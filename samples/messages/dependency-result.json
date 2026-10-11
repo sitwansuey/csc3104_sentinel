@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "incident_id": "INC-DEMO-001",
+  "target": {
+    "cluster_id": "sentinel-lab",
+    "namespace": "sentinel-demo",
+    "kind": "Deployment",
+    "name": "demo-api",
+    "uid": "synthetic-demo-uid-001"
+  },
+  "kind": "dependency_result",
+  "action_id": "ACT-DEMO-001",
+  "status": "CLEAR",
+  "affected_services": [
+    "demo-api",
+    "mock-db"
+  ],
+  "blockers": [],
+  "unknowns": [],
+  "checked_at": "2026-10-10T12:00:34Z"
+}

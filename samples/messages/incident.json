@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "incident_id": "INC-DEMO-001",
+  "target": {
+    "cluster_id": "sentinel-lab",
+    "namespace": "sentinel-demo",
+    "kind": "Deployment",
+    "name": "demo-api",
+    "uid": "synthetic-demo-uid-001"
+  },
+  "kind": "incident",
+  "observed_at": "2026-10-10T12:00:30Z",
+  "observed_resource_version": "102",
+  "observed_generation": 2,
+  "signals": [
+    {
+      "evidence_id": "E-POD-1",
+      "source": "pod_status",
+      "reason": "CrashLoopBackOff",
+      "detail": "One desired replica, zero ready; repeated exit code 1",
+      "at": "2026-10-10T12:00:30Z"
+    },
+    {
+      "evidence_id": "E-LOG-1",
+      "source": "container_log",
+      "reason": "StartupError",
+      "detail": "Invalid startup configuration; process exited with code 1",
+      "at": "2026-10-10T12:00:30Z"
+    }
+  ]
+}

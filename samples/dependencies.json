@@ -1,0 +1,19 @@
+{
+  "source": "synthetic_development_fixture",
+  "edge_direction": "caller_to_callee",
+  "nodes": [
+    "demo-api",
+    "mock-db"
+  ],
+  "edges": [
+    {
+      "from": "demo-api",
+      "to": "mock-db"
+    }
+  ],
+  "known_health": {
+    "demo-api": false,
+    "mock-db": true
+  },
+  "note": "The local demo has no real database; this mock edge is for offline dependency tests."
+}

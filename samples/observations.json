@@ -1,0 +1,1384 @@
+{
+  "healthy": [
+    {
+      "source": "synthetic_development_fixture",
+      "captured_at": "2026-10-10T12:00:00Z",
+      "cluster_id": "sentinel-lab",
+      "deployment": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+          "name": "demo-api",
+          "namespace": "sentinel-demo",
+          "labels": {
+            "app": "demo-api"
+          },
+          "uid": "synthetic-demo-uid-001",
+          "resourceVersion": "101",
+          "generation": 1
+        },
+        "spec": {
+          "replicas": 1,
+          "revisionHistoryLimit": 5,
+          "minReadySeconds": 2,
+          "progressDeadlineSeconds": 90,
+          "strategy": {
+            "type": "Recreate"
+          },
+          "selector": {
+            "matchLabels": {
+              "app": "demo-api"
+            }
+          },
+          "template": {
+            "metadata": {
+              "labels": {
+                "app": "demo-api"
+              }
+            },
+            "spec": {
+              "automountServiceAccountToken": false,
+              "securityContext": {
+                "runAsNonRoot": true,
+                "runAsUser": 10001,
+                "runAsGroup": 10001,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "containers": [
+                {
+                  "name": "demo-api",
+                  "image": "sentinel-demo:0.1.0",
+                  "imagePullPolicy": "Never",
+                  "ports": [
+                    {
+                      "name": "http",
+                      "containerPort": 8080
+                    }
+                  ],
+                  "env": [
+                    {
+                      "name": "STARTUP_FAILURE",
+                      "value": "false"
+                    }
+                  ],
+                  "resources": {
+                    "requests": {
+                      "cpu": "50m",
+                      "memory": "32Mi"
+                    },
+                    "limits": {
+                      "cpu": "200m",
+                      "memory": "64Mi"
+                    }
+                  },
+                  "securityContext": {
+                    "allowPrivilegeEscalation": false,
+                    "readOnlyRootFilesystem": true,
+                    "capabilities": {
+                      "drop": [
+                        "ALL"
+                      ]
+                    }
+                  },
+                  "readinessProbe": {
+                    "httpGet": {
+                      "path": "/readyz",
+                      "port": "http"
+                    },
+                    "periodSeconds": 3,
+                    "timeoutSeconds": 2
+                  },
+                  "livenessProbe": {
+                    "httpGet": {
+                      "path": "/healthz",
+                      "port": "http"
+                    },
+                    "initialDelaySeconds": 5,
+                    "periodSeconds": 5,
+                    "timeoutSeconds": 2
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "status": {
+          "observedGeneration": 1,
+          "replicas": 1,
+          "readyReplicas": 1,
+          "availableReplicas": 1
+        }
+      },
+      "pods": [
+        {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "metadata": {
+            "name": "demo-api-fixture",
+            "namespace": "sentinel-demo",
+            "uid": "synthetic-pod-uid",
+            "labels": {
+              "app": "demo-api"
+            }
+          },
+          "status": {
+            "phase": "Running",
+            "containerStatuses": [
+              {
+                "name": "demo-api",
+                "ready": true,
+                "restartCount": 0,
+                "state": {
+                  "running": {
+                    "startedAt": "2026-10-10T12:00:00Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          }
+        }
+      ],
+      "events": [],
+      "logs": []
+    },
+    {
+      "source": "synthetic_development_fixture",
+      "captured_at": "2026-10-10T12:00:15Z",
+      "cluster_id": "sentinel-lab",
+      "deployment": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+          "name": "demo-api",
+          "namespace": "sentinel-demo",
+          "labels": {
+            "app": "demo-api"
+          },
+          "uid": "synthetic-demo-uid-001",
+          "resourceVersion": "101",
+          "generation": 1
+        },
+        "spec": {
+          "replicas": 1,
+          "revisionHistoryLimit": 5,
+          "minReadySeconds": 2,
+          "progressDeadlineSeconds": 90,
+          "strategy": {
+            "type": "Recreate"
+          },
+          "selector": {
+            "matchLabels": {
+              "app": "demo-api"
+            }
+          },
+          "template": {
+            "metadata": {
+              "labels": {
+                "app": "demo-api"
+              }
+            },
+            "spec": {
+              "automountServiceAccountToken": false,
+              "securityContext": {
+                "runAsNonRoot": true,
+                "runAsUser": 10001,
+                "runAsGroup": 10001,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "containers": [
+                {
+                  "name": "demo-api",
+                  "image": "sentinel-demo:0.1.0",
+                  "imagePullPolicy": "Never",
+                  "ports": [
+                    {
+                      "name": "http",
+                      "containerPort": 8080
+                    }
+                  ],
+                  "env": [
+                    {
+                      "name": "STARTUP_FAILURE",
+                      "value": "false"
+                    }
+                  ],
+                  "resources": {
+                    "requests": {
+                      "cpu": "50m",
+                      "memory": "32Mi"
+                    },
+                    "limits": {
+                      "cpu": "200m",
+                      "memory": "64Mi"
+                    }
+                  },
+                  "securityContext": {
+                    "allowPrivilegeEscalation": false,
+                    "readOnlyRootFilesystem": true,
+                    "capabilities": {
+                      "drop": [
+                        "ALL"
+                      ]
+                    }
+                  },
+                  "readinessProbe": {
+                    "httpGet": {
+                      "path": "/readyz",
+                      "port": "http"
+                    },
+                    "periodSeconds": 3,
+                    "timeoutSeconds": 2
+                  },
+                  "livenessProbe": {
+                    "httpGet": {
+                      "path": "/healthz",
+                      "port": "http"
+                    },
+                    "initialDelaySeconds": 5,
+                    "periodSeconds": 5,
+                    "timeoutSeconds": 2
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "status": {
+          "observedGeneration": 1,
+          "replicas": 1,
+          "readyReplicas": 1,
+          "availableReplicas": 1
+        }
+      },
+      "pods": [
+        {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "metadata": {
+            "name": "demo-api-fixture",
+            "namespace": "sentinel-demo",
+            "uid": "synthetic-pod-uid",
+            "labels": {
+              "app": "demo-api"
+            }
+          },
+          "status": {
+            "phase": "Running",
+            "containerStatuses": [
+              {
+                "name": "demo-api",
+                "ready": true,
+                "restartCount": 0,
+                "state": {
+                  "running": {
+                    "startedAt": "2026-10-10T12:00:15Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          }
+        }
+      ],
+      "events": [],
+      "logs": []
+    },
+    {
+      "source": "synthetic_development_fixture",
+      "captured_at": "2026-10-10T12:00:30Z",
+      "cluster_id": "sentinel-lab",
+      "deployment": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+          "name": "demo-api",
+          "namespace": "sentinel-demo",
+          "labels": {
+            "app": "demo-api"
+          },
+          "uid": "synthetic-demo-uid-001",
+          "resourceVersion": "101",
+          "generation": 1
+        },
+        "spec": {
+          "replicas": 1,
+          "revisionHistoryLimit": 5,
+          "minReadySeconds": 2,
+          "progressDeadlineSeconds": 90,
+          "strategy": {
+            "type": "Recreate"
+          },
+          "selector": {
+            "matchLabels": {
+              "app": "demo-api"
+            }
+          },
+          "template": {
+            "metadata": {
+              "labels": {
+                "app": "demo-api"
+              }
+            },
+            "spec": {
+              "automountServiceAccountToken": false,
+              "securityContext": {
+                "runAsNonRoot": true,
+                "runAsUser": 10001,
+                "runAsGroup": 10001,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "containers": [
+                {
+                  "name": "demo-api",
+                  "image": "sentinel-demo:0.1.0",
+                  "imagePullPolicy": "Never",
+                  "ports": [
+                    {
+                      "name": "http",
+                      "containerPort": 8080
+                    }
+                  ],
+                  "env": [
+                    {
+                      "name": "STARTUP_FAILURE",
+                      "value": "false"
+                    }
+                  ],
+                  "resources": {
+                    "requests": {
+                      "cpu": "50m",
+                      "memory": "32Mi"
+                    },
+                    "limits": {
+                      "cpu": "200m",
+                      "memory": "64Mi"
+                    }
+                  },
+                  "securityContext": {
+                    "allowPrivilegeEscalation": false,
+                    "readOnlyRootFilesystem": true,
+                    "capabilities": {
+                      "drop": [
+                        "ALL"
+                      ]
+                    }
+                  },
+                  "readinessProbe": {
+                    "httpGet": {
+                      "path": "/readyz",
+                      "port": "http"
+                    },
+                    "periodSeconds": 3,
+                    "timeoutSeconds": 2
+                  },
+                  "livenessProbe": {
+                    "httpGet": {
+                      "path": "/healthz",
+                      "port": "http"
+                    },
+                    "initialDelaySeconds": 5,
+                    "periodSeconds": 5,
+                    "timeoutSeconds": 2
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "status": {
+          "observedGeneration": 1,
+          "replicas": 1,
+          "readyReplicas": 1,
+          "availableReplicas": 1
+        }
+      },
+      "pods": [
+        {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "metadata": {
+            "name": "demo-api-fixture",
+            "namespace": "sentinel-demo",
+            "uid": "synthetic-pod-uid",
+            "labels": {
+              "app": "demo-api"
+            }
+          },
+          "status": {
+            "phase": "Running",
+            "containerStatuses": [
+              {
+                "name": "demo-api",
+                "ready": true,
+                "restartCount": 0,
+                "state": {
+                  "running": {
+                    "startedAt": "2026-10-10T12:00:30Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          }
+        }
+      ],
+      "events": [],
+      "logs": []
+    }
+  ],
+  "failed-rollout": [
+    {
+      "source": "synthetic_development_fixture",
+      "captured_at": "2026-10-10T12:00:00Z",
+      "cluster_id": "sentinel-lab",
+      "deployment": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+          "name": "demo-api",
+          "namespace": "sentinel-demo",
+          "labels": {
+            "app": "demo-api"
+          },
+          "uid": "synthetic-demo-uid-001",
+          "resourceVersion": "102",
+          "generation": 2
+        },
+        "spec": {
+          "replicas": 1,
+          "revisionHistoryLimit": 5,
+          "minReadySeconds": 2,
+          "progressDeadlineSeconds": 90,
+          "strategy": {
+            "type": "Recreate"
+          },
+          "selector": {
+            "matchLabels": {
+              "app": "demo-api"
+            }
+          },
+          "template": {
+            "metadata": {
+              "labels": {
+                "app": "demo-api"
+              }
+            },
+            "spec": {
+              "automountServiceAccountToken": false,
+              "securityContext": {
+                "runAsNonRoot": true,
+                "runAsUser": 10001,
+                "runAsGroup": 10001,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "containers": [
+                {
+                  "name": "demo-api",
+                  "image": "sentinel-demo:0.1.0",
+                  "imagePullPolicy": "Never",
+                  "ports": [
+                    {
+                      "name": "http",
+                      "containerPort": 8080
+                    }
+                  ],
+                  "env": [
+                    {
+                      "name": "STARTUP_FAILURE",
+                      "value": "true"
+                    }
+                  ],
+                  "resources": {
+                    "requests": {
+                      "cpu": "50m",
+                      "memory": "32Mi"
+                    },
+                    "limits": {
+                      "cpu": "200m",
+                      "memory": "64Mi"
+                    }
+                  },
+                  "securityContext": {
+                    "allowPrivilegeEscalation": false,
+                    "readOnlyRootFilesystem": true,
+                    "capabilities": {
+                      "drop": [
+                        "ALL"
+                      ]
+                    }
+                  },
+                  "readinessProbe": {
+                    "httpGet": {
+                      "path": "/readyz",
+                      "port": "http"
+                    },
+                    "periodSeconds": 3,
+                    "timeoutSeconds": 2
+                  },
+                  "livenessProbe": {
+                    "httpGet": {
+                      "path": "/healthz",
+                      "port": "http"
+                    },
+                    "initialDelaySeconds": 5,
+                    "periodSeconds": 5,
+                    "timeoutSeconds": 2
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "status": {
+          "observedGeneration": 2,
+          "replicas": 1,
+          "readyReplicas": 0,
+          "availableReplicas": 0
+        }
+      },
+      "pods": [
+        {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "metadata": {
+            "name": "demo-api-fixture",
+            "namespace": "sentinel-demo",
+            "uid": "synthetic-pod-uid",
+            "labels": {
+              "app": "demo-api"
+            }
+          },
+          "status": {
+            "phase": "Running",
+            "containerStatuses": [
+              {
+                "name": "demo-api",
+                "ready": false,
+                "restartCount": 1,
+                "state": {
+                  "waiting": {
+                    "reason": "CrashLoopBackOff",
+                    "message": "Back-off restarting failed container"
+                  }
+                },
+                "lastState": {
+                  "terminated": {
+                    "exitCode": 1,
+                    "reason": "Error"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "reason": "BackOff",
+          "type": "Warning",
+          "message": "Back-off restarting failed container",
+          "lastTimestamp": "2026-10-10T12:00:00Z"
+        }
+      ],
+      "logs": [
+        {
+          "pod": "demo-api-fixture",
+          "container": "demo-api",
+          "text": "Invalid startup configuration; process exited with code 1",
+          "at": "2026-10-10T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "source": "synthetic_development_fixture",
+      "captured_at": "2026-10-10T12:00:15Z",
+      "cluster_id": "sentinel-lab",
+      "deployment": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+          "name": "demo-api",
+          "namespace": "sentinel-demo",
+          "labels": {
+            "app": "demo-api"
+          },
+          "uid": "synthetic-demo-uid-001",
+          "resourceVersion": "102",
+          "generation": 2
+        },
+        "spec": {
+          "replicas": 1,
+          "revisionHistoryLimit": 5,
+          "minReadySeconds": 2,
+          "progressDeadlineSeconds": 90,
+          "strategy": {
+            "type": "Recreate"
+          },
+          "selector": {
+            "matchLabels": {
+              "app": "demo-api"
+            }
+          },
+          "template": {
+            "metadata": {
+              "labels": {
+                "app": "demo-api"
+              }
+            },
+            "spec": {
+              "automountServiceAccountToken": false,
+              "securityContext": {
+                "runAsNonRoot": true,
+                "runAsUser": 10001,
+                "runAsGroup": 10001,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "containers": [
+                {
+                  "name": "demo-api",
+                  "image": "sentinel-demo:0.1.0",
+                  "imagePullPolicy": "Never",
+                  "ports": [
+                    {
+                      "name": "http",
+                      "containerPort": 8080
+                    }
+                  ],
+                  "env": [
+                    {
+                      "name": "STARTUP_FAILURE",
+                      "value": "true"
+                    }
+                  ],
+                  "resources": {
+                    "requests": {
+                      "cpu": "50m",
+                      "memory": "32Mi"
+                    },
+                    "limits": {
+                      "cpu": "200m",
+                      "memory": "64Mi"
+                    }
+                  },
+                  "securityContext": {
+                    "allowPrivilegeEscalation": false,
+                    "readOnlyRootFilesystem": true,
+                    "capabilities": {
+                      "drop": [
+                        "ALL"
+                      ]
+                    }
+                  },
+                  "readinessProbe": {
+                    "httpGet": {
+                      "path": "/readyz",
+                      "port": "http"
+                    },
+                    "periodSeconds": 3,
+                    "timeoutSeconds": 2
+                  },
+                  "livenessProbe": {
+                    "httpGet": {
+                      "path": "/healthz",
+                      "port": "http"
+                    },
+                    "initialDelaySeconds": 5,
+                    "periodSeconds": 5,
+                    "timeoutSeconds": 2
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "status": {
+          "observedGeneration": 2,
+          "replicas": 1,
+          "readyReplicas": 0,
+          "availableReplicas": 0
+        }
+      },
+      "pods": [
+        {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "metadata": {
+            "name": "demo-api-fixture",
+            "namespace": "sentinel-demo",
+            "uid": "synthetic-pod-uid",
+            "labels": {
+              "app": "demo-api"
+            }
+          },
+          "status": {
+            "phase": "Running",
+            "containerStatuses": [
+              {
+                "name": "demo-api",
+                "ready": false,
+                "restartCount": 2,
+                "state": {
+                  "waiting": {
+                    "reason": "CrashLoopBackOff",
+                    "message": "Back-off restarting failed container"
+                  }
+                },
+                "lastState": {
+                  "terminated": {
+                    "exitCode": 1,
+                    "reason": "Error"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "reason": "BackOff",
+          "type": "Warning",
+          "message": "Back-off restarting failed container",
+          "lastTimestamp": "2026-10-10T12:00:15Z"
+        }
+      ],
+      "logs": [
+        {
+          "pod": "demo-api-fixture",
+          "container": "demo-api",
+          "text": "Invalid startup configuration; process exited with code 1",
+          "at": "2026-10-10T12:00:15Z"
+        }
+      ]
+    },
+    {
+      "source": "synthetic_development_fixture",
+      "captured_at": "2026-10-10T12:00:30Z",
+      "cluster_id": "sentinel-lab",
+      "deployment": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+          "name": "demo-api",
+          "namespace": "sentinel-demo",
+          "labels": {
+            "app": "demo-api"
+          },
+          "uid": "synthetic-demo-uid-001",
+          "resourceVersion": "102",
+          "generation": 2
+        },
+        "spec": {
+          "replicas": 1,
+          "revisionHistoryLimit": 5,
+          "minReadySeconds": 2,
+          "progressDeadlineSeconds": 90,
+          "strategy": {
+            "type": "Recreate"
+          },
+          "selector": {
+            "matchLabels": {
+              "app": "demo-api"
+            }
+          },
+          "template": {
+            "metadata": {
+              "labels": {
+                "app": "demo-api"
+              }
+            },
+            "spec": {
+              "automountServiceAccountToken": false,
+              "securityContext": {
+                "runAsNonRoot": true,
+                "runAsUser": 10001,
+                "runAsGroup": 10001,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "containers": [
+                {
+                  "name": "demo-api",
+                  "image": "sentinel-demo:0.1.0",
+                  "imagePullPolicy": "Never",
+                  "ports": [
+                    {
+                      "name": "http",
+                      "containerPort": 8080
+                    }
+                  ],
+                  "env": [
+                    {
+                      "name": "STARTUP_FAILURE",
+                      "value": "true"
+                    }
+                  ],
+                  "resources": {
+                    "requests": {
+                      "cpu": "50m",
+                      "memory": "32Mi"
+                    },
+                    "limits": {
+                      "cpu": "200m",
+                      "memory": "64Mi"
+                    }
+                  },
+                  "securityContext": {
+                    "allowPrivilegeEscalation": false,
+                    "readOnlyRootFilesystem": true,
+                    "capabilities": {
+                      "drop": [
+                        "ALL"
+                      ]
+                    }
+                  },
+                  "readinessProbe": {
+                    "httpGet": {
+                      "path": "/readyz",
+                      "port": "http"
+                    },
+                    "periodSeconds": 3,
+                    "timeoutSeconds": 2
+                  },
+                  "livenessProbe": {
+                    "httpGet": {
+                      "path": "/healthz",
+                      "port": "http"
+                    },
+                    "initialDelaySeconds": 5,
+                    "periodSeconds": 5,
+                    "timeoutSeconds": 2
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "status": {
+          "observedGeneration": 2,
+          "replicas": 1,
+          "readyReplicas": 0,
+          "availableReplicas": 0
+        }
+      },
+      "pods": [
+        {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "metadata": {
+            "name": "demo-api-fixture",
+            "namespace": "sentinel-demo",
+            "uid": "synthetic-pod-uid",
+            "labels": {
+              "app": "demo-api"
+            }
+          },
+          "status": {
+            "phase": "Running",
+            "containerStatuses": [
+              {
+                "name": "demo-api",
+                "ready": false,
+                "restartCount": 4,
+                "state": {
+                  "waiting": {
+                    "reason": "CrashLoopBackOff",
+                    "message": "Back-off restarting failed container"
+                  }
+                },
+                "lastState": {
+                  "terminated": {
+                    "exitCode": 1,
+                    "reason": "Error"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "reason": "BackOff",
+          "type": "Warning",
+          "message": "Back-off restarting failed container",
+          "lastTimestamp": "2026-10-10T12:00:30Z"
+        }
+      ],
+      "logs": [
+        {
+          "pod": "demo-api-fixture",
+          "container": "demo-api",
+          "text": "Invalid startup configuration; process exited with code 1",
+          "at": "2026-10-10T12:00:30Z"
+        }
+      ]
+    }
+  ],
+  "transient-failure": [
+    {
+      "source": "synthetic_development_fixture",
+      "captured_at": "2026-10-10T12:00:00Z",
+      "cluster_id": "sentinel-lab",
+      "deployment": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+          "name": "demo-api",
+          "namespace": "sentinel-demo",
+          "labels": {
+            "app": "demo-api"
+          },
+          "uid": "synthetic-demo-uid-001",
+          "resourceVersion": "101",
+          "generation": 1
+        },
+        "spec": {
+          "replicas": 1,
+          "revisionHistoryLimit": 5,
+          "minReadySeconds": 2,
+          "progressDeadlineSeconds": 90,
+          "strategy": {
+            "type": "Recreate"
+          },
+          "selector": {
+            "matchLabels": {
+              "app": "demo-api"
+            }
+          },
+          "template": {
+            "metadata": {
+              "labels": {
+                "app": "demo-api"
+              }
+            },
+            "spec": {
+              "automountServiceAccountToken": false,
+              "securityContext": {
+                "runAsNonRoot": true,
+                "runAsUser": 10001,
+                "runAsGroup": 10001,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "containers": [
+                {
+                  "name": "demo-api",
+                  "image": "sentinel-demo:0.1.0",
+                  "imagePullPolicy": "Never",
+                  "ports": [
+                    {
+                      "name": "http",
+                      "containerPort": 8080
+                    }
+                  ],
+                  "env": [
+                    {
+                      "name": "STARTUP_FAILURE",
+                      "value": "false"
+                    }
+                  ],
+                  "resources": {
+                    "requests": {
+                      "cpu": "50m",
+                      "memory": "32Mi"
+                    },
+                    "limits": {
+                      "cpu": "200m",
+                      "memory": "64Mi"
+                    }
+                  },
+                  "securityContext": {
+                    "allowPrivilegeEscalation": false,
+                    "readOnlyRootFilesystem": true,
+                    "capabilities": {
+                      "drop": [
+                        "ALL"
+                      ]
+                    }
+                  },
+                  "readinessProbe": {
+                    "httpGet": {
+                      "path": "/readyz",
+                      "port": "http"
+                    },
+                    "periodSeconds": 3,
+                    "timeoutSeconds": 2
+                  },
+                  "livenessProbe": {
+                    "httpGet": {
+                      "path": "/healthz",
+                      "port": "http"
+                    },
+                    "initialDelaySeconds": 5,
+                    "periodSeconds": 5,
+                    "timeoutSeconds": 2
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "status": {
+          "observedGeneration": 1,
+          "replicas": 1,
+          "readyReplicas": 1,
+          "availableReplicas": 1
+        }
+      },
+      "pods": [
+        {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "metadata": {
+            "name": "demo-api-fixture",
+            "namespace": "sentinel-demo",
+            "uid": "synthetic-pod-uid",
+            "labels": {
+              "app": "demo-api"
+            }
+          },
+          "status": {
+            "phase": "Running",
+            "containerStatuses": [
+              {
+                "name": "demo-api",
+                "ready": true,
+                "restartCount": 0,
+                "state": {
+                  "running": {
+                    "startedAt": "2026-10-10T12:00:00Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          }
+        }
+      ],
+      "events": [],
+      "logs": []
+    },
+    {
+      "source": "synthetic_development_fixture",
+      "captured_at": "2026-10-10T12:00:15Z",
+      "cluster_id": "sentinel-lab",
+      "deployment": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+          "name": "demo-api",
+          "namespace": "sentinel-demo",
+          "labels": {
+            "app": "demo-api"
+          },
+          "uid": "synthetic-demo-uid-001",
+          "resourceVersion": "102",
+          "generation": 2
+        },
+        "spec": {
+          "replicas": 1,
+          "revisionHistoryLimit": 5,
+          "minReadySeconds": 2,
+          "progressDeadlineSeconds": 90,
+          "strategy": {
+            "type": "Recreate"
+          },
+          "selector": {
+            "matchLabels": {
+              "app": "demo-api"
+            }
+          },
+          "template": {
+            "metadata": {
+              "labels": {
+                "app": "demo-api"
+              }
+            },
+            "spec": {
+              "automountServiceAccountToken": false,
+              "securityContext": {
+                "runAsNonRoot": true,
+                "runAsUser": 10001,
+                "runAsGroup": 10001,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "containers": [
+                {
+                  "name": "demo-api",
+                  "image": "sentinel-demo:0.1.0",
+                  "imagePullPolicy": "Never",
+                  "ports": [
+                    {
+                      "name": "http",
+                      "containerPort": 8080
+                    }
+                  ],
+                  "env": [
+                    {
+                      "name": "STARTUP_FAILURE",
+                      "value": "true"
+                    }
+                  ],
+                  "resources": {
+                    "requests": {
+                      "cpu": "50m",
+                      "memory": "32Mi"
+                    },
+                    "limits": {
+                      "cpu": "200m",
+                      "memory": "64Mi"
+                    }
+                  },
+                  "securityContext": {
+                    "allowPrivilegeEscalation": false,
+                    "readOnlyRootFilesystem": true,
+                    "capabilities": {
+                      "drop": [
+                        "ALL"
+                      ]
+                    }
+                  },
+                  "readinessProbe": {
+                    "httpGet": {
+                      "path": "/readyz",
+                      "port": "http"
+                    },
+                    "periodSeconds": 3,
+                    "timeoutSeconds": 2
+                  },
+                  "livenessProbe": {
+                    "httpGet": {
+                      "path": "/healthz",
+                      "port": "http"
+                    },
+                    "initialDelaySeconds": 5,
+                    "periodSeconds": 5,
+                    "timeoutSeconds": 2
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "status": {
+          "observedGeneration": 2,
+          "replicas": 1,
+          "readyReplicas": 0,
+          "availableReplicas": 0
+        }
+      },
+      "pods": [
+        {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "metadata": {
+            "name": "demo-api-fixture",
+            "namespace": "sentinel-demo",
+            "uid": "synthetic-pod-uid",
+            "labels": {
+              "app": "demo-api"
+            }
+          },
+          "status": {
+            "phase": "Running",
+            "containerStatuses": [
+              {
+                "name": "demo-api",
+                "ready": false,
+                "restartCount": 2,
+                "state": {
+                  "waiting": {
+                    "reason": "CrashLoopBackOff",
+                    "message": "Back-off restarting failed container"
+                  }
+                },
+                "lastState": {
+                  "terminated": {
+                    "exitCode": 1,
+                    "reason": "Error"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "reason": "BackOff",
+          "type": "Warning",
+          "message": "Back-off restarting failed container",
+          "lastTimestamp": "2026-10-10T12:00:15Z"
+        }
+      ],
+      "logs": [
+        {
+          "pod": "demo-api-fixture",
+          "container": "demo-api",
+          "text": "Invalid startup configuration; process exited with code 1",
+          "at": "2026-10-10T12:00:15Z"
+        }
+      ]
+    },
+    {
+      "source": "synthetic_development_fixture",
+      "captured_at": "2026-10-10T12:00:30Z",
+      "cluster_id": "sentinel-lab",
+      "deployment": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+          "name": "demo-api",
+          "namespace": "sentinel-demo",
+          "labels": {
+            "app": "demo-api"
+          },
+          "uid": "synthetic-demo-uid-001",
+          "resourceVersion": "101",
+          "generation": 1
+        },
+        "spec": {
+          "replicas": 1,
+          "revisionHistoryLimit": 5,
+          "minReadySeconds": 2,
+          "progressDeadlineSeconds": 90,
+          "strategy": {
+            "type": "Recreate"
+          },
+          "selector": {
+            "matchLabels": {
+              "app": "demo-api"
+            }
+          },
+          "template": {
+            "metadata": {
+              "labels": {
+                "app": "demo-api"
+              }
+            },
+            "spec": {
+              "automountServiceAccountToken": false,
+              "securityContext": {
+                "runAsNonRoot": true,
+                "runAsUser": 10001,
+                "runAsGroup": 10001,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "containers": [
+                {
+                  "name": "demo-api",
+                  "image": "sentinel-demo:0.1.0",
+                  "imagePullPolicy": "Never",
+                  "ports": [
+                    {
+                      "name": "http",
+                      "containerPort": 8080
+                    }
+                  ],
+                  "env": [
+                    {
+                      "name": "STARTUP_FAILURE",
+                      "value": "false"
+                    }
+                  ],
+                  "resources": {
+                    "requests": {
+                      "cpu": "50m",
+                      "memory": "32Mi"
+                    },
+                    "limits": {
+                      "cpu": "200m",
+                      "memory": "64Mi"
+                    }
+                  },
+                  "securityContext": {
+                    "allowPrivilegeEscalation": false,
+                    "readOnlyRootFilesystem": true,
+                    "capabilities": {
+                      "drop": [
+                        "ALL"
+                      ]
+                    }
+                  },
+                  "readinessProbe": {
+                    "httpGet": {
+                      "path": "/readyz",
+                      "port": "http"
+                    },
+                    "periodSeconds": 3,
+                    "timeoutSeconds": 2
+                  },
+                  "livenessProbe": {
+                    "httpGet": {
+                      "path": "/healthz",
+                      "port": "http"
+                    },
+                    "initialDelaySeconds": 5,
+                    "periodSeconds": 5,
+                    "timeoutSeconds": 2
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "status": {
+          "observedGeneration": 1,
+          "replicas": 1,
+          "readyReplicas": 1,
+          "availableReplicas": 1
+        }
+      },
+      "pods": [
+        {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "metadata": {
+            "name": "demo-api-fixture",
+            "namespace": "sentinel-demo",
+            "uid": "synthetic-pod-uid",
+            "labels": {
+              "app": "demo-api"
+            }
+          },
+          "status": {
+            "phase": "Running",
+            "containerStatuses": [
+              {
+                "name": "demo-api",
+                "ready": true,
+                "restartCount": 0,
+                "state": {
+                  "running": {
+                    "startedAt": "2026-10-10T12:00:30Z"
+                  }
+                },
+                "lastState": {}
+              }
+            ]
+          }
+        }
+      ],
+      "events": [],
+      "logs": []
+    }
+  ]
+}

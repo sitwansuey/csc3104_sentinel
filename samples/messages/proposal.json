@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "incident_id": "INC-DEMO-001",
+  "target": {
+    "cluster_id": "sentinel-lab",
+    "namespace": "sentinel-demo",
+    "kind": "Deployment",
+    "name": "demo-api",
+    "uid": "synthetic-demo-uid-001"
+  },
+  "kind": "proposal",
+  "action_id": "ACT-DEMO-001",
+  "action": "ROLLBACK",
+  "parameters": {
+    "baseline_id": "BASE-DEMO-001",
+    "template_sha256": "a9091159ce70bcf4679f6fa7a70c33ce7169e8dd3296ec647d9bfee47c9445bb"
+  },
+  "based_on_resource_version": "102",
+  "rationale": "Repeated startup failures after a template change; an observed healthy baseline is retained.",
+  "evidence_refs": [
+    "E-POD-1",
+    "E-LOG-1"
+  ]
+}

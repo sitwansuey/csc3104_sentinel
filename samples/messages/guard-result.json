@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "incident_id": "INC-DEMO-001",
+  "target": {
+    "cluster_id": "sentinel-lab",
+    "namespace": "sentinel-demo",
+    "kind": "Deployment",
+    "name": "demo-api",
+    "uid": "synthetic-demo-uid-001"
+  },
+  "kind": "guard_result",
+  "action_id": "ACT-DEMO-001",
+  "verdict": "ESCALATE",
+  "reason_codes": [
+    "OPERATOR_APPROVAL_REQUIRED"
+  ],
+  "policy_version": "demo-policy-v1",
+  "validated_resource_version": "102",
+  "checked_at": "2026-10-10T12:00:35Z"
+}

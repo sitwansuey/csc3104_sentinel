@@ -1,0 +1,66 @@
+{
+  "stable": [
+    {
+      "at": "2026-10-10T12:00:50Z",
+      "service": "demo-api",
+      "http_status": 200,
+      "ready_replicas": 1,
+      "desired_replicas": 1,
+      "dependencies": {
+        "mock-db": true
+      }
+    },
+    {
+      "at": "2026-10-10T12:01:00Z",
+      "service": "demo-api",
+      "http_status": 200,
+      "ready_replicas": 1,
+      "desired_replicas": 1,
+      "dependencies": {
+        "mock-db": true
+      }
+    },
+    {
+      "at": "2026-10-10T12:01:10Z",
+      "service": "demo-api",
+      "http_status": 200,
+      "ready_replicas": 1,
+      "desired_replicas": 1,
+      "dependencies": {
+        "mock-db": true
+      }
+    }
+  ],
+  "unstable": [
+    {
+      "at": "2026-10-10T12:00:50Z",
+      "service": "demo-api",
+      "http_status": 200,
+      "ready_replicas": 1,
+      "desired_replicas": 1,
+      "dependencies": {
+        "mock-db": true
+      }
+    },
+    {
+      "at": "2026-10-10T12:01:00Z",
+      "service": "demo-api",
+      "http_status": 503,
+      "ready_replicas": 1,
+      "desired_replicas": 1,
+      "dependencies": {
+        "mock-db": false
+      }
+    },
+    {
+      "at": "2026-10-10T12:01:10Z",
+      "service": "demo-api",
+      "http_status": 200,
+      "ready_replicas": 1,
+      "desired_replicas": 1,
+      "dependencies": {
+        "mock-db": true
+      }
+    }
+  ]
+}

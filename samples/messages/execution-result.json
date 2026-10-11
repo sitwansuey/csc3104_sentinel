@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "incident_id": "INC-DEMO-001",
+  "target": {
+    "cluster_id": "sentinel-lab",
+    "namespace": "sentinel-demo",
+    "kind": "Deployment",
+    "name": "demo-api",
+    "uid": "synthetic-demo-uid-001"
+  },
+  "kind": "execution_result",
+  "action_id": "ACT-DEMO-001",
+  "status": "APPLIED",
+  "resource_version": "103",
+  "recorded_at": "2026-10-10T12:00:45Z",
+  "details": "Synthetic example after operator approval and fresh Guard validation; no actual API call was made."
+}

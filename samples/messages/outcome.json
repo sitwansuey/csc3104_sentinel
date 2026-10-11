@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "incident_id": "INC-DEMO-001",
+  "target": {
+    "cluster_id": "sentinel-lab",
+    "namespace": "sentinel-demo",
+    "kind": "Deployment",
+    "name": "demo-api",
+    "uid": "synthetic-demo-uid-001"
+  },
+  "kind": "outcome",
+  "action_id": "ACT-DEMO-001",
+  "status": "RECOVERED",
+  "window_start": "2026-10-10T12:00:50Z",
+  "window_end": "2026-10-10T12:01:10Z",
+  "checks": [
+    {
+      "name": "service_health",
+      "passed": true,
+      "detail": "Three successful synthetic samples over 20 seconds"
+    },
+    {
+      "name": "dependency_health",
+      "passed": true,
+      "detail": "Synthetic mock-db samples remain healthy"
+    }
+  ]
+}

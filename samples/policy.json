@@ -1,0 +1,28 @@
+{
+  "policy_id": "demo-policy",
+  "policy_version": "demo-policy-v1",
+  "targets": [
+    {
+      "cluster_id": "sentinel-lab",
+      "namespace": "sentinel-demo",
+      "kind": "Deployment",
+      "name": "demo-api",
+      "uid": "synthetic-demo-uid-001"
+    }
+  ],
+  "allowed_actions": [
+    "ROLLBACK"
+  ],
+  "require_operator_approval": true,
+  "unknown_dependency_result": "ESCALATE",
+  "detection": {
+    "failure_duration_seconds": 30
+  },
+  "health": {
+    "stable_window_seconds": 20,
+    "minimum_samples": 3,
+    "max_sample_gap_seconds": 15,
+    "required_http_status": 200
+  },
+  "note": "Development policy: review constraints before adding other actions or workloads."
+}
