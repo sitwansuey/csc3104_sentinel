@@ -11,9 +11,10 @@ action: restore a specific saved healthy Pod template (`ROLLBACK`).
 ## Current starter
 
 The demo lab, message validator, synthetic samples and contract tests are provided.
-The six service files are implementation stubs. Live adapters, service runtimes,
-messaging and automated recovery still need to be built. Sample results are not
-live authorisations or measured recovery results.
+The Guard now has a fixture-driven evaluator and standalone demo; the other five
+service files are implementation stubs. Live adapters, service runtimes, messaging
+and automated recovery still need to be built. Sample results are not live
+authorisations or measured recovery results.
 
 ## Ownership and deliverables
 
@@ -102,7 +103,12 @@ Use Python 3.12+. No external packages are needed for the starter checks.
 ```bash
 python scripts/check_contracts.py
 python -m unittest discover -s tests -p "test_*.py" -v
+python scripts/demo_guard.py
 ```
+
+The [Recovery Guard guide](docs/recovery-guard.md) explains its local inputs,
+temporary approval format and decision scenarios. The demo uses copied synthetic
+fixtures and a fixed UTC clock; it makes no cluster writes.
 
 Choose a service file and implement its TODOs. Add `tests/test_<component>.py`
 and a small fixture-driven example. Use a feature branch, one reviewer and a
