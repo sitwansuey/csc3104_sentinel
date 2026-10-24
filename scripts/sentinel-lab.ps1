@@ -111,11 +111,13 @@ function Test-Offline {
 function Test-Observer([string]$Label, [int]$ExpectedIncidents, [int]$PollCount) {
     Find-Python
     Write-Host "Observing $Label for approximately $(($PollCount - 1) * 15) seconds..."
-    $raw = @(Invoke-Python @('scripts/demo_observer_live.py', '--context', $script:Context, '--poll-count', "$PollCount", '--interval-seconds', '15')) -join "`n"
+    $expectation = if ($ExpectedIncidents -eq 0) { 'healthy' } else { 'persistent-failure' }
+    $reportPath = Join-Path $script:RunDirectory ($Label + '-observer.json')
+    $raw = @(Invoke-Python @('scripts/demo_observer_live.py', '--context', $script:Context, '--poll-count', "$PollCount", '--interval-seconds', '15', '--expect', $expectation, '--output', $reportPath)) -join "`n"
     Write-Host $raw
     $raw | Set-Content -LiteralPath (Join-Path $script:RunDirectory ($Label + '-observer.json')) -Encoding UTF8
     $report = $raw | ConvertFrom-Json
-    if (@($report.errors).Count -ne 0 -or $report.observations_read -ne $PollCount -or $report.incident_count -ne $ExpectedIncidents) {
+    if (-not $report.validation.passed -or @($report.errors).Count -ne 0 -or $report.observations_read -ne $PollCount -or $report.incident_count -ne $ExpectedIncidents) {
         throw "Observer check failed: expected $ExpectedIncidents incidents, $PollCount observations and no collection errors."
     }
     Write-Host "PASS: $Label observer check." -ForegroundColor Green
@@ -141,7 +143,7 @@ function Test-Live {
     Find-Python
     Invoke-Kube @('rollout', 'status', 'deployment/demo-api', '--timeout=120s')
     Test-Health
-    Test-Observer 'healthy' 0 4
+    Test-Observer 'healthy' 0 5
     $deployment = Save-Deployment 'healthy'
     $container = @($deployment.spec.template.spec.containers | Where-Object { $_.name -eq 'demo-api' })
     $setting = @($container.env | Where-Object { $_.name -eq 'STARTUP_FAILURE' })
@@ -155,14 +157,14 @@ function Test-Live {
     try {
         Write-Host 'Injecting STARTUP_FAILURE=true into the local demo...'
         Invoke-Kube @('set', 'env', 'deployment/demo-api', '--containers=demo-api', 'STARTUP_FAILURE=true')
-        Test-Observer 'failed' 1 6
+        Test-Observer 'failed' 1 9
         Save-Deployment 'failed' | Out-Null
         Invoke-Kube @('get', 'pods')
     } finally {
         Write-Host 'Restoring the saved healthy revision, including after a failed test...'
         Restore-Baseline
     }
-    Test-Observer 'recovered' 0 4
+    Test-Observer 'recovered' 0 5
     Write-Host 'PASS: Healthy -> failure detected -> recovered.' -ForegroundColor Green
     Write-Host 'This is an operator-run live test; planner/executor/verifier automation is still separate.'
 }
@@ -221,7 +223,7 @@ try {
             Write-Host ''
             Write-Host '1 - Set up/reuse cluster and deploy demo'
             Write-Host '2 - Run Python tests and offline demos'
-            Write-Host '3 - Run live healthy/failure/recovery test (about 3 minutes)'
+            Write-Host '3 - Run live healthy/failure/recovery test (about 4-5 minutes)'
             Write-Host '4 - Show cluster status'
             Write-Host '5 - Retry recovery using saved healthy revision'
             Write-Host '6 - Cleanup local cluster and demo image'

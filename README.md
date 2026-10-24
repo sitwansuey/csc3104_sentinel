@@ -164,9 +164,11 @@ and integration tests plus the coordinator demo. The former `cleanup-sentinel.ba
 also opens this menu. Install Docker Desktop, kind, kubectl and Python 3.12+
 before using it; missing tools are reported without starting the selected action.
 
-The Windows live test saves a healthy revision, checks the Observer against a
-healthy workload, injects the startup fault, expects one incident, restores the
-saved revision and checks health again. Recovery is attempted even if the fault
+The [Observer live-test guide](docs/observer-live-test.md) records issue #3 commands,
+acceptance checks and evidence. The Windows live test saves a healthy revision,
+checks the Observer against a healthy workload for at least 60 seconds, injects
+the startup fault, verifies threshold timing and 60 seconds of duplicate
+suppression, restores the saved revision and checks health again. Recovery is attempted even if the fault
 check fails. Option **5** retries recovery; force-closing the terminal can interrupt
 recovery, so use that option if needed. Transcripts and JSON evidence are saved in
 unique `runs/windows-lab-*` folders. The cluster remains running until cleanup is

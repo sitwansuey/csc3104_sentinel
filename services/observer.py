@@ -80,7 +80,7 @@ class Observer:
             self._episodes_by_target.pop(target_key, None)
             return None
 
-        correlation_key = _correlation_key(snapshot, signals)
+        correlation_key = _correlation_key(snapshot)
         episode = self._episodes_by_target.get(target_key)
         if episode is None or episode.correlation_key != correlation_key:
             episode = FailureEpisode(
@@ -447,17 +447,10 @@ def _unique_signals(signals: list[dict]) -> list[dict]:
     return unique
 
 
-def _correlation_key(snapshot: ObservationSnapshot, signals: list[dict]) -> tuple:
-    primary_reason = _primary_reason(signals)
-    return _target_key(snapshot.target) + (snapshot.generation, primary_reason)
-
-
-def _primary_reason(signals: list[dict]) -> str:
-    for source in ("pod_status", "event", "container_log", "deployment_status"):
-        for signal in signals:
-            if signal["source"] == source:
-                return signal["reason"]
-    return signals[0]["reason"]
+def _correlation_key(snapshot: ObservationSnapshot) -> tuple:
+    # Kubernetes conditions evolve during the same failed rollout. Preserve the
+    # initial timer and emitted flag until health returns or a new generation starts.
+    return _target_key(snapshot.target) + (snapshot.generation,)
 
 
 def _target_key(target: dict) -> tuple:
