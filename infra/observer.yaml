@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sentinel-observer
+  namespace: sentinel-demo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sentinel-observer-reader
+  namespace: sentinel-demo
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [demo-api]
+    verbs: [get]
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [list]
+  - apiGroups: [""]
+    resources: [pods, events]
+    verbs: [list]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sentinel-observer-reader
+  namespace: sentinel-demo
+subjects:
+  - kind: ServiceAccount
+    name: sentinel-observer
+    namespace: sentinel-demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sentinel-observer-reader
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sentinel-observer-data
+  namespace: sentinel-demo
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 128Mi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sentinel-observer-policy
+  namespace: sentinel-demo
+data:
+  policy.json: |
+    {"detection":{"failure_duration_seconds":30,"max_sample_gap_seconds":45}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentinel-observer
+  namespace: sentinel-demo
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sentinel-observer
+  template:
+    metadata:
+      labels:
+        app: sentinel-observer
+    spec:
+      serviceAccountName: sentinel-observer
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: observer
+          image: sentinel-observer:0.2.0
+          imagePullPolicy: Never
+          args:
+            - run
+            - --in-cluster
+            - --namespace=sentinel-demo
+            - --deployment=demo-api
+            - --cluster-id=sentinel-lab
+            - --state=/data/observer.sqlite3
+            - --coordinator-db=/data/coordinator.sqlite3
+            - --policy=/config/policy.json
+            - --collect-logs
+          readinessProbe:
+            exec:
+              command: [python, -m, services.observer_cli, health, --state=/data/observer.sqlite3]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: policy
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: sentinel-observer-data
+        - name: policy
+          configMap:
+            name: sentinel-observer-policy

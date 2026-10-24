@@ -12,8 +12,9 @@ action: restore a specific saved healthy Pod template (`ROLLBACK`).
 
 The demo lab, message validator, synthetic samples and contract tests are provided.
 The Coordinator now has SQLite lifecycle/approval persistence, durable local event
-routing, a CLI and an offline integration demo. The Observer implements detection
-and a Kubernetes polling adapter. The Guard has a fixture-driven evaluator,
+routing, a CLI and an offline integration demo. The Observer has threshold-based detection, ownership-correlated Pod/event/log
+collection, a persistent worker/outbox, local Coordinator handoff and a restricted
+Kubernetes deployment. The Guard has a fixture-driven evaluator,
 expiring decisions bound to exact inputs, detailed reports,
 baseline/security/resource checks, a JSON runner,
 read-only Kubernetes metadata collection, optional server-side admission dry-run
@@ -119,6 +120,10 @@ python scripts/demo_guard_v2.py
 The [Coordinator guide](docs/coordinator.md) describes persistence, lifecycle,
 approval and routing contracts, CLI usage and restart recovery. Its demo connects
 the real Observer and Guard with synthetic planner/executor/verifier responses.
+
+The [Observer runtime guide](docs/observer-runtime.md) covers Buddy 2 startup,
+read-only deployment, durable delivery, live restart evidence and remaining
+completion gates.
 
 The [Recovery Guard guide](docs/recovery-guard.md) explains its local inputs,
 resource constraints, temporary approval format and decision scenarios. The
