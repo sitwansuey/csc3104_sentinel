@@ -4,7 +4,10 @@ permissions:
   contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
@@ -13,3 +16,4 @@ jobs:
       - run: python scripts/check_contracts.py
       - run: python -m unittest discover -s tests -p "test_*.py" -v
       - run: bash -n scripts/lab.sh
+        if: runner.os == 'Linux'

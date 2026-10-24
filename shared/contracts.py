@@ -81,9 +81,11 @@ def validate_message(message):
     kind = message.get("kind")
     if not isinstance(kind, str) or kind not in FIELDS:
         raise ContractError("message.kind: unknown message type")
-    _object(message, {"kind", "schema_version", "target"} | FIELDS[kind])
-    if message["schema_version"] != "1.0":
-        raise ContractError("schema_version: only 1.0 is supported")
+    version = message.get("schema_version")
+    bound_fields = {"proposal_sha256", "inputs_sha256", "valid_until"} if kind == "guard_result" and version == "2.0" else set()
+    _object(message, {"kind", "schema_version", "target"} | FIELDS[kind] | bound_fields)
+    if version != "1.0" and not (kind == "guard_result" and version == "2.0"):
+        raise ContractError("schema_version: unsupported message version")
     _target(message["target"])
     _string(message["incident_id"], "incident_id")
     if "action_id" in message:
@@ -129,6 +131,12 @@ def validate_message(message):
         _string(message["policy_version"], "policy_version")
         _string(message["validated_resource_version"], "validated_resource_version")
         _timestamp(message["checked_at"], "checked_at")
+        if version == "2.0":
+            for key in ("proposal_sha256", "inputs_sha256"):
+                if not isinstance(message[key], str) or not re.fullmatch(r"[a-f0-9]{64}", message[key]):
+                    raise ContractError(f"{key}: expected a lowercase SHA-256 digest")
+            if _timestamp(message["valid_until"], "valid_until") < _timestamp(message["checked_at"], "checked_at"):
+                raise ContractError("valid_until: must not precede checked_at")
 
     elif kind == "dependency_result":
         _enum(message["status"], {"CLEAR", "BLOCKED", "UNKNOWN"}, "status")

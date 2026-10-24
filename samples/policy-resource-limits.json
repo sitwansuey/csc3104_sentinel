@@ -1,0 +1,24 @@
+{
+  "policy_id": "demo-policy",
+  "policy_version": "demo-resource-policy-v1",
+  "targets": [
+    {
+      "cluster_id": "sentinel-lab",
+      "namespace": "sentinel-demo",
+      "kind": "Deployment",
+      "name": "demo-api",
+      "uid": "synthetic-demo-uid-001"
+    }
+  ],
+  "allowed_actions": ["ROLLBACK"],
+  "require_operator_approval": true,
+  "unknown_dependency_result": "ESCALATE",
+  "max_state_age_seconds": 15,
+  "max_dependency_age_seconds": 30,
+  "resource_constraints": {
+    "max_container_requests": {"cpu": "100m", "memory": "64Mi"},
+    "max_container_limits": {"cpu": "500m", "memory": "128Mi"},
+    "require_requests_and_limits": true
+  },
+  "note": "Development example for the synthetic demo only. Review identities, freshness and resource bounds for each real workload; never use synthetic approvals for live execution."
+}
