@@ -11,10 +11,13 @@ action: restore a specific saved healthy Pod template (`ROLLBACK`).
 ## Current starter
 
 The demo lab, message validator, synthetic samples and contract tests are provided.
-The Guard now has a fixture-driven evaluator and standalone demo; the other five
-service files are implementation stubs. Live adapters, service runtimes, messaging
-and automated recovery still need to be built. Sample results are not live
-authorisations or measured recovery results.
+The Coordinator now has SQLite lifecycle/approval persistence, durable local event
+routing, a CLI and an offline integration demo. The Observer implements detection
+and a Kubernetes polling adapter; the Guard has an evaluator and a durable local
+worker connected to the Coordinator, with file or read-only Kubernetes state input.
+Planner, Executor and Verifier remain implementation stubs. Distributed runtimes,
+messaging and live automated recovery still need integration. Sample results are
+not live authorisations or measured recovery results.
 
 ## Ownership and deliverables
 
@@ -104,7 +107,12 @@ Use Python 3.12+. No external packages are needed for the starter checks.
 python scripts/check_contracts.py
 python -m unittest discover -s tests -p "test_*.py" -v
 python scripts/demo_guard.py
+python scripts/demo_coordinator.py
 ```
+
+The [Coordinator guide](docs/coordinator.md) describes persistence, lifecycle,
+approval and routing contracts, CLI usage and restart recovery. Its demo connects
+the real Observer and Guard with synthetic planner/executor/verifier responses.
 
 The [Recovery Guard guide](docs/recovery-guard.md) explains its local inputs,
 temporary approval format and decision scenarios. The demo uses copied synthetic
@@ -129,6 +137,25 @@ not distributed coordination across hosts. Workload constraints belong in policy
 not hard-coded application logic.
 
 ## Local lab
+
+On Windows, keep Docker Desktop running and launch `scripts\sentinel-lab.bat`
+from PowerShell or by double-clicking it. A persistent terminal provides a menu
+for setup, Python tests, live failure/recovery testing, status and cleanup.
+Choose **7** to set up the cluster and run both test stages, then **6** when ready
+to remove the local cluster and demo image. Choose **8** for focused Guard unit
+and integration tests plus the coordinator demo. The former `cleanup-sentinel.bat`
+also opens this menu. Install Docker Desktop, kind, kubectl and Python 3.12+
+before using it; missing tools are reported without starting the selected action.
+
+The Windows live test saves a healthy revision, checks the Observer against a
+healthy workload, injects the startup fault, expects one incident, restores the
+saved revision and checks health again. Recovery is attempted even if the fault
+check fails. Option **5** retries recovery; force-closing the terminal can interrupt
+recovery, so use that option if needed. Transcripts and JSON evidence are saved in
+unique `runs/windows-lab-*` folders. The cluster remains running until cleanup is
+selected. The terminal retains its output until you close it or type `exit` after
+leaving the menu. This tests local Kubernetes and uses operator-driven recovery;
+it does not deploy the unfinished Sentinel services or create a shared cloud cluster.
 
 With Docker, kind and kubectl available, run from the repo root. Inspect the fault
 before restoring it; the fault command's rollout timeout is expected.

@@ -1,5 +1,12 @@
 # Recovery Guard
 
+The Guard is connected to the coordinator through the durable local worker in
+`runtime/guard_pipeline.py`. `python scripts/coordinator.py guard --help` shows
+file-input and read-only Kubernetes input options. See
+[Coordinator integration](coordinator.md#recovery-guard-worker) for approval,
+dependency and restart behavior. `scripts/demo_coordinator.py` exercises this
+worker; `tests/test_guard_integration.py` covers the real decision/routing paths.
+
 The Guard is an offline evaluator for `ROLLBACK` proposals. It returns a validated
 `guard_result` with `ALLOW`, `REJECT` or `ESCALATE`, explicit reason codes, the
 policy version, the checked live resource version and a UTC evaluation time. It

@@ -101,8 +101,11 @@ class ObserverDetectionTests(unittest.TestCase):
         incident = detect(self.observations["failed-rollout"], self.policy)
         validate_message(incident)
 
-        with self.assertRaises(NotImplementedError):
-            coordinator.handle(incident, store=object(), event_bus=object())
+        with coordinator.SQLiteStore() as store:
+            bus = coordinator.LocalEventBus()
+            coordinator.handle(incident, store, bus)
+            self.assertEqual(store.incident(incident["incident_id"])["state"], "OPEN")
+            self.assertEqual(bus.events[0]["payload"]["incident"], incident)
 
     def _failure_sequence(self, minute_prefix, *, generation, resource_version):
         sequence = []
