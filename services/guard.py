@@ -7,41 +7,16 @@ See docs/recovery-guard.md for the temporary local input contracts.
 
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-import hashlib
-import json
 import re
 
 from shared.contracts import ACTION_TYPES, ContractError, validate_message
+from services.guard_common import (
+    GuardInputError, mapping as _mapping, string as _string,
+    utc_timestamp as _utc_timestamp, json_sha256 as _json_sha256,
+)
 
 
 TARGET_FIELDS = ("cluster_id", "namespace", "kind", "name", "uid")
-
-
-class GuardInputError(ContractError):
-    """An input cannot support a trustworthy wire-format Guard result."""
-
-
-def _mapping(value, path):
-    if not isinstance(value, dict):
-        raise GuardInputError(f"{path}: expected an object")
-    return value
-
-
-def _string(value, path):
-    if not isinstance(value, str) or not value.strip():
-        raise GuardInputError(f"{path}: expected a nonempty string")
-    return value
-
-
-def _utc_timestamp(value, path):
-    _string(value, path)
-    try:
-        result = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise GuardInputError(f"{path}: invalid ISO timestamp") from exc
-    if result.utcoffset() != timedelta(0):
-        raise GuardInputError(f"{path}: expected a timezone-aware UTC timestamp")
-    return result
 
 
 def _target(value, path):
@@ -52,16 +27,6 @@ def _target(value, path):
         _string(value[key], f"{path}.{key}")
     if value["kind"] != "Deployment":
         raise GuardInputError(f"{path}.kind: only Deployment is supported")
-
-
-def _json_sha256(value):
-    try:
-        canonical = json.dumps(
-            value, sort_keys=True, separators=(",", ":"), allow_nan=False
-        ).encode("utf-8")
-    except (TypeError, ValueError) as exc:
-        raise GuardInputError("Fingerprint input must be JSON serializable") from exc
-    return hashlib.sha256(canonical).hexdigest()
 
 
 def template_sha256(pod_template: dict) -> str:
@@ -99,6 +64,7 @@ def _validate_policy(policy):
     for key in ("max_state_age_seconds", "max_dependency_age_seconds"):
         if key in policy and (type(policy[key]) is not int or policy[key] < 0):
             raise GuardInputError(f"policy.{key}: expected a nonnegative integer")
+    return None  # Extended/resource policy validation is owned by guard_decisions.
 
 
 def _live_snapshot(live_state):
@@ -184,9 +150,9 @@ def _approval_reasons(proposal, policy, approval, checked_at):
     return [], []
 
 
-def evaluate(proposal: dict, live_state: dict, policy: dict,
+def _evaluate_core(proposal: dict, live_state: dict, policy: dict,
              baseline: dict | None, dependencies: dict, approval: dict | None = None,
-             *, now: datetime | None = None) -> dict:
+             *, now: datetime | None = None, _trace=None) -> dict:
     """Validate one explicit rollback without performing Kubernetes writes.
 
     Malformed wire inputs raise ContractError. Invalid policy/live-state inputs
@@ -241,10 +207,14 @@ def evaluate(proposal: dict, live_state: dict, policy: dict,
         escalated.extend(dependency_unknowns)
 
     # Approval cannot rescue any of the preceding hard failures.
-    if not rejected:
+    approval_checked = not rejected
+    if approval_checked:
         approval_rejected, approval_escalated = _approval_reasons(proposal, policy, approval, checked_at)
         rejected.extend(approval_rejected)
         escalated.extend(approval_escalated)
+    if _trace is not None:
+        _trace.update(rejected=list(rejected), escalated=list(escalated),
+                      approval_checked=approval_checked)
     verdict = "REJECT" if rejected else "ESCALATE" if escalated else "ALLOW"
     result = {
         "schema_version": "1.0", "kind": "guard_result",
@@ -258,3 +228,26 @@ def evaluate(proposal: dict, live_state: dict, policy: dict,
     }
     validate_message(result)
     return result
+
+
+def evaluate_with_report(proposal, live_state, policy, baseline, dependencies,
+                         approval=None, *, now=None, preview=None):
+    """Evaluate current inputs and return (version-2 decision, bounded audit report)."""
+    from services.guard_decisions import evaluate_with_report as enhanced
+    return enhanced(_evaluate_core, proposal, live_state, policy, baseline,
+                    dependencies, approval, now=now, preview=preview)
+
+
+def evaluate(proposal, live_state, policy, baseline, dependencies,
+             approval=None, *, now=None, preview=None):
+    """Return an exact-input-bound, expiring decision without applying recovery."""
+    return evaluate_with_report(proposal, live_state, policy, baseline,
+                                dependencies, approval, now=now, preview=preview)[0]
+
+
+def assert_decision_usable(result, proposal, live_state, policy, baseline,
+                           dependencies, approval=None, *, now=None, preview=None):
+    """Check a trusted response's binding/expiry; still require a conditional write."""
+    from services.guard_decisions import assert_decision_usable as check
+    return check(result, proposal, live_state, policy, baseline, dependencies,
+                 approval, now=now, preview=preview)

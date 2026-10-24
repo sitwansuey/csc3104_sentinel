@@ -13,9 +13,13 @@ action: restore a specific saved healthy Pod template (`ROLLBACK`).
 The demo lab, message validator, synthetic samples and contract tests are provided.
 The Coordinator now has SQLite lifecycle/approval persistence, durable local event
 routing, a CLI and an offline integration demo. The Observer implements detection
-and a Kubernetes polling adapter; the Guard has an evaluator and a durable local
-worker connected to the Coordinator, with file or read-only Kubernetes state input.
-Planner, Executor and Verifier remain implementation stubs. Distributed runtimes,
+and a Kubernetes polling adapter. The Guard has a fixture-driven evaluator,
+expiring decisions bound to exact inputs, detailed reports,
+baseline/security/resource checks, a JSON runner,
+read-only Kubernetes metadata collection, optional server-side admission dry-run
+and a container image definition, plus a durable local worker connected to the
+Coordinator. Planner, Executor and Verifier remain implementation stubs. Trusted
+baseline storage, authenticated approval transport, distributed runtimes,
 messaging and live automated recovery still need integration. Sample results are
 not live authorisations or measured recovery results.
 
@@ -108,6 +112,8 @@ python scripts/check_contracts.py
 python -m unittest discover -s tests -p "test_*.py" -v
 python scripts/demo_guard.py
 python scripts/demo_coordinator.py
+python scripts/demo_guard_handoff.py
+python scripts/demo_guard_v2.py
 ```
 
 The [Coordinator guide](docs/coordinator.md) describes persistence, lifecycle,
@@ -115,8 +121,19 @@ approval and routing contracts, CLI usage and restart recovery. Its demo connect
 the real Observer and Guard with synthetic planner/executor/verifier responses.
 
 The [Recovery Guard guide](docs/recovery-guard.md) explains its local inputs,
-temporary approval format and decision scenarios. The demo uses copied synthetic
-fixtures and a fixed UTC clock; it makes no cluster writes.
+resource constraints, temporary approval format and decision scenarios. The
+[runner guide](docs/guard-runtime.md) covers arbitrary JSON inputs, explicit live
+Kubernetes reads, exit codes and the Guard container. The
+[version-2 guide](docs/guard-v2.md) covers strict live policy, health/security and
+workload budgets, bound decisions, admission previews and audit reports. The
+[Member 4 role guide](docs/guard-role.md) describes your contribution and teammate
+handoffs. The demos use synthetic fixtures and a fixed UTC clock; they make no
+cluster writes. Version-2 demo approvals, health records and server previews are
+fabricated and have no live authority. The
+handoff demo exercises fresh validation and conditional writes against a fake API.
+The [Guard integration contract](docs/guard-integration-contract.md) records
+producer/consumer responsibilities, failure handling and proposed approval lookup
+semantics, with a pending owner-review checklist for team agreement.
 
 Choose a service file and implement its TODOs. Add `tests/test_<component>.py`
 and a small fixture-driven example. Use a feature branch, one reviewer and a
