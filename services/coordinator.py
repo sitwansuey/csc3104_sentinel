@@ -269,7 +269,7 @@ def handle(message: dict, store: SQLiteStore, event_bus) -> bool:
     return changed
 
 
-def approve(action_id: str, operator_id: str, store: SQLiteStore) -> dict:
+def approve(action_id: str, operator_id: str, store: SQLiteStore, *, expires_at: str | None = None) -> dict:
     """Persist approval and request fresh Guard evaluation; never grant execution."""
     _require(isinstance(operator_id, str) and bool(operator_id.strip()), "Operator identity is required")
     store.db.execute("BEGIN IMMEDIATE")
@@ -279,7 +279,8 @@ def approve(action_id: str, operator_id: str, store: SQLiteStore) -> dict:
         if (action and action["state"] == "VALIDATING" and previous
                 and previous["operator_id"] == operator_id
                 and previous["proposal_sha256"] == _digest(action["proposal"])
-                and previous["policy_version"] == action["guard_result"]["policy_version"]):
+                and previous["policy_version"] == action["guard_result"]["policy_version"]
+                and previous.get("expires_at") == expires_at):
             store.db.execute("COMMIT")
             return previous
         _require(action is not None and action["state"] == "AWAITING_APPROVAL",
@@ -289,9 +290,17 @@ def approve(action_id: str, operator_id: str, store: SQLiteStore) -> dict:
                  "Approval cannot override state, dependency or policy escalation")
         now = store.now()
         _require(_time(now) >= _time(guard["checked_at"]), "Approval predates the Guard decision")
+        if expires_at is not None:
+            try:
+                valid_expiry = isinstance(expires_at, str) and _time(expires_at) > _time(now)
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise CoordinatorError("Approval expiry must be a future UTC timestamp") from exc
+            _require(valid_expiry, "Approval expiry must be a future UTC timestamp")
         record = {"action_id": action_id, "operator_id": operator_id,
                   "proposal_sha256": _digest(action["proposal"]),
                   "policy_version": guard["policy_version"], "decision": "APPROVED", "approved_at": now}
+        if expires_at is not None:
+            record["expires_at"] = expires_at
         store.db.execute("INSERT INTO approvals(action_id,record) VALUES(?,?)", (action_id, _json(record)))
         store._state(action["incident_id"], action_id, "VALIDATING")
         store._enqueue("guard.request", {"proposal": action["proposal"], "approval": record}, action_id)

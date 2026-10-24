@@ -1,0 +1,35 @@
+# Lab execution identity. Apply with an administrator, then run the executor
+# using a kubeconfig containing only this service account's credentials.
+# Kubernetes RBAC limits resources/verbs, not individual Deployment fields;
+# the restricted executor adapter supplies the exact conditional JSON Patch.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sentinel-executor
+  namespace: sentinel-demo
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sentinel-executor
+  namespace: sentinel-demo
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["demo-api"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sentinel-executor
+  namespace: sentinel-demo
+subjects:
+  - kind: ServiceAccount
+    name: sentinel-executor
+    namespace: sentinel-demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sentinel-executor

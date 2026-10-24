@@ -8,7 +8,191 @@ policies and dependencies, then verified against post-action health.
 conditional execution → verified recovery. Start with one workload and one
 action: restore a specific saved healthy Pod template (`ROLLBACK`).
 
-## Current starter
+## Start here: local setup on Windows
+
+Use this section for a new teammate's first run. Run commands in PowerShell from
+the repository root, the folder containing this README. Clone the team repository
+or download/extract it first; Git is only needed if you choose to clone it.
+
+Choose either [Method 1: scripts](#method-1-install-and-set-up-with-scripts) or
+[Method 2: manual setup](#method-2-install-and-set-up-manually). Both run the same
+real Kubernetes Executor experiment; manual setup skips the dependency installer
+and environment-setup wrapper, not the Executor's safety checks.
+
+The local environment needs:
+
+| Dependency | Purpose |
+| --- | --- |
+| Docker Desktop with a running Linux engine | Builds the demo image and runs the kind node |
+| kind | Creates the local Kubernetes cluster |
+| kubectl | Talks to the Kubernetes API |
+| Python 3.12+ | Runs Sentinel's code, tests and local workers |
+| WinGet / Microsoft App Installer | Required only for installing missing tools through Method 1 |
+
+Sentinel's Python code uses the standard library: no `pip install`, LLM API key
+or cloud account is needed for these local experiments. Package installation
+and the first container-image downloads need network access. Docker Desktop
+also needs its supported Windows/WSL 2 and hardware-virtualization prerequisites;
+the [dependency guide](docs/dependencies.md) links the platform requirements.
+
+### Method 1: install and set up with scripts
+
+#### 1. Install missing dependencies
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-dependencies.ps1
+```
+
+Alternatively, double-click `scripts\install-dependencies.bat`. The installer
+keeps existing compatible tools and installs missing ones. Review installer
+prompts and finish Docker Desktop's first-run setup. Windows feature changes,
+WSL setup and reboots are not automated. If the tools install but Docker is not
+running yet, the script reports that the engine is unavailable; continue below.
+
+#### 2. Start Docker Desktop and check readiness
+
+Start Docker Desktop yourself and use Linux containers with the WSL 2 backend.
+The lab uses kind, so Docker Desktop's separate built-in Kubernetes cluster need
+not be enabled. Then check without installing or creating anything:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-dependencies.ps1 -CheckOnly
+```
+
+Expected result: all four tools are found and the Docker Linux engine responds,
+with exit code 0. This checks prerequisites, not application recovery. These
+scripts discover common installation locations; manual `docker`, `kind`,
+`kubectl` and `python` commands require usable PATH entries. Reopen your terminal
+after installation, or use the executable paths printed by the checker.
+`-ExecutionPolicy Bypass` applies only to the launched PowerShell process.
+
+#### 3. Run the offline checks
+
+With a working Python command:
+
+```powershell
+python scripts/check_contracts.py
+python -m unittest discover -s tests -p "test_*.py" -v
+```
+
+These checks require no running cluster. Test-only API doubles reproduce failure
+paths deterministically; passing them is not evidence of live Kubernetes recovery.
+
+#### 4. Set up, test the live executor and clean up
+
+For the complete local Role 5 experiment, use:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-executor-live.ps1 -Setup -Cleanup
+```
+
+This creates/reuses the single-node `sentinel-lab` kind cluster, builds and loads
+the demo image, and deploys `demo-api` in namespace `sentinel-demo`. The experiment
+captures a measured healthy baseline, creates restricted executor credentials,
+deliberately injects demo startup failures, and tests actual conditional recovery,
+rejections, duplicates, competing local workers and restart reconciliation after
+a worker crash. Initial setup can take longer while images download.
+
+The Python workers run on the desktop; Kubernetes runs the demo workload. The
+experiment uses the real Coordinator, Guard and Executor, with operator-authored
+proposals and a documented single-app dependency attestation. Planner/RAG and
+Role 6 verification are still separate team work. `APPLIED` routes to `VERIFYING`,
+not directly to `RECOVERED`.
+
+With `-Cleanup`, the wrapper removes the named cluster after the test and retains
+evidence in `runs/executor-live-*`. The experiment removes its private executor
+kubeconfig. Docker Desktop and cached images remain; cleanup does not prune
+unrelated Docker resources. `runs/` is Git-ignored, so preserve/share sanitized
+experiment evidence separately.
+
+To keep the healthy cluster available for development, omit `-Cleanup`:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-executor-live.ps1 -Setup
+```
+
+Remove a retained cluster when finished. From a terminal where kind is available:
+
+```powershell
+kind delete cluster --name sentinel-lab
+kind get clusters
+```
+
+The second command should no longer list `sentinel-lab`. The earlier validation
+cluster was already removed; `-Setup` creates the environment again when needed.
+
+### Method 2: install and set up manually
+
+Install the programs yourself from their official sources. WinGet and the
+dependency installer are optional for this route.
+
+| Program | Manual installation/setup |
+| --- | --- |
+| [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/) | Follow the Windows prerequisites, install it, finish first-run setup and start its Linux engine using WSL 2 |
+| [kind](https://kind.sigs.k8s.io/docs/user/quick-start/) | Download the Windows binary for your CPU architecture, rename it `kind.exe` and place it in a directory on your user PATH |
+| [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-windows/) | Download the matching Windows executable, follow the upstream verification instructions and add its directory to your user PATH |
+| [Python](https://www.python.org/downloads/windows/) | Install Python 3.12+ using an official installer or Install Manager, and make a working interpreter available as `python` |
+
+To add a tools directory, open Windows' **Edit environment variables for your
+account**, edit the user **Path**, add that directory and reopen PowerShell.
+Keep kubectl within the supported version skew of your chosen Kubernetes node;
+the upstream kubectl guide explains the compatibility requirement.
+
+Check the installations from the repository root:
+
+```powershell
+docker version
+docker info --format '{{.OSType}}'
+kind version
+kubectl version --client
+python --version
+```
+
+Docker must report a reachable server and `linux`; Python must be 3.12 or newer.
+Create the named cluster, build/load the image and deploy the workload explicitly:
+
+```powershell
+kind create cluster --name sentinel-lab --config infra/kind.yaml --wait 120s
+docker build -t sentinel-demo:0.1.0 demo
+kind load docker-image sentinel-demo:0.1.0 --name sentinel-lab
+kubectl --context kind-sentinel-lab apply -f infra/demo.yaml
+kubectl --context kind-sentinel-lab --namespace sentinel-demo rollout status deployment/demo-api --timeout=120s
+kubectl --context kind-sentinel-lab --namespace sentinel-demo get deployments,pods,services
+```
+
+If `sentinel-lab` already exists, inspect it with `kind get clusters` and reuse
+that intended lab instead of creating it again. The Deployment should reach
+`1/1` ready. Then run the actual Executor experiment against this prepared lab:
+
+```powershell
+python scripts/test_executor_live.py
+```
+
+The experiment still measures the healthy baseline, provisions a restricted
+executor identity, injects the faults and invokes the real Guard/Executor. It
+does not use the old operator rollback as the recovery implementation. Expect
+`PASS: live restricted executor and crash reconciliation`; Coordinator stops at
+`VERIFYING`, with measured HTTP/replica checks recorded separately from Role 6.
+Run the offline checks from Method 1 as well.
+
+Clean up manually when finished:
+
+```powershell
+kind delete cluster --name sentinel-lab
+kind get clusters
+```
+
+This removes the named cluster and its workload containers, while retaining
+`runs/` evidence and image caches. Both methods need Docker Desktop running
+during live testing; neither requires enabling its separate Kubernetes cluster.
+
+For detailed installation/troubleshooting and Linux/macOS prerequisites, read
+[dependencies.md](docs/dependencies.md). For the live Executor's design, inputs,
+CLI, measured results, RBAC and limitations, read
+[executor-live.md](docs/executor-live.md). The [Local lab](#local-lab) section
+below describes the older operator-run experiment and its menu separately.
+
+## Current implementation
 
 The demo lab, message validator, synthetic samples and contract tests are provided.
 The Coordinator now has SQLite lifecycle/approval persistence, durable local event
@@ -19,10 +203,21 @@ expiring decisions bound to exact inputs, detailed reports,
 baseline/security/resource checks, a JSON runner,
 read-only Kubernetes metadata collection, optional server-side admission dry-run
 and a container image definition, plus a durable local worker connected to the
-Coordinator. Planner, Executor and Verifier remain implementation stubs. Trusted
-baseline storage, authenticated approval transport, distributed runtimes,
-messaging and live automated recovery still need integration. Sample results are
-not live authorisations or measured recovery results.
+Coordinator. The Executor has a persistent rollback core and a live Kubernetes
+adapter with UID/resource-version conditional writes, atomic action evidence,
+local per-target process coordination and conservative crash reconciliation.
+The live runtime connects the core to the actual Guard and current approvals;
+the local worker supports Coordinator result delivery. Test-only API doubles
+are isolated under `tests/support/` for offline regressions. Planner and Verifier
+remain implementation stubs.
+Trusted production baseline storage, authenticated approval transport,
+distributed runtimes, messaging and the complete recovery pipeline still need
+integration. Sample results are not live authorisations or measured outcomes.
+
+The [Executor core guide](docs/executor.md) explains durable action records,
+coordination and crash reconciliation. The
+[live Executor write-up](docs/executor-live.md) describes actual Kubernetes
+execution, restricted RBAC, team handoff, reproducible testing and cleanup.
 
 ## Ownership and deliverables
 
@@ -120,6 +315,14 @@ python scripts/demo_guard_v2.py
 The [Coordinator guide](docs/coordinator.md) describes persistence, lifecycle,
 approval and routing contracts, CLI usage and restart recovery. Its demo connects
 the real Observer and Guard with synthetic planner/executor/verifier responses.
+Executor regression tests exercise the real Coordinator, Guard and Executor
+with test-only API doubles. Use the live experiment for measured Kubernetes
+execution; APPLIED still requires independent outcome verification.
+
+For installation and the actual live Executor experiment, follow
+[Start here: local setup on Windows](#start-here-local-setup-on-windows).
+The [live guide](docs/executor-live.md) explains measured baseline evidence, the
+restricted identity and the remaining production limits.
 
 The [Observer runtime guide](docs/observer-runtime.md) covers Buddy 2 startup,
 read-only deployment, durable delivery, live restart evidence and remaining
@@ -140,9 +343,9 @@ The [Guard integration contract](docs/guard-integration-contract.md) records
 producer/consumer responsibilities, failure handling and proposed approval lookup
 semantics, with a pending owner-review checklist for team agreement.
 
-Choose a service file and implement its TODOs. Add `tests/test_<component>.py`
-and a small fixture-driven example. Use a feature branch, one reviewer and a
-focused PR covering behaviour, validation and affected interfaces.
+Extend the existing component design and add focused tests and a fixture-driven
+example for each increment. Use a feature branch, one reviewer and a focused PR
+covering behaviour, validation and affected interfaces.
 
 | Input | Purpose |
 | --- | --- |

@@ -40,6 +40,12 @@ prints the saved approval record. Fixture timestamps are synthetic; obtain a new
 Guard result after approval rather than replaying the old escalation. Operator
 IDs identify local callers; this prototype does not authenticate operators.
 
+For strict live policies, add `--expires-at` with a future UTC timestamp. The
+Python interface accepts the same optional `expires_at` keyword. Approval expiry
+is persisted with the proposal/policy binding and checked by the Guard; its
+maximum lifetime comes from policy. Omitting expiry retains development-mode
+behaviour. See the [live Executor guide](executor-live.md) for the runtime handoff.
+
 ## Lifecycle and message ownership
 
 | Input | Allowed prior state | Resulting state / routing |
@@ -70,7 +76,7 @@ The verifier owns duration, sample gaps and actual health measurements.
 
 ## Approval and validation
 
-`approve(action_id, operator_id, store)` records the SHA-256 of the complete
+`approve(action_id, operator_id, store, expires_at=...)` records the SHA-256 of the complete
 canonical proposal, the Guard's policy version, operator ID and UTC approval
 time. Its format is accepted by the existing Guard. The canonical JSON encoding
 matches the Guard fingerprint without importing its business logic.
