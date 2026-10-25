@@ -1,6 +1,7 @@
 """Exercise the persistent CLI across separate processes."""
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import subprocess
 import sys
@@ -48,8 +49,10 @@ class CoordinatorCLITests(unittest.TestCase):
             run("ingest", str(ROOT / "samples/messages/incident.json"))
             run("ingest", str(ROOT / "samples/messages/proposal.json"))
             run("ingest", str(ROOT / "samples/messages/guard-result.json"))
-            output = run("approve", "ACT-DEMO-001", "cli-operator")
+            expiry = (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat()
+            output = run("approve", "ACT-DEMO-001", "cli-operator", "--expires-at", expiry)
             self.assertEqual(output[0]["approval"]["operator_id"], "cli-operator")
+            self.assertEqual(output[0]["approval"]["expires_at"], expiry)
             status = run("status", "INC-DEMO-001")[0]
             self.assertEqual(status["state"], "VALIDATING")
             self.assertIsInstance(status["target"], dict)

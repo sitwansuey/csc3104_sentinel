@@ -59,29 +59,42 @@ def detect_all(observations: list[dict], policy: dict) -> list[dict]:
 
 
 class Observer:
-    """Stateful offline observer for duplicate and ongoing-failure suppression."""
+    """Stateful detection with checkpointable failure episodes and bounded history."""
 
     def __init__(self, policy: dict):
         self.failure_duration = _failure_duration(policy)
-        self._seen_observations: set[str] = set()
+        detection = policy.get("detection") or {}
+        self.max_sample_gap = detection.get("max_sample_gap_seconds")
+        if self.max_sample_gap is not None:
+            _integer(self.max_sample_gap, "policy.detection.max_sample_gap_seconds", minimum=1)
+        self._latest_snapshots: dict[tuple, ObservationSnapshot] = {}
         self._episodes_by_target: dict[tuple, FailureEpisode] = {}
 
     def observe(self, observation: dict) -> dict | None:
         """Process one observation and return a new incident only when warranted."""
         snapshot = validate_observation(observation)
-        observation_hash = _json_sha256(observation)
-        if observation_hash in self._seen_observations:
-            return None
-        self._seen_observations.add(observation_hash)
-
         signals = _failure_signals(snapshot)
         target_key = _target_key(snapshot.target)
+        previous = self._latest_snapshots.get(target_key)
+        if previous is not None and (snapshot.captured_at < previous.captured_at or (
+                snapshot.captured_at == previous.captured_at and snapshot.generation <= previous.generation)):
+            return None
+        for old_key in list(self._latest_snapshots):
+            if old_key[:-1] == target_key[:-1] and old_key != target_key:
+                self._latest_snapshots.pop(old_key)
+                self._episodes_by_target.pop(old_key, None)
+        if target_key not in self._latest_snapshots and len(self._latest_snapshots) >= 1024:
+            raise ObservationError("Observer target budget exceeded")
+        self._latest_snapshots[target_key] = snapshot
         if not signals:
             self._episodes_by_target.pop(target_key, None)
             return None
 
-        correlation_key = _correlation_key(snapshot, signals)
+        correlation_key = _correlation_key(snapshot)
         episode = self._episodes_by_target.get(target_key)
+        if (episode is not None and not episode.emitted and self.max_sample_gap is not None
+                and (snapshot.captured_at - episode.last_seen_at).total_seconds() > self.max_sample_gap):
+            episode = None
         if episode is None or episode.correlation_key != correlation_key:
             episode = FailureEpisode(
                 correlation_key=correlation_key,
@@ -104,6 +117,53 @@ class Observer:
         validate_message(incident)
         episode.emitted = True
         return incident
+
+
+    def collection_gap(self):
+        """Unknown collection intervals cannot prove a continuously failing window."""
+        self._episodes_by_target = {key: value for key, value in self._episodes_by_target.items() if value.emitted}
+
+    def export_state(self):
+        return {
+            "version": 1,
+            "failure_duration_seconds": self.failure_duration.total_seconds(),
+            "max_sample_gap_seconds": self.max_sample_gap,
+            "latest": [deepcopy(snapshot.observation) for snapshot in self._latest_snapshots.values()],
+            "episodes": [{"first": deepcopy(episode.first_snapshot.observation),
+                          "last": deepcopy(episode.last_snapshot.observation), "emitted": episode.emitted}
+                         for episode in self._episodes_by_target.values()],
+        }
+
+    @classmethod
+    def from_state(cls, policy, state):
+        observer = cls(policy)
+        if (state.get("version") != 1
+                or state.get("failure_duration_seconds") != observer.failure_duration.total_seconds()
+                or state.get("max_sample_gap_seconds") != observer.max_sample_gap):
+            raise ObservationError("Incompatible Observer checkpoint")
+        if len(state["latest"]) > 1024 or len(state["episodes"]) > 1024:
+            raise ObservationError("Observer checkpoint exceeds target budget")
+        for observation in state["latest"]:
+            snapshot = validate_observation(observation)
+            key = _target_key(snapshot.target)
+            if key in observer._latest_snapshots:
+                raise ObservationError("Repeated checkpoint target")
+            observer._latest_snapshots[key] = snapshot
+        for item in state["episodes"]:
+            first, last = validate_observation(item["first"]), validate_observation(item["last"])
+            key = _target_key(last.target)
+            latest = observer._latest_snapshots.get(key)
+            if (type(item["emitted"]) is not bool or _correlation_key(first) != _correlation_key(last)
+                    or first.captured_at > last.captured_at or latest is None
+                    or latest.observation != last.observation or not _failure_signals(first)
+                    or not _failure_signals(last) or key in observer._episodes_by_target):
+                raise ObservationError("Invalid Observer failure checkpoint")
+            observer._episodes_by_target[key] = FailureEpisode(
+                correlation_key=_correlation_key(first), first_seen_at=first.captured_at,
+                last_seen_at=last.captured_at, first_snapshot=first, last_snapshot=last,
+                emitted=item["emitted"],
+            )
+        return observer
 
 
 def validate_observation(observation: dict) -> ObservationSnapshot:
@@ -236,18 +296,19 @@ def _validate_pods(value):
         _string(metadata.get("name"), f"{pod_path}.metadata.name")
         status = _mapping(pod.get("status"), f"{pod_path}.status")
         _string(status.get("phase"), f"{pod_path}.status.phase")
-        container_statuses = status.get("containerStatuses", [])
-        if not isinstance(container_statuses, list):
-            raise ObservationError(f"{pod_path}.status.containerStatuses: expected a list")
-        for container_index, container in enumerate(container_statuses):
-            container_path = f"{pod_path}.status.containerStatuses[{container_index}]"
-            container = _mapping(container, container_path)
-            _string(container.get("name"), f"{container_path}.name")
-            if type(container.get("ready")) is not bool:
-                raise ObservationError(f"{container_path}.ready: expected a boolean")
-            _integer(container.get("restartCount"), f"{container_path}.restartCount")
-            _mapping(container.get("state"), f"{container_path}.state")
-            _mapping(container.get("lastState", {}), f"{container_path}.lastState")
+        for field in ("containerStatuses", "initContainerStatuses"):
+            container_statuses = status.get(field, [])
+            if not isinstance(container_statuses, list):
+                raise ObservationError(f"{pod_path}.status.{field}: expected a list")
+            for container_index, container in enumerate(container_statuses):
+                container_path = f"{pod_path}.status.{field}[{container_index}]"
+                container = _mapping(container, container_path)
+                _string(container.get("name"), f"{container_path}.name")
+                if type(container.get("ready")) is not bool:
+                    raise ObservationError(f"{container_path}.ready: expected a boolean")
+                _integer(container.get("restartCount"), f"{container_path}.restartCount")
+                _mapping(container.get("state"), f"{container_path}.state")
+                _mapping(container.get("lastState", {}), f"{container_path}.lastState")
 
 
 def _validate_events(value):
@@ -306,7 +367,10 @@ def _failure_signals(snapshot: ObservationSnapshot) -> list[dict]:
         pod_name = pod["metadata"]["name"]
         pod_status = pod["status"]
         pod_phase = pod_status["phase"]
-        for container in pod_status.get("containerStatuses", []):
+        containers = list(pod_status.get("containerStatuses", []))
+        containers.extend(container for container in pod_status.get("initContainerStatuses", [])
+                          if container.get("state", {}).get("terminated", {}).get("exitCode") != 0)
+        for container in containers:
             reason, detail = _container_failure_detail(pod_name, pod_phase, container)
             if reason is None:
                 continue
@@ -431,7 +495,7 @@ def _incident_from_episode(episode: FailureEpisode, signals: list[dict]) -> dict
         "observed_at": _format_timestamp(snapshot.captured_at),
         "observed_resource_version": snapshot.resource_version,
         "observed_generation": snapshot.generation,
-        "signals": _unique_signals(signals),
+        "signals": _unique_signals(_failure_signals(episode.first_snapshot) + signals),
     }
 
 
@@ -447,17 +511,10 @@ def _unique_signals(signals: list[dict]) -> list[dict]:
     return unique
 
 
-def _correlation_key(snapshot: ObservationSnapshot, signals: list[dict]) -> tuple:
-    primary_reason = _primary_reason(signals)
-    return _target_key(snapshot.target) + (snapshot.generation, primary_reason)
-
-
-def _primary_reason(signals: list[dict]) -> str:
-    for source in ("pod_status", "event", "container_log", "deployment_status"):
-        for signal in signals:
-            if signal["source"] == source:
-                return signal["reason"]
-    return signals[0]["reason"]
+def _correlation_key(snapshot: ObservationSnapshot) -> tuple:
+    # Kubernetes conditions evolve during the same failed rollout. Preserve the
+    # initial timer and emitted flag until health returns or a new generation starts.
+    return _target_key(snapshot.target) + (snapshot.generation,)
 
 
 def _target_key(target: dict) -> tuple:

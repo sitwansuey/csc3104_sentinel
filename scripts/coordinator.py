@@ -27,6 +27,7 @@ def main():
     approval = commands.add_parser("approve", help="Record operator approval; queue Guard revalidation")
     approval.add_argument("action_id")
     approval.add_argument("operator_id")
+    approval.add_argument("--expires-at", help="Future UTC expiry; required by strict live Guard policies")
     status = commands.add_parser("status")
     status.add_argument("incident_id")
     commands.add_parser("pending", help="Replay unacknowledged routing envelopes")
@@ -49,7 +50,8 @@ def main():
             if args.command == "ingest":
                 handle(json.loads(args.file.read_text(encoding="utf-8")), store, bus)
             elif args.command == "approve":
-                print(json.dumps({"approval": approve(args.action_id, args.operator_id, store)}))
+                print(json.dumps({"approval": approve(args.action_id, args.operator_id, store,
+                                                       expires_at=args.expires_at)}))
             elif args.command == "status":
                 incident = store.incident(args.incident_id)
                 if incident is None:

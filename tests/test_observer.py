@@ -1,4 +1,5 @@
 import copy
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sys
@@ -89,6 +90,52 @@ class ObserverDetectionTests(unittest.TestCase):
         validate_message(second_incident)
         self.assertNotEqual(first_incident["incident_id"], second_incident["incident_id"])
         self.assertEqual(second_incident["observed_generation"], 3)
+
+    def test_evolving_kubernetes_reasons_keep_one_failure_timer_and_incident(self):
+        # A real failed rollout gains Available=False, then ProgressDeadlineExceeded.
+        # Those new symptoms must neither restart the timer nor emit a duplicate.
+        observer = Observer(self.policy)
+        start = datetime(2026, 10, 25, tzinfo=timezone.utc)
+        incidents = []
+        for seconds in range(0, 121, 15):
+            observation = copy.deepcopy(self.observations["failed-rollout"][0])
+            at = (start + timedelta(seconds=seconds)).isoformat()
+            observation.update(captured_at=at, pods=[], logs=[], events=[])
+            if seconds >= 15:
+                reason = "ProgressDeadlineExceeded" if seconds >= 90 else "MinimumReplicasUnavailable"
+                observation["events"] = [{
+                    "reason": reason, "type": "Warning", "message": reason,
+                    "lastTimestamp": at,
+                }]
+            incident = observer.observe(observation)
+            if incident:
+                incidents.append(incident)
+        self.assertEqual(len(incidents), 1)
+        self.assertEqual(incidents[0]["observed_at"], "2026-10-25T00:00:30Z")
+
+    def test_new_generation_starts_an_episode_without_intervening_recovery(self):
+        observer = Observer(self.policy)
+        first = [observer.observe(item) for item in self.observations["failed-rollout"]]
+        second = [observer.observe(item) for item in self._failure_sequence(
+            "2026-10-10T12:02", generation=3, resource_version="200",
+        )]
+        self.assertEqual(sum(item is not None for item in first), 1)
+        self.assertEqual(sum(item is not None for item in second), 1)
+        self.assertNotEqual(first[-1]["incident_id"], second[-1]["incident_id"])
+
+    def test_recovery_resets_suppression_within_the_same_generation(self):
+        observer = Observer(self.policy)
+        for item in self.observations["failed-rollout"]:
+            observer.observe(item)
+        healthy = copy.deepcopy(self.observations["healthy"][-1])
+        healthy["captured_at"] = "2026-10-10T12:01:00Z"
+        healthy["deployment"]["metadata"]["generation"] = 2
+        healthy["deployment"]["status"]["observedGeneration"] = 2
+        self.assertIsNone(observer.observe(healthy))
+        incidents = [observer.observe(item) for item in self._failure_sequence(
+            "2026-10-10T12:02", generation=2, resource_version="200",
+        )]
+        self.assertEqual(sum(item is not None for item in incidents), 1)
 
     def test_malformed_observation_fails_predictably(self):
         malformed = copy.deepcopy(self.observations["failed-rollout"][0])

@@ -172,18 +172,22 @@ have no live authority.
 These checks let the owners implement independently today. The local Coordinator
 worker in `runtime/guard_pipeline.py` now persists Guard decisions and routes
 approval-driven revalidation through SQLite; `scripts/demo_coordinator.py` and
-`tests/test_guard_integration.py` exercise this connection. Its approval creation
-does not yet supply live expiry, and its Kubernetes reader does not collect
-reference metadata or admission previews. Full live-policy input collection and
-audit-report persistence still need to be connected to that worker. Production
-authentication, the real Executor and the dependency producer remain integration
-work.
+`tests/test_guard_integration.py` exercise this connection. Approval creation now
+accepts an optional future UTC expiry, including CLI `approve --expires-at`.
+Its original Kubernetes reader does not collect reference metadata or admission
+previews. The [live Executor runtime](executor-live.md) collects these under
+execution coordination and rereads the Coordinator approval before mutation.
+Complete audit-report persistence, production authentication and the dependency
+producer remain integration work.
 The version-2 demo exercises health, security, configuration, workload and
 admission gates with fabricated evidence; it contacts no cluster. No shared
-hosting environment was created by these Guard improvements. Planner, Executor
-and Verifier remain stubs. The Observer and Coordinator have local
-implementations; trusted baseline/health stores and distributed transport still
-need integration.
+hosting environment was created by these Guard improvements. Planner and
+Verifier remain stubs. The [Executor core](executor.md) connects the real
+Coordinator and Guard to a durable ledger. Its [live adapter](executor-live.md)
+adds conditional Kubernetes writes with restricted credentials; fake adapters
+remain for offline regression. The Observer and Coordinator have local
+implementations; trusted production baseline/health stores and distributed
+transport still need integration.
 
 ## Team acceptance checklist
 
