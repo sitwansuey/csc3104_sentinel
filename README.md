@@ -28,6 +28,7 @@ The local environment needs:
 | kubectl | Talks to the Kubernetes API |
 | Python 3.12+ | Runs Sentinel's code, tests and local workers |
 | WinGet / Microsoft App Installer | Required only for installing missing tools through Method 1 |
+| Node.js 20.19+ or 22.12+ with npm | Optional; builds the [observability dashboard](#observability-dashboard) frontend on first run |
 
 Sentinel's Python code uses the standard library: no `pip install`, LLM API key
 or cloud account is needed for these local experiments. Package installation
@@ -208,7 +209,9 @@ adapter with UID/resource-version conditional writes, atomic action evidence,
 local per-target process coordination and conservative crash reconciliation.
 The live runtime connects the core to the actual Guard and current approvals;
 the local worker supports Coordinator result delivery. Test-only API doubles
-are isolated under `tests/support/` for offline regressions. Planner and Verifier
+are isolated under `tests/support/` for offline regressions. A read-only
+[observability dashboard](#observability-dashboard) displays Coordinator records,
+Guard reports, cluster metrics and fault markers. Planner and Verifier
 remain implementation stubs.
 Trusted production baseline storage, authenticated approval transport,
 distributed runtimes, messaging and the complete recovery pipeline still need
@@ -271,8 +274,9 @@ it must not be the first time components are connected.
 - **Final gate:** deployed end-to-end regression, distributed failure cases and evaluation runs.
 
 Add the first scenario integration test during Phase 2 and maintain it as adapters
-change. The current CI checks contracts, discovered Python tests and lab-script
-syntax; it does not yet test a live cluster or the complete recovery pipeline.
+change. The current CI checks contracts, discovered Python tests, lab-script
+syntax and the dashboard frontend build/tests; it does not yet test a live cluster
+or the complete recovery pipeline.
 
 Required recovery checks include:
 
@@ -363,23 +367,33 @@ not hard-coded application logic.
 
 ## Observability dashboard
 
-Run `python scripts/dashboard.py --demo` and open **http://127.0.0.1:8765** for an
-isolated, labelled recovery playback. Eight views cover Overview, Kubernetes and
-each of the six members, including detailed Guard policy findings. The React
-interface uses shadcn/ui components, Tailwind CSS and Recharts. Its dark console
-shows CPU/memory trends, node readiness/capacity, Pod health/restarts and
-Warning events. Missing usage remains unavailable. For actual events, run
-`python scripts/dashboard.py` against the Coordinator database and connect the
-read-only Kubernetes collector with `scripts/observe_dashboard.py`. Views refresh
-every two seconds. The [dashboard guide](docs/dashboard.md) explains live setup,
-fault markers, producer integration and limitations. Planner and Verifier remain
-stubs; playback results are synthetic. The dashboard grants no recovery
-permissions and performs no cluster writes.
-On Windows, double-click `scripts/start-dashboard.bat` to open the demo in your
-browser using an available port; keep its terminal open while using it.
-The first frontend build requires Node.js 20.19+ or 22.12+ with npm. Startup
-automatically installs dependencies and builds changed frontend sources; later
-runs reuse the generated build. Python itself needs no additional packages.
+A local, read-only console for following one incident from detection through
+Guard validation, execution and verification. Eight views cover Overview,
+Kubernetes and each of the six members. It shows CPU/memory trends with fault
+markers, node readiness/capacity, Pod health/restarts, Warning events, and an
+incident drawer that combines evidence, proposal, Guard findings, execution and
+outcome. Expired decisions and stale observations are marked so they do not look
+current. Views refresh every two seconds. The React interface uses shadcn/ui,
+Tailwind CSS and Recharts.
+
+| Goal | Command |
+| --- | --- |
+| Demo without a cluster | Double-click `scripts\start-dashboard.bat`, or run `python scripts/dashboard.py --demo` and open **http://127.0.0.1:8765** |
+| Watch the local lab live | In `scripts\sentinel-lab.bat`, choose **9** (dashboard + collector windows), then **3** (live test) |
+| Inspect a live Executor run | `python scripts/dashboard.py --db runs/executor-live-<id>/coordinator.sqlite` |
+| Connect your own records | `python scripts/dashboard.py` with `scripts/observe_dashboard.py`; see the [dashboard guide](docs/dashboard.md) |
+
+The first start builds the frontend with Node.js 20.19+ or 22.12+ and npm; later
+starts reuse the build until frontend sources change. Python needs no extra
+packages. Keep the launcher's terminal open while using the dashboard.
+
+The dashboard grants no recovery permissions and performs no cluster writes; the
+collector uses only `kubectl get`. Demo playback is synthetic and labelled as
+such. The Executor view shows records routed through the Coordinator, not the
+Executor's own attempt store. Planner and Verifier remain stubs, so their views
+show whatever their placeholder producers submit. The
+[dashboard guide](docs/dashboard.md) covers live setup, permissions, fault markers,
+producer integration and limitations.
 
 ## Local lab
 
@@ -390,8 +404,8 @@ Choose **7** to set up the cluster and run both test stages, then **6** when rea
 to remove the local cluster and demo image. Choose **8** for focused Guard unit
 and integration tests plus the coordinator demo. Choose **9** before **3** to open
 the live dashboard and its read-only collector against the lab cluster in separate
-windows; the live test records fault and recovery markers on its timeline. The former `cleanup-sentinel.bat`
-also opens this menu. Install Docker Desktop, kind, kubectl and Python 3.12+
+windows; the live test records fault and recovery markers on its timeline. The
+former `cleanup-sentinel.bat` also opens this menu. Install Docker Desktop, kind, kubectl and Python 3.12+
 before using it; missing tools are reported without starting the selected action.
 
 The [Observer live-test guide](docs/observer-live-test.md) records issue #3 commands,
