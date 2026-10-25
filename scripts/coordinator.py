@@ -14,11 +14,13 @@ from services.coordinator import (
     dispatch_pending, handle,
 )
 from runtime.guard_pipeline import KubectlStateReader, json_reader, process_guard_requests
+from runtime.telemetry import emit_event
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", default="runs/coordinator.sqlite3")
+    parser.add_argument("--telemetry", type=Path, help="Optionally journal CLI/worker errors for the dashboard")
     commands = parser.add_subparsers(dest="command", required=True)
     ingest = commands.add_parser("ingest", help="Record one wire-message JSON file")
     ingest.add_argument("file", type=Path)
@@ -79,6 +81,12 @@ def main():
             for event in bus.events:
                 print(json.dumps(event))
     except (ValueError, OSError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as exc:
+        if args.telemetry:
+            try:
+                emit_event(args.telemetry, component=4 if args.command == "guard" else 1,
+                           event_type="error", summary=f"{args.command} stopped ({type(exc).__name__}); inspect the CLI and pending records")
+            except (ValueError, OSError, sqlite3.Error):
+                pass  # Diagnostics must not mask the original failure.
         parser.exit(1, f"coordinator: {exc}\n")
 
 

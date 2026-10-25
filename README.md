@@ -153,6 +153,26 @@ The coordinator and executor own separate records; a local SQLite prototype is
 not distributed coordination across hosts. Workload constraints belong in policy,
 not hard-coded application logic.
 
+## Observability dashboard
+
+Run `python scripts/dashboard.py --demo` and open **http://127.0.0.1:8765** for an
+isolated, labelled recovery playback. Eight views cover Overview, Kubernetes and
+each of the six members, including detailed Guard policy findings. The React
+interface uses shadcn/ui components, Tailwind CSS and Recharts. Its dark console
+shows CPU/memory trends, node readiness/capacity, Pod health/restarts and
+Warning events. Missing usage remains unavailable. For actual events, run
+`python scripts/dashboard.py` against the Coordinator database and connect the
+read-only Kubernetes collector with `scripts/observe_dashboard.py`. Views refresh
+every two seconds. The [dashboard guide](docs/dashboard.md) explains live setup,
+fault markers, producer integration and limitations. Planner, Executor and Verifier
+remain stubs; playback results are synthetic. The dashboard grants no recovery
+permissions and performs no cluster writes.
+On Windows, double-click `scripts/start-dashboard.bat` to open the demo in your
+browser using an available port; keep its terminal open while using it.
+The first frontend build requires Node.js 20.19+ or 22.12+ with npm. Startup
+automatically installs dependencies and builds changed frontend sources; later
+runs reuse the generated build. Python itself needs no additional packages.
+
 ## Local lab
 
 On Windows, keep Docker Desktop running and launch `scripts\sentinel-lab.bat`
@@ -160,7 +180,9 @@ from PowerShell or by double-clicking it. A persistent terminal provides a menu
 for setup, Python tests, live failure/recovery testing, status and cleanup.
 Choose **7** to set up the cluster and run both test stages, then **6** when ready
 to remove the local cluster and demo image. Choose **8** for focused Guard unit
-and integration tests plus the coordinator demo. The former `cleanup-sentinel.bat`
+and integration tests plus the coordinator demo. Choose **9** before **3** to open
+the live dashboard and its read-only collector against the lab cluster in separate
+windows; the live test records fault and recovery markers on its timeline. The former `cleanup-sentinel.bat`
 also opens this menu. Install Docker Desktop, kind, kubectl and Python 3.12+
 before using it; missing tools are reported without starting the selected action.
 

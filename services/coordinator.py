@@ -99,6 +99,10 @@ class SQLiteStore:
                 id INTEGER PRIMARY KEY, topic TEXT NOT NULL, payload TEXT NOT NULL,
                 action_id TEXT, delivered INTEGER NOT NULL DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS guard_reports (
+                decision_sha256 TEXT PRIMARY KEY, action_id TEXT NOT NULL
+                    REFERENCES actions(action_id), report TEXT NOT NULL
+            );
         """)
 
     def __enter__(self):

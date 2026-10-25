@@ -1,0 +1,104 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+:root {
+  font-family: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  --radius: .625rem;
+  --background: oklch(.985 0 0);
+  --foreground: oklch(.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(.145 0 0);
+  --primary: oklch(.55 .14 158);
+  --primary-foreground: oklch(.98 0 0);
+  --secondary: oklch(.96 0 0);
+  --secondary-foreground: oklch(.2 0 0);
+  --muted: oklch(.96 0 0);
+  --muted-foreground: oklch(.52 0 0);
+  --accent: oklch(.96 0 0);
+  --accent-foreground: oklch(.2 0 0);
+  --destructive: oklch(.58 .22 27);
+  --border: oklch(.9 0 0);
+  --input: oklch(.9 0 0);
+  --ring: oklch(.65 .12 158);
+  --chart-1: oklch(.65 .13 195);
+  --chart-2: oklch(.65 .16 290);
+  --chart-3: oklch(.6 .13 158);
+  --chart-4: oklch(.7 .14 65);
+  --chart-5: oklch(.65 .19 20);
+  --sidebar: oklch(.97 0 0);
+}
+.dark {
+  color-scheme: dark;
+  --background: oklch(.145 .003 265);
+  --foreground: oklch(.95 .004 265);
+  --card: oklch(.18 .003 265);
+  --card-foreground: oklch(.95 .004 265);
+  --popover: oklch(.205 .003 265);
+  --popover-foreground: oklch(.95 .004 265);
+  --primary: oklch(.81 .12 158);
+  --primary-foreground: oklch(.2 .025 158);
+  --secondary: oklch(.24 .005 265);
+  --secondary-foreground: oklch(.95 .004 265);
+  --muted: oklch(.235 .004 265);
+  --muted-foreground: oklch(.67 .012 265);
+  --accent: oklch(.26 .006 265);
+  --accent-foreground: oklch(.95 .004 265);
+  --destructive: oklch(.72 .16 22);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(.72 .1 158);
+  --chart-1: oklch(.78 .105 211);
+  --chart-2: oklch(.73 .13 293);
+  --chart-3: oklch(.81 .12 158);
+  --chart-4: oklch(.8 .13 75);
+  --chart-5: oklch(.74 .15 20);
+  --sidebar: oklch(.16 .003 265);
+}
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  body { @apply m-0 min-w-[340px] bg-background text-foreground antialiased; }
+  button, [role="tab"], summary { cursor: pointer; }
+  code, pre { font-family: "Cascadia Code", Consolas, monospace; }
+  ::selection { background: oklch(.65 .1 158 / .3); }
+}
+@layer components {
+  .nav-group-label { @apply mb-3 mt-1 px-3 font-mono text-[9px] font-medium tracking-[.16em] text-muted-foreground/60; }
+  .sidebar-tab[data-state="active"] { @apply border-primary/15 bg-primary/10 text-primary shadow-none; }
+  .sidebar-tab[data-state="inactive"] { @apply text-muted-foreground hover:bg-muted/50 hover:text-foreground; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
