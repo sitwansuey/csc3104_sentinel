@@ -11,7 +11,7 @@ from pathlib import Path
 import subprocess
 
 from services.coordinator import acknowledge, dispatch_pending, record_message
-from services.guard import evaluate
+from services.guard import evaluate_with_report
 
 
 def json_reader(path):
@@ -98,9 +98,13 @@ def process_guard_requests(store, event_bus, *, state_reader, policy_reader,
                 raise ValueError("Guard worker clock must return timezone-aware UTC")
             if dependencies is None:
                 dependencies = _dependencies(store, proposal, now)
-            decision = evaluate(proposal, state, policy, baseline, dependencies,
-                                store.approval(action["action_id"]), now=now)
+            decision, report = evaluate_with_report(
+                proposal, state, policy, baseline, dependencies,
+                store.approval(action["action_id"]), now=now)
             record_message(decision, store)
+            store.db.execute(
+                "INSERT OR IGNORE INTO guard_reports(decision_sha256,action_id,report) VALUES(?,?,?)",
+                (report["decision_sha256"], action["action_id"], json.dumps(report, allow_nan=False)))
             acknowledge(store, request["id"])
             store.db.execute("COMMIT")
             decisions.append(decision)

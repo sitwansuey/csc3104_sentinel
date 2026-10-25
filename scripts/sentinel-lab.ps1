@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Menu', 'Setup', 'Test', 'LiveTest', 'Status', 'Recover', 'Cleanup', 'Full', 'Guard')]
+    [ValidateSet('Menu', 'Setup', 'Test', 'LiveTest', 'Status', 'Recover', 'Cleanup', 'Full', 'Guard', 'Dashboard')]
     [string]$Action = 'Menu'
 )
 
@@ -19,6 +19,9 @@ $runName = 'windows-lab-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]:
 $script:RunDirectory = Join-Path $projectRoot ('runs\' + $runName)
 New-Item -ItemType Directory -Force -Path $script:RunDirectory | Out-Null
 $script:BaselineFile = Join-Path $projectRoot 'runs\windows-lab-baseline.json'
+$script:CoordinatorDb = 'runs/coordinator.sqlite3'
+$script:TelemetryDb = 'runs/telemetry.sqlite3'
+$script:DashboardWindows = @()
 
 function Require-Tool([string]$Name) {
     $command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -66,6 +69,40 @@ function Invoke-Python([string[]]$Arguments) {
     Write-Host ('> Python ' + ($Arguments -join ' ')) -ForegroundColor Cyan
     & $script:PythonExe @script:PythonPrefix @Arguments
     if ($LASTEXITCODE -ne 0) { throw "Python failed with exit code $LASTEXITCODE." }
+}
+
+function Start-PythonWindow([string]$Title, [string[]]$Arguments) {
+    Find-Python
+    # An encoded command avoids re-quoting paths with spaces; -NoExit keeps errors visible.
+    $quote = { param($Text) "'" + ($Text -replace "'", "''") + "'" }
+    $quoted = @(@($script:PythonExe) + $script:PythonPrefix + $Arguments | ForEach-Object { & $quote $_ })
+    $command = "`$Host.UI.RawUI.WindowTitle = $(& $quote $Title); Set-Location -LiteralPath $(& $quote $projectRoot); & $($quoted -join ' ')"
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+    Write-Host ('> Python ' + ($Arguments -join ' ') + "  [new window: $Title]") -ForegroundColor Cyan
+    return Start-Process powershell.exe -PassThru -ArgumentList @('-NoLogo', '-NoProfile', '-NoExit', '-EncodedCommand', $encoded)
+}
+
+function Start-LiveDashboard {
+    Require-Tool 'kubectl' | Out-Null
+    if (@($script:DashboardWindows | Where-Object { -not $_.HasExited }).Count -gt 0) {
+        Write-Host 'Dashboard windows from this menu are still open. Close them to start fresh ones.'
+        return
+    }
+    $server = Start-PythonWindow 'Sentinel dashboard (live)' @('scripts/dashboard.py', '--db', $script:CoordinatorDb, '--telemetry', $script:TelemetryDb, '--port', '0', '--open-browser')
+    $collector = Start-PythonWindow 'Sentinel dashboard collector' @('scripts/observe_dashboard.py', '--context', $script:Context, '--cluster-id', $script:Cluster, '--namespace', $script:Namespace, '--db', $script:CoordinatorDb, '--telemetry', $script:TelemetryDb)
+    $script:DashboardWindows = @($server, $collector)
+    Write-Host 'PASS: Live dashboard and read-only collector started in separate windows.' -ForegroundColor Green
+    Write-Host 'The browser opens once the frontend is built. Run option 3 to watch the fault and recovery.'
+    Write-Host 'Stop each window with Ctrl+C before cleanup; the collector reports errors once the cluster is deleted.'
+}
+
+function Write-DashboardMarker([string]$Type, [string]$Summary) {
+    # Markers only annotate the dashboard timeline; a failure here must not affect the test.
+    try {
+        Invoke-Python @('scripts/dashboard_event.py', '--telemetry', $script:TelemetryDb, '--member', '1', '--type', $Type, '--summary', $Summary) | Out-Null
+    } catch {
+        Write-Host ('Dashboard marker not recorded: ' + $_.Exception.Message) -ForegroundColor Yellow
+    }
 }
 
 function Save-Deployment([string]$Label) {
@@ -155,16 +192,25 @@ function Test-Live {
     $baseline | ConvertTo-Json | Set-Content -LiteralPath $script:BaselineFile -Encoding UTF8
     Copy-Item -LiteralPath $script:BaselineFile -Destination (Join-Path $script:RunDirectory 'baseline.json')
     try {
-        Write-Host 'Injecting STARTUP_FAILURE=true into the local demo...'
-        Invoke-Kube @('set', 'env', 'deployment/demo-api', '--containers=demo-api', 'STARTUP_FAILURE=true')
-        Test-Observer 'failed' 1 9
-        Save-Deployment 'failed' | Out-Null
-        Invoke-Kube @('get', 'pods')
-    } finally {
-        Write-Host 'Restoring the saved healthy revision, including after a failed test...'
-        Restore-Baseline
+        try {
+            Write-Host 'Injecting STARTUP_FAILURE=true into the local demo...'
+            Write-DashboardMarker 'fault' 'Lab: injecting STARTUP_FAILURE=true into deployment/demo-api'
+            Invoke-Kube @('set', 'env', 'deployment/demo-api', '--containers=demo-api', 'STARTUP_FAILURE=true')
+            Test-Observer 'failed' 1 9
+            Write-DashboardMarker 'status' 'Lab: Observer detected the startup failure'
+            Save-Deployment 'failed' | Out-Null
+            Invoke-Kube @('get', 'pods')
+        } finally {
+            Write-Host 'Restoring the saved healthy revision, including after a failed test...'
+            Write-DashboardMarker 'status' "Lab: restoring saved healthy revision $revision"
+            Restore-Baseline
+        }
+        Test-Observer 'recovered' 0 5
+    } catch {
+        Write-DashboardMarker 'error' ('Lab live test failed: ' + $_.Exception.Message)
+        throw
     }
-    Test-Observer 'recovered' 0 5
+    Write-DashboardMarker 'status' 'Lab: healthy -> failure detected -> recovered'
     Write-Host 'PASS: Healthy -> failure detected -> recovered.' -ForegroundColor Green
     Write-Host 'This is an operator-run live test; planner/executor/verifier automation is still separate.'
 }
@@ -187,7 +233,7 @@ function Cleanup-Lab {
         Write-Host 'Demo image is already absent.'
     }
     Write-Host 'PASS: Local lab cleanup complete. Logs are retained under runs/.' -ForegroundColor Green
-    Write-Host 'Stop any separate port-forward terminal with Ctrl+C. Docker Desktop can then be closed.'
+    Write-Host 'Stop any separate port-forward or dashboard windows with Ctrl+C. Docker Desktop can then be closed.'
 }
 
 function Run-Action([string]$SelectedAction) {
@@ -199,6 +245,7 @@ function Run-Action([string]$SelectedAction) {
         'Recover' { Restore-Baseline }
         'Cleanup' { Cleanup-Lab }
         'Full' { Setup-Lab; Test-Offline; Test-Live }
+        'Dashboard' { Start-LiveDashboard }
         'Guard' {
             Invoke-Python @('-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_guard*.py', '-v')
             Invoke-Python @('scripts/demo_coordinator.py')
@@ -229,11 +276,12 @@ try {
             Write-Host '6 - Cleanup local cluster and demo image'
             Write-Host '7 - Setup + Python tests + live test (leaves cluster running)'
             Write-Host '8 - Run Recovery Guard unit/integration tests and coordinator demo'
+            Write-Host '9 - Open live dashboard and collector for this cluster (read-only, new windows)'
             Write-Host '0 - Leave menu (terminal stays open)'
             $selection = Read-Host 'Choose an option'
             if ($selection -eq '0' -or $null -eq $selection) { break }
-            $options = @{ '1'='Setup'; '2'='Test'; '3'='LiveTest'; '4'='Status'; '5'='Recover'; '6'='Cleanup'; '7'='Full'; '8'='Guard' }
-            if (-not $options.ContainsKey($selection)) { Write-Host 'Choose 0 through 8.'; continue }
+            $options = @{ '1'='Setup'; '2'='Test'; '3'='LiveTest'; '4'='Status'; '5'='Recover'; '6'='Cleanup'; '7'='Full'; '8'='Guard'; '9'='Dashboard' }
+            if (-not $options.ContainsKey($selection)) { Write-Host 'Choose 0 through 9.'; continue }
             try { Run-Action $options[$selection] } catch {
                 Write-Host ('FAILED: ' + $_.Exception.Message) -ForegroundColor Red
                 Write-Host 'Review the output above. The menu remains available to retry or recover.'
