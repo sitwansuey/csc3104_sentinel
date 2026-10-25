@@ -10,6 +10,11 @@ action: restore a specific saved healthy Pod template (`ROLLBACK`).
 
 ## Start here: local setup on Windows
 
+For the container-packaged Boutique demo, use the
+[packaged laptop demo guide](docs/packaged-demo.md). That route needs Docker
+Desktop and kind on the host; Python, kubectl and the built UI run in the image.
+The instructions below remain the host-development route.
+
 Use this section for a new teammate's first run. Run commands in PowerShell from
 the repository root, the folder containing this README. Clone the team repository
 or download/extract it first; Git is only needed if you choose to clone it.
@@ -194,6 +199,15 @@ CLI, measured results, RBAC and limitations, read
 below describes the older operator-run experiment and its menu separately.
 
 ## Current implementation
+
+For an opt-in experiment using the real Online Boutique shipping service, see
+[the single-service Boutique guide](docs/boutique-live.md). It reuses the Guard
+and restricted Executor with manual proposals and measured gRPC requests;
+Planner and Verifier integration remains pending.
+The [Boutique demo instruction book](docs/boutique-demo-handbook.md) explains
+integrated live dashboard startup, injection, role coverage, evidence and cleanup.
+For team handover and presentations, see the
+[current-system script and flowchart](docs/current-system-demo.md).
 
 The demo lab, message validator, synthetic samples and contract tests are provided.
 The Coordinator now has SQLite lifecycle/approval persistence, durable local event

@@ -1,0 +1,13 @@
+.git
+.agents
+.codex
+.aws
+.venv
+.env
+.env.*
+runs
+experiments/results
+dashboard/node_modules
+dashboard/dist
+**/__pycache__
+**/*.pyc

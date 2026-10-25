@@ -99,7 +99,9 @@ def snapshot(db_path, telemetry_path):
     return result
 
 
-def make_server(db_path, telemetry_path, *, port=8765, provider=None):
+def make_server(db_path, telemetry_path, *, port=8765, provider=None, bind="127.0.0.1"):
+    if bind not in {"127.0.0.1", "0.0.0.0"}:
+        raise ValueError("Dashboard bind must be loopback or explicit container bind")
     read_snapshot = provider or (lambda: snapshot(db_path, telemetry_path))
 
     class Handler(BaseHTTPRequestHandler):
@@ -164,5 +166,6 @@ def make_server(db_path, telemetry_path, *, port=8765, provider=None):
         def log_message(self, *args):
             pass
 
-    # Loopback only: this is a local read surface, not an authenticated team gateway.
-    return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    # Host launches default to loopback. Container launchers explicitly opt in to
+    # all container interfaces and publish only on host loopback.
+    return ThreadingHTTPServer((bind, port), Handler)

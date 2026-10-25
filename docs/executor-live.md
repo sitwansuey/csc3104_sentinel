@@ -368,6 +368,8 @@ need an agreed Roles 1/4/5 protocol. Uncertain execution and lifecycle delivery
 conflicts currently require authoritative evidence/manual resolution.
 
 Planner/RAG generation, automatic dependency analysis and Role 6 sustained
-verification remain team work. One application on one kind node does not
-establish Online Boutique recovery, application independence, load behaviour or
-the completed six-component distributed system.
+verification remain team work. The original demo-api run above does not establish
+whole-Boutique recovery, application independence, load behaviour or the completed
+six-component distributed system. A later experiment exercises the same executor
+against the actual Boutique shipping service with manual planning; see the
+[Boutique instruction book](boutique-demo-handbook.md) for its scope and evidence.
