@@ -211,8 +211,10 @@ The live runtime connects the core to the actual Guard and current approvals;
 the local worker supports Coordinator result delivery. Test-only API doubles
 are isolated under `tests/support/` for offline regressions. A read-only
 [observability dashboard](#observability-dashboard) displays Coordinator records,
-Guard reports, cluster metrics and fault markers. Planner and Verifier
-remain implementation stubs.
+Guard reports, cluster metrics and fault markers. The Verifier now evaluates
+offline dependency graphs and sustained post-action health windows, with
+Guard/Coordinator integration tests. Planner remains an implementation stub;
+Verifier runtime delivery and live evidence collection remain separate work.
 Trusted production baseline storage, authenticated approval transport,
 distributed runtimes, messaging and the complete recovery pipeline still need
 integration. Sample results are not live authorisations or measured outcomes.
@@ -314,7 +316,11 @@ python scripts/demo_guard.py
 python scripts/demo_coordinator.py
 python scripts/demo_guard_handoff.py
 python scripts/demo_guard_v2.py
+python scripts/demo_verifier.py
 ```
+
+The [offline Verifier guide](docs/verifier.md) explains graph traversal, health
+window rules, unknown evidence and remaining live/runtime integration work.
 
 The [Coordinator guide](docs/coordinator.md) describes persistence, lifecycle,
 approval and routing contracts, CLI usage and restart recovery. Its demo connects

@@ -1,7 +1,7 @@
 """Owner 6: dependency impact before execution; sustained health after execution."""
 
 from copy import deepcopy
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from shared.contracts import ContractError, validate_message
 
@@ -57,10 +57,97 @@ def _health_policy(policy):
     return rules
 
 
-def inspect_dependencies(proposal: dict, graph: dict, live_state: dict) -> dict:
-    """Traverse caller-to-callee edges; handle cycles, unhealthy and unknown nodes."""
+def _reachable(start, adjacency):
+    visited, pending = set(), [start]
+    while pending:
+        node = pending.pop()
+        if node not in visited:
+            visited.add(node)
+            pending.extend(adjacency.get(node, set()) - visited)
+    return visited
+
+
+def inspect_dependencies(proposal: dict, graph: dict, live_state: dict,
+                         *, now: datetime | None = None) -> dict:
+    """Assess the target's callers and callees from trusted offline evidence.
+
+    The failing target is intentionally not its own dependency blocker. UNKNOWN
+    means incomplete evidence, not permission. Guard makes the final decision.
+    """
     validate_message(proposal)
-    raise NotImplementedError("Implement CLEAR/BLOCKED/UNKNOWN dependency checks")
+    if proposal["kind"] != "proposal":
+        raise VerifierInputError("Expected a proposal")
+    if not isinstance(graph, dict) or graph.get("edge_direction") != "caller_to_callee":
+        raise VerifierInputError("graph must declare caller_to_callee edges")
+    nodes, edges = graph.get("nodes"), graph.get("edges")
+    if not isinstance(nodes, list) or any(
+        not isinstance(node, str) or not node.strip() for node in nodes
+    ):
+        raise VerifierInputError("graph.nodes must be a list of service names")
+    if not isinstance(edges, list) or not isinstance(live_state, dict):
+        raise VerifierInputError("Expected graph.edges list and live_state object")
+    checked_at = datetime.now(timezone.utc) if now is None else now
+    if not isinstance(checked_at, datetime) or checked_at.utcoffset() != timedelta(0):
+        raise VerifierInputError("now must be a timezone-aware UTC datetime")
+    names = set(nodes)
+    forward, reverse = {node: set() for node in names}, {node: set() for node in names}
+    unknowns = set()
+    for edge in edges:
+        if not isinstance(edge, dict) or any(
+            not isinstance(edge.get(key), str) or not edge[key].strip() for key in ("from", "to")
+        ):
+            raise VerifierInputError("Each edge must name its caller and callee")
+        caller, callee = edge["from"], edge["to"]
+        forward.setdefault(caller, set()).add(callee)
+        reverse.setdefault(callee, set()).add(caller)
+        unknowns.update(f"undeclared-node: {node}" for node in (caller, callee) if node not in names)
+
+    root = proposal["target"]["name"]
+    affected = _reachable(root, forward) | _reachable(root, reverse)
+    if root not in names:
+        unknowns.add(f"undeclared-node: {root}")
+    if proposal["action"] not in {"ROLLBACK", "RESTART", "SCALE"}:
+        unknowns.add("proposal-does-not-request-recovery")
+    if "target" in live_state and live_state["target"] != proposal["target"]:
+        unknowns.add("live-target-mismatch")
+    if "deployment" in live_state:
+        deployment = live_state["deployment"]
+        metadata = deployment.get("metadata", {}) if isinstance(deployment, dict) else {}
+        expected = proposal["target"]
+        if (not isinstance(metadata, dict) or not isinstance(deployment, dict)
+                or deployment.get("kind") != expected["kind"]
+                or live_state.get("cluster_id") != expected["cluster_id"]
+                or any(metadata.get(key) != expected[key] for key in ("name", "namespace", "uid"))):
+            unknowns.add("live-target-mismatch")
+        if isinstance(metadata, dict) and metadata.get("resourceVersion") != proposal["based_on_resource_version"]:
+            unknowns.add("live-resource-version-mismatch")
+    if "captured_at" in live_state:
+        try:
+            if _timestamp(live_state["captured_at"]) > checked_at:
+                unknowns.add("live-state-from-future")
+        except VerifierInputError:
+            unknowns.add("invalid-live-state-time")
+
+    health = graph.get("known_health", {})
+    if not isinstance(health, dict):
+        raise VerifierInputError("graph.known_health must be an object")
+    health = dict(health)
+    if "known_health" in live_state:
+        if not isinstance(live_state["known_health"], dict):
+            raise VerifierInputError("live_state.known_health must be an object")
+        health.update(live_state["known_health"])
+    blockers = []
+    for service in sorted(affected - {root}):
+        if type(health.get(service)) is not bool:
+            unknowns.add(service)
+        elif not health[service]:
+            blockers.append(service)
+    result = _envelope(proposal, "dependency_result")
+    result.update(status="BLOCKED" if blockers else "UNKNOWN" if unknowns else "CLEAR",
+                  affected_services=sorted(affected), blockers=blockers,
+                  unknowns=sorted(unknowns), checked_at=_format_time(checked_at))
+    validate_message(result)
+    return result
 
 
 def verify(execution: dict, samples: list[dict], policy: dict) -> dict:
