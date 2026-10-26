@@ -124,7 +124,8 @@ Commit: {commit}
 2. Install kind and have it on PATH. Use Windows PowerShell.
 3. Run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\Start-App.ps1
 4. Open http://127.0.0.1:8765 (or pass -Port 8766).
-5. Stop using Ctrl+C in that terminal, or .\\Stop-App.ps1.
+5. Stop using Ctrl+C in that terminal, or run:
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\Stop-App.ps1
 
 The launcher loads and checks the included images, runs the recovery scenarios,
 then leaves the dashboard open. Existing reserved demo resources are refused;
@@ -136,7 +137,7 @@ Kubernetes node, shipping-service and probe images if necessary. This is not a
 fully offline installer. Host Python and Node are not needed for the app.
 
 Buddy 2 connected telemetry validation is a separate, disposable lab:
-  .\\Load-Images.ps1
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\Load-Images.ps1
   Set-Location .\\source
   python scripts/test_observer_otel_live.py --skip-build
 This command additionally requires host Python 3.12+ and kubectl on PATH.
