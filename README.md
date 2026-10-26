@@ -336,8 +336,11 @@ python scripts/demo_guard_v2.py
 python scripts/demo_verifier.py
 ```
 
-The [Verifier guide](docs/verifier.md) explains graph traversal, health
-window rules, unknown evidence and remaining live/runtime integration work.
+The [Verifier guide](docs/verifier.md) explains graph traversal and health windows.
+The [durable worker](docs/verifier-worker.md) preserves readings/deadlines through
+restart; [live adapters](docs/verifier-live.md) read Kubernetes, HTTP and OTLP
+evidence. The [connected validation](docs/verifier-connected-validation.md) records
+real Collector, dependency-failure, timeout and worker-restart acceptance cases.
 
 The [Coordinator guide](docs/coordinator.md) describes persistence, lifecycle,
 approval and routing contracts, CLI usage and restart recovery. Its demo connects
