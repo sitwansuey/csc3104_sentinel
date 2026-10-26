@@ -187,7 +187,22 @@ def _apply(message, store):
              and incident["active_action_id"] == action_id, "Result does not match active action")
     state = action["state"]
     if kind == "dependency_result":
-        _require(state in {"VALIDATING", "AWAITING_APPROVAL"}, "Dependency result arrived out of order")
+        _require(state in {"VALIDATING", "AWAITING_APPROVAL", "READY"},
+                 "Dependency result arrived out of order")
+        previous_findings = [json.loads(row[0]) for row in db.execute(
+            "SELECT payload FROM messages")]
+        previous_findings = [item for item in previous_findings
+                             if item["kind"] == "dependency_result" and item["action_id"] == action_id]
+        if previous_findings:
+            _require(_time(message["checked_at"]) > max(
+                _time(item["checked_at"]) for item in previous_findings),
+                "Dependency result must be newer than stored evidence")
+        if state == "READY":
+            _require(_time(message["checked_at"]) > _time(action["guard_result"]["checked_at"]),
+                     "Dependency update must follow the authorized decision")
+            # Revoke queued execution before accepting changed evidence. The
+            # executor also rechecks current lifecycle before a conditional write.
+            store._state(incident_id, action_id, "VALIDATING")
         store._enqueue("guard.request", {"proposal": action["proposal"], "dependencies": message,
                                        "approval": store.approval(action_id)}, action_id)
     elif kind == "guard_result":
