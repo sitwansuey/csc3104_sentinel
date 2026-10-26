@@ -96,6 +96,8 @@ class Experiment:
     allowed_registries = ["docker.io"]
     service_account = "default"
     rbac_path = ROOT / "infra/executor-rbac.yaml"
+    publish_dependency_results = False
+    health_outcome_description = " after executor rollback; Role 6 outcome remains pending"
 
     def __init__(self, directory):
         self.directory = Path(directory).resolve()
@@ -271,6 +273,17 @@ class Experiment:
             time.sleep(5)
         raise RuntimeError("Live Observer did not report sustained unavailability")
 
+    def dependency_result(self, proposal):
+        """Default generic lab attestation; Boutique overrides with Role 6."""
+        return {"schema_version": "1.0", "kind": "dependency_result", "incident_id": proposal["incident_id"],
+                "action_id": proposal["action_id"], "target": self.target, "status": "CLEAR",
+                "affected_services": [self.name], "blockers": [], "unknowns": [], "checked_at": utc()}
+
+    def complete_recovery(self, folder, proposal, execution):
+        """Generic lab keeps its original health-only path; Boutique verifies."""
+        self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=120s", timeout=160)
+        save(folder / "post-health.json", self.health_window(self.baseline["pod_template"]))
+
     def case(self, label, incident, *, coordinator=False, approval=True):
         folder = self.directory / label
         folder.mkdir()
@@ -280,11 +293,7 @@ class Experiment:
                     "based_on_resource_version": self.deployment()["metadata"]["resourceVersion"],
                     "rationale": "Operator-authored live lab proposal: restore measured healthy template",
                     "evidence_refs": [incident["incident_id"], self.baseline["health_evidence"]["evidence_id"]]}
-        dependencies = {"schema_version": "1.0", "kind": "dependency_result", "incident_id": incident["incident_id"],
-                        "action_id": proposal["action_id"], "target": self.target, "status": "CLEAR",
-                        "affected_services": [self.name], "blockers": [], "unknowns": [], "checked_at": utc()}
-        # This is an explicit operator attestation for the self-contained demo,
-        # not fabricated evidence of Role 6 dependency analysis.
+        dependencies = self.dependency_result(proposal)
         record = {"action_id": proposal["action_id"], "proposal_sha256": proposal_fingerprint(proposal),
                   "policy_version": self.policy["policy_version"], "operator_id": "authorized-live-lab-operator",
                   "decision": "APPROVED", "approved_at": utc(), "expires_at": utc(now() + timedelta(seconds=180))}
@@ -293,6 +302,8 @@ class Experiment:
         save(folder / "approval.json", record if approval else None)
         if coordinator:
             handle(proposal, self.store, self.bus)
+            if self.publish_dependency_results:
+                handle(dependencies, self.store, self.bus)
             state_reader = lambda p: {"cluster_id": self.cluster_id, "captured_at": utc(), "deployment": self.deployment()}
             readers = dict(state_reader=state_reader, policy_reader=lambda p: self.policy,
                            baseline_reader=lambda p: self.baseline, dependency_reader=lambda p: dependencies)
@@ -398,9 +409,8 @@ class Experiment:
                        coordinator_state="VERIFYING")
         finally:
             adapters.ledger.close()
-        self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=120s", timeout=160)
-        save(folder / "post-health.json", self.health_window(self.baseline["pod_template"]))
-        self.check(self.health_description + " after executor rollback; Role 6 outcome remains pending")
+        self.complete_recovery(folder, proposal, result)
+        self.check(self.health_description + self.health_outcome_description)
 
     def crash_restart(self):
         incident = self.fault("crash")
@@ -428,8 +438,7 @@ class Experiment:
                        worker_exit=73, original_writes=1, restart_writes=0, coordinator_state="VERIFYING")
         finally:
             adapters.ledger.close()
-        self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=120s", timeout=160)
-        save(folder / "post-health.json", self.health_window(self.baseline["pod_template"]))
+        self.complete_recovery(folder, proposal, results[0])
 
     def run(self):
         try:

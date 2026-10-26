@@ -202,8 +202,9 @@ below describes the older operator-run experiment and its menu separately.
 
 For an opt-in experiment using the real Online Boutique shipping service, see
 [the single-service Boutique guide](docs/boutique-live.md). It reuses the Guard
-and restricted Executor with manual proposals and measured gRPC requests;
-Planner and Verifier integration remains pending.
+and restricted Executor with harness-authored proposals. Role 6 now evaluates
+the reviewed dependency graph and publishes outcomes from live gRPC, readiness
+and template evidence. Planner integration remains pending.
 The [Boutique demo instruction book](docs/boutique-demo-handbook.md) explains
 integrated live dashboard startup, injection, role coverage, evidence and cleanup.
 For team handover and presentations, see the
@@ -228,7 +229,9 @@ are isolated under `tests/support/` for offline regressions. A read-only
 Guard reports, cluster metrics and fault markers. The Verifier now evaluates
 offline dependency graphs and sustained post-action health windows, with
 Guard/Coordinator integration tests. Planner remains an implementation stub;
-Verifier runtime delivery and live evidence collection remain separate work.
+Boutique now consumes durable verification requests and supplies real gRPC,
+readiness and template evidence; successful outcomes close its incidents as
+RECOVERED. See [the current workflow](docs/current-system-demo.md).
 Trusted production baseline storage, authenticated approval transport,
 distributed runtimes, messaging and the complete recovery pipeline still need
 integration. Sample results are not live authorisations or measured outcomes.
@@ -333,7 +336,7 @@ python scripts/demo_guard_v2.py
 python scripts/demo_verifier.py
 ```
 
-The [offline Verifier guide](docs/verifier.md) explains graph traversal, health
+The [Verifier guide](docs/verifier.md) explains graph traversal, health
 window rules, unknown evidence and remaining live/runtime integration work.
 
 The [Coordinator guide](docs/coordinator.md) describes persistence, lifecycle,
@@ -410,8 +413,7 @@ packages. Keep the launcher's terminal open while using the dashboard.
 The dashboard grants no recovery permissions and performs no cluster writes; the
 collector uses only `kubectl get`. Demo playback is synthetic and labelled as
 such. The Executor view shows records routed through the Coordinator, not the
-Executor's own attempt store. Planner and Verifier remain stubs, so their views
-show whatever their placeholder producers submit. The
+Executor's own attempt store. Planner remains a stub. The Boutique experiment now publishes real Role 6 dependency and health outcomes; generic/demo playback records retain their producer-specific behavior. The
 [dashboard guide](docs/dashboard.md) covers live setup, permissions, fault markers,
 producer integration and limitations.
 

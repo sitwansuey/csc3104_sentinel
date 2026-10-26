@@ -39,16 +39,28 @@ hand the incident to Coordinator. The harness runs those implementations on the
 host rather than deploying the separate Observer container.
 
 The same strict Guard and restricted executor used by the original demo operate
-on the shipping target. The harness supplies the proposal and an explicit
-isolated-service dependency attestation. The Guard checks actual state, baseline,
+on the shipping target. The harness supplies the proposal. Role 6 evaluates the reviewed single-service
+graph in `infra/boutique-dependencies.json` against the current Deployment identity
+and version; this is scoped dependency analysis, not automatic graph discovery. The Guard checks actual state, baseline,
 policy, registry/account, resource budgets, approval and optional admission
 preview. Missing approval, hard rejection and stale state make zero executor
 mutations. The restored template and execution marker are one conditional patch.
 
 The test includes a competing process, exact duplicate replay, changed intent
 under one ID, a server-side version race, and actual process death after a real
-patch. Restart reconciles live evidence without another mutation. Quote checks
-run after both recoveries. APPLIED routes to VERIFYING; no Role 6 outcome is emitted.
+patch. Restart reconciles live evidence without another mutation. After each APPLIED result, `runtime/verifier_pipeline.py` consumes the durable
+`verifier.request`. Role 6 evaluates three real gRPC quote samples across at least
+ten seconds, full target identity, readiness/availability and the approved template.
+A valid RECOVERED outcome closes the incident; failed health maps to FAILED and
+missing or inconsistent evidence maps to NEEDS_REVIEW. Collection occurs outside
+the Coordinator transaction, with eligibility rechecked before publication.
+
+The HTTP evidence interface remains backward-compatible. Boutique uses explicit
+`protocol: grpc`, `grpc_status: 0` and an application-level quote check; no HTTP
+status is invented for gRPC. A timeout remains unavailable evidence. Runtime
+verification binds the expected template hash to the persisted approved proposal.
+Both `approved-rollback/outcome.json` and `crash-after-write/outcome.json` preserve
+the formal outcomes.
 
 ## Current boundaries and evidence
 
@@ -63,13 +75,22 @@ observations/incidents, policies/proposals/approvals, journals, execution result
 quote samples and dashboard validation. Temporary executor credentials are removed.
 The wrapper optionally deletes only the named test cluster; caches/evidence remain.
 
+Historical results below predate live Role 6 integration and therefore ended at
+VERIFYING. Do not treat those old runs as evidence of the new outcome path.
+
 The first shipping experiment passed on 25 October 2026 in
 `runs/boutique-live-20261025T131709Z-ac6908/`. The later full Observer/dashboard run
 passed in `runs/boutique-live-20261025T150203Z-404085/`. See the
 [recorded integrated validation](boutique-demo-handbook.md#recorded-integrated-validation)
 for exact checks, browser evidence and limitations.
 
-Remaining work is actual Planner and Verifier integration, connected-service and
+Remaining work is actual Planner integration, connected-service and
 second-workload evaluation, distributed transport, authenticated authority and
 cross-host ownership/fencing. The [Executor core guide](executor.md)
 explains the existing executor code and its limits.
+
+## Integrated Role 6 validation: 26 October 2026
+
+Source run `boutique-live-20261026T072233Z-88a8c2` passed in the separate sentinel-boutique-lab cluster. All 12 checkpoints passed. Both incidents finished RECOVERED with two APPLIED execution results, two CLEAR dependency results and two passing outcomes. Three actual post-action gRPC/readiness/template samples were evaluated in each recovery round; the crash round made zero additional writes after restart. Dashboard frontend and snapshot returned HTTP 200, with 56 cluster samples and six Guard reports. Temporary executor credentials were removed. The existing packaged demo was left running separately.
+
+Regression validation: 564 Python tests and 54 dashboard tests passed; frontend type-check and production build passed. Thirteen new tests cover gRPC evidence, fail-closed missing evidence, exact template/identity, lifecycle transitions, stale requests, replay, concurrent changes and atomic outcome/request persistence. Tests include simulated unhealthy and missing evidence; only healthy recovery outcomes were exercised in this live run. These results validate this source working tree, not an older exported runner image.

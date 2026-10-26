@@ -10,3 +10,4 @@ dist/
 runs/
 experiments/results/
 node_modules/
+outputs/

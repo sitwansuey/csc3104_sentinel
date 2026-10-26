@@ -1,0 +1,6 @@
+{
+  "edge_direction": "caller_to_callee",
+  "nodes": ["shippingservice"],
+  "edges": [],
+  "known_health": {}
+}

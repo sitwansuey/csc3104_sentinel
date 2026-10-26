@@ -232,7 +232,7 @@ and exact target identity. Opening the dashboard does not consume pending routes
 | 3 | Consume `planner.request`, then submit a `proposal`. The current Planner is a stub; evidence references are displayed, not resolved into logs. |
 | 4 | Run the existing Coordinator Guard worker. New evaluations atomically persist the bound detailed report, decision, downstream route and input acknowledgment. |
 | 5 | Consume execution routes with the required fresh Guard checks, then submit `execution_result`. A pending route is not counted as an attempted write. |
-| 6 | Submit pre-execution `dependency_result` and post-execution `outcome`. The current Verifier is a stub; absent findings remain unknown. |
+| 6 | Submit pre-execution `dependency_result` and post-execution `outcome`. Boutique invokes the real dependency evaluator and durable post-execution worker using measured gRPC, readiness and template evidence; absent findings remain unknown. Opening this read-only dashboard does not run those workers. |
 
 Member 4 example with recorded inputs:
 
