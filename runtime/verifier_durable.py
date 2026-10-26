@@ -1,6 +1,7 @@
 """Local durable Verifier routing; live sample collection is an injected adapter."""
 
 from copy import deepcopy
+from collections.abc import Iterator
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -96,9 +97,21 @@ def process_verifier_requests(store, event_bus, *, ledger, policy_reader,
             outcome = ledger.evaluate(execution["action_id"], now=clock())
             if outcome is None:
                 samples = sample_reader(deepcopy(execution))
-                now = clock()
-                ledger.record_samples(execution["action_id"], samples, now=now)
-                outcome = ledger.evaluate(execution["action_id"], now=now)
+                if not isinstance(samples, (list, Iterator)):
+                    raise VerifierInputError("Sample reader must return a list or incremental iterator")
+                try:
+                    chunks = [samples] if isinstance(samples, list) else ([sample] for sample in samples)
+                    for index, chunk in enumerate(chunks):
+                        if index >= 10000:
+                            raise VerifierInputError("Reader exceeds 10000 incremental readings")
+                        now = clock()
+                        ledger.record_samples(execution["action_id"], chunk, now=now)
+                        outcome = ledger.evaluate(execution["action_id"], now=now)
+                        if outcome is not None:
+                            break
+                finally:
+                    if isinstance(samples, Iterator) and hasattr(samples, "close"):
+                        samples.close()
         else:
             outcome = job["outcome"]
         if outcome is not None:

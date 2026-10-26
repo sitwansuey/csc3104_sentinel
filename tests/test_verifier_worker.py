@@ -180,6 +180,7 @@ class VerifierWorkerTests(unittest.TestCase):
             finally:
                 coordinator.close()
                 ledger.close()
+
             coordinator, ledger = SQLiteStore(coordinator_path), VerificationStore(verifier_path)
             try:
                 results = process_verifier_requests(coordinator, self.bus, ledger=ledger,
@@ -191,6 +192,23 @@ class VerifierWorkerTests(unittest.TestCase):
             finally:
                 coordinator.close()
                 ledger.close()
+
+    def test_streaming_reader_checkpoints_before_process_interruption(self):
+        class WorkerKilled(BaseException):
+            pass
+
+        def interrupted(execution):
+            yield self.readings[0]
+            raise WorkerKilled()
+
+        with self.assertRaises(WorkerKilled):
+            self.run_pass(sample_reader=interrupted)
+        saved = self.ledger.get(self.action)
+        self.assertEqual(saved["samples"], self.readings[:1])
+        self.assertEqual(self.state(), "VERIFYING")
+        self.now += timedelta(seconds=20)
+        self.assertEqual(self.run_pass(sample_reader=lambda execution: iter(self.readings[1:]))[0]["status"], "RECOVERED")
+        self.assertEqual(self.ledger.get(self.action)["deadline"], saved["deadline"])
 
     def test_overlapping_workers_keep_one_final_outcome(self):
         with tempfile.TemporaryDirectory() as directory:
