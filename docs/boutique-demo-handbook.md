@@ -186,10 +186,12 @@ PASS: live dashboard HTTP, Guard reports, execution records and cluster telemetr
 Tests complete. Dashboard stays live for inspection; press Ctrl+C to stop it.
 ```
 
-Both incidents must remain `VERIFYING`. `APPLIED` proves execution, not sustained
-recovery. The harness's application samples are operator measurements, not a
-fabricated Role 6 outcome. No LLM reasoning or automatic dependency analysis is
-claimed by the Planner/Dependencies views.
+Both incidents now finish `RECOVERED` only after Role 6 publishes passing outcomes.
+`APPLIED` first routes to `VERIFYING`; a durable Verifier worker then evaluates real
+gRPC quote, readiness, full identity and approved-template evidence. Failed health
+produces FAILED; incomplete evidence produces NEEDS_REVIEW. The Planner still uses
+a harness-authored proposal. The reviewed one-service graph is not automatic
+dependency discovery.
 
 ## 7. Inspect retained evidence
 
@@ -219,8 +221,8 @@ Other important paths:
 | `coordinator.sqlite` | Role 1 lifecycle, approvals, Guard reports and execution messages |
 | `observer.sqlite` | Role 2 checkpoint/outbox |
 | `executor.sqlite`, `locks/` | Role 5 journal and single-host coordination |
-| `approved-rollback/` | Proposal, approval, Guard result, APPLIED and post-health samples |
-| `crash-after-write/` | Write receipt, reconciliation result, zero-restart-write counters and post-health samples |
+| `approved-rollback/` | Proposal, dependency result, approval, Guard result, APPLIED, post-health samples and outcome.json |
+| `crash-after-write/` | Write receipt, reconciliation, zero-restart-write counters, post-health samples and outcome.json |
 | `telemetry.sqlite3` | UI events and actual projected cluster history |
 | `dashboard-cleanup.json` | Recorded successful server/collector shutdown |
 
@@ -260,7 +262,7 @@ For an unattended repeat that also stops the dashboard automatically:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Dashboard -DashboardPort 0 -ExitAfterTest -Cleanup
 ```
 
-## Recorded integrated validation
+## Recorded integrated validation (historical, before live Role 6)
 
 On 25 October 2026 the unattended integrated run passed on this Windows desktop:
 `runs/boutique-live-20261025T150203Z-404085/` (ignored local evidence).
@@ -288,6 +290,9 @@ dependencies where appropriate and are distinct from the real-cluster/browser
 evidence above. The live run used automatic `-ExitAfterTest`; the interactive
 Enter prompts are covered offline rather than by a human-attended recorded run.
 
+The recorded runs above predate Role 6 integration. Their VERIFYING states are
+historical; new successful runs must produce two RECOVERED outcomes.
+
 ## Role coverage and limits
 
 | Role | Implementation actually used | Remaining outside this demo |
@@ -297,8 +302,8 @@ Enter prompts are covered offline rather than by a human-attended recorded run.
 | 3 Planner | Not called; proposals are operator-authored | Retrieval and actual LLM planning |
 | 4 Guard | Real evaluator, detailed reports, live state/reference checks, current approval and admission preview | Production provenance and broader workload evaluation |
 | 5 Executor | Real restricted adapter, conditional writes, journal, deduplication, local locking, real crash reconciliation | Cross-host leases/fencing and ownership-loss handling |
-| 6 Verifier | Not called; dependencies are operator-attested and health measured by the harness | Dependency analysis and sustained outcome messages |
+| 6 Verifier | Reviewed-graph dependency analysis; real gRPC/readiness/template evidence; durable outcome publication | Automatic graph discovery and multi-service evaluation |
 
-Thus Roles 1, 2, 4 and 5 participate in actual live testing. Their entire final
+Thus Roles 1, 2, 4, 5 and 6 participate in the current live workflow. Their entire final
 distributed/cloud scope is not complete. This is one real service on local kind,
 not whole-Boutique recovery, a cloud deployment or an AI-generated recovery.

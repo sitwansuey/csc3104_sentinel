@@ -13,7 +13,7 @@ not the unfinished final platform.
 | 3 Planner | Shared proposal contract; implementation remains a stub | No Planner implementation added. The harness supplies an explicitly operator-authored proposal. |
 | 4 Guard | Evaluator, strict policies, reports, approval checks, live reference reads and admission preview | The same Guard validates actual shipping state/baseline and current approval. Existing Coordinator Guard reports are visible in the connected dashboard. The teammate's evaluator/dashboard design is reused. |
 | 5 Executor | Restricted adapter, target allowlist, conditional patch, durable journal, local locks, duplicate handling and reconciliation | Demo harness gained workload configuration hooks; Boutique supplies its own deployment, image, health and fault adapters. Real executor workers run against shippingservice, including a crash after a real patch. The production recovery algorithm was not replaced. |
-| 6 Verifier | Shared dependency/outcome contracts; implementation remains a stub | No Verifier implementation added. The harness supplies an isolated-service dependency attestation and independently measures shipping quotes; it does not emit RECOVERED. |
+| 6 Verifier | Reviewed dependency traversal and sustained health evaluator | The live adapter invokes real dependency evaluation, then a durable worker consumes verifier.request and publishes outcomes from actual gRPC, readiness, identity and exact-template evidence. |
 
 The Guard teammate's existing read-only UI now connects through
 `scripts/boutique_dashboard.py`. It serves actual records from the experiment,
@@ -55,15 +55,11 @@ competing workers and a real process crash after Kubernetes accepted a patch.
 On restart, the executor reconciles recorded attempt evidence against live state
 without submitting another mutation.
 
-“We measure shipping requests after recovery, but Role 6 is not yet integrated.
-APPLIED therefore moves the incident to VERIFYING, not RECOVERED. Finally we stop
-the dashboard and collector, remove temporary executor credentials and delete
-the named test cluster, preserving experiment evidence.”
+“Role 6 now verifies recovery independently of the execution result. APPLIED first moves the incident to VERIFYING and creates a durable verifier.request. The worker collects three actual gRPC shipping quotes over at least ten seconds. It checks positive USD quotes, full target identity, ready and available replicas, stable configuration and the exact approved template hash. Only passing evidence produces RECOVERED. Known failed health produces NOT_RECOVERED / FAILED; missing evidence produces UNKNOWN / NEEDS_REVIEW. Outcome publication and request acknowledgement commit together after rechecking the active action. Replaying a completed request cannot close another incident.
 
 ## Setup, injection, execution and cleanup flowchart
 
-Solid paths below describe the current experiment. The Planner and Verifier
-boxes explicitly identify substitutes rather than completed services.
+Solid paths describe the current integrated experiment. The harness supplies planning; Role 6 uses its actual evaluator and measured live evidence. The reviewed graph covers only shippingservice; no automatic graph discovery is claimed.
 
 ```mermaid
 flowchart TD
@@ -78,7 +74,8 @@ flowchart TD
     I --> J[Role 2 detects failure and persists incident/outbox]
     J --> K[Role 1 persists incident and queues planning]
     K --> L[Operator-authored proposal; Role 3 pending]
-    L --> M[Role 4 validates policy, state, baseline and dependencies]
+    L --> LD[Role 6 evaluates reviewed graph and live deployment state]
+    LD --> M[Role 4 validates policy, state, baseline and dependencies]
     M -->|Hard failure| N[Reject: zero executor mutations]
     M -->|Approval required| O[Role 1 records expiring operator approval]
     O --> P[Fresh Role 4 validation]
@@ -91,8 +88,16 @@ flowchart TD
     U -->|Insufficient evidence| W[NEEDS_RECONCILIATION; block competing actions]
     T --> V
     V --> X[Role 1 records VERIFYING]
-    X --> Y[Harness measures quotes; Role 6 outcome pending]
-    Y --> Z[Inspect UI and saved evidence]
+    X --> VR[Durable verifier.request]
+    VR --> VH[Role 6 collects 3 real gRPC samples over at least 10 seconds]
+    VH --> VC[Check quote, identity, replicas, stable approved template and timing]
+    VC --> VP[Atomically publish outcome and acknowledge request]
+    VP -->|RECOVERED| OK[Role 1 records RECOVERED]
+    VP -->|NOT_RECOVERED| BAD[Role 1 records FAILED]
+    VP -->|UNKNOWN| UNK[Role 1 records NEEDS_REVIEW]
+    OK --> Z[Inspect UI and saved evidence]
+    BAD --> Z
+    UNK --> Z
     N --> Z
     W --> Z
     Z --> AA[Stop UI/collector; remove temporary credentials]
@@ -112,7 +117,7 @@ execution; a previously stored ALLOW alone does not authorize the mutation.
 
 | Location | Current contents |
 | --- | --- |
-| Desktop | Python harness, Coordinator/Observer/Guard/Executor runtime calls, SQLite files, UI server and telemetry collector |
+| Desktop | Python harness, Coordinator/Observer/Guard/Executor/Verifier runtime calls, SQLite files, UI server and telemetry collector |
 | Docker Desktop | kind node container and image storage |
 | Kubernetes inside kind | shippingservice, its ServiceAccount/Service, restricted executor RBAC and short-lived gRPC client Pods |
 | Browser | Built React UI reading the loopback dashboard API |
@@ -133,7 +138,11 @@ it does not create six independently deployed microservices.
 The host-run diagram and workflow above remain valid for the development route.
 The packaged route uses a separate `sentinel-boutique-package` cluster and the
 same recovery logic. Administrator setup/injection credentials remain distinct
-from the executor's restricted credentials. Planner and Verifier remain pending.
+from the executor's restricted credentials. Planner remains pending. Existing packaged images must be rebuilt to include live Verifier integration.
 
 Use the recorded checks in the packaging guide to distinguish validated image,
 cluster and browser behaviour from still-unverified second-laptop portability.
+
+## Verification scope and artifacts
+
+The two successful recovery rounds now each create post-health.json and outcome.json. One full run expects two APPLIED execution results, two CLEAR dependency results, two RECOVERED outcomes and twelve PASS checkpoints across nine behavioral test categories. Nine quote probes cover three baseline samples and three after each rollback. The reviewed graph is infra/boutique-dependencies.json, scoped to shippingservice. The generic demo-api experiment retains its original health hook; these changes integrate the Boutique path. Always-on Verifier scheduling beyond this experiment and automatic dependency discovery remain future work.

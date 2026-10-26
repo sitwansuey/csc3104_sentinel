@@ -31,7 +31,7 @@ class BoutiqueDashboard:
         ensure_frontend()
         self.server = make_server(self.directory / "coordinator.sqlite", self.telemetry, port=self.port, bind=self.bind)
         self.url = f"http://127.0.0.1:{self.server.server_port}"
-        self.event(1, "status", "Live Boutique experiment; operator planning and health measurements; Roles 3/6 pending")
+        self.event(1, "status", "Live Boutique experiment; harness planning; Role 6 dependency and outcome verification integrated")
         self.threads = [threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": .25}, daemon=True),
                         threading.Thread(target=self.collect, daemon=True)]
         for thread in self.threads:
@@ -65,11 +65,18 @@ class BoutiqueDashboard:
         require(snapshot["mode"] == "recorded/live producers", "Dashboard must not use synthetic playback")
         require(snapshot["sources"]["coordinator"]["connected"], "Dashboard cannot read experiment Coordinator")
         require(snapshot["sources"]["telemetry"]["connected"], "Dashboard cannot read experiment telemetry")
-        require(len(snapshot["incidents"]) == 2 and all(i["state"] == "VERIFYING" for i in snapshot["incidents"]),
-                "Dashboard must show the two actual incidents awaiting Role 6")
+        require(len(snapshot["incidents"]) == 2 and all(i["state"] == "RECOVERED" for i in snapshot["incidents"]),
+                "Dashboard must show two incidents closed by Role 6")
         require(len(snapshot["actions"]) == 2 and all(a["execution_result"]["status"] == "APPLIED" for a in snapshot["actions"]),
                 "Dashboard must show the two real execution results")
         require(bool(snapshot["reports"]) and len(snapshot["approvals"]) == 2, "Guard reports or approvals missing from UI data")
+        outcomes = [item["message"] for item in snapshot["messages"] if item["message"]["kind"] == "outcome"]
+        dependencies = [item["message"] for item in snapshot["messages"] if item["message"]["kind"] == "dependency_result"]
+        require(len(outcomes) == 2 and all(item["status"] == "RECOVERED"
+                                          and all(check["passed"] for check in item["checks"]) for item in outcomes),
+                "Dashboard must expose two passing Role 6 outcomes")
+        require(len(dependencies) == 2 and all(item["status"] == "CLEAR" for item in dependencies),
+                "Dashboard must expose two Role 6 pre-execution dependency results")
         history = snapshot["cluster_history"]
         require(history and all(c["cluster_id"] == self.cluster_id and c["namespace"] == self.namespace for c in history),
                 "Dashboard cluster history is missing or belongs to another experiment")
@@ -79,7 +86,7 @@ class BoutiqueDashboard:
         result = {"status": "PASS", "url": self.url, "frontend_http": 200, "snapshot_http": 200,
                   "mode": snapshot["mode"], "incidents": len(snapshot["incidents"]),
                   "guard_reports": len(snapshot["reports"]), "applied_actions": len(snapshot["actions"]),
-                  "cluster_samples": len(history), "role6_outcomes": 0}
+                  "cluster_samples": len(history), "role6_outcomes": len(outcomes), "dependency_results": len(dependencies)}
         save(self.directory / "dashboard-validation.json", result)
         return result
 
