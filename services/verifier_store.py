@@ -72,8 +72,8 @@ class VerificationStore:
         health = policy["health"]
         timeout = health.get("verification_timeout_seconds",
                              health["stable_window_seconds"] + health["minimum_samples"] * health["max_sample_gap_seconds"])
-        if type(timeout) is not int or timeout < health["stable_window_seconds"]:
-            raise VerifierInputError("Verification timeout must cover the healthy window")
+        if type(timeout) is not int or not health["stable_window_seconds"] <= timeout <= 86400:
+            raise VerifierInputError("Verification timeout must cover the healthy window and be at most one day")
         with self._transaction():
             job = self.get(execution["action_id"])
             if job:

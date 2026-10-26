@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 from services.verifier import _reachable, inspect_dependencies, verify
 from services.verifier_http import EvidenceHTTP, validate_url
+from services.guard_common import json_sha256
 from services.verifier_traces import stamp, trace_edges, utc_time
 from shared.contracts import validate_message
 
@@ -80,7 +81,8 @@ class LiveEvidenceCollector:
         observed, ready, available, updated = values
         ready = min(ready, available, updated) if observed >= generation else 0
         return {"generation": generation, "resource_version": version,
-                "ready_replicas": ready, "desired_replicas": desired}
+                "ready_replicas": ready, "desired_replicas": desired, "available_replicas": available,
+                "template_sha256": json_sha256(spec["template"]) if isinstance(spec.get("template"), dict) else None}
 
     def read_service(self, name):
         """Bind endpoint health to a stable configured Deployment identity."""
@@ -96,7 +98,10 @@ class LiveEvidenceCollector:
             final = self._snapshot(self.kubernetes.get(path), target)
             if first["generation"] != final["generation"]:
                 raise ValueError("Deployment changed during collection")
+            if first["template_sha256"] != final["template_sha256"]:
+                raise ValueError("Deployment template changed during collection")
             result.update(final, http_status=health["http_status"])
+            result["configuration_stable"] = True
             if health["error"]:
                 result["errors"].append(health["error"])
             ready = final["ready_replicas"] >= final["desired_replicas"]
@@ -177,8 +182,15 @@ class LiveEvidenceCollector:
         sample = {"at": stamp(now), "service": name, "target": deepcopy(target),
                   "http_status": root.get("http_status"), "ready_replicas": root.get("ready_replicas"),
                   "desired_replicas": root.get("desired_replicas"),
+                  "available_replicas": root.get("available_replicas"),
+                  "template_sha256": root.get("template_sha256"),
+                  "configuration_stable": root.get("configuration_stable", False),
                   "dependencies": None if graph["unknowns"] else dependencies,
                   "source": "live_verifier", "dependency_unknowns": graph["unknowns"]}
+        sample["dependency_evidence"] = deepcopy(graph["edge_evidence"])
+        sample["observations"] = {service: {key: deepcopy(source.get(key)) for key in
+            ("target", "observed_at", "resource_version", "generation", "known_health")}
+            for service, source in sources.items()}
         return {"sample": sample, "graph": graph, "sources": sources}
 
     def samples(self, execution):
