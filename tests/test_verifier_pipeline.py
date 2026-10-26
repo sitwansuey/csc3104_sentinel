@@ -195,7 +195,8 @@ class BoutiqueRoleSixIntegrationTests(unittest.TestCase):
                         execution.update(incident_id=incident["incident_id"], action_id=proposal["action_id"], target=target,
                                          recorded_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
                         handle(execution, experiment.store, experiment.bus)
-                        experiment.complete_recovery(folder, proposal, execution)
+                        experiment.complete_recovery(folder, proposal, execution,
+                            clock=lambda: datetime.now(timezone.utc) + timedelta(seconds=20))
                         self.assertEqual(experiment.store.incident(incident["incident_id"])["state"], "RECOVERED")
                         self.assertEqual(json.loads((folder / "outcome.json").read_text())["status"], "RECOVERED")
                     messages = [json.loads(row[0]) for row in experiment.store.db.execute("SELECT payload FROM messages")]
