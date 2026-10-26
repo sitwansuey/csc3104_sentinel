@@ -1,0 +1,22 @@
+{
+  "cluster_id": "sentinel-lab",
+  "services": {
+    "demo-api": {
+      "target": {
+        "cluster_id": "sentinel-lab",
+        "namespace": "sentinel-demo",
+        "kind": "Deployment",
+        "name": "demo-api",
+        "uid": "REPLACE_WITH_ACTUAL_DEPLOYMENT_UID"
+      },
+      "health_url": "http://127.0.0.1:18080/healthz",
+      "trace_service": "demo-api"
+    }
+  },
+  "declared_edges": [],
+  "dependency_inventory_complete": false,
+  "require_traces": false,
+  "max_collection_seconds": 20,
+  "max_health_age_seconds": 10,
+  "max_trace_age_seconds": 300
+}
