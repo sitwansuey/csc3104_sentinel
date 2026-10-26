@@ -33,10 +33,17 @@ def first_work_date(comparison):
 
 
 class GitHub:
-    def __init__(self, token):
+    def __init__(self, token, repository_token=None, *, token_name="PROJECT_TOKEN"):
         self.token = token
+        self.token_name = token_name
+        # Organization Projects credentials need not grant repository Contents
+        # access. Use the workflow's scoped token for private repository reads.
+        self.repository_api = (GitHub(repository_token, token_name="GITHUB_TOKEN")
+                               if repository_token else self)
 
     def request(self, path, payload=None):
+        if path.startswith("repos/") and self.repository_api is not self:
+            return self.repository_api.request(path, payload)
         request = Request("https://api.github.com/" + path,
                           data=None if payload is None else json.dumps(payload).encode(),
                           headers={"Authorization": "Bearer " + self.token,
@@ -49,13 +56,15 @@ class GitHub:
         except HTTPError as exc:
             code = exc.code
             exc.close()
-            raise RuntimeError(f"GitHub returned HTTP {code}; check PROJECT_TOKEN permissions") from None
+            raise RuntimeError(f"GitHub returned HTTP {code} using {self.token_name}; "
+                               "check resource existence and token access") from None
 
     def graphql(self, query, **variables):
         result = self.request("graphql", {"query": query, "variables": variables})
         if result.get("errors"):
             # Never print request headers or credential-bearing debug output.
-            raise RuntimeError("GitHub GraphQL rejected the request; check project access and schema")
+            raise RuntimeError(f"GitHub GraphQL rejected the request using {self.token_name}; "
+                               "check resource access and schema")
         return result["data"]
 
     def items(self):
@@ -99,7 +108,7 @@ class GitHub:
             raise ValueError("Too many open PRs for one branch")
         result = set()
         for pull in pulls:
-            linked = self.graphql("""query($number:Int!) {
+            linked = self.repository_api.graphql("""query($number:Int!) {
               repository(owner:"sitwansuey",name:"csc3104_sentinel") {
                 pullRequest(number:$number) { closingIssuesReferences(first:100) {
                   nodes { id repository { nameWithOwner } }
@@ -175,10 +184,13 @@ def main():
     token = os.environ.get("PROJECT_TOKEN")
     if not token:
         raise RuntimeError("Add the PROJECT_TOKEN Actions secret; see docs/project-automation.md")
+    repository_token = os.environ.get("GITHUB_TOKEN")
+    if not repository_token:
+        raise RuntimeError("Pass the workflow GITHUB_TOKEN for repository reads; see docs/project-automation.md")
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
     if event.get("repository", {}).get("full_name") != REPOSITORY:
         raise ValueError("This automation is scoped to the Sentinel repository")
-    api = GitHub(token)
+    api = GitHub(token, repository_token)
     if os.environ.get("GITHUB_EVENT_NAME") == "workflow_run":
         handle_push(api, event)
 

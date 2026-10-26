@@ -34,9 +34,21 @@ history. The marker is per issue, even if the issue later uses another branch.
 ## Activation and credentials
 
 Keep the existing **PROJECT_TOKEN** secret with organization Projects read/write
-and repository Contents, Issues and Pull requests read. The normal repository
-GITHUB_TOKEN cannot edit organization Projects. Never place a token in source,
+and visibility of this repository's issues in that Project. The normal repository
+**GITHUB_TOKEN** reads repository commits, PRs and their closing-issue links;
+the workflow supplies it automatically with read-only Contents, Issues and
+Pull requests permissions. No second repository secret is required. The normal
+repository token cannot edit organization Projects. Never place tokens in source,
 issues or chat.
+
+The earlier implementation reused PROJECT_TOKEN for commit comparisons. The
+observed repeated HTTP 404 failures occurred there while Checks passed and the
+same comparison succeeded with repository access. Missing private-repository
+Contents access is the likely cause; this token's settings are not inspectable
+from the Actions secret. Repository
+reads and Project operations now use their respective tokens. A 404 can also mean
+a missing commit/resource; errors identify the token role without printing it.
+Workflow changes activate only after review and merge to the default branch.
 
 Merge the follow-up PR to replace PR #31's already-installed label automation.
 Until then, its old label rules remain active. Afterwards test a linked branch's
