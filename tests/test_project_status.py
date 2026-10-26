@@ -1,6 +1,8 @@
 """Project automation tests use fake APIs and cannot change the real board."""
 
 import importlib.util
+import json
+from copy import deepcopy
 from pathlib import Path
 import unittest
 from unittest.mock import Mock
@@ -55,9 +57,11 @@ class ProjectStatusTests(unittest.TestCase):
 
     def test_ready_label_moves_active_card_without_setting_start(self):
         api = Mock()
-        automation.update_item(api, {"id": "item", "status": {"name": "In Progress"}}, ready=True)
-        api.update.assert_called_once_with("item", automation.STATUS_FIELD,
-                                          {"singleSelectOptionId": automation.READY})
+        automation.update_label_item(api, {"id": "item", "status": {"name": "In Progress"}},
+                                     31, {"ready to merge"})
+        api.update.assert_any_call("item", automation.STATUS_FIELD,
+                                   {"singleSelectOptionId": automation.READY})
+        self.assertFalse(any(call.args[1] == automation.START_FIELD for call in api.update.call_args_list))
 
     def test_closed_issue_push_is_ignored(self):
         api = Mock()
@@ -100,7 +104,7 @@ class ProjectStatusTests(unittest.TestCase):
             "workflow_run": {"event": "push", "head_branch": "feat/21-verifier", "head_sha": "abc123",
                              "repository": {"full_name": automation.REPOSITORY}},
         })
-        api.update.assert_called_once_with("item", automation.STATUS_FIELD,
+        api.update.assert_any_call("item", automation.STATUS_FIELD,
                                           {"singleSelectOptionId": automation.READY})
 
     def pull(self, **changes):
@@ -121,7 +125,7 @@ class ProjectStatusTests(unittest.TestCase):
         api.issue.return_value = {"id": "issue", "number": 21, "state": "OPEN"}
         api.items.return_value = {"issue": {"id": "item", "status": {"name": "In Progress"}}}
         automation.handle_pr(api, {"pull_request": {"number": 31}})
-        api.update.assert_called_once_with("item", automation.STATUS_FIELD,
+        api.update.assert_any_call("item", automation.STATUS_FIELD,
                                           {"singleSelectOptionId": automation.READY})
 
     def test_existing_pr_card_is_updated_too(self):
@@ -132,15 +136,115 @@ class ProjectStatusTests(unittest.TestCase):
             "issue": {"id": "item", "status": {"name": "In Progress"}},
             "pr": {"id": "pr-item", "status": {"name": "Todo"}}}
         automation.handle_pr(api, {"pull_request": {"number": 31}})
-        self.assertEqual(api.update.call_count, 2)
+        statuses = [call for call in api.update.call_args_list if call.args[1] == automation.STATUS_FIELD]
+        self.assertEqual(len(statuses), 2)
 
     def test_draft_closed_and_removed_label_events_cannot_mark_ready(self):
         for changes in ({"isDraft": True}, {"state": "MERGED"}, {"labels": {"nodes": []}}):
             api = Mock()
             api.graphql.return_value = {"repository": {"pullRequest": self.pull(**changes)}}
+            api.issue.return_value = None
+            api.items.return_value = {"issue": {"id": "item", "status": {"name": "In Progress"}}}
             automation.handle_pr(api, {"pull_request": {"number": 31}})
-            api.items.assert_not_called()
             api.update.assert_not_called()
+
+    def label_api(self, item):
+        api = Mock()
+        names = {**{value: key for key, value in automation.QUEUED.items()},
+                 automation.IN_PROGRESS: "In Progress", automation.READY: "Ready To Merge"}
+
+        def update(item_id, field, value):
+            self.assertEqual(item_id, item["id"])
+            if field == automation.STATUS_FIELD:
+                item["status"] = {"name": names[value["singleSelectOptionId"]]}
+        api.update.side_effect = update
+        return api
+
+    def test_in_progress_overrides_ready_even_with_both_labels(self):
+        item = {"id": "item", "status": {"name": "Ready To Merge"}, "start": {"date": "2026-10-24"}}
+        api = self.label_api(item)
+        automation.update_label_item(api, item, 31, {"in progress", "ready to merge"})
+        self.assertEqual(item["status"]["name"], "In Progress")
+        self.assertEqual(item["start"]["date"], "2026-10-24")
+
+    def test_removing_one_label_follows_the_remaining_label(self):
+        item = {"id": "item", "status": {"name": "Todo"}}
+        api = self.label_api(item)
+        automation.update_label_item(api, item, 31, {"in progress", "ready to merge"})
+        automation.update_label_item(api, item, 31, {"ready to merge"})
+        self.assertEqual(item["status"]["name"], "Ready To Merge")
+        automation.update_label_item(api, item, 31, {"in progress"})
+        self.assertEqual(item["status"]["name"], "In Progress")
+
+    def test_removing_all_labels_restores_original_todo_or_backlog(self):
+        for queued in ("Todo", "Backlog"):
+            for label in ("in progress", "ready to merge"):
+                item = {"id": "item", "status": {"name": queued}}
+                api = self.label_api(item)
+                automation.update_label_item(api, item, 31, {label})
+                # A new runner can restore from persisted metadata, without process memory.
+                item = deepcopy(item)
+                api = self.label_api(item)
+                automation.update_label_item(api, item, 31, set())
+                self.assertEqual(item["status"]["name"], queued)
+                self.assertFalse(automation.automation_state(item)["label_controlled"])
+                api.update.reset_mock()
+                automation.update_label_item(api, item, 31, set())
+                api.update.assert_not_called()
+
+    def test_push_records_todo_before_automatic_start(self):
+        item = {"id": "item", "status": {"name": "Todo"}}
+        api = self.label_api(item)
+        automation.remember_queue(api, item)
+        automation.update_item(api, item, date="2026-10-26")
+        automation.update_label_item(api, item, 31, {"ready to merge"})
+        automation.update_label_item(api, item, 31, set())
+        self.assertEqual(item["status"]["name"], "Todo")
+
+    def test_existing_active_card_without_history_defaults_to_todo(self):
+        item = {"id": "item", "status": {"name": "In Progress"}}
+        api = self.label_api(item)
+        automation.update_label_item(api, item, 31, {"ready to merge"})
+        automation.update_label_item(api, item, 31, set())
+        self.assertEqual(item["status"]["name"], "Todo")
+
+    def test_unrelated_pr_or_no_managed_label_never_resets_card(self):
+        item = {"id": "item", "status": {"name": "In Progress"}}
+        api = self.label_api(item)
+        automation.update_label_item(api, item, 31, set())
+        api.update.assert_not_called()
+        automation.update_label_item(api, item, 31, {"ready to merge"})
+        api.update.reset_mock()
+        automation.update_label_item(api, item, 32, set())
+        api.update.assert_not_called()
+        self.assertEqual(item["status"]["name"], "Ready To Merge")
+
+    def test_done_cards_remain_done_on_label_addition_and_removal(self):
+        item = {"id": "item", "status": {"name": "Done"}}
+        api = self.label_api(item)
+        for labels in ({"in progress"}, {"ready to merge"}, set()):
+            automation.update_label_item(api, item, 31, labels)
+        api.update.assert_not_called()
+
+    def test_failed_restoration_keeps_metadata_for_retry(self):
+        item = {"id": "item", "status": {"name": "Backlog"}}
+        api = self.label_api(item)
+        automation.update_label_item(api, item, 31, {"ready to merge"})
+        api.update.side_effect = RuntimeError("temporary API failure")
+        with self.assertRaises(RuntimeError):
+            automation.update_label_item(api, item, 31, set())
+        self.assertTrue(automation.automation_state(item)["label_controlled"])
+        api = self.label_api(item)
+        automation.update_label_item(api, item, 31, set())
+        self.assertEqual(item["status"]["name"], "Backlog")
+
+    def test_invalid_saved_queue_fails_instead_of_guessing(self):
+        item = {"id": "item", "status": {"name": "In Progress"},
+                "automation": {"text": json.dumps({"queued": "Missing", "label_controlled": True, "pr": 31})}}
+        api = Mock()
+        with self.assertRaises(ValueError):
+            automation.update_label_item(api, item, 31, set())
+        api.update.assert_not_called()
 
 
 if __name__ == "__main__":
