@@ -1,8 +1,10 @@
 # Live Boutique demo instruction book
 
 This procedure runs one actual Online Boutique shipping service on local kind,
-injects a bad rollout, and demonstrates guarded restricted rollback with a live
-read-only dashboard. It uses implementations from Roles 1, 2, 4 and 5.
+injects two bad rollouts, and demonstrates guarded restricted rollback with a live
+read-only dashboard. Its final scenario injects an unnecessary recovery
+recommendation against the restored healthy service, which the Guard rejects
+without an Executor repair write. It uses implementations from Roles 1, 2, 4 and 5.
 Planning, dependency attestation and post-action health measurement are explicitly
 operator/test inputs while Roles 3 and 6 are unfinished. There is no LLM call.
 
@@ -10,6 +12,10 @@ This book describes the host-development route. For a container image that
 bundles Python, kubectl and the built UI, use the
 [packaged laptop demo guide](packaged-demo.md) instead. Both run the same
 Guard/executor experiment; they use different dedicated cluster names.
+The default interactive sequence has three Enter prompts. Use `-GuardRejection`
+only when you want to skip the two recovery rounds and show just the final
+rejection scenario. Rebuild the packaged runner after updating the source;
+an existing image retains its previous sequence.
 
 ## 1. Install and check the tools
 
@@ -179,13 +185,6 @@ and saves APPLIED with zero additional mutation attempts. Quote measurements
 run again. Duplicate requests and changed intent under a reused ID are also
 checked by the suite.
 
-Expected success messages include:
-
-```text
-PASS: live dashboard HTTP, Guard reports, execution records and cluster telemetry
-Tests complete. Dashboard stays live for inspection; press Ctrl+C to stop it.
-```
-
 Both incidents now finish `RECOVERED` only after Role 6 publishes passing outcomes.
 `APPLIED` first routes to `VERIFYING`; a durable Verifier worker then evaluates real
 gRPC quote, readiness, full identity and approved-template evidence. Failed health
@@ -193,7 +192,34 @@ produces FAILED; incomplete evidence produces NEEDS_REVIEW. The Planner still us
 a harness-authored proposal. The reviewed one-service graph is not automatic
 dependency discovery.
 
-## 7. Inspect retained evidence
+## 7. Reject an unnecessary rollback in the final scenario
+
+After both recoveries, the script pauses at its **third and final injection
+prompt**. Press Enter to inject a labelled false-alarm incident and a proposal
+to roll back to the template that is already running. The service stays healthy;
+this injects a faulty recommendation, not another pod failure.
+
+Open the latest incident in the dashboard. Guard returns `REJECT` with reason
+`ROLLBACK_ALREADY_AT_BASELINE`, even with valid approval. Coordinator records
+`REJECTED` and does not route a recovery to its Executor. The independent
+Executor safety check also refuses the proposal before any repair patch.
+
+The terminal checks zero Executor patch/journal attempts and no change to the
+Deployment identity, version, generation, template or workload Pod UIDs during
+the measured rejection. Earlier setup, the first two recoveries and health probes
+do write to Kubernetes; the zero-write claim applies to this final repair attempt.
+See [the rejection scenario guide](guard-rejection-demo.md) for the explanation
+and standalone mode.
+
+The completed default run has **two `RECOVERED` incidents and one `REJECTED`
+false-alarm incident**. Expected success messages include:
+
+```text
+PASS: live dashboard HTTP, Guard reports, execution records and cluster telemetry
+Tests complete. Dashboard stays live for inspection; press Ctrl+C to stop it.
+```
+
+## 8. Inspect retained evidence
 
 Use the exact directory printed by your run. To select the most recently
 created experiment from another terminal:
@@ -223,6 +249,8 @@ Other important paths:
 | `executor.sqlite`, `locks/` | Role 5 journal and single-host coordination |
 | `approved-rollback/` | Proposal, dependency result, approval, Guard result, APPLIED, post-health samples and outcome.json |
 | `crash-after-write/` | Write receipt, reconciliation, zero-restart-write counters, post-health samples and outcome.json |
+| `false-alarm-incident.json` | Labelled false recovery recommendation against the healthy service |
+| `unnecessary-rollback/` | Rejected proposal, approval, Guard report, independent Executor refusal and zero-write proof |
 | `telemetry.sqlite3` | UI events and actual projected cluster history |
 | `dashboard-cleanup.json` | Recorded successful server/collector shutdown |
 
@@ -230,7 +258,7 @@ Other important paths:
 logs can contain application data. The private executor kubeconfig is removed
 after execution; the dashboard never serves that file.
 
-## 8. Stop and clean up
+## 9. Stop and clean up
 
 Stop optional log/watch terminals with Ctrl+C. In the main terminal, press
 Ctrl+C once after tests finish. The UI server and collector stop; because you
@@ -291,7 +319,9 @@ evidence above. The live run used automatic `-ExitAfterTest`; the interactive
 Enter prompts are covered offline rather than by a human-attended recorded run.
 
 The recorded runs above predate Role 6 integration. Their VERIFYING states are
-historical; new successful runs must produce two RECOVERED outcomes.
+historical; new successful runs must produce two RECOVERED outcomes followed by
+one REJECTED false-alarm incident. Those recordings also predate the third
+injection prompt and do not validate the new three-scenario sequence.
 
 ## Role coverage and limits
 

@@ -113,6 +113,9 @@ class GuardDecisionTests(unittest.TestCase):
         })
         self.baseline["pod_template"]["spec"]["containers"][0]["image"] = "demo/sentinel@sha256:" + "a" * 64
         self.live["deployment"]["spec"]["template"] = deepcopy(self.baseline["pod_template"])
+        self.live["deployment"]["spec"]["template"]["spec"]["containers"][0]["env"] = [
+            {"name": "PORT", "value": "invalid-port"}
+        ]
         self.baseline["reference_versions"] = []
         self.live["reference_versions"] = []
         self.baseline["health_evidence"] = {

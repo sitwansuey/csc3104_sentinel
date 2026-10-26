@@ -123,6 +123,11 @@ class BoutiqueExperiment(Experiment):
     publish_dependency_results = True
     health_outcome_description = " after executor rollback; Role 6 published RECOVERED"
 
+    def after_recovery_scenarios(self):
+        """Finish the default walkthrough by refusing a redundant third repair."""
+        from scripts.guard_rejection_demo import run_unnecessary_rollback
+        run_unnecessary_rollback(self)
+
     def prepare(self):
         super().prepare()
         self.policy["health"] = {
@@ -388,7 +393,10 @@ def main():
     parser.add_argument("--dashboard-port", type=int, default=8765, help="Loopback UI port; 0 selects a free port")
     parser.add_argument("--dashboard-bind", choices=["127.0.0.1", "0.0.0.0"], default="127.0.0.1")
     parser.add_argument("--exit-after-test", action="store_true", help="Stop the dashboard after validation instead of waiting for Ctrl+C")
-    parser.add_argument("--pause-before-injection", action="store_true", help="Wait for Enter before each controlled bad rollout")
+    parser.add_argument("--pause-before-injection", action="store_true",
+                        help="Wait for Enter before each bad rollout and the final unnecessary rollback proposal")
+    parser.add_argument("--guard-rejection", action="store_true",
+                        help="Run only the final unnecessary-rollback rejection scenario, skipping both recovery rounds")
     parser.add_argument("--crash-worker", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.crash_worker:
@@ -417,10 +425,22 @@ def main():
                 cluster_id=experiment.cluster_id, namespace=experiment.namespace, port=args.dashboard_port, bind=args.dashboard_bind)
             experiment.dashboard = dashboard
             dashboard.start()
-        experiment.run()
+        if args.guard_rejection:
+            from scripts.guard_rejection_demo import run_unnecessary_rollback
+            experiment.prepare()
+            experiment.permissions()
+            run_unnecessary_rollback(experiment)
+            experiment.summary.update(status="PASS", finished_at=utc())
+            experiment.credentials.unlink(missing_ok=True)
+            experiment.summary["private_executor_credentials_removed"] = not experiment.credentials.exists()
+            save(experiment.directory / "summary.json", experiment.summary)
+        else:
+            experiment.run()
         if dashboard:
-            experiment.summary["dashboard"] = dashboard.verify()
-            print("PASS: live dashboard HTTP, Guard reports, execution records and cluster telemetry", flush=True)
+            experiment.summary["dashboard"] = (dashboard.verify_rejection() if args.guard_rejection else dashboard.verify())
+            print("PASS: live rejection dashboard, Guard findings and zero-write evidence"
+                  if args.guard_rejection else
+                  "PASS: live dashboard HTTP, Guard reports, execution records and cluster telemetry", flush=True)
             if not args.exit_after_test:
                 print("Tests complete. Dashboard stays live for inspection; press Ctrl+C to stop it.", flush=True)
                 try:
@@ -445,7 +465,9 @@ def main():
             experiment.credentials.unlink(missing_ok=True)
             save(experiment.directory / "summary.json", experiment.summary)
             signal.signal(signal.SIGTERM, previous_term)
-    print("PASS: live Boutique rollback, crash reconciliation and Role 6 verification; both incidents RECOVERED", flush=True)
+    print("PASS: Guard rejected unnecessary rollback; service unchanged and zero Executor patch attempts"
+          if args.guard_rejection else
+          "PASS: two Boutique recoveries verified; final unnecessary rollback REJECTED with zero Executor patch attempts", flush=True)
     return 0
 
 

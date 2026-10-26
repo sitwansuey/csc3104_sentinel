@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param([switch]$Setup, [switch]$Cleanup, [switch]$Dashboard,
       [ValidateRange(0,65535)][int]$DashboardPort = 8765, [switch]$ExitAfterTest,
-      [switch]$PauseBeforeInjection)
+      [switch]$PauseBeforeInjection, [switch]$GuardRejection)
 
 $ErrorActionPreference = 'Stop'
 if ($ExitAfterTest -and -not $Dashboard) { throw '-ExitAfterTest requires -Dashboard.' }
@@ -36,6 +36,7 @@ try {
     if ($Dashboard) { $testOptions += @('--dashboard', '--dashboard-port', "$DashboardPort") }
     if ($ExitAfterTest) { $testOptions += '--exit-after-test' }
     if ($PauseBeforeInjection) { $testOptions += '--pause-before-injection' }
+    if ($GuardRejection) { $testOptions += '--guard-rejection' }
     & $pythonTool.Path @pythonPrefix (Join-Path $PSScriptRoot 'test_boutique_live.py') @testOptions
     $resultCode = $LASTEXITCODE
 } finally {

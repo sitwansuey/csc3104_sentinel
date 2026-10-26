@@ -64,6 +64,15 @@ the formal outcomes.
 
 ## Current boundaries and evidence
 
+The default interactive runner now appends a third, final scenario after both
+verified recoveries: a labelled false alarm proposes a rollback to the template
+already running. The Guard rejects the unnecessary change, and the restricted
+Executor independently confirms zero repair patch attempts. The completed run
+contains two RECOVERED incidents and one REJECTED false-alarm incident. Use
+`-GuardRejection` for only this final scenario; see the
+[Guard rejection demo](guard-rejection-demo.md). Historical results below predate
+that additional scenario.
+
 There is no LLM call, automatic dependency discovery, Chaos Mesh experiment or
 whole-Boutique/cloud deployment. The dashboard is read-only. Missing Metrics API
 usage remains unavailable rather than becoming fabricated resource measurements.

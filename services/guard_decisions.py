@@ -153,6 +153,44 @@ def _preview_checks(proposal, live_state, baseline, policy, preview, checked_at)
                     {"PASSED": "PASS", "REJECTED": "FAIL", "UNKNOWN": "UNKNOWN"}[status])]
 
 
+def _rollback_change_checks(proposal, live_state, baseline, policy, trace):
+    """A template rollback must change the current trusted desired state.
+
+    Replica unavailability alone does not make rewriting an identical template
+    useful. Kubernetes can replace a failed Pod without a Deployment rollback.
+    This compares hashes only after the core has validated baseline identity and
+    content, and never includes template contents in the audit report.
+    """
+    if proposal["action"] != "ROLLBACK" or any(
+            code == "INVALID_BASELINE" or code.startswith("BASELINE_")
+            for code in trace["rejected"]):
+        return []
+    path = "live_state.deployment.spec.template"
+    try:
+        deployment = mapping(live_state.get("deployment"), "live_state.deployment")
+        spec = mapping(deployment.get("spec"), "live_state.deployment.spec")
+        template = mapping(spec.get("template"), path)
+        pod_spec = mapping(template.get("spec"), path + ".spec")
+        containers = pod_spec.get("containers")
+        if not isinstance(containers, list) or not containers or any(
+                not isinstance(container, dict) for container in containers):
+            raise GuardInputError("Live template requires container specifications")
+        current_hash = json_sha256(template)
+    except GuardInputError:
+        return [finding("ROLLBACK_CHANGE_UNKNOWN", path, None,
+                        "a valid current pod template",
+                        "The current template is unavailable; a useful rollback cannot be established.",
+                        "UNKNOWN" if policy.get("profile") == "live" else "SKIP")]
+    baseline_hash = baseline["template_sha256"]
+    unchanged = current_hash == baseline_hash
+    return [finding("ROLLBACK_ALREADY_AT_BASELINE" if unchanged else "ROLLBACK_CHANGES_TEMPLATE",
+                    path, {"template_sha256": current_hash},
+                    {"different_from_baseline_sha256": baseline_hash},
+                    "The Deployment already uses the saved baseline; rollback would make no template change."
+                    if unchanged else "Rollback would restore a different, previously verified template.",
+                    "FAIL" if unchanged else "PASS")]
+
+
 _CORE_PATHS = {
     "TARGET_NOT_ALLOWED": "policy.targets", "ACTION_NOT_ALLOWED": "policy.allowed_actions",
     "ACTION_NOT_IMPLEMENTED": "proposal.action", "LIVE_TARGET_MISMATCH": "live_state.deployment.metadata",
@@ -245,6 +283,7 @@ def evaluate_with_report(core, proposal, live_state, policy, baseline, dependenc
     trace = {}
     original = core(proposal, live_state, policy, baseline, dependencies, approval, now=checked_at, _trace=trace)
     checks = _core_findings(original, proposal, live_state, policy, trace)
+    checks += _rollback_change_checks(proposal, live_state, baseline, policy, trace)
     checks += guard_eligibility.assess(proposal, live_state, baseline, policy, checked_at)
     checks += guard_resources.assess(proposal, live_state, baseline, policy, checked_at)
     checks += _approval_checks(policy, approval, checked_at)

@@ -5,6 +5,16 @@ baseline, dependencies and operator approval. It returns `ALLOW`, `REJECT` or
 `ESCALATE`; it never applies recovery. Hard failures take precedence over
 missing evidence or approval.
 
+A rollback must also change the current Pod template. If its canonical hash
+already matches the validated baseline, the Guard rejects with
+`ROLLBACK_ALREADY_AT_BASELINE`, even when approval exists or replicas are
+unavailable. Rewriting an identical template is not a repair for that failure.
+Reports include the compared hashes, not template contents. Live profiles
+escalate with `ROLLBACK_CHANGE_UNKNOWN` when the current template cannot be
+verified; legacy development snapshots without a template skip this check.
+The [live Guard rejection demo](guard-rejection-demo.md) proves the refusal
+against shippingservice, including zero Executor patch attempts.
+
 ## Run the independent demonstration
 
 No Kubernetes cluster, cloud account, application or LLM is needed:

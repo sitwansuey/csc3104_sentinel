@@ -145,4 +145,18 @@ cluster and browser behaviour from still-unverified second-laptop portability.
 
 ## Verification scope and artifacts
 
-The two successful recovery rounds now each create post-health.json and outcome.json. One full run expects two APPLIED execution results, two CLEAR dependency results, two RECOVERED outcomes and twelve PASS checkpoints across nine behavioral test categories. Nine quote probes cover three baseline samples and three after each rollback. The reviewed graph is infra/boutique-dependencies.json, scoped to shippingservice. The generic demo-api experiment retains its original health hook; these changes integrate the Boutique path. Always-on Verifier scheduling beyond this experiment and automatic dependency discovery remain future work.
+The two successful recovery rounds each create post-health.json and outcome.json.
+The default run then pauses for a third scenario: an explicitly injected false
+recovery recommendation against the restored healthy service. The Guard rejects
+the redundant rollback with ROLLBACK_ALREADY_AT_BASELINE. An independent restricted
+Executor test confirms zero patch attempts even with valid approval; the
+Coordinator schedules no execution or health-verification request for that action.
+
+One full run expects two APPLIED execution results, three CLEAR dependency results,
+two RECOVERED outcomes, one REJECTED false-alarm incident and thirteen PASS
+checkpoints. Nine quote probes cover three baseline samples and three after each
+rollback. The final refusal adds no application crash or recovery write; its
+before/after proof is unnecessary-rollback/proof.json. The reviewed graph remains
+infra/boutique-dependencies.json, scoped to shippingservice. The generic demo-api
+experiment retains its original two-round behavior. Always-on Verifier scheduling
+and automatic dependency discovery remain future work.
