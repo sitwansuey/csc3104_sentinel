@@ -25,13 +25,27 @@ def _eligible(store, request):
     return action
 
 
-def process_verifier_requests(store, event_bus, *, sample_reader, policy_reader):
+def process_verifier_requests(store, event_bus, *, sample_reader, policy_reader, ledger=None, clock=None):
     """Evaluate exact executions; incomplete collection cannot establish recovery.
 
 The expected rollback hash comes from the persisted proposal, not a sample's
 claim. Reader failures produce UNKNOWN evidence; storage/contract failures leave
 requests pending. A committed outcome and acknowledgment are replay-safe.
 """
+    if ledger is not None:
+        from runtime.verifier_durable import process_verifier_requests as process_durable
+
+        def bound_policy(execution):
+            policy = deepcopy(policy_reader(deepcopy(execution)))
+            if policy.get("health", {}).get("require_template_match"):
+                action = store.action(execution["action_id"])
+                policy["health"]["expected_template_sha256"] = action["proposal"]["parameters"].get("template_sha256")
+            return policy
+
+        return process_durable(store, event_bus, ledger=ledger, sample_reader=sample_reader,
+                               policy_reader=bound_policy, clock=clock)
+    # Compatibility for callers that already collect a complete window in one call.
+    # Incremental/live workers must supply a VerificationStore to persist readings.
     pending = store.db.execute(
         "SELECT id FROM outbox WHERE topic='verifier.request' AND delivered=0 ORDER BY id"
     ).fetchall()
