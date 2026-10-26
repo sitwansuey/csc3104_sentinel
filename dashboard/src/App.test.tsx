@@ -13,7 +13,7 @@ beforeEach(()=>{
   fetchMock=vi.fn().mockImplementation(async()=>({ok:true,json:async()=>structuredClone(data)}))
   vi.stubGlobal("fetch",fetchMock)
 })
-async function ready(){render(<App/>);await screen.findByText("Explore the recovery loop.")}
+async function ready(){render(<App/>);await screen.findByLabelText("Recovery overview")}
 async function tab(name:string){await userEvent.click(screen.getByRole("tab",{name}));return screen.getByRole("tabpanel")}
 
 describe("shadcn dashboard",()=>{
@@ -33,7 +33,7 @@ describe("shadcn dashboard",()=>{
     data.cluster_history[0].sources.node_metrics={status:"unavailable",error_code:"API_UNAVAILABLE"}
     data.cluster_history[0].sources.pod_metrics={status:"unavailable",error_code:"PERMISSION_DENIED"}
     data.cluster_history=data.cluster_history.slice(0,1)
-    render(<App/>);await screen.findByText("Every signal. In context.")
+    render(<App/>);await screen.findByLabelText("Recovery overview")
     const panel=await tab("Kubernetes")
     expect(within(panel).getByText("Usage metrics unavailable")).toBeInTheDocument()
     expect(within(panel).getByText("Read permission denied")).toBeInTheDocument()
@@ -92,13 +92,13 @@ describe("shadcn dashboard",()=>{
 describe("dashboard review improvements",()=>{
   it("selects the observed cluster explicitly and shows its connection status",async()=>{
     data.mode="recorded/live producers"
-    render(<App/>);await screen.findByText("Every signal. In context.")
+    render(<App/>);await screen.findByLabelText("Recovery overview")
     await waitFor(()=>expect(screen.getByRole("combobox",{name:"Cluster filter"})).toHaveTextContent("sentinel-lab"))
     expect(screen.getByLabelText("Cluster connection: Receiving")).toBeInTheDocument()
   })
   it("opens one incident in a combined detail drawer from the register",async()=>{
     await ready()
-    await userEvent.click(screen.getByRole("button",{name:"Open incident INC-001"}))
+    await userEvent.click(screen.getByRole("button",{name:"Inspect focused incident INC-001"}))
     const drawer=await screen.findByRole("dialog",{name:"INC-001"})
     for(const text of ["Detection evidence","Recovery proposal","Guard evaluation","Execution","Outcome after execution"])expect(within(drawer).getByText(text)).toBeInTheDocument()
   })
@@ -106,7 +106,7 @@ describe("dashboard review improvements",()=>{
     data.mode="recorded/live producers"
     data.messages.find(r=>r.message.kind==="guard_result")!.message.valid_until=new Date(Date.now()-60_000).toISOString()
     data.messages.find(r=>r.message.kind==="guard_result")!.message.checked_at=new Date(Date.now()-120_000).toISOString()
-    render(<App/>);await screen.findByText("Every signal. In context.")
+    render(<App/>);await screen.findByLabelText("Recovery overview")
     const panel=await tab("Recovery Guard")
     expect(within(panel).getAllByText("ALLOW · EXPIRED")[0]).not.toHaveClass("text-emerald-600")
     fetchMock.mockRejectedValue(new Error("offline"))
@@ -119,7 +119,7 @@ describe("dashboard review improvements",()=>{
   it("changes the chart time range from one shared control",async()=>{
     await ready()
     const range=screen.getByRole("group",{name:"Chart time range"})
-    expect(within(range).getByRole("button",{name:"15m"})).toHaveAttribute("aria-pressed","true")
+    expect(within(range).getByRole("button",{name:"All"})).toHaveAttribute("aria-pressed","true")
     await userEvent.click(within(range).getByRole("button",{name:"5m"}))
     expect(within(range).getByRole("button",{name:"5m"})).toHaveAttribute("aria-pressed","true")
     expect(screen.getByText(/Last 5m/)).toBeInTheDocument()

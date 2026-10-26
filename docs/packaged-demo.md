@@ -157,7 +157,8 @@ success is inferred from the current desktop's results.
 For the recovery semantics and individual role responsibilities, see the
 [Boutique instruction book](boutique-demo-handbook.md). The packaged path changes
 the environment boundary, not the Guard/executor algorithm. APPLIED still routes
-to VERIFYING; it does not claim AI planning, Role 6 completion or cloud readiness.
+to VERIFYING and then RECOVERED after Role 6 consumes and verifies live evidence.
+It does not claim AI planning, automatic dependency discovery or cloud readiness.
 
 ## Recorded packaged validation
 
@@ -176,7 +177,7 @@ was `sha256:6280244e5093ec49789cf56a1aa89b014e8bbb1f7a45444d24ecea51173ee6b8`.
 | Host-published browser UI | Headless installed Edge rendered Overview, Recovery Guard, Executor and Kubernetes, with zero page JavaScript errors |
 | Idempotency/concurrency | Duplicate replay, changed-ID payload refusal, competing process and server-side version race passed |
 | Post-write crash | One actual patch before exit 73; restart used one read and zero mutations |
-| Lifecycle/health | Both incidents VERIFYING, both post-action quote windows successful, zero fabricated Role 6 outcomes |
+| Lifecycle/health (historical image) | Both incidents VERIFYING before Role 6 integration; new source builds require two real RECOVERED outcomes |
 | Cleanup | Runner and named cluster removed; host operator and restricted executor credential files removed; evidence retained |
 | Runtime boundary | Inspected non-root UID 10001, read-only root, dropped ALL capabilities, read-only bootstrap mount, writable data mount, kind network and host-loopback UI publication; Docker/kind/Node/npm absent |
 
@@ -191,3 +192,12 @@ The interactive run additionally retains `runtime-boundaries.json`.
 
 The cache test skipped pulls; it was not a network-disconnected laptop test.
 Export/load on a second machine, ARM builds and cloud deployment were not tested.
+
+## Live Role 6 integration
+
+Rebuild the runner from the updated source to include Role 6; loading an older
+image does not update it. The new runner calls the actual dependency evaluator,
+collects protocol-native gRPC evidence, consumes verifier.request and publishes
+formal outcomes. Successful current-source runs finish with two RECOVERED
+incidents. Historical image results above remain unchanged. See
+[current-system-demo.md](current-system-demo.md) for the full flowchart.

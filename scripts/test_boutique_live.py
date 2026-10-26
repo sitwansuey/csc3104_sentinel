@@ -1,4 +1,4 @@
-"""Opt-in shippingservice experiment; real recovery, manual planning/verification.
+"""Opt-in shippingservice experiment; real recovery and Role 6 verification.
 
 Uses a dedicated kind cluster. Reuses the demo's execution scenarios, not its
 workload assumptions. No LLM, Chaos Mesh or whole-storefront recovery is claimed.
@@ -19,6 +19,9 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.test_executor_live import Experiment, crash_worker, now, require, save, utc
 from runtime.observer_pipeline import LocalCoordinatorSink, ObserverStore
+from runtime.verifier_pipeline import process_verifier_requests
+from services.verifier import inspect_dependencies
+from services.executor_store import fingerprint
 from services.observer_kubernetes import CollectionError, KubernetesEvidenceCollector, KubectlReader
 
 
@@ -116,6 +119,97 @@ class BoutiqueExperiment(Experiment):
     dashboard = None
     pause_before_injection = False
     prepared = None
+    publish_dependency_results = True
+    health_outcome_description = " after executor rollback; Role 6 published RECOVERED"
+
+    def prepare(self):
+        super().prepare()
+        self.policy["health"] = {
+            "protocol": "grpc", "required_grpc_status": 0,
+            "minimum_samples": 3, "stable_window_seconds": 10,
+            "max_sample_gap_seconds": 45, "required_dependencies": [],
+            "require_target_identity": True, "require_template_match": True,
+            "require_available_replicas": True,
+        }
+        save(self.directory / "policy.json", self.policy)
+
+    def dependency_result(self, proposal):
+        # Reviewed single-service topology, not automatic dependency discovery.
+        graph = json.loads((ROOT / "infra/boutique-dependencies.json").read_text(encoding="utf-8"))
+        state = {"cluster_id": self.cluster_id, "captured_at": utc(), "deployment": self.deployment()}
+        result = inspect_dependencies(proposal, graph, state, now=now())
+        save(self.directory / "dependency-graph.json", graph)
+        self.event(6, "status", "Role 6 assessed the isolated shipping dependency graph: " + result["status"],
+                   target=proposal["target"], incident_id=proposal["incident_id"], action_id=proposal["action_id"])
+        return result
+
+    def verification_samples(self, execution):
+        """Collect protocol-native evidence; collection failures stay unknown."""
+        samples = []
+        for index in range(3):
+            before = self.deployment()
+            sample = {"service": self.name, "protocol": "grpc", "dependencies": {},
+                      "grpc_status": None, "application_check_passed": None}
+            try:
+                response = self.quote_response()
+                sample.update(grpc_status=0, quote=response)
+                try:
+                    validate_quote(response)
+                except (AttributeError, TypeError, ValueError, RuntimeError):
+                    sample["application_check_passed"] = False
+                else:
+                    sample["application_check_passed"] = True
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+                # Do not turn a timeout or unavailable probe into an invented gRPC status.
+                sample["collection_error"] = type(error).__name__
+            after = self.deployment()
+            metadata, status = after["metadata"], after.get("status", {})
+            sample.update(
+                at=utc(), target={"cluster_id": self.cluster_id, "namespace": self.namespace,
+                                  "kind": "Deployment", "name": self.name, "uid": metadata["uid"]},
+                ready_replicas=status.get("readyReplicas", 0),
+                available_replicas=status.get("availableReplicas", 0),
+                desired_replicas=after["spec"].get("replicas", 1),
+                template_sha256=fingerprint(after["spec"]["template"]),
+                resource_version=metadata["resourceVersion"],
+                configuration_stable=(before["metadata"]["uid"] == metadata["uid"]
+                                      and before["spec"]["template"] == after["spec"]["template"]
+                                      and status.get("observedGeneration", 0) >= metadata["generation"]),
+            )
+            samples.append(sample)
+            self.event(6, "status", "Role 6 collected shipping verification sample " + str(index + 1),
+                       target=execution["target"], incident_id=execution["incident_id"], action_id=execution["action_id"])
+            try:
+                self.observe("role6-" + execution["action_id"] + "-" + str(index))
+            except CollectionError:
+                self.event(2, "error", "Dashboard observation unavailable during Role 6 measurement")
+            if index < 2:
+                time.sleep(5)
+        return samples
+
+    def complete_recovery(self, folder, proposal, execution):
+        # Readiness waiting is bounded and never itself establishes recovery.
+        self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=120s",
+                     timeout=160, allow_failure=True)
+
+        def collect(current):
+            samples = self.verification_samples(current)
+            save(folder / "post-health.json", samples)
+            return samples
+
+        outcomes = process_verifier_requests(self.store, self.bus, sample_reader=collect,
+                                             policy_reader=lambda current: self.policy)
+        require(len(outcomes) == 1 and outcomes[0]["action_id"] == proposal["action_id"],
+                "Expected one Role 6 outcome for the current recovery")
+        outcome = outcomes[0]
+        save(folder / "outcome.json", outcome)
+        self.event(6, "status", "Role 6 published " + outcome["status"], target=proposal["target"],
+                   incident_id=proposal["incident_id"], action_id=proposal["action_id"])
+        require(outcome["status"] == "RECOVERED", "Role 6 could not verify shipping recovery: " + outcome["status"])
+        require(self.store.incident(proposal["incident_id"])["state"] == "RECOVERED",
+                "Coordinator did not close the verified incident")
+        self.check("Role 6 verified gRPC, readiness and template; Coordinator RECOVERED",
+                   action_id=proposal["action_id"], outcome="RECOVERED")
 
     def event(self, component, event_type, summary, **details):
         if self.dashboard:
@@ -145,8 +239,9 @@ class BoutiqueExperiment(Experiment):
             require(nodes == [self.cluster_id + "-control-plane"], "Requires the dedicated single-node Boutique lab")
         self.summary.update(workload="Online Boutique shippingservice v0.10.7",
                             planning="operator-authored proposal; no model call",
-                            dependencies="operator-attested isolated service; no dependency discovery",
-                            verification="operator measurements; Role 6 pending")
+                            dependencies="Role 6 evaluates reviewed isolated-service graph against live identity; no automatic discovery",
+                            verification="Role 6 consumes real gRPC, readiness and template evidence and publishes outcomes",
+                            scope="single-node kind; Roles 1/2/4/5/6 integrated; Planner proposal supplied by harness")
         image = self.prepared["shipping"] if self.prepared else self.load_image(SHIPPING_IMAGE)
         self.client_image = self.prepared["client"] if self.prepared else self.load_image(CLIENT_IMAGE)
         save(self.directory / "images.json", {"shipping": image, "client": self.client_image})
@@ -186,7 +281,7 @@ class BoutiqueExperiment(Experiment):
                        incident_id=incident["incident_id"])
         return incident
 
-    def quote(self):
+    def quote_response(self):
         """Independent unprivileged client calls the service through cluster DNS."""
         name = "shipping-probe-" + uuid4().hex[:10]
         request = {"items": [{"productId": "demo-item", "quantity": 1}]}
@@ -214,12 +309,16 @@ class BoutiqueExperiment(Experiment):
                     logs = self.kubectl("logs", name, allow_failure=True)
                     require(phase == "Succeeded" and logs.returncode == 0, "Shipping RPC failed: " + logs.stdout[-500:])
                     response = json.loads(logs.stdout)
-                    validate_quote(response)
                     return response
                 time.sleep(1)
             raise RuntimeError("Shipping RPC probe timed out")
         finally:
             self.kubectl("delete", "pod", name, "--ignore-not-found", "--wait=false", allow_failure=True)
+
+    def quote(self):
+        response = self.quote_response()
+        validate_quote(response)
+        return response
 
     def health_window(self, expected_template):
         samples = []
@@ -342,7 +441,7 @@ def main():
             experiment.credentials.unlink(missing_ok=True)
             save(experiment.directory / "summary.json", experiment.summary)
             signal.signal(signal.SIGTERM, previous_term)
-    print("PASS: live Boutique restricted rollback and crash reconciliation; Coordinator remains VERIFYING", flush=True)
+    print("PASS: live Boutique rollback, crash reconciliation and Role 6 verification; both incidents RECOVERED", flush=True)
     return 0
 
 

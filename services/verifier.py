@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+import re
 
 from shared.contracts import ContractError, validate_message
 
@@ -42,13 +43,27 @@ def _check(name, passed, detail):
 def _health_policy(policy):
     if not isinstance(policy, dict) or not isinstance(policy.get("health"), dict):
         raise VerifierInputError("policy.health must be an object")
-    rules = policy["health"]
+    rules = deepcopy(policy["health"])
+    protocol = rules.setdefault("protocol", "http")
+    if protocol not in {"http", "grpc"}:
+        raise VerifierInputError("policy.health.protocol must be http or grpc")
     for key in ("minimum_samples", "stable_window_seconds", "max_sample_gap_seconds"):
         if type(rules.get(key)) is not int or rules[key] < 1:
             raise VerifierInputError(f"policy.health.{key} must be a positive integer")
-    status = rules.get("required_http_status")
-    if type(status) is not int or not 100 <= status <= 599:
-        raise VerifierInputError("policy.health.required_http_status must be an HTTP status")
+    if protocol == "http":
+        status = rules.get("required_http_status")
+        if type(status) is not int or not 100 <= status <= 599:
+            raise VerifierInputError("policy.health.required_http_status must be an HTTP status")
+    else:
+        status = rules.get("required_grpc_status")
+        if type(status) is not int or status != 0:
+            raise VerifierInputError("policy.health.required_grpc_status must be 0 (OK)")
+    for key in ("require_target_identity", "require_template_match", "require_available_replicas"):
+        if key in rules and type(rules[key]) is not bool:
+            raise VerifierInputError(f"policy.health.{key} must be a boolean")
+    if rules.get("require_template_match") and not re.fullmatch(
+            r"[a-f0-9]{64}", str(rules.get("expected_template_sha256", ""))):
+        raise VerifierInputError("A verified expected template SHA-256 is required")
     required = rules.get("required_dependencies", [])
     if not isinstance(required, list) or any(
         not isinstance(name, str) or not name.strip() for name in required
@@ -171,15 +186,16 @@ def verify(execution: dict, samples: list[dict], policy: dict) -> dict:
 
     stamps, rows = [], []
     identity_ok = timestamps_ok = health_complete = dependencies_complete = True
-    unhealthy_service = unhealthy_dependency = False
+    configuration_complete = True
+    unhealthy_service = unhealthy_dependency = unhealthy_template = False
     required_dependencies = set(rules.get("required_dependencies", []))
     for sample in samples:
         if not isinstance(sample, dict):
             identity_ok = timestamps_ok = health_complete = dependencies_complete = False
             continue
         matching = sample.get("service") == execution["target"]["name"]
-        if "target" in sample:
-            matching = matching and sample["target"] == execution["target"]
+        if "target" in sample or rules.get("require_target_identity"):
+            matching = matching and sample.get("target") == execution["target"]
         identity_ok = identity_ok and matching
         try:
             at = _timestamp(sample.get("at"))
@@ -190,13 +206,33 @@ def verify(execution: dict, samples: list[dict], policy: dict) -> dict:
             timestamps_ok = False
         stamps.append(at)
         rows.append(sample)
-        http, ready, desired = (sample.get(key) for key in ("http_status", "ready_replicas", "desired_replicas"))
-        complete = (type(http) is int and 100 <= http <= 599
-                    and type(ready) is int and ready >= 0
+        ready, desired = (sample.get(key) for key in ("ready_replicas", "desired_replicas"))
+        protocol_matches = sample.get("protocol", "http") == rules["protocol"]
+        if rules["protocol"] == "grpc":
+            status, application_ok = sample.get("grpc_status"), sample.get("application_check_passed")
+            response_complete = type(status) is int and 0 <= status <= 16 and type(application_ok) is bool
+            response_healthy = status == rules["required_grpc_status"] and application_ok is True
+        else:
+            status = sample.get("http_status")
+            response_complete = type(status) is int and 100 <= status <= 599
+            response_healthy = status == rules["required_http_status"]
+        complete = (protocol_matches and response_complete and type(ready) is int and ready >= 0
                     and type(desired) is int and desired > 0)
+        available = sample.get("available_replicas")
+        if rules.get("require_available_replicas"):
+            complete = complete and type(available) is int and available >= 0
         health_complete = health_complete and complete
         if complete:
-            unhealthy_service |= http != rules["required_http_status"] or ready < desired
+            unhealthy_service |= not response_healthy or ready < desired
+            if rules.get("require_available_replicas"):
+                unhealthy_service |= available < desired
+        if rules.get("require_template_match"):
+            template = sample.get("template_sha256")
+            valid_hash = isinstance(template, str) and re.fullmatch(r"[a-f0-9]{64}", template) is not None
+            configuration_complete = (configuration_complete and valid_hash
+                                      and sample.get("configuration_stable") is True)
+            if valid_hash:
+                unhealthy_template |= template != rules["expected_template_sha256"]
         dependencies = sample.get("dependencies")
         if not isinstance(dependencies, dict):
             dependencies_complete = False
@@ -229,14 +265,18 @@ def verify(execution: dict, samples: list[dict], policy: dict) -> dict:
                          f"Observed {duration:g} seconds; at least {rules['stable_window_seconds']} required"))
     checks.append(_check("sample_gaps", gaps_ok, f"No gap may exceed {rules['max_sample_gap_seconds']} seconds"))
     checks.append(_check("service_health", bool(rows) and health_complete and not unhealthy_service,
-                         "Requires complete successful HTTP and positive desired-replica readiness readings"))
+                         "Requires complete successful " + rules["protocol"].upper()
+                         + " application and positive desired-replica readiness readings"))
     checks.append(_check("dependency_health", bool(rows) and dependencies_complete and not unhealthy_dependency,
                          "Every required/observed dependency must be present and healthy in every reading"))
+    if rules.get("require_template_match"):
+        checks.append(_check("sample_configuration", bool(rows) and configuration_complete and not unhealthy_template,
+                             "Each reading must retain the approved template and a stable observation identity"))
 
     trustworthy = (usable_execution and identity_ok and timestamps_ok
-                   and health_complete and dependencies_complete)
+                   and health_complete and dependencies_complete and configuration_complete)
     status = "UNKNOWN"
-    if trustworthy and (unhealthy_service or unhealthy_dependency):
+    if trustworthy and (unhealthy_service or unhealthy_dependency or unhealthy_template):
         status = "NOT_RECOVERED"
     elif all(check["passed"] for check in checks):
         status = "RECOVERED"
