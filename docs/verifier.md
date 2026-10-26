@@ -95,7 +95,7 @@ synthetic data and a fixed clock. Integration tests send real Verifier findings
 to the Guard and real outcomes to Coordinator. Execution input is synthetic;
 this is not a demonstration of a complete live recovery pipeline.
 
-The offline demo above is still synthetic. Live Boutique request processing is implemented in `runtime/verifier_pipeline.py`, called by `BoutiqueExperiment.complete_recovery()`. Trace-derived graph discovery, distributed coordination and persistent service scheduling remain separate work. These pure evaluator functions do not implement authenticated transport.
+The offline demo above is still synthetic. Live Boutique request processing is implemented in `runtime/verifier_pipeline.py`, called by `BoutiqueExperiment.complete_recovery()`. The [durable worker](verifier-worker.md) saves incremental readings and exact pending outcomes. Generic HTTP/Kubernetes and OTLP trace adapters plus a polling CLI are described in [live evidence](verifier-live.md). Distributed coordination and authenticated transport remain outside this local runtime.
 
 ## Live Boutique policy and lifecycle
 
@@ -105,6 +105,6 @@ The post-action policy requires three gRPC samples across at least ten seconds, 
 
 A successful grpcurl completion establishes status 0; valid positive USD quotes establish the application check. Probe timeout/collection failures stay unknown rather than becoming fabricated gRPC error/status measurements. Missing evidence cannot establish recovery.
 
-Collection runs outside the Coordinator transaction. The worker rechecks the active action/execution in VERIFYING, then atomically records outcome and acknowledges the request. Replays do not repeat closure. Storage/policy errors leave the request pending; collection errors publish UNKNOWN. RECOVERED maps to RECOVERED, NOT_RECOVERED to FAILED, UNKNOWN to NEEDS_REVIEW.
+Collection runs outside the Coordinator transaction. Boutique now yields each reading into a separate durable Verifier store. Policy/deadline are frozen on first intake, partial readings survive restart, and incomplete evidence waits until the fixed deadline before UNKNOWN. The worker atomically records the accepted outcome and acknowledges its Coordinator request, then acknowledges its own exact saved outcome. Replays do not repeat closure. Storage/policy errors leave work pending. RECOVERED maps to RECOVERED, NOT_RECOVERED to FAILED, UNKNOWN to NEEDS_REVIEW.
 
 Run the integrated source demonstration with `scripts/test-boutique-live.ps1 -Setup -Dashboard`. Both ordinary rollback and crash/restart reconciliation invoke the same worker. The generic demo-api health hook is unchanged. Each recovery folder saves post-health.json and outcome.json; the dashboard exposes actual dependency/outcome messages.
