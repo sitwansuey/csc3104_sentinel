@@ -47,7 +47,7 @@ bounded command; this increment does not add a daemon, broker or HTTP API.
 - The first intake freezes policy and deadline. Policy changes need explicit owner
   reconciliation; they do not silently rewrite an active verification window.
 - `health.verification_timeout_seconds` optionally sets a positive timeout at least
-  as long as `stable_window_seconds`. By default it is `stable_window_seconds +
+  as long as `stable_window_seconds` and no more than 86,400 seconds. By default it is `stable_window_seconds +
   minimum_samples * max_sample_gap_seconds`, or 65 seconds for the sample policy.
 - Readings persist across restarts. Exact replays are deduplicated by measurement
   time; changed content at that time is an error. Stored delivery may arrive out
@@ -71,3 +71,5 @@ Do not place these SQLite files on a network share. They are not distributed
 transport or cross-host coordination. No authenticated baseline/telemetry
 provenance is created by hashing or by the worker. The sample dependency inventory
 must be supplied completely; empty maps cannot establish the real graph is empty.
+
+Streaming collectors checkpoint each reading before requesting the next, so interrupted collection retains completed readings.
