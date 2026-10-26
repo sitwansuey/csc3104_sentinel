@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.test_boutique_live import BoutiqueExperiment, command
 from scripts.test_executor_live import require, save, utc
 from runtime.observer_pipeline import ObserverStore, LocalCoordinatorSink
+from services.observer_kubernetes import CollectionError
 from shared.contracts import validate_message
 
 
@@ -70,7 +71,14 @@ def main():
         previous_elapsed = None
         while True:
             require(time.monotonic() < deadline, 'Detection timed out')
-            item = poll('fault-' + str(len(records)))
+            try:
+                item = poll('fault-' + str(len(records)))
+            except CollectionError as error:
+                with ObserverStore(directory / 'observer.sqlite', policy, collector.target) as store:
+                    store.collection_failed(error)
+                previous_elapsed = None
+                time.sleep(2)
+                continue
             elapsed = ((timestamp(item['captured_at']) - timestamp(item['first_seen_at'])).total_seconds()
                        if item['first_seen_at'] else None)
             if item['incident']:
