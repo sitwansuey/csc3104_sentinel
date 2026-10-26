@@ -18,16 +18,34 @@
    History exceeding the comparison API limit fails explicitly; set that date
    manually. Already-merged history cannot be reconstructed from this comparison.
 5. Link the PR with `Closes #21` in its description, or use the numbered branch.
-   Add the existing **ready to merge** label to an open, non-draft PR when the
-   team considers it ready. Its open, same-repository closing issues move to
-   **Ready To Merge**, as does its own card if already in the project.
+   On an open PR, **in progress** moves its open, same-repository closing issues
+   and numbered-branch issue to **In Progress**. **ready to merge** moves them to
+   **Ready To Merge** when the PR is not a draft. Its own card moves too if already
+   in the project. If both labels are present, **in progress wins**, allowing a
+   mistaken ready decision to be corrected immediately.
 
-No extra PR cards are created. Backlog/Done cards and closed issues are left
-alone. Further pushes do not move Ready To Merge back to In Progress. Removing
-the label does not change the board automatically; move the card manually if more
-work is needed. A label indicates a human decision; this automation does not
-approve, merge or check that reviews/CI have passed. Existing Done automation is
-not changed. Missing project cards must be added manually.
+| Current PR labels | Project status |
+| --- | --- |
+| in progress (with or without ready to merge) | In Progress |
+| ready to merge only, non-draft PR | Ready To Merge |
+| Neither, after this automation managed a label | Restore saved Todo or Backlog |
+| Neither, without previous label tracking | Leave the card unchanged |
+
+Removing one label follows the remaining label. Removing the final status label
+restores each card's own previous queue. The **Automation state** text field
+stores that queue and controlling PR before a label changes the status. A push
+also records Todo before starting work. For older active cards without saved
+history, the fallback queue is Todo. Do not edit this bookkeeping field manually;
+it can be omitted from normal views. No Start date is cleared or overwritten by
+label changes. A fresh push after returning to Todo can start work again.
+
+No extra PR cards are created. Done cards and closed issues are left alone;
+explicit PR labels can activate Backlog cards. Further pushes without a label
+change do not move Ready To Merge backwards. Use one controlling PR per issue;
+another PR cannot overwrite or remove the first PR's saved label control.
+A label indicates a human decision; this automation does not approve, merge or
+check that reviews/CI have passed. Existing Done automation is not changed.
+Missing project cards must be added manually.
 
 ## One-time credential setup
 
@@ -60,7 +78,8 @@ automated fake-API tests have been run, not a real event-driven board update.
 PR metadata events. It checks out only the default branch; PR text and feature
 code are never executed with the project credential. The script uses fixed
 repository/project/field IDs, bounded API requests, paginated project items and
-current PR state. Push handling also reconciles current PR labels so queued event
+current PR state. It handles both label addition and removal using current labels,
+not stale event contents. Push handling also reconciles current PR labels so queued event
 replacement does not silently lose a ready label. Issues can still start work
 against agreed interfaces while blocked; blockers are not automatically removed.
 
