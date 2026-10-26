@@ -8,6 +8,8 @@ from pathlib import Path
 import sqlite3
 from urllib.parse import urlsplit
 
+from services.coordinator_read import read_records
+
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "dashboard" / "dist"
 LIMIT = 600
@@ -37,13 +39,6 @@ def _open_readonly(path):
     return db
 
 
-def _decode(row, fields):
-    item = dict(row)
-    for field in fields:
-        item[field] = json.loads(item[field]) if item[field] else None
-    return item
-
-
 def snapshot(db_path, telemetry_path):
     result = {
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -52,24 +47,8 @@ def snapshot(db_path, telemetry_path):
         "approvals": [], "outbox": [], "reports": [], "telemetry": [], "cluster_history": [],
     }
     try:
-        db = _open_readonly(db_path)
-        try:
-            result["incidents"] = [_decode(row, ("target",)) for row in db.execute(
-                "SELECT rowid AS sequence,* FROM incidents ORDER BY rowid DESC LIMIT ?", (LIMIT,))]
-            result["actions"] = [_decode(row, ("proposal", "guard_result", "execution_result")) for row in db.execute(
-                "SELECT rowid AS sequence,* FROM actions ORDER BY rowid DESC LIMIT ?", (LIMIT,))]
-            result["messages"] = [{"sequence": row[0], "message": json.loads(row[1])} for row in db.execute(
-                "SELECT rowid,payload FROM messages ORDER BY rowid DESC LIMIT ?", (LIMIT,))]
-            result["approvals"] = [{"id": row[0], "record": json.loads(row[1])} for row in db.execute(
-                "SELECT id,record FROM approvals ORDER BY id DESC LIMIT ?", (LIMIT,))]
-            result["outbox"] = [dict(row) for row in db.execute(
-                "SELECT id,topic,action_id,delivered FROM outbox ORDER BY id DESC LIMIT ?", (LIMIT,))]
-            if db.execute("SELECT 1 FROM sqlite_master WHERE name='guard_reports'").fetchone():
-                result["reports"] = [json.loads(row[0]) for row in db.execute(
-                    "SELECT report FROM guard_reports ORDER BY rowid DESC LIMIT ?", (LIMIT,))]
-            result["sources"]["coordinator"] = {"connected": True}
-        finally:
-            db.close()
+        result.update(read_records(db_path, limit=LIMIT))
+        result["sources"]["coordinator"] = {"connected": True}
     except (sqlite3.Error, ValueError, OSError):
         for field in ("incidents", "actions", "messages", "approvals", "outbox", "reports"):
             result[field] = []
