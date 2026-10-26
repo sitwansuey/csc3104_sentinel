@@ -21,6 +21,7 @@ from scripts.test_executor_live import Experiment, crash_worker, now, require, s
 from runtime.observer_pipeline import LocalCoordinatorSink, ObserverStore
 from runtime.verifier_pipeline import process_verifier_requests
 from services.verifier import inspect_dependencies
+from services.verifier_store import VerificationStore
 from services.executor_store import fingerprint
 from services.observer_kubernetes import CollectionError, KubernetesEvidenceCollector, KubectlReader
 
@@ -145,7 +146,6 @@ class BoutiqueExperiment(Experiment):
 
     def verification_samples(self, execution):
         """Collect protocol-native evidence; collection failures stay unknown."""
-        samples = []
         for index in range(3):
             before = self.deployment()
             sample = {"service": self.name, "protocol": "grpc", "dependencies": {},
@@ -176,29 +176,33 @@ class BoutiqueExperiment(Experiment):
                                       and before["spec"]["template"] == after["spec"]["template"]
                                       and status.get("observedGeneration", 0) >= metadata["generation"]),
             )
-            samples.append(sample)
             self.event(6, "status", "Role 6 collected shipping verification sample " + str(index + 1),
                        target=execution["target"], incident_id=execution["incident_id"], action_id=execution["action_id"])
             try:
                 self.observe("role6-" + execution["action_id"] + "-" + str(index))
             except CollectionError:
                 self.event(2, "error", "Dashboard observation unavailable during Role 6 measurement")
+            yield sample
             if index < 2:
                 time.sleep(5)
-        return samples
 
-    def complete_recovery(self, folder, proposal, execution):
+    def complete_recovery(self, folder, proposal, execution, *, clock=None):
         # Readiness waiting is bounded and never itself establishes recovery.
         self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=120s",
                      timeout=160, allow_failure=True)
 
         def collect(current):
-            samples = self.verification_samples(current)
-            save(folder / "post-health.json", samples)
-            return samples
+            return self.verification_samples(current)
 
-        outcomes = process_verifier_requests(self.store, self.bus, sample_reader=collect,
-                                             policy_reader=lambda current: self.policy)
+        ledger = VerificationStore(self.directory / "verifier.sqlite3")
+        try:
+            outcomes = process_verifier_requests(self.store, self.bus, ledger=ledger, sample_reader=collect,
+                                                 policy_reader=lambda current: self.policy, clock=clock)
+            job = ledger.get(execution["action_id"])
+            if job:
+                save(folder / "post-health.json", job["samples"])
+        finally:
+            ledger.close()
         require(len(outcomes) == 1 and outcomes[0]["action_id"] == proposal["action_id"],
                 "Expected one Role 6 outcome for the current recovery")
         outcome = outcomes[0]
