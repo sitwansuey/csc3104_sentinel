@@ -13,6 +13,8 @@ REPOSITORY = "sitwansuey/csc3104_sentinel"
 PROJECT = "PVT_kwDOE8Kj6M4Boi1V"
 STATUS_FIELD = "PVTSSF_lADOE8Kj6M4Boi1VzhnCctU"
 START_FIELD = "PVTF_lADOE8Kj6M4Boi1VzhnFVyc"
+AUTOMATION_FIELD = "PVTF_lADOE8Kj6M4Boi1VzhnOgw0"
+QUEUED = {"Todo": "f75ad846", "Backlog": "642d25f0"}
 IN_PROGRESS = "47fc9ee4"
 READY = "d648e700"
 BRANCH = re.compile(r"^(?:feat|feature|fix|bugfix|chore|docs|test|refactor)/(\d+)-[a-zA-Z0-9][a-zA-Z0-9._/-]*$")
@@ -39,9 +41,7 @@ def first_work_date(comparison):
     return None
 
 
-def desired_status(current, *, ready=False):
-    if ready:
-        return READY if current in {"Todo", "In Progress", "Ready To Merge"} else None
+def desired_status(current):
     return IN_PROGRESS if current == "Todo" else None
 
 
@@ -91,6 +91,9 @@ class GitHub:
                     start:fieldValueByName(name:"Start date") {
                       ... on ProjectV2ItemFieldDateValue { date }
                     }
+                    automation:fieldValueByName(name:"Automation state") {
+                      ... on ProjectV2ItemFieldTextValue { text }
+                    }
                   }
                   pageInfo { hasNextPage endCursor }
                 }
@@ -110,14 +113,70 @@ class GitHub:
         }''', project=PROJECT, item=item_id, field=field, value=value)
 
 
-def update_item(api, item, *, date=None, ready=False):
+def update_item(api, item, *, date=None):
     current = (item.get("status") or {}).get("name")
-    next_status = desired_status(current, ready=ready)
+    next_status = desired_status(current)
     if next_status:
         api.update(item["id"], STATUS_FIELD, {"singleSelectOptionId": next_status})
     # Preserve historical dates and leave intentionally queued/done work alone.
     if date and not item.get("start") and current in {"Todo", "In Progress", "Ready To Merge"}:
         api.update(item["id"], START_FIELD, {"date": date})
+
+
+def automation_state(item):
+    text = (item.get("automation") or {}).get("text")
+    if not text:
+        return {}
+    state = json.loads(text)
+    if (not isinstance(state, dict) or state.get("queued") not in QUEUED
+            or type(state.get("label_controlled")) is not bool
+            or (state["label_controlled"] and type(state.get("pr")) is not int)):
+        raise ValueError("Invalid Automation state; review the card before retrying")
+    return state
+
+
+def save_state(api, item, state):
+    if state != automation_state(item):
+        text = json.dumps(state, sort_keys=True)
+        api.update(item["id"], AUTOMATION_FIELD, {"text": text})
+        item["automation"] = {"text": text}
+
+
+def remember_queue(api, item):
+    """Capture queue state before a push moves Todo to In Progress."""
+    current = (item.get("status") or {}).get("name")
+    state = automation_state(item)
+    if current in QUEUED and not state.get("label_controlled"):
+        save_state(api, item, {"queued": current, "label_controlled": False})
+
+
+def update_label_item(api, item, pr_number, labels):
+    current = (item.get("status") or {}).get("name")
+    if current not in {*QUEUED, "In Progress", "Ready To Merge"}:
+        return
+    state = automation_state(item)
+    if state.get("label_controlled") and state["pr"] != pr_number:
+        print("Card is controlled by another PR; coordinate its labels before changing status")
+        return
+    # Explicit work-in-progress wins if the user accidentally leaves both labels.
+    target = IN_PROGRESS if "in progress" in labels else READY if "ready to merge" in labels else None
+    if target:
+        queued = current if current in QUEUED else state.get("queued", "Todo")
+        save_state(api, item, {"queued": queued, "label_controlled": True, "pr": pr_number})
+    elif state.get("label_controlled"):
+        target = QUEUED[state["queued"]]
+        current_id = {**QUEUED, "In Progress": IN_PROGRESS, "Ready To Merge": READY}[current]
+        if target != current_id:
+            api.update(item["id"], STATUS_FIELD, {"singleSelectOptionId": target})
+        # Clear control after restoration succeeds so a failed write can be retried.
+        save_state(api, item, {"queued": state["queued"], "label_controlled": False})
+        return
+    else:
+        # An unrelated/unlabelled PR never resets work started by a branch push.
+        return
+    current_id = {**QUEUED, "In Progress": IN_PROGRESS, "Ready To Merge": READY}[current]
+    if target != current_id:
+        api.update(item["id"], STATUS_FIELD, {"singleSelectOptionId": target})
 
 
 def handle_push(api, event):
@@ -142,6 +201,7 @@ def handle_push(api, event):
     if not item:
         print(f"Issue #{number} is not in the project; add it before tracking work")
         return
+    remember_queue(api, item)
     update_item(api, item, date=date)
     print(f"Processed pushed work for issue #{number}; existing dates and advanced statuses preserved")
     # A newer push event may replace a queued label event in the concurrency group.
@@ -165,10 +225,11 @@ def handle_pr(api, event):
         }
       }
     }''', number=number)["repository"]["pullRequest"]
-    if not pull or pull["state"] != "OPEN" or pull["isDraft"]:
+    if not pull or pull["state"] != "OPEN":
         return
-    if "ready to merge" not in {label["name"] for label in pull["labels"]["nodes"]}:
-        return
+    labels = {label["name"] for label in pull["labels"]["nodes"]}
+    if pull["isDraft"]:
+        labels.discard("ready to merge")
     if pull["closingIssuesReferences"]["pageInfo"]["hasNextPage"]:
         raise ValueError("PR has more than 100 closing issues; review its scope")
     issues = {issue["id"]: issue for issue in pull["closingIssuesReferences"]["nodes"]
@@ -181,8 +242,8 @@ def handle_pr(api, event):
     items = api.items()
     for node_id in [pull["id"], *issues]:
         if node_id in items:
-            update_item(api, items[node_id], ready=True)
-    print("Processed ready-to-merge label for existing project cards; no new PR cards created")
+            update_label_item(api, items[node_id], pr_number=event["pull_request"]["number"], labels=labels)
+    print("Reconciled current PR labels for existing project cards; no new PR cards created")
 
 
 def main():
