@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import re
 from copy import deepcopy
 from pathlib import Path
 import unittest
@@ -237,6 +238,28 @@ class ProjectStatusTests(unittest.TestCase):
         api = self.label_api(item)
         automation.update_label_item(api, item, 31, set())
         self.assertEqual(item["status"]["name"], "Backlog")
+
+    def test_converted_to_draft_event_restores_queue_instead_of_staying_ready(self):
+        # Exercise the handler through an event the workflow actually subscribes to.
+        workflow = (Path(__file__).resolve().parents[1] /
+                    ".github/workflows/project-status.yml").read_text(encoding="utf-8")
+        subscribed = re.search(r"pull_request_target:\s*\n\s*types:\s*\[([^]]+)\]", workflow)
+        self.assertIsNotNone(subscribed)
+        self.assertIn("converted_to_draft", {part.strip() for part in subscribed[1].split(",")})
+        for queued in ("Todo", "Backlog"):
+            with self.subTest(queued=queued):
+                item = {"id": "item", "status": {"name": "Ready To Merge"},
+                        "start": {"date": "2026-10-24"},
+                        "automation": {"text": json.dumps(
+                            {"queued": queued, "label_controlled": True, "pr": 31})}}
+                api = self.label_api(item)
+                api.graphql.return_value = {"repository": {"pullRequest": self.pull(isDraft=True)}}
+                api.issue.return_value = None
+                api.items.return_value = {"issue": item}
+                automation.handle_pr(api, {"action": "converted_to_draft", "pull_request": {"number": 31}})
+                self.assertEqual(item["status"]["name"], queued)
+                self.assertFalse(automation.automation_state(item)["label_controlled"])
+                self.assertEqual(item["start"]["date"], "2026-10-24")
 
     def test_invalid_saved_queue_fails_instead_of_guessing(self):
         item = {"id": "item", "status": {"name": "In Progress"},

@@ -31,6 +31,10 @@
 | Neither, after this automation managed a label | Restore saved Todo or Backlog |
 | Neither, without previous label tracking | Leave the card unchanged |
 
+Converting a PR back to draft also reconciles its labels immediately: a remaining
+**in progress** label keeps it In Progress; a **ready to merge** label alone no
+longer marks it ready and restores its saved queue. Existing Start dates remain.
+
 Removing one label follows the remaining label. Removing the final status label
 restores each card's own previous queue. The **Automation state** text field
 stores that queue and controlling PR before a label changes the status. A push
