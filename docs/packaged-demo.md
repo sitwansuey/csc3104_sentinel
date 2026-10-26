@@ -24,8 +24,20 @@ Open `http://127.0.0.1:8765`, or the URL printed by the script. Once healthy quo
 measurements and the baseline are captured, press Enter in the main terminal to
 inject the first bad PORT rollout. Watch the UI's Kubernetes, Monitoring,
 Coordinator, Recovery Guard and Executor views. Press Enter at the second prompt
-for the real post-write worker-crash experiment. The test suite runs actual
-refusal, concurrency, duplicate and crash/reconciliation checks.
+for the real post-write worker-crash experiment. After that recovery, press
+Enter at the **third and final prompt** to inject a false recovery recommendation
+against the healthy service. Guard rejects the redundant rollback with
+`ROLLBACK_ALREADY_AT_BASELINE`, despite valid approval, and the Executor makes
+zero repair patch attempts. This final scenario does not crash the pod again.
+
+The default sequence finishes with **two `RECOVERED` incidents and one
+`REJECTED` false-alarm incident**. The test suite also runs actual refusal,
+concurrency, duplicate and crash/reconciliation checks. For the final scenario's
+explanation and evidence, see [the Guard rejection demo](guard-rejection-demo.md).
+
+Rebuild the runner after updating this source. An already-built image retains
+the earlier sequence; do not use `-SkipBuild` or `-Offline` until the updated
+image has been built and rehearsed.
 
 After successful checks the UI stays live for inspection. Press Ctrl+C in the
 main terminal after the demo; normal cleanup stops the UI/collector and removes
@@ -44,6 +56,7 @@ Useful options:
 | `-SkipBuild` | Use the existing runner image deliberately; rebuild after source changes |
 | `-Offline` | Skip build and registry pulls; require all four images already cached locally |
 | `-Port 8766` | Publish the UI at a different host loopback port |
+| `-GuardRejection` | Run only the final false-alarm/unnecessary-rollback rejection scenario, with one injection prompt |
 | `-KeepCluster` | Retain Kubernetes after the runner stops; temporary administrator credentials are still removed |
 
 Existing resources with the reserved names are refused at startup. Inspect them
@@ -165,6 +178,8 @@ It does not claim AI planning, automatic dependency discovery or cloud readiness
 On 26 October 2026 (Singapore time), the runner image was built on Windows
 Docker Desktop using Linux/amd64 containers. The image ID recorded by the runs
 was `sha256:6280244e5093ec49789cf56a1aa89b014e8bbb1f7a45444d24ecea51173ee6b8`.
+These historical results predate the third, rejection-only scenario; the two
+recorded Enter prompts do not validate the current three-prompt sequence.
 
 | Check | Recorded outcome |
 | --- | --- |
@@ -199,5 +214,6 @@ Rebuild the runner from the updated source to include Role 6; loading an older
 image does not update it. The new runner calls the actual dependency evaluator,
 collects protocol-native gRPC evidence, consumes verifier.request and publishes
 formal outcomes. Successful current-source runs finish with two RECOVERED
-incidents. Historical image results above remain unchanged. See
+incidents followed by one REJECTED false-alarm incident from the final Guard
+necessity check. Historical image results above remain unchanged. See
 [current-system-demo.md](current-system-demo.md) for the full flowchart.

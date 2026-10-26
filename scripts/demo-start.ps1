@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$SkipBuild, [switch]$Offline, [switch]$Unattended,
+param([switch]$SkipBuild, [switch]$Offline, [switch]$Unattended, [switch]$GuardRejection,
       [switch]$KeepCluster, [ValidateRange(1024,65535)][int]$Port = 8765)
 
 $ErrorActionPreference = 'Stop'
@@ -84,6 +84,7 @@ try {
     if (-not $Unattended) { $runOptions += '-it' }
     $runOptions += @($PackagedImage,'--prepared-environment','/bootstrap/environment.json','--run-dir','/data/evidence',
         '--dashboard','--dashboard-bind','0.0.0.0','--dashboard-port','8765')
+    if ($GuardRejection) { $runOptions += '--guard-rejection' }
     if ($Unattended) { $runOptions += '--exit-after-test' } else { $runOptions += '--pause-before-injection' }
     & $DemoDocker @runOptions
     $resultCode = $LASTEXITCODE

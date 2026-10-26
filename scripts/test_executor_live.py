@@ -284,14 +284,14 @@ class Experiment:
         self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=120s", timeout=160)
         save(folder / "post-health.json", self.health_window(self.baseline["pod_template"]))
 
-    def case(self, label, incident, *, coordinator=False, approval=True):
+    def case(self, label, incident, *, coordinator=False, approval=True, rationale=None):
         folder = self.directory / label
         folder.mkdir()
         proposal = {"schema_version": "1.0", "kind": "proposal", "incident_id": incident["incident_id"],
                     "action_id": "ACT-LIVE-" + uuid4().hex, "target": self.target, "action": "ROLLBACK",
                     "parameters": {"baseline_id": self.baseline["baseline_id"], "template_sha256": self.baseline["template_sha256"]},
                     "based_on_resource_version": self.deployment()["metadata"]["resourceVersion"],
-                    "rationale": "Operator-authored live lab proposal: restore measured healthy template",
+                    "rationale": rationale or "Operator-authored live lab proposal: restore measured healthy template",
                     "evidence_refs": [incident["incident_id"], self.baseline["health_evidence"]["evidence_id"]]}
         dependencies = self.dependency_result(proposal)
         record = {"action_id": proposal["action_id"], "proposal_sha256": proposal_fingerprint(proposal),
@@ -440,6 +440,9 @@ class Experiment:
             adapters.ledger.close()
         self.complete_recovery(folder, proposal, results[0])
 
+    def after_recovery_scenarios(self):
+        """Run optional workload-specific checks before credentials are removed."""
+
     def run(self):
         try:
             self.prepare()
@@ -449,6 +452,7 @@ class Experiment:
             self.conditional_race(incident)
             self.positive(incident)
             self.crash_restart()
+            self.after_recovery_scenarios()
             save(self.directory / "final-deployment.json", self.deployment())
             self.summary["status"] = "PASS"
         except BaseException as exc:

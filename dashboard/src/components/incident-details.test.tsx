@@ -40,7 +40,8 @@ describe("incident detail workspace", () => {
     expect(screen.queryByText("Restore the observed healthy template")).not.toBeInTheDocument()
     expect(screen.queryByText("Synthetic execution result")).not.toBeInTheDocument()
     expect(screen.queryByText("BASELINE_HEALTH_STATUS")).not.toBeInTheDocument()
-    expect(screen.getByText(/No post-execution verification for the selected action/)).toBeInTheDocument()
+    expect(screen.getByText(/No post-repair verification required/)).toBeInTheDocument()
+    expect(screen.getByText(/No execution scheduled: the Guard rejected this proposal/)).toBeInTheDocument()
   })
 
   it("retains an inspected action across refresh and resets to the next incident's active action", async () => {
@@ -59,6 +60,28 @@ describe("incident detail workspace", () => {
     view.rerender(<IncidentDetails snapshot={refreshed} incidentId="INC-NEW" open onOpenChange={vi.fn()} />)
     expect(screen.getByText("New incident proposal")).toBeInTheDocument()
     expect(screen.queryByText("Proposal for ACT-002")).not.toBeInTheDocument()
+  })
+
+  it("shows rejection evidence without borrowing an earlier action's execution or claiming current health", () => {
+    const data = fixture()
+    addAction(data)
+    data.incidents[0].active_action_id = "ACT-002"
+    data.incidents[0].state = "REJECTED"
+    data.messages.find(record => record.message.kind === "incident")!.message.signals = [{ reason: "InjectedFalseAlarm", source: "demo_harness",
+      detail: "Injected false alarm to test a redundant rollback proposal.", at: data.generated_at }]
+    const evidence = { sequence: 20, at: data.generated_at, component: 5, event_type: "status", target: data.incidents[0].target,
+      incident_id: "INC-001", action_id: "ACT-002", summary: "Executor refused the rejected action: zero patch attempts.", metrics: {} }
+    data.telemetry.push(evidence, { ...evidence, sequence: 21, action_id: "ACT-001", summary: "FOREIGN_EXECUTOR_EVIDENCE" })
+    details(data)
+    expect(screen.getByText("BLOCKED")).toBeInTheDocument()
+    expect(screen.getByText("NOT REQUIRED")).toBeInTheDocument()
+    expect(screen.getByText(/No execution scheduled: the Guard rejected this proposal/)).toBeInTheDocument()
+    expect(screen.getByText(evidence.summary)).toBeInTheDocument()
+    expect(screen.queryByText("FOREIGN_EXECUTOR_EVIDENCE")).not.toBeInTheDocument()
+    expect(screen.queryByText("Synthetic execution result")).not.toBeInTheDocument()
+    expect(screen.queryByText(/No post-execution verification for the selected action/)).not.toBeInTheDocument()
+    expect(screen.getByText("False alarm submitted")).toBeInTheDocument()
+    expect(screen.queryByText("Failure detected")).not.toBeInTheDocument()
   })
 
   it("uses database sequence and explicitly labels missing producer timestamps", () => {

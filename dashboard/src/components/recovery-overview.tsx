@@ -45,6 +45,7 @@ export function RecoveryOverview({ data, snapshot, range, now, transportStale, n
     .sort((a, b) => a.sequence - b.sequence)
   const latest = (kind: string) => messages.filter(r => r.message.kind === kind).at(-1)?.message
   const detection = latest("incident")
+  const injectedFalseAlarm = detection?.signals?.some(signal => signal.reason === "InjectedFalseAlarm" && signal.source === "demo_harness")
   const proposal = latest("proposal") || action?.proposal
   const bound = (m?: WireMessage | null) => m && action && m.action_id === action.action_id &&
     m.incident_id === incident?.incident_id && identity(m.target) === identity(incident?.target) ? m : undefined
@@ -52,6 +53,18 @@ export function RecoveryOverview({ data, snapshot, range, now, transportStale, n
   const execution = latest("execution_result") || bound(action?.execution_result)
   const dependencies = latest("dependency_result")
   const outcome = latest("outcome")
+  const rejectedWithoutExecution = guard?.verdict === "REJECT" && !execution
+  const redundantRollback = guard?.reason_codes?.includes("ROLLBACK_ALREADY_AT_BASELINE")
+  const report = guard?.checked_at && guard.proposal_sha256 && guard.inputs_sha256
+    ? snapshot.reports.find(r => r.action_id === action?.action_id && r.checked_at === guard.checked_at &&
+      r.proposal_sha256 === guard.proposal_sha256 && r.inputs_sha256 === guard.inputs_sha256) : undefined
+  const rejectionReason = report?.checks.find(check => guard?.reason_codes?.includes(check.code))?.message ||
+    (redundantRollback ? "The live pod template already matches the healthy baseline. This rollback would not change its configuration." :
+      guard?.reason_codes?.join(" / ") || "The proposal did not pass the Guard's safety checks.")
+  const executorEvidence = rejectedWithoutExecution ? [...data.telemetry].filter(e =>
+    e.component === 5 && e.event_type === "status" && e.incident_id === incident?.incident_id &&
+    e.action_id === action?.action_id && identity(e.target) === identity(incident?.target))
+    .sort((a, b) => b.sequence - a.sequence)[0] : undefined
   const observations = data.telemetry.filter(e => e.event_type === "observation" && e.target)
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
   const target = incident?.target || observations[0]?.target
@@ -76,7 +89,7 @@ export function RecoveryOverview({ data, snapshot, range, now, transportStale, n
   const harnessProposal = /operator-authored|harness/i.test(proposal?.rationale || "")
   const stages: { label: string; role: string; view: View; icon: typeof Activity; value: ReactNode; detail: string }[] = [
     { label: "Detect", role: "Role 2", view: "monitoring", icon: Activity,
-      value: <Status value={detection ? "RECORDED" : "WAITING"}/>, detail: "Observer evidence" },
+      value: <Status value={detection ? "RECORDED" : "WAITING"}/>, detail: injectedFalseAlarm ? "Harness false alarm" : "Observer evidence" },
     { label: "Propose", role: "Role 3", view: "planner", icon: Sparkles,
       value: <Status value={proposal ? "RECORDED" : "WAITING"}/>, detail: harnessProposal ? "Harness proposal" : "Submitted proposal" },
     { label: "Dependencies", role: "Role 6", view: "verification", icon: GitBranch,
@@ -84,9 +97,9 @@ export function RecoveryOverview({ data, snapshot, range, now, transportStale, n
     { label: "Authorize", role: "Role 4", view: "guard", icon: ShieldCheck,
       value: guard ? <GuardDecisionStatus decision={guard} demo={demo} transportStale={transportStale} now={now}/> : <Status value="WAITING"/>, detail: "Policy and approval" },
     { label: "Execute", role: "Role 5", view: "executor", icon: Terminal,
-      value: <Status value={execution?.status || "WAITING"}/>, detail: "Restricted repair" },
+      value: <Status value={execution?.status || (rejectedWithoutExecution ? "BLOCKED" : "WAITING")}/>, detail: rejectedWithoutExecution ? "Guard refused this proposal" : "Restricted repair" },
     { label: "Verify", role: "Role 6", view: "verification", icon: CheckCheck,
-      value: <Status value={outcome?.status || "WAITING"}/>, detail: "Measured recovery outcome" },
+      value: <Status value={outcome?.status || (rejectedWithoutExecution ? "NOT REQUIRED" : "WAITING")}/>, detail: rejectedWithoutExecution ? "No repair scheduled" : "Measured recovery outcome" },
   ]
   const checks = outcome?.checks || []
   const signals = detection?.signals || []
@@ -99,7 +112,7 @@ export function RecoveryOverview({ data, snapshot, range, now, transportStale, n
       <CardContent className="p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">{unresolved ? "Incident needs attention" : incident ? "Latest recorded recovery" : "Watching for incidents"}</p>
+            <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">{rejectedWithoutExecution ? "Latest rejected proposal" : unresolved ? "Incident needs attention" : incident ? "Latest recorded recovery" : "Watching for incidents"}</p>
             <h2 className="mt-2 break-words text-xl font-semibold tracking-tight sm:text-2xl">{target?.name || "Waiting for service telemetry"}</h2>
             <p className="mt-1 break-all text-xs text-muted-foreground">{target ? `${target.cluster_id} / ${target.namespace}` : "Select a cluster or connect an Observer."}</p>
           </div>
@@ -107,10 +120,16 @@ export function RecoveryOverview({ data, snapshot, range, now, transportStale, n
             {incident && <><Status value={incident.state}/><Button variant="outline" size="sm" onClick={() => inspect(incident.incident_id)} aria-label={`Inspect focused incident ${incident.incident_id}`}><Search className="size-3.5"/>Inspect incident</Button></>}
           </div>
         </div>
+        {rejectedWithoutExecution && <section aria-label="Guard rejection explanation" className="mt-5 space-y-2 rounded-lg border border-border/70 bg-muted/20 p-4">
+          <h3 className="text-sm font-medium">{redundantRollback ? "Guard rejected an unnecessary rollback" : "Guard rejected the proposal"}</h3>
+          <p className="text-xs leading-relaxed text-muted-foreground">{rejectionReason}</p>
+          <p className="text-xs font-medium">No execution scheduled for this proposal. No cluster modification was authorized.</p>
+          {executorEvidence && <div className="border-t border-border/60 pt-2"><p className="text-[10px] font-medium text-muted-foreground">Recorded Executor evidence</p><p className="mt-1 text-xs leading-relaxed">{executorEvidence.summary}</p></div>}
+        </section>}
         <div className="mt-5 grid gap-4 border-t border-border/60 pt-4 sm:grid-cols-3">
           <div><p className="text-[11px] text-muted-foreground">Observed replicas</p><p className="mt-1 flex flex-wrap items-center gap-2 text-lg font-medium">{ready}<Status value={demo && observation ? "PLAYBACK" : readiness}/></p><p className="mt-1 text-[10px] text-muted-foreground">{observation ? `Observed ${time(observation.at)}${!recent ? " / historical sample" : ""}` : "No readiness evidence received"}</p></div>
           <div><p className="text-[11px] text-muted-foreground">Recovery record</p><p className="mt-1 break-all font-mono text-xs leading-7">{incident?.incident_id || "No incident recorded"}</p><p className="mt-1 text-[10px] text-muted-foreground">{incidents.filter(i => i.state === "RECOVERED").length} verified / {incidents.length} incidents in current filters</p></div>
-          <div><p className="text-[11px] text-muted-foreground">Verification evidence</p><div className="mt-2"><Status value={outcome?.status || "AWAITING OUTCOME"}/></div><p className="mt-2 text-[10px] text-muted-foreground">{outcome ? `Recorded ${time(outcome.window_end)} / not a current probe` : "An applied repair still needs a Verifier outcome."}</p></div>
+          <div><p className="text-[11px] text-muted-foreground">Verification evidence</p><div className="mt-2"><Status value={outcome?.status || (rejectedWithoutExecution ? "NOT REQUIRED" : "AWAITING OUTCOME")}/></div><p className="mt-2 text-[10px] text-muted-foreground">{outcome ? `Recorded ${time(outcome.window_end)} / not a current probe` : rejectedWithoutExecution ? "The proposal was rejected before execution; no recovery outcome is expected." : "An applied repair still needs a Verifier outcome."}</p></div>
         </div>
       </CardContent>
     </Card>
@@ -133,7 +152,7 @@ export function RecoveryOverview({ data, snapshot, range, now, transportStale, n
           <ul className="space-y-2.5">{checks.map((check, i) => <li key={`${check.name}-${i}`} className="flex items-start justify-between gap-3 text-xs"><span title={check.detail} className="min-w-0 leading-relaxed">{checkNames[check.name] || check.name}</span><Status value={check.passed ? "PASS" : "FAIL"}/></li>)}</ul>
           <p className="border-t border-border/60 pt-3 text-[10px] leading-relaxed text-muted-foreground">{Number.isFinite(elapsedWindow) ? `${elapsedWindow.toFixed(1)}s recorded observation window. ` : ""}Recorded outcomes do not establish current service health.</p>
           <Button variant="outline" size="sm" onClick={() => navigate("verification")}>View verification evidence<ArrowRight className="size-3"/></Button>
-        </CardContent> : <Empty title="Recovery is not verified yet" detail={execution ? "Execution has a result. Waiting for the Verifier's post-action outcome." : "Checks appear after an execution result and a measured health window."}/>}
+        </CardContent> : rejectedWithoutExecution ? <Empty title="No post-repair verification required" detail="The Guard rejected this proposal and no execution was scheduled. Observed replicas remain a separate health signal."/> : <Empty title="Recovery is not verified yet" detail={execution ? "Execution has a result. Waiting for the Verifier's post-action outcome." : "Checks appear after an execution result and a measured health window."}/>}
       </Panel>
     </div>
 
@@ -141,11 +160,11 @@ export function RecoveryOverview({ data, snapshot, range, now, transportStale, n
       <Panel title="Incident timeline" description="Focused incident and active action / Coordinator record order">
         {!messages.length ? <Empty title="Waiting for recovery records" detail="Faults, detection and recovery milestones appear as producers publish evidence."/> : <ol className="divide-y divide-border/50 px-5">
           {fault && <li className="flex gap-4 py-3"><span className="mt-1.5 size-2 shrink-0 rounded-full bg-rose-400"/><div className="min-w-0 flex-1"><p className="text-xs font-medium">Fault marker recorded</p><p className="mt-1 line-clamp-3 break-words text-[11px] leading-relaxed text-muted-foreground">{fault.summary}</p></div><time className="shrink-0 font-mono text-[10px] text-muted-foreground">{time(fault.at)}</time></li>}
-          {messages.map(({ sequence, message: m }) => <li key={sequence} className="flex gap-4 py-3"><span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary/70"/><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-xs font-medium">{names[m.kind] || m.kind}</p>{m.kind === "guard_result" ? <GuardDecisionStatus decision={m} demo={demo} transportStale={transportStale} now={now}/> : <Status value={m.verdict || m.status || m.action || "RECORDED"}/>}</div><p className="mt-1 line-clamp-3 break-words text-[11px] leading-relaxed text-muted-foreground">{m.rationale || m.details || m.reason_codes?.join(" / ") || (m.kind === "incident" ? m.signals?.[0]?.detail : "") || targetLabel(m.target)}</p></div><time className="shrink-0 font-mono text-[10px] text-muted-foreground">{time(stamp(m))}</time></li>)}
+          {messages.map(({ sequence, message: m }) => <li key={sequence} className="flex gap-4 py-3"><span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary/70"/><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-xs font-medium">{m.kind === "incident" && injectedFalseAlarm ? "False alarm submitted" : names[m.kind] || m.kind}</p>{m.kind === "guard_result" ? <GuardDecisionStatus decision={m} demo={demo} transportStale={transportStale} now={now}/> : <Status value={m.verdict || m.status || m.action || "RECORDED"}/>}</div><p className="mt-1 line-clamp-3 break-words text-[11px] leading-relaxed text-muted-foreground">{m.rationale || m.details || m.reason_codes?.join(" / ") || (m.kind === "incident" ? m.signals?.[0]?.detail : "") || targetLabel(m.target)}</p></div><time className="shrink-0 font-mono text-[10px] text-muted-foreground">{time(stamp(m))}</time></li>)}
         </ol>}
       </Panel>
       <div className="min-w-0 space-y-5">
-        <Panel title="Failure evidence" description="Selected detection signals / full records in incident details">
+        <Panel title={injectedFalseAlarm ? "Injected false alarm evidence" : "Failure evidence"} description="Selected detection signals / full records in incident details">
           {signals.length ? <CardContent className="space-y-4 p-5">{signals.slice(0, 3).map((signal, i) => <div key={i}><p className="text-xs font-medium">{signal.reason}</p><p className="mt-1 line-clamp-3 break-words text-[11px] leading-relaxed text-muted-foreground">{signal.detail}</p><p className="mt-1 text-[10px] text-muted-foreground">{signal.source}</p></div>)}{incident && <Button variant="outline" size="sm" onClick={() => inspect(incident.incident_id)}>Inspect full incident evidence<ArrowRight className="size-3"/></Button>}</CardContent> : <Empty title="No failure evidence in focus"/>}
         </Panel>
         <div className="rounded-xl border border-border/70 px-5 py-4"><p className="text-xs font-medium">Detailed workspace</p><p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">Use the sidebar for Kubernetes resources, detection evidence, approvals and the execution journal's reported results.</p><div className="mt-3 flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => navigate("coordinator")}>All incidents</Button><Button variant="outline" size="sm" onClick={() => navigate("cluster")}>Kubernetes</Button><Button variant="outline" size="sm" onClick={() => navigate("monitoring")}>Monitoring</Button></div></div>

@@ -200,6 +200,16 @@ below describes the older operator-run experiment and its menu separately.
 
 ## Current implementation
 
+The default Boutique injection sequence now ends with a Guard refusal
+demonstration: normal rollback, executor-crash/reconciliation recovery, then an
+explicitly labelled false recovery recommendation against the healthy
+shippingservice. The last scenario rejects a redundant rollback with zero Executor
+repair patch attempts; it does not crash the pod again. The default interactive
+run has three Enter prompts and ends with two `RECOVERED` incidents and one
+`REJECTED` incident. Rebuild the packaged runner to include the new sequence.
+For only the final scenario, run `scripts\start-guard-rejection.bat` or use
+`-GuardRejection`. See [the Guard rejection demo](docs/guard-rejection-demo.md).
+
 For an opt-in experiment using the real Online Boutique shipping service, see
 [the single-service Boutique guide](docs/boutique-live.md). It reuses the Guard
 and restricted Executor with harness-authored proposals. Role 6 now evaluates

@@ -11,6 +11,24 @@ function show(snapshot: Snapshot, transportStale = false) {
     range="all" now={Date.now()} transportStale={transportStale} navigate={vi.fn()} inspect={vi.fn()}/></TooltipProvider>)
 }
 
+function rejectedProposal() {
+  const s = fixture()
+  s.incidents[0].state = "REJECTED"
+  s.actions[0].state = "REJECTED"
+  s.actions[0].execution_result = null
+  s.messages = s.messages.filter(r => !["execution_result", "outcome"].includes(r.message.kind))
+  const guard = s.actions[0].guard_result!
+  guard.verdict = "REJECT"
+  guard.reason_codes = ["ROLLBACK_ALREADY_AT_BASELINE"]
+  s.outbox = []
+  s.reports[0].checks = [{ code: "ROLLBACK_ALREADY_AT_BASELINE", status: "FAIL", path: "live.template",
+    message: "Recorded finding: live configuration already equals the approved baseline.", actual: "same", expected: "different" }]
+  const detection = s.messages.find(r => r.message.kind === "incident")!.message
+  detection.signals = [{ reason: "InjectedFalseAlarm", source: "demo_harness",
+    detail: "Injected false alarm: healthy configuration; test a redundant rollback.", at: s.generated_at }]
+  return s
+}
+
 describe("focused recovery Overview", () => {
   it("shows real outcome checks and keeps resource usage off the Overview", () => {
     show(fixture())
@@ -19,6 +37,60 @@ describe("focused recovery Overview", () => {
     expect(screen.getByText("Deployment readiness")).toBeInTheDocument()
     expect(screen.queryByText("Resource utilization")).not.toBeInTheDocument()
     expect(screen.queryByText("CPU usage")).not.toBeInTheDocument()
+    const pipeline = screen.getByRole("region", { name: "Focused recovery pipeline" })
+    expect(within(within(pipeline).getByRole("button", { name: "View Execute details" })).getByText("APPLIED")).toBeInTheDocument()
+    expect(within(within(pipeline).getByRole("button", { name: "View Verify details" })).getByText("RECOVERED")).toBeInTheDocument()
+    expect(screen.queryByText("No post-repair verification required")).not.toBeInTheDocument()
+  })
+
+  it("explains a rejected false alarm without implying a repair or pending verification", () => {
+    const s = rejectedProposal()
+    s.telemetry = []
+    show(s)
+    expect(screen.getByText("Latest rejected proposal")).toBeInTheDocument()
+    expect(screen.getByText("Guard rejected an unnecessary rollback")).toBeInTheDocument()
+    expect(screen.getByText("Recorded finding: live configuration already equals the approved baseline.")).toBeInTheDocument()
+    expect(screen.getByText(/No execution scheduled for this proposal/)).toBeInTheDocument()
+    expect(screen.getByText("No post-repair verification required")).toBeInTheDocument()
+    expect(screen.queryByText("Recovery is not verified yet")).not.toBeInTheDocument()
+    expect(screen.getByText("False alarm submitted")).toBeInTheDocument()
+    expect(screen.queryByText("Failure detected")).not.toBeInTheDocument()
+    expect(screen.getByText("No observations")).toBeInTheDocument()
+    expect(screen.queryByText("Ready", { exact: true })).not.toBeInTheDocument()
+    expect(screen.queryByText(/zero patch attempts/i)).not.toBeInTheDocument()
+    const pipeline = screen.getByRole("region", { name: "Focused recovery pipeline" })
+    expect(within(within(pipeline).getByRole("button", { name: "View Execute details" })).getByText("BLOCKED")).toBeInTheDocument()
+    expect(within(within(pipeline).getByRole("button", { name: "View Verify details" })).getByText("NOT REQUIRED")).toBeInTheDocument()
+  })
+
+  it.each(["checked_at", "proposal_sha256", "inputs_sha256"] as const)("uses the reason-code explanation when a detailed finding has mismatching %s", field => {
+    const s = rejectedProposal()
+    s.reports[0][field] = "wrong decision binding"
+    show(s)
+    expect(screen.queryByText("Recorded finding: live configuration already equals the approved baseline.")).not.toBeInTheDocument()
+    expect(screen.getByText(/live pod template already matches the healthy baseline/)).toBeInTheDocument()
+  })
+
+  it("shows zero-write evidence only from an Executor event bound to the focused incident, action and target", () => {
+    const s = rejectedProposal()
+    const evidence = { sequence: 20, at: s.generated_at, component: 5, event_type: "status", summary: "Independent Executor test: zero patch attempts; generation and Pod UIDs unchanged.",
+      target: s.incidents[0].target, incident_id: s.incidents[0].incident_id, action_id: s.actions[0].action_id, metrics: {} }
+    s.telemetry.push(evidence, { ...evidence, sequence: 21, action_id: "OTHER", summary: "FOREIGN_ACTION_EVIDENCE" },
+      { ...evidence, sequence: 22, incident_id: "OTHER", summary: "FOREIGN_INCIDENT_EVIDENCE" },
+      { ...evidence, sequence: 23, target: { ...evidence.target, uid: "OTHER" }, summary: "FOREIGN_TARGET_EVIDENCE" })
+    show(s)
+    expect(screen.getByText(evidence.summary)).toBeInTheDocument()
+    expect(screen.queryByText(/FOREIGN_.*_EVIDENCE/)).not.toBeInTheDocument()
+  })
+
+  it("preserves recorded execution and verification when a rejection is also present", () => {
+    const s = fixture()
+    s.actions[0].guard_result!.verdict = "REJECT"
+    show(s)
+    expect(screen.getByText("Application response and replicas")).toBeInTheDocument()
+    expect(screen.queryByText(/No execution scheduled for this proposal/)).not.toBeInTheDocument()
+    const pipeline = screen.getByRole("region", { name: "Focused recovery pipeline" })
+    expect(within(within(pipeline).getByRole("button", { name: "View Execute details" })).getByText("APPLIED")).toBeInTheDocument()
   })
 
   it("prioritizes an unresolved incident without borrowing the previous recovery", () => {
