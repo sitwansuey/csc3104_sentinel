@@ -3,7 +3,11 @@
 Issue #20 connects the offline algorithms from #9 to Coordinator's existing
 `verifier.request` commands. `runtime/verifier_pipeline.py` is composition code,
 following the existing Guard/Executor local-worker pattern. It never writes to
-Kubernetes. Live health/trace adapters remain #21.
+Kubernetes. Live health/trace adapters are documented in [verifier-live.md](verifier-live.md).
+The shared entrypoint selects durable mode when given a `VerificationStore`
+through its `ledger` argument, delegating to `runtime/verifier_durable.py`.
+Legacy complete-window callers without a ledger retain their original one-shot
+behavior; the live CLI and Boutique integration explicitly use durable mode.
 
 ## Demonstration
 
@@ -38,7 +42,8 @@ health evidence. Optional full target identity must match. Missing readings are
 For controlled fixture replay only, `--now 2026-10-10T12:01:10Z` freezes the clock.
 Reports explicitly say `mode: offline_file`. Do not call this live collection or
 use an untrusted file as evidence of real recovery. A scheduler can repeat the
-bounded command; this increment does not add a daemon, broker or HTTP API.
+bounded command. The [live CLI](verifier-live.md) also supports a polling loop;
+no broker, distributed transport or authenticated HTTP API is added.
 
 ## Persistence and failure semantics
 
@@ -47,11 +52,14 @@ bounded command; this increment does not add a daemon, broker or HTTP API.
 - The first intake freezes policy and deadline. Policy changes need explicit owner
   reconciliation; they do not silently rewrite an active verification window.
 - `health.verification_timeout_seconds` optionally sets a positive timeout at least
-  as long as `stable_window_seconds`. By default it is `stable_window_seconds +
+  as long as `stable_window_seconds` and at most one day. By default it is `stable_window_seconds +
   minimum_samples * max_sample_gap_seconds`, or 65 seconds for the sample policy.
 - Readings persist across restarts. Exact replays are deduplicated by measurement
   time; changed content at that time is an error. Stored delivery may arrive out
   of order and is sorted by validated measurement time before verification.
+- A reader may return a list or an incremental iterator. Each yielded reading
+  commits before requesting the next one. A process interruption midway through
+  a gRPC window therefore preserves its earlier observations.
 - Valid unhealthy evidence freezes `NOT_RECOVERED`. Complete healthy evidence
   freezes `RECOVERED`. Incomplete evidence keeps monitoring pending until the
   deadline, then freezes `UNKNOWN`. Late collection cannot extend that deadline.
