@@ -1,5 +1,15 @@
 # Buddy 2: connected telemetry
 
+## Review-branch validation, 26 October 2026
+
+Rebased onto the current main through the original teammate-authored telemetry
+commit, preserving authorship. All **670 Python tests** passed. A fresh live run
+at `runs/observer-otel-20261026T114347Z-0ba41d` passed real connected SDK metrics,
+traces and logs, read-only RBAC, metric-only incidents with ready Pods, PVC-backed
+restart without duplicate delivery and healthy telemetry restoration. Its
+`summary.json` confirms the dedicated cluster was removed. This new run validates
+the review branch; the older measured evidence below remains historical.
+
 The Observer can now join Kubernetes evidence with real OpenTelemetry traces,
 metrics and logs for several explicitly configured Deployments. The receiver,
 multi-target worker, durable incident context and connected validation lab are
