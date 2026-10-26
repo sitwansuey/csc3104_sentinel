@@ -84,6 +84,19 @@ def loaded_image_digest(inspection, listing):
 
 
 class Experiment:
+    # The experiment supplies workload configuration; production adapters stay generic.
+    context = CONTEXT
+    namespace = NAMESPACE
+    name = NAME
+    cluster_id = "sentinel-lab"
+    restricted_context = RESTRICTED_CONTEXT
+    entrypoint = Path(__file__).resolve()
+    health_source = "sentinel-live-lab-http"
+    health_description = "HTTP and replica health"
+    allowed_registries = ["docker.io"]
+    service_account = "default"
+    rbac_path = ROOT / "infra/executor-rbac.yaml"
+
     def __init__(self, directory):
         self.directory = Path(directory).resolve()
         self.directory.mkdir(parents=True, exist_ok=False)
@@ -97,8 +110,8 @@ class Experiment:
         self.bus = LocalEventBus()
 
     def kubectl(self, *arguments, restricted=False, timeout=40, allow_failure=False):
-        command = ["kubectl", "--context=" + (RESTRICTED_CONTEXT if restricted else CONTEXT),
-                   "--namespace=" + NAMESPACE, f"--request-timeout={max(10, timeout - 5)}s"]
+        command = ["kubectl", "--context=" + (self.restricted_context if restricted else self.context),
+                   "--namespace=" + self.namespace, f"--request-timeout={max(10, timeout - 5)}s"]
         if restricted:
             command.append("--kubeconfig=" + str(self.credentials))
         result = subprocess.run(command + list(arguments), capture_output=True,
@@ -108,15 +121,15 @@ class Experiment:
         return result
 
     def deployment(self):
-        return json.loads(self.kubectl("get", "deployment", NAME, "-o", "json").stdout)
+        return json.loads(self.kubectl("get", "deployment", self.name, "-o", "json").stdout)
 
     def check(self, name, **details):
         self.summary["checks"].append({"name": name, "passed": True, "at": utc(), **details})
         print("PASS: " + name, flush=True)
 
-    def prepare(self):
+    def prepare_image(self):
         deployment = self.deployment()
-        require(deployment["metadata"]["name"] == NAME, "Unexpected lab Deployment")
+        require(deployment["metadata"]["name"] == self.name, "Unexpected lab Deployment")
         # Resolve the actual node image manifest, not Docker's image-config hash.
         inspection = subprocess.run(
             ["docker", "exec", "sentinel-lab-control-plane", "crictl", "inspecti", "sentinel-demo:0.1.0"],
@@ -136,19 +149,23 @@ class Experiment:
              "docker.io/library/sentinel-demo:0.1.0", image], capture_output=True, text=True, timeout=30, check=False,
         )
         require(alias.returncode == 0, "Could not register the local immutable image reference")
-        self.kubectl("set", "image", "deployment/" + NAME, "demo-api=" + image)
-        self.kubectl("set", "env", "deployment/" + NAME, "--containers=demo-api", "STARTUP_FAILURE=false")
-        self.kubectl("rollout", "status", "deployment/" + NAME, "--timeout=120s", timeout=160)
+        self.kubectl("set", "image", "deployment/" + self.name, "demo-api=" + image)
+        self.kubectl("set", "env", "deployment/" + self.name, "--containers=demo-api", "STARTUP_FAILURE=false")
+        self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=120s", timeout=160)
+        return image
+
+    def prepare(self):
+        image = self.prepare_image()
         deployment = self.deployment()
-        self.target = {"cluster_id": "sentinel-lab", "namespace": NAMESPACE,
-                       "kind": "Deployment", "name": NAME, "uid": deployment["metadata"]["uid"]}
+        self.target = {"cluster_id": self.cluster_id, "namespace": self.namespace,
+                       "kind": "Deployment", "name": self.name, "uid": deployment["metadata"]["uid"]}
         save(self.directory / "allowed-targets.json", [self.target])
         template = deployment["spec"]["template"]
         samples = self.health_window(template)
         self.baseline = {"baseline_id": "BASE-LIVE-" + uuid4().hex[:12], "target": self.target,
                          "healthy_observed_at": samples[-1]["at"], "pod_template": template,
                          "template_sha256": fingerprint(template), "reference_versions": [],
-                         "health_evidence": {"source": "sentinel-live-lab-http",
+                         "health_evidence": {"source": self.health_source,
                              "evidence_id": "HEALTH-" + uuid4().hex, "status": "HEALTHY",
                              "target": self.target, "template_sha256": fingerprint(template),
                              "window_start": samples[0]["at"], "window_end": samples[-1]["at"]}}
@@ -161,10 +178,10 @@ class Experiment:
                   "decision_ttl_seconds": 20, "max_approval_lifetime_seconds": 300,
                   "require_server_dry_run": False,
                   "baseline_constraints": {"max_age_seconds": 1800, "min_healthy_duration_seconds": 10,
-                      "trusted_sources": ["sentinel-live-lab-http"], "require_health_evidence": True,
+                      "trusted_sources": [self.health_source], "require_health_evidence": True,
                       "require_compatible_references": True, "require_image_digests": True},
                   "security_constraints": {"deny_privileged": True, "deny_host_access": True,
-                      "allowed_image_registries": ["docker.io"], "allowed_service_accounts": ["default"],
+                      "allowed_image_registries": self.allowed_registries, "allowed_service_accounts": [self.service_account],
                       "forbid_service_account_change": True},
                   "resource_constraints": {"require_requests_and_limits": True,
                       "max_container_requests": {"cpu": "100m", "memory": "64Mi"},
@@ -174,23 +191,23 @@ class Experiment:
                       "max_replicas": 2, "max_surge_replicas": 1}}
         save(self.directory / "policy.json", policy)
         self.policy = policy
-        self.kubectl("apply", "-f", str(ROOT / "infra/executor-rbac.yaml"))
+        self.kubectl("apply", "-f", str(self.rbac_path))
         configuration = json.loads(self.kubectl("config", "view", "--minify", "--flatten", "--raw", "-o", "json").stdout)
         cluster = configuration["clusters"][0]["cluster"]
         require("certificate-authority-data" in cluster and cluster["server"].startswith("https://"),
                 "Restricted credentials require the selected cluster's CA and HTTPS server")
         token = self.kubectl("create", "token", "sentinel-executor", "--duration=1h").stdout.strip()
         private_config = {"apiVersion": "v1", "kind": "Config",
-                          "clusters": [{"name": "sentinel-lab", "cluster": {
+                          "clusters": [{"name": self.cluster_id, "cluster": {
                               "server": cluster["server"], "certificate-authority-data": cluster["certificate-authority-data"]}}],
                           "users": [{"name": "executor", "user": {"token": token}}],
-                          "contexts": [{"name": RESTRICTED_CONTEXT, "context": {
-                              "cluster": "sentinel-lab", "user": "executor", "namespace": NAMESPACE}}],
-                          "current-context": RESTRICTED_CONTEXT}
+                          "contexts": [{"name": self.restricted_context, "context": {
+                              "cluster": self.cluster_id, "user": "executor", "namespace": self.namespace}}],
+                          "current-context": self.restricted_context}
         with self.credentials.open("x", encoding="utf-8") as stream:
             _private_file(self.credentials)
             json.dump(private_config, stream)
-        self.check("healthy baseline captured with real HTTP samples and immutable image", image=image)
+        self.check("healthy baseline captured with real service samples and immutable image", image=image)
 
     def health_window(self, expected_template):
         samples = []
@@ -199,7 +216,7 @@ class Experiment:
             require(deployment["spec"]["template"] == expected_template, "Healthy template changed during measurement")
             require(deployment.get("status", {}).get("readyReplicas") == 1
                     and deployment["status"].get("availableReplicas") == 1, "Application is not ready")
-            result = self.kubectl("exec", "deployment/" + NAME, "--", "python3", "-c",
+            result = self.kubectl("exec", "deployment/" + self.name, "--", "python3", "-c",
                 "import urllib.request; r=urllib.request.urlopen('http://demo-api:8080/healthz',timeout=5); "
                 "assert r.status==200; print(r.read().decode())")
             require(json.loads(result.stdout).get("status") == "ok", "HTTP health response was not healthy")
@@ -210,8 +227,8 @@ class Experiment:
         return samples
 
     def permissions(self):
-        allowed = [("get", "deployment/demo-api"), ("patch", "deployment/demo-api")]
-        denied = [("delete", "deployment/demo-api"), ("get", "secrets"),
+        allowed = [("get", "deployment/" + self.name), ("patch", "deployment/" + self.name)]
+        denied = [("delete", "deployment/" + self.name), ("get", "secrets"),
                   ("create", "pods/exec"), ("patch", "deployment/outside-executor-scope")]
         results = []
         for verb, resource in allowed + denied:
@@ -227,22 +244,25 @@ class Experiment:
         save(self.directory / "rbac-checks.json", results)
         self.check("real ServiceAccount permits only selected Deployment get/patch; forbidden write denied")
 
+    def inject_fault(self):
+        self.kubectl("set", "env", "deployment/" + self.name, "--containers=demo-api", "STARTUP_FAILURE=true")
+
     def fault(self, label):
-        self.kubectl("set", "env", "deployment/" + NAME, "--containers=demo-api", "STARTUP_FAILURE=true")
+        self.inject_fault()
         deadline = time.monotonic() + 130
         while time.monotonic() < deadline:
-            pods = json.loads(self.kubectl("get", "pods", "-l", "app=demo-api", "-o", "json").stdout)
+            pods = json.loads(self.kubectl("get", "pods", "-l", "app=" + self.name, "-o", "json").stdout)
             crashes = [status for pod in pods["items"] for status in pod.get("status", {}).get("containerStatuses", [])
-                       if status.get("state", {}).get("waiting", {}).get("reason") == "CrashLoopBackOff"]
+                       if status.get("state", {}).get("waiting", {}).get("reason") in {"CrashLoopBackOff", "RunContainerError", "CreateContainerError"}]
             if crashes:
                 save(self.directory / (label + "-fault-pods.json"), pods)
                 break
             time.sleep(2)
         else:
-            raise RuntimeError("Injected fault did not reach CrashLoopBackOff")
+            raise RuntimeError("Injected fault did not reach a container startup failure")
         observer = Observer({"detection": {"failure_duration_seconds": 5}})
         for _ in range(5):
-            observation = deployment_to_observation(self.deployment(), cluster_id="sentinel-lab", observed_at=now())
+            observation = deployment_to_observation(self.deployment(), cluster_id=self.cluster_id, observed_at=now())
             incident = observer.observe(observation)
             if incident:
                 save(self.directory / (label + "-incident.json"), incident)
@@ -262,7 +282,7 @@ class Experiment:
                     "evidence_refs": [incident["incident_id"], self.baseline["health_evidence"]["evidence_id"]]}
         dependencies = {"schema_version": "1.0", "kind": "dependency_result", "incident_id": incident["incident_id"],
                         "action_id": proposal["action_id"], "target": self.target, "status": "CLEAR",
-                        "affected_services": [NAME], "blockers": [], "unknowns": [], "checked_at": utc()}
+                        "affected_services": [self.name], "blockers": [], "unknowns": [], "checked_at": utc()}
         # This is an explicit operator attestation for the self-contained demo,
         # not fabricated evidence of Role 6 dependency analysis.
         record = {"action_id": proposal["action_id"], "proposal_sha256": proposal_fingerprint(proposal),
@@ -273,7 +293,7 @@ class Experiment:
         save(folder / "approval.json", record if approval else None)
         if coordinator:
             handle(proposal, self.store, self.bus)
-            state_reader = lambda p: {"cluster_id": "sentinel-lab", "captured_at": utc(), "deployment": self.deployment()}
+            state_reader = lambda p: {"cluster_id": self.cluster_id, "captured_at": utc(), "deployment": self.deployment()}
             readers = dict(state_reader=state_reader, policy_reader=lambda p: self.policy,
                            baseline_reader=lambda p: self.baseline, dependency_reader=lambda p: dependencies)
             first = process_guard_requests(self.store, self.bus, **readers)[0]
@@ -288,7 +308,7 @@ class Experiment:
         return folder, proposal
 
     def adapters(self, folder, *, coordinator=False, reconcile_only=False):
-        return build_adapters(context=RESTRICTED_CONTEXT, cluster_id="sentinel-lab", kubeconfig=self.credentials,
+        return build_adapters(context=self.restricted_context, cluster_id=self.cluster_id, kubeconfig=self.credentials,
             allowed_targets=self.directory / "allowed-targets.json", ledger=self.directory / "executor.sqlite",
             locks=self.directory / "locks", policy=self.directory / "policy.json", baseline=self.directory / "baseline.json",
             dependencies=folder / "dependencies.json", approval=folder / "approval.json", server_dry_run=True,
@@ -306,7 +326,7 @@ class Experiment:
                     policy["allowed_actions"] = []
                     save(self.directory / "policy.json", policy)
                 if label == "stale-state":
-                    self.kubectl("annotate", "deployment/" + NAME, "sentinel.io/stale-probe=" + uuid4().hex, "--overwrite")
+                    self.kubectl("annotate", "deployment/" + self.name, "sentinel.io/stale-probe=" + uuid4().hex, "--overwrite")
                 result = execute(proposal, adapters)
                 save(folder / "execution.json", result)
                 require(result["status"] in {"FAILED", "CONFLICT"}, "Rejected input unexpectedly executed")
@@ -322,9 +342,9 @@ class Experiment:
         before = self.deployment()
         def race(command, **kwargs):
             if "patch" in command:
-                self.kubectl("annotate", "deployment/" + NAME, "sentinel.io/race=" + uuid4().hex, "--overwrite")
+                self.kubectl("annotate", "deployment/" + self.name, "sentinel.io/race=" + uuid4().hex, "--overwrite")
             return subprocess.run(command, **kwargs)
-        api = KubectlDeploymentAPI(context=RESTRICTED_CONTEXT, cluster_id="sentinel-lab", kubeconfig=self.credentials,
+        api = KubectlDeploymentAPI(context=self.restricted_context, cluster_id=self.cluster_id, kubeconfig=self.credentials,
                                    allowed_targets=[self.target], runner=race)
         evidence = {"action_id": proposal["action_id"], "proposal_sha256": proposal_fingerprint(proposal),
                     "target_uid": self.target["uid"], "template_sha256": self.baseline["template_sha256"], "attempt_id": uuid4().hex}
@@ -349,7 +369,7 @@ class Experiment:
         try:
             command = [sys.executable, "-m", "runtime.live_executor", "--proposal", str(folder / "proposal.json"),
                 "--allowed-targets", str(self.directory / "allowed-targets.json"), "--kubeconfig", str(self.credentials),
-                "--context", RESTRICTED_CONTEXT, "--cluster-id", "sentinel-lab", "--ledger", str(self.directory / "executor.sqlite"),
+                "--context", self.restricted_context, "--cluster-id", self.cluster_id, "--ledger", str(self.directory / "executor.sqlite"),
                 "--locks", str(self.directory / "locks"), "--policy", str(self.directory / "policy.json"),
                 "--baseline", str(self.directory / "baseline.json"), "--dependencies", str(folder / "dependencies.json"),
                 "--approval", str(folder / "approval.json")]
@@ -378,16 +398,17 @@ class Experiment:
                        coordinator_state="VERIFYING")
         finally:
             adapters.ledger.close()
-        self.kubectl("rollout", "status", "deployment/" + NAME, "--timeout=120s", timeout=160)
+        self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=120s", timeout=160)
         save(folder / "post-health.json", self.health_window(self.baseline["pod_template"]))
-        self.check("HTTP and replica health after executor rollback; Role 6 outcome remains pending")
+        self.check(self.health_description + " after executor rollback; Role 6 outcome remains pending")
 
     def crash_restart(self):
         incident = self.fault("crash")
         folder, proposal = self.case("crash-after-write", incident, coordinator=True)
-        configuration = {"directory": str(self.directory), "folder": str(folder), "credentials": str(self.credentials)}
+        configuration = {"directory": str(self.directory), "folder": str(folder), "credentials": str(self.credentials),
+                         "cluster_id": self.cluster_id, "context": self.restricted_context}
         save(folder / "worker.json", configuration)
-        worker = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--crash-worker", str(folder / "worker.json")],
+        worker = subprocess.run([sys.executable, str(self.entrypoint), "--crash-worker", str(folder / "worker.json")],
                                 cwd=ROOT, capture_output=True, text=True, timeout=60)
         require(worker.returncode == 73, "Crash worker did not stop at the intended post-write boundary")
         with SQLiteExecutionLedger(self.directory / "executor.sqlite") as ledger:
@@ -407,7 +428,7 @@ class Experiment:
                        worker_exit=73, original_writes=1, restart_writes=0, coordinator_state="VERIFYING")
         finally:
             adapters.ledger.close()
-        self.kubectl("rollout", "status", "deployment/" + NAME, "--timeout=120s", timeout=160)
+        self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=120s", timeout=160)
         save(folder / "post-health.json", self.health_window(self.baseline["pod_template"]))
 
     def run(self):
@@ -432,7 +453,7 @@ class Experiment:
                              {"op": "replace", "path": "/spec/template", "value": self.baseline["pod_template"]}]
                     path = self.directory / "emergency-cleanup-patch.json"
                     save(path, patch)
-                    self.kubectl("patch", "deployment", NAME, "--type=json", "--patch-file", str(path))
+                    self.kubectl("patch", "deployment", self.name, "--type=json", "--patch-file", str(path))
                     self.summary["operator_emergency_restore"] = True
                 except Exception:
                     self.summary["operator_emergency_restore"] = False
@@ -449,7 +470,8 @@ def crash_worker(configuration):
     config = json.loads(Path(configuration).read_text(encoding="utf-8"))
     directory, folder = Path(config["directory"]), Path(config["folder"])
     store = SQLiteStore(directory / "coordinator.sqlite")
-    adapters = build_adapters(context=RESTRICTED_CONTEXT, cluster_id="sentinel-lab", kubeconfig=config["credentials"],
+    adapters = build_adapters(context=config.get("context", RESTRICTED_CONTEXT),
+        cluster_id=config.get("cluster_id", "sentinel-lab"), kubeconfig=config["credentials"],
         allowed_targets=directory / "allowed-targets.json", ledger=directory / "executor.sqlite", locks=directory / "locks",
         policy=directory / "policy.json", baseline=directory / "baseline.json", dependencies=folder / "dependencies.json",
         approval_reader=lambda p: store.approval(p["action_id"]), server_dry_run=True)
