@@ -41,6 +41,8 @@ Useful options:
 
 | Option | Behaviour |
 | --- | --- |
+| `-Review` | Run the recovery scenarios without input prompts, then keep the live dashboard available until stopped; cannot be combined with `-Unattended` |
+| `-Image <tag>` | Build/use a selected runner image tag instead of the default |
 | `-SkipBuild` | Use the existing runner image deliberately; rebuild after source changes |
 | `-Offline` | Skip build and registry pulls; require all four images already cached locally |
 | `-Port 8766` | Publish the UI at a different host loopback port |
@@ -49,6 +51,15 @@ Useful options:
 Existing resources with the reserved names are refused at startup. Inspect them
 or use the explicit stop command before rerunning. This avoids silently reusing
 a partially failed demo or another experiment's state.
+
+To review a freshly built image with a persistent dashboard:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\demo-start.ps1 -Image sentinel-boutique-runner:0.3.0 -Review
+```
+
+Keep that process running while reviewing the UI. Use `demo-stop.ps1` to stop
+the runner and its dedicated cluster; experiment evidence is retained.
 
 ## Stop and cleanup
 
@@ -124,6 +135,24 @@ does not require a registry connection from the Kubernetes node. Both workload
 and client use recorded immutable manifest references with imagePullPolicy Never.
 
 ## Move to the laptop or share with the team
+
+To build a versioned ZIP with the app, Buddy 2 Observer/validation/Collector images,
+matching committed source, Windows launchers and SHA-256 checksums:
+
+```powershell
+python scripts/package_containers.py --version 0.4.0
+```
+
+The packager snapshots Git HEAD, builds Linux amd64 images from that snapshot,
+runs contracts and the Python suite inside the runner, and verifies the finished
+ZIP. Output goes under a unique `runs/releases/` folder. Push the intended commit
+before packaging. Untracked files and local run evidence are excluded.
+
+Extract the ZIP and run `Start-App.ps1` with Docker Desktop and kind available;
+it imports the four images, checks their IDs and starts persistent review mode.
+The bundle README explains the separate Buddy 2 telemetry lab, which also needs
+host Python and kubectl. Kubernetes node/workload images are downloaded at app
+startup if missing, so this ZIP is not a fully offline installer.
 
 Option A: copy/clone this version of the repository on the laptop and run
 `demo-start.ps1`. Docker builds everything; host Python/Node are unnecessary.

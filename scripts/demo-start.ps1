@@ -1,11 +1,14 @@
 [CmdletBinding()]
-param([switch]$SkipBuild, [switch]$Offline, [switch]$Unattended,
-      [switch]$KeepCluster, [ValidateRange(1024,65535)][int]$Port = 8765)
+param([switch]$SkipBuild, [switch]$Offline, [switch]$Unattended, [switch]$Review,
+      [switch]$KeepCluster, [ValidateRange(1024,65535)][int]$Port = 8765,
+      [ValidateNotNullOrEmpty()][string]$Image = 'sentinel-boutique-runner:0.1.0')
 
 $ErrorActionPreference = 'Stop'
+if ($Review -and $Unattended) { throw '-Review and -Unattended cannot be combined.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
 . (Join-Path $PSScriptRoot 'packaged-demo-common.ps1')
+$script:PackagedImage = $Image
 Initialize-PackagedTools
 
 # Refuse existing reserved resources before creating or modifying anything.
@@ -81,10 +84,11 @@ try {
         '--mount',"type=bind,source=$data,target=/data",
         '--env','KUBECONFIG=/bootstrap/operator-kubeconfig.yaml',
         '--publish',"127.0.0.1:${Port}:8765")
-    if (-not $Unattended) { $runOptions += '-it' }
+    if (-not $Unattended -and -not $Review) { $runOptions += '-it' }
     $runOptions += @($PackagedImage,'--prepared-environment','/bootstrap/environment.json','--run-dir','/data/evidence',
         '--dashboard','--dashboard-bind','0.0.0.0','--dashboard-port','8765')
-    if ($Unattended) { $runOptions += '--exit-after-test' } else { $runOptions += '--pause-before-injection' }
+    if ($Unattended) { $runOptions += '--exit-after-test' }
+    elseif (-not $Review) { $runOptions += '--pause-before-injection' }
     & $DemoDocker @runOptions
     $resultCode = $LASTEXITCODE
 } finally {
