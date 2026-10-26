@@ -25,8 +25,11 @@ COPY samples/ samples/
 COPY tests/ tests/
 COPY dashboard/ dashboard/
 COPY --from=frontend /frontend/dist/ dashboard/dist/
-# Stamp the prebuilt frontend while building; Node/npm are absent at runtime.
-RUN python -c "from scripts.dashboard import ensure_frontend; ensure_frontend()" \
+# The frontend stage built these exact sources. Refresh its index timestamp so
+# a cached build also gets stamped after a fresh checkout/archive extraction.
+# Node/npm are absent at runtime.
+RUN touch dashboard/dist/index.html \
+    && python -c "from scripts.dashboard import ensure_frontend; ensure_frontend()" \
     && mkdir /data && chown 10001:10001 /data
 USER 10001:10001
 EXPOSE 8765
