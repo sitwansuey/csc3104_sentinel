@@ -262,7 +262,8 @@ class ReceiverTests(unittest.TestCase):
                 raw = json.dumps(document).encode()
                 with self.assertRaises(HTTPError) as error:
                     urlopen(Request(url, raw, {"Content-Type": "application/json"}))
-                self.assertEqual(error.exception.code, 401)
+                with closing(error.exception) as response:
+                    self.assertEqual(response.code, 401)
                 request = Request(url, gzip.compress(raw), {"Content-Type": "application/json", "Content-Encoding": "gzip", "Authorization": "Bearer test-token"})
                 with urlopen(request) as response:
                     self.assertEqual(json.load(response), {})
@@ -280,7 +281,8 @@ class ReceiverTests(unittest.TestCase):
                     headers = {"Authorization": "Bearer test-token", **headers}
                     with self.subTest(status=status), self.assertRaises(HTTPError) as rejected:
                         urlopen(Request(url, data, headers))
-                    self.assertEqual(rejected.exception.code, status)
+                    with closing(rejected.exception) as response:
+                        self.assertEqual(response.code, status)
                 with self.assertRaises(ValueError):
                     make_receiver(None, bind="0.0.0.0")
             finally:
