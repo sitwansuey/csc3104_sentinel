@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param([switch]$Setup, [switch]$Cleanup, [switch]$Dashboard,
       [ValidateRange(0,65535)][int]$DashboardPort = 8765, [switch]$ExitAfterTest,
-      [switch]$PauseBeforeInjection)
+      [switch]$PauseBeforeInjection, [string]$ProviderScript, [string]$ProviderPolicy,
+      [string]$Operator, [string]$RunDirectory)
 
 $ErrorActionPreference = 'Stop'
 if ($ExitAfterTest -and -not $Dashboard) { throw '-ExitAfterTest requires -Dashboard.' }
@@ -33,6 +34,10 @@ try {
     $pythonPrefix = @()
     if ((Split-Path -Leaf $pythonTool.Path) -eq 'py.exe') { $pythonPrefix = @('-3') }
     $testOptions = @()
+    if ($ProviderScript) { $testOptions += @('--provider-script', $ProviderScript) }
+    if ($ProviderPolicy) { $testOptions += @('--provider-policy', $ProviderPolicy) }
+    if ($Operator) { $testOptions += @('--operator', $Operator) }
+    if ($RunDirectory) { $testOptions += @('--run-dir', $RunDirectory) }
     if ($Dashboard) { $testOptions += @('--dashboard', '--dashboard-port', "$DashboardPort") }
     if ($ExitAfterTest) { $testOptions += '--exit-after-test' }
     if ($PauseBeforeInjection) { $testOptions += '--pause-before-injection' }

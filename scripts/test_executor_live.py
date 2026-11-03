@@ -440,15 +440,18 @@ class Experiment:
             adapters.ledger.close()
         self.complete_recovery(folder, proposal, results[0])
 
+    def recover_incident(self, incident):
+        self.negative_cases(incident)
+        self.conditional_race(incident)
+        self.positive(incident)
+        self.crash_restart()
+
     def run(self):
         try:
             self.prepare()
             self.permissions()
             incident = self.fault("primary")
-            self.negative_cases(incident)
-            self.conditional_race(incident)
-            self.positive(incident)
-            self.crash_restart()
+            self.recover_incident(incident)
             save(self.directory / "final-deployment.json", self.deployment())
             self.summary["status"] = "PASS"
         except BaseException as exc:
