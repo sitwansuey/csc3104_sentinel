@@ -1,7 +1,7 @@
 # Shared fixed scope for the trusted host bootstrap and teardown scripts.
 $script:PackagedCluster = 'sentinel-boutique-package'
 $script:PackagedContainer = 'sentinel-boutique-runner'
-$script:PackagedImage = 'sentinel-boutique-runner:0.1.0'
+$script:PackagedImage = 'sentinel-boutique-runner:0.3.0'
 $script:ShippingImage = 'us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice:v0.10.7'
 $script:ProbeImage = 'fullstorydev/grpcurl:v1.9.3'
 

@@ -1,12 +1,18 @@
 # Packaged Boutique demo on a Windows laptop
 
+For the load-image → start → test → cleanup sequence, use the
+[short laptop instructions](laptop-demo-quickstart.md). The current launcher
+selects `sentinel-boutique-runner:0.3.0`; older exported images do not contain
+the latest Verifier/Guard integration or packaging security fixes.
+
 This runs the existing real Boutique recovery experiment from a Docker image.
 You need Docker Desktop with a running Linux engine, kind and PowerShell on the
 host. Host Python, Node and kubectl are not needed for this packaged route.
 The image contains Python 3.12, kubectl and the prebuilt dashboard. Node is used
-only in its build stage. Roles 1, 2, 4 and 5 run inside the demo container;
+only in its build stage. Roles 1, 2, 4, 5 and 6 run inside the demo container;
 shippingservice and request-probe Pods run on actual Kubernetes inside kind.
-Roles 3/6 remain operator/test substitutes, not implemented services.
+Role 3 remains a harness substitute. Role 6 checkpoints streamed measurements in
+its own durable SQLite store and publishes actual verification outcomes.
 
 ## Build, create, inject and inspect
 
@@ -57,6 +63,7 @@ Useful options:
 | `-Offline` | Skip build and registry pulls; require all four images already cached locally |
 | `-Port 8766` | Publish the UI at a different host loopback port |
 | `-GuardRejection` | Run only the final false-alarm/unnecessary-rollback rejection scenario, with one injection prompt |
+| `-UIControls` | Use the opt-in browser injection panel instead of Enter prompts; rebuild from current source first and do not combine with `-Unattended` |
 | `-KeepCluster` | Retain Kubernetes after the runner stops; temporary administrator credentials are still removed |
 
 Existing resources with the reserved names are refused at startup. Inspect them
@@ -89,8 +96,8 @@ runs/packaged-boutique-<timestamp>-<id>/
   data/evidence/              normal Boutique records and dashboard evidence
 ```
 
-`data/evidence/` contains baselines, incidents, Role 2 state/outbox, Coordinator
-and execution journals, Guard reports, proposals/approvals, actual quote samples,
+`data/evidence/` contains baselines, incidents, Role 2 state/outbox, Coordinator,
+execution and Verifier journals, Guard reports, proposals/approvals, actual quote samples,
 transport counters and dashboard checks. It survives runner removal. Private
 executor credentials are removed by Python; the host bootstrap's operator
 kubeconfig is removed after the runner stops. Force-closing the host process can
@@ -145,7 +152,7 @@ Option B: transfer the already-built runner image plus the matching repository
 version. On the original machine:
 
 ```powershell
-docker save --output .\runs\sentinel-boutique-runner.tar sentinel-boutique-runner:0.1.0
+docker save --output .\runs\sentinel-boutique-runner.tar sentinel-boutique-runner:0.3.0
 ```
 
 Copy that tar separately. On the laptop:

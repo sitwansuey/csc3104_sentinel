@@ -10,6 +10,7 @@ import threading
 from urllib.request import urlopen
 
 from runtime.cluster_metrics import collect_cluster_snapshot
+from runtime.boutique_observability import emit_observation
 from runtime.dashboard import make_server
 from runtime.telemetry import emit_cluster_snapshot, emit_event
 from scripts.dashboard import ensure_frontend
@@ -17,19 +18,23 @@ from scripts.test_executor_live import require, save
 
 
 class BoutiqueDashboard:
-    def __init__(self, directory, *, context, cluster_id, namespace, port=8765, bind="127.0.0.1"):
+    def __init__(self, directory, *, context, cluster_id, namespace, port=8765, bind="127.0.0.1", lab_control=None,
+                 application_collector=None):
         self.directory = Path(directory)
         self.telemetry = self.directory / "telemetry.sqlite3"
         self.context, self.cluster_id, self.namespace = context, cluster_id, namespace
         self.port = port
         self.bind = bind
+        self.lab_control = lab_control
+        self.application_collector = application_collector
         self.stop = threading.Event()
         self.server = None
         self.threads = []
 
     def start(self):
         ensure_frontend()
-        self.server = make_server(self.directory / "coordinator.sqlite", self.telemetry, port=self.port, bind=self.bind)
+        self.server = make_server(self.directory / "coordinator.sqlite", self.telemetry, port=self.port,
+                                  bind=self.bind, lab_control=self.lab_control)
         self.url = f"http://127.0.0.1:{self.server.server_port}"
         self.event(1, "status", "Live Boutique experiment; harness planning; Role 6 dependency and outcome verification integrated")
         self.threads = [threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": .25}, daemon=True),
@@ -53,6 +58,12 @@ class BoutiqueDashboard:
             except Exception as error:
                 # Logs and credentials from subprocess exceptions are not published.
                 self.event(2, "error", "Dashboard collection failed: " + type(error).__name__)
+            if self.application_collector:
+                try:
+                    emit_observation(self.telemetry, cluster_id=self.cluster_id, namespace=self.namespace,
+                                     stage="inventory", services=self.application_collector())
+                except Exception as error:
+                    self.event(2, "error", "Boutique inventory collection failed: " + type(error).__name__)
             self.stop.wait(2)
 
     def _snapshot(self):
@@ -159,6 +170,26 @@ class BoutiqueDashboard:
                   "guard_reports": len(snapshot["reports"]), "applied_actions": len(recovered),
                   "rejected_actions": len(rejected), "executor_patch_attempts_for_rejected_action": 0,
                   "cluster_samples": len(history), "role6_outcomes": len(outcomes), "dependency_results": len(dependencies)}
+        if self.application_collector:
+            observations = snapshot.get("boutique_history", [])
+            require(observations and all(item["cluster_id"] == self.cluster_id and item["namespace"] == self.namespace
+                                         for item in observations), "Boutique observations belong to another experiment")
+            inventory = next((item for item in observations if item["stage"] == "inventory"), None)
+            require(inventory and len(inventory["services"]) == 11,
+                    "Dashboard must expose all eleven Boutique Deployments")
+            for stage in ("primary-fault", "crash-fault"):
+                measured = next((item for item in observations if item["stage"] == stage), None)
+                require(measured and measured["journey"]["home_status"] == 200
+                        and measured["journey"]["cart_status"] != 200
+                        and measured["journey"]["checkout_status"] != 200
+                        and measured["journey"]["passed"] is False,
+                        "Dashboard must show actual downstream shopping failures")
+            measured = [item for item in observations if item["stage"] == "verification"]
+            require(len(measured) >= 6 and all(item["journey"]["passed"] is True
+                                              and item["journey"]["order_confirmed"] for item in measured),
+                    "Dashboard must show confirmed post-action shopping results")
+            result["boutique"] = {"deployments": len(inventory["services"]),
+                                  "fault_measurements": 2, "post_action_measurements": len(measured)}
         save(self.directory / "dashboard-validation.json", result)
         return result
 
@@ -183,11 +214,19 @@ class BoutiqueDashboard:
         return result
 
     def close(self):
+        control_error = None
+        if self.lab_control:
+            try:
+                self.lab_control.finish("STOPPED")
+            except OSError as error:
+                control_error = error
         self.stop.set()
         if self.server:
             if self.threads and self.threads[0].is_alive():
                 self.server.shutdown()
             self.server.server_close()
         for thread in self.threads:
-            thread.join(timeout=25)
+            thread.join(timeout=35)
         require(not any(t.is_alive() for t in self.threads), "Dashboard collector did not stop within its bounded request window")
+        if control_error:
+            raise control_error

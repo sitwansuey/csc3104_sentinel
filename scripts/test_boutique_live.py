@@ -118,6 +118,7 @@ class BoutiqueExperiment(Experiment):
     allowed_registries = ["us-central1-docker.pkg.dev"]
     service_account = "shippingservice"
     dashboard = None
+    lab_control = None
     pause_before_injection = False
     prepared = None
     publish_dependency_results = True
@@ -127,6 +128,9 @@ class BoutiqueExperiment(Experiment):
         """Finish the default walkthrough by refusing a redundant third repair."""
         from scripts.guard_rejection_demo import run_unnecessary_rollback
         run_unnecessary_rollback(self)
+
+    def close(self):
+        """Workload-specific child processes may override this teardown hook."""
 
     def prepare(self):
         super().prepare()
@@ -219,6 +223,9 @@ class BoutiqueExperiment(Experiment):
                 "Coordinator did not close the verified incident")
         self.check("Role 6 verified gRPC, readiness and template; Coordinator RECOVERED",
                    action_id=proposal["action_id"], outcome="RECOVERED")
+        if self.lab_control:
+            self.lab_control.complete_scenario("RECOVERED", incident_id=proposal["incident_id"],
+                                               action_id=proposal["action_id"])
 
     def event(self, component, event_type, summary, **details):
         if self.dashboard:
@@ -354,7 +361,10 @@ class BoutiqueExperiment(Experiment):
         self.event(1, "fault", "Operator injected PORT=invalid-port into shippingservice", target=self.target)
 
     def fault(self, label):
-        if self.pause_before_injection:
+        if self.lab_control:
+            print("Baseline ready. Inject the " + label + " scenario from the dashboard.", flush=True)
+            self.lab_control.wait_for_injection(label)
+        elif self.pause_before_injection:
             input("Baseline ready. Press Enter to inject the " + label + " bad rollout (Ctrl+C aborts): ")
         self.inject_fault()
         deadline = time.monotonic() + 130
@@ -395,6 +405,10 @@ def main():
     parser.add_argument("--exit-after-test", action="store_true", help="Stop the dashboard after validation instead of waiting for Ctrl+C")
     parser.add_argument("--pause-before-injection", action="store_true",
                         help="Wait for Enter before each bad rollout and the final unnecessary rollback proposal")
+    parser.add_argument("--ui-controls", action="store_true",
+                        help="Opt in to local dashboard buttons for the fixed lab injection sequence")
+    parser.add_argument("--connected", action="store_true", help="Deploy the full connected Boutique storefront")
+    parser.add_argument("--storefront-port", type=int, default=8080, help="Loopback storefront port in connected mode")
     parser.add_argument("--guard-rejection", action="store_true",
                         help="Run only the final unnecessary-rollback rejection scenario, skipping both recovery rounds")
     parser.add_argument("--crash-worker", help=argparse.SUPPRESS)
@@ -405,13 +419,27 @@ def main():
         parser.error("--dashboard-port must be between 0 and 65535")
     if args.exit_after_test and not args.dashboard:
         parser.error("--exit-after-test requires --dashboard")
+    if args.ui_controls and (not args.dashboard or args.pause_before_injection):
+        parser.error("--ui-controls requires --dashboard and replaces --pause-before-injection")
+    if args.connected and args.prepared_environment:
+        parser.error("Connected mode requires its host lab; the old packaged bootstrap is single-service")
+    if not 1 <= args.storefront_port <= 65535 or (args.connected and args.dashboard and args.storefront_port == args.dashboard_port):
+        parser.error("Storefront port must be valid and separate from the dashboard port")
     directory = args.run_dir or ROOT / "runs" / ("boutique-live-" + now().strftime("%Y%m%dT%H%M%SZ-") + uuid4().hex[:6])
-    experiment = BoutiqueExperiment(directory)
+    if args.connected:
+        from scripts.boutique_connected import ConnectedBoutiqueExperiment
+        experiment = ConnectedBoutiqueExperiment(directory, storefront_port=args.storefront_port)
+    else:
+        experiment = BoutiqueExperiment(directory)
     if args.prepared_environment:
         experiment.prepared = prepared_environment(args.prepared_environment)
         experiment.cluster_id = experiment.prepared["cluster_id"]
         experiment.context = experiment.prepared["context"]
     experiment.pause_before_injection = args.pause_before_injection
+    if args.ui_controls:
+        from runtime.lab_control import LabControl
+        experiment.lab_control = LabControl(directory, cluster_id=experiment.cluster_id, context=experiment.context,
+            namespace=experiment.namespace, deployment=experiment.name, rejection_only=args.guard_rejection)
     print("Boutique evidence: " + str(experiment.directory), flush=True)
     dashboard = None
     # Docker stop sends SIGTERM. Reuse the normal interruption/finally cleanup.
@@ -422,7 +450,9 @@ def main():
         if args.dashboard:
             from scripts.boutique_dashboard import BoutiqueDashboard
             dashboard = BoutiqueDashboard(experiment.directory, context=experiment.context,
-                cluster_id=experiment.cluster_id, namespace=experiment.namespace, port=args.dashboard_port, bind=args.dashboard_bind)
+                cluster_id=experiment.cluster_id, namespace=experiment.namespace, port=args.dashboard_port,
+                bind=args.dashboard_bind, lab_control=experiment.lab_control,
+                application_collector=getattr(experiment, "application_inventory", None))
             experiment.dashboard = dashboard
             dashboard.start()
         if args.guard_rejection:
@@ -441,6 +471,8 @@ def main():
             print("PASS: live rejection dashboard, Guard findings and zero-write evidence"
                   if args.guard_rejection else
                   "PASS: live dashboard HTTP, Guard reports, execution records and cluster telemetry", flush=True)
+            if experiment.lab_control:
+                experiment.lab_control.finish("COMPLETED")
             if not args.exit_after_test:
                 print("Tests complete. Dashboard stays live for inspection; press Ctrl+C to stop it.", flush=True)
                 try:
@@ -450,9 +482,13 @@ def main():
                     pass
     except KeyboardInterrupt:
         experiment.summary.update(status="INTERRUPTED")
+        if experiment.lab_control:
+            experiment.lab_control.finish("STOPPED")
         return 130
     except Exception as exc:
         experiment.summary.update(status="FAILED", integration_error=type(exc).__name__)
+        if experiment.lab_control:
+            experiment.lab_control.finish("FAILED")
         print("FAIL: Boutique experiment: " + str(exc), file=sys.stderr)
         return 1
     finally:
@@ -461,10 +497,13 @@ def main():
                 dashboard.close()
                 save(experiment.directory / "dashboard-cleanup.json", {"server_stopped": True, "collector_stopped": True})
         finally:
-            experiment.store.close()
-            experiment.credentials.unlink(missing_ok=True)
-            save(experiment.directory / "summary.json", experiment.summary)
-            signal.signal(signal.SIGTERM, previous_term)
+            try:
+                experiment.close()
+            finally:
+                experiment.store.close()
+                experiment.credentials.unlink(missing_ok=True)
+                save(experiment.directory / "summary.json", experiment.summary)
+                signal.signal(signal.SIGTERM, previous_term)
     print("PASS: Guard rejected unnecessary rollback; service unchanged and zero Executor patch attempts"
           if args.guard_rejection else
           "PASS: two Boutique recoveries verified; final unnecessary rollback REJECTED with zero Executor patch attempts", flush=True)

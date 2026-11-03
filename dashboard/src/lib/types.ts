@@ -24,9 +24,35 @@ export interface Cluster {
   summary: Record<string, number | null>; truncation: Record<string, number>;
 }
 export interface Snapshot {
+  boutique_history?: BoutiqueObservation[];
+  lab?: LabSession;
   generated_at: string; mode: string; demo_step?: string; limit: number; sources: Record<string, Source>;
   incidents: Incident[]; actions: Action[]; messages: { sequence: number; message: WireMessage }[];
   approvals: { id: number; record: Approval }[]; outbox: { id: number; topic: string; action_id: string | null; delivered: number }[];
   reports: GuardReport[]; telemetry: Telemetry[]; cluster_history: Cluster[];
 }
-export type View = "overview" | "cluster" | "coordinator" | "monitoring" | "planner" | "guard" | "executor" | "verification"
+export interface LabScenario {
+  id: string; title: string; description: string; expected: "RECOVERED" | "REJECTED";
+  status: string; requested_at: string | null; finished_at: string | null;
+  incident_id: string | null; action_id: string | null;
+}
+export interface LabSession {
+  session_id: string; state: string; gate_id: string | null; active_scenario: string | null;
+  can_inject: boolean; updated_at: string; planning: string;
+  target: {cluster_id: string; namespace: string; name: string}; scenarios: LabScenario[];
+}
+export interface BoutiqueService {
+  name: string; desired: number | null; ready: number | null; available: number | null;
+  generation: number | null; observed_generation: number | null;
+  ready_state: boolean | null; recovery_target: boolean;
+}
+export interface BoutiqueJourney {
+  home_status: number | null; add_to_cart_status: number | null; cart_status: number | null;
+  checkout_status: number | null; passed: boolean | null; order_confirmed: boolean;
+}
+export interface BoutiqueObservation {
+  sequence: number; cluster_id: string; namespace: string; observed_at: string;
+  stage: string; services: BoutiqueService[] | null; journey: BoutiqueJourney | null;
+  incident_id: string | null; action_id: string | null;
+}
+export type View = "overview" | "cluster" | "boutique" | "coordinator" | "monitoring" | "planner" | "guard" | "executor" | "verification"

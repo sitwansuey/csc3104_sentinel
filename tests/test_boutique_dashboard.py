@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -62,6 +62,18 @@ class BoutiqueDashboardTests(unittest.TestCase):
                     dashboard.start()
             dashboard.close()
             self.assertEqual(dashboard.threads, [])
+
+    def test_control_audit_failure_does_not_skip_server_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            control = Mock()
+            control.finish.side_effect = OSError("audit disk unavailable")
+            dashboard = BoutiqueDashboard(directory, context="test", cluster_id="test", namespace="test",
+                                          lab_control=control)
+            dashboard.server = Mock()
+            with self.assertRaisesRegex(OSError, "audit disk unavailable"):
+                dashboard.close()
+            self.assertTrue(dashboard.stop.is_set())
+            dashboard.server.server_close.assert_called_once()
 
 
 class BoutiqueDashboardEvidenceTests(unittest.TestCase):

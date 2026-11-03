@@ -71,7 +71,11 @@ def workload_proof(experiment):
 
 def run_unnecessary_rollback(experiment):
     """Use the real Coordinator, Guard and restricted Executor on a healthy lab."""
-    if experiment.pause_before_injection:
+    lab_control = getattr(experiment, "lab_control", None)
+    if lab_control:
+        print("Healthy baseline ready. Inject the unnecessary rollback scenario from the dashboard.", flush=True)
+        lab_control.wait_for_injection("unnecessary-rollback")
+    elif experiment.pause_before_injection:
         input("Healthy baseline ready. Press Enter to inject an unnecessary rollback proposal "
               "(the service remains healthy; Ctrl+C aborts): ")
     before = workload_proof(experiment)
@@ -175,4 +179,6 @@ def run_unnecessary_rollback(experiment):
     experiment.summary["guard_rejection"] = proof
     experiment.check("Guard rejects unnecessary rollback despite approval; zero Executor patch attempts",
                      verdict="REJECT", reason_code=REASON, executor_patch_attempts=0)
+    if lab_control:
+        lab_control.complete_scenario("REJECTED", incident_id=incident["incident_id"], action_id=proposal["action_id"])
     return proof

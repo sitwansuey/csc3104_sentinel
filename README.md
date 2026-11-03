@@ -11,7 +11,8 @@ action: restore a specific saved healthy Pod template (`ROLLBACK`).
 ## Start here: local setup on Windows
 
 For the container-packaged Boutique demo, use the
-[packaged laptop demo guide](docs/packaged-demo.md). That route needs Docker
+[short Windows laptop instructions](docs/laptop-demo-quickstart.md) or the
+[detailed packaged demo guide](docs/packaged-demo.md). That route needs Docker
 Desktop and kind on the host; Python, kubectl and the built UI run in the image.
 The instructions below remain the host-development route.
 
@@ -199,6 +200,16 @@ CLI, measured results, RBAC and limitations, read
 below describes the older operator-run experiment and its menu separately.
 
 ## Current implementation
+
+For opt-in browser buttons that inject the Boutique lab scenarios and display
+their measured outcomes, see [browser-controlled experiments](docs/experiment-controls.md).
+The default dashboard remains read-only; the experiment controls do not approve
+proposals or bypass Guard/Executor checks.
+For connected-service testing with the real storefront and checkout, see the
+[connected Boutique lab](docs/boutique-connected.md). It keeps shipping-only
+Executor permissions and adds actual downstream shopping-flow verification.
+Its **Online Boutique** dashboard page shows all eleven Deployment readiness
+cards and measured homepage/cart/checkout results before, during and after faults.
 
 The default Boutique injection sequence now ends with a Guard refusal
 demonstration: normal rollback, executor-crash/reconciliation recovery, then an

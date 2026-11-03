@@ -1,4 +1,8 @@
-"""Read-only local dashboard API. No approvals, ingestion or Kubernetes writes."""
+"""Read-only dashboard, with optional gates for a dedicated lab harness.
+
+The default API has no mutation routes. Opt-in lab controls only release a fixed
+scenario owned by the harness; they cannot approve or execute recovery actions.
+"""
 
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -86,12 +90,16 @@ def snapshot(db_path, telemetry_path):
                 result["cluster_history"] = [{"sequence": row[0], **json.loads(row[1])} for row in db.execute(
                     "SELECT id,payload FROM cluster_snapshots ORDER BY id DESC LIMIT ?", (CLUSTER_HISTORY_LIMIT,))]
                 result["sources"]["cluster_metrics"] = {"connected": bool(result["cluster_history"])}
+            if db.execute("SELECT 1 FROM sqlite_master WHERE name='boutique_observations'").fetchone():
+                result["boutique_history"] = [{"sequence": row[0], **json.loads(row[1])} for row in db.execute(
+                    "SELECT id,payload FROM boutique_observations ORDER BY id DESC LIMIT 180")]
         finally:
             db.close()
     except (sqlite3.Error, ValueError, OSError):
         result["telemetry"], result["cluster_history"] = [], []
         result["sources"].pop("telemetry", None)
         result["sources"].pop("cluster_metrics", None)
+        result.pop("boutique_history", None)
     result["sources"].setdefault("telemetry", {
         "connected": False, "detail": "No telemetry journal connected. Start the collector or emit an event."})
     result["sources"].setdefault("cluster_metrics", {
@@ -99,12 +107,26 @@ def snapshot(db_path, telemetry_path):
     return result
 
 
-def make_server(db_path, telemetry_path, *, port=8765, provider=None, bind="127.0.0.1"):
+def make_server(db_path, telemetry_path, *, port=8765, provider=None, bind="127.0.0.1", lab_control=None):
     if bind not in {"127.0.0.1", "0.0.0.0"}:
         raise ValueError("Dashboard bind must be loopback or explicit container bind")
     read_snapshot = provider or (lambda: snapshot(db_path, telemetry_path))
 
     class Handler(BaseHTTPRequestHandler):
+        def _local_host(self):
+            hosts = self.headers.get_all("Host", [])
+            if len(hosts) != 1:
+                return None
+            try:
+                parsed = urlsplit("http://" + hosts[0])
+                valid = (parsed.hostname in {"127.0.0.1", "localhost"}
+                         and parsed.username is None and parsed.password is None
+                         and not parsed.path and not parsed.query and not parsed.fragment
+                         and parsed.port is not None and 1 <= parsed.port <= 65535)
+                return hosts[0] if valid else None
+            except ValueError:
+                return None
+
         def do_GET(self):
             try:
                 route = urlsplit(self.path).path
@@ -113,10 +135,22 @@ def make_server(db_path, telemetry_path, *, port=8765, provider=None, bind="127.
                 return
             if route == "/api/snapshot":
                 try:
-                    body = json.dumps(read_snapshot(), allow_nan=False).encode("utf-8")
+                    result = read_snapshot()
+                    if lab_control is not None:
+                        if not self._local_host():
+                            self.send_error(403)
+                            return
+                        result = {**result, "lab": lab_control.snapshot()}
+                    body = json.dumps(result, allow_nan=False).encode("utf-8")
                 except Exception:
                     self.send_error(503, "Snapshot unavailable")
                     return
+                content_type = "application/json; charset=utf-8"
+            elif route == "/api/lab" and lab_control is not None:
+                if not self._local_host():
+                    self.send_error(403)
+                    return
+                body = json.dumps(lab_control.capabilities()).encode("utf-8")
                 content_type = "application/json; charset=utf-8"
             elif route in {"/", "/index.html"}:
                 try:
@@ -161,11 +195,50 @@ def make_server(db_path, telemetry_path, *, port=8765, provider=None, bind="127.
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'")
             self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                # Closing/refreshing the browser does not undo an accepted gate.
+                # A later click replays that gate instead of releasing another.
+                pass
 
         def log_message(self, *args):
             pass
 
     # Host launches default to loopback. Container launchers explicitly opt in to
     # all container interfaces and publish only on host loopback.
-    return ThreadingHTTPServer((bind, port), Handler)
+    class LabHandler(Handler):
+        def do_POST(self):
+            from runtime.lab_control import LabConflict
+            if self.path != "/api/lab/inject":
+                self.send_error(404)
+                return
+            host = self._local_host()
+            if (not host or self.headers.get("Origin") != "http://" + host
+                    or not lab_control.authenticates(self.headers.get("X-Sentinel-Lab-Token"))):
+                self.send_error(403)
+                return
+            if self.headers.get_content_type() != "application/json" or self.headers.get("Transfer-Encoding"):
+                self.send_error(415)
+                return
+            try:
+                size = int(self.headers.get("Content-Length", "0"))
+                if not 0 < size <= 2048:
+                    raise ValueError("Invalid body length")
+                self.connection.settimeout(3)
+                payload = json.loads(self.rfile.read(size))
+                if not isinstance(payload, dict) or set(payload) != {"session_id", "gate_id"}:
+                    raise ValueError("Invalid request")
+                result = lab_control.request_injection(**payload)
+            except LabConflict:
+                self._respond(409, b'{"error":"Scenario changed; refresh before injecting."}', "application/json")
+                return
+            except (ValueError, TypeError, TimeoutError):
+                self.send_error(400)
+                return
+            except OSError:
+                self.send_error(503, "Lab control unavailable")
+                return
+            self._respond(202, json.dumps(result).encode("utf-8"), "application/json")
+
+    return ThreadingHTTPServer((bind, port), Handler if lab_control is None else LabHandler)

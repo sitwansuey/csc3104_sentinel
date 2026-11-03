@@ -17,9 +17,9 @@ async function ready(){render(<App/>);await screen.findByLabelText("Recovery ove
 async function tab(name:string){await userEvent.click(screen.getByRole("tab",{name}));return screen.getByRole("tabpanel")}
 
 describe("shadcn dashboard",()=>{
-  it("renders actual shadcn tabs, cards, selectors and all eight feeds",async()=>{
+  it("renders actual shadcn tabs, cards, selectors and all nine feeds",async()=>{
     await ready()
-    expect(screen.getAllByRole("tab")).toHaveLength(8)
+    expect(screen.getAllByRole("tab")).toHaveLength(9)
     expect(document.querySelector('[data-slot="card"]')).toBeInTheDocument()
     expect(screen.getByRole("combobox",{name:"Incident filter"})).toHaveAttribute("data-slot","select-trigger")
     const expectations:[string,string][]=[["Kubernetes","Pod inventory"],["Coordinator","Recorded approvals"],["Monitoring","Detection evidence"],["Planner / RCA","Restore the observed healthy template"],["Recovery Guard","BASELINE_HEALTH_STATUS"],["Executor","Recorded execution attempts"],["Dependencies / Health","Healthy samples over the required window"]]

@@ -1,8 +1,9 @@
 [CmdletBinding()]
-param([switch]$SkipBuild, [switch]$Offline, [switch]$Unattended, [switch]$GuardRejection,
+param([switch]$SkipBuild, [switch]$Offline, [switch]$Unattended, [switch]$GuardRejection, [switch]$UIControls,
       [switch]$KeepCluster, [ValidateRange(1024,65535)][int]$Port = 8765)
 
 $ErrorActionPreference = 'Stop'
+if ($UIControls -and $Unattended) { throw '-UIControls waits for browser input and cannot use -Unattended.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
 . (Join-Path $PSScriptRoot 'packaged-demo-common.ps1')
@@ -16,7 +17,12 @@ $containers = @(& $DemoDocker ps -a --filter "name=^/$PackagedContainer$" --form
 if ($LASTEXITCODE -ne 0 -or $containers -contains $PackagedContainer) { throw 'Packaged runner name is unavailable.' }
 
 if (-not $SkipBuild -and -not $Offline) {
-    & $DemoDocker build -f infra/demo-runner.Dockerfile -t $PackagedImage .
+    $sourceRevision = 'unknown'
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        $revision = & git rev-parse HEAD 2>$null
+        if ($LASTEXITCODE -eq 0) { $sourceRevision = $revision }
+    }
+    & $DemoDocker build --pull --build-arg "SOURCE_REVISION=$sourceRevision" -f infra/demo-runner.Dockerfile -t $PackagedImage .
     if ($LASTEXITCODE -ne 0) { throw 'Demo image build failed.' }
 }
 & $DemoDocker image inspect $PackagedImage --format '{{.Id}}'
@@ -81,11 +87,13 @@ try {
         '--mount',"type=bind,source=$data,target=/data",
         '--env','KUBECONFIG=/bootstrap/operator-kubeconfig.yaml',
         '--publish',"127.0.0.1:${Port}:8765")
-    if (-not $Unattended) { $runOptions += '-it' }
+    if (-not $Unattended -and -not $UIControls) { $runOptions += '-it' }
     $runOptions += @($PackagedImage,'--prepared-environment','/bootstrap/environment.json','--run-dir','/data/evidence',
         '--dashboard','--dashboard-bind','0.0.0.0','--dashboard-port','8765')
     if ($GuardRejection) { $runOptions += '--guard-rejection' }
-    if ($Unattended) { $runOptions += '--exit-after-test' } else { $runOptions += '--pause-before-injection' }
+    if ($UIControls) { $runOptions += '--ui-controls' }
+    elseif ($Unattended) { $runOptions += '--exit-after-test' }
+    else { $runOptions += '--pause-before-injection' }
     & $DemoDocker @runOptions
     $resultCode = $LASTEXITCODE
 } finally {
