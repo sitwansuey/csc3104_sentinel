@@ -29,4 +29,21 @@ describe("security evidence",()=>{
     expect(screen.getByText("QUANTITY")).toBeInTheDocument()
     expect(screen.queryByRole("button")).not.toBeInTheDocument()
   })
+  it("marks an old or future monitor heartbeat stale",()=>{
+    const now=Date.parse("2026-11-04T01:00:00Z")
+    render(<SecurityOverview now={now} events={[{sequence:1,kind:"monitor",at:"2026-11-04T00:59:00Z",status:"WAITING",completed:13,total:13,interval_seconds:86400}]}/>)
+    expect(screen.getByText("STALE")).toBeInTheDocument()
+    expect(screen.getByText(/cannot be assumed active/)).toBeInTheDocument()
+  })
+  it("shows scheduled progress and explicit open or resolved alerts",()=>{
+    const now=Date.parse("2026-11-04T01:00:00Z")
+    render(<SecurityOverview now={now} events={[
+      {sequence:2,kind:"monitor",at:new Date(now).toISOString(),status:"SCANNING",completed:2,total:13,interval_seconds:86400},
+      {sequence:1,kind:"alert",at:new Date(now).toISOString(),code:"CVE_SCAN_FAILED",severity:"HIGH",status:"OPEN",detail:"Scan unavailable."}
+    ]}/>)
+    expect(screen.getByText("SCANNING")).toBeInTheDocument()
+    expect(screen.getByText(/2 \/ 13 images/)).toBeInTheDocument()
+    expect(screen.getByText("CVE_SCAN_FAILED")).toBeInTheDocument()
+    expect(screen.getByText("OPEN")).toBeInTheDocument()
+  })
 })

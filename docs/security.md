@@ -4,6 +4,9 @@ This opt-in security lab adds a TLS-terminating reverse proxy, bounded inspectio
 of unary shipping requests, and read-only image vulnerability scanning. It uses
 the actual Online Boutique shipping image in separate Docker Compose networks.
 It does not modify an existing kind cluster or redirect the connected storefront.
+The [connected security guide](security-connected.md) adds a separate full
+Boutique/Calico Kubernetes lab with real caller sidecars, enforced bypass
+prevention, a patched candidate and daily scanning/alerts.
 
 Automatic patching is **disabled**. The selected workflow is scan and recommend:
 rebuild a reviewed image, run compatibility tests, rescan it, and approve its exact
@@ -93,8 +96,11 @@ python scripts/scan_image_security.py --image $images.shipping --output runs/sec
 ```
 
 The same command can scan `$images.envoy`. For another workload, supply its exact
-public `repository@sha256:manifest-digest`. Private registry credential handling,
-local-only image scanning and automatic cluster image discovery are not included.
+public `repository@sha256:manifest-digest`. Private registry credential handling
+and automatic cluster image discovery are not included.
+Local image archive scanning is available with `--local-image`; the connected
+guide explains its OCI identity binding. Automatic live inventory discovery is
+still outside this fixed lab.
 
 The command returns 0 for `NO_KNOWN_CVES`, 1 for `FINDINGS`, and 2 for `UNKNOWN`.
 All severities and unfixed findings are included; no custom ignore/VEX policy is

@@ -1,13 +1,14 @@
 """Envoy HTTP ext_authz endpoint; private loopback sidecar, no cluster credentials."""
 
 import argparse
+import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from runtime.security_store import record
 from services.grpc_inspection import MAX_BODY, inspect_request
 
 
-def make_server(journal, *, port=9001):
+def make_server(journal, *, port=9001, stdout_events=False):
     class Handler(BaseHTTPRequestHandler):
         server_version = "SentinelInspector"
         sys_version = ""
@@ -37,7 +38,9 @@ def make_server(journal, *, port=9001):
                                          self.headers.get("grpc-encoding", ""), body,
                                          partial=self.headers.get("x-envoy-auth-partial-body", "false") != "false")
                 # Fail closed if the audit journal cannot be written.
-                record(journal, "inspection", result)
+                event = record(journal, "inspection", result)
+                if stdout_events:
+                    print(json.dumps(event, allow_nan=False), flush=True)
             except (ValueError, TimeoutError):
                 self.send_error(400)
                 return
@@ -63,8 +66,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--journal", required=True)
     parser.add_argument("--port", type=int, default=9001)
+    parser.add_argument("--stdout-events", action="store_true", help="Emit the same metadata-only audit records for log collection")
     args = parser.parse_args()
-    with make_server(args.journal, port=args.port) as server:
+    with make_server(args.journal, port=args.port, stdout_events=args.stdout_events) as server:
         server.serve_forever()
 
 

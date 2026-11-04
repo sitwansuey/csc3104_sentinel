@@ -53,10 +53,15 @@ class InspectionTests(unittest.TestCase):
     def test_quantity_product_and_item_limits_are_enforced(self):
         for payload, rule in ((request(0), "QUANTITY"), (request(101), "QUANTITY"),
                               (request(2**64-1), "QUANTITY"), (request(product=b"bad\n"), "TEXT_CONSTRAINT"),
-                              (request(product=b"<script>"), "PRODUCT_ID"), (b"", "ITEM_COUNT"),
+                              (request(product=b"<script>"), "PRODUCT_ID"),
                               (request() * 21, "ITEM_COUNT")):
             with self.subTest(rule=rule):
                 self.assertEqual(self.inspect(frame(payload))["rule"], rule)
+
+    def test_empty_cart_quote_is_a_legitimate_upstream_request(self):
+        self.assertEqual(self.inspect(frame(b""))["verdict"], "ALLOW")
+        self.assertEqual(self.inspect(frame(field(1,field(1,b"Street"))),
+                         path="/hipstershop.ShippingService/ShipOrder")["rule"], "ITEM_COUNT")
 
     def test_compressed_partial_oversized_multiframe_and_truncated_bodies_denied(self):
         for data, options in ((b"\x01" + frame(request())[1:], {}), (frame(request()), {"encoding": "gzip"}),

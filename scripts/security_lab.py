@@ -110,7 +110,7 @@ def envoy_config(*, upstream=False):
         "clusters": clusters}}
 
 
-def certificates(directory):
+def certificates(directory, *, extra_clients=()):
     openssl = shutil.which("openssl")
     if not openssl:
         raise RuntimeError("OpenSSL is required on PATH for short-lived local test certificates")
@@ -119,8 +119,10 @@ def certificates(directory):
     run([openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", "/CN=Sentinel lab CA",
          "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign",
          "-addext", "subjectKeyIdentifier=hash", "-keyout", ca / "ca.key", "-out", ca / "ca.crt"])
-    for identity, host, client in (("gateway", "gateway.internal", False), ("upstream", "upstream.internal", False),
-                                   ("proxy-client", "proxy-client.internal", True), ("client", "client.internal", True)):
+    identities = [("gateway", "gateway.internal", False), ("upstream", "upstream.internal", False),
+                  ("proxy-client", "proxy-client.internal", True), ("client", "client.internal", True)]
+    identities += [(identity, identity + ".internal", True) for identity in extra_clients]
+    for identity, host, client in identities:
         folder = directory / identity
         folder.mkdir(mode=0o700)
         run([openssl, "req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", f"/CN={host}",

@@ -57,6 +57,16 @@ class ImageSecurityTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 image_reference(value)
 
+    def test_docker_hub_aliases_bind_only_the_same_repository_and_digest(self):
+        source = report()
+        image = "docker.io/library/redis@sha256:" + "a"*64
+        source["ArtifactName"] = image
+        source["Metadata"]["RepoDigests"] = ["redis@sha256:" + "a"*64]
+        self.assertEqual(summarize(source,image)["image"],image)
+        source["Metadata"]["RepoDigests"] = ["redis@sha256:" + "b"*64]
+        with self.assertRaises(ValueError):
+            summarize(source,image)
+
     def test_scan_failure_overwrites_previous_clean_output_with_unknown(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "scan.json"
@@ -83,6 +93,7 @@ class ImageSecurityTests(unittest.TestCase):
         command = commands[-1]
         self.assertIn("--read-only", command)
         self.assertIn("--user", command)
+        self.assertIn("TMPDIR=/report/tmp", command)
         self.assertIn("remote", command)
         self.assertIn("--ignore-unfixed=false", command)
         self.assertEqual(command[-1], IMAGE)

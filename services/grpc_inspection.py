@@ -96,7 +96,9 @@ def inspect_request(path, content_type, encoding, body, *, partial=False):
             if fields.get(5, [0])[0] > 999999999:
                 raise InspectionDenied("ZIP_CONSTRAINT")
         items = request.get(2, [])
-        if not 1 <= len(items) <= 20:
+        # The real storefront requests a zero-cost quote for an empty cart.
+        minimum = 0 if path.endswith("/GetQuote") else 1
+        if not minimum <= len(items) <= 20:
             raise InspectionDenied("ITEM_COUNT")
         for item in items:
             fields = _fields(item, {1: 2, 2: 0})

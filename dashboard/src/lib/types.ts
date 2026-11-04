@@ -60,9 +60,12 @@ export interface SecurityFinding {
   id: string; package: string; installed: string; fixed: string | null; severity: string; recommendation: string;
 }
 export interface SecurityEvent {
-  sequence: number; kind: "inspection" | "image_scan"; at: string;
+  sequence: number; kind: "inspection" | "image_scan" | "alert" | "monitor"; at: string;
   method?: string; bytes?: number; verdict?: string; rule?: string;
   image?: string; status?: string; scanner?: string; counts?: Record<string, number>;
   findings?: SecurityFinding[]; automatic_patching?: boolean; detail?: string;
+  code?: string; severity?: string; completed?: number; total?: number;
+  interval_seconds?: number; next_scan_at?: string | null;
+  scanned_at?: string;
 }
 export type View = "overview" | "cluster" | "boutique" | "security" | "coordinator" | "monitoring" | "planner" | "guard" | "executor" | "verification"
