@@ -10,8 +10,9 @@ import json
 from pathlib import Path
 import subprocess
 
-from services.coordinator import acknowledge, dispatch_pending, record_message
-from services.guard import evaluate_with_report
+from services.coordinator import CoordinatorError, acknowledge, dispatch_pending, record_message
+from services.guard import assert_decision_usable, evaluate_with_report
+from shared.contracts import validate_message
 
 
 def json_reader(path):
@@ -44,14 +45,29 @@ class KubectlStateReader:
                 "deployment": json.loads(result.stdout)}
 
 
-def _dependencies(store, proposal, now):
-    records = []
-    for row in store.db.execute("SELECT payload FROM messages"):
-        message = json.loads(row[0])
-        if message["kind"] == "dependency_result" and message["action_id"] == proposal["action_id"]:
-            records.append(message)
-    if records:
-        return max(records, key=lambda item: datetime.fromisoformat(item["checked_at"].replace("Z", "+00:00")))
+def _dependencies(store, proposal, now, provided=None):
+    stored = store.dependency_result(proposal["action_id"])
+    if provided is not None:
+        validate_message(provided)
+        if provided["kind"] != "dependency_result":
+            raise ValueError("Dependency reader must return a dependency_result")
+        if any(provided[key] != proposal[key] for key in ("incident_id", "action_id", "target")):
+            return provided  # Let Guard reject mismatched input; never persist it.
+        if stored:
+            provided_at = datetime.fromisoformat(provided["checked_at"].replace("Z", "+00:00"))
+            stored_at = datetime.fromisoformat(stored["checked_at"].replace("Z", "+00:00"))
+            if provided_at < stored_at:
+                return stored
+            if provided_at == stored_at:
+                if provided != stored:
+                    raise CoordinatorError("Dependency reader conflicts with accepted evidence at the same timestamp")
+                return stored
+        # Persist the exact provider input used by the decision, atomically with
+        # its report. This also advances a revoked action's evidence binding.
+        record_message(provided, store)
+        return provided
+    if stored:
+        return stored
     # Absence of owner 6's result must never become fabricated CLEAR evidence.
     return {"schema_version": "1.0", "kind": "dependency_result",
             "incident_id": proposal["incident_id"], "action_id": proposal["action_id"],
@@ -96,16 +112,24 @@ def process_guard_requests(store, event_bus, *, state_reader, policy_reader,
             now = clock()
             if not isinstance(now, datetime) or now.utcoffset() != timedelta(0):
                 raise ValueError("Guard worker clock must return timezone-aware UTC")
-            if dependencies is None:
-                dependencies = _dependencies(store, proposal, now)
+            dependencies = _dependencies(store, proposal, now, dependencies)
+            approval = store.approval(action["action_id"])
             decision, report = evaluate_with_report(
-                proposal, state, policy, baseline, dependencies,
-                store.approval(action["action_id"]), now=now)
-            record_message(decision, store)
+                proposal, state, policy, baseline, dependencies, approval, now=now)
+            if decision["verdict"] == "ALLOW":
+                assert_decision_usable(decision, proposal, state, policy, baseline,
+                                       dependencies, approval, now=now)
             store.db.execute(
                 "INSERT OR IGNORE INTO guard_reports(decision_sha256,action_id,report) VALUES(?,?,?)",
                 (report["decision_sha256"], action["action_id"], json.dumps(report, allow_nan=False)))
-            acknowledge(store, request["id"])
+            record_message(decision, store)
+            # Every queued request for this action is covered by the newest
+            # evidence read under this same transaction, including a provider
+            # finding ingested above. Avoid evaluating superseded requests twice.
+            for covered in store.db.execute(
+                    "SELECT id FROM outbox WHERE topic='guard.request' AND action_id=? AND delivered=0",
+                    (action["action_id"],)).fetchall():
+                acknowledge(store, covered[0])
             store.db.execute("COMMIT")
             decisions.append(decision)
         except BaseException:
