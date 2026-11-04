@@ -1,0 +1,1335 @@
+{
+  "schema_version": "1.0",
+  "suite_version": "guard-cases-v1",
+  "evidence_kind": "synthetic_fixture",
+  "label_definition": {
+    "SAFE": "Authorizable with all supplied fixture evidence and approval.",
+    "UNSAFE": "Must not authorize with these inputs; missing evidence or approval does not imply physical harm."
+  },
+  "base_inputs": {
+    "proposal": {
+      "schema_version": "1.0",
+      "incident_id": "INC-DEMO-001",
+      "target": {
+        "cluster_id": "sentinel-lab",
+        "namespace": "sentinel-demo",
+        "kind": "Deployment",
+        "name": "demo-api",
+        "uid": "synthetic-demo-uid-001"
+      },
+      "kind": "proposal",
+      "action_id": "ACT-DEMO-001",
+      "action": "ROLLBACK",
+      "parameters": {
+        "baseline_id": "BASE-DEMO-001",
+        "template_sha256": "956f1deb6a1356fdb6fe5d4eead3f25563acef58e97efad351c0f1e594ce1573"
+      },
+      "based_on_resource_version": "102",
+      "rationale": "Repeated startup failures after a template change; an observed healthy baseline is retained.",
+      "evidence_refs": [
+        "E-POD-1",
+        "E-LOG-1"
+      ]
+    },
+    "live_state": {
+      "source": "synthetic_development_fixture",
+      "captured_at": "2026-10-10T12:00:30Z",
+      "cluster_id": "sentinel-lab",
+      "deployment": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+          "name": "demo-api",
+          "namespace": "sentinel-demo",
+          "labels": {
+            "app": "demo-api"
+          },
+          "uid": "synthetic-demo-uid-001",
+          "resourceVersion": "102",
+          "generation": 2
+        },
+        "spec": {
+          "replicas": 1,
+          "revisionHistoryLimit": 5,
+          "minReadySeconds": 2,
+          "progressDeadlineSeconds": 90,
+          "strategy": {
+            "type": "Recreate"
+          },
+          "selector": {
+            "matchLabels": {
+              "app": "demo-api"
+            }
+          },
+          "template": {
+            "metadata": {
+              "labels": {
+                "app": "demo-api"
+              }
+            },
+            "spec": {
+              "automountServiceAccountToken": false,
+              "securityContext": {
+                "runAsNonRoot": true,
+                "runAsUser": 10001,
+                "runAsGroup": 10001,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "containers": [
+                {
+                  "name": "demo-api",
+                  "image": "sentinel-demo:0.1.0",
+                  "imagePullPolicy": "Never",
+                  "ports": [
+                    {
+                      "name": "http",
+                      "containerPort": 8080
+                    }
+                  ],
+                  "env": [
+                    {
+                      "name": "STARTUP_FAILURE",
+                      "value": "true"
+                    }
+                  ],
+                  "resources": {
+                    "requests": {
+                      "cpu": "50m",
+                      "memory": "32Mi"
+                    },
+                    "limits": {
+                      "cpu": "200m",
+                      "memory": "64Mi"
+                    }
+                  },
+                  "securityContext": {
+                    "allowPrivilegeEscalation": false,
+                    "readOnlyRootFilesystem": true,
+                    "capabilities": {
+                      "drop": [
+                        "ALL"
+                      ]
+                    }
+                  },
+                  "readinessProbe": {
+                    "httpGet": {
+                      "path": "/readyz",
+                      "port": "http"
+                    },
+                    "periodSeconds": 3,
+                    "timeoutSeconds": 2
+                  },
+                  "livenessProbe": {
+                    "httpGet": {
+                      "path": "/healthz",
+                      "port": "http"
+                    },
+                    "initialDelaySeconds": 5,
+                    "periodSeconds": 5,
+                    "timeoutSeconds": 2
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "status": {
+          "observedGeneration": 2,
+          "replicas": 1,
+          "readyReplicas": 0,
+          "availableReplicas": 0
+        }
+      },
+      "pods": [
+        {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "metadata": {
+            "name": "demo-api-fixture",
+            "namespace": "sentinel-demo",
+            "uid": "synthetic-pod-uid",
+            "labels": {
+              "app": "demo-api"
+            }
+          },
+          "status": {
+            "phase": "Running",
+            "containerStatuses": [
+              {
+                "name": "demo-api",
+                "ready": false,
+                "restartCount": 4,
+                "state": {
+                  "waiting": {
+                    "reason": "CrashLoopBackOff",
+                    "message": "Back-off restarting failed container"
+                  }
+                },
+                "lastState": {
+                  "terminated": {
+                    "exitCode": 1,
+                    "reason": "Error"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "reason": "BackOff",
+          "type": "Warning",
+          "message": "Back-off restarting failed container",
+          "lastTimestamp": "2026-10-10T12:00:30Z"
+        }
+      ],
+      "logs": [
+        {
+          "pod": "demo-api-fixture",
+          "container": "demo-api",
+          "text": "Invalid startup configuration; process exited with code 1",
+          "at": "2026-10-10T12:00:30Z"
+        }
+      ],
+      "reference_versions": []
+    },
+    "policy": {
+      "policy_id": "synthetic-guard-v2-demo",
+      "policy_version": "synthetic-guard-v2-demo-1",
+      "targets": [
+        {
+          "cluster_id": "sentinel-lab",
+          "namespace": "sentinel-demo",
+          "kind": "Deployment",
+          "name": "demo-api",
+          "uid": "synthetic-demo-uid-001"
+        }
+      ],
+      "allowed_actions": [
+        "ROLLBACK"
+      ],
+      "require_operator_approval": true,
+      "unknown_dependency_result": "ESCALATE",
+      "detection": {
+        "failure_duration_seconds": 30
+      },
+      "health": {
+        "stable_window_seconds": 20,
+        "minimum_samples": 3,
+        "max_sample_gap_seconds": 15,
+        "required_http_status": 200
+      },
+      "note": "FABRICATED FIXTURE. Offline Guard evaluation only; no live authority.",
+      "profile": "live",
+      "max_state_age_seconds": 15,
+      "max_dependency_age_seconds": 30,
+      "decision_ttl_seconds": 10,
+      "max_approval_lifetime_seconds": 300,
+      "require_server_dry_run": false,
+      "max_server_dry_run_age_seconds": 10,
+      "resource_constraints": {
+        "require_requests_and_limits": true,
+        "max_container_requests": {
+          "cpu": "100m",
+          "memory": "64Mi"
+        },
+        "max_container_limits": {
+          "cpu": "500m",
+          "memory": "128Mi"
+        }
+      },
+      "workload_constraints": {
+        "max_pod_requests": {
+          "cpu": "250m",
+          "memory": "128Mi"
+        },
+        "max_rollout_requests": {
+          "cpu": "1",
+          "memory": "512Mi"
+        },
+        "max_replicas": 3,
+        "max_surge_replicas": 1
+      },
+      "baseline_constraints": {
+        "max_age_seconds": 300,
+        "min_healthy_duration_seconds": 30,
+        "trusted_sources": [
+          "synthetic-demo-verifier"
+        ],
+        "require_health_evidence": true,
+        "require_compatible_references": true,
+        "require_image_digests": true
+      },
+      "security_constraints": {
+        "deny_privileged": true,
+        "deny_host_access": true,
+        "allowed_image_registries": [
+          "registry.example.test"
+        ],
+        "allowed_service_accounts": [
+          "default"
+        ],
+        "forbid_service_account_change": true
+      }
+    },
+    "baseline": {
+      "source": "synthetic_development_fixture",
+      "baseline_id": "BASE-DEMO-001",
+      "target": {
+        "cluster_id": "sentinel-lab",
+        "namespace": "sentinel-demo",
+        "kind": "Deployment",
+        "name": "demo-api",
+        "uid": "synthetic-demo-uid-001"
+      },
+      "healthy_observed_at": "2026-10-10T11:59:30Z",
+      "template_sha256": "956f1deb6a1356fdb6fe5d4eead3f25563acef58e97efad351c0f1e594ce1573",
+      "pod_template": {
+        "metadata": {
+          "labels": {
+            "app": "demo-api"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "securityContext": {
+            "runAsNonRoot": true,
+            "runAsUser": 10001,
+            "runAsGroup": 10001,
+            "seccompProfile": {
+              "type": "RuntimeDefault"
+            }
+          },
+          "containers": [
+            {
+              "name": "demo-api",
+              "image": "registry.example.test/sentinel/demo@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+              "imagePullPolicy": "Never",
+              "ports": [
+                {
+                  "name": "http",
+                  "containerPort": 8080
+                }
+              ],
+              "env": [
+                {
+                  "name": "STARTUP_FAILURE",
+                  "value": "false"
+                }
+              ],
+              "resources": {
+                "requests": {
+                  "cpu": "50m",
+                  "memory": "32Mi"
+                },
+                "limits": {
+                  "cpu": "200m",
+                  "memory": "64Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "readOnlyRootFilesystem": true,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                }
+              },
+              "readinessProbe": {
+                "httpGet": {
+                  "path": "/readyz",
+                  "port": "http"
+                },
+                "periodSeconds": 3,
+                "timeoutSeconds": 2
+              },
+              "livenessProbe": {
+                "httpGet": {
+                  "path": "/healthz",
+                  "port": "http"
+                },
+                "initialDelaySeconds": 5,
+                "periodSeconds": 5,
+                "timeoutSeconds": 2
+              }
+            }
+          ]
+        }
+      },
+      "reference_versions": [],
+      "health_evidence": {
+        "source": "synthetic-demo-verifier",
+        "evidence_id": "SYNTHETIC-HEALTH-001",
+        "status": "HEALTHY",
+        "target": {
+          "cluster_id": "sentinel-lab",
+          "namespace": "sentinel-demo",
+          "kind": "Deployment",
+          "name": "demo-api",
+          "uid": "synthetic-demo-uid-001"
+        },
+        "template_sha256": "956f1deb6a1356fdb6fe5d4eead3f25563acef58e97efad351c0f1e594ce1573",
+        "window_start": "2026-10-10T11:58:30Z",
+        "window_end": "2026-10-10T11:59:30Z"
+      }
+    },
+    "dependencies": {
+      "schema_version": "1.0",
+      "incident_id": "INC-DEMO-001",
+      "target": {
+        "cluster_id": "sentinel-lab",
+        "namespace": "sentinel-demo",
+        "kind": "Deployment",
+        "name": "demo-api",
+        "uid": "synthetic-demo-uid-001"
+      },
+      "kind": "dependency_result",
+      "action_id": "ACT-DEMO-001",
+      "status": "CLEAR",
+      "affected_services": [
+        "demo-api",
+        "mock-db"
+      ],
+      "blockers": [],
+      "unknowns": [],
+      "checked_at": "2026-10-10T12:00:34Z"
+    },
+    "now": "2026-10-10T12:00:40Z",
+    "approval": {
+      "action_id": "ACT-DEMO-001",
+      "proposal_sha256": "845f735599289153fe0c3667a74ac03309de2886868486b7e51086a82aebc832",
+      "policy_version": "synthetic-guard-v2-demo-1",
+      "operator_id": "SYNTHETIC-DEMO-OPERATOR",
+      "decision": "APPROVED",
+      "approved_at": "2026-10-10T12:00:35Z",
+      "expires_at": "2026-10-10T12:05:35Z"
+    },
+    "preview": null
+  },
+  "cases": [
+    {
+      "id": "safe-approved-rollback",
+      "label": "SAFE",
+      "category": "valid",
+      "description": "Fresh, approved rollback to an intact healthy baseline.",
+      "expected_full": {
+        "verdict": "ALLOW",
+        "reason": "VALIDATION_PASSED"
+      },
+      "changes": []
+    },
+    {
+      "id": "safe-state-near-expiry",
+      "label": "SAFE",
+      "category": "stale",
+      "description": "State is one second inside the maximum age, leaving a positive decision window.",
+      "expected_full": {
+        "verdict": "ALLOW",
+        "reason": "VALIDATION_PASSED"
+      },
+      "changes": [
+        {
+          "path": [
+            "live_state",
+            "captured_at"
+          ],
+          "value": "2026-10-10T12:00:26Z"
+        }
+      ]
+    },
+    {
+      "id": "safe-dependency-near-expiry",
+      "label": "SAFE",
+      "category": "dependency",
+      "description": "CLEAR evidence is one second inside the maximum age.",
+      "expected_full": {
+        "verdict": "ALLOW",
+        "reason": "VALIDATION_PASSED"
+      },
+      "changes": [
+        {
+          "path": [
+            "dependencies",
+            "checked_at"
+          ],
+          "value": "2026-10-10T12:00:11Z"
+        }
+      ]
+    },
+    {
+      "id": "safe-approval-near-expiry",
+      "label": "SAFE",
+      "category": "approval",
+      "description": "A matching approval still has one second of validity.",
+      "expected_full": {
+        "verdict": "ALLOW",
+        "reason": "VALIDATION_PASSED"
+      },
+      "changes": [
+        {
+          "path": [
+            "approval",
+            "expires_at"
+          ],
+          "value": "2026-10-10T12:00:41Z"
+        }
+      ]
+    },
+    {
+      "id": "safe-two-replicas",
+      "label": "SAFE",
+      "category": "resource",
+      "description": "Two replicas and rolling surge remain within workload budgets.",
+      "expected_full": {
+        "verdict": "ALLOW",
+        "reason": "VALIDATION_PASSED"
+      },
+      "changes": [
+        {
+          "path": [
+            "live_state",
+            "deployment",
+            "spec",
+            "replicas"
+          ],
+          "value": 2
+        }
+      ]
+    },
+    {
+      "id": "safe-unknown-policy-reject-with-clear",
+      "label": "SAFE",
+      "category": "dependency",
+      "description": "A stricter UNKNOWN policy still allows fresh CLEAR evidence.",
+      "expected_full": {
+        "verdict": "ALLOW",
+        "reason": "VALIDATION_PASSED"
+      },
+      "changes": [
+        {
+          "path": [
+            "policy",
+            "unknown_dependency_result"
+          ],
+          "value": "REJECT"
+        }
+      ]
+    },
+    {
+      "id": "stale-resource-version",
+      "label": "UNSAFE",
+      "category": "stale",
+      "description": "Proposal references an older live resource version.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "STALE_RESOURCE_VERSION"
+      },
+      "changes": [
+        {
+          "path": [
+            "live_state",
+            "deployment",
+            "metadata",
+            "resourceVersion"
+          ],
+          "value": "103"
+        }
+      ]
+    },
+    {
+      "id": "stale-live-snapshot",
+      "label": "UNSAFE",
+      "category": "stale",
+      "description": "State is older than policy permits.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "STALE_LIVE_STATE"
+      },
+      "changes": [
+        {
+          "path": [
+            "live_state",
+            "captured_at"
+          ],
+          "value": "2026-10-10T12:00:24Z"
+        }
+      ]
+    },
+    {
+      "id": "future-live-snapshot",
+      "label": "UNSAFE",
+      "category": "stale",
+      "description": "State comes from the future.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "LIVE_STATE_FROM_FUTURE"
+      },
+      "changes": [
+        {
+          "path": [
+            "live_state",
+            "captured_at"
+          ],
+          "value": "2026-10-10T12:00:41Z"
+        }
+      ]
+    },
+    {
+      "id": "recreated-target",
+      "label": "UNSAFE",
+      "category": "stale",
+      "description": "The target Deployment UID changed.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "TARGET_UID_MISMATCH"
+      },
+      "changes": [
+        {
+          "path": [
+            "live_state",
+            "deployment",
+            "metadata",
+            "uid"
+          ],
+          "value": "synthetic-recreated-uid"
+        }
+      ]
+    },
+    {
+      "id": "forbidden-target",
+      "label": "UNSAFE",
+      "category": "forbidden",
+      "description": "The exact target is absent from the allowlist.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "TARGET_NOT_ALLOWED"
+      },
+      "changes": [
+        {
+          "path": [
+            "policy",
+            "targets"
+          ],
+          "value": []
+        }
+      ]
+    },
+    {
+      "id": "forbidden-action",
+      "label": "UNSAFE",
+      "category": "forbidden",
+      "description": "ROLLBACK is absent from allowed actions.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "ACTION_NOT_ALLOWED"
+      },
+      "changes": [
+        {
+          "path": [
+            "policy",
+            "allowed_actions"
+          ],
+          "value": []
+        }
+      ]
+    },
+    {
+      "id": "tampered-baseline",
+      "label": "UNSAFE",
+      "category": "tampered",
+      "description": "Saved template contents changed without updating their trusted hash.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "BASELINE_HASH_MISMATCH"
+      },
+      "changes": [
+        {
+          "path": [
+            "baseline",
+            "pod_template",
+            "spec",
+            "containers"
+          ],
+          "value": [
+            {
+              "name": "demo-api",
+              "image": "registry.example.test/sentinel/changed@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+              "imagePullPolicy": "Never",
+              "ports": [
+                {
+                  "name": "http",
+                  "containerPort": 8080
+                }
+              ],
+              "env": [
+                {
+                  "name": "STARTUP_FAILURE",
+                  "value": "false"
+                }
+              ],
+              "resources": {
+                "requests": {
+                  "cpu": "50m",
+                  "memory": "32Mi"
+                },
+                "limits": {
+                  "cpu": "200m",
+                  "memory": "64Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "readOnlyRootFilesystem": true,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                }
+              },
+              "readinessProbe": {
+                "httpGet": {
+                  "path": "/readyz",
+                  "port": "http"
+                },
+                "periodSeconds": 3,
+                "timeoutSeconds": 2
+              },
+              "livenessProbe": {
+                "httpGet": {
+                  "path": "/healthz",
+                  "port": "http"
+                },
+                "initialDelaySeconds": 5,
+                "periodSeconds": 5,
+                "timeoutSeconds": 2
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "baseline-identity-mismatch",
+      "label": "UNSAFE",
+      "category": "tampered",
+      "description": "The stored baseline ID differs from the requested one.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "BASELINE_ID_MISMATCH"
+      },
+      "changes": [
+        {
+          "path": [
+            "baseline",
+            "baseline_id"
+          ],
+          "value": "BASE-OTHER"
+        }
+      ]
+    },
+    {
+      "id": "dependency-blocked",
+      "label": "UNSAFE",
+      "category": "dependency",
+      "description": "A Verifier-shaped BLOCKED finding vetoes the action.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "DEPENDENCY_BLOCKED"
+      },
+      "changes": [
+        {
+          "path": [
+            "dependencies",
+            "status"
+          ],
+          "value": "BLOCKED"
+        }
+      ]
+    },
+    {
+      "id": "dependency-unknown-escalate",
+      "label": "UNSAFE",
+      "category": "dependency",
+      "description": "UNKNOWN cannot authorize execution under ESCALATE policy.",
+      "expected_full": {
+        "verdict": "ESCALATE",
+        "reason": "DEPENDENCY_UNKNOWN"
+      },
+      "changes": [
+        {
+          "path": [
+            "dependencies",
+            "status"
+          ],
+          "value": "UNKNOWN"
+        }
+      ]
+    },
+    {
+      "id": "dependency-unknown-reject",
+      "label": "UNSAFE",
+      "category": "dependency",
+      "description": "UNKNOWN is rejected under the configured stricter policy.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "DEPENDENCY_UNKNOWN"
+      },
+      "changes": [
+        {
+          "path": [
+            "policy",
+            "unknown_dependency_result"
+          ],
+          "value": "REJECT"
+        },
+        {
+          "path": [
+            "dependencies",
+            "status"
+          ],
+          "value": "UNKNOWN"
+        }
+      ]
+    },
+    {
+      "id": "dependency-stale",
+      "label": "UNSAFE",
+      "category": "dependency",
+      "description": "An old CLEAR assessment is insufficient evidence.",
+      "expected_full": {
+        "verdict": "ESCALATE",
+        "reason": "STALE_DEPENDENCY_RESULT"
+      },
+      "changes": [
+        {
+          "path": [
+            "dependencies",
+            "checked_at"
+          ],
+          "value": "2026-10-10T12:00:09Z"
+        }
+      ]
+    },
+    {
+      "id": "dependency-future",
+      "label": "UNSAFE",
+      "category": "dependency",
+      "description": "A future-dated CLEAR assessment cannot authorize.",
+      "expected_full": {
+        "verdict": "ESCALATE",
+        "reason": "DEPENDENCY_RESULT_FROM_FUTURE"
+      },
+      "changes": [
+        {
+          "path": [
+            "dependencies",
+            "checked_at"
+          ],
+          "value": "2026-10-10T12:00:41Z"
+        }
+      ]
+    },
+    {
+      "id": "dependency-other-incident",
+      "label": "UNSAFE",
+      "category": "dependency",
+      "description": "Evidence is bound to another incident.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "DEPENDENCY_RESULT_MISMATCH"
+      },
+      "changes": [
+        {
+          "path": [
+            "dependencies",
+            "incident_id"
+          ],
+          "value": "INC-OTHER"
+        }
+      ]
+    },
+    {
+      "id": "dependency-other-action",
+      "label": "UNSAFE",
+      "category": "dependency",
+      "description": "Evidence is bound to another action.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "DEPENDENCY_RESULT_MISMATCH"
+      },
+      "changes": [
+        {
+          "path": [
+            "dependencies",
+            "action_id"
+          ],
+          "value": "ACT-OTHER"
+        }
+      ]
+    },
+    {
+      "id": "dependency-other-target",
+      "label": "UNSAFE",
+      "category": "dependency",
+      "description": "Evidence is bound to another target UID.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "DEPENDENCY_RESULT_MISMATCH"
+      },
+      "changes": [
+        {
+          "path": [
+            "dependencies",
+            "target",
+            "uid"
+          ],
+          "value": "synthetic-other-uid"
+        }
+      ]
+    },
+    {
+      "id": "approval-missing",
+      "label": "UNSAFE",
+      "category": "approval",
+      "description": "Required human approval is absent.",
+      "expected_full": {
+        "verdict": "ESCALATE",
+        "reason": "OPERATOR_APPROVAL_REQUIRED"
+      },
+      "changes": [
+        {
+          "path": [
+            "approval"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "id": "approval-expired",
+      "label": "UNSAFE",
+      "category": "approval",
+      "description": "Approval expires exactly at evaluation time (exclusive expiry).",
+      "expected_full": {
+        "verdict": "ESCALATE",
+        "reason": "APPROVAL_EXPIRED"
+      },
+      "changes": [
+        {
+          "path": [
+            "approval",
+            "expires_at"
+          ],
+          "value": "2026-10-10T12:00:40Z"
+        }
+      ]
+    },
+    {
+      "id": "approval-wrong-proposal",
+      "label": "UNSAFE",
+      "category": "approval",
+      "description": "Approval belongs to a different full proposal hash.",
+      "expected_full": {
+        "verdict": "ESCALATE",
+        "reason": "APPROVAL_MISMATCH"
+      },
+      "changes": [
+        {
+          "path": [
+            "approval",
+            "proposal_sha256"
+          ],
+          "value": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "approval-denied",
+      "label": "UNSAFE",
+      "category": "approval",
+      "description": "An operator explicitly rejected the matching action.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "OPERATOR_REJECTED"
+      },
+      "changes": [
+        {
+          "path": [
+            "approval",
+            "decision"
+          ],
+          "value": "REJECTED"
+        }
+      ]
+    },
+    {
+      "id": "approval-future",
+      "label": "UNSAFE",
+      "category": "approval",
+      "description": "Approval has not been granted at evaluation time.",
+      "expected_full": {
+        "verdict": "ESCALATE",
+        "reason": "APPROVAL_FROM_FUTURE"
+      },
+      "changes": [
+        {
+          "path": [
+            "approval",
+            "approved_at"
+          ],
+          "value": "2026-10-10T12:00:41Z"
+        }
+      ]
+    },
+    {
+      "id": "untrusted-baseline-health",
+      "label": "UNSAFE",
+      "category": "baseline-health",
+      "description": "Health evidence comes from an untrusted source.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "BASELINE_HEALTH_SOURCE"
+      },
+      "changes": [
+        {
+          "path": [
+            "baseline",
+            "health_evidence",
+            "source"
+          ],
+          "value": "synthetic-untrusted-planner"
+        }
+      ]
+    },
+    {
+      "id": "missing-baseline-health",
+      "label": "UNSAFE",
+      "category": "baseline-health",
+      "description": "No healthy-window evidence accompanies the baseline.",
+      "expected_full": {
+        "verdict": "ESCALATE",
+        "reason": "BASELINE_HEALTH_EVIDENCE_MISSING"
+      },
+      "changes": [
+        {
+          "path": [
+            "baseline",
+            "health_evidence"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "id": "privileged-baseline",
+      "label": "UNSAFE",
+      "category": "security",
+      "description": "An internally consistent baseline requests a forbidden privileged container.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "SECURITY_PRIVILEGED"
+      },
+      "changes": [
+        {
+          "path": [
+            "proposal",
+            "parameters",
+            "template_sha256"
+          ],
+          "value": "fcf8c8c174a22e92c66091b4038d04b2f37ab5a607bad853c1553f6d7830bff8"
+        },
+        {
+          "path": [
+            "baseline",
+            "template_sha256"
+          ],
+          "value": "fcf8c8c174a22e92c66091b4038d04b2f37ab5a607bad853c1553f6d7830bff8"
+        },
+        {
+          "path": [
+            "baseline",
+            "pod_template",
+            "spec",
+            "containers"
+          ],
+          "value": [
+            {
+              "name": "demo-api",
+              "image": "registry.example.test/sentinel/demo@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+              "imagePullPolicy": "Never",
+              "ports": [
+                {
+                  "name": "http",
+                  "containerPort": 8080
+                }
+              ],
+              "env": [
+                {
+                  "name": "STARTUP_FAILURE",
+                  "value": "false"
+                }
+              ],
+              "resources": {
+                "requests": {
+                  "cpu": "50m",
+                  "memory": "32Mi"
+                },
+                "limits": {
+                  "cpu": "200m",
+                  "memory": "64Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "readOnlyRootFilesystem": true,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "privileged": true
+              },
+              "readinessProbe": {
+                "httpGet": {
+                  "path": "/readyz",
+                  "port": "http"
+                },
+                "periodSeconds": 3,
+                "timeoutSeconds": 2
+              },
+              "livenessProbe": {
+                "httpGet": {
+                  "path": "/healthz",
+                  "port": "http"
+                },
+                "initialDelaySeconds": 5,
+                "periodSeconds": 5,
+                "timeoutSeconds": 2
+              }
+            }
+          ]
+        },
+        {
+          "path": [
+            "baseline",
+            "health_evidence",
+            "template_sha256"
+          ],
+          "value": "fcf8c8c174a22e92c66091b4038d04b2f37ab5a607bad853c1553f6d7830bff8"
+        },
+        {
+          "path": [
+            "approval",
+            "proposal_sha256"
+          ],
+          "value": "73f72c15589fa064f642a8aede49bf55b7df01aa87a5205e95de904a035a3bcf"
+        }
+      ]
+    },
+    {
+      "id": "container-resource-over-budget",
+      "label": "UNSAFE",
+      "category": "resource",
+      "description": "An internally consistent template exceeds the allowed per-container CPU request.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "RESOURCE_REQUEST_EXCEEDS_POLICY"
+      },
+      "changes": [
+        {
+          "path": [
+            "proposal",
+            "parameters",
+            "template_sha256"
+          ],
+          "value": "50a941a545aea4de0a356a572987112522cca9e304dd523d08284956af08edd9"
+        },
+        {
+          "path": [
+            "baseline",
+            "template_sha256"
+          ],
+          "value": "50a941a545aea4de0a356a572987112522cca9e304dd523d08284956af08edd9"
+        },
+        {
+          "path": [
+            "baseline",
+            "pod_template",
+            "spec",
+            "containers"
+          ],
+          "value": [
+            {
+              "name": "demo-api",
+              "image": "registry.example.test/sentinel/demo@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+              "imagePullPolicy": "Never",
+              "ports": [
+                {
+                  "name": "http",
+                  "containerPort": 8080
+                }
+              ],
+              "env": [
+                {
+                  "name": "STARTUP_FAILURE",
+                  "value": "false"
+                }
+              ],
+              "resources": {
+                "requests": {
+                  "cpu": "150m",
+                  "memory": "32Mi"
+                },
+                "limits": {
+                  "cpu": "200m",
+                  "memory": "64Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "readOnlyRootFilesystem": true,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                }
+              },
+              "readinessProbe": {
+                "httpGet": {
+                  "path": "/readyz",
+                  "port": "http"
+                },
+                "periodSeconds": 3,
+                "timeoutSeconds": 2
+              },
+              "livenessProbe": {
+                "httpGet": {
+                  "path": "/healthz",
+                  "port": "http"
+                },
+                "initialDelaySeconds": 5,
+                "periodSeconds": 5,
+                "timeoutSeconds": 2
+              }
+            }
+          ]
+        },
+        {
+          "path": [
+            "baseline",
+            "health_evidence",
+            "template_sha256"
+          ],
+          "value": "50a941a545aea4de0a356a572987112522cca9e304dd523d08284956af08edd9"
+        },
+        {
+          "path": [
+            "approval",
+            "proposal_sha256"
+          ],
+          "value": "e24b8e1ef462cf26ae84522372ee2e8a6235866f6ece23ea806b81a04f7cf6b8"
+        }
+      ]
+    },
+    {
+      "id": "no-template-change",
+      "label": "UNSAFE",
+      "category": "necessity",
+      "description": "The current Deployment already uses the saved healthy template.",
+      "expected_full": {
+        "verdict": "REJECT",
+        "reason": "ROLLBACK_ALREADY_AT_BASELINE"
+      },
+      "changes": [
+        {
+          "path": [
+            "live_state",
+            "deployment",
+            "spec",
+            "template",
+            "spec",
+            "containers"
+          ],
+          "value": [
+            {
+              "name": "demo-api",
+              "image": "registry.example.test/sentinel/demo@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+              "imagePullPolicy": "Never",
+              "ports": [
+                {
+                  "name": "http",
+                  "containerPort": 8080
+                }
+              ],
+              "env": [
+                {
+                  "name": "STARTUP_FAILURE",
+                  "value": "false"
+                }
+              ],
+              "resources": {
+                "requests": {
+                  "cpu": "50m",
+                  "memory": "32Mi"
+                },
+                "limits": {
+                  "cpu": "200m",
+                  "memory": "64Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "readOnlyRootFilesystem": true,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                }
+              },
+              "readinessProbe": {
+                "httpGet": {
+                  "path": "/readyz",
+                  "port": "http"
+                },
+                "periodSeconds": 3,
+                "timeoutSeconds": 2
+              },
+              "livenessProbe": {
+                "httpGet": {
+                  "path": "/healthz",
+                  "port": "http"
+                },
+                "initialDelaySeconds": 5,
+                "periodSeconds": 5,
+                "timeoutSeconds": 2
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision-window-exhausted",
+      "label": "UNSAFE",
+      "category": "stale",
+      "description": "Snapshot age is inclusive but leaves no live authorization validity window.",
+      "expected_full": {
+        "verdict": "ESCALATE",
+        "reason": "DECISION_WINDOW_EXHAUSTED"
+      },
+      "changes": [
+        {
+          "path": [
+            "live_state",
+            "captured_at"
+          ],
+          "value": "2026-10-10T12:00:25Z"
+        }
+      ]
+    }
+  ]
+}
