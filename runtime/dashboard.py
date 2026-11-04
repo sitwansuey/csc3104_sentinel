@@ -93,6 +93,8 @@ def snapshot(db_path, telemetry_path):
             if db.execute("SELECT 1 FROM sqlite_master WHERE name='boutique_observations'").fetchone():
                 result["boutique_history"] = [{"sequence": row[0], **json.loads(row[1])} for row in db.execute(
                     "SELECT id,payload FROM boutique_observations ORDER BY id DESC LIMIT 180")]
+            from runtime.security_store import recent
+            result["security_events"] = recent(db)
         finally:
             db.close()
     except (sqlite3.Error, ValueError, OSError):
@@ -100,6 +102,7 @@ def snapshot(db_path, telemetry_path):
         result["sources"].pop("telemetry", None)
         result["sources"].pop("cluster_metrics", None)
         result.pop("boutique_history", None)
+        result.pop("security_events", None)
     result["sources"].setdefault("telemetry", {
         "connected": False, "detail": "No telemetry journal connected. Start the collector or emit an event."})
     result["sources"].setdefault("cluster_metrics", {
