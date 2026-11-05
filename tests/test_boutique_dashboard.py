@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from scripts.boutique_dashboard import BoutiqueDashboard
+from experiments.boutique.harness.dashboard import BoutiqueDashboard
 from scripts.guard_rejection_demo import UNCHANGED_FIELDS
 from services.coordinator.core import SQLiteStore
 
@@ -30,8 +30,8 @@ class BoutiqueDashboardTests(unittest.TestCase):
                        "events": [], "summary": {}, "truncation": {}}
             dashboard = BoutiqueDashboard(root, context="test-context", cluster_id="test-cluster",
                                           namespace="test-namespace", port=0)
-            with patch("scripts.boutique_dashboard.ensure_frontend"), \
-                    patch("scripts.boutique_dashboard.collect_cluster_snapshot", return_value=cluster) as collect, \
+            with patch("experiments.boutique.harness.dashboard.ensure_frontend"), \
+                    patch("experiments.boutique.harness.dashboard.collect_cluster_snapshot", return_value=cluster) as collect, \
                     patch("runtime.dashboard.ASSETS", assets):
                 try:
                     dashboard.start()
@@ -57,7 +57,7 @@ class BoutiqueDashboardTests(unittest.TestCase):
     def test_unstarted_session_can_be_closed_after_frontend_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             dashboard = BoutiqueDashboard(directory, context="test", cluster_id="test", namespace="test", port=0)
-            with patch("scripts.boutique_dashboard.ensure_frontend", side_effect=RuntimeError("build failed")):
+            with patch("experiments.boutique.harness.dashboard.ensure_frontend", side_effect=RuntimeError("build failed")):
                 with self.assertRaisesRegex(RuntimeError, "build failed"):
                     dashboard.start()
             dashboard.close()
@@ -137,7 +137,7 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
             dashboard = BoutiqueDashboard(root, context="test-context", cluster_id="test-cluster",
                                           namespace="test-namespace", port=0)
             dashboard.url = "http://127.0.0.1:9999"
-            with patch("scripts.boutique_dashboard.urlopen", side_effect=[
+            with patch("experiments.boutique.harness.dashboard.urlopen", side_effect=[
                 Response(b'<html><script src="/assets/test.js"></script></html>'),
                 Response(json.dumps(self.snapshot).encode("utf-8")),
             ]) as fetch:

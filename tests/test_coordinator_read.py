@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from runtime.dashboard import snapshot
 from services.coordinator.core import SQLiteStore, LocalEventBus, handle
-from services.coordinator_read import read_records
+from services.coordinator.read import read_records
 
 
 class CoordinatorReadTests(unittest.TestCase):

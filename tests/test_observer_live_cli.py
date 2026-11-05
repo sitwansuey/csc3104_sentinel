@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts import demo_observer_live as live
+from experiments.validation import demo_observer_live as live
 
 
 ROOT = Path(__file__).resolve().parents[1]

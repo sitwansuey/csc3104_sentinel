@@ -12,7 +12,7 @@ from pathlib import Path
 import sqlite3
 from urllib.parse import urlsplit
 
-from services.coordinator_read import read_records
+from services.coordinator.read import read_records
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "dashboard" / "dist"

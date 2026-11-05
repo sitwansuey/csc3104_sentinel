@@ -16,7 +16,7 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from scripts.test_executor_live import Experiment, crash_worker, now, require, save, utc
+from experiments.recovery.live import Experiment, crash_worker, now, require, save, utc
 from runtime.observer_pipeline import LocalCoordinatorSink, ObserverStore
 from runtime.verifier_pipeline import process_verifier_requests
 from services.verifier.core import inspect_dependencies

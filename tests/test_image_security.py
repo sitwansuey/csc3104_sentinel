@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts.scan_image_security import TRIVY_VERSION, main, run_scan
+from scripts.security.scan_image_security import TRIVY_VERSION, main, run_scan
 from services.image_security import image_reference, summarize
 
 
@@ -71,7 +71,7 @@ class ImageSecurityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "scan.json"
             output.write_text('{"status":"NO_KNOWN_CVES"}')
-            with patch("scripts.scan_image_security.run_scan", side_effect=RuntimeError("scanner down")):
+            with patch("scripts.security.scan_image_security.run_scan", side_effect=RuntimeError("scanner down")):
                 self.assertEqual(main(["--image", IMAGE, "--output", str(output)]), 2)
             self.assertEqual(json.loads(output.read_text())["status"], "UNKNOWN")
 

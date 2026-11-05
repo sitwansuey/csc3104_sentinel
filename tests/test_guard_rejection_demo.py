@@ -4,7 +4,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import unittest
 
-from scripts.demo_guard import load_fixtures
+from experiments.validation.demo_guard import load_fixtures
 from scripts.guard_rejection_demo import (
     REASON, UNCHANGED_FIELDS, require_valid_approval, validate_rejection_proof,
 )

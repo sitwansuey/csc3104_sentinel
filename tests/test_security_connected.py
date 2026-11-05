@@ -11,9 +11,9 @@ import tempfile
 import unittest
 
 from runtime.security_store import import_inspections, recent, update_alert
-from scripts.boutique_security_manifest import CALLERS, NAMESPACE, caller_config, overlay, proxy_config
-from scripts.scan_image_security import archive_config_id
-from scripts.watch_security import assess_scan, inspection_alerts, load_inventory, scan_cycle
+from scripts.security.boutique_security_manifest import CALLERS, NAMESPACE, caller_config, overlay, proxy_config
+from scripts.security.scan_image_security import archive_config_id
+from scripts.security.watch_security import assess_scan, inspection_alerts, load_inventory, scan_cycle
 from services.image_security import summarize
 
 

@@ -9,8 +9,8 @@ import sys
 import tempfile
 import unittest
 
-from scripts.demo_guard import DEFAULT_NOW
-from scripts.demo_guard_v2 import SCENARIOS, build_inputs, export_inputs, run_scenario
+from experiments.validation.demo_guard import DEFAULT_NOW
+from experiments.validation.demo_guard_v2 import SCENARIOS, build_inputs, export_inputs, run_scenario
 from services.guard.core import GuardInputError, assert_decision_usable, evaluate, evaluate_with_report
 from shared.contracts import validate_message
 

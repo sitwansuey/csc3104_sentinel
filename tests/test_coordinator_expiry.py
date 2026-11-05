@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import unittest
 
-from scripts.demo_guard_v2 import build_inputs
+from experiments.validation.demo_guard_v2 import build_inputs
 from services.coordinator.core import CoordinatorError, LocalEventBus, SQLiteStore, approve, handle
 from services.guard.core import evaluate
 

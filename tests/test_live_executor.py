@@ -16,7 +16,7 @@ import unittest
 from unittest.mock import patch
 
 from runtime.live_executor import LiveGuardAuthorizer, build_adapters, main
-from scripts.demo_guard import load_fixtures
+from experiments.validation.demo_guard import load_fixtures
 from services.executor.core import execute, reconcile
 from tests.support.executor_fake import FakeDeploymentAPI
 from services.guard.core import GuardInputError, proposal_fingerprint, template_sha256

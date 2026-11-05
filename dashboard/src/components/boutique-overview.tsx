@@ -26,7 +26,7 @@ export function BoutiqueOverview({ records, cluster, now, stale, playback=false,
   return <div className="space-y-5">
     <div className="rounded-xl border border-primary/20 bg-primary/5 p-5">
       <div className="flex items-center gap-2 text-sm font-medium"><ShoppingCart className="size-4 text-primary"/>Connected Online Boutique</div>
-      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Eleven application and Redis Deployments. Fault injection and restricted recovery currently target shipping only. Planner proposals are supplied by the harness.</p>
+      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Eleven application and Redis Deployments. Fault injection and restricted recovery currently target shipping only. Planning uses the selected harness or RCA-agent mode; see Planner / RCA for recorded activity.</p>
       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Deployment readiness is infrastructure evidence. Shopping requests are measured at experiment stages; they are not continuous availability monitoring. Formal recovery is decided separately by Verifier.</p>
     </div>
     <Panel title="Boutique service readiness" description={inventory ? `${inventory.cluster_id} / ${inventory.namespace} · Observed ${time(inventory.observed_at)}` : "Waiting for connected-mode Deployment inventory"}>

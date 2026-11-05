@@ -2,7 +2,7 @@ import copy
 from datetime import datetime, timedelta, timezone
 import unittest
 
-from scripts.observer_live_checks import assess_report
+from scripts.validation.observer_live_checks import assess_report
 
 
 def report(*, healthy=False, count=None):

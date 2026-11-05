@@ -1,43 +1,23 @@
-# Documentation map
+# Operating guides
 
-Start with the [demo handbook](boutique-demo-handbook.md): prerequisites,
-connected storefront, ordered browser injections, evidence and cleanup.
-[System flow](current-system-demo.md) explains the current implementation;
-[repository review](repository-review-2026-11-05.md) records accepted changes,
-validation and remaining work.
+Read these in order:
 
-## Setup and experiments
+1. [Setup](setup.md): dependencies, script/manual installation and local environment.
+2. [Run and observe](run.md): launch, browser/manual/automatic injection, evidence and cleanup.
+3. [Architecture](architecture.md): role handoffs and safety/ownership boundaries.
+4. [Testing](testing.md): offline regressions, live acceptance and specialised checks.
+5. [Current status](status.md): tested revisions, actual results and remaining limitations.
 
-| Purpose | Guide |
-| --- | --- |
-| Install with scripts or manually | [Dependencies](dependencies.md) and the repository README |
-| Current full storefront, shipping repair | [Connected Boutique](boutique-connected.md) |
-| Smaller shipping-only lab | [Boutique live](boutique-live.md) |
-| Browser injection gates and evidence | [Experiment controls](experiment-controls.md) |
-| Dashboard/API | [Dashboard](dashboard.md), [response contract](dashboard-api.md) |
-| Future image build and laptop transfer | [Packaged demo](packaged-demo.md), [historical image scan](image-security.md) |
+Use [Planner mode](planner.md), [Chaos Mesh](chaos.md), [security](security.md) or
+[packaging](packaging.md) only when using that optional mode. Benchmarks are
+documented beside their code/data: [RCAEval](../agent/datasets/README.md) and
+[Guard cases](../data/experimentation/guard/README.md).
 
-## Role implementation
+Role design lives beside the implementation: [Coordinator](../services/coordinator/README.md),
+[Observer](../services/observer/README.md), [Planner](../services/planner/README.md),
+[Guard](../services/guard/README.md), [Executor](../services/executor/README.md)
+and [Verifier](../services/verifier/README.md).
 
-| Role | Design and operation |
-| --- | --- |
-| 1 Coordinator | [Persistence, approvals and lifecycle](coordinator.md) |
-| 2 Observer | [Runtime](observer-runtime.md), [telemetry](observer-telemetry.md), [live checks](observer-live-test.md) |
-| 3 Planner | [Offline flow](offline-flow.md), [provider boundary](provider-recovery.md); real model integration remains pending |
-| 4 Guard | [Rules and ownership](recovery-guard.md), [v2 gates](guard-v2.md), [runtime](guard-runtime.md), [handoffs](guard-integration-contract.md), [evaluation](guard-evaluation.md) |
-| 5 Executor | [Core](executor.md), [live adapter/RBAC](executor-live.md) |
-| 6 Verifier | [Evaluator](verifier.md), [durable worker](verifier-worker.md), [live readers](verifier-live.md), [connected acceptance](verifier-connected-validation.md) |
-
-## Optional integration work
-
-[Dependency revalidation](dependency-revalidation.md) explains revocation.
-[Worker transport](worker-transport.md) is a delivery foundation, not a deployed
-cross-host ownership system. [Protected Boutique](security-connected.md) and
-[security components](security.md) describe a separate lab; protected guarded
-recovery remains unfinished. [Project automation](project-automation.md) covers
-repository workflow configuration.
-
-Offline demonstrations, test fixtures and specialised acceptance scripts remain
-because they test different failure boundaries. They are not alternative claims
-of live recovery. Generated journals, scans, screenshots and export archives
-belong under ignored `runs/`, not in the source tree.
+[Optional worker transport](../runtime/README.md) and [GitHub automation](../.github/README.md)
+are developer references. Historical acceptance reports are retained in Git;
+new run artifacts belong in ignored output directories, not additional source guides.

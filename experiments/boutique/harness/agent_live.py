@@ -5,7 +5,7 @@ import json
 from agent.llm import Ollama
 from services.rca.core import DEFAULT_CONFIG, propose_from_telemetry
 from services.guard.common import json_sha256
-from scripts.test_executor_live import require, save
+from experiments.recovery.live import require, save
 
 
 def export_telemetry(directory, target, destination):

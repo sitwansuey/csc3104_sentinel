@@ -9,7 +9,7 @@ from unittest.mock import patch
 from scripts.test_boutique_live import (
     BoutiqueExperiment, CLIENT_IMAGE, SHIPPING_IMAGE, repository_digest, shipping_manifest, validate_quote,
 )
-from scripts.test_executor_live import Experiment
+from experiments.recovery.live import Experiment
 from services.observer.kubernetes import CollectionError
 
 

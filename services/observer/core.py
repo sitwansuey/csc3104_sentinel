@@ -7,7 +7,7 @@ import hashlib
 import json
 
 from shared.contracts import ContractError, validate_message
-from services.observer_telemetry import TelemetryError, validate_context
+from services.observer.telemetry import TelemetryError, validate_context
 
 
 DEFAULT_FAILURE_DURATION_SECONDS = 30

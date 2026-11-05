@@ -2,7 +2,7 @@
 
 import unittest
 
-from scripts.test_executor_live import loaded_image_digest
+from experiments.recovery.live import loaded_image_digest
 
 
 class LoadedImageDigestTests(unittest.TestCase):

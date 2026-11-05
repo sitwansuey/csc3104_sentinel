@@ -50,7 +50,7 @@ COPY experiments/ experiments/
 COPY agent/ agent/
 COPY data/sentinel/samples/ data/sentinel/samples/
 COPY runbooks/ runbooks/
-COPY evaluation/ evaluation/
+COPY data/experimentation/guard/ data/experimentation/guard/
 COPY tests/ tests/
 COPY .github/scripts/ .github/scripts/
 COPY .github/workflows/ .github/workflows/

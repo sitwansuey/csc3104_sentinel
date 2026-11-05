@@ -14,7 +14,7 @@ from runtime.boutique_observability import emit_observation
 from runtime.dashboard import make_server
 from runtime.telemetry import emit_cluster_snapshot, emit_event
 from scripts.dashboard import ensure_frontend
-from scripts.test_executor_live import require, save
+from experiments.recovery.live import require, save
 
 
 class BoutiqueDashboard:
@@ -36,7 +36,7 @@ class BoutiqueDashboard:
         self.server = make_server(self.directory / "coordinator.sqlite", self.telemetry, port=self.port,
                                   bind=self.bind, lab_control=self.lab_control)
         self.url = f"http://127.0.0.1:{self.server.server_port}"
-        self.event(1, "status", "Live Boutique experiment; harness planning; Role 6 dependency and outcome verification integrated")
+        self.event(1, "status", "Live Boutique experiment; configured proposal source; Role 6 dependency and outcome verification integrated")
         self.threads = [threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": .25}, daemon=True),
                         threading.Thread(target=self.collect, daemon=True)]
         for thread in self.threads:

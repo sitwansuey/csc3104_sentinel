@@ -147,7 +147,7 @@ try {
     if ($missing.Count -and -not $CheckOnly) {
         $winget = Find-Program 'winget.exe' '--version'
         if (-not $winget) {
-            throw 'WinGet is unavailable. Install Microsoft App Installer, then rerun; see docs/dependencies.md.'
+            throw 'WinGet is unavailable. Install Microsoft App Installer, then rerun; see docs/setup.md.'
         }
         foreach ($dependency in $missing) {
             Write-Host ('Installing missing package ' + $dependency.Id + '; review any installer prompts.')
@@ -178,7 +178,7 @@ try {
     if (-not $engine -or $engine.Output -ne 'linux') {
         Write-Host 'TOOLS FOUND. Docker Linux engine is unavailable; the Kubernetes lab is not ready.'
         Write-Host 'Start Docker Desktop yourself, review its terms, select Linux containers, and rerun -CheckOnly.'
-        Write-Host 'If it cannot start, check WSL 2 and BIOS/UEFI virtualization; see docs/dependencies.md.'
+        Write-Host 'If it cannot start, check WSL 2 and BIOS/UEFI virtualization; see docs/setup.md.'
         exit 3
     }
     Write-Host 'TOOLS FOUND. Docker Linux engine responds. No cluster was created or changed.'

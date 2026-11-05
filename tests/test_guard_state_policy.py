@@ -4,7 +4,7 @@ from copy import deepcopy
 from datetime import timedelta
 import unittest
 
-from scripts.demo_guard_v2 import build_inputs
+from experiments.validation.demo_guard_v2 import build_inputs
 from services.guard.core import GuardInputError, assess_state_policy, evaluate_with_report
 
 

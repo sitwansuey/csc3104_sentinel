@@ -4,7 +4,6 @@ WORKDIR /app
 COPY services/__init__.py /app/services/
 COPY services/observer/ /app/services/observer/
 COPY services/coordinator/ /app/services/coordinator/
-COPY services/observer_telemetry.py /app/services/
 COPY shared/__init__.py shared/contracts.py /app/shared/
 COPY runtime/__init__.py runtime/observer_pipeline.py runtime/observer_fleet.py runtime/otlp_receiver.py /app/runtime/
 COPY data/sentinel/samples/policy.json /app/data/sentinel/samples/policy.json

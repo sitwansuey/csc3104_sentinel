@@ -10,7 +10,7 @@ from unittest.mock import Mock
 
 from runtime.boutique_observability import emit_observation, service_inventory, shopping_summary
 from runtime.dashboard import snapshot
-from scripts.boutique_connected import APPLICATIONS, ConnectedBoutiqueExperiment
+from experiments.boutique.harness.connected import APPLICATIONS, ConnectedBoutiqueExperiment
 from tests.test_boutique_connected import resources
 
 

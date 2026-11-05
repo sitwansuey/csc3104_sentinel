@@ -12,9 +12,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from scripts.boutique_connected import (APPLICATIONS, UPSTREAM, UPSTREAM_SHA256, ConnectedBoutiqueExperiment,
+from experiments.boutique.harness.connected import (APPLICATIONS, UPSTREAM, UPSTREAM_SHA256, ConnectedBoutiqueExperiment,
                                         configured_graph, connected_manifest, decoded_resources, image_digest, readiness)
-from scripts.boutique_storefront import StorefrontProbe
+from experiments.boutique.traffic.storefront import StorefrontProbe
 from scripts.test_boutique_live import BoutiqueExperiment
 from services.executor.store import fingerprint
 from services.verifier.core import verify

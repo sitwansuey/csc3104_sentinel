@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from scripts.demo_offline_flow import OfflineFlow, fixture
+from experiments.validation.demo_offline_flow import OfflineFlow, fixture
 from services.coordinator.core import handle
 from services.observer.core import detect
 from services.rca.core import propose_from_telemetry

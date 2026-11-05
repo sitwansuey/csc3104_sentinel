@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class WorkerDemoTests(unittest.TestCase):
     def test_documented_command_works_outside_repository(self):
         with tempfile.TemporaryDirectory() as directory:
-            result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts" / "demo_verifier_worker.py")],
+            result = subprocess.run([sys.executable, "-B", str(ROOT / "experiments" / "validation" / "demo_verifier_worker.py")],
                                     cwd=directory, capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr)
         report = json.loads(result.stdout)
