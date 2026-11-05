@@ -47,7 +47,8 @@ def prepared_environment(path):
 
 
 def command(arguments, timeout=300):
-    result = subprocess.run(arguments, capture_output=True, text=True, timeout=timeout, check=False)
+    result = subprocess.run(arguments, capture_output=True, text=True, encoding="utf-8",
+                            errors="replace", timeout=timeout, check=False)
     require(result.returncode == 0, "Command failed: " + " ".join(arguments[:3]) + "\n" + result.stderr[-1500:])
     return result.stdout
 
