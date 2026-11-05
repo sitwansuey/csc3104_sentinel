@@ -51,6 +51,7 @@ class LiveGuardAuthorizer:
         self.paths = dict(policy=policy, baseline=baseline,
                           dependencies=dependencies, approval=approval)
         self.context, self.cluster_id, self.kubeconfig = context, cluster_id, kubeconfig
+        self.dependency_reader = lambda proposal: load_json(self.paths["dependencies"], "dependencies")
         self.server_dry_run = server_dry_run
         self.approval_reader = approval_reader or (lambda proposal: load_json(self.paths["approval"], "approval"))
 
@@ -61,7 +62,7 @@ class LiveGuardAuthorizer:
             "proposal": deepcopy(proposal), "live_state": deepcopy(live_state),
             "policy": policy,
             "baseline": load_json(self.paths["baseline"], "baseline"),
-            "dependencies": load_json(self.paths["dependencies"], "dependencies"),
+            "dependencies": self.dependency_reader(deepcopy(proposal)),
             "approval": deepcopy(self.approval_reader(deepcopy(proposal))), "preview": None,
         }
         baseline = inputs["baseline"]
