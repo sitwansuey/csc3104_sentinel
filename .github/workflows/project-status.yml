@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: read
+  issues: read
+  pull-requests: read
 
 concurrency:
   group: sentinel-project-first-work
@@ -31,4 +33,5 @@ jobs:
       - name: Update project from trusted event metadata
         env:
           PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: python .github/scripts/project_status.py

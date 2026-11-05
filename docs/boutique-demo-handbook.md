@@ -1,339 +1,111 @@
-# Live Boutique demo instruction book
+# Local Boutique demo: setup, injection, recovery and cleanup
 
-This procedure runs one actual Online Boutique shipping service on local kind,
-injects two bad rollouts, and demonstrates guarded restricted rollback with a live
-read-only dashboard. Its final scenario injects an unnecessary recovery
-recommendation against the restored healthy service, which the Guard rejects
-without an Executor repair write. It uses implementations from Roles 1, 2, 4 and 5.
-Planning, dependency attestation and post-action health measurement are explicitly
-operator/test inputs while Roles 3 and 6 are unfinished. There is no LLM call.
+The canonical current procedure is [the connected Boutique guide](boutique-connected.md).
+It deploys the storefront, checkout and supporting services: eleven Deployments
+in total. Fault injection and restricted repair currently target shipping only.
+Roles 1, 2, 4, 5 and 6 run their actual implementations through the local harness.
+The harness supplies the recovery proposal and records a demo approval; no LLM
+call or authenticated human approval portal is claimed.
 
-This book describes the host-development route. For a container image that
-bundles Python, kubectl and the built UI, use the
-[packaged laptop demo guide](packaged-demo.md) instead. Both run the same
-Guard/executor experiment; they use different dedicated cluster names.
-The default interactive sequence has three Enter prompts. Use `-GuardRejection`
-only when you want to skip the two recovery rounds and show just the final
-rejection scenario. Rebuild the packaged runner after updating the source;
-an existing image retains its previous sequence.
+## 1. Prepare the host
 
-## 1. Install and check the tools
-
-Open PowerShell in the repository root. Start Docker Desktop with Linux
-containers. Docker Desktop's separate Kubernetes option is unnecessary.
+Install Docker Desktop (Linux engine), kind, kubectl, Python 3.12+ and Node/npm
+for the dashboard build. Start Docker Desktop. From the repository root:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-dependencies.ps1 -CheckOnly
 ```
 
-If tools are missing, run the installer, finish installation/WSL prompts, start
-Docker Desktop and repeat the check:
+If tools are missing, use the installer without `-CheckOnly`, or follow the
+[manual dependency instructions](dependencies.md). Docker Desktop's separate
+built-in Kubernetes cluster is unnecessary; this experiment creates its own kind
+cluster. Full Boutique needs sufficient Docker memory/CPU for all eleven Pods.
+
+## 2. Start the connected experiment
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-dependencies.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Connected -Dashboard -UIControls -Cleanup
 ```
 
-The script handles Docker Desktop, kind, kubectl and Python 3.12+; it does not
-install Node. Install [Node.js LTS](https://nodejs.org/en/download) for the UI
-build (20.19+ or 22.12+ supported by the current launcher), then reopen PowerShell:
+- Sentinel: http://127.0.0.1:8765/#overview
+- Boutique: http://127.0.0.1:8080
+
+Wait for the measured healthy baseline and permission checks. Select
+**Online Boutique** for service readiness, shopping measurements, namespace Pods,
+restarts and warning events. Use the role pages and incident drawer for Sentinel
+decisions, approvals, execution and formal verification outcomes.
+
+## 3. Run the three ordered UI scenarios
+
+1. **Inject invalid PORT**: actual startup failure, Observer detection, Guard
+   checks, restricted template restore and independent Verifier recovery.
+2. **Inject fault + crash Executor**: actual repair followed by process exit;
+   restart reconciles the committed write without another repair mutation.
+3. **Inject false recommendation**: propose a rollback while already healthy;
+   Guard refuses it and the Executor makes zero repair attempts.
+
+The buttons release fixed harness steps. They do not approve a recovery or run
+arbitrary Kubernetes commands from the HTTP handler. The harness's demo approval
+cannot bypass hard Guard constraints. APPLIED remains VERIFYING until Role 6
+publishes a sustained outcome. Cart/checkout must recover as well as shipping.
+
+For automatic execution, replace `-UIControls` with `-ExitAfterTest`.
+Omit `-Connected` to use the smaller shipping-only experiment. Do not claim that
+the standalone `test_executor_live.py` HTTP lab provides the same role coverage.
+
+## 4. Observe and inspect evidence
 
 ```powershell
-node --version
-npm.cmd --version
-```
-
-You can install the programs manually instead; follow the
-[README manual setup](../README.md#method-2-install-and-set-up-manually) and add
-Node separately. No cloud account, pip packages or model API key are needed.
-
-Code used: `scripts/install-dependencies.ps1` discovers tools and probes Docker;
-`scripts/install-dependencies.bat` is its double-click wrapper.
-
-## 2. Build and optionally verify the frontend
-
-```powershell
-npm.cmd --prefix dashboard ci
-npm.cmd --prefix dashboard run build
-npm.cmd --prefix dashboard test
-```
-
-The first command downloads the exact locked frontend dependencies; internet
-access is required. Build output is ignored `dashboard/dist/`. The test command
-checks frontend behaviour offline, not Kubernetes recovery.
-
-Code used: `dashboard/package.json`, `dashboard/package-lock.json`,
-`dashboard/src/` and `dashboard/vite.config.ts`. The launcher's
-`scripts/dashboard.py::ensure_frontend()` also builds automatically when needed.
-
-## 3. Start the integrated interactive experiment
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Dashboard -PauseBeforeInjection -Cleanup
-```
-
-The wrapper checks prerequisites and creates/reuses only `sentinel-boutique-lab`
-using `infra/kind.yaml`. It runs `scripts/test_boutique_live.py`. It does not run
-the older `demo-api` test or change another cluster's workloads. This dedicated
-test resets its shipping Deployment on rerun; do not place unrelated work there.
-kind creation can change your default kubectl context; commands here are explicit.
-
-The console prints both:
-
-```text
-Boutique evidence: ...\runs\boutique-live-...
-Live Boutique dashboard: http://127.0.0.1:8765
-```
-
-Open the printed URL in your browser. If port 8765 is occupied, add
-`-DashboardPort 0` to select a free port and use the newly printed URL. The UI
-binds only to loopback. Do not pass `--demo`: that selects synthetic playback.
-
-The integrated launcher uses `scripts/boutique_dashboard.py` to start the real
-`runtime/dashboard.py` HTTP server and the existing `runtime/cluster_metrics.py`
-collector. The exact run's `coordinator.sqlite` and `telemetry.sqlite3` are wired
-automatically. No separate `observe_dashboard.py` process is required; starting
-an extra detector against the test database can create competing incidents.
-
-## 4. Inspect the healthy baseline before injection
-
-Wait for the prompt `Press Enter to inject the primary bad rollout`. Leave it
-waiting while you explain the healthy service and UI. The test has:
-
-- Pulled shippingservice v0.10.7 and grpcurl v1.9.3, resolved their manifest
-  digests, and pulled those immutable images through the kind node runtime.
-- Deployed the actual service, ServiceAccount and Service in `sentinel-boutique`.
-  The custom lab manifest is generated by `shipping_manifest()` in
-  `scripts/test_boutique_live.py`.
-- Measured three successful `ShippingService/GetQuote` requests over at least
-  ten seconds, with one ready/available replica. Probe Pods have no API token.
-- Saved the actual healthy Pod template, hash, UID and evidence in `baseline.json`
-  and `baseline-health.json`. Image references are in `images.json`.
-- Created a short-lived executor identity scoped to get/patch the shipping
-  Deployment. The scoped RBAC is generated from `infra/executor-rbac.yaml`.
-
-In the UI, inspect **Overview**, **Kubernetes** and **Monitoring**. CPU/memory
-usage requires Metrics Server, which this experiment does not install. Missing
-usage displays unavailable; Pod readiness, restarts and events still work.
-
-The collector is an observation surface, never authorization input. Measurements
-and collection timestamps must not be confused with a Guard ALLOW decision.
-
-Optional second-terminal commands:
-
-```powershell
-kubectl --context kind-sentinel-boutique-lab -n sentinel-boutique get pods -w
+kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected get pods -w
 ```
 
 ```powershell
-kubectl --context kind-sentinel-boutique-lab -n sentinel-boutique logs deployment/shippingservice -f
+kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected logs deployment/checkoutservice --follow --tail=50
 ```
 
-Logs follow the selected Pod; rerun after replacement. The dashboard has no
-continuous raw log stream. Role 2 captures bounded diagnostic logs into incident
-evidence. Short-lived probe Pods appear alongside the shipping workload.
+The run directory printed at startup contains Coordinator/Observer/Executor/
+Verifier journals, proposals, Guard reports, approvals, actual request results,
+outcomes and cleanup evidence. The dashboard projects these records without
+creating another incident stream. Shopping requests are measured at test stages;
+the UI is not an all-request trace or application-log streaming console. Usage
+metrics remain unavailable unless the Metrics API supplies actual measurements.
 
-## 5. Inject and watch the first recovery
+## Code used at each stage
 
-Press Enter in the main terminal. `BoutiqueExperiment.inject_fault()` uses the
-operator identity to set `PORT=invalid-port`. The real application fails startup.
-The lab deliberately uses `Recreate` so a failed rollout causes a visible outage.
-This availability setting is for the experiment, not a production recommendation.
-
-Watch these UI views while the script runs automatically:
-
-| View | Actual evidence to explain |
+| Stage | Main files |
 | --- | --- |
-| Kubernetes | Shipping Pod failure/replacement, readiness and Warning events |
-| Monitoring | Role 2 observations and persisted incident evidence |
-| Coordinator | Incident, active action, approval and durable routing |
-| Recovery Guard | Approval escalation, ALLOW, policy version, exact input binding and policy findings |
-| Executor | APPLIED result and action details |
+| Host checks and cluster ownership | `scripts/install-dependencies.ps1`, `scripts/test-boutique-live.ps1`, `infra/kind.yaml` |
+| Connected workload and shopping probes | `scripts/boutique_connected.py`, `scripts/boutique_storefront.py`, pinned `infra/boutique-connected-upstream.yaml` |
+| Harness proposal, injection and scenarios | `scripts/test_executor_live.py`, `scripts/test_boutique_live.py`, `runtime/lab_control.py`, `scripts/guard_rejection_demo.py` |
+| Observation and incident delivery | `services/observer.py`, `services/observer_kubernetes.py`, `runtime/observer_pipeline.py`, `services/coordinator.py` |
+| Dependency findings and authorization | `services/verifier.py`, `runtime/guard_pipeline.py`, `services/guard.py` |
+| Conditional repair and reconciliation | `runtime/live_executor.py`, `runtime/executor_pipeline.py`, `services/executor.py`, `services/executor_store.py`, `services/k8s_executor_adapter.py` |
+| Independent outcome | `runtime/verifier_pipeline.py`, `runtime/verifier_durable.py`, `services/verifier_store.py` |
+| UI and operational projections | `scripts/boutique_dashboard.py`, `runtime/dashboard.py`, `services/coordinator_read.py`, `runtime/cluster_metrics.py`, `runtime/boutique_observability.py`, `dashboard/src/` |
 
-Role 2 uses `KubernetesEvidenceCollector`/`KubectlReader` in
-`services/observer_kubernetes.py`, the detector in `services/observer.py`, and
-`ObserverStore`/`LocalCoordinatorSink` in `runtime/observer_pipeline.py`. It reads
-actual Deployment/owned Pod/event/log evidence and persists checkpoint/outbox
-state in `observer.sqlite`. If a rollout changes during collection, it rejects
-that sample and performs bounded read-only retries; inconsistent evidence cannot
-advance the sustained-failure timer. This runs on the host, not an Observer Pod.
+## 5. Clean up
 
-The shared `scripts/test_executor_live.py` scenario methods supply a labelled
-operator-authored proposal. They test missing approval, hard rejection and stale
-state with zero executor mutations; a real server-side version race; and a
-competing process. These negative cases have evidence files and harness markers;
-not every negative case is a Coordinator-managed action displayed in Guard tables.
+After inspection, press Ctrl+C in the launcher and let teardown finish. The
+`-Cleanup` flag removes its named cluster; the harness stops the dashboard and
+port-forward and removes private Executor credentials. Evidence and cached
+images remain. With `-ExitAfterTest`, teardown happens automatically.
 
-For the successful action, `services/coordinator.py::approve()` persists an
-expiring approval. `runtime/guard_pipeline.py` calls the actual Guard and saves
-decisions/reports. `runtime/live_executor.py` obtains fresh validation under
-execution coordination. Human approval cannot bypass a hard Guard constraint.
-
-`runtime/executor_pipeline.py`, `services/executor.py`,
-`services/executor_store.py` and `services/k8s_executor_adapter.py` restore the
-specific stored template with UID/resource-version tests and action evidence in
-one conditional JSON Patch. The executor uses its own restricted kubeconfig;
-setup, injection and measurement use the separate operator identity.
-
-## 6. Watch the crash/restart experiment
-
-After the first rollback and successful quote measurements, the script pauses
-before the `crash` bad rollout. Inspect the first action, then press Enter again.
-
-The second worker really patches Kubernetes, then exits with code 73 before
-ledger completion. The restarted worker inspects live action/template evidence
-and saves APPLIED with zero additional mutation attempts. Quote measurements
-run again. Duplicate requests and changed intent under a reused ID are also
-checked by the suite.
-
-Both incidents now finish `RECOVERED` only after Role 6 publishes passing outcomes.
-`APPLIED` first routes to `VERIFYING`; a durable Verifier worker then evaluates real
-gRPC quote, readiness, full identity and approved-template evidence. Failed health
-produces FAILED; incomplete evidence produces NEEDS_REVIEW. The Planner still uses
-a harness-authored proposal. The reviewed one-service graph is not automatic
-dependency discovery.
-
-## 7. Reject an unnecessary rollback in the final scenario
-
-After both recoveries, the script pauses at its **third and final injection
-prompt**. Press Enter to inject a labelled false-alarm incident and a proposal
-to roll back to the template that is already running. The service stays healthy;
-this injects a faulty recommendation, not another pod failure.
-
-Open the latest incident in the dashboard. Guard returns `REJECT` with reason
-`ROLLBACK_ALREADY_AT_BASELINE`, even with valid approval. Coordinator records
-`REJECTED` and does not route a recovery to its Executor. The independent
-Executor safety check also refuses the proposal before any repair patch.
-
-The terminal checks zero Executor patch/journal attempts and no change to the
-Deployment identity, version, generation, template or workload Pod UIDs during
-the measured rejection. Earlier setup, the first two recoveries and health probes
-do write to Kubernetes; the zero-write claim applies to this final repair attempt.
-See [the rejection scenario guide](guard-rejection-demo.md) for the explanation
-and standalone mode.
-
-The completed default run has **two `RECOVERED` incidents and one `REJECTED`
-false-alarm incident**. Expected success messages include:
-
-```text
-PASS: live dashboard HTTP, Guard reports, execution records and cluster telemetry
-Tests complete. Dashboard stays live for inspection; press Ctrl+C to stop it.
-```
-
-## 8. Inspect retained evidence
-
-Use the exact directory printed by your run. To select the most recently
-created experiment from another terminal:
+For interrupted cleanup, inspect and remove only the dedicated lab:
 
 ```powershell
-$boutiqueRun = Get-ChildItem .\runs -Directory -Filter 'boutique-live-*' |
-    Sort-Object CreationTime -Descending |
-    Select-Object -First 1
-Get-Content (Join-Path $boutiqueRun.FullName 'summary.json')
-Get-Content (Join-Path $boutiqueRun.FullName 'dashboard-validation.json')
-Get-Content (Join-Path $boutiqueRun.FullName 'observer-status.json')
-```
-
-The summary is saved when execution finishes; while running, inspect the UI and
-individual files. `dashboard-validation.json` records an actual HTTP check of
-the built page and API against this run's incidents, approvals, Guard reports,
-execution results and cluster inventory. It is not a browser screenshot test.
-`dashboard-snapshot.json` retains the checked API response.
-
-Other important paths:
-
-| Path within the run | Meaning |
-| --- | --- |
-| `primary-incident.json`, `crash-incident.json`, `*-observation.json` | Actual Role 2 diagnostic evidence |
-| `coordinator.sqlite` | Role 1 lifecycle, approvals, Guard reports and execution messages |
-| `observer.sqlite` | Role 2 checkpoint/outbox |
-| `executor.sqlite`, `locks/` | Role 5 journal and single-host coordination |
-| `approved-rollback/` | Proposal, dependency result, approval, Guard result, APPLIED, post-health samples and outcome.json |
-| `crash-after-write/` | Write receipt, reconciliation, zero-restart-write counters, post-health samples and outcome.json |
-| `false-alarm-incident.json` | Labelled false recovery recommendation against the healthy service |
-| `unnecessary-rollback/` | Rejected proposal, approval, Guard report, independent Executor refusal and zero-write proof |
-| `telemetry.sqlite3` | UI events and actual projected cluster history |
-| `dashboard-cleanup.json` | Recorded successful server/collector shutdown |
-
-`runs/` is ignored by Git. Preserve sanitized evidence separately; raw diagnostic
-logs can contain application data. The private executor kubeconfig is removed
-after execution; the dashboard never serves that file.
-
-## 9. Stop and clean up
-
-Stop optional log/watch terminals with Ctrl+C. In the main terminal, press
-Ctrl+C once after tests finish. The UI server and collector stop; because you
-used `-Cleanup`, the wrapper then deletes only `sentinel-boutique-lab` and checks
-the remaining kind inventory. Wait for that cleanup message before closing it.
-
-```powershell
+kind delete cluster --name sentinel-boutique-connected
 kind get clusters
 ```
 
-The Boutique cluster should be absent. Docker Desktop, other clusters, evidence,
-frontend dependencies and image caches remain. There is no global Docker prune.
+## Other modes
 
-If you omitted `-Cleanup`, or force-closed the process, remove the named cluster
-explicitly after stopping any surviving processes:
+- [Security lab](security-connected.md): separate opt-in mTLS/inspection/CVE
+  experiment. It does not yet run the guarded recovery pipeline; issue #69 tracks
+  that integration.
+- [Provider integration](provider-recovery.md): optional trusted provider adapter
+  boundary. Offline mock planning exists; actual LLM integration remains pending.
+- [Packaged runner](packaged-demo.md): the exported 0.3.0 image is historical and
+  lacks these latest connected/UI changes. Use source for the current system.
 
-```powershell
-kind delete cluster --name sentinel-boutique-lab
-```
-
-On test failure, the harness attempts a labelled operator baseline restoration;
-that does not count as executor success. Force termination can skip Python's
-cleanup: check the printed run directory for `.executor-kubeconfig.json`, remove
-that temporary credential file, and delete the dedicated cluster.
-
-For an unattended repeat that also stops the dashboard automatically:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Dashboard -DashboardPort 0 -ExitAfterTest -Cleanup
-```
-
-## Recorded integrated validation (historical, before live Role 6)
-
-On 25 October 2026 the unattended integrated run passed on this Windows desktop:
-`runs/boutique-live-20261025T150203Z-404085/` (ignored local evidence).
-
-- The real HTTP page and snapshot API returned 200; the API exposed two actual
-  incidents, two APPLIED actions, two approvals, four Guard reports and 56 cluster
-  samples. Both incidents remained VERIFYING.
-- Both incidents included actual `deployment_status`, `pod_status`, `event` and
-  `container_log` evidence. Role 2 persisted two incidents with zero pending
-  deliveries. One inconsistent rollout sample was rejected and retried; the
-  final collection/delivery error states were clear.
-- The original live rollback, refusal, duplicate/conflict, competing-worker and
-  crash/restart tests passed. Restart used one read and zero mutation attempts.
-- Headless installed Microsoft Edge rendered the actual UI with zero page
-  JavaScript errors. Overview and Recovery Guard screenshots, including policy
-  findings, are retained with `browser-validation.json` in that run directory.
-- Server/collector shutdown was recorded in `dashboard-cleanup.json`; the
-  wrapper removed the test cluster and verified that no kind clusters remained.
-  Private executor credentials were removed.
-
-The frontend build and all 54 frontend tests passed. The Python suite passed
-505 tests plus six contract samples; a subsequent focused regression checks the
-interactive prompt and inconsistent-read retry. These offline checks use fake
-dependencies where appropriate and are distinct from the real-cluster/browser
-evidence above. The live run used automatic `-ExitAfterTest`; the interactive
-Enter prompts are covered offline rather than by a human-attended recorded run.
-
-The recorded runs above predate Role 6 integration. Their VERIFYING states are
-historical; new successful runs must produce two RECOVERED outcomes followed by
-one REJECTED false-alarm incident. Those recordings also predate the third
-injection prompt and do not validate the new three-scenario sequence.
-
-## Role coverage and limits
-
-| Role | Implementation actually used | Remaining outside this demo |
-| --- | --- | --- |
-| 1 Coordinator | SQLite lifecycle, durable routing, public expiring approval, Guard reports, execution ingestion | Authenticated operators, cross-service/cloud transport |
-| 2 Observer | Full live collector, actual detector, durable checkpoint/outbox and Coordinator sink | Container/PVC restart test is separate; broader telemetry/dependency discovery |
-| 3 Planner | Not called; proposals are operator-authored | Retrieval and actual LLM planning |
-| 4 Guard | Real evaluator, detailed reports, live state/reference checks, current approval and admission preview | Production provenance and broader workload evaluation |
-| 5 Executor | Real restricted adapter, conditional writes, journal, deduplication, local locking, real crash reconciliation | Cross-host leases/fencing and ownership-loss handling |
-| 6 Verifier | Reviewed-graph dependency analysis; real gRPC/readiness/template evidence; durable outcome publication | Automatic graph discovery and multi-service evaluation |
-
-Thus Roles 1, 2, 4, 5 and 6 participate in the current live workflow. Their entire final
-distributed/cloud scope is not complete. This is one real service on local kind,
-not whole-Boutique recovery, a cloud deployment or an AI-generated recovery.
+See [the consolidation review](repository-review-2026-11-05.md) for exact tests,
+branch decisions, issue status and remaining limitations.

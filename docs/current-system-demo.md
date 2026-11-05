@@ -1,162 +1,91 @@
-# Current system: team update, presentation script and flowchart
+# Current system: roles, explanation and flow
 
-Use the [demo instruction book](boutique-demo-handbook.md) for exact setup,
-injection and cleanup commands. This document describes the current tested scope,
-not the unfinished final platform.
+Use [the local demo handbook](boutique-demo-handbook.md) for setup, injection and
+cleanup. The default demonstration uses the connected Boutique application and
+harness-authored proposals. It makes no actual LLM claim.
 
-## What changed for each role
+## Role coverage
 
-| Role | Existing implementation reused | Integration added for the Boutique demo |
-| --- | --- | --- |
-| 1 Coordinator | Incident lifecycle, SQLite records, routing, expiring approvals and result ingestion | The Boutique harness delivers real Observer incidents, records approval through the public interface and sends actual execution results. Dashboard reads this exact run's database. Approval expiry support was added earlier with the live executor; no new lifecycle rewrite was needed. |
-| 2 Observer | Kubernetes evidence collector, detector, persistent checkpoint/outbox and Coordinator sink | Full collector now reads shipping Deployment, owned Pods, warnings and bounded diagnostic logs. Durable observer state/outbox is used in the experiment. Inconsistent rollout samples receive bounded read-only retries; the failure timer resets on collection gaps. |
-| 3 Planner | Shared proposal contract; implementation remains a stub | No Planner implementation added. The harness supplies an explicitly operator-authored proposal. |
-| 4 Guard | Evaluator, strict policies, reports, approval checks, live reference reads and admission preview | The same Guard validates actual shipping state/baseline and current approval. Existing Coordinator Guard reports are visible in the connected dashboard. The teammate's evaluator/dashboard design is reused. |
-| 5 Executor | Restricted adapter, target allowlist, conditional patch, durable journal, local locks, duplicate handling and reconciliation | Demo harness gained workload configuration hooks; Boutique supplies its own deployment, image, health and fault adapters. Real executor workers run against shippingservice, including a crash after a real patch. The production recovery algorithm was not replaced. |
-| 6 Verifier | Reviewed dependency traversal and sustained health evaluator | The live adapter invokes real dependency evaluation, then a durable worker consumes verifier.request and publishes outcomes from actual gRPC, readiness, identity and exact-template evidence. |
+| Role | Implementation in the current connected harness |
+| --- | --- |
+| 1 Coordinator | Persists actual incidents, proposals, approvals, lifecycle and request/result routing. APPLIED creates verification work; only a passing independent outcome closes an incident as RECOVERED. |
+| 2 Observer | Collects shipping Deployment/owned Pod/event/diagnostic evidence, detects sustained failure, persists a checkpoint/outbox and delivers the incident. Namespace inventory covers all Boutique Pods. Optional multi-workload OTLP capability has a separate instrumented validation lab. |
+| 3 Planner | Offline runbook/proposal validation and an injected provider boundary now exist. The default live demonstration still uses explicit harness proposals; real RAG/LLM integration remains pending. |
+| 4 Guard | Validates current state, exact baseline, policy, resources, dependency evidence and approval. New dependency evidence revokes queued authorization and requires a newly bound decision/report. |
+| 5 Executor | Revalidates under a local target lock, journals the immutable action/attempt, uses UID/resource-version conditional writes and restores the exact approved Pod template. Duplicate IDs replay saved results; changed intent conflicts; crashes reconcile action evidence without blindly repeating a mutation. |
+| 6 Verifier | Evaluates configured dependencies and independently checkpoints sustained shipping gRPC, replica/template/identity and actual storefront/cart/checkout evidence before publishing the outcome. |
 
-The Guard teammate's existing read-only UI now connects through
-`scripts/boutique_dashboard.py`. It serves actual records from the experiment,
-collects projected live cluster data without producing a second incident stream,
-and verifies the page/API. `scripts/test-boutique-live.ps1` manages setup and
-optional cleanup. `scripts/test_boutique_live.py` coordinates the experiment.
+Six responsibilities do not imply six deployed services: the current accepted
+local experiment composes implementations in the host harness and worker
+processes. Optional authenticated worker delivery is a foundation; separate
+network worker deployment and cross-host ownership are not established here.
 
-## Presentation script: current system
+## Short presentation script
 
-“Sentinel is a Kubernetes incident diagnosis and guarded recovery project. Our
-final goal includes LLM-assisted planning and independent outcome verification.
-Today's demonstration exercises the implemented safety and execution path using
-a real Online Boutique shipping service; planning is supplied by the operator.
+“Sentinel observes and repairs a real connected Online Boutique application on
+local Kubernetes. The storefront, checkout and supporting services are deployed,
+while the controlled configuration fault and repair target shipping.
 
-“Docker Desktop runs a local kind Kubernetes cluster. The harness deploys the
-actual upstream shippingservice image pinned to a resolved manifest digest. It
-makes successful gRPC shipping-quote requests and stores the exact healthy Pod
-template, its hash and the measured health evidence as the recovery baseline.
+“Before injection, we measure actual shipping and shopping success and save the
+exact healthy Pod template and its hash. A dashboard button releases a fixed
+harness scenario that injects an invalid startup port. Kubernetes keeps trying
+the faulty configuration; our Observer records evidence of sustained failure.
 
-“The UI shows real Coordinator records and live Kubernetes telemetry. The
-operator then injects a bad PORT configuration. The application fails startup.
-Our Observer collects Deployment, owned Pod, Warning event and diagnostic log
-evidence, detects sustained failure and durably delivers the incident.
+“While the real Planner integration is pending, the harness proposes restoring
+the saved baseline. The Coordinator records the proposal and demo approval.
+Guard checks live state, policy, resources, dependencies and approval. Approval
+cannot override a hard constraint.
 
-“While the Planner is unfinished, the harness provides a clearly labelled
-rollback proposal referring to the stored baseline. The Guard checks actual
-state, policy, baseline, resources, dependency evidence and approval. Missing
-approval or a hard rejection produces no executor mutation. An approval never
-overrides a hard safety constraint.
+“The restricted Executor rechecks authorization under a workload lock, persists
+intent and submits a conditional Kubernetes patch. The patch tests the target
+UID and resource version and records action evidence with the restored template.
+This lets a restarted worker recognise a completed write without repeating it.
 
-“The executor uses a separate identity permitted to get and patch only the
-selected Deployment. Under local target coordination it rechecks authorization,
-journals intent and submits one patch with UID and resource-version tests. It
-restores the specific baseline rather than undoing whichever revision happens
-to be latest. Kubernetes then replaces the Pods using that restored template.
+“An applied patch is not proof of recovery. Verifier checks sustained shipping
+health, supporting Deployment readiness and successful cart/checkout requests.
+The Coordinator marks RECOVERED only after that independent outcome. Our other
+scenarios demonstrate crash reconciliation and rejection of an unnecessary
+rollback without a repair write.”
 
-“The demo also tests duplicate requests, changed payloads under a reused ID,
-competing workers and a real process crash after Kubernetes accepted a patch.
-On restart, the executor reconciles recorded attempt evidence against live state
-without submitting another mutation.
-
-“Role 6 now verifies recovery independently of the execution result. APPLIED first moves the incident to VERIFYING and creates a durable verifier.request. The worker collects three actual gRPC shipping quotes over at least ten seconds. It checks positive USD quotes, full target identity, ready and available replicas, stable configuration and the exact approved template hash. Only passing evidence produces RECOVERED. Known failed health produces NOT_RECOVERED / FAILED; missing evidence produces UNKNOWN / NEEDS_REVIEW. Outcome publication and request acknowledgement commit together after rechecking the active action. Replaying a completed request cannot close another incident.
-
-## Setup, injection, execution and cleanup flowchart
-
-Solid paths describe the current integrated experiment. The harness supplies planning; Role 6 uses its actual evaluator and measured live evidence. The reviewed graph covers only shippingservice; no automatic graph discovery is claimed.
+## Pipeline
 
 ```mermaid
 flowchart TD
-    A[Install/check Docker, kind, kubectl, Python and Node] --> B[Build dashboard frontend]
-    B --> C[Wrapper creates dedicated kind cluster]
-    C --> D[Start read-only UI and live telemetry collector]
-    D --> E[Deploy actual shippingservice with immutable image]
-    E --> F[Measure healthy gRPC quotes and save exact template/hash]
-    F --> G[Provision separate restricted executor identity]
-    G --> H[Operator presses Enter: inject invalid PORT]
-    H --> I[Role 2 collects Deployment, Pod, event and log evidence]
-    I --> J[Role 2 detects failure and persists incident/outbox]
-    J --> K[Role 1 persists incident and queues planning]
-    K --> L[Operator-authored proposal; Role 3 pending]
-    L --> LD[Role 6 evaluates reviewed graph and live deployment state]
-    LD --> M[Role 4 validates policy, state, baseline and dependencies]
-    M -->|Hard failure| N[Reject: zero executor mutations]
-    M -->|Approval required| O[Role 1 records expiring operator approval]
-    O --> P[Fresh Role 4 validation]
-    P -->|ALLOW| Q[Role 5 locks target and binds immutable action ID]
-    Q --> R[Fresh state/Guard checks; journal WRITE_STARTED]
-    R --> S[Restricted UID/version conditional patch]
-    S --> T[Kubernetes replaces Pods from healthy template]
-    S -->|Timeout or worker crash| U[Read-only reconciliation of live action/template evidence]
-    U -->|Proven applied| V[Persist APPLIED and deliver to Role 1]
-    U -->|Insufficient evidence| W[NEEDS_RECONCILIATION; block competing actions]
-    T --> V
-    V --> X[Role 1 records VERIFYING]
-    X --> VR[Durable verifier.request]
-    VR --> VH[Role 6 collects 3 real gRPC samples over at least 10 seconds]
-    VH --> VC[Check quote, identity, replicas, stable approved template and timing]
-    VC --> VP[Atomically publish outcome and acknowledge request]
-    VP -->|RECOVERED| OK[Role 1 records RECOVERED]
-    VP -->|NOT_RECOVERED| BAD[Role 1 records FAILED]
-    VP -->|UNKNOWN| UNK[Role 1 records NEEDS_REVIEW]
-    OK --> Z[Inspect UI and saved evidence]
-    BAD --> Z
-    UNK --> Z
-    N --> Z
-    W --> Z
-    Z --> AA[Stop UI/collector; remove temporary credentials]
-    AA --> AB[Delete named kind cluster; retain evidence/cache]
-    I -. actual observations .-> D
-    K -. records .-> D
-    M -. Guard reports .-> D
-    V -. execution results .-> D
+    A[Install/check host tools] --> B[Create dedicated kind cluster]
+    B --> C[Deploy connected Boutique and start local UI]
+    C --> D[Measure shipping and shopping baseline; save exact template/hash]
+    D --> E[UI gate releases fixed fault injection]
+    E --> F[Role 2: sustained failure evidence]
+    F --> G[Role 1: persist incident]
+    G --> H[Harness proposal; real Planner integration pending]
+    H --> I[Role 6: dependency assessment]
+    I --> J[Role 4: Guard evaluation]
+    J -->|Approval required| K[Role 1: record demo approval and request revalidation]
+    K --> J
+    J -->|Reject/escalate| L[Record refusal; no authorized repair]
+    J -->|Allow| M[Role 5: lock, fresh validation and durable intent]
+    M --> N[Conditional UID/version patch restores stored template]
+    N --> O[Kubernetes recreates Pods]
+    N --> P[Role 1: APPLIED becomes VERIFYING]
+    O --> Q[Role 6: sustained shipping, dependencies and checkout evidence]
+    P --> Q
+    Q --> R[Role 1 records RECOVERED, FAILED or NEEDS_REVIEW]
+    L --> S[Inspect UI and saved evidence]
+    R --> S
+    S --> T[Stop owned processes, remove credentials and delete named cluster]
 ```
 
-The actual harness performs refusal/concurrency tests and two recoveries: normal
-execution and the post-write crash case. The chart condenses their common path.
-Fresh Guard validation also occurs inside the executor's lock immediately before
-execution; a previously stored ALLOW alone does not authorize the mutation.
+## Operational visibility and limits
 
-## What is deployed where
+The UI shows Sentinel's stored activity, namespace Pod status/restarts/warnings,
+Deployment readiness and stage-based shopping measurements. It marks old or
+unavailable evidence explicitly. Application log inspection uses `kubectl logs`;
+there is no claim of complete request tracing or streamed logs for every service.
+The dependency graph is derived from reviewed configuration, not automatically
+discovered from traces. Metrics usage requires a readable Metrics API.
 
-| Location | Current contents |
-| --- | --- |
-| Desktop | Python harness, Coordinator/Observer/Guard/Executor/Verifier runtime calls, SQLite files, UI server and telemetry collector |
-| Docker Desktop | kind node container and image storage |
-| Kubernetes inside kind | shippingservice, its ServiceAccount/Service, restricted executor RBAC and short-lived gRPC client Pods |
-| Browser | Built React UI reading the loopback dashboard API |
-
-The six responsibility areas are not six independently deployed services in this
-experiment. The dashboard is read-only and grants no execution permission.
-
-## Packaged laptop demo
-
-The packaged runner is now implemented. Follow the [packaged demo guide](packaged-demo.md)
-for `scripts/demo-start.ps1` and `scripts/demo-stop.ps1`. The image bundles Python,
-kubectl and the built dashboard; host bootstrap manages Docker/kind and imports
-cached images. The runner joins kind's private network with a TLS-verified
-internal kubeconfig, has no Docker socket and writes evidence to a persistent
-host mount. This moves the local runtime calls described above into one container;
-it does not create six independently deployed microservices.
-
-The host-run diagram and workflow above remain valid for the development route.
-The packaged route uses a separate `sentinel-boutique-package` cluster and the
-same recovery logic. Administrator setup/injection credentials remain distinct
-from the executor's restricted credentials. Planner remains pending. Existing packaged images must be rebuilt to include live Verifier integration.
-
-Use the recorded checks in the packaging guide to distinguish validated image,
-cluster and browser behaviour from still-unverified second-laptop portability.
-
-## Verification scope and artifacts
-
-The two successful recovery rounds each create post-health.json and outcome.json.
-The default run then pauses for a third scenario: an explicitly injected false
-recovery recommendation against the restored healthy service. The Guard rejects
-the redundant rollback with ROLLBACK_ALREADY_AT_BASELINE. An independent restricted
-Executor test confirms zero patch attempts even with valid approval; the
-Coordinator schedules no execution or health-verification request for that action.
-
-One full run expects two APPLIED execution results, three CLEAR dependency results,
-two RECOVERED outcomes, one REJECTED false-alarm incident and thirteen PASS
-checkpoints. Nine quote probes cover three baseline samples and three after each
-rollback. The final refusal adds no application crash or recovery write; its
-before/after proof is unnecessary-rollback/proof.json. The reviewed graph remains
-infra/boutique-dependencies.json, scoped to shippingservice. The generic demo-api
-experiment retains its original two-round behavior. Always-on Verifier scheduling
-and automatic dependency discovery remain future work.
+Security inspection and scheduled CVE alerts are available in a separate opt-in
+lab; they are not silently enabled in the recovery demo. Trusted baseline storage,
+authenticated human approvals, cross-host Executor coordination, deployment of
+remote workers and actual LLM acceptance remain tracked work. The old exported
+runner image predates the current connected source.

@@ -7,6 +7,7 @@ import hashlib
 import json
 
 from shared.contracts import ContractError, validate_message
+from services.observer_telemetry import TelemetryError, validate_context
 
 
 DEFAULT_FAILURE_DURATION_SECONDS = 30
@@ -87,26 +88,40 @@ class Observer:
             raise ObservationError("Observer target budget exceeded")
         self._latest_snapshots[target_key] = snapshot
         if not signals:
+            # Missing threshold evidence is unknown, not proof of recovery. Keep
+            # emitted suppression and reset only an unfinished failure window.
+            context = snapshot.observation.get("telemetry", {})
+            if context.get("thresholds_complete") is False:
+                old = self._episodes_by_target.get(target_key)
+                if old and old.emitted and old.first_snapshot.generation == snapshot.generation:
+                    old.last_snapshot = snapshot
+                else:
+                    self._episodes_by_target.pop(target_key, None)
+                return None
             self._episodes_by_target.pop(target_key, None)
             return None
 
         correlation_key = _correlation_key(snapshot)
+        # A cached metric point cannot establish additional failing time.
+        failure_at = _failure_time(snapshot)
         episode = self._episodes_by_target.get(target_key)
         if (episode is not None and not episode.emitted and self.max_sample_gap is not None
-                and (snapshot.captured_at - episode.last_seen_at).total_seconds() > self.max_sample_gap):
+                and (failure_at - episode.last_seen_at).total_seconds() > self.max_sample_gap):
             episode = None
         if episode is None or episode.correlation_key != correlation_key:
             episode = FailureEpisode(
                 correlation_key=correlation_key,
-                first_seen_at=snapshot.captured_at,
-                last_seen_at=snapshot.captured_at,
+                first_seen_at=failure_at,
+                last_seen_at=failure_at,
                 first_snapshot=snapshot,
                 last_snapshot=snapshot,
             )
             self._episodes_by_target[target_key] = episode
         else:
-            episode.last_seen_at = snapshot.captured_at
             episode.last_snapshot = snapshot
+            if failure_at <= episode.last_seen_at:
+                return None
+            episode.last_seen_at = failure_at
 
         if episode.emitted:
             return None
@@ -130,7 +145,9 @@ class Observer:
             "max_sample_gap_seconds": self.max_sample_gap,
             "latest": [deepcopy(snapshot.observation) for snapshot in self._latest_snapshots.values()],
             "episodes": [{"first": deepcopy(episode.first_snapshot.observation),
-                          "last": deepcopy(episode.last_snapshot.observation), "emitted": episode.emitted}
+                          "last": deepcopy(episode.last_snapshot.observation), "emitted": episode.emitted,
+                          "first_seen_at": _format_timestamp(episode.first_seen_at),
+                          "last_seen_at": _format_timestamp(episode.last_seen_at)}
                          for episode in self._episodes_by_target.values()],
         }
 
@@ -151,16 +168,24 @@ class Observer:
             observer._latest_snapshots[key] = snapshot
         for item in state["episodes"]:
             first, last = validate_observation(item["first"]), validate_observation(item["last"])
+            first_seen = _utc_timestamp(item.get("first_seen_at", item["first"]["captured_at"]), "first_seen_at")
+            last_seen = _utc_timestamp(item.get("last_seen_at", item["last"]["captured_at"]), "last_seen_at")
             key = _target_key(last.target)
             latest = observer._latest_snapshots.get(key)
-            if (type(item["emitted"]) is not bool or _correlation_key(first) != _correlation_key(last)
+            unknown_last = (item["emitted"] is True and not _failure_signals(last)
+                            and last.observation.get("telemetry", {}).get("thresholds_complete") is False
+                            and first.target == last.target and first.generation == last.generation)
+            if (type(item["emitted"]) is not bool or (not unknown_last and _correlation_key(first) != _correlation_key(last))
                     or first.captured_at > last.captured_at or latest is None
                     or latest.observation != last.observation or not _failure_signals(first)
-                    or not _failure_signals(last) or key in observer._episodes_by_target):
+                    or (not _failure_signals(last) and not (item["emitted"] and
+                        last.observation.get("telemetry", {}).get("thresholds_complete") is False))
+                    or first_seen > last_seen or first_seen > first.captured_at or last_seen > last.captured_at
+                    or key in observer._episodes_by_target):
                 raise ObservationError("Invalid Observer failure checkpoint")
             observer._episodes_by_target[key] = FailureEpisode(
-                correlation_key=_correlation_key(first), first_seen_at=first.captured_at,
-                last_seen_at=last.captured_at, first_snapshot=first, last_snapshot=last,
+                correlation_key=_correlation_key(first), first_seen_at=first_seen,
+                last_seen_at=last_seen, first_snapshot=first, last_snapshot=last,
                 emitted=item["emitted"],
             )
         return observer
@@ -211,6 +236,11 @@ def validate_observation(observation: dict) -> ObservationSnapshot:
     _validate_pods(observation.get("pods"))
     _validate_events(observation.get("events"))
     _validate_logs(observation.get("logs"))
+    if "telemetry" in observation:
+        try:
+            validate_context(observation["telemetry"], observation)
+        except (TelemetryError, KeyError, TypeError, AttributeError) as error:
+            raise ObservationError("Invalid correlated telemetry") from error
 
     target = {
         "cluster_id": cluster_id,
@@ -386,6 +416,10 @@ def _failure_signals(snapshot: ObservationSnapshot) -> list[dict]:
             "One or more desired containers are not ready",
             snapshot.captured_at,
         ))
+    if snapshot.desired_replicas:
+        for alert in snapshot.observation.get("telemetry", {}).get("alerts", []):
+            signals.append(_signal(snapshot, "otel_metric_alert", alert["name"], alert["detail"],
+                                   _utc_timestamp(alert["at"], "metric.at")))
     if not signals:
         return []
 
@@ -408,6 +442,11 @@ def _failure_signals(snapshot: ObservationSnapshot) -> list[dict]:
             entry["text"],
             _utc_timestamp(entry["at"], "log.at"),
         ))
+
+    for source, rows in snapshot.observation.get("telemetry", {}).get("records", {}).items():
+        for row in rows[:5]:
+            signals.append({"evidence_id": row["evidence_id"], "source": "otel_" + source,
+                "reason": "CorrelatedTelemetry", "detail": json.dumps(row, sort_keys=True), "at": row["at"]})
 
     return signals
 
@@ -514,7 +553,24 @@ def _unique_signals(signals: list[dict]) -> list[dict]:
 def _correlation_key(snapshot: ObservationSnapshot) -> tuple:
     # Kubernetes conditions evolve during the same failed rollout. Preserve the
     # initial timer and emitted flag until health returns or a new generation starts.
-    return _target_key(snapshot.target) + (snapshot.generation,)
+    key = _target_key(snapshot.target) + (snapshot.generation,)
+    if _metric_only(snapshot):
+        key += ("telemetry", *(a["name"] for a in snapshot.observation["telemetry"]["alerts"]))
+    return key
+
+
+def _metric_only(snapshot):
+    return (bool(snapshot.observation.get("telemetry", {}).get("alerts"))
+            and snapshot.observed_generation >= snapshot.generation
+            and snapshot.ready_replicas >= snapshot.desired_replicas
+            and snapshot.available_replicas >= snapshot.desired_replicas
+            and _containers_are_ready(snapshot))
+
+
+def _failure_time(snapshot):
+    if _metric_only(snapshot):
+        return min(_utc_timestamp(a["at"], "metric.at") for a in snapshot.observation["telemetry"]["alerts"])
+    return snapshot.captured_at
 
 
 def _target_key(target: dict) -> tuple:

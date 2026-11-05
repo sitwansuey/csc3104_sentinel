@@ -3,7 +3,9 @@ import importlib.util
 import json
 from pathlib import Path
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
+from urllib.error import HTTPError
+import io
 
 spec = importlib.util.spec_from_file_location(
     "project_status", Path(__file__).resolve().parents[1] / ".github/scripts/project_status.py")
@@ -30,6 +32,48 @@ def event(branch="anything-you-like"):
 
 
 class ProjectStartTests(unittest.TestCase):
+    def test_repository_reads_use_workflow_token_and_project_mutations_use_project_token(self):
+        api = a.GitHub("project-test-token", "repository-test-token")
+        response = Mock()
+        response.__enter__ = Mock(return_value=io.StringIO('{"ok":true}'))
+        response.__exit__ = Mock(return_value=False)
+        with patch.object(a, 'urlopen', return_value=response) as request:
+            api.request('repos/' + a.REPOSITORY + '/compare/main...abc')
+            self.assertEqual(request.call_args.args[0].get_header('Authorization'),
+                             'Bearer repository-test-token')
+        response.__enter__ = Mock(return_value=io.StringIO('{"data":{"ok":true}}'))
+        with patch.object(a, 'urlopen', return_value=response) as request:
+            api.update('card', a.STATUS_FIELD, {'singleSelectOptionId': a.IN_PROGRESS})
+            self.assertEqual(request.call_args.args[0].get_header('Authorization'),
+                             'Bearer project-test-token')
+
+    def test_closing_issue_graphql_uses_repository_credentials(self):
+        api = a.GitHub('project-test-token', 'repository-test-token')
+        api.request = Mock(return_value=[{'number': 40}])
+        api.graphql = Mock(side_effect=AssertionError('Project token used for repository query'))
+        api.repository_api.graphql = Mock(return_value={'repository': {'pullRequest': {
+            'closingIssuesReferences': {'nodes': [{'id':'issue', 'repository': {'nameWithOwner': a.REPOSITORY}}],
+                                       'pageInfo': {'hasNextPage':False}}}}})
+        self.assertEqual(api.pull_issues('arbitrary-branch'), {'issue'})
+        api.repository_api.graphql.assert_called_once()
+
+    def test_http_failure_names_token_role_without_exposing_credentials_and_closes_response(self):
+        api = a.GitHub('project-test-token', 'repository-test-token')
+        error = HTTPError('https://api.github.com/test', 404, 'Not Found', {}, io.BytesIO())
+        with patch.object(a, 'urlopen', side_effect=error):
+            with self.assertRaisesRegex(RuntimeError, 'HTTP 404 using GITHUB_TOKEN') as caught:
+                api.request('repos/' + a.REPOSITORY + '/compare/main...abc')
+        self.assertNotIn('repository-test-token', str(caught.exception))
+        self.assertTrue(error.closed)
+
+    def test_workflow_supplies_read_only_repository_token_and_trusted_default_branch(self):
+        workflow = (Path(__file__).parents[1] / '.github/workflows/project-status.yml').read_text()
+        self.assertIn('GITHUB_TOKEN: ${{ github.token }}', workflow)
+        self.assertIn('contents: read', workflow)
+        self.assertIn('pull-requests: read', workflow)
+        self.assertIn('ref: ${{ github.event.repository.default_branch }}', workflow)
+        self.assertNotIn('pull_request_target:', workflow)
+
     def test_arbitrary_branch_name_is_linked_without_parsing_messages(self):
         self.assertTrue(a.linked_to_branch(card(), "anything-you-like"))
         self.assertFalse(a.linked_to_branch(card(), "feat/21-guessed-name"))

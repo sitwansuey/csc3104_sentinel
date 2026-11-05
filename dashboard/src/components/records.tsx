@@ -13,9 +13,9 @@ import { decisionPresentation } from "@/lib/decision-display"
 
 export function Status({ value }: { value?: string | null }) {
   const status=value || "NO DATA"
-  const good=["ALLOW","PASS","CLEAR","RECOVERED","APPLIED","NOOP","HEALTHY","READY","Ready","available","RECENT"].includes(status)
-  const bad=["FAIL","REJECT","REJECTED","FAILED","BLOCKED","CONFLICT","NOT_RECOVERED","error","Failed","CrashLoopBackOff","ImagePullBackOff","OOMKilled","NotReady"].includes(status)
-  const warn=["ESCALATE","UNKNOWN","AWAITING_APPROVAL","NEEDS_REVIEW","NEEDS_RECONCILIATION","fault","STALE","Pending","unavailable","PARTIAL","BackOff","FailedScheduling","Unhealthy"].includes(status)
+  const good=["ALLOW","PASS","CLEAR","RECOVERED","APPLIED","NOOP","HEALTHY","READY","Ready","available","RECENT","RESOLVED"].includes(status)
+  const bad=["FAIL","REJECT","REJECTED","FAILED","BLOCKED","CONFLICT","NOT_RECOVERED","error","Failed","CrashLoopBackOff","ImagePullBackOff","OOMKilled","NotReady","DENY","HIGH","CRITICAL"].includes(status)
+  const warn=["ESCALATE","UNKNOWN","AWAITING_APPROVAL","NEEDS_REVIEW","NEEDS_RECONCILIATION","fault","STALE","Pending","unavailable","PARTIAL","BackOff","FailedScheduling","Unhealthy","WARNING","MEDIUM","FINDINGS","OPEN","NOT CONNECTED"].includes(status)
   // Old or replayed observations must never inherit the green "current health" treatment.
   const stale=/^(last known|stale|expired)/i.test(status)
   return <Badge variant="outline" title={stale?"Not a current observation":undefined} className={cn("rounded-md font-mono text-[10px] font-medium tracking-wide",stale&&"border-dashed border-amber-500/40 bg-transparent text-amber-600 dark:text-amber-300",!stale&&good&&"border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",!stale&&bad&&"border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-300",!stale&&warn&&"border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-300")}>{status}</Badge>
