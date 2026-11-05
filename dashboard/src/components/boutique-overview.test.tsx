@@ -5,7 +5,8 @@ import { BoutiqueOverview } from "./boutique-overview"
 import type { BoutiqueObservation, Cluster } from "@/lib/types"
 
 const now = Date.parse("2026-11-04T01:00:00Z")
-const cluster = { cluster_id: "connected", namespace: "boutique" } as Cluster
+const cluster: Cluster = {cluster_id: "connected", namespace: "boutique", observed_at: new Date(now).toISOString(),
+  sources: {pods: {status: "available"}, events: {status: "available"}}, nodes: [], pods: [], events: [], summary: {}, truncation: {}}
 function observations(): BoutiqueObservation[] {
   return [{ sequence: 2, cluster_id: "connected", namespace: "boutique", observed_at: new Date(now).toISOString(),
     stage: "inventory", incident_id: null, action_id: null, journey: null, services: [
@@ -25,6 +26,8 @@ describe("Boutique application overview", () => {
     expect(screen.getAllByText("500")).toHaveLength(2)
     expect(screen.getByText("FAIL")).toBeInTheDocument()
     expect(screen.queryByText("RECOVERED")).not.toBeInTheDocument()
+    expect(screen.getByText("Pod inventory")).toBeInTheDocument()
+    expect(screen.getByText("Kubernetes warning events")).toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", {name: "INC-1"}))
     expect(inspect).toHaveBeenCalledWith("INC-1")
   })

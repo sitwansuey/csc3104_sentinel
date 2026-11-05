@@ -190,6 +190,17 @@ class LiveExecutorTests(unittest.TestCase):
         self.assertEqual(second.decision["verdict"], "REJECT")
         self.assertIn("OPERATOR_REJECTED", second.decision["reason_codes"])
 
+    def test_fresh_dependency_reader_overrides_previously_clear_file_before_mutation(self):
+        adapters = self.build()
+        dependencies = deepcopy(self.fixtures["dependencies"])
+        dependencies.update(status="BLOCKED", blockers=["dependency changed after proposal"])
+        adapters.authorizer.dependency_reader = lambda proposal: deepcopy(dependencies)
+        self.assertEqual(json.loads(self.paths["dependencies"].read_text())["status"], "CLEAR")
+        result = execute(self.proposal, adapters)
+        self.assertEqual(result["status"], "FAILED")
+        self.assertIn("DEPENDENCY_BLOCKED", result["details"])
+        self.assertEqual(self.cluster.writes, [])
+
     def test_injected_coordinator_approval_is_fresh_and_missing_record_cannot_authorize(self):
         records = [deepcopy(self.approval)]
         calls = []

@@ -3,12 +3,14 @@ param([switch]$Setup, [switch]$Cleanup, [switch]$Dashboard,
       [ValidateRange(0,65535)][int]$DashboardPort = 8765, [switch]$ExitAfterTest,
       [switch]$PauseBeforeInjection, [switch]$GuardRejection, [switch]$UIControls, [switch]$Connected,
       [ValidateRange(1,65535)][int]$StorefrontPort = 8080,
-      [switch]$Agent, [string]$AgentConfig)
+      [switch]$Agent, [string]$AgentConfig, [string]$ProviderScript, [string]$ProviderPolicy,
+      [string]$Operator, [string]$RunDirectory)
 
 $ErrorActionPreference = 'Stop'
 if ($ExitAfterTest -and -not $Dashboard) { throw '-ExitAfterTest requires -Dashboard.' }
 if ($AgentConfig -and -not $Agent) { throw '-AgentConfig requires -Agent.' }
 if ($Agent -and $GuardRejection) { throw '-Agent and -GuardRejection are separate scenarios.' }
+if ($Agent -and $ProviderScript) { throw '-Agent and -ProviderScript are separate planning modes.' }
 if ($UIControls -and (-not $Dashboard -or $PauseBeforeInjection)) { throw '-UIControls requires -Dashboard and replaces -PauseBeforeInjection.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
@@ -40,6 +42,10 @@ try {
     $testOptions = @()
     if ($Agent) { $testOptions += '--agent' }
     if ($AgentConfig) { $testOptions += @('--agent-config', $AgentConfig) }
+    if ($ProviderScript) { $testOptions += @('--provider-script', $ProviderScript) }
+    if ($ProviderPolicy) { $testOptions += @('--provider-policy', $ProviderPolicy) }
+    if ($Operator) { $testOptions += @('--operator', $Operator) }
+    if ($RunDirectory) { $testOptions += @('--run-dir', $RunDirectory) }
     if ($Dashboard) { $testOptions += @('--dashboard', '--dashboard-port', "$DashboardPort") }
     if ($ExitAfterTest) { $testOptions += '--exit-after-test' }
     if ($PauseBeforeInjection) { $testOptions += '--pause-before-injection' }

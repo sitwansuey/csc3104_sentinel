@@ -1,6 +1,7 @@
 import { Boxes, ShoppingCart, ShieldCheck } from "lucide-react"
 import { CardContent } from "@/components/ui/card"
 import { Empty, Panel, Records, Status } from "@/components/records"
+import { PodTable, WarningEvents } from "@/components/metrics"
 import { time } from "@/lib/data"
 import type { BoutiqueObservation, Cluster } from "@/lib/types"
 
@@ -50,6 +51,8 @@ export function BoutiqueOverview({ records, cluster, now, stale, playback=false,
           record.incident_id ? <button type="button" onClick={() => inspect(record.incident_id!)} className="max-w-48 break-all text-left text-xs text-primary underline underline-offset-4">{record.incident_id}</button> : "Baseline"]
       })}/> : <Empty title="No shopping requests measured yet" detail="Baseline, injected-fault and post-action shopping measurements appear here as the experiment progresses."/>}
     </Panel>
-    <p className="text-xs leading-relaxed text-muted-foreground">Use Kubernetes for Pod restarts and warning events, and the role pages for Sentinel activity. This view does not stream application logs, discover dependencies from traces, or enable recovery of other services.</p>
+    <PodTable cluster={cluster} transportStale={stale} demo={playback}/>
+    <WarningEvents cluster={cluster}/>
+    <p className="text-xs leading-relaxed text-muted-foreground">Pod status, restarts and warning events cover this namespace. Use the role pages for Sentinel activity and kubectl logs for individual application logs. Shopping measurements run at experiment stages; this view does not trace every application request or enable recovery of other services.</p>
   </div>
 }

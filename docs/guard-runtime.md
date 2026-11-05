@@ -163,7 +163,7 @@ Build and run the file-only CLI image from the repository root:
 
 ```text
 docker build -f deploy/docker/guard.Dockerfile -t sentinel-guard:local .
-docker run --rm --mount "type=bind,source=YOUR_ABSOLUTE_REPO_PATH,target=/inputs,readonly" sentinel-guard:local --proposal /inputs/samples/messages/proposal.json --policy /inputs/samples/policy.json --baseline /inputs/samples/baseline.json --dependencies /inputs/samples/messages/dependency-result.json --live-state /inputs/runs/guard-live-state.json --now 2026-10-10T12:00:40Z
+docker run --rm --mount "type=bind,source=YOUR_ABSOLUTE_REPO_PATH,target=/inputs,readonly" sentinel-guard:local --proposal /inputs/data/sentinel/samples/messages/proposal.json --policy /inputs/data/sentinel/samples/policy.json --baseline /inputs/data/sentinel/samples/baseline.json --dependencies /inputs/data/sentinel/samples/messages/dependency-result.json --live-state /inputs/data/sentinel/runs/guard-live-state.json --now 2026-10-10T12:00:40Z
 python -m unittest discover -s tests -p "test_guard_cli.py" -v
 ```
 

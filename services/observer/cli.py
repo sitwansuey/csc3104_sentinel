@@ -12,6 +12,8 @@ import threading
 
 from runtime.observer_pipeline import LocalCoordinatorSink, ObserverStore, is_ready, status_file
 from services.observer.kubernetes import InClusterReader, KubectlReader, KubernetesEvidenceCollector
+from services.observer_telemetry import CorrelatedEvidenceCollector, TelemetryStore
+from runtime.observer_fleet import fleet_health, load_targets, run_fleet
 
 
 def main(argv=None):
@@ -24,8 +26,11 @@ def main(argv=None):
     source = run.add_mutually_exclusive_group(required=True)
     source.add_argument("--context")
     source.add_argument("--in-cluster", action="store_true")
-    run.add_argument("--namespace", required=True)
-    run.add_argument("--deployment", required=True)
+    run.add_argument("--namespace")
+    run.add_argument("--deployment")
+    run.add_argument("--targets", type=Path, help="Explicit multi-workload target configuration")
+    run.add_argument("--telemetry-db", type=Path, help="Observer-owned OTLP evidence database")
+    run.add_argument("--service-name", action="append", help="OTel service.name for a single target")
     run.add_argument("--cluster-id", required=True)
     run.add_argument("--collect-logs", action="store_true")
     run.add_argument("--interval-seconds", type=float, default=15)
@@ -34,8 +39,16 @@ def main(argv=None):
     for name in ("status", "pending", "health"):
         sub = commands.add_parser(name)
         sub.add_argument("--state", type=Path, default=Path("data/sentinel/runs/observer.sqlite3"))
+    fleet = commands.add_parser("fleet-health")
+    fleet.add_argument("--state", type=Path, required=True)
+    fleet.add_argument("--targets", type=Path, required=True)
+    fleet.add_argument("--cluster-id", required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == "fleet-health":
+            result = fleet_health(args.state, args.cluster_id, load_targets(args.targets))
+            print(json.dumps(result, sort_keys=True))
+            return int(not result["ready"])
         if args.command in ("status", "health"):
             status = status_file(args.state)
             status["ready"] = is_ready(status)
@@ -55,6 +68,18 @@ def main(argv=None):
         if not isinstance(detection, dict):
             raise ValueError("Observer detection policy must be an object")
         policy["detection"] = detection
+        if args.targets:
+            if args.namespace or args.deployment or args.service_name:
+                parser.error("Use --targets or a single namespace/deployment, not both")
+            load_targets(args.targets)
+        elif not args.namespace or not args.deployment:
+            parser.error("A namespace and deployment, or --targets, are required")
+        if not isinstance(policy.get("telemetry", {}), dict):
+            raise ValueError("Observer telemetry policy must be an object")
+        if policy.get("telemetry") and not args.telemetry_db:
+            parser.error("A telemetry policy requires --telemetry-db")
+        if args.service_name and not args.telemetry_db:
+            parser.error("--service-name requires --telemetry-db")
         gap = detection.setdefault("max_sample_gap_seconds", 45)
         if (not math.isfinite(args.interval_seconds) or args.interval_seconds <= 0
                 or type(gap) is not int or gap <= args.interval_seconds
@@ -63,8 +88,13 @@ def main(argv=None):
         if args.state.resolve() == args.coordinator_db.resolve():
             parser.error("Observer and Coordinator require separate database files")
         reader = InClusterReader() if args.in_cluster else KubectlReader(args.context)
-        collector = KubernetesEvidenceCollector(reader, namespace=args.namespace, name=args.deployment,
-                                                 cluster_id=args.cluster_id, collect_logs=args.collect_logs)
+        collector = None
+        if not args.targets:
+            collector = KubernetesEvidenceCollector(reader, namespace=args.namespace, name=args.deployment,
+                                                     cluster_id=args.cluster_id, collect_logs=args.collect_logs)
+            if args.telemetry_db:
+                collector = CorrelatedEvidenceCollector(collector, TelemetryStore(args.telemetry_db),
+                    args.service_name or [args.deployment], policy.get("telemetry", {}))
         sink = LocalCoordinatorSink(args.coordinator_db)
         stop = threading.Event()
         previous_handlers = {}
@@ -72,7 +102,10 @@ def main(argv=None):
             for signum in (signal.SIGINT, signal.SIGTERM):
                 previous_handlers[signum] = signal.signal(signum, lambda *_: stop.set())
         try:
-            with ObserverStore(args.state, policy, collector.target) as store:
+            if args.targets:
+                return run_fleet(args, reader, policy, sink, stop)
+            scoped_policy = {**policy, "observer_service_names": args.service_name or [args.deployment]} if args.telemetry_db else policy
+            with ObserverStore(args.state, scoped_policy, collector.target) as store:
                 store.flush(sink)
                 polls, consecutive_errors = 0, 0
                 while not stop.is_set() and (args.poll_count == 0 or polls < args.poll_count):

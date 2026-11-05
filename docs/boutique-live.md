@@ -73,9 +73,12 @@ contains two RECOVERED incidents and one REJECTED false-alarm incident. Use
 [Guard rejection demo](guard-rejection-demo.md). Historical results below predate
 that additional scenario.
 
-There is no LLM call, automatic dependency discovery, Chaos Mesh experiment or
-whole-Boutique/cloud deployment. The dashboard is read-only. Missing Metrics API
-usage remains unavailable rather than becoming fabricated resource measurements.
+The default three-scenario suite makes no LLM call. Optional
+[agent mode](boutique-demo-handbook.md#live-agent-recovery-mode) uses RCA and
+Ollama planning for one recovery. Automatic dependency discovery, Chaos Mesh and
+whole-Boutique/cloud deployment are outside this single-service lab. The
+dashboard is read-only. Missing Metrics API usage remains unavailable rather than
+becoming fabricated resource measurements.
 On failure, an explicitly labelled administrator restoration can run as teardown;
 it never counts as successful executor recovery.
 

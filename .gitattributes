@@ -1,2 +1,2 @@
 *.sh text eol=lf
-infra/boutique-connected-upstream.yaml text eol=lf
+deploy/boutique/upstream.yaml text eol=lf

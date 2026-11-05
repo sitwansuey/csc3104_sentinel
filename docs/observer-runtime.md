@@ -5,6 +5,9 @@ Deployment and Kubernetes diagnostic telemetry, filters transient failures,
 correlates evidence by workload identity/generation, and hands incidents to the
 Coordinator. It never performs recovery actions.
 
+The [connected telemetry guide](observer-telemetry.md) covers the newer multi-target
+runtime, OTLP receiver, gauge thresholds and separate SDK/Collector validation lab.
+
 ## Run on the host
 
 From the repository root, with Python 3.12+, kubectl and an explicit context:
@@ -28,8 +31,10 @@ positive and smaller than that gap. Changing a database's configured target or
 policy is rejected; preserve its pending messages and choose a new state file
 instead of silently discarding detection state.
 
-Collection errors have bounded retries and a failing exit code after three
-consecutive errors. Supervisor restart is safe. A read error or a sample gap
+The single-target worker exits after three consecutive collection errors by
+default. The multi-target worker continues polling each target independently,
+reports failures per target and exposes aggregate `fleet-health`. Supervisor
+restart is safe. A read error or a sample gap
 beyond policy restarts an **unemitted** failure timer: missing telemetry cannot
 prove continuous failure. Already emitted episodes remain suppressed across
 errors/restarts until observed health or a new generation/UID starts a new one.
@@ -132,8 +137,8 @@ from its baseline file if the operator process is force-terminated.
 | Failure thresholds, gap handling, stale-sample protection and correlated signals | Implemented and regression-tested |
 | Persistent runtime, outbox retry and Coordinator ingestion | Implemented; restart/rollback/replay tests |
 | Non-root container, restricted RBAC, PVC deployment and startup guide | Implemented; live validation recorded below |
-| External OpenTelemetry/metrics/traces integration | **Not complete**; no configured team collector/telemetry interface is integrated |
-| Online Boutique and second-workload evaluation | **Not complete**; the current live evidence covers the demo only |
+| External OpenTelemetry/metrics/traces integration | Implemented receiver, Collector configuration, Pod correlation and gauge thresholds; see the connected telemetry guide for validation and limits |
+| Online Boutique and second-workload evaluation | Boutique Kubernetes evidence is documented in the Boutique handbook; the new connected-services lab evaluates OTLP separately. Boutique tracing instrumentation and broader cloud evaluation remain pending |
 | Distributed transport and full Planner/Executor/Verifier recovery flow | **Not complete**; requires team integration and end-to-end evidence |
 | Owner review and merge of the component contracts | **Pending team review** |
 

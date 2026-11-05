@@ -3,12 +3,14 @@
 Follow detection, planning, Guard validation, execution and verification in one
 local workspace. The React interface uses shadcn/ui components, Tailwind CSS and
 Recharts. The dashboard polls every two seconds, supports incident and
-workload filters, and has eight views:
+workload filters, and has ten views:
 
 | View | Records shown |
 | --- | --- |
 | Overview | Cluster CPU/memory trends, node/Pod readiness, pipeline, lifecycle events and fault markers |
 | Kubernetes | Node capacity/readiness, namespace Pod health/restarts, measured CPU/memory and Warning events |
+| Online Boutique | All eleven Deployment readiness cards, stage-based shopping results, namespace Pods/restarts and warning events |
+| Security | Inspection metadata and image scan/alert evidence when the selected journal has security producers |
 | Member 1: Coordinator | Incident register, pending/acknowledged routes, recorded approvals |
 | Member 2: Monitoring | Ready/desired/available replicas, detection evidence, collector errors |
 | Member 3: Planner / RCA | Proposed action, target/version, rationale, baseline parameters, evidence references |
@@ -16,8 +18,12 @@ workload filters, and has eight views:
 | Member 5: Executor | Reported attempts, conflicts, reconciliation results, pending execution routes |
 | Member 6: Dependencies / Health | Pre-execution dependency status and post-execution health checks/windows |
 
-This is a read-only view. It cannot approve proposals, inject faults or execute
-recovery. There is no cloud deployment or shared cluster in this change.
+The default dashboard is read-only. The dedicated Boutique harness can opt in
+to [fixed browser injection gates](experiment-controls.md); those gates do not
+approve proposals or run repair commands from HTTP handlers. Role implementations
+still authorize/execute/verify the resulting recovery. No cloud deployment or
+shared-cluster acceptance is claimed. Application logs are inspected with
+`kubectl logs`; this UI does not stream every request or application log.
 
 ## Try it now without a cluster
 
@@ -229,7 +235,7 @@ and exact target identity. Opening the dashboard does not consume pending routes
 | --- | --- |
 | 1 | Keep the Coordinator running against the selected database. Existing approval handling remains outside the dashboard. |
 | 2 | Use the collector above, or an existing adapter feeding contract-valid `incident` messages. |
-| 3 | Consume `planner.request`, then submit a `proposal`. The current Planner is a stub; evidence references are displayed, not resolved into logs. |
+| 3 | Consume `planner.request`, then submit a `proposal`. Offline runbook/proposal validation and an optional provider boundary exist; the default live demo uses explicit harness proposals and makes no actual LLM call. |
 | 4 | Run the existing Coordinator Guard worker. New evaluations atomically persist the bound detailed report, decision, downstream route and input acknowledgment. |
 | 5 | Consume execution routes with the required fresh Guard checks, then submit `execution_result`. A pending route is not counted as an attempted write. |
 | 6 | Submit pre-execution `dependency_result` and post-execution `outcome`. Boutique invokes the real dependency evaluator and durable post-execution worker using measured gRPC, readiness and template evidence; absent findings remain unknown. Opening this read-only dashboard does not run those workers. |

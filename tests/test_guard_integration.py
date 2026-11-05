@@ -83,6 +83,7 @@ class GuardIntegrationTests(unittest.TestCase):
         self.process()
         approve(self.aid, "operator", self.store)
         self.dependencies["status"] = "BLOCKED"
+        self.dependencies["checked_at"] = "2026-10-10T12:00:39Z"
         self.assertEqual(self.process(40)[0]["verdict"], "REJECT")
         self.assertEqual(self.execution_requests(), [])
 

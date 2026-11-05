@@ -8,9 +8,33 @@ policies and dependencies, then verified against post-action health.
 conditional execution → verified recovery. Start with one workload and one
 action: restore a specific saved healthy Pod template (`ROLLBACK`).
 
+## Current connected demo: start here
+
+With Docker Desktop's Linux engine running and kind, kubectl, Python and the
+dashboard build tools installed, run from the repository root:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Connected -Dashboard -UIControls -Cleanup
+```
+
+Open **http://127.0.0.1:8765/#overview** for injection/recovery and
+**http://127.0.0.1:8080** for Boutique. The connected demo uses Roles 1, 2, 4, 5
+and 6 with harness-authored proposals and demo approval. Eleven Deployments are
+observed; supported faults and repairs currently target shipping. The **Online
+Boutique** page shows service readiness, shopping measurements, Pods/restarts
+and warning events. The optional [live agent mode](docs/boutique-demo-handbook.md#live-agent-recovery-mode)
+uses RCA and Ollama planning for one guarded recovery; the default demo keeps
+harness-authored proposals.
+
+Use the [demo handbook](docs/boutique-demo-handbook.md) and
+[connected guide](docs/boutique-connected.md) for prerequisites, code used at
+each stage and cleanup. The [5 November consolidation review](docs/repository-review-2026-11-05.md)
+records branch/PR decisions, exact tests, role coverage and remaining work.
+The previously exported runner image predates these source changes.
+
 ## Repository organization
 
-To test live recovery with your agent, see the [live agent end-to-end guide](docs/live-agent-e2e.md): `python scripts/test_boutique_live.py --agent --dashboard --pause-before-injection`.
+To test live recovery with your agent, see [live agent recovery mode](docs/boutique-demo-handbook.md#live-agent-recovery-mode): `python scripts/test_boutique_live.py --agent --dashboard --pause-before-injection`.
 
 All project data is under `data/`: `data/sentinel/` contains application fixtures, settings and runtime evidence; `data/experimentation/` contains benchmark datasets, experiment settings and evaluation results. Existing `sample-100` results are at `data/experimentation/runs/sample-100/`. See the [data layout](data/README.md).
 
@@ -39,6 +63,10 @@ For the container-packaged Boutique demo, use the
 [detailed packaged demo guide](docs/packaged-demo.md). That route needs Docker
 Desktop and kind on the host; Python, kubectl and the built UI run in the image.
 The instructions below remain the host-development route.
+
+The exported 0.3.0 runner supports the earlier shipping-only demo. For the latest
+connected storefront and UI controls, use the source command above until a new
+runner release is built and validated.
 
 Use this section for a new teammate's first run. Run commands in PowerShell from
 the repository root, the folder containing this README. Clone the team repository
@@ -246,6 +274,14 @@ below describes the older operator-run experiment and its menu separately.
 
 ## Current implementation
 
+The opt-in [security lab](docs/security.md) adds an mTLS gRPC reverse proxy,
+schema-aware shipping request inspection, image CVE detection and package patch
+recommendations in the dashboard's Security view. It is isolated from existing
+Kubernetes labs; scanning does not automatically patch or deploy images.
+The [connected security lab](docs/security-connected.md) runs the full storefront
+with inspected shipping traffic, enforced Calico policies, candidate validation
+and scheduled image scans/alerts in its own kind cluster.
+
 For opt-in browser buttons that inject the Boutique lab scenarios and display
 their measured outcomes, see [browser-controlled experiments](docs/experiment-controls.md).
 The default dashboard remains read-only; the experiment controls do not approve
@@ -270,7 +306,8 @@ For an opt-in experiment using the real Online Boutique shipping service, see
 [the single-service Boutique guide](docs/boutique-live.md). It reuses the Guard
 and restricted Executor with harness-authored proposals. Role 6 now evaluates
 the reviewed dependency graph and publishes outcomes from live gRPC, readiness
-and template evidence. Planner integration remains pending.
+and template evidence. Add `--agent` to use RCA and Ollama planning for one
+recovery; the default three-scenario run uses harness-authored proposals.
 The [Boutique demo instruction book](docs/boutique-demo-handbook.md) explains
 integrated live dashboard startup, injection, role coverage, evidence and cleanup.
 For team handover and presentations, see the
@@ -280,7 +317,11 @@ The demo lab, message validator, synthetic samples and contract tests are provid
 The Coordinator now has SQLite lifecycle/approval persistence, durable local event
 routing, a CLI and an offline integration demo. The Observer has threshold-based detection, ownership-correlated Pod/event/log
 collection, a persistent worker/outbox, local Coordinator handoff and a restricted
-Kubernetes deployment. The Guard has a fixture-driven evaluator,
+Kubernetes deployment. Its [connected telemetry runtime](docs/observer-telemetry.md)
+adds bounded OTLP traces/metrics/logs, current-Pod correlation, gauge thresholds
+and independent monitoring of multiple configured Deployments. Boutique tracing
+instrumentation and shared-cloud transport remain integration work.
+The Guard has a fixture-driven evaluator,
 expiring decisions bound to exact inputs, detailed reports,
 baseline/security/resource checks, a JSON runner,
 read-only Kubernetes metadata collection, optional server-side admission dry-run
@@ -294,13 +335,16 @@ are isolated under `tests/support/` for offline regressions. A read-only
 [observability dashboard](#observability-dashboard) displays Coordinator records,
 Guard reports, cluster metrics and fault markers. The Verifier now evaluates
 offline dependency graphs and sustained post-action health windows, with
-Guard/Coordinator integration tests. Planner remains an implementation stub;
+Guard/Coordinator integration tests. Offline Planner validation and a provider
+adapter boundary are implemented; the default live demo still uses the harness.
 Boutique now consumes durable verification requests and supplies real gRPC,
 readiness and template evidence; successful outcomes close its incidents as
 RECOVERED. See [the current workflow](docs/current-system-demo.md).
-Trusted production baseline storage, authenticated approval transport,
-distributed runtimes, messaging and the complete recovery pipeline still need
-integration. Sample results are not live authorisations or measured outcomes.
+Trusted production baseline storage, authenticated human approvals, deployed
+remote worker adapters and cross-host target ownership still need integration.
+An optional authenticated worker-delivery interface exists; it is not the
+transport used by the local harness or proof of distributed execution. Sample
+results are not live authorisations or measured outcomes.
 
 The [Executor core guide](docs/executor.md) explains durable action records,
 coordination and crash reconciliation. The
@@ -385,7 +429,7 @@ latency and post-recovery health. Define safe/unsafe cases and health thresholds
 before scoring; use the same independent outcome measurement across configurations.
 
 Use Online Boutique as the primary workload and a second workload to test
-application independence. Keep evaluation solutions out of `runbooks/`. Record
+application independence. Keep evaluation solutions out of `agent/knowledge/`. Record
 fault settings, workload/model/prompt versions and repeated-run results.
 
 ## Start coding
@@ -435,6 +479,11 @@ handoffs. The demos use synthetic fixtures and a fixed UTC clock; they make no
 cluster writes. Version-2 demo approvals, health records and server previews are
 fabricated and have no live authority. The
 handoff demo exercises fresh validation and conditional writes against a fake API.
+The [Guard evaluation guide](docs/guard-evaluation.md) provides versioned safe/unsafe
+cases, a state/policy versus full-validation runner, explicit metrics and preliminary
+fixture results. Final scoring still requires the accepted frozen release.
+The [dependency revalidation guide](docs/dependency-revalidation.md) demonstrates
+real Verifier findings invalidating queued authorization through Coordinator.
 The [Guard integration contract](docs/guard-integration-contract.md) records
 producer/consumer responsibilities, failure handling and proposed approval lookup
 semantics, with a pending owner-review checklist for team agreement.
@@ -450,7 +499,7 @@ covering behaviour, validation and affected interfaces.
 | [data/sentinel/samples/baseline.json](data/sentinel/samples/baseline.json) | Exact healthy template and its identity/hash |
 | [data/sentinel/samples/policy.json](data/sentinel/samples/policy.json) | Permissions, approval and detection/health thresholds |
 | [data/sentinel/samples/dependencies.json](data/sentinel/samples/dependencies.json) / [data/sentinel/samples/health.json](data/sentinel/samples/health.json) | Synthetic graph and health readings |
-| [runbooks/](runbooks/) | Generic retrieval guidance |
+| [agent/knowledge/](agent/knowledge/) | Curated diagnostic workflows and retrieval guidance |
 
 Keep IDs stable across retries and treat resource versions as opaque strings.
 The coordinator and executor own separate records; a local SQLite prototype is
@@ -482,7 +531,10 @@ packages. Keep the launcher's terminal open while using the dashboard.
 The dashboard grants no recovery permissions and performs no cluster writes; the
 collector uses only `kubectl get`. Demo playback is synthetic and labelled as
 such. The Executor view shows records routed through the Coordinator, not the
-Executor's own attempt store. Planner remains a stub. The Boutique experiment now publishes real Role 6 dependency and health outcomes; generic/demo playback records retain their producer-specific behavior. The
+Executor's own attempt store. The default demonstration uses harness proposals;
+offline Planner validation and an optional provider boundary are also present.
+The Boutique experiment publishes real Role 6 dependency and health outcomes;
+generic/demo playback records retain their producer-specific behavior. The
 [dashboard guide](docs/dashboard.md) covers live setup, permissions, fault markers,
 producer integration and limitations.
 

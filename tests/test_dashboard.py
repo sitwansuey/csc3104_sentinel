@@ -106,17 +106,18 @@ class DashboardTests(unittest.TestCase):
             bus = LocalEventBus()
             for name in ("incident", "proposal", "dependency-result"):
                 handle(fixture(f"messages/{name}.json"), store, bus)
-            # Proposal + dependency result queue two Guard requests. Both may
-            # evaluate the same immutable decision; the report must not conflict.
+            # Proposal + dependency result queue two Guard requests. One fresh
+            # evaluation covers both, with one report and durable acknowledgment.
             decisions = process_guard_requests(
                 store, bus, state_reader=lambda p: fixture("observations.json")["failed-rollout"][-1],
                 policy_reader=lambda p: fixture("policy.json"), baseline_reader=lambda p: fixture("baseline.json"),
                 clock=lambda: datetime(2026, 10, 10, 12, 0, 35, tzinfo=timezone.utc))
-            self.assertEqual(len(decisions), 2)
+            self.assertEqual(len(decisions), 1)
             report = snapshot(self.db, self.telemetry)["reports"][0]
             self.assertEqual(report["inputs_sha256"], decisions[0]["inputs_sha256"])
             self.assertTrue(any(check["status"] == "UNKNOWN" for check in report["checks"]))
             self.assertEqual(store.db.execute("SELECT COUNT(*) FROM guard_reports").fetchone()[0], 1)
+            self.assertEqual(store.db.execute("SELECT COUNT(*) FROM outbox WHERE topic='guard.request' AND delivered=0").fetchone()[0], 0)
             self.assertEqual(store.db.execute("SELECT COUNT(*) FROM outbox WHERE topic='executor.request'").fetchone()[0], 0)
 
     def test_failed_report_write_rolls_back_decision_and_ack(self):
@@ -217,9 +218,11 @@ class DashboardTests(unittest.TestCase):
                 with self.assertRaises(HTTPError) as error:
                     urlopen(base + path, timeout=3)
                 self.assertEqual(error.exception.code, 404)
+                error.exception.close()
             with self.assertRaises(HTTPError) as error:
                 urlopen(Request(base + "/api/snapshot", data=b"{}", method="POST"), timeout=3)
             self.assertEqual(error.exception.code, 501)
+            error.exception.close()
         finally:
             server.shutdown()
             server.server_close()
@@ -235,6 +238,7 @@ class DashboardTests(unittest.TestCase):
                     urlopen(f"http://127.0.0.1:{server.server_port}", timeout=3)
                 self.assertEqual(error.exception.code, 503)
                 self.assertIn("npm --prefix dashboard run build", error.exception.read().decode())
+                error.exception.close()
             finally:
                 server.shutdown()
                 server.server_close()

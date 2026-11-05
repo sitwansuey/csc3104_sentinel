@@ -2,8 +2,10 @@
 
 This opt-in source experiment deploys the real v0.10.7 Boutique application:
 frontend, checkout, shipping, cart/Redis, product catalog, currency, payment,
-email, advertisements and recommendations. Planner is still harness-authored;
-it is not required to test real dependency impact and restricted recovery.
+email, advertisements and recommendations. The default scenario suite uses
+harness-authored proposals to test real dependency impact and restricted recovery.
+Add `-Agent` for [one RCA/Ollama-planned recovery](boutique-demo-handbook.md#live-agent-recovery-mode)
+with connected post-action verification.
 
 The existing single-service experiment stays available. Connected mode uses its
 own `sentinel-boutique-connected` cluster and namespace. Only shippingservice is
@@ -41,8 +43,9 @@ results at baseline, during each injected fault, and during post-action
 verification. It includes confirmation evidence and links to the associated
 incident. These are stage measurements, not continuous checkout traffic.
 The view remains namespace-wide when a shipping incident is selected so affected
-supporting services are still visible. Use **Kubernetes** for Pod restarts and
-warning events, and the role pages for Sentinel's workflow.
+supporting services are still visible. Namespace Pods, restarts and warning
+events appear below the shopping table and on **Kubernetes**. Use the role pages
+for Sentinel's workflow.
 
 Application log streaming and distributed request tracing are not integrated.
 For a second terminal, watch all Boutique Pods:
@@ -184,10 +187,11 @@ shipping uses the existing reviewed rollback template configuration.
 
 The recovery core and shared event contracts are unchanged. This remains a
 single-node lab with local coordination, a configured dependency graph and one
-injected fault type. It does not establish full application coverage, concurrent
-fault handling, load resilience, automatic discovery, AI diagnosis or public
-cloud readiness. Separate workload images have not been certified by the older
-runner's zero-CVE scan.
+injected fault type. The default suite uses harness proposals; optional agent
+mode retains its diagnosis and model calls for separate acceptance. This lab
+does not establish full application coverage, concurrent fault handling, load
+resilience, automatic discovery or public cloud readiness. Separate workload
+images have not been certified by the older runner's zero-CVE scan.
 
 ## Adding other fault targets later
 

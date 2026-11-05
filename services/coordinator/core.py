@@ -103,6 +103,10 @@ class SQLiteStore:
                 decision_sha256 TEXT PRIMARY KEY, action_id TEXT NOT NULL
                     REFERENCES actions(action_id), report TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS dependency_revalidations (
+                action_id TEXT PRIMARY KEY REFERENCES actions(action_id),
+                dependency_sha256 TEXT NOT NULL
+            );
         """)
 
     def __enter__(self):
@@ -142,6 +146,13 @@ class SQLiteStore:
         row = self.db.execute("SELECT record FROM approvals WHERE action_id=? ORDER BY id DESC LIMIT 1",
                               (action_id,)).fetchone()
         return json.loads(row[0]) if row else None
+
+    def dependency_result(self, action_id):
+        """Return the newest accepted immutable finding for this action."""
+        findings = (json.loads(row[0]) for row in self.db.execute("SELECT payload FROM messages"))
+        return max((item for item in findings
+                    if item["kind"] == "dependency_result" and item["action_id"] == action_id),
+                   key=lambda item: _time(item["checked_at"]), default=None)
 
     def _enqueue(self, topic, payload, action_id=None):
         self.db.execute("INSERT INTO outbox(topic,payload,action_id) VALUES(?,?,?)",
@@ -187,7 +198,22 @@ def _apply(message, store):
              and incident["active_action_id"] == action_id, "Result does not match active action")
     state = action["state"]
     if kind == "dependency_result":
-        _require(state in {"VALIDATING", "AWAITING_APPROVAL"}, "Dependency result arrived out of order")
+        _require(state in {"VALIDATING", "AWAITING_APPROVAL", "READY"},
+                 "Dependency result arrived out of order")
+        previous_finding = store.dependency_result(action_id)
+        if previous_finding:
+            _require(_time(message["checked_at"]) > _time(previous_finding["checked_at"]),
+                "Dependency result must be newer than stored evidence")
+        if state == "READY":
+            # Revoke queued execution before accepting changed evidence. The
+            # executor also rechecks current lifecycle before a conditional write.
+            store._state(incident_id, action_id, "VALIDATING")
+        if state == "READY" or previous_finding or action["guard_result"] or db.execute(
+                "SELECT 1 FROM dependency_revalidations WHERE action_id=?", (action_id,)).fetchone():
+            # Keep this requirement after escalation/approval too: a delayed
+            # decision must not restore READY using the superseded evidence.
+            db.execute("INSERT OR REPLACE INTO dependency_revalidations VALUES(?,?)",
+                       (action_id, _digest(message)))
         store._enqueue("guard.request", {"proposal": action["proposal"], "dependencies": message,
                                        "approval": store.approval(action_id)}, action_id)
     elif kind == "guard_result":
@@ -200,6 +226,27 @@ def _apply(message, store):
         if message["verdict"] == "ALLOW":
             _require(message["validated_resource_version"] == action["proposal"]["based_on_resource_version"],
                      "Guard allowed a different resource version")
+            latest = store.dependency_result(action_id)
+            if latest:
+                _require(_time(message["checked_at"]) >= _time(latest["checked_at"]),
+                         "Guard ALLOW predates the latest dependency evidence")
+            if message["schema_version"] == "2.0":
+                _require(message["proposal_sha256"] == _digest(action["proposal"]),
+                         "Guard allowed a different proposal")
+            required = db.execute("SELECT dependency_sha256 FROM dependency_revalidations WHERE action_id=?",
+                                  (action_id,)).fetchone()
+            if required:
+                row = db.execute("SELECT report FROM guard_reports WHERE decision_sha256=? AND action_id=?",
+                                 (_digest(message), action_id)).fetchone()
+                report = json.loads(row[0]) if row else {}
+                _require(message["schema_version"] == "2.0"
+                         and isinstance(report, dict)
+                         and report.get("decision_sha256") == _digest(message)
+                         and report.get("proposal_sha256") == message["proposal_sha256"]
+                         and report.get("inputs_sha256") == message["inputs_sha256"]
+                         and isinstance(report.get("input_fingerprints"), dict)
+                         and report["input_fingerprints"].get("dependencies") == required[0],
+                         "Dependency revalidation requires a Guard report bound to the latest evidence")
         next_state = {"ALLOW": "READY", "REJECT": "REJECTED", "ESCALATE": "AWAITING_APPROVAL"}[message["verdict"]]
         db.execute("UPDATE actions SET guard_result=? WHERE action_id=?", (_json(message), action_id))
         store._state(incident_id, action_id, next_state)

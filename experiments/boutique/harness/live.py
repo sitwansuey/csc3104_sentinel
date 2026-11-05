@@ -46,7 +46,8 @@ def prepared_environment(path):
 
 
 def command(arguments, timeout=300):
-    result = subprocess.run(arguments, capture_output=True, text=True, timeout=timeout, check=False)
+    result = subprocess.run(arguments, capture_output=True, text=True, encoding="utf-8",
+                            errors="replace", timeout=timeout, check=False)
     require(result.returncode == 0, "Command failed: " + " ".join(arguments[:3]) + "\n" + result.stderr[-1500:])
     return result.stdout
 
@@ -125,11 +126,28 @@ class BoutiqueExperiment(Experiment):
 
     def after_recovery_scenarios(self):
         """Finish the default walkthrough by refusing a redundant third repair."""
-        from scripts.guard_rejection_demo import run_unnecessary_rollback
-        run_unnecessary_rollback(self)
+        if self.provider_script is None:
+            from scripts.guard_rejection_demo import run_unnecessary_rollback
+            run_unnecessary_rollback(self)
 
     def close(self):
         """Workload-specific child processes may override this teardown hook."""
+
+    provider_script = None
+
+    def adapters(self, folder, *, coordinator=False, reconcile_only=False):
+        adapters = super().adapters(folder, coordinator=coordinator, reconcile_only=reconcile_only)
+        if not reconcile_only:
+            # Initial routing evidence may age while the action waits. The
+            # Executor obtains a new Role 6 finding under its target lock.
+            adapters.authorizer.dependency_reader = self.dependency_result
+        return adapters
+
+    def recover_incident(self, incident):
+        if self.provider_script is None:
+            return super().recover_incident(incident)
+        from scripts.boutique_provider import run_provider_case
+        return run_provider_case(self, incident)
 
     def prepare(self):
         super().prepare()
@@ -413,11 +431,24 @@ def main():
     parser.add_argument("--guard-rejection", action="store_true",
                         help="Run only the final unnecessary-rollback rejection scenario, skipping both recovery rounds")
     parser.add_argument("--crash-worker", help=argparse.SUPPRESS)
+    parser.add_argument("--provider-script", type=Path, help="Opt in to a trusted Planner provider adapter (JSON stdin/stdout)")
+    parser.add_argument("--provider-policy", type=Path, help="Trusted policy override for provider recovery")
+    parser.add_argument("--operator", help="Lab operator identity; exact interactive action confirmation is required")
     args = parser.parse_args()
     if args.agent_config and not args.agent:
         parser.error("--agent-config requires --agent")
     if args.agent and args.guard_rejection:
         parser.error("--agent and --guard-rejection are separate scenarios")
+    if args.agent and args.provider_script:
+        parser.error("--agent and --provider-script are separate planning modes")
+    if args.provider_script and not args.provider_script.is_file():
+        parser.error("--provider-script must identify an existing adapter")
+    if args.provider_script and args.dashboard:
+        parser.error("The dashboard acceptance sequence uses the original operator lab mode")
+    if args.provider_script and args.guard_rejection:
+        parser.error("Provider recovery and the harness-only rejection scenario are separate modes")
+    if (args.provider_policy or args.operator) and not args.provider_script:
+        parser.error("--provider-policy and --operator require --provider-script")
     if args.crash_worker:
         return crash_worker(args.crash_worker)
     if not 0 <= args.dashboard_port <= 65535:
@@ -442,6 +473,9 @@ def main():
     experiment = experiment_type(directory, **({"storefront_port": args.storefront_port} if args.connected else {}))
     if args.agent:
         experiment.agent_config = args.agent_config
+    experiment.provider_script = args.provider_script.resolve() if args.provider_script else None
+    experiment.provider_policy = args.provider_policy
+    experiment.operator = args.operator
     if args.prepared_environment:
         experiment.prepared = prepared_environment(args.prepared_environment)
         experiment.cluster_id = experiment.prepared["cluster_id"]
@@ -518,6 +552,8 @@ def main():
                 signal.signal(signal.SIGTERM, previous_term)
     print("PASS: live agent diagnosed the fault, proposed rollback, and Coordinator verified RECOVERED"
           if args.agent else
+          "PASS: configured provider recovery completed with an independent Verifier outcome"
+          if args.provider_script else
           "PASS: Guard rejected unnecessary rollback; service unchanged and zero Executor patch attempts"
           if args.guard_rejection else
           "PASS: two Boutique recoveries verified; final unnecessary rollback REJECTED with zero Executor patch attempts", flush=True)

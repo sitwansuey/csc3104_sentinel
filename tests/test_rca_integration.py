@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock
 
-from services.planner.core import propose
+from services.planner.core import propose, retrieve_runbooks
 from services.rca.core import diagnose, propose_from_telemetry
 from shared.contracts import validate_message
 
@@ -77,7 +77,32 @@ class RCAIntegrationTests(unittest.TestCase):
              "template_sha256": "a" * 64}, "rationale": "bad baseline"},
         ):
             with self.assertRaises(ValueError):
-                propose(self.incident, [self.baseline], lambda q: [], lambda ctx: decision)
+                propose(self.incident, [self.baseline], retrieve_runbooks, lambda ctx: decision)
+
+    def test_rca_provider_cannot_use_future_or_tampered_baseline(self):
+        diagnosis = {"incident_id": self.incident["incident_id"], "prediction": {"1": {"reason": "Startup failed"}}}
+        for change in ({"healthy_observed_at": "2099-01-01T00:00:00Z"},
+                       {"template_sha256": "a" * 64}):
+            provider = Mock()
+            proposal = propose(self.incident, [dict(self.baseline, **change)], Mock(), provider,
+                               diagnosis=diagnosis)
+            self.assertEqual(proposal["action"], "ESCALATE")
+            provider.assert_not_called()
+
+    def test_rca_provider_cannot_mutate_trusted_baseline(self):
+        diagnosis = {"incident_id": self.incident["incident_id"], "prediction": {"1": {"reason": "Startup failed"}}}
+        before = json.loads(json.dumps(self.baseline))
+
+        def provider(context):
+            context["baselines"][0]["template_sha256"] = "a" * 64
+            return {"action": "ROLLBACK", "parameters": {
+                key: context["baselines"][0][key] for key in ("baseline_id", "template_sha256")},
+                "rationale": "Use a changed baseline"}
+
+        with self.assertRaisesRegex(ValueError, "unavailable or changed"):
+            propose(self.incident, [self.baseline], lambda query: {"kp": [{"id": "startup"}]},
+                    provider, diagnosis=diagnosis)
+        self.assertEqual(self.baseline, before)
 
     def test_rejects_wrong_incident_diagnosis(self):
         with self.assertRaises(ValueError):

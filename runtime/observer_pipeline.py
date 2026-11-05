@@ -33,6 +33,9 @@ class ObserverStore:
                 incident_id TEXT PRIMARY KEY, payload TEXT NOT NULL,
                 delivered INTEGER NOT NULL DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS observer_incident_context (
+                incident_id TEXT PRIMARY KEY, payload TEXT NOT NULL
+            );
         """)
         fingerprint = hashlib.sha256(encoded({"policy": policy, "target": target}).encode()).hexdigest()
         initial_status = {"polls": 0, "collection_errors": 0, "last_success_at": None,
@@ -72,6 +75,9 @@ class ObserverStore:
                 validate_message(incident)
                 self.db.execute("INSERT INTO observer_outbox(incident_id,payload) VALUES(?,?)",
                                 (incident["incident_id"], encoded(incident)))
+                if "telemetry" in observation:
+                    self.db.execute("INSERT INTO observer_incident_context VALUES(?,?)",
+                                    (incident["incident_id"], encoded(observation["telemetry"])))
             status.update(polls=status["polls"] + 1, last_success_at=observation["captured_at"],
                           last_collection_error=None)
             self._save(observer, status)
@@ -97,6 +103,10 @@ class ObserverStore:
     def pending(self):
         return [json.loads(row[0]) for row in self.db.execute(
             "SELECT payload FROM observer_outbox WHERE delivered=0 ORDER BY rowid")]
+
+    def incident_context(self, incident_id):
+        row = self.db.execute("SELECT payload FROM observer_incident_context WHERE incident_id=?", (incident_id,)).fetchone()
+        return json.loads(row[0]) if row else None
 
     def flush(self, sink):
         delivered = 0

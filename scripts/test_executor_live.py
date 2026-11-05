@@ -446,15 +446,18 @@ class Experiment:
     def after_recovery_scenarios(self):
         """Run optional workload-specific checks before credentials are removed."""
 
+    def recover_incident(self, incident):
+        self.negative_cases(incident)
+        self.conditional_race(incident)
+        self.positive(incident)
+        self.crash_restart()
+
     def run(self):
         try:
             self.prepare()
             self.permissions()
             incident = self.fault("primary")
-            self.negative_cases(incident)
-            self.conditional_race(incident)
-            self.positive(incident)
-            self.crash_restart()
+            self.recover_incident(incident)
             self.after_recovery_scenarios()
             save(self.directory / "final-deployment.json", self.deployment())
             self.summary["status"] = "PASS"
