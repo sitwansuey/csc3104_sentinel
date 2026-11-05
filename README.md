@@ -235,7 +235,11 @@ The demo lab, message validator, synthetic samples and contract tests are provid
 The Coordinator now has SQLite lifecycle/approval persistence, durable local event
 routing, a CLI and an offline integration demo. The Observer has threshold-based detection, ownership-correlated Pod/event/log
 collection, a persistent worker/outbox, local Coordinator handoff and a restricted
-Kubernetes deployment. The Guard has a fixture-driven evaluator,
+Kubernetes deployment. Its [connected telemetry runtime](docs/observer-telemetry.md)
+adds bounded OTLP traces/metrics/logs, current-Pod correlation, gauge thresholds
+and independent monitoring of multiple configured Deployments. Boutique tracing
+instrumentation and shared-cloud transport remain integration work.
+The Guard has a fixture-driven evaluator,
 expiring decisions bound to exact inputs, detailed reports,
 baseline/security/resource checks, a JSON runner,
 read-only Kubernetes metadata collection, optional server-side admission dry-run
