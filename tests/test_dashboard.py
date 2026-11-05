@@ -218,9 +218,11 @@ class DashboardTests(unittest.TestCase):
                 with self.assertRaises(HTTPError) as error:
                     urlopen(base + path, timeout=3)
                 self.assertEqual(error.exception.code, 404)
+                error.exception.close()
             with self.assertRaises(HTTPError) as error:
                 urlopen(Request(base + "/api/snapshot", data=b"{}", method="POST"), timeout=3)
             self.assertEqual(error.exception.code, 501)
+            error.exception.close()
         finally:
             server.shutdown()
             server.server_close()
@@ -236,6 +238,7 @@ class DashboardTests(unittest.TestCase):
                     urlopen(f"http://127.0.0.1:{server.server_port}", timeout=3)
                 self.assertEqual(error.exception.code, 503)
                 self.assertIn("npm --prefix dashboard run build", error.exception.read().decode())
+                error.exception.close()
             finally:
                 server.shutdown()
                 server.server_close()

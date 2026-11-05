@@ -33,6 +33,14 @@ If a result response is lost, resend the exact saved result with the same lease.
 
 ## Client example
 
+Guard workers submit both `result` and `report` on `/v1/result`. The report is
+the exact object returned by `evaluate_with_report`, bound to the claimed
+proposal, decision and latest accepted dependency evidence. Its insertion,
+decision ingestion and delivery acknowledgment commit together. Missing,
+conflicting or superseded proof is refused; exact retries include both objects.
+Other worker roles cannot submit Guard reports. This preserves dependency
+revalidation when using the remote delivery boundary.
+
 ```python
 import os
 from runtime.worker_http import WorkerClient

@@ -41,8 +41,9 @@ results at baseline, during each injected fault, and during post-action
 verification. It includes confirmation evidence and links to the associated
 incident. These are stage measurements, not continuous checkout traffic.
 The view remains namespace-wide when a shipping incident is selected so affected
-supporting services are still visible. Use **Kubernetes** for Pod restarts and
-warning events, and the role pages for Sentinel's workflow.
+supporting services are still visible. Namespace Pods, restarts and warning
+events appear below the shopping table and on **Kubernetes**. Use the role pages
+for Sentinel's workflow.
 
 Application log streaming and distributed request tracing are not integrated.
 For a second terminal, watch all Boutique Pods:

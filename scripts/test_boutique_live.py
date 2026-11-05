@@ -136,6 +136,14 @@ class BoutiqueExperiment(Experiment):
 
     provider_script = None
 
+    def adapters(self, folder, *, coordinator=False, reconcile_only=False):
+        adapters = super().adapters(folder, coordinator=coordinator, reconcile_only=reconcile_only)
+        if not reconcile_only:
+            # Initial routing evidence may age while the action waits. The
+            # Executor obtains a new Role 6 finding under its target lock.
+            adapters.authorizer.dependency_reader = self.dependency_result
+        return adapters
+
     def recover_incident(self, incident):
         if self.provider_script is None:
             return super().recover_incident(incident)
@@ -430,6 +438,8 @@ def main():
         parser.error("--provider-script must identify an existing adapter")
     if args.provider_script and args.dashboard:
         parser.error("The dashboard acceptance sequence uses the original operator lab mode")
+    if args.provider_script and args.guard_rejection:
+        parser.error("Provider recovery and the harness-only rejection scenario are separate modes")
     if (args.provider_policy or args.operator) and not args.provider_script:
         parser.error("--provider-policy and --operator require --provider-script")
     if args.crash_worker:
@@ -526,9 +536,12 @@ def main():
                 experiment.credentials.unlink(missing_ok=True)
                 save(experiment.directory / "summary.json", experiment.summary)
                 signal.signal(signal.SIGTERM, previous_term)
-    print("PASS: Guard rejected unnecessary rollback; service unchanged and zero Executor patch attempts"
-          if args.guard_rejection else
-          "PASS: two Boutique recoveries verified; final unnecessary rollback REJECTED with zero Executor patch attempts", flush=True)
+    if args.provider_script:
+        print("PASS: configured provider recovery completed with an independent Verifier outcome", flush=True)
+    else:
+        print("PASS: Guard rejected unnecessary rollback; service unchanged and zero Executor patch attempts"
+              if args.guard_rejection else
+              "PASS: two Boutique recoveries verified; final unnecessary rollback REJECTED with zero Executor patch attempts", flush=True)
     return 0
 
 

@@ -44,10 +44,16 @@ def handler(database, services, lease_seconds=30):
                         auth.encode(), ("Bearer " + services[name][1]).encode()):
                     raise ProtocolError(401, "Invalid credentials")
                 role = services[name][0]
-                length = int(self.headers.get("Content-Length", 0))
+                lengths = self.headers.get_all("Content-Length", [])
+                if len(lengths) != 1 or self.headers.get("Transfer-Encoding"):
+                    raise ProtocolError(400, "Ambiguous request framing")
+                length = int(lengths[0])
                 if not 0 < length <= MAX_BODY:
                     raise ProtocolError(413, "Invalid body length")
-                body = json.loads(self.rfile.read(length))
+                raw = self.rfile.read(length)
+                if len(raw) != length:
+                    raise ProtocolError(400, "Incomplete request body")
+                body = json.loads(raw)
                 if not isinstance(body, dict):
                     raise ProtocolError(400, "Expected JSON object")
                 with SQLiteStore(database) as store:
@@ -58,7 +64,8 @@ def handler(database, services, lease_seconds=30):
                         answer = delivery.ingest(role, body["message"])
                     elif self.path in ("/v1/result", "/v1/retry"):
                         answer = delivery.finish(name, role, body["delivery_id"], body["lease_token"],
-                                                 body.get("result"), retry=self.path == "/v1/retry")
+                                                 body.get("result"), retry=self.path == "/v1/retry",
+                                                 report=body.get("report"))
                     else:
                         raise ProtocolError(404, "Unknown endpoint")
                 self.reply(200, answer)

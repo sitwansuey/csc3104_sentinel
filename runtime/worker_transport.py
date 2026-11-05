@@ -80,7 +80,7 @@ class Delivery:
                     "expires_at": expires, "attempt": receipt["attempts"] + 1, "topic": row["topic"],
                     "payload": json.loads(row["payload"])}}
 
-    def finish(self, identity, role, delivery_id, token, result, *, retry=False):
+    def finish(self, identity, role, delivery_id, token, result, *, retry=False, report=None):
         with self.transaction() as (db, now):
             row = db.execute("""SELECT r.*, o.topic, o.payload FROM transport_receipts r
                 JOIN outbox o ON o.id=r.event_id WHERE r.delivery_id=?""", (delivery_id,)).fetchone()
@@ -90,8 +90,9 @@ class Delivery:
                 raise ProtocolError(403, "Delivery belongs to another worker")
             if token != row["lease_token"]:
                 raise ProtocolError(409, "Lease has been replaced")
+            result_digest = digest(result) if report is None else digest({"result": result, "report": report})
             if row["finished"] is not None:
-                if not retry and row["result_digest"] == digest(result):
+                if not retry and row["result_digest"] == result_digest:
                     return {"accepted": True, "replay": True}
                 raise ProtocolError(409, "Delivery retired or result changed")
             if now >= row["expires"]:
@@ -107,10 +108,29 @@ class Delivery:
             if (result["kind"] != TOPICS[role][row["topic"]] or
                     any(result.get(key) != source[key] for key in ("incident_id", "target", "action_id") if key in source)):
                 raise ProtocolError(409, "Result does not correspond to claimed request")
+            if role == "guard":
+                # Guard decisions and their exact evidence report are one
+                # durable handoff. This is required after dependency revocation.
+                latest = self.store.dependency_result(source["action_id"])
+                if (not isinstance(report, dict)
+                        or report.get("decision_sha256") != digest(result)
+                        or report.get("proposal_sha256") != digest(source)
+                        or report.get("inputs_sha256") != result.get("inputs_sha256")
+                        or not isinstance(report.get("input_fingerprints"), dict)
+                        or latest is not None and report["input_fingerprints"].get("dependencies") != digest(latest)):
+                    raise ProtocolError(409, "Guard result needs its report bound to current evidence")
+                previous = db.execute("SELECT report FROM guard_reports WHERE decision_sha256=?",
+                                      (digest(result),)).fetchone()
+                if previous and json.loads(previous[0]) != report:
+                    raise ProtocolError(409, "Guard report conflicts with stored evidence")
+                db.execute("INSERT OR IGNORE INTO guard_reports(decision_sha256,action_id,report) VALUES(?,?,?)",
+                           (digest(result), source["action_id"], json.dumps(report, allow_nan=False)))
+            elif report is not None:
+                raise ProtocolError(403, "Only the Guard may submit an authorization report")
             record_message(result, self.store)
             acknowledge(self.store, row["event_id"])
             db.execute("UPDATE transport_receipts SET finished=?, result_digest=? WHERE event_id=?",
-                       (now, digest(result), row["event_id"]))
+                       (now, result_digest, row["event_id"]))
             return {"accepted": True, "replay": False}
 
     def ingest(self, role, message):
