@@ -394,6 +394,11 @@ handoffs. The demos use synthetic fixtures and a fixed UTC clock; they make no
 cluster writes. Version-2 demo approvals, health records and server previews are
 fabricated and have no live authority. The
 handoff demo exercises fresh validation and conditional writes against a fake API.
+The [Guard evaluation guide](docs/guard-evaluation.md) provides versioned safe/unsafe
+cases, a state/policy versus full-validation runner, explicit metrics and preliminary
+fixture results. Final scoring still requires the accepted frozen release.
+The [dependency revalidation guide](docs/dependency-revalidation.md) demonstrates
+real Verifier findings invalidating queued authorization through Coordinator.
 The [Guard integration contract](docs/guard-integration-contract.md) records
 producer/consumer responsibilities, failure handling and proposed approval lookup
 semantics, with a pending owner-review checklist for team agreement.

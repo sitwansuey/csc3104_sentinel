@@ -150,6 +150,50 @@ def _approval_reasons(proposal, policy, approval, checked_at):
     return [], []
 
 
+def _state_policy_reasons(proposal, policy, live_target, resource_version,
+                          captured_at, checked_at):
+    """Shared checks over already validated state and policy inputs."""
+    rejected = []
+    if proposal["target"] not in policy["targets"]:
+        rejected.append("TARGET_NOT_ALLOWED")
+    if proposal["action"] not in policy["allowed_actions"]:
+        rejected.append("ACTION_NOT_ALLOWED")
+    elif proposal["action"] != "ROLLBACK":
+        rejected.append("ACTION_NOT_IMPLEMENTED")
+    if any(live_target[key] != proposal["target"][key] for key in TARGET_FIELDS if key != "uid"):
+        rejected.append("LIVE_TARGET_MISMATCH")
+    if live_target["uid"] != proposal["target"]["uid"]:
+        rejected.append("TARGET_UID_MISMATCH")
+    if proposal["based_on_resource_version"] != resource_version:
+        rejected.append("STALE_RESOURCE_VERSION")
+    if captured_at > checked_at:
+        rejected.append("LIVE_STATE_FROM_FUTURE")
+    elif "max_state_age_seconds" in policy and (checked_at - captured_at).total_seconds() > policy["max_state_age_seconds"]:
+        rejected.append("STALE_LIVE_STATE")
+    return rejected
+
+
+def assess_state_policy(proposal, live_state, policy, *, now=None) -> list[str]:
+    """Return state/policy refusals for offline comparative evaluation.
+
+    This is a partial assessment, not an execution authorization. It omits
+    baseline, dependency, approval, eligibility, resource and admission checks
+    and never returns a ``guard_result``. An empty list establishes only that
+    the supplied proposal passes the target/action and live-state checks.
+    The full evaluator uses the same check implementation.
+    """
+    validate_message(proposal)
+    if proposal["kind"] != "proposal":
+        raise GuardInputError("Expected proposal message kind")
+    _validate_policy(policy)
+    live_target, resource_version, captured_at = _live_snapshot(live_state)
+    checked_at = datetime.now(timezone.utc) if now is None else now
+    if not isinstance(checked_at, datetime) or checked_at.utcoffset() != timedelta(0):
+        raise GuardInputError("now: expected a timezone-aware UTC datetime")
+    return _state_policy_reasons(proposal, policy, live_target, resource_version,
+                                 captured_at, checked_at)
+
+
 def _evaluate_core(proposal: dict, live_state: dict, policy: dict,
              baseline: dict | None, dependencies: dict, approval: dict | None = None,
              *, now: datetime | None = None, _trace=None) -> dict:
@@ -169,23 +213,9 @@ def _evaluate_core(proposal: dict, live_state: dict, policy: dict,
     if not isinstance(checked_at, datetime) or checked_at.utcoffset() != timedelta(0):
         raise GuardInputError("now: expected a timezone-aware UTC datetime")
 
-    rejected, escalated = [], []
-    if proposal["target"] not in policy["targets"]:
-        rejected.append("TARGET_NOT_ALLOWED")
-    if proposal["action"] not in policy["allowed_actions"]:
-        rejected.append("ACTION_NOT_ALLOWED")
-    elif proposal["action"] != "ROLLBACK":
-        rejected.append("ACTION_NOT_IMPLEMENTED")
-    if any(live_target[key] != proposal["target"][key] for key in TARGET_FIELDS if key != "uid"):
-        rejected.append("LIVE_TARGET_MISMATCH")
-    if live_target["uid"] != proposal["target"]["uid"]:
-        rejected.append("TARGET_UID_MISMATCH")
-    if proposal["based_on_resource_version"] != resource_version:
-        rejected.append("STALE_RESOURCE_VERSION")
-    if captured_at > checked_at:
-        rejected.append("LIVE_STATE_FROM_FUTURE")
-    elif "max_state_age_seconds" in policy and (checked_at - captured_at).total_seconds() > policy["max_state_age_seconds"]:
-        rejected.append("STALE_LIVE_STATE")
+    rejected = _state_policy_reasons(proposal, policy, live_target,
+                                     resource_version, captured_at, checked_at)
+    escalated = []
     if proposal["action"] == "ROLLBACK":
         rejected.extend(_baseline_reasons(proposal, baseline, checked_at))
 
