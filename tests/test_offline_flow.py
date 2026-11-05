@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts.demo_offline_flow import OfflineFlow, fixture, demonstrate
+from experiments.validation.demo_offline_flow import OfflineFlow, fixture, demonstrate
 from services.coordinator.core import handle
 from runtime.planner_pipeline import process_planner_requests
 from services.planner.core import retrieve_runbooks, mock_provider

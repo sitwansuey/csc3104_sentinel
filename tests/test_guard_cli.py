@@ -82,7 +82,7 @@ class GuardCliTests(unittest.TestCase):
         # Live adapters deliberately refuse the permissive development policy.
         # These synthetic inputs satisfy the policy shape; mocks still prevent
         # every actual Kubernetes call in these boundary tests.
-        from scripts.demo_guard_v2 import build_inputs
+        from experiments.validation.demo_guard_v2 import build_inputs
         values = build_inputs()
         self.proposal, self.policy, self.live = values["proposal"], values["policy"], values["live_state"]
         for name in self.values:

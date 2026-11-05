@@ -21,7 +21,7 @@ from runtime.observer_fleet import load_targets, state_path, run_fleet
 from runtime.observer_pipeline import status_file
 from services.observer import cli as observer_cli
 from services.observer.core import Observer
-from services.observer_telemetry import TelemetryError, TelemetryStore, normalize
+from services.observer.telemetry import TelemetryError, TelemetryStore, normalize
 
 NOW = datetime(2026, 10, 26, 0, 0, 30, tzinfo=timezone.utc)
 ROOT = Path(__file__).resolve().parents[1]

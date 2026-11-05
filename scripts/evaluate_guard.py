@@ -20,7 +20,7 @@ from services.guard.core import assess_state_policy, assert_decision_usable, eva
 from services.guard.common import json_sha256, utc_timestamp
 
 
-DEFAULT_CASES = ROOT / "evaluation/guard/v1/cases.json"
+DEFAULT_CASES = ROOT / "data/experimentation/guard/v1/cases.json"
 CONFIGURATIONS = {
     "state_policy_only": {
         "enabled_gates": ["target_allowlist", "action_allowlist_and_implementation",

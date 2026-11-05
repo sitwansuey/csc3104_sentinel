@@ -13,7 +13,7 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
-from scripts.demo_guard import load_fixtures
+from experiments.validation.demo_guard import load_fixtures
 from services.executor.core import ACTION_ANNOTATION, ConditionalWriteConflict, ReadUnavailable, encode_evidence
 from services.executor.store import fingerprint
 from services.executor.kubernetes_adapter import KubectlDeploymentAPI, LiveAdapterError, WriteOutcomeUnknown

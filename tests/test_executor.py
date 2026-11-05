@@ -17,7 +17,7 @@ import unittest
 from unittest.mock import patch
 
 from runtime.executor_pipeline import GuardAuthorizer
-from scripts.demo_guard import load_fixtures
+from experiments.validation.demo_guard import load_fixtures
 from services.executor.core import (
     ACTION_ANNOTATION, ConditionalWriteConflict, ExecutionAdapters,
     ReadUnavailable, execute,

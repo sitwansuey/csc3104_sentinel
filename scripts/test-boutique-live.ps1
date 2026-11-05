@@ -22,6 +22,11 @@ if (@($dependencies | Where-Object { -not $_.Tool }).Count) {
     throw 'Run scripts\install-dependencies.ps1 first; required tools are unavailable.'
 }
 $pythonTool = ($dependencies | Where-Object { $_.Id -eq 'Python.Python.3.14' }).Tool
+$projectPython = Join-Path $projectRoot '.venv\Scripts\python.exe'
+if (Test-Path -LiteralPath $projectPython -PathType Leaf) {
+    $pythonTool = [pscustomobject]@{Path = $projectPython}
+    Write-Host "Using project Python: $projectPython"
+}
 $dockerTool = ($dependencies | Where-Object { $_.Id -eq 'Docker.DockerDesktop' }).Tool
 $kindTool = ($dependencies | Where-Object { $_.Id -eq 'Kubernetes.kind' }).Tool
 $engine = Invoke-Probe $dockerTool.Path 'info --format "{{.OSType}}"'

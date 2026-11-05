@@ -1,0 +1,31 @@
+# Role 1 — Coordinator
+
+`core.py` owns incident/proposal/approval/result lifecycle decisions and durable
+local routing. `store.py` owns the SQLite schema, record queries, outbox and
+transaction context. `read.py` is the bounded public read-only projection used
+by the dashboard. Existing public imports are re-exported by `__init__.py`.
+
+Incoming messages have stable identities. An exact retry is ignored; changed
+content under a stable identity is rejected. Lifecycle state and generated
+commands commit together under BEGIN IMMEDIATE. Consumers record a result and
+acknowledge its request atomically, then publish pending outbox entries. A
+process crash can replay a command, so consumers still deduplicate it.
+
+The normal path is OPEN → VALIDATING → AWAITING_APPROVAL → fresh validation →
+READY → VERIFYING → RECOVERED. Failures/rejections/review states are explicit.
+APPLIED alone creates a Verifier request. A changed dependency assessment
+revokes queued execution and requires a bound current Guard report.
+
+Approval binds the exact proposal and policy version; it only requests new
+Guard evaluation. It cannot override hard constraints. The harness supplies
+trusted demo approval; authenticated operator access is future work.
+
+`python scripts/coordinator.py --help` exposes local ingestion/status/approval
+and worker commands. The source uses one SQLite connection per worker and
+separate execution/verification ledgers. This is single-host durability, not a
+distributed message broker or Kubernetes fencing mechanism.
+
+See [architecture](../../docs/architecture.md), [operation](../../docs/run.md)
+and [optional HTTP delivery](../../runtime/README.md). Relevant regressions:
+`test_coordinator`, `test_coordinator_expiry`, `test_coordinator_read`,
+`test_dependency_revalidation`, `test_recovery_runner` and worker integration tests.

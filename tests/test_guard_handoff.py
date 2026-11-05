@@ -2,8 +2,8 @@
 
 import unittest
 
-from scripts.demo_guard import load_fixtures
-from scripts.demo_guard_handoff import FakeCluster, SCENARIOS, run_scenario
+from experiments.validation.demo_guard import load_fixtures
+from experiments.validation.demo_guard_handoff import FakeCluster, SCENARIOS, run_scenario
 
 
 class GuardHandoffTests(unittest.TestCase):

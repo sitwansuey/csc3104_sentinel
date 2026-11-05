@@ -88,6 +88,31 @@ class LiveAgentTests(unittest.TestCase):
         self.assertNotIn("Recovery Planner", [c["role"] for c in model.calls])
         self.assertEqual(json.loads((folder / "model-proposal.json").read_text())["action"], "ESCALATE")
 
+    def test_refreshed_version_is_new_intent_and_gets_a_different_action_id(self):
+        proposals = []
+        for version in ("200", "201"):
+            folder = self.root / ("case-" + version)
+            folder.mkdir()
+            harness = self.harness()
+            deployment = deepcopy(self.observation["deployment"])
+            deployment["metadata"]["resourceVersion"] = version
+            harness.deployment.return_value = deployment
+            with patch("experiments.boutique.harness.agent_live.Ollama", return_value=self.model()):
+                proposals.append(harness.build_proposal(self.incident, folder))
+        self.assertNotEqual(proposals[0]["based_on_resource_version"], proposals[1]["based_on_resource_version"])
+        self.assertNotEqual(proposals[0]["action_id"], proposals[1]["action_id"])
+
+    def test_template_change_during_inference_stops_the_proposal(self):
+        folder = self.root / "changed-target"
+        folder.mkdir()
+        harness = self.harness()
+        changed = deepcopy(self.observation["deployment"])
+        changed["spec"]["template"] = {"another": "configuration"}
+        harness.deployment.side_effect = [deepcopy(self.observation["deployment"]), changed]
+        with patch("experiments.boutique.harness.agent_live.Ollama", return_value=self.model()):
+            with self.assertRaisesRegex(RuntimeError, "Target changed"):
+                harness.build_proposal(self.incident, folder)
+
 
 if __name__ == "__main__":
     unittest.main()

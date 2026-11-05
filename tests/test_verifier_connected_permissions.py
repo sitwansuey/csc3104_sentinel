@@ -1,5 +1,5 @@
 import unittest
-from scripts.verifier_lab_manifest import manifest
+from scripts.validation.verifier_lab_manifest import manifest
 
 class CompatibilityTests(unittest.TestCase):
     def test_lab_verifier_role_has_no_kubernetes_mutation_permissions(self):

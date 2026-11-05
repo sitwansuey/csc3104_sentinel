@@ -16,7 +16,7 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from scripts.test_executor_live import Experiment, crash_worker, now, require, save, utc
+from experiments.recovery.live import Experiment, crash_worker, now, require, save, utc
 from runtime.observer_pipeline import LocalCoordinatorSink, ObserverStore
 from runtime.verifier_pipeline import process_verifier_requests
 from services.verifier.core import inspect_dependencies
@@ -127,7 +127,7 @@ class BoutiqueExperiment(Experiment):
     def after_recovery_scenarios(self):
         """Finish the default walkthrough by refusing a redundant third repair."""
         if self.provider_script is None:
-            from scripts.guard_rejection_demo import run_unnecessary_rollback
+            from experiments.boutique.harness.rejection import run_unnecessary_rollback
             run_unnecessary_rollback(self)
 
     def close(self):
@@ -501,7 +501,7 @@ def main():
             experiment.dashboard = dashboard
             dashboard.start()
         if args.guard_rejection:
-            from scripts.guard_rejection_demo import run_unnecessary_rollback
+            from experiments.boutique.harness.rejection import run_unnecessary_rollback
             experiment.prepare()
             experiment.permissions()
             run_unnecessary_rollback(experiment)

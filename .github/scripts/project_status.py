@@ -183,10 +183,10 @@ def main():
         return
     token = os.environ.get("PROJECT_TOKEN")
     if not token:
-        raise RuntimeError("Add the PROJECT_TOKEN Actions secret; see docs/project-automation.md")
+        raise RuntimeError("Add the PROJECT_TOKEN Actions secret; see .github/README.md")
     repository_token = os.environ.get("GITHUB_TOKEN")
     if not repository_token:
-        raise RuntimeError("Pass the workflow GITHUB_TOKEN for repository reads; see docs/project-automation.md")
+        raise RuntimeError("Pass the workflow GITHUB_TOKEN for repository reads; see .github/README.md")
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
     if event.get("repository", {}).get("full_name") != REPOSITORY:
         raise ValueError("This automation is scoped to the Sentinel repository")

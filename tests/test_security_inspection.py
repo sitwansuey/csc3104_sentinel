@@ -11,7 +11,7 @@ from unittest.mock import patch
 from runtime.dashboard import snapshot
 from runtime.security_inspector import make_server
 from runtime.security_store import record
-from scripts.security_lab import envoy_config
+from scripts.security.security_lab import envoy_config
 from services.grpc_inspection import MAX_BODY, inspect_request
 
 
