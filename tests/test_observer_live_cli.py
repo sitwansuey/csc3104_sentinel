@@ -26,7 +26,7 @@ class SequenceApi:
 
 class LiveCliTests(unittest.TestCase):
     def healthy_deployment(self):
-        fixture = json.loads((ROOT / "samples/observations.json").read_text(encoding="utf-8"))
+        fixture = json.loads((ROOT / "data/sentinel/samples/observations.json").read_text(encoding="utf-8"))
         return fixture["healthy"][0]["deployment"]
 
     def test_partial_collection_returns_failure_and_retains_evidence(self):

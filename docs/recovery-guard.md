@@ -81,9 +81,9 @@ signed execution credential.
 | Input | Source and required meaning |
 | --- | --- |
 | `proposal` | A `proposal` wire message containing the exact target, action, baseline ID/hash and resource version used when planning |
-| `live_state` | An observation-shaped object like `samples/observations.json["failed-rollout"][-1]`: `cluster_id`, UTC `captured_at`, and `deployment` with `kind` plus `metadata.namespace`, `name`, `uid`, `resourceVersion` |
-| `policy` | `samples/policy.json`: `policy_id`, `policy_version`, exact target allowlist, action allowlist, boolean `require_operator_approval`, and `unknown_dependency_result` set to `ESCALATE` or `REJECT` |
-| `baseline` | `samples/baseline.json`: exact target, baseline ID, lowercase template SHA-256, UTC `healthy_observed_at`, and saved `pod_template` |
+| `live_state` | An observation-shaped object like `data/sentinel/samples/observations.json["failed-rollout"][-1]`: `cluster_id`, UTC `captured_at`, and `deployment` with `kind` plus `metadata.namespace`, `name`, `uid`, `resourceVersion` |
+| `policy` | `data/sentinel/samples/policy.json`: `policy_id`, `policy_version`, exact target allowlist, action allowlist, boolean `require_operator_approval`, and `unknown_dependency_result` set to `ESCALATE` or `REJECT` |
+| `baseline` | `data/sentinel/samples/baseline.json`: exact target, baseline ID, lowercase template SHA-256, UTC `healthy_observed_at`, and saved `pod_template` |
 | `dependencies` | A `dependency_result` wire message for the same incident, action and target |
 | `approval` | Optional local operator record described below |
 | `preview` | Bound server-side admission result when required; offline fixtures may replay a separately supplied record |
@@ -113,7 +113,7 @@ nonempty version required by the existing output contract.
 ## Rollback resource constraints
 
 Policies may optionally include `resource_constraints`. The separate
-[resource-policy example](../samples/policy-resource-limits.json) adds these
+[resource-policy example](../data/sentinel/samples/policy-resource-limits.json) adds these
 rules and explicit state/dependency freshness limits without changing the starter
 fixtures. It is a development example; review the ceilings for each real workload.
 

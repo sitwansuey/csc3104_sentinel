@@ -1,5 +1,7 @@
 # Current system: team update, presentation script and flowchart
 
+The original walkthrough below supplies operator-authored planning. The newer [live agent mode](live-agent-e2e.md) runs the RCA agent and model-based recovery planning through the same Guard, Executor and Verifier path.
+
 Use the [demo instruction book](boutique-demo-handbook.md) for exact setup,
 injection and cleanup commands. This document describes the current tested scope,
 not the unfinished final platform.
@@ -157,6 +159,6 @@ two RECOVERED outcomes, one REJECTED false-alarm incident and thirteen PASS
 checkpoints. Nine quote probes cover three baseline samples and three after each
 rollback. The final refusal adds no application crash or recovery write; its
 before/after proof is unnecessary-rollback/proof.json. The reviewed graph remains
-infra/boutique-dependencies.json, scoped to shippingservice. The generic demo-api
+deploy/boutique/dependencies.json, scoped to shippingservice. The generic demo-api
 experiment retains its original two-round behavior. Always-on Verifier scheduling
 and automatic dependency discovery remain future work.

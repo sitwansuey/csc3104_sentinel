@@ -9,7 +9,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from services.guard import GuardInputError, evaluate, proposal_fingerprint, template_sha256
+from services.guard.core import GuardInputError, evaluate, proposal_fingerprint, template_sha256
 from shared.contracts import ContractError, validate_message
 
 
@@ -22,11 +22,11 @@ def fixture(path):
 
 class GuardDecisionTests(unittest.TestCase):
     def setUp(self):
-        self.proposal = fixture("samples/messages/proposal.json")
-        self.live_state = fixture("samples/observations.json")["failed-rollout"][-1]
-        self.policy = fixture("samples/policy.json")
-        self.baseline = fixture("samples/baseline.json")
-        self.dependencies = fixture("samples/messages/dependency-result.json")
+        self.proposal = fixture("data/sentinel/samples/messages/proposal.json")
+        self.live_state = fixture("data/sentinel/samples/observations.json")["failed-rollout"][-1]
+        self.policy = fixture("data/sentinel/samples/policy.json")
+        self.baseline = fixture("data/sentinel/samples/baseline.json")
+        self.dependencies = fixture("data/sentinel/samples/messages/dependency-result.json")
 
     def approval(self, **changes):
         record = {

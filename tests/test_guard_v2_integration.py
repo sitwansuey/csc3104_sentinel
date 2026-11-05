@@ -11,7 +11,7 @@ import unittest
 
 from scripts.demo_guard import DEFAULT_NOW
 from scripts.demo_guard_v2 import SCENARIOS, build_inputs, export_inputs, run_scenario
-from services.guard import GuardInputError, assert_decision_usable, evaluate, evaluate_with_report
+from services.guard.core import GuardInputError, assert_decision_usable, evaluate, evaluate_with_report
 from shared.contracts import validate_message
 
 
@@ -36,7 +36,7 @@ class GuardV2IntegrationTests(unittest.TestCase):
             export_inputs(export, ["allowed"])
             location = export / "allowed"
             report_path = Path(directory) / "audit.json"
-            arguments = [sys.executable, "-m", "services.guard_cli"]
+            arguments = [sys.executable, "-m", "services.guard.cli"]
             for name in ("proposal", "policy", "baseline", "dependencies", "approval", "live-state", "preview"):
                 arguments.extend([f"--{name}", str(location / f"{name}.json")])
             arguments.extend(["--now", DEFAULT_NOW, "--report", str(report_path)])

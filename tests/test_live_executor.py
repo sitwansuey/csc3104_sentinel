@@ -17,10 +17,10 @@ from unittest.mock import patch
 
 from runtime.live_executor import LiveGuardAuthorizer, build_adapters, main
 from scripts.demo_guard import load_fixtures
-from services.executor import execute, reconcile
+from services.executor.core import execute, reconcile
 from tests.support.executor_fake import FakeDeploymentAPI
-from services.guard import GuardInputError, proposal_fingerprint, template_sha256
-from services.k8s_executor_adapter import KubectlDeploymentAPI as RealDeploymentAPI
+from services.guard.core import GuardInputError, proposal_fingerprint, template_sha256
+from services.executor.kubernetes_adapter import KubectlDeploymentAPI as RealDeploymentAPI
 
 
 NOW = datetime(2026, 10, 10, 12, 0, 40, tzinfo=timezone.utc)
@@ -89,7 +89,7 @@ class LiveExecutorTests(unittest.TestCase):
         self.kubeconfig = self.directory / "restricted.kubeconfig"
         self.kubeconfig.write_text(PRIVATE_MARKER, encoding="utf-8")
         self.cluster = FakeDeploymentAPI(self.snapshot, clock=lambda: NOW)
-        self.factory = patch("services.k8s_executor_adapter.KubectlDeploymentAPI", return_value=self.cluster).start()
+        self.factory = patch("services.executor.kubernetes_adapter.KubectlDeploymentAPI", return_value=self.cluster).start()
         self.addCleanup(patch.stopall)
         self.references = patch("runtime.live_executor.read_reference_versions", return_value=[]).start()
         patch("runtime.live_executor._utc_now", return_value=NOW).start()

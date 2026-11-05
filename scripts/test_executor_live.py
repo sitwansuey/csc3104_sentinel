@@ -25,14 +25,14 @@ sys.path.insert(0, str(ROOT))
 from runtime.executor_pipeline import process_executor_requests
 from runtime.guard_pipeline import process_guard_requests
 from runtime.live_executor import build_adapters
-from services.coordinator import LocalEventBus, SQLiteStore, approve, handle
-from services.executor import ACTION_ANNOTATION, execute, reconcile
-from services.executor_store import ActionConflict, SQLiteExecutionLedger, fingerprint
-from services.guard import proposal_fingerprint
-from services.guard_preview import _private_file
-from services.k8s_executor_adapter import KubectlDeploymentAPI, WriteOutcomeUnknown
-from services.k8s_observer_adapter import deployment_to_observation
-from services.observer import Observer
+from services.coordinator.core import LocalEventBus, SQLiteStore, approve, handle
+from services.executor.core import ACTION_ANNOTATION, execute, reconcile
+from services.executor.store import ActionConflict, SQLiteExecutionLedger, fingerprint
+from services.guard.core import proposal_fingerprint
+from services.guard.preview import _private_file
+from services.executor.kubernetes_adapter import KubectlDeploymentAPI, WriteOutcomeUnknown
+from services.observer.kubernetes_adapter import deployment_to_observation
+from services.observer.core import Observer
 
 
 CONTEXT = "kind-sentinel-lab"
@@ -95,7 +95,7 @@ class Experiment:
     health_description = "HTTP and replica health"
     allowed_registries = ["docker.io"]
     service_account = "default"
-    rbac_path = ROOT / "infra/executor-rbac.yaml"
+    rbac_path = ROOT / "deploy/sentinel/executor-rbac.yaml"
     publish_dependency_results = False
     health_outcome_description = " after executor rollback; Role 6 outcome remains pending"
 
@@ -284,15 +284,18 @@ class Experiment:
         self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=120s", timeout=160)
         save(folder / "post-health.json", self.health_window(self.baseline["pod_template"]))
 
-    def case(self, label, incident, *, coordinator=False, approval=True, rationale=None):
-        folder = self.directory / label
-        folder.mkdir()
-        proposal = {"schema_version": "1.0", "kind": "proposal", "incident_id": incident["incident_id"],
+    def build_proposal(self, incident, folder, rationale=None):
+        return {"schema_version": "1.0", "kind": "proposal", "incident_id": incident["incident_id"],
                     "action_id": "ACT-LIVE-" + uuid4().hex, "target": self.target, "action": "ROLLBACK",
                     "parameters": {"baseline_id": self.baseline["baseline_id"], "template_sha256": self.baseline["template_sha256"]},
                     "based_on_resource_version": self.deployment()["metadata"]["resourceVersion"],
                     "rationale": rationale or "Operator-authored live lab proposal: restore measured healthy template",
                     "evidence_refs": [incident["incident_id"], self.baseline["health_evidence"]["evidence_id"]]}
+
+    def case(self, label, incident, *, coordinator=False, approval=True, rationale=None):
+        folder = self.directory / label
+        folder.mkdir()
+        proposal = self.build_proposal(incident, folder, rationale)
         dependencies = self.dependency_result(proposal)
         record = {"action_id": proposal["action_id"], "proposal_sha256": proposal_fingerprint(proposal),
                   "policy_version": self.policy["policy_version"], "operator_id": "authorized-live-lab-operator",
@@ -512,7 +515,7 @@ def main():
     args = parser.parse_args()
     if args.crash_worker:
         return crash_worker(args.crash_worker)
-    directory = args.run_dir or ROOT / "runs" / ("executor-live-" + now().strftime("%Y%m%dT%H%M%SZ-") + uuid4().hex[:6])
+    directory = args.run_dir or ROOT / "data/sentinel/runs" / ("executor-live-" + now().strftime("%Y%m%dT%H%M%SZ-") + uuid4().hex[:6])
     experiment = Experiment(directory)
     print("Live executor evidence: " + str(experiment.directory), flush=True)
     try:

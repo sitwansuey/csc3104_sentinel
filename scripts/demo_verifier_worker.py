@@ -10,14 +10,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from runtime.verifier_pipeline import process_verifier_requests
-from services.coordinator import LocalEventBus, SQLiteStore, approve, handle
-from services.guard import evaluate
-from services.verifier import inspect_dependencies
-from services.verifier_store import VerificationStore
+from services.coordinator.core import LocalEventBus, SQLiteStore, approve, handle
+from services.guard.core import evaluate
+from services.verifier.core import inspect_dependencies
+from services.verifier.store import VerificationStore
 
 
 def load(name):
-    return json.loads((ROOT / "samples" / name).read_text(encoding="utf-8"))
+    return json.loads((ROOT / "data/sentinel/samples" / name).read_text(encoding="utf-8"))
 
 
 def run_scenario(name):

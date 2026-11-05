@@ -7,8 +7,8 @@ from pathlib import Path
 import unittest
 
 from scripts.demo_guard_v2 import build_inputs
-from services.coordinator import CoordinatorError, LocalEventBus, SQLiteStore, approve, handle
-from services.guard import evaluate
+from services.coordinator.core import CoordinatorError, LocalEventBus, SQLiteStore, approve, handle
+from services.guard.core import evaluate
 
 
 class CoordinatorExpiryTests(unittest.TestCase):
@@ -20,7 +20,7 @@ class CoordinatorExpiryTests(unittest.TestCase):
         self.addCleanup(self.store.close)
         self.bus = LocalEventBus()
         incident = json.loads((Path(__file__).resolve().parents[1] /
-                               "samples/messages/incident.json").read_text(encoding="utf-8"))
+                               "data/sentinel/samples/messages/incident.json").read_text(encoding="utf-8"))
         handle(incident, self.store, self.bus)
         handle(self.inputs["proposal"], self.store, self.bus)
         decision = evaluate(**self.inputs, now=self.now)

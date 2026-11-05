@@ -8,13 +8,13 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from services.coordinator import LocalEventBus, SQLiteStore, acknowledge, approve, dispatch_pending, handle
+from services.coordinator.core import LocalEventBus, SQLiteStore, acknowledge, approve, dispatch_pending, handle
 from runtime.guard_pipeline import process_guard_requests
-from services.observer import detect
+from services.observer.core import detect
 
 
 def fixture(name):
-    return json.loads((ROOT / "samples" / name).read_text(encoding="utf-8"))
+    return json.loads((ROOT / "data/sentinel/samples" / name).read_text(encoding="utf-8"))
 
 
 def main():

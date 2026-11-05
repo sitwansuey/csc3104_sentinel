@@ -6,18 +6,18 @@ import tempfile
 import threading
 import unittest
 
-from services.coordinator import (
+from services.coordinator.core import (
     CoordinatorError, LocalEventBus, SQLiteStore, acknowledge, approve,
     dispatch_pending, handle,
 )
-from services.guard import evaluate, proposal_fingerprint
+from services.guard.core import evaluate, proposal_fingerprint
 
 ROOT = Path(__file__).resolve().parents[1]
 NOW = datetime(2026, 10, 10, 12, 0, 36, tzinfo=timezone.utc)
 
 
 def fixture(name):
-    return json.loads((ROOT / "samples" / name).read_text(encoding="utf-8"))
+    return json.loads((ROOT / "data/sentinel/samples" / name).read_text(encoding="utf-8"))
 
 
 class CoordinatorTests(unittest.TestCase):

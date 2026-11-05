@@ -8,13 +8,13 @@ import unittest
 from unittest.mock import patch
 
 from runtime.guard_pipeline import KubectlStateReader, process_guard_requests
-from services.coordinator import CoordinatorError, LocalEventBus, SQLiteStore, approve, handle
+from services.coordinator.core import CoordinatorError, LocalEventBus, SQLiteStore, approve, handle
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def fixture(name):
-    return json.loads((ROOT / "samples" / name).read_text(encoding="utf-8"))
+    return json.loads((ROOT / "data/sentinel/samples" / name).read_text(encoding="utf-8"))
 
 
 class GuardIntegrationTests(unittest.TestCase):

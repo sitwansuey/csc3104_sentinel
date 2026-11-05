@@ -1,6 +1,6 @@
 import unittest
-from services.guard_common import json_sha256
-from services.verifier_live import LiveEvidenceCollector
+from services.guard.common import json_sha256
+from services.verifier.live import LiveEvidenceCollector
 from tests.test_verifier_live import configuration, Kubernetes, HTTP, NOW
 
 class CompatibilityTests(unittest.TestCase):

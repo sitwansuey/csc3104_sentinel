@@ -8,6 +8,30 @@ policies and dependencies, then verified against post-action health.
 conditional execution → verified recovery. Start with one workload and one
 action: restore a specific saved healthy Pod template (`ROLLBACK`).
 
+## Repository organization
+
+To test live recovery with your agent, see the [live agent end-to-end guide](docs/live-agent-e2e.md): `python scripts/test_boutique_live.py --agent --dashboard --pause-before-injection`.
+
+All project data is under `data/`: `data/sentinel/` contains application fixtures, settings and runtime evidence; `data/experimentation/` contains benchmark datasets, experiment settings and evaluation results. Existing `sample-100` results are at `data/experimentation/runs/sample-100/`. See the [data layout](data/README.md).
+
+See the [repository layout](docs/repository-layout.md) and [shared Boutique experiment environment](experiments/boutique/README.md). Deployment resources live in `deploy/`; Boutique harness and traffic code live in `experiments/boutique/`; dataset conventions live in `data/`. Existing recovery-demo launch commands remain supported. The [Chaos Mesh demo guide](docs/boutique-chaos-demo.md) documents live faults; the [RCAEval guide](docs/rcaeval.md) documents the published offline benchmark.
+
+## RCAEval benchmark and live chaos demo
+
+Offline evaluation uses **645 non-code RCAEval cases**: RE1 and RE2 across Online Boutique, Sock Shop and Train Ticket. RE3 code-level faults are excluded. Custom dataset generation has been removed.
+
+```powershell
+python -m pip install -r requirements.txt
+python scripts/download_rcaeval.py
+python scripts/evaluate_rcaeval.py export --out data/experimentation/runs/rcaeval-eval
+python scripts/evaluate_rcaeval.py run --tasks data/experimentation/runs/rcaeval-eval/tasks --out data/experimentation/runs/rcaeval-eval/results --method casetoolkit
+python scripts/evaluate_rcaeval.py score --answers data/experimentation/runs/rcaeval-eval/answers.jsonl --predictions data/experimentation/runs/rcaeval-eval/results/predictions.jsonl --out data/experimentation/runs/rcaeval-eval/scores
+```
+
+To test your local model with upstream CaseToolkit, install `requirements.txt` and run the evaluator with `--method casetoolkit`. Model settings default to `data/sentinel/samples/rca-config.json`; `--config data/experimentation/config/rcaeval-model.json` supplies overrides. Tool requests, results and scored predictions are saved for inspection.
+
+See [RCAEval selection, model evaluation and scoring](docs/rcaeval.md). For live demonstrations, use `python scripts/run_boutique_chaos.py --setup --faults network`; see [the demo guide](docs/boutique-chaos-demo.md).
+
 ## Start here: local setup on Windows
 
 For the container-packaged Boutique demo, use the
@@ -36,11 +60,32 @@ The local environment needs:
 | WinGet / Microsoft App Installer | Required only for installing missing tools through Method 1 |
 | Node.js 20.19+ or 22.12+ with npm | Optional; builds the [observability dashboard](#observability-dashboard) frontend on first run |
 
-Sentinel's Python code uses the standard library: no `pip install`, LLM API key
-or cloud account is needed for these local experiments. Package installation
-and the first container-image downloads need network access. Docker Desktop
-also needs its supported Windows/WSL 2 and hardware-virtualization prerequisites;
-the [dependency guide](docs/dependencies.md) links the platform requirements.
+Install the Python packages and benchmark data below in addition to the tools.
+The agent uses a local Ollama model; no cloud account or LLM API key is required.
+Package installation, dataset downloads and the first container-image downloads
+need network access. Docker Desktop also needs its supported Windows/WSL 2 and
+hardware-virtualization prerequisites; the [dependency guide](docs/dependencies.md)
+links the platform requirements.
+
+### Install Python packages and download RCAEval
+
+After installing Python through either tool setup method, run from the repository root:
+
+```powershell
+python -m pip install -r requirements.txt
+python scripts/download_rcaeval.py
+```
+
+`requirements.txt` is the single Python dependency file for the agent, benchmark
+tools and instrumented Verifier lab. The downloader saves all **645 RE1/RE2
+non-code cases** (about **3.11 GB**) under
+`data/experimentation/datasets/rcaeval-non-code/`; RE3 code faults are excluded.
+It checks source hashes and reuses verified files when rerun. To fetch only the
+filtered index, use `python scripts/download_rcaeval.py --index-only`.
+The underlying module also remains available as `python -m agent.datasets.rcaeval`.
+
+Evaluation outputs belong under `data/experimentation/runs/`; application outputs
+belong under `data/sentinel/runs/`. All directories named `runs/` are Git-ignored.
 
 ### Method 1: install and set up with scripts
 
@@ -107,9 +152,9 @@ Role 6 verification are still separate team work. `APPLIED` routes to `VERIFYING
 not directly to `RECOVERED`.
 
 With `-Cleanup`, the wrapper removes the named cluster after the test and retains
-evidence in `runs/executor-live-*`. The experiment removes its private executor
+evidence in `data/sentinel/runs/executor-live-*`. The experiment removes its private executor
 kubeconfig. Docker Desktop and cached images remain; cleanup does not prune
-unrelated Docker resources. `runs/` is Git-ignored, so preserve/share sanitized
+unrelated Docker resources. `data/sentinel/runs/` is Git-ignored, so preserve/share sanitized
 experiment evidence separately.
 
 To keep the healthy cluster available for development, omit `-Cleanup`:
@@ -159,10 +204,10 @@ Docker must report a reachable server and `linux`; Python must be 3.12 or newer.
 Create the named cluster, build/load the image and deploy the workload explicitly:
 
 ```powershell
-kind create cluster --name sentinel-lab --config infra/kind.yaml --wait 120s
-docker build -t sentinel-demo:0.1.0 demo
+kind create cluster --name sentinel-lab --config deploy/kind/kind.yaml --wait 120s
+docker build -t sentinel-demo:0.1.0 experiments/workloads/demo
 kind load docker-image sentinel-demo:0.1.0 --name sentinel-lab
-kubectl --context kind-sentinel-lab apply -f infra/demo.yaml
+kubectl --context kind-sentinel-lab apply -f deploy/workloads/demo.yaml
 kubectl --context kind-sentinel-lab --namespace sentinel-demo rollout status deployment/demo-api --timeout=120s
 kubectl --context kind-sentinel-lab --namespace sentinel-demo get deployments,pods,services
 ```
@@ -190,7 +235,7 @@ kind get clusters
 ```
 
 This removes the named cluster and its workload containers, while retaining
-`runs/` evidence and image caches. Both methods need Docker Desktop running
+`data/sentinel/runs/` evidence and image caches. Both methods need Docker Desktop running
 during live testing; neither requires enabling its separate Kubernetes cluster.
 
 For detailed installation/troubleshooting and Linux/macOS prerequisites, read
@@ -266,12 +311,12 @@ execution, restricted RBAC, team handoff, reproducible testing and cleanup.
 
 | Member / component | First implementation | Finished component |
 | --- | --- | --- |
-| **1 — [Coordinator](services/coordinator.py) + environment** | SQLite incident lifecycle, approval records and local event routing; support the lab | Persistent lifecycle and approvals, reliable event routing, restart handling, shared workload/fault automation |
-| **2 — [Observer](services/observer.py)** | Convert sample observations into incidents; filter transient failures and duplicates | Live Kubernetes and telemetry collection, threshold-based detection and correlated incident context |
-| **3 — [Planner](services/planner.py)** | Retrieve generic runbooks and validate proposals from an injected mock provider | RAG-assisted LLM planning, typed actions, evidence references and explicit failure/escalation paths |
-| **4 — [Guard](services/guard.py)** | Check target/action policy, current state, baseline and approval | State, policy, resource and dependency validation; ALLOW/REJECT/ESCALATE decisions; approval and optional preview gates |
-| **5 — [Executor](services/executor.py)** | Restore an explicit template through a fake API; persist attempts and handle duplicates/conflicts | Restricted Kubernetes execution, per-target coordination, conditional writes, idempotency, bounded retries and crash reconciliation |
-| **6 — [Verifier](services/verifier.py)** | Traverse a sample dependency graph and verify a health window | Observed dependency graph, impact-check results, sustained service/dependency health verification and recovery metrics |
+| **1 — [Coordinator](services/coordinator/core.py) + environment** | SQLite incident lifecycle, approval records and local event routing; support the lab | Persistent lifecycle and approvals, reliable event routing, restart handling, shared workload/fault automation |
+| **2 — [Observer](services/observer/core.py)** | Convert sample observations into incidents; filter transient failures and duplicates | Live Kubernetes and telemetry collection, threshold-based detection and correlated incident context |
+| **3 — [RCA / Planner](docs/rca.md)** | Imported Sentinel RCA engine and diagnostic runbooks; validate proposals from an injected provider | Evidence-backed diagnosis, typed actions, evidence references and explicit failure/escalation paths |
+| **4 — [Guard](services/guard/core.py)** | Check target/action policy, current state, baseline and approval | State, policy, resource and dependency validation; ALLOW/REJECT/ESCALATE decisions; approval and optional preview gates |
+| **5 — [Executor](services/executor/core.py)** | Restore an explicit template through a fake API; persist attempts and handle duplicates/conflicts | Restricted Kubernetes execution, per-target coordination, conditional writes, idempotency, bounded retries and crash reconciliation |
+| **6 — [Verifier](services/verifier/core.py)** | Traverse a sample dependency graph and verify a health window | Observed dependency graph, impact-check results, sustained service/dependency health verification and recovery metrics |
 
 All members own working code, meaningful tests and integration for their component.
 Member 6 supplies dependency results; Member 4 makes the final Guard decision.
@@ -400,11 +445,11 @@ covering behaviour, validation and affected interfaces.
 
 | Input | Purpose |
 | --- | --- |
-| [samples/observations.json](samples/observations.json) | Healthy, persistent-failure and transient sequences |
-| [samples/messages/](samples/messages/) | Six wire-message examples validated by [shared/contracts.py](shared/contracts.py) |
-| [samples/baseline.json](samples/baseline.json) | Exact healthy template and its identity/hash |
-| [samples/policy.json](samples/policy.json) | Permissions, approval and detection/health thresholds |
-| [samples/dependencies.json](samples/dependencies.json) / [samples/health.json](samples/health.json) | Synthetic graph and health readings |
+| [data/sentinel/samples/observations.json](data/sentinel/samples/observations.json) | Healthy, persistent-failure and transient sequences |
+| [data/sentinel/samples/messages/](data/sentinel/samples/messages/) | Six wire-message examples validated by [shared/contracts.py](shared/contracts.py) |
+| [data/sentinel/samples/baseline.json](data/sentinel/samples/baseline.json) | Exact healthy template and its identity/hash |
+| [data/sentinel/samples/policy.json](data/sentinel/samples/policy.json) | Permissions, approval and detection/health thresholds |
+| [data/sentinel/samples/dependencies.json](data/sentinel/samples/dependencies.json) / [data/sentinel/samples/health.json](data/sentinel/samples/health.json) | Synthetic graph and health readings |
 | [runbooks/](runbooks/) | Generic retrieval guidance |
 
 Keep IDs stable across retries and treat resource versions as opaque strings.
@@ -427,7 +472,7 @@ Tailwind CSS and Recharts.
 | --- | --- |
 | Demo without a cluster | Double-click `scripts\start-dashboard.bat`, or run `python scripts/dashboard.py --demo` and open **http://127.0.0.1:8765** |
 | Watch the local lab live | In `scripts\sentinel-lab.bat`, choose **9** (dashboard + collector windows), then **3** (live test) |
-| Inspect a live Executor run | `python scripts/dashboard.py --db runs/executor-live-<id>/coordinator.sqlite` |
+| Inspect a live Executor run | `python scripts/dashboard.py --db data/sentinel/runs/executor-live-<id>/coordinator.sqlite` |
 | Connect your own records | `python scripts/dashboard.py` with `scripts/observe_dashboard.py`; see the [dashboard guide](docs/dashboard.md) |
 
 The first start builds the frontend with Node.js 20.19+ or 22.12+ and npm; later
@@ -461,7 +506,7 @@ the startup fault, verifies threshold timing and 60 seconds of duplicate
 suppression, restores the saved revision and checks health again. Recovery is attempted even if the fault
 check fails. Option **5** retries recovery; force-closing the terminal can interrupt
 recovery, so use that option if needed. Transcripts and JSON evidence are saved in
-unique `runs/windows-lab-*` folders. The cluster remains running until cleanup is
+unique `data/sentinel/runs/windows-lab-*` folders. The cluster remains running until cleanup is
 selected. The terminal retains its output until you close it or type `exit` after
 leaving the menu. This tests local Kubernetes and uses operator-driven recovery;
 it does not deploy the unfinished Sentinel services or create a shared cloud cluster.
@@ -479,7 +524,7 @@ bash scripts/lab.sh health
 ```
 
 This is an operator-run baseline, not Sentinel's automated executor. Lab evidence
-is saved under `runs/`; copy it before repeating experiments you want to retain.
+is saved under `data/sentinel/runs/`; copy it before repeating experiments you want to retain.
 
 ## Architecture target
 

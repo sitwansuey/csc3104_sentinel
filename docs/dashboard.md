@@ -89,7 +89,7 @@ interface; they do not represent an installed cluster.
 In terminal 1:
 
 ```powershell
-python scripts/dashboard.py --db runs/coordinator.sqlite3 --telemetry runs/telemetry.sqlite3
+python scripts/dashboard.py --db data/sentinel/runs/coordinator.sqlite3 --telemetry data/sentinel/runs/telemetry.sqlite3
 ```
 
 The server binds only to **127.0.0.1**. Missing databases are reported as
@@ -104,9 +104,9 @@ python scripts/observe_dashboard.py `
   --context kind-sentinel-lab `
   --cluster-id sentinel-lab `
   --namespace sentinel-demo `
-  --policy samples/policy.json `
-  --db runs/coordinator.sqlite3 `
-  --telemetry runs/telemetry.sqlite3
+  --policy data/sentinel/samples/policy.json `
+  --db data/sentinel/runs/coordinator.sqlite3 `
+  --telemetry data/sentinel/runs/telemetry.sqlite3
 ```
 
 Use your actual context, cluster ID, namespace and reviewed policy. For Online
@@ -219,7 +219,7 @@ All six tabs read the agreed contracts already stored by the Coordinator. Each
 producer uses its existing route into `handle(message, store, bus)` or the CLI:
 
 ```powershell
-python scripts/coordinator.py --db runs/coordinator.sqlite3 ingest path/to/message.json
+python scripts/coordinator.py --db data/sentinel/runs/coordinator.sqlite3 ingest path/to/message.json
 ```
 
 Messages must satisfy lifecycle ordering and use the matching incident, action
@@ -237,8 +237,8 @@ and exact target identity. Opening the dashboard does not consume pending routes
 Member 4 example with recorded inputs:
 
 ```powershell
-python scripts/coordinator.py --db runs/coordinator.sqlite3 `
-  --telemetry runs/telemetry.sqlite3 guard `
+python scripts/coordinator.py --db data/sentinel/runs/coordinator.sqlite3 `
+  --telemetry data/sentinel/runs/telemetry.sqlite3 guard `
   --policy path/to/policy.json --baseline path/to/baseline.json `
   --state path/to/current-state.json
 ```
@@ -263,7 +263,7 @@ Any member can publish an optional component error or heartbeat:
 from runtime.telemetry import emit_event
 
 emit_event(
-    "runs/telemetry.sqlite3",
+    "data/sentinel/runs/telemetry.sqlite3",
     component=3,
     event_type="error",
     summary="Planner provider timed out; no recovery proposal produced",

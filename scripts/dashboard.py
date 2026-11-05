@@ -83,8 +83,8 @@ def ensure_frontend():
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--db", type=Path, default=Path("runs/coordinator.sqlite3"))
-    parser.add_argument("--telemetry", type=Path, default=Path("runs/telemetry.sqlite3"))
+    parser.add_argument("--db", type=Path, default=Path("data/sentinel/runs/coordinator.sqlite3"))
+    parser.add_argument("--telemetry", type=Path, default=Path("data/sentinel/runs/telemetry.sqlite3"))
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--open-browser", action="store_true", help="Open the local dashboard in your default browser")
     parser.add_argument("--demo", action="store_true", help="Isolated synthetic recovery playback; never reads your live databases")

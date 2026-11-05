@@ -4,9 +4,10 @@ Start with the [README setup walkthrough](../README.md#start-here-local-setup-on
 for the complete install, readiness check, test and cleanup sequence. This guide
 provides installation details and troubleshooting.
 
-Sentinel's Python checks and executor use the standard library. The local live
-lab also needs Docker with Linux containers, kind and kubectl. Installing these
-tools does not deploy Sentinel or prove that recovery works.
+Install the project's Python dependencies with `python -m pip install -r requirements.txt`.
+The local live lab also needs Docker with Linux containers, kind and kubectl.
+Download the offline benchmark with `python scripts/download_rcaeval.py`.
+Installing these tools does not deploy Sentinel or prove that recovery works.
 
 ## Windows
 
@@ -114,7 +115,7 @@ Linux server, and Python must be 3.12 or newer. No Python packages are required
 for the provided local experiment.
 
 Then follow [README Method 2](../README.md#method-2-install-and-set-up-manually)
-to create `sentinel-lab`, build/load the image, apply `infra/demo.yaml`, wait for
+to create `sentinel-lab`, build/load the image, apply `deploy/workloads/demo.yaml`, wait for
 the healthy Deployment and run `python scripts/test_executor_live.py`. That
 Python command runs the actual Executor experiment against the manually prepared
 cluster. It is not the old operator rollback demo. Delete the cluster afterward

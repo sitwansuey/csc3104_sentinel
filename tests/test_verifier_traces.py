@@ -2,7 +2,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import unittest
 
-from services.verifier_traces import trace_edges
+from services.verifier.traces import trace_edges
 
 NOW = datetime(2026, 10, 26, 0, 0, 0, tzinfo=timezone.utc)
 

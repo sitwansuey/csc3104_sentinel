@@ -1,0 +1,34 @@
+{
+  "id": "wf-network-delay",
+  "name": "network_delay",
+  "description": "Diagnostic workflow for network latency, delay, packet loss, corruption, and retransmissions.",
+  "control": "selector",
+  "tags": ["network", "latency", "delay", "packet", "loss", "retransmission", "corruption", "tcp", "timeout"],
+  "steps": [
+    {
+      "step_id": "s1_trace_span_latency",
+      "goal": "Inspect trace span durations between caller and callee components.",
+      "tool": "traces",
+      "tool_args": { "duration_column": "duration" }
+    },
+    {
+      "step_id": "s2_network_kpis",
+      "goal": "Inspect network drop rate, packet corruption, and TCP retransmit metrics.",
+      "tool": "metrics",
+      "tool_args": { "kpi_column": "kpi_name", "value_column": "value" }
+    },
+    {
+      "step_id": "s3_timeout_logs",
+      "goal": "Scan logs for socket timeouts, connection reset by peer, and network unreachable errors.",
+      "tool": "logs",
+      "tool_args": { "message_column": "message" }
+    }
+  ],
+  "rules": [
+    "Trace latency alone cannot prove network failure; verify network KPIs and socket logs.",
+    "Missing traces are not evidence of system health.",
+    "Packet loss cascades into connection retries and thread starvation."
+  ],
+  "tools": ["traces", "metrics", "logs"]
+}
+

@@ -10,10 +10,10 @@ from dataclasses import replace
 from datetime import datetime
 import json
 
-from services.coordinator import acknowledge, dispatch_pending, record_message
-from services.executor import GuardCheck, execute, reconcile
-from services.executor_store import TargetBusy
-from services.guard import assert_decision_usable, evaluate
+from services.coordinator.core import acknowledge, dispatch_pending, record_message
+from services.executor.core import GuardCheck, execute, reconcile
+from services.executor.store import TargetBusy
+from services.guard.core import assert_decision_usable, evaluate
 
 
 class GuardAuthorizer:

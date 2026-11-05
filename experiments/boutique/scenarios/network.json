@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "fault": "network",
+  "target_service": "shippingservice",
+  "kind": "NetworkChaos",
+  "spec": {
+    "action": "delay",
+    "direction": "both",
+    "delay": {
+      "latency": "200ms",
+      "correlation": "0",
+      "jitter": "20ms"
+    }
+  }
+}

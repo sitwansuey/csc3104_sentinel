@@ -8,7 +8,7 @@ from scripts.demo_guard import load_fixtures
 from scripts.guard_rejection_demo import (
     REASON, UNCHANGED_FIELDS, require_valid_approval, validate_rejection_proof,
 )
-from services.guard import evaluate_with_report, proposal_fingerprint
+from services.guard.core import evaluate_with_report, proposal_fingerprint
 
 
 NOW = datetime(2026, 10, 10, 12, 0, 40, tzinfo=timezone.utc)

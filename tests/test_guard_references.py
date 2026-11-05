@@ -4,7 +4,7 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
-from services.guard_adapters import AdapterError, read_reference_versions
+from services.guard.adapters import AdapterError, read_reference_versions
 
 
 class ReferenceAdapterTests(unittest.TestCase):
@@ -18,7 +18,7 @@ class ReferenceAdapterTests(unittest.TestCase):
 
     def test_reads_only_selected_metadata_with_explicit_context_and_deduplicates(self):
         completed = subprocess.CompletedProcess([], 0, b"secret-uid\topaque:rv", b"")
-        with patch("services.guard_adapters.subprocess.run", return_value=completed) as run:
+        with patch("services.guard.adapters.subprocess.run", return_value=completed) as run:
             records = self.read([self.secret, self.secret], kubeconfig="private file.yaml")
         run.assert_called_once()
         command = run.call_args.args[0]
@@ -31,7 +31,7 @@ class ReferenceAdapterTests(unittest.TestCase):
 
     def test_unavailable_secret_never_echoes_server_response(self):
         completed = subprocess.CompletedProcess([], 1, b"PRIVATE-SECRET-DATA", b"PRIVATE-CREDENTIAL")
-        with patch("services.guard_adapters.subprocess.run", return_value=completed):
+        with patch("services.guard.adapters.subprocess.run", return_value=completed):
             with self.assertRaises(AdapterError) as caught:
                 self.read()
         self.assertEqual(caught.exception.code, "REFERENCE_STATE_UNAVAILABLE")
@@ -41,13 +41,13 @@ class ReferenceAdapterTests(unittest.TestCase):
         for refs in ([dict(self.secret, namespace="other")], [dict(self.secret, name="--raw=/secret")],
                      [dict(self.secret, kind="Pod")], [dict(self.secret, data="SECRET")], [None]):
             with self.subTest(refs=refs):
-                with patch("services.guard_adapters.subprocess.run") as run:
+                with patch("services.guard.adapters.subprocess.run") as run:
                     with self.assertRaises(AdapterError):
                         self.read(refs)
                     run.assert_not_called()
 
     def test_all_identities_validated_before_first_read(self):
-        with patch("services.guard_adapters.subprocess.run") as run:
+        with patch("services.guard.adapters.subprocess.run") as run:
             with self.assertRaises(AdapterError):
                 self.read([self.secret, dict(self.secret, name="bad..name")])
             run.assert_not_called()
@@ -56,7 +56,7 @@ class ReferenceAdapterTests(unittest.TestCase):
         for payload in (b"", b"uid", b"uid\t", b"uid\trv\textra", b"\xff\trv", b"uid\trv\nextra"):
             with self.subTest(payload=payload):
                 completed = subprocess.CompletedProcess([], 0, payload, b"")
-                with patch("services.guard_adapters.subprocess.run", return_value=completed):
+                with patch("services.guard.adapters.subprocess.run", return_value=completed):
                     with self.assertRaises(AdapterError) as caught:
                         self.read()
                 self.assertEqual(caught.exception.code, "REFERENCE_STATE_INVALID")
@@ -65,7 +65,7 @@ class ReferenceAdapterTests(unittest.TestCase):
         for error, code in ((FileNotFoundError(), "REFERENCE_STATE_UNAVAILABLE"),
                             (subprocess.TimeoutExpired([], 15), "REFERENCE_STATE_TIMEOUT")):
             with self.subTest(code=code):
-                with patch("services.guard_adapters.subprocess.run", side_effect=error):
+                with patch("services.guard.adapters.subprocess.run", side_effect=error):
                     with self.assertRaises(AdapterError) as caught:
                         self.read()
                 self.assertEqual(caught.exception.code, code)

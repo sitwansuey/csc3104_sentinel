@@ -14,8 +14,8 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from services.guard import proposal_fingerprint, template_sha256
-from services.guard_cli import main
+from services.guard.core import proposal_fingerprint, template_sha256
+from services.guard.cli import main
 from shared.contracts import validate_message
 
 
@@ -32,11 +32,11 @@ class GuardCliV2Tests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.directory = Path(self.temp.name)
-        self.proposal = fixture("samples/messages/proposal.json")
-        self.policy = fixture("samples/policy.json")
-        self.live = fixture("samples/observations.json")["failed-rollout"][-1]
-        self.baseline = fixture("samples/baseline.json")
-        self.dependencies = fixture("samples/messages/dependency-result.json")
+        self.proposal = fixture("data/sentinel/samples/messages/proposal.json")
+        self.policy = fixture("data/sentinel/samples/policy.json")
+        self.live = fixture("data/sentinel/samples/observations.json")["failed-rollout"][-1]
+        self.baseline = fixture("data/sentinel/samples/baseline.json")
+        self.dependencies = fixture("data/sentinel/samples/messages/dependency-result.json")
         self.approval = {
             "action_id": self.proposal["action_id"],
             "proposal_sha256": proposal_fingerprint(self.proposal),
@@ -152,7 +152,7 @@ class GuardCliV2Tests(unittest.TestCase):
     def test_report_failure_emits_no_authorization_and_preserves_existing_report(self):
         report = self.path("report")
         report.write_text("preserve me", encoding="utf-8")
-        with patch("services.guard_cli.os.replace", side_effect=OSError("secret-details")):
+        with patch("services.guard.cli.os.replace", side_effect=OSError("secret-details")):
             code, stdout, stderr = self.run_cli([*self.args(), "--report", str(report)])
         self.assertEqual((code, stdout), (1, ""))
         self.assertEqual(json.loads(stderr)["error"]["code"], "REPORT_UNAVAILABLE")
@@ -170,7 +170,7 @@ class GuardCliV2Tests(unittest.TestCase):
                 self.assertEqual(self.path(name).read_bytes(), before)
         kubeconfig = self.path("kubeconfig")
         kubeconfig.write_text("private credentials", encoding="utf-8")
-        with patch("services.guard_cli.read_deployment") as read:
+        with patch("services.guard.cli.read_deployment") as read:
             code, stdout, stderr = self.run_cli([*self.args(live=True), "--kubeconfig", str(kubeconfig), "--report", str(kubeconfig)])
         self.assertEqual((code, stdout), (1, ""))
         read.assert_not_called()
@@ -202,9 +202,9 @@ class GuardCliV2Tests(unittest.TestCase):
                     self.configure_live()
                     del self.policy["max_state_age_seconds"]
                     self.write_inputs()
-                with patch("services.guard_cli.read_deployment") as read:
-                    with patch("services.guard_cli.read_reference_versions") as refs:
-                        with patch("services.guard_cli.server_dry_run") as preview:
+                with patch("services.guard.cli.read_deployment") as read:
+                    with patch("services.guard.cli.read_reference_versions") as refs:
+                        with patch("services.guard.cli.server_dry_run") as preview:
                             code, stdout, stderr = self.run_cli(self.args(live=True))
                 self.assertEqual((code, stdout), (1, ""))
                 self.assertEqual(json.loads(stderr)["error"]["code"], "INVALID_GUARD_INPUT")
@@ -217,8 +217,8 @@ class GuardCliV2Tests(unittest.TestCase):
                      [*self.args(live=True), "--preview", str(self.path("preview"))],
                      [*self.args(), "--server-dry-run", "--preview", "anything"]):
             with self.subTest(args=args):
-                with patch("services.guard_cli.read_deployment") as read:
-                    with patch("services.guard_cli.server_dry_run") as preview:
+                with patch("services.guard.cli.read_deployment") as read:
+                    with patch("services.guard.cli.server_dry_run") as preview:
                         code, stdout, stderr = self.run_cli(args)
                 self.assertEqual((code, stdout), (1, ""))
                 self.assertEqual(json.loads(stderr)["error"]["code"], "ARGUMENT_ERROR")
@@ -229,8 +229,8 @@ class GuardCliV2Tests(unittest.TestCase):
         self.configure_live()
         self.policy.update(require_server_dry_run=True, max_server_dry_run_age_seconds=10)
         self.write_inputs()
-        with patch("services.guard_cli.read_deployment", return_value=self.live):
-            with patch("services.guard_cli.server_dry_run", return_value=self.preview()) as preview:
+        with patch("services.guard.cli.read_deployment", return_value=self.live):
+            with patch("services.guard.cli.server_dry_run", return_value=self.preview()) as preview:
                 code, stdout, stderr = self.run_cli([*self.args(live=True), "--server-dry-run"])
         self.assertEqual((code, stderr), (0, ""))
         self.assertEqual(json.loads(stdout)["verdict"], "ALLOW")
@@ -240,8 +240,8 @@ class GuardCliV2Tests(unittest.TestCase):
         self.configure_live()
         for status, code_expected in (("UNKNOWN", 3), ("REJECTED", 2)):
             with self.subTest(status=status):
-                with patch("services.guard_cli.read_deployment", return_value=self.live):
-                    with patch("services.guard_cli.server_dry_run", return_value=self.preview(status)) as preview:
+                with patch("services.guard.cli.read_deployment", return_value=self.live):
+                    with patch("services.guard.cli.server_dry_run", return_value=self.preview(status)) as preview:
                         code, stdout, stderr = self.run_cli([*self.args(live=True), "--server-dry-run"])
                 self.assertEqual((code, stderr), (code_expected, ""))
                 self.assertNotEqual(json.loads(stdout)["verdict"], "ALLOW")
@@ -256,8 +256,8 @@ class GuardCliV2Tests(unittest.TestCase):
                 live = copy.deepcopy(self.live)
                 if change_version:
                     live["deployment"]["metadata"]["resourceVersion"] = "103"
-                with patch("services.guard_cli.read_deployment", return_value=live):
-                    with patch("services.guard_cli.server_dry_run") as preview:
+                with patch("services.guard.cli.read_deployment", return_value=live):
+                    with patch("services.guard.cli.server_dry_run") as preview:
                         code, stdout, stderr = self.run_cli([*self.args(live=True, approval=approval), "--server-dry-run"])
                 self.assertEqual((code, stderr), (expected, ""))
                 self.assertNotEqual(json.loads(stdout)["verdict"], "ALLOW")
@@ -269,9 +269,9 @@ class GuardCliV2Tests(unittest.TestCase):
         later = initial + timedelta(seconds=65)
         admitted = self.preview()
         admitted["checked_at"] = timestamp(later)
-        with patch("services.guard_cli.read_deployment", return_value=self.live):
-            with patch("services.guard_cli.server_dry_run", return_value=admitted) as preview:
-                with patch("services.guard_decisions._clock", side_effect=[initial, later]):
+        with patch("services.guard.cli.read_deployment", return_value=self.live):
+            with patch("services.guard.cli.server_dry_run", return_value=admitted) as preview:
+                with patch("services.guard.decisions._clock", side_effect=[initial, later]):
                     code, stdout, stderr = self.run_cli([*self.args(live=True), "--server-dry-run"])
         self.assertEqual((code, stderr), (3, ""))
         self.assertIn("APPROVAL_EXPIRED", json.loads(stdout)["reason_codes"])
@@ -283,9 +283,9 @@ class GuardCliV2Tests(unittest.TestCase):
             {"name": "external-data", "csi": {"driver": "example.invalid"}}]
         self.bind_template()
         self.write_inputs()
-        with patch("services.guard_cli.read_deployment", return_value=self.live):
-            with patch("services.guard_cli.read_reference_versions") as refs:
-                with patch("services.guard_cli.server_dry_run") as preview:
+        with patch("services.guard.cli.read_deployment", return_value=self.live):
+            with patch("services.guard.cli.read_reference_versions") as refs:
+                with patch("services.guard.cli.server_dry_run") as preview:
                     code, stdout, stderr = self.run_cli([*self.args(live=True), "--server-dry-run"])
         self.assertEqual((code, stderr), (3, ""))
         self.assertIn("BASELINE_REFERENCE_UNSUPPORTED", json.loads(stdout)["reason_codes"])
@@ -300,8 +300,8 @@ class GuardCliV2Tests(unittest.TestCase):
         self.baseline["reference_versions"] = [reference]
         self.bind_template()
         self.write_inputs()
-        with patch("services.guard_cli.read_deployment", return_value=self.live):
-            with patch("services.guard_cli.read_reference_versions", return_value=[reference]) as refs:
+        with patch("services.guard.cli.read_deployment", return_value=self.live):
+            with patch("services.guard.cli.read_reference_versions", return_value=[reference]) as refs:
                 code, stdout, stderr = self.run_cli(self.args(live=True))
         self.assertEqual((code, stderr), (0, ""))
         self.assertEqual(json.loads(stdout)["verdict"], "ALLOW")
@@ -315,9 +315,9 @@ class GuardCliV2Tests(unittest.TestCase):
         self.bind_template()
         self.live["deployment"]["metadata"]["uid"] = "replacement"
         self.write_inputs()
-        with patch("services.guard_cli.read_deployment", return_value=self.live):
-            with patch("services.guard_cli.read_reference_versions") as refs:
-                with patch("services.guard_cli.server_dry_run") as preview:
+        with patch("services.guard.cli.read_deployment", return_value=self.live):
+            with patch("services.guard.cli.read_reference_versions") as refs:
+                with patch("services.guard.cli.server_dry_run") as preview:
                     code, stdout, stderr = self.run_cli([*self.args(live=True), "--server-dry-run"])
         self.assertEqual((code, stderr), (2, ""))
         self.assertEqual(json.loads(stdout)["verdict"], "REJECT")

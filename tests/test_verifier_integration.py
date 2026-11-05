@@ -4,16 +4,16 @@ import json
 from pathlib import Path
 import unittest
 
-from services.coordinator import LocalEventBus, SQLiteStore, approve, handle
-from services.guard import evaluate
-from services.verifier import inspect_dependencies, verify
+from services.coordinator.core import LocalEventBus, SQLiteStore, approve, handle
+from services.guard.core import evaluate
+from services.verifier.core import inspect_dependencies, verify
 
 ROOT = Path(__file__).resolve().parents[1]
 NOW = datetime(2026, 10, 10, 12, 0, 40, tzinfo=timezone.utc)
 
 
 def load(name):
-    return json.loads((ROOT / "samples" / name).read_text(encoding="utf-8"))
+    return json.loads((ROOT / "data/sentinel/samples" / name).read_text(encoding="utf-8"))
 
 
 class VerifierIntegrationTests(unittest.TestCase):

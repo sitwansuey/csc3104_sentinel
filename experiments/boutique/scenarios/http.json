@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "fault": "http",
+  "target_service": "frontend",
+  "kind": "HTTPChaos",
+  "spec": {
+    "target": "Request",
+    "port": 8080,
+    "method": "GET",
+    "path": "/",
+    "abort": true
+  }
+}

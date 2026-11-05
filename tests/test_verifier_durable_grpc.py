@@ -1,7 +1,7 @@
 from datetime import timedelta
 import unittest
 from runtime.verifier_pipeline import process_verifier_requests
-from services.verifier_store import VerificationStore
+from services.verifier.store import VerificationStore
 from tests import test_verifier_pipeline as pipeline_fixtures
 
 class CompatibilityTests(unittest.TestCase):

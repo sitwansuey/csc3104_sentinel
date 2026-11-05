@@ -10,7 +10,7 @@ from runtime.telemetry import emit_event
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--telemetry", default="runs/telemetry.sqlite3")
+    parser.add_argument("--telemetry", default="data/sentinel/runs/telemetry.sqlite3")
     parser.add_argument("--member", type=int, choices=range(1, 7), required=True)
     parser.add_argument("--type", choices=("fault", "error", "status", "heartbeat"), required=True)
     parser.add_argument("--summary", required=True)

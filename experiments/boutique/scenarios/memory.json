@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "fault": "memory",
+  "target_service": "recommendationservice",
+  "kind": "StressChaos",
+  "spec": {
+    "stressors": {
+      "memory": {
+        "workers": 1,
+        "size": "256MB"
+      }
+    }
+  }
+}

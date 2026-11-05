@@ -11,10 +11,10 @@ from shared.contracts import ContractError, validate_message
 
 class ContractBoundaryTests(unittest.TestCase):
     def proposal(self):
-        return json.loads((ROOT / "samples/messages/proposal.json").read_text())
+        return json.loads((ROOT / "data/sentinel/samples/messages/proposal.json").read_text())
 
     def test_all_bundled_messages_are_compatible(self):
-        for path in (ROOT / "samples/messages").glob("*.json"):
+        for path in (ROOT / "data/sentinel/samples/messages").glob("*.json"):
             with self.subTest(path=path.name):
                 validate_message(json.loads(path.read_text()))
 
@@ -69,13 +69,13 @@ class ContractBoundaryTests(unittest.TestCase):
             validate_message(message)
 
     def test_outcome_window_cannot_run_backwards(self):
-        message = json.loads((ROOT / "samples/messages/outcome.json").read_text())
+        message = json.loads((ROOT / "data/sentinel/samples/messages/outcome.json").read_text())
         message["window_end"] = "2026-10-10T12:00:00Z"
         with self.assertRaises(ContractError):
             validate_message(message)
 
     def test_naive_observation_time_is_rejected(self):
-        message = json.loads((ROOT / "samples/messages/incident.json").read_text())
+        message = json.loads((ROOT / "data/sentinel/samples/messages/incident.json").read_text())
         message["observed_at"] = "2026-10-10T12:00:30"
         with self.assertRaises(ContractError):
             validate_message(message)

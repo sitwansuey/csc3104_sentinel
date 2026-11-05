@@ -34,7 +34,7 @@ passed unchanged and compared for equality.
 The implemented development boundary is JSON files and the command line:
 
 ```text
-python -m services.guard_cli --help
+python -m services.guard.cli --help
 ```
 
 Required input flags are `--proposal`, `--policy`, `--baseline`,
@@ -96,7 +96,7 @@ invalid required inputs. Callers must handle those errors as zero-write paths.
 
 Maximum state/dependency ages are optional only in development profiles. Omitting a limit
 means there is no maximum age; it must not be interpreted as a hidden default.
-The [development resource policy](../samples/policy-resource-limits.json) explicitly
+The [development resource policy](../data/sentinel/samples/policy-resource-limits.json) explicitly
 uses 15 seconds for state and 30 seconds for dependencies. These values and its
 synthetic identities require review before use with a real workload. Evidence
 exactly at an age limit is accepted; an older reading is stale.

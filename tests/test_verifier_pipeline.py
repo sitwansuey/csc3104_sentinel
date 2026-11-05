@@ -8,9 +8,9 @@ import unittest
 from unittest.mock import patch
 
 from runtime.verifier_pipeline import process_verifier_requests
-from services.coordinator import SQLiteStore, LocalEventBus, approve, handle
-from services.guard import evaluate
-from services.verifier import verify, VerifierInputError
+from services.coordinator.core import SQLiteStore, LocalEventBus, approve, handle
+from services.guard.core import evaluate
+from services.verifier.core import verify, VerifierInputError
 from scripts.test_boutique_live import BoutiqueExperiment
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,7 +18,7 @@ NOW = datetime(2026, 10, 10, 12, 0, 40, tzinfo=timezone.utc)
 
 
 def load(name):
-    return json.loads((ROOT / "samples" / name).read_text(encoding="utf-8"))
+    return json.loads((ROOT / "data/sentinel/samples" / name).read_text(encoding="utf-8"))
 
 
 def grpc_policy(template=None):

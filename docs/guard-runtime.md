@@ -13,8 +13,8 @@ Run these commands from the repository root. First extract one observation from
 the existing fixture collection into a standalone snapshot:
 
 ```text
-python -c "import json; from pathlib import Path; source=json.loads(Path('samples/observations.json').read_text(encoding='utf-8')); Path('runs').mkdir(exist_ok=True); Path('runs/guard-live-state.json').write_text(json.dumps(source['failed-rollout'][-1]), encoding='utf-8')"
-python -m services.guard_cli --proposal samples/messages/proposal.json --policy samples/policy.json --baseline samples/baseline.json --dependencies samples/messages/dependency-result.json --live-state runs/guard-live-state.json --now 2026-10-10T12:00:40Z
+python -c "import json; from pathlib import Path; source=json.loads(Path('data/sentinel/samples/observations.json').read_text(encoding='utf-8')); Path('data/sentinel/runs').mkdir(parents=True, exist_ok=True); Path('data/sentinel/runs/guard-live-state.json').write_text(json.dumps(source['failed-rollout'][-1]), encoding='utf-8')"
+python -m services.guard.cli --proposal data/sentinel/samples/messages/proposal.json --policy data/sentinel/samples/policy.json --baseline data/sentinel/samples/baseline.json --dependencies data/sentinel/samples/messages/dependency-result.json --live-state data/sentinel/runs/guard-live-state.json --now 2026-10-10T12:00:40Z
 ```
 
 The second command produces `ESCALATE` with `OPERATOR_APPROVAL_REQUIRED` and exit
@@ -28,7 +28,7 @@ For all new policy gates and detailed reports, run:
 ```text
 python scripts/demo_guard_v2.py
 python scripts/demo_guard_v2.py --scenario allowed --write-inputs guard-v2-fixtures
-python -m services.guard_cli --proposal guard-v2-fixtures/allowed/proposal.json --policy guard-v2-fixtures/allowed/policy.json --baseline guard-v2-fixtures/allowed/baseline.json --dependencies guard-v2-fixtures/allowed/dependencies.json --approval guard-v2-fixtures/allowed/approval.json --live-state guard-v2-fixtures/allowed/live-state.json --preview guard-v2-fixtures/allowed/preview.json --now 2026-10-10T12:00:40Z --report guard-v2-fixtures/allowed/report.json
+python -m services.guard.cli --proposal guard-v2-fixtures/allowed/proposal.json --policy guard-v2-fixtures/allowed/policy.json --baseline guard-v2-fixtures/allowed/baseline.json --dependencies guard-v2-fixtures/allowed/dependencies.json --approval guard-v2-fixtures/allowed/approval.json --live-state guard-v2-fixtures/allowed/live-state.json --preview guard-v2-fixtures/allowed/preview.json --now 2026-10-10T12:00:40Z --report guard-v2-fixtures/allowed/report.json
 ```
 
 Choose a new export directory. These inputs, approvals, health evidence and
@@ -58,12 +58,12 @@ maximum ages. It is a development policy and is refused by live mode.
 Install `kubectl`, configure credentials, and use an explicit context:
 
 ```text
-python -m services.guard_cli --proposal runs/proposal.json --policy runs/reviewed-live-policy.json --baseline runs/baseline.json --dependencies runs/dependencies.json --approval runs/approval.json --context YOUR_EXPLICIT_CONTEXT --cluster-id YOUR_CONFIGURED_CLUSTER_ID --kubeconfig runs/your-private-kubeconfig.yaml --server-dry-run --report runs/guard-report.json
+python -m services.guard.cli --proposal data/sentinel/runs/proposal.json --policy data/sentinel/runs/reviewed-live-policy.json --baseline data/sentinel/runs/baseline.json --dependencies data/sentinel/runs/dependencies.json --approval data/sentinel/runs/approval.json --context YOUR_EXPLICIT_CONTEXT --cluster-id YOUR_CONFIGURED_CLUSTER_ID --kubeconfig data/sentinel/runs/your-private-kubeconfig.yaml --server-dry-run --report data/sentinel/runs/guard-report.json
 ```
 
-Those `runs/` paths are examples of records supplied by their owners, not bundled
+Those `data/sentinel/runs/` paths are examples of records supplied by their owners, not bundled
 live approvals or dependency findings. The proposal must contain the actual
-Deployment UID and resource version, not the synthetic identities from `samples/`.
+Deployment UID and resource version, not the synthetic identities from `data/sentinel/samples/`.
 The saved baseline must belong to the same Deployment identity.
 Supply an explicitly reviewed `profile: "live"` policy with all mandatory
 freshness, approval, baseline, security and workload fields listed in the
@@ -162,7 +162,7 @@ automated execution. No HTTP endpoint is exposed until that transport is agreed.
 Build and run the file-only CLI image from the repository root:
 
 ```text
-docker build -f services/guard.Dockerfile -t sentinel-guard:local .
+docker build -f deploy/docker/guard.Dockerfile -t sentinel-guard:local .
 docker run --rm --mount "type=bind,source=YOUR_ABSOLUTE_REPO_PATH,target=/inputs,readonly" sentinel-guard:local --proposal /inputs/samples/messages/proposal.json --policy /inputs/samples/policy.json --baseline /inputs/samples/baseline.json --dependencies /inputs/samples/messages/dependency-result.json --live-state /inputs/runs/guard-live-state.json --now 2026-10-10T12:00:40Z
 python -m unittest discover -s tests -p "test_guard_cli.py" -v
 ```

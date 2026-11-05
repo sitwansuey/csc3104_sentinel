@@ -144,7 +144,7 @@ and security remediation should follow reproducible single-fault experiments.
 - Frontend type-check/build and **72 component tests** passed. The existing
   non-failing bundle-size warning remains. PowerShell parsing and whitespace
   checks passed.
-- Actual source run `runs/boutique-live-20261103T173128Z-814440/` completed all
+- Actual source run `data/sentinel/runs/boutique-live-20261103T173128Z-814440/` completed all
   **13 real Kubernetes checkpoints**. Its identifier is UTC; the run occurred on
   4 November in Singapore. Installed Edge clicked all three live buttons; each
   returned HTTP 202 with zero page JavaScript errors. Desktop/mobile ready-state
@@ -157,7 +157,7 @@ and security remediation should follow reproducible single-fault experiments.
 - The final completed-results layout and incident drawer were separately checked
   using a **read-only replay of that run's real evidence**, not a second live
   recovery. Browser QA helpers and screenshots are under ignored
-  `runs/lab-ui-validation/`. The temporary replay server was stopped afterward.
+  `data/sentinel/runs/lab-ui-validation/`. The temporary replay server was stopped afterward.
 
 No new image was built/scanned for this UI change. The previous exported image
 and its historical CVE scan remain separate artifacts. Planner, connected-service

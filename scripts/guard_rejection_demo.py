@@ -10,10 +10,10 @@ from uuid import uuid4
 
 from runtime.guard_pipeline import process_guard_requests
 from scripts.test_executor_live import now, require, save, utc
-from services.coordinator import handle
-from services.executor import execute
-from services.executor_store import fingerprint
-from services.guard import evaluate_with_report
+from services.coordinator.core import handle
+from services.executor.core import execute
+from services.executor.store import fingerprint
+from services.guard.core import evaluate_with_report
 
 
 REASON = "ROLLBACK_ALREADY_AT_BASELINE"

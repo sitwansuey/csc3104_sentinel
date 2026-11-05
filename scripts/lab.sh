@@ -14,13 +14,13 @@ kube() { kubectl --context "$LAB_CONTEXT" --namespace "$LAB_NAMESPACE" "$@"; }
 
 capture() {
   local phase="$1"
-  mkdir -p runs
-  kube get deployment/demo-api -o json > "runs/${phase}-deployment.json"
-  kube get pods -l app=demo-api -o json > "runs/${phase}-pods.json"
-  kube get replicasets -l app=demo-api -o json > "runs/${phase}-replicasets.json"
-  kube get events -o json > "runs/${phase}-events.json"
+  mkdir -p data/sentinel/runs
+  kube get deployment/demo-api -o json > "data/sentinel/runs/${phase}-deployment.json"
+  kube get pods -l app=demo-api -o json > "data/sentinel/runs/${phase}-pods.json"
+  kube get replicasets -l app=demo-api -o json > "data/sentinel/runs/${phase}-replicasets.json"
+  kube get events -o json > "data/sentinel/runs/${phase}-events.json"
   kube logs deployment/demo-api --all-containers=true --tail=100 --pod-running-timeout=5s \
-    > "runs/${phase}-logs.txt" 2>&1 || true
+    > "data/sentinel/runs/${phase}-logs.txt" 2>&1 || true
 }
 
 usage() {
@@ -35,13 +35,13 @@ case "${1:-}" in
     require python3
     docker info >/dev/null
     if ! kind get clusters | awk -v cluster="$LAB_CLUSTER" '$0 == cluster { found=1 } END { exit !found }'; then
-      kind create cluster --name "$LAB_CLUSTER" --config infra/kind.yaml --wait 120s
+      kind create cluster --name "$LAB_CLUSTER" --config deploy/kind/kind.yaml --wait 120s
     fi
-    docker build -t "$LAB_IMAGE" demo
+    docker build -t "$LAB_IMAGE" experiments/workloads/demo
     kind load docker-image "$LAB_IMAGE" --name "$LAB_CLUSTER"
-    kube apply -f infra/demo.yaml
+    kube apply -f deploy/workloads/demo.yaml
     kube rollout status deployment/demo-api --timeout=120s
-    mkdir -p runs
+    mkdir -p data/sentinel/runs
     {
       kind version
       python3 --version
@@ -50,19 +50,19 @@ case "${1:-}" in
       docker image inspect "$LAB_IMAGE" --format 'App image ID: {{.Id}}'
       docker image inspect python:3.12-slim --format 'Base image digests: {{json .RepoDigests}}'
       docker inspect "${LAB_CLUSTER}-control-plane" --format 'Node image ID: {{.Image}}'
-    } > runs/tool-versions.txt
+    } > data/sentinel/runs/tool-versions.txt
     capture before
     printf '%s\n' 'Healthy deployment ready. Next: bash scripts/lab.sh health'
     ;;
   fault)
     require kubectl
     require python3
-    mkdir -p runs
-    kube get deployment/demo-api -o json > runs/before-deployment.json
+    mkdir -p data/sentinel/runs
+    kube get deployment/demo-api -o json > data/sentinel/runs/before-deployment.json
     python3 - <<'PY'
 import json
 from pathlib import Path
-deployment = json.loads(Path("runs/before-deployment.json").read_text())
+deployment = json.loads(Path("data/sentinel/runs/before-deployment.json").read_text())
 container = next(c for c in deployment["spec"]["template"]["spec"]["containers"] if c["name"] == "demo-api")
 values = {v["name"]: v.get("value") for v in container.get("env", [])}
 if values.get("STARTUP_FAILURE") != "false":
@@ -72,7 +72,7 @@ revision = metadata.get("annotations", {}).get("deployment.kubernetes.io/revisio
 if not revision.isdigit():
     raise SystemExit("No valid baseline revision. Wait for the healthy rollout first.")
 baseline = {"deployment_uid": metadata["uid"], "healthy_revision": int(revision)}
-Path("runs/baseline.json").write_text(json.dumps(baseline, indent=2) + "\n")
+Path("data/sentinel/runs/baseline.json").write_text(json.dumps(baseline, indent=2) + "\n")
 PY
     kube rollout status deployment/demo-api --timeout=20s
     capture before
@@ -81,7 +81,7 @@ PY
       fail 'Fault rollout unexpectedly succeeded; inspect the Deployment and app logs.'
     fi
     capture fault
-    printf '%s\n' 'Expected rollout failure observed. Evidence is in runs/fault-*.'
+    printf '%s\n' 'Expected rollout failure observed. Evidence is in data/sentinel/runs/fault-*.'
     printf '%s\n' 'Next: bash scripts/lab.sh inspect'
     ;;
   inspect)
@@ -93,16 +93,16 @@ PY
   capture)
     require kubectl
     capture observed
-    printf '%s\n' 'Evidence saved to runs/observed-*.'
+    printf '%s\n' 'Evidence saved to data/sentinel/runs/observed-*.'
     ;;
   recover)
     require kubectl
     require python3
-    [[ -f runs/baseline.json ]] || fail 'No saved baseline. See the manifest reset commands in README.md.'
+    [[ -f data/sentinel/runs/baseline.json ]] || fail 'No saved baseline. See the manifest reset commands in README.md.'
     local_uid="$(kube get deployment/demo-api -o jsonpath='{.metadata.uid}')"
-    saved_uid="$(python3 -c 'import json; print(json.load(open("runs/baseline.json"))["deployment_uid"])')"
+    saved_uid="$(python3 -c 'import json; print(json.load(open("data/sentinel/runs/baseline.json"))["deployment_uid"])')"
     [[ "$local_uid" == "$saved_uid" ]] || fail 'Deployment was recreated; saved baseline does not apply. Run the lab from up again.'
-    revision="$(python3 -c 'import json; print(json.load(open("runs/baseline.json"))["healthy_revision"])')"
+    revision="$(python3 -c 'import json; print(json.load(open("data/sentinel/runs/baseline.json"))["healthy_revision"])')"
     [[ "$revision" =~ ^[0-9]+$ ]] || fail 'Invalid saved revision.'
     # Operator baseline only: Sentinel will later use explicit desired state,
     # coordination, persistent action records and API preconditions.

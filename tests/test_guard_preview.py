@@ -13,9 +13,9 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from services.guard import proposal_fingerprint, template_sha256
-from services.guard_adapters import AdapterError, KUBECTL_TIMEOUT_SECONDS
-from services.guard_preview import server_dry_run
+from services.guard.core import proposal_fingerprint, template_sha256
+from services.guard.adapters import AdapterError, KUBECTL_TIMEOUT_SECONDS
+from services.guard.preview import server_dry_run
 
 
 def fixture(path):
@@ -24,9 +24,9 @@ def fixture(path):
 
 class GuardPreviewTests(unittest.TestCase):
     def setUp(self):
-        self.proposal = fixture("samples/messages/proposal.json")
-        self.live = fixture("samples/observations.json")["failed-rollout"][-1]
-        self.baseline = fixture("samples/baseline.json")
+        self.proposal = fixture("data/sentinel/samples/messages/proposal.json")
+        self.live = fixture("data/sentinel/samples/observations.json")["failed-rollout"][-1]
+        self.baseline = fixture("data/sentinel/samples/baseline.json")
         self.response = copy.deepcopy(self.live["deployment"])
         self.response["spec"]["template"] = copy.deepcopy(self.baseline["pod_template"])
 
@@ -60,7 +60,7 @@ class GuardPreviewTests(unittest.TestCase):
             return self.completed()
 
         before = datetime.now(timezone.utc)
-        with patch("services.guard_preview.subprocess.run", side_effect=run) as mocked:
+        with patch("services.guard.preview.subprocess.run", side_effect=run) as mocked:
             result = self.preview(kubeconfig="C:/private config/team.yaml")
         mocked.assert_called_once()
         self.assertEqual(result["status"], "PASSED")
@@ -96,7 +96,7 @@ class GuardPreviewTests(unittest.TestCase):
             with self.subTest(mutate=mutate):
                 self.setUp()
                 mutate()
-                with patch("services.guard_preview.subprocess.run") as run:
+                with patch("services.guard.preview.subprocess.run") as run:
                     result = self.preview()
                 run.assert_not_called()
                 self.assertEqual(result["status"], "UNKNOWN")
@@ -114,7 +114,7 @@ class GuardPreviewTests(unittest.TestCase):
             with self.subTest(mutate=mutate):
                 self.setUp()
                 mutate()
-                with patch("services.guard_preview.subprocess.run") as run:
+                with patch("services.guard.preview.subprocess.run") as run:
                     result = self.preview()
                 run.assert_not_called()
                 self.assertEqual(result["status"], "UNKNOWN")
@@ -126,13 +126,13 @@ class GuardPreviewTests(unittest.TestCase):
                 with self.subTest(field=field, value=value):
                     self.setUp()
                     self.proposal["target"][field] = value
-                    with patch("services.guard_preview.subprocess.run") as run:
+                    with patch("services.guard.preview.subprocess.run") as run:
                         with self.assertRaises(AdapterError):
                             self.preview()
                     run.assert_not_called()
         self.setUp()
         self.proposal["unexpected-secret"] = "do-not-echo"
-        with patch("services.guard_preview.subprocess.run") as run:
+        with patch("services.guard.preview.subprocess.run") as run:
             with self.assertRaises(AdapterError) as caught:
                 self.preview()
         run.assert_not_called()
@@ -144,7 +144,7 @@ class GuardPreviewTests(unittest.TestCase):
                      {"context": "team-context", "cluster_id": " "},
                      {"context": "team-context", "cluster_id": "sentinel-lab", "kubeconfig": ""}):
             with self.subTest(args=args):
-                with patch("services.guard_preview.subprocess.run") as run:
+                with patch("services.guard.preview.subprocess.run") as run:
                     with self.assertRaises(AdapterError):
                         server_dry_run(self.proposal, self.live, self.baseline, **args)
                 run.assert_not_called()
@@ -153,7 +153,7 @@ class GuardPreviewTests(unittest.TestCase):
         for stderr in (b"Unauthorized secret-token", b"Forbidden secret-token", b"invalid: secret-token"):
             with self.subTest(stderr=stderr):
                 failure = subprocess.CompletedProcess([], 1, b"", stderr)
-                with patch("services.guard_preview.subprocess.run", return_value=failure) as run:
+                with patch("services.guard.preview.subprocess.run", return_value=failure) as run:
                     result = self.preview()
                 self.assertEqual(result["status"], "UNKNOWN")
                 self.assertEqual(result["details_code"], "SERVER_DRY_RUN_FAILED")
@@ -167,7 +167,7 @@ class GuardPreviewTests(unittest.TestCase):
             (FileNotFoundError("private-system-path"), "SERVER_DRY_RUN_UNAVAILABLE"),
         ):
             with self.subTest(failure=failure):
-                with patch("services.guard_preview.subprocess.run", side_effect=failure) as run:
+                with patch("services.guard.preview.subprocess.run", side_effect=failure) as run:
                     result = self.preview()
                 self.assertEqual(result["status"], "UNKNOWN")
                 self.assertEqual(result["details_code"], detail)
@@ -185,8 +185,8 @@ class GuardPreviewTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), b"")
             raise OSError("private-security-details")
 
-        with patch("services.guard_preview._private_file", side_effect=fail):
-            with patch("services.guard_preview.subprocess.run") as run:
+        with patch("services.guard.preview._private_file", side_effect=fail):
+            with patch("services.guard.preview.subprocess.run") as run:
                 result = self.preview()
         run.assert_not_called()
         self.assertEqual(result["status"], "UNKNOWN")
@@ -196,12 +196,12 @@ class GuardPreviewTests(unittest.TestCase):
     def test_strict_bounded_server_json_and_invalid_object_are_unknown(self):
         for payload in (b"not-json", b"\xff", b'{"x":1,"x":2}', b'{"x":NaN}', b"null", b"[]"):
             with self.subTest(payload=payload):
-                with patch("services.guard_preview.subprocess.run", return_value=subprocess.CompletedProcess([], 0, payload, b"secret")):
+                with patch("services.guard.preview.subprocess.run", return_value=subprocess.CompletedProcess([], 0, payload, b"secret")):
                     result = self.preview()
                 self.assertEqual(result["status"], "UNKNOWN")
                 self.assertNotIn("secret", json.dumps(result))
-        with patch("services.guard_adapters.MAX_JSON_BYTES", 10):
-            with patch("services.guard_preview.subprocess.run", return_value=self.completed()):
+        with patch("services.guard.adapters.MAX_JSON_BYTES", 10):
+            with patch("services.guard.preview.subprocess.run", return_value=self.completed()):
                 result = self.preview()
         self.assertEqual(result["details_code"], "INVALID_SERVER_RESPONSE")
 
@@ -211,21 +211,21 @@ class GuardPreviewTests(unittest.TestCase):
             with self.subTest(field=field):
                 self.setUp()
                 self.response["metadata"][field] = value
-                with patch("services.guard_preview.subprocess.run", return_value=self.completed()):
+                with patch("services.guard.preview.subprocess.run", return_value=self.completed()):
                     result = self.preview()
                 self.assertEqual(result["status"], "UNKNOWN")
                 self.assertEqual(result["details_code"], "SERVER_RESPONSE_IDENTITY_MISMATCH")
 
     def test_missing_response_template_cannot_pass(self):
         del self.response["spec"]["template"]
-        with patch("services.guard_preview.subprocess.run", return_value=self.completed()):
+        with patch("services.guard.preview.subprocess.run", return_value=self.completed()):
             result = self.preview()
         self.assertEqual(result["status"], "UNKNOWN")
         self.assertEqual(result["details_code"], "INVALID_SERVER_RESPONSE")
 
     def test_admission_mutation_requires_new_candidate_and_approval(self):
         self.response["spec"]["template"]["metadata"]["annotations"] = {"injected": "true"}
-        with patch("services.guard_preview.subprocess.run", return_value=self.completed()):
+        with patch("services.guard.preview.subprocess.run", return_value=self.completed()):
             result = self.preview()
         self.assertEqual(result["status"], "REJECTED")
         self.assertEqual(result["details_code"], "ADMISSION_TEMPLATE_MUTATED")

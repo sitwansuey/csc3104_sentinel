@@ -50,7 +50,7 @@ than being rejected merely because its hash was stale.
 To inspect the standalone inputs, choose a directory that does not exist:
 
 ```bash
-python scripts/demo_guard_v2.py --scenario allowed --write-inputs runs/guard-v2-fixtures
+python scripts/demo_guard_v2.py --scenario allowed --write-inputs data/sentinel/runs/guard-v2-fixtures
 ```
 
 This creates `NOTICE.json` and `allowed/{proposal,live-state,policy,baseline,
@@ -61,7 +61,7 @@ object. These files support offline replay only.
 
 ## Decisions and explanations
 
-`services.guard.evaluate(...)` emits a `guard_result` with
+`services.guard.core.evaluate(...)` emits a `guard_result` with
 `schema_version: "2.0"`. `evaluate_with_report(...)` returns `(decision, report)`.
 The report includes individual `PASS`, `FAIL`, `UNKNOWN` and `SKIP` findings with
 the rule code, input path, bounded actual/expected metadata and explanation.

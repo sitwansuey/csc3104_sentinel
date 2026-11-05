@@ -6,13 +6,13 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from services.k8s_observer_adapter import (
+from services.observer.kubernetes_adapter import (
     DeploymentObservationMonitor,
     deployment_to_observation,
     observe_deployment,
     read_deployment_observation,
 )
-from services.observer import Observer, detect, validate_observation
+from services.observer.core import Observer, detect, validate_observation
 from shared.contracts import validate_message
 
 
@@ -62,7 +62,7 @@ class SequenceClock:
 
 class KubernetesObserverAdapterTests(unittest.TestCase):
     def setUp(self):
-        self.policy = fixture("samples/policy.json")
+        self.policy = fixture("data/sentinel/samples/policy.json")
 
     def test_healthy_deployment_normalizes_to_healthy_observation(self):
         observation = deployment_to_observation(

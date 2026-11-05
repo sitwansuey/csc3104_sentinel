@@ -14,17 +14,17 @@ from runtime.executor_pipeline import (
     reconcile_pending_executions,
 )
 from runtime.guard_pipeline import process_guard_requests
-from services.coordinator import LocalEventBus, SQLiteStore, approve, handle
-from services.executor import ExecutionAdapters
+from services.coordinator.core import LocalEventBus, SQLiteStore, approve, handle
+from services.executor.core import ExecutionAdapters
 from tests.support.executor_fake import FakeDeploymentAPI
-from services.executor_store import LocalTargetCoordinator, SQLiteExecutionLedger
+from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedger
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def fixture(name):
-    return json.loads((ROOT / "samples" / name).read_text(encoding="utf-8"))
+    return json.loads((ROOT / "data/sentinel/samples" / name).read_text(encoding="utf-8"))
 
 
 class ExecutorIntegrationTests(unittest.TestCase):
@@ -219,7 +219,7 @@ class ExecutorIntegrationTests(unittest.TestCase):
         self.assertEqual(len(self.cluster.writes), 1)
 
     def test_target_busy_leaves_the_durable_command_pending(self):
-        from services.executor_store import TargetBusy
+        from services.executor.store import TargetBusy
 
         self.prepare()
         with self.adapters.coordination.hold(self.proposal["target"]):

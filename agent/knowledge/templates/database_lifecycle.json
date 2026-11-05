@@ -1,0 +1,33 @@
+{
+  "id": "wf-database-lifecycle",
+  "name": "database_lifecycle",
+  "description": "Diagnostic workflow for database connection limit, db close, and container process termination.",
+  "control": "sequence",
+  "tags": ["database", "db", "connection", "pool", "close", "termination", "kill", "mysql", "redis", "exit"],
+  "steps": [
+    {
+      "step_id": "s1_db_connection_kpis",
+      "goal": "Check database active connections against maximum configured pool limit.",
+      "tool": "metrics",
+      "tool_args": { "kpi_column": "kpi_name", "value_column": "value" }
+    },
+    {
+      "step_id": "s2_db_and_container_logs",
+      "goal": "Scan logs for connection refused, max connections reached, or container termination signals.",
+      "tool": "logs",
+      "tool_args": { "message_column": "message" }
+    },
+    {
+      "step_id": "s3_check_upstream_starvation",
+      "goal": "Inspect upstream services experiencing database connection timeouts.",
+      "tool": "traces",
+      "tool_args": { "duration_column": "duration" }
+    }
+  ],
+  "rules": [
+    "Database pool exhaustion causes abrupt latency surge across all client services.",
+    "Container process termination must be inspected for preceding CPU or memory spikes."
+  ],
+  "tools": ["metrics", "logs", "traces"]
+}
+

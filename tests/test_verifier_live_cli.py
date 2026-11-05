@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from services.verifier_live_cli import main
+from services.verifier.live_cli import main
 from tests.test_verifier_live import configuration, HTTP, Kubernetes
 
 
@@ -16,8 +16,8 @@ class LiveCLITests(unittest.TestCase):
             config = Path(directory) / "inventory.json"
             config.write_text(json.dumps(configuration()), encoding="utf-8")
             output = io.StringIO()
-            with patch("services.verifier_live_cli.KubectlReader", return_value=Kubernetes()) as reader:
-                with patch("services.verifier_live.EvidenceHTTP", return_value=HTTP()), redirect_stdout(output):
+            with patch("services.verifier.live_cli.KubectlReader", return_value=Kubernetes()) as reader:
+                with patch("services.verifier.live.EvidenceHTTP", return_value=HTTP()), redirect_stdout(output):
                     code = main(["--inventory", str(config), "--context", "chosen-context", "sample", "--service", "checkout"])
             self.assertEqual(code, 0)
             reader.assert_called_once_with("chosen-context")

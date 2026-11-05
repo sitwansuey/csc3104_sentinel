@@ -27,7 +27,7 @@ it does not install Docker Desktop or kind on the host.
 ## 2. Copy the matching source and image
 
 Copy the exported source ZIP, runner TAR and `SHA256SUMS.txt` from the desktop's
-`runs/exports/` folder. Extract the source ZIP, keep the TAR beside the extracted
+`data/sentinel/runs/exports/` folder. Extract the source ZIP, keep the TAR beside the extracted
 `sentinel-boutique-source` folder, and open PowerShell in that source folder.
 Use this matching source snapshot when reproducing the exported image. Current
 GitHub source also includes later dashboard/connected-mode updates that are not
@@ -113,7 +113,7 @@ docker ps --filter name=sentinel-boutique-runner
 ```
 
 The dedicated cluster and runner should be absent. Evidence remains under
-`runs/packaged-boutique-*/data/evidence/`, including `verifier.sqlite3`, outcomes,
+`data/sentinel/runs/packaged-boutique-*/data/evidence/`, including `verifier.sqlite3`, outcomes,
 execution records and dashboard validation. Image caches and Docker Desktop
 remain. If the launcher was force-closed, inspect that run's `bootstrap` folder
 for a leftover `operator-kubeconfig.yaml`; remove that exact credential file after

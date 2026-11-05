@@ -10,7 +10,7 @@ import threading
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.verifier_live import LiveEvidenceCollector, collect_window
+from services.verifier.live import LiveEvidenceCollector, collect_window
 
 
 class DemoKubernetes:

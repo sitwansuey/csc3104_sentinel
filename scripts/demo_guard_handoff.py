@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.demo_guard import DEFAULT_NOW, load_fixtures, utc_timestamp
-from services.guard import assert_decision_usable, evaluate, proposal_fingerprint, template_sha256
+from services.guard.core import assert_decision_usable, evaluate, proposal_fingerprint, template_sha256
 from shared.contracts import ContractError
 
 

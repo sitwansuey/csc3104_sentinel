@@ -10,19 +10,19 @@ Coordinator. It never performs recovery actions.
 From the repository root, with Python 3.12+, kubectl and an explicit context:
 
 ```powershell
-python -m services.observer_cli run --context kind-sentinel-lab --namespace sentinel-demo --deployment demo-api --cluster-id sentinel-lab --collect-logs
-python -m services.observer_cli status --state runs/observer.sqlite3
-python -m services.observer_cli pending --state runs/observer.sqlite3
+python -m services.observer.cli run --context kind-sentinel-lab --namespace sentinel-demo --deployment demo-api --cluster-id sentinel-lab --collect-logs
+python -m services.observer.cli status --state data/sentinel/runs/observer.sqlite3
+python -m services.observer.cli pending --state data/sentinel/runs/observer.sqlite3
 ```
 
 The first command runs until Ctrl+C/SIGTERM. Use `--poll-count 1` for one poll.
-Default files are `runs/observer.sqlite3` and `runs/coordinator.sqlite3`; override
+Default files are `data/sentinel/runs/observer.sqlite3` and `data/sentinel/runs/coordinator.sqlite3`; override
 them with `--state` and `--coordinator-db`. They must be separate databases.
 The runtime uses Owner 1's public ingestion transaction and stores one durable
 `planner.request` per new incident. It does not run a synthetic Planner or drain
 another component's queue.
 
-`samples/policy.json` supplies the default 30-second threshold. The runtime adds
+`data/sentinel/samples/policy.json` supplies the default 30-second threshold. The runtime adds
 `detection.max_sample_gap_seconds=45` unless configured. An interval must be
 positive and smaller than that gap. Changing a database's configured target or
 policy is rejected; preserve its pending messages and choose a new state file
@@ -87,9 +87,9 @@ The manifest targets only `sentinel-demo/demo-api`; adapt names and storage
 explicitly before another environment.
 
 ```powershell
-docker build -f services/observer.Dockerfile -t sentinel-observer:0.2.0 .
+docker build -f deploy/docker/observer.Dockerfile -t sentinel-observer:0.2.0 .
 kind load docker-image sentinel-observer:0.2.0 --name sentinel-lab
-kubectl --context kind-sentinel-lab apply -f infra/observer.yaml
+kubectl --context kind-sentinel-lab apply -f deploy/sentinel/observer.yaml
 kubectl --context kind-sentinel-lab -n sentinel-demo rollout status deployment/sentinel-observer --timeout=120s
 kubectl --context kind-sentinel-lab -n sentinel-demo logs deployment/sentinel-observer --tail=10
 ```
@@ -159,7 +159,7 @@ The deployed non-root Observer passed the following real kind-cluster checks:
 | Restricted RBAC | Required reads allowed; Deployment patch, Secret read and Pod exec denied |
 
 Incident: `INC-7018A1A1A3C9`. Raw evidence from this run is retained at
-`runs/buddy2-runtime-validation/`. **374 tests** passed for the final source, including restart timer
+`data/sentinel/runs/buddy2-runtime-validation/`. **374 tests** passed for the final source, including restart timer
 preservation, stale samples, missing-observation gaps, identity changes,
 ownership filtering, optional/missing logs, rotating token reads, redirects,
 transaction rollback, delivery failure and replay after Coordinator acceptance.
@@ -183,6 +183,6 @@ the same PVC and existing first incident. It passed with the final source:
 
 The earlier record remained intact. Final source hashes for the four core worker
 modules were compared with the running container and matched. Repeated evidence:
-`runs/observer-runtime-20261024T182451Z-f14c0e/`. Both demo and Observer were left healthy.
+`data/sentinel/runs/observer-runtime-20261024T182451Z-f14c0e/`. Both demo and Observer were left healthy.
 The Coordinator records remain OPEN awaiting the real downstream services;
 operator restoration does not fabricate a Verifier outcome or close incidents.

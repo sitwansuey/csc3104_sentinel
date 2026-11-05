@@ -11,7 +11,7 @@ from shared.contracts import validate_message
 
 
 def main():
-    paths = sorted((ROOT / "samples/messages").glob("*.json"))
+    paths = sorted((ROOT / "data/sentinel/samples/messages").glob("*.json"))
     if not paths:
         raise ValueError("No example messages found")
     messages = [json.loads(path.read_text()) for path in paths]
@@ -28,7 +28,7 @@ def main():
     known_evidence = {s["evidence_id"] for s in incident["signals"]}
     if not set(proposal["evidence_refs"]) <= known_evidence:
         raise ValueError("Proposal references missing evidence")
-    baseline = json.loads((ROOT / "samples/baseline.json").read_text())
+    baseline = json.loads((ROOT / "data/sentinel/samples/baseline.json").read_text())
     canonical = json.dumps(baseline["pod_template"], sort_keys=True, separators=(",", ":")).encode()
     digest = hashlib.sha256(canonical).hexdigest()
     if digest != proposal["parameters"]["template_sha256"] or digest != baseline["template_sha256"]:

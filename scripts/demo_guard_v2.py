@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.demo_guard import DEFAULT_NOW, load_fixtures
-from services.guard import evaluate_with_report, proposal_fingerprint, template_sha256
+from services.guard.core import evaluate_with_report, proposal_fingerprint, template_sha256
 
 
 SCENARIOS = {

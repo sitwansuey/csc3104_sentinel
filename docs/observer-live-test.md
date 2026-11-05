@@ -23,7 +23,7 @@ and status (4). Allow about 4–5 minutes for the live test, plus setup time.
 ## Configuration and acceptance
 
 - Context: `kind-sentinel-lab`; namespace: `sentinel-demo`; Deployment: `demo-api`.
-- Policy: `samples/policy.json`; `detection.failure_duration_seconds`: 30.
+- Policy: `data/sentinel/samples/policy.json`; `detection.failure_duration_seconds`: 30.
 - Poll interval: 15 seconds between reads, plus collection time.
 - Healthy: 5 polls, spanning at least 60 seconds; desired replicas must be
   positive, ready and available at every poll, with the generation observed.
@@ -47,7 +47,7 @@ treating an incomplete window as a pass.
 
 ## Evidence
 
-Each run creates a unique ignored `runs/windows-lab-<timestamp>-<id>/` folder:
+Each run creates a unique ignored `data/sentinel/runs/windows-lab-<timestamp>-<id>/` folder:
 
 - `terminal.log`: executed commands and output.
 - `healthy-observer.json`, `failed-observer.json`, `recovered-observer.json`:
@@ -98,7 +98,7 @@ start new episodes.
 Environment: Python 3.13.2, kind v0.33.0 go1.26.7 windows/amd64, Docker Engine
 29.4.3, kubectl v1.34.1, Kubernetes server
 v1.37.0. Raw live evidence is retained at:
-`runs/windows-lab-20261025-014422-a51cb5/`. Unit output: `runs/issue3-unit-tests.log`.
+`data/sentinel/runs/windows-lab-20261025-014422-a51cb5/`. Unit output: `data/sentinel/runs/issue3-unit-tests.log`.
 The shareable evidence archive includes source hashes for the tested files.
 
 Setup initially failed on stale Docker runtime sockets. Only the socket-containing

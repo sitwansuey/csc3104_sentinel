@@ -10,8 +10,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.guard_common import GuardInputError
-from services.guard_resources import assess, validate_policy
+from services.guard.common import GuardInputError
+from services.guard.resources import assess, validate_policy
 
 
 NOW = datetime(2026, 10, 10, 12, 0, 40, tzinfo=timezone.utc)

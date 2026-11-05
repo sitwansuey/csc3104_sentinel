@@ -16,8 +16,8 @@ from scripts.boutique_connected import (APPLICATIONS, UPSTREAM, UPSTREAM_SHA256,
                                         configured_graph, connected_manifest, decoded_resources, image_digest, readiness)
 from scripts.boutique_storefront import StorefrontProbe
 from scripts.test_boutique_live import BoutiqueExperiment
-from services.executor_store import fingerprint
-from services.verifier import verify
+from services.executor.store import fingerprint
+from services.verifier.core import verify
 
 
 def resources():

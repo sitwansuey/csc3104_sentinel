@@ -3,7 +3,7 @@ import threading
 import unittest
 from urllib.error import URLError
 
-from services.verifier_http import EvidenceHTTP, EvidenceUnavailable, validate_url
+from services.verifier.http import EvidenceHTTP, EvidenceUnavailable, validate_url
 
 
 class Handler(BaseHTTPRequestHandler):

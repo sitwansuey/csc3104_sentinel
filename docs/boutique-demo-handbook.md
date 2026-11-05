@@ -72,7 +72,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-
 ```
 
 The wrapper checks prerequisites and creates/reuses only `sentinel-boutique-lab`
-using `infra/kind.yaml`. It runs `scripts/test_boutique_live.py`. It does not run
+using `deploy/kind/kind.yaml`. It runs `scripts/test_boutique_live.py`. It does not run
 the older `demo-api` test or change another cluster's workloads. This dedicated
 test resets its shipping Deployment on rerun; do not place unrelated work there.
 kind creation can change your default kubectl context; commands here are explicit.
@@ -80,7 +80,7 @@ kind creation can change your default kubectl context; commands here are explici
 The console prints both:
 
 ```text
-Boutique evidence: ...\runs\boutique-live-...
+Boutique evidence: ...\data\sentinel\runs\boutique-live-...
 Live Boutique dashboard: http://127.0.0.1:8765
 ```
 
@@ -109,7 +109,7 @@ waiting while you explain the healthy service and UI. The test has:
 - Saved the actual healthy Pod template, hash, UID and evidence in `baseline.json`
   and `baseline-health.json`. Image references are in `images.json`.
 - Created a short-lived executor identity scoped to get/patch the shipping
-  Deployment. The scoped RBAC is generated from `infra/executor-rbac.yaml`.
+  Deployment. The scoped RBAC is generated from `deploy/sentinel/executor-rbac.yaml`.
 
 In the UI, inspect **Overview**, **Kubernetes** and **Monitoring**. CPU/memory
 usage requires Metrics Server, which this experiment does not install. Missing
@@ -150,7 +150,7 @@ Watch these UI views while the script runs automatically:
 | Executor | APPLIED result and action details |
 
 Role 2 uses `KubernetesEvidenceCollector`/`KubectlReader` in
-`services/observer_kubernetes.py`, the detector in `services/observer.py`, and
+`services/observer/kubernetes.py`, the detector in `services/observer/core.py`, and
 `ObserverStore`/`LocalCoordinatorSink` in `runtime/observer_pipeline.py`. It reads
 actual Deployment/owned Pod/event/log evidence and persists checkpoint/outbox
 state in `observer.sqlite`. If a rollout changes during collection, it rejects
@@ -163,13 +163,13 @@ state with zero executor mutations; a real server-side version race; and a
 competing process. These negative cases have evidence files and harness markers;
 not every negative case is a Coordinator-managed action displayed in Guard tables.
 
-For the successful action, `services/coordinator.py::approve()` persists an
+For the successful action, `services/coordinator/core.py::approve()` persists an
 expiring approval. `runtime/guard_pipeline.py` calls the actual Guard and saves
 decisions/reports. `runtime/live_executor.py` obtains fresh validation under
 execution coordination. Human approval cannot bypass a hard Guard constraint.
 
-`runtime/executor_pipeline.py`, `services/executor.py`,
-`services/executor_store.py` and `services/k8s_executor_adapter.py` restore the
+`runtime/executor_pipeline.py`, `services/executor/core.py`,
+`services/executor/store.py` and `services/executor/kubernetes_adapter.py` restore the
 specific stored template with UID/resource-version tests and action evidence in
 one conditional JSON Patch. The executor uses its own restricted kubeconfig;
 setup, injection and measurement use the separate operator identity.
@@ -225,7 +225,7 @@ Use the exact directory printed by your run. To select the most recently
 created experiment from another terminal:
 
 ```powershell
-$boutiqueRun = Get-ChildItem .\runs -Directory -Filter 'boutique-live-*' |
+$boutiqueRun = Get-ChildItem .\data\sentinel\runs -Directory -Filter 'boutique-live-*' |
     Sort-Object CreationTime -Descending |
     Select-Object -First 1
 Get-Content (Join-Path $boutiqueRun.FullName 'summary.json')
@@ -254,7 +254,7 @@ Other important paths:
 | `telemetry.sqlite3` | UI events and actual projected cluster history |
 | `dashboard-cleanup.json` | Recorded successful server/collector shutdown |
 
-`runs/` is ignored by Git. Preserve sanitized evidence separately; raw diagnostic
+`data/sentinel/runs/` is ignored by Git. Preserve sanitized evidence separately; raw diagnostic
 logs can contain application data. The private executor kubeconfig is removed
 after execution; the dashboard never serves that file.
 
@@ -293,7 +293,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-
 ## Recorded integrated validation (historical, before live Role 6)
 
 On 25 October 2026 the unattended integrated run passed on this Windows desktop:
-`runs/boutique-live-20261025T150203Z-404085/` (ignored local evidence).
+`data/sentinel/runs/boutique-live-20261025T150203Z-404085/` (ignored local evidence).
 
 - The real HTTP page and snapshot API returned 200; the API exposed two actual
   incidents, two APPLIED actions, two approvals, four Guard reports and 56 cluster

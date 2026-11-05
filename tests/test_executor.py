@@ -18,15 +18,15 @@ from unittest.mock import patch
 
 from runtime.executor_pipeline import GuardAuthorizer
 from scripts.demo_guard import load_fixtures
-from services.executor import (
+from services.executor.core import (
     ACTION_ANNOTATION, ConditionalWriteConflict, ExecutionAdapters,
     ReadUnavailable, execute,
 )
 from tests.support.executor_fake import FakeDeploymentAPI
-from services.executor_store import (
+from services.executor.store import (
     ActionConflict, LocalTargetCoordinator, SQLiteExecutionLedger, TargetBusy,
 )
-from services.guard import proposal_fingerprint
+from services.guard.core import proposal_fingerprint
 from shared.contracts import validate_message
 
 
@@ -274,7 +274,7 @@ class ExecutorTests(unittest.TestCase):
     def test_local_lock_excludes_another_process_and_is_released_on_abrupt_exit(self):
         child = """
 import json, os, sys
-from services.executor_store import LocalTargetCoordinator, TargetBusy
+from services.executor.store import LocalTargetCoordinator, TargetBusy
 coordinator = LocalTargetCoordinator(sys.argv[1])
 try:
     with coordinator.hold(json.loads(sys.argv[2])):

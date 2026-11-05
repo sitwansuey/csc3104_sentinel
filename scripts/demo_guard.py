@@ -9,7 +9,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from services.guard import evaluate, proposal_fingerprint
+from services.guard.core import evaluate, proposal_fingerprint
 
 
 DEFAULT_NOW = "2026-10-10T12:00:40Z"
@@ -41,11 +41,11 @@ def load_fixtures() -> dict:
         return json.loads((ROOT / relative_path).read_text(encoding="utf-8"))
 
     return {
-        "proposal": read("samples/messages/proposal.json"),
-        "live_state": read("samples/observations.json")["failed-rollout"][-1],
-        "policy": read("samples/policy.json"),
-        "baseline": read("samples/baseline.json"),
-        "dependencies": read("samples/messages/dependency-result.json"),
+        "proposal": read("data/sentinel/samples/messages/proposal.json"),
+        "live_state": read("data/sentinel/samples/observations.json")["failed-rollout"][-1],
+        "policy": read("data/sentinel/samples/policy.json"),
+        "baseline": read("data/sentinel/samples/baseline.json"),
+        "dependencies": read("data/sentinel/samples/messages/dependency-result.json"),
     }
 
 

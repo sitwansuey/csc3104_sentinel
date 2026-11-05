@@ -10,8 +10,8 @@ import json
 from pathlib import Path
 import subprocess
 
-from services.coordinator import acknowledge, dispatch_pending, record_message
-from services.guard import evaluate_with_report
+from services.coordinator.core import acknowledge, dispatch_pending, record_message
+from services.guard.core import evaluate_with_report
 
 
 def json_reader(path):

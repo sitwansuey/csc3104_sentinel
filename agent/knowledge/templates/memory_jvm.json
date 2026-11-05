@@ -1,0 +1,38 @@
+{
+  "id": "wf-memory-jvm",
+  "name": "memory_jvm",
+  "description": "Diagnostic workflow for high memory usage, node memory consumption, JVM CPU load, and JVM Heap OutOfMemory.",
+  "control": "sequence",
+  "tags": ["memory", "ram", "jvm", "oom", "heap", "gc", "garbage", "leak", "allocation", "consumption"],
+  "steps": [
+    {
+      "step_id": "s1_scan_gc_and_oom",
+      "goal": "Scan logs for Full GC pauses, OutOfMemoryError, and heap allocation failures.",
+      "tool": "logs",
+      "tool_args": { "message_column": "message" }
+    },
+    {
+      "step_id": "s2_memory_kpis",
+      "goal": "Inspect container and node memory metrics (working set, heap utilization).",
+      "tool": "metrics",
+      "tool_args": { "kpi_column": "kpi_name", "value_column": "value" }
+    },
+    {
+      "step_id": "s3_verify_persistence",
+      "goal": "Verify whether memory continuously rises without recovery, indicating a leak.",
+      "tool": "metrics"
+    },
+    {
+      "step_id": "s4_check_gc_pause_latency",
+      "goal": "Correlate JVM stop-the-world GC pauses with elevated trace span latency.",
+      "tool": "traces"
+    }
+  ],
+  "rules": [
+    "Routine Young GC ('GC Allocation Failure') is normal JVM operation and not an incident.",
+    "Full GC or OutOfMemory in logs strongly corroborates memory saturation.",
+    "Root cause occurrence time corresponds to the initial surge in heap/memory, not the crash moment."
+  ],
+  "tools": ["logs", "metrics", "traces"]
+}
+

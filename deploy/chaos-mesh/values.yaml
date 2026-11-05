@@ -1,0 +1,13 @@
+# Dedicated local kind lab (containerd); chart version is pinned in the runner.
+controllerManager:
+  replicaCount: 1
+  enableFilterNamespace: true
+  leaderElection:
+    enabled: false
+chaosDaemon:
+  runtime: containerd
+  socketPath: /run/containerd/containerd.sock
+dnsServer:
+  create: true
+dashboard:
+  create: false

@@ -1,0 +1,41 @@
+{
+  "id": "wf-multimodal-rca",
+  "name": "multimodal_rca",
+  "description": "General multi-modal triage workflow across metrics, logs, and traces for unknown or complex incidents.",
+  "control": "sequence",
+  "tags": ["general", "failure", "root", "cause", "incident", "anomaly", "triage", "unknown"],
+  "steps": [
+    {
+      "step_id": "s1_schema_inventory",
+      "goal": "Inspect schemas and available telemetry files to verify columns and coverage.",
+      "tool": "profile"
+    },
+    {
+      "step_id": "s2_metrics_scan",
+      "goal": "Analyze metrics in incident window across all components against 60-minute baseline.",
+      "tool": "metrics"
+    },
+    {
+      "step_id": "s3_corroborate_signals",
+      "goal": "Corroborate abnormal components with trace spans and error logs.",
+      "tool": "logs"
+    },
+    {
+      "step_id": "s4_separate_initiators",
+      "goal": "Separate initiating anomalies from propagated symptoms and check candidate onsets.",
+      "tool": "traces"
+    },
+    {
+      "step_id": "s5_contract_compliance",
+      "goal": "Return exact requested root cause elements conforming to task contract."
+    }
+  ],
+  "rules": [
+    "Compute metric baseline before time filtering to prevent contamination.",
+    "Preserve component IDs exactly as declared in system schema.",
+    "Use UTC+8 for naive timestamps.",
+    "Missing or truncated data lowers diagnostic confidence."
+  ],
+  "tools": ["profile", "metrics", "logs", "traces"]
+}
+

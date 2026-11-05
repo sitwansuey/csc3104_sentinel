@@ -2,10 +2,13 @@
 param([switch]$Setup, [switch]$Cleanup, [switch]$Dashboard,
       [ValidateRange(0,65535)][int]$DashboardPort = 8765, [switch]$ExitAfterTest,
       [switch]$PauseBeforeInjection, [switch]$GuardRejection, [switch]$UIControls, [switch]$Connected,
-      [ValidateRange(1,65535)][int]$StorefrontPort = 8080)
+      [ValidateRange(1,65535)][int]$StorefrontPort = 8080,
+      [switch]$Agent, [string]$AgentConfig)
 
 $ErrorActionPreference = 'Stop'
 if ($ExitAfterTest -and -not $Dashboard) { throw '-ExitAfterTest requires -Dashboard.' }
+if ($AgentConfig -and -not $Agent) { throw '-AgentConfig requires -Agent.' }
+if ($Agent -and $GuardRejection) { throw '-Agent and -GuardRejection are separate scenarios.' }
 if ($UIControls -and (-not $Dashboard -or $PauseBeforeInjection)) { throw '-UIControls requires -Dashboard and replaces -PauseBeforeInjection.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
@@ -29,12 +32,14 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not list kind clusters.' }
     if ($clusters -notcontains $clusterName) {
         if (-not $Setup) { throw 'Run with -Setup to create the dedicated Boutique lab.' }
-        & $kindTool.Path create cluster --name $clusterName --config (Join-Path $projectRoot 'infra/kind.yaml') --wait 120s
+        & $kindTool.Path create cluster --name $clusterName --config (Join-Path $projectRoot 'deploy/kind/kind.yaml') --wait 120s
         if ($LASTEXITCODE -ne 0) { throw 'Boutique cluster setup failed.' }
     }
     $pythonPrefix = @()
     if ((Split-Path -Leaf $pythonTool.Path) -eq 'py.exe') { $pythonPrefix = @('-3') }
     $testOptions = @()
+    if ($Agent) { $testOptions += '--agent' }
+    if ($AgentConfig) { $testOptions += @('--agent-config', $AgentConfig) }
     if ($Dashboard) { $testOptions += @('--dashboard', '--dashboard-port', "$DashboardPort") }
     if ($ExitAfterTest) { $testOptions += '--exit-after-test' }
     if ($PauseBeforeInjection) { $testOptions += '--pause-before-injection' }
