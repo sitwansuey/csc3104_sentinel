@@ -16,6 +16,7 @@ import { RecoveryOverview } from "@/components/recovery-overview"
 import { IncidentDetails } from "@/components/incident-details"
 import { LabExperiment } from "@/components/lab-experiment"
 import { BoutiqueOverview } from "@/components/boutique-overview"
+import { SecurityOverview } from "@/components/security-overview"
 import { age, fresh, identity, observedClusters, scope, targetLabel, time, type Scoped } from "@/lib/data"
 import { decisionPresentation } from "@/lib/decision-display"
 import type { ChartRange } from "@/lib/chart-data"
@@ -32,6 +33,7 @@ const views:{id:View;label:string;icon:LucideIcon;member?:number;description:str
   {id:"guard",label:"Recovery Guard",icon:ShieldCheck,member:4,description:"Policy findings, approval requirements and expiring decisions."},
   {id:"executor",label:"Executor",icon:Terminal,member:5,description:"Reported attempts, conflicts and reconciliation requirements."},
   {id:"verification",label:"Dependencies / Health",icon:GitBranch,member:6,description:"Dependency findings and post-execution health windows."},
+  {id:"security",label:"Security",icon:Shield,description:"gRPC inspection decisions, image CVEs and package patch recommendations."},
 ]
 function initialView():View { const value=location.hash.slice(1);return views.some(v=>v.id===value)?value as View:"overview" }
 export default function App() {
@@ -123,6 +125,7 @@ type ViewProps={view:View;snapshot:Snapshot;data:Scoped;navigate:(view:View)=>vo
 function ViewContent({view,snapshot,data,navigate,range,now,transportStale,inspect}:ViewProps) {
   const cluster=data.clusters[0],demo=snapshot.mode==="synthetic",live={demo,transportStale}
   if(view==="boutique")return <BoutiqueOverview records={snapshot.boutique_history||[]} cluster={cluster} now={now} stale={transportStale} playback={demo} inspect={inspect}/>
+  if(view==="security")return <SecurityOverview events={snapshot.security_events||[]} now={now}/>
   if(view==="overview")return <RecoveryOverview data={data} snapshot={snapshot} range={range} now={now} transportStale={transportStale} navigate={navigate} inspect={inspect}/>
   if(view==="cluster")return <><ClusterScope cluster={cluster} {...live}/><ClusterStats clusters={data.clusters} {...live}/><div className="grid gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,1fr)]"><ResourceChart clusters={data.clusters} telemetry={data.telemetry} range={range} demo={demo}/><Sources cluster={cluster} {...live}/></div><NodeGrid cluster={cluster} {...live}/><PodTable cluster={cluster} {...live}/><WarningEvents cluster={cluster}/>{cluster&&Object.values(cluster.truncation).some(n=>n>0)&&<Context>Inventory exceeded collector limits. Lists and aggregates may be incomplete.</Context>}</>
   return <><RecoveryStats data={data} {...live} now={now}/>{view==="coordinator"?<Coordinator snapshot={snapshot} data={data} now={now} inspect={inspect}/>:view==="monitoring"?<Monitoring data={data} range={range} {...live} now={now}/>:view==="planner"?<Planner data={data}/>:view==="guard"?<Guard snapshot={snapshot} data={data} {...live} now={now}/>:view==="executor"?<Executor snapshot={snapshot} data={data}/>:<Verification data={data}/>}</>

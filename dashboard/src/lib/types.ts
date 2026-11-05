@@ -24,6 +24,7 @@ export interface Cluster {
   summary: Record<string, number | null>; truncation: Record<string, number>;
 }
 export interface Snapshot {
+  security_events?: SecurityEvent[];
   boutique_history?: BoutiqueObservation[];
   lab?: LabSession;
   generated_at: string; mode: string; demo_step?: string; limit: number; sources: Record<string, Source>;
@@ -55,4 +56,16 @@ export interface BoutiqueObservation {
   stage: string; services: BoutiqueService[] | null; journey: BoutiqueJourney | null;
   incident_id: string | null; action_id: string | null;
 }
-export type View = "overview" | "cluster" | "boutique" | "coordinator" | "monitoring" | "planner" | "guard" | "executor" | "verification"
+export interface SecurityFinding {
+  id: string; package: string; installed: string; fixed: string | null; severity: string; recommendation: string;
+}
+export interface SecurityEvent {
+  sequence: number; kind: "inspection" | "image_scan" | "alert" | "monitor"; at: string;
+  method?: string; bytes?: number; verdict?: string; rule?: string;
+  image?: string; status?: string; scanner?: string; counts?: Record<string, number>;
+  findings?: SecurityFinding[]; automatic_patching?: boolean; detail?: string;
+  code?: string; severity?: string; completed?: number; total?: number;
+  interval_seconds?: number; next_scan_at?: string | null;
+  scanned_at?: string;
+}
+export type View = "overview" | "cluster" | "boutique" | "security" | "coordinator" | "monitoring" | "planner" | "guard" | "executor" | "verification"

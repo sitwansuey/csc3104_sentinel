@@ -201,6 +201,14 @@ below describes the older operator-run experiment and its menu separately.
 
 ## Current implementation
 
+The opt-in [security lab](docs/security.md) adds an mTLS gRPC reverse proxy,
+schema-aware shipping request inspection, image CVE detection and package patch
+recommendations in the dashboard's Security view. It is isolated from existing
+Kubernetes labs; scanning does not automatically patch or deploy images.
+The [connected security lab](docs/security-connected.md) runs the full storefront
+with inspected shipping traffic, enforced Calico policies, candidate validation
+and scheduled image scans/alerts in its own kind cluster.
+
 For opt-in browser buttons that inject the Boutique lab scenarios and display
 their measured outcomes, see [browser-controlled experiments](docs/experiment-controls.md).
 The default dashboard remains read-only; the experiment controls do not approve
