@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "fault": "pod",
+  "target_service": "shippingservice",
+  "kind": "PodChaos",
+  "spec": {
+    "action": "pod-failure"
+  }
+}

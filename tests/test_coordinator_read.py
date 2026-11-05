@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from runtime.dashboard import snapshot
-from services.coordinator import SQLiteStore, LocalEventBus, handle
+from services.coordinator.core import SQLiteStore, LocalEventBus, handle
 from services.coordinator_read import read_records
 
 
@@ -13,7 +13,7 @@ class CoordinatorReadTests(unittest.TestCase):
     def test_public_reader_matches_persisted_incident_without_modifying_database(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'coordinator.db'
-            incident = json.loads((Path(__file__).parents[1] / 'samples/messages/incident.json').read_text())
+            incident = json.loads((Path(__file__).parents[1] / 'data/sentinel/samples/messages/incident.json').read_text())
             with SQLiteStore(path) as store:
                 handle(incident, store, LocalEventBus())
             before = path.read_bytes()

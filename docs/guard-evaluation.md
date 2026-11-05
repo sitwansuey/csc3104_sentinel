@@ -20,7 +20,7 @@ From the repository root with Python 3.12+:
 
 ```powershell
 python -m unittest tests.test_guard_state_policy tests.test_guard_evaluation -v
-python scripts/evaluate_guard.py --repeats 30 --warmups 2 --output runs/guard-evaluation-new
+python scripts/evaluate_guard.py --repeats 30 --warmups 2 --output data/experimentation/runs/guard-evaluation-new
 ```
 
 Choose a new output directory on each run. Existing directories are refused.
@@ -51,7 +51,7 @@ meaning; retain old results alongside their original definitions.
 | `full_available` | All preceding checks plus baseline identity/hash, rollback necessity, baseline health/references, security, container/workload budgets, exact dependency identity/status/freshness, operator approval, decision binding/expiry | Server admission dry-run and runtime preview |
 
 Both configurations use the same state/policy check implementation in
-`services/guard.py`. The partial assessor returns refusal codes only. Its
+`services/guard/core.py`. The partial assessor returns refusal codes only. Its
 comparison ALLOW means that the selected checks passed; it is not a wire
 `guard_result` and cannot authorize an Executor command. Full validation uses
 the production evaluator and checks that each resulting ALLOW is usable with

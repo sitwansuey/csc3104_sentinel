@@ -4,9 +4,9 @@ import unittest
 from unittest.mock import patch
 
 from scripts.demo_offline_flow import OfflineFlow, fixture, demonstrate
-from services.coordinator import handle
+from services.coordinator.core import handle
 from runtime.planner_pipeline import process_planner_requests
-from services.planner import retrieve_runbooks, mock_provider
+from services.planner.core import retrieve_runbooks, mock_provider
 
 
 class OfflineFlowTests(unittest.TestCase):

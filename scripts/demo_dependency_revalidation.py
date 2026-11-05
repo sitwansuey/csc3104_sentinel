@@ -10,12 +10,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from runtime.guard_pipeline import process_guard_requests
-from services.coordinator import LocalEventBus, SQLiteStore, approve, handle
-from services.verifier import inspect_dependencies
+from services.coordinator.core import LocalEventBus, SQLiteStore, approve, handle
+from services.verifier.core import inspect_dependencies
 
 
 def fixture(name):
-    return json.loads((ROOT / "samples" / name).read_text(encoding="utf-8"))
+    return json.loads((ROOT / "data/sentinel/samples" / name).read_text(encoding="utf-8"))
 
 
 def at(second):

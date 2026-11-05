@@ -53,7 +53,7 @@ def setup_cluster(directory):
     clusters = command(["kind", "get", "clusters"]).stdout.split()
     if CLUSTER not in clusters:
         command(["kind", "create", "cluster", "--name", CLUSTER, "--image", "kindest/node:v1.37.0",
-                 "--config", ROOT / "infra/kind-security.yaml", "--wait", "0s"])
+                 "--config", ROOT / "deploy/kind/kind-security.yaml", "--wait", "0s"])
     nodes = command(["kind", "get", "nodes", "--name", CLUSTER]).stdout.split()
     if nodes != [CLUSTER + "-control-plane"]:
         raise ValueError("This lab requires its dedicated single node")
@@ -105,7 +105,7 @@ def prepare(directory, candidate):
     for image in (ENVOY, CLIENT):
         command(["docker", "pull", image])
         command(["docker", "exec", node, "crictl", "pull", image])
-    command(["docker", "build", "-f", ROOT / "infra/security-inspector.Dockerfile", "-t", INSPECTOR, ROOT])
+    command(["docker", "build", "-f", ROOT / "deploy/docker/security-inspector.Dockerfile", "-t", INSPECTOR, ROOT])
     inspector, inspector_id = local_manifest(INSPECTOR, node, "sentinel.local/security-inspector")
     base = connected_manifest(resources, images, NAMESPACE)
     if candidate:
@@ -135,7 +135,7 @@ def prepare(directory, candidate):
         path.chmod(0o600)
         kube("apply", "-f", path)
     proto = {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "security-test-proto", "namespace": NAMESPACE},
-             "data": {"shipping.proto": (ROOT / "demo/security/shipping.proto").read_text()}}
+             "data": {"shipping.proto": (ROOT / "experiments/workloads/security/shipping.proto").read_text()}}
     save(directory / "proto.json", proto)
     kube("apply", "-f", directory / "proto.json")
     for name in sorted(APPLICATIONS | {"security-gateway"}):
@@ -271,7 +271,7 @@ def validate(directory, storefront):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("start", "test", "serve", "stop"))
-    parser.add_argument("--directory", type=Path, default=ROOT / "runs/boutique-security")
+    parser.add_argument("--directory", type=Path, default=ROOT / "data/sentinel/runs/boutique-security")
     parser.add_argument("--candidate", type=Path, help="Reviewed candidate.json with adjacent passing scan.json")
     parser.add_argument("--storefront-port", type=int, default=8081)
     parser.add_argument("--dashboard-port", type=int, default=8767)

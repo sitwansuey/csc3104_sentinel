@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "fault": "cpu",
+  "target_service": "shippingservice",
+  "kind": "StressChaos",
+  "spec": {
+    "stressors": {
+      "cpu": {
+        "workers": 1,
+        "load": 90
+      }
+    }
+  }
+}

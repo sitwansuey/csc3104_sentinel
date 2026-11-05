@@ -37,7 +37,7 @@ try {
         if ($LASTEXITCODE -ne 0 -or $remaining -contains 'sentinel-lab') {
             throw 'Cluster teardown could not be verified.'
         }
-        Write-Host 'Removed sentinel-lab. Evidence in runs/ and cached images are retained.'
+        Write-Host 'Removed sentinel-lab. Evidence in data/sentinel/runs/ and cached images are retained.'
     }
 }
 exit $resultCode

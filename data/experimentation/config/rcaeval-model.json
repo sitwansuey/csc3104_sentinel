@@ -1,0 +1,10 @@
+{
+  "base_url": "http://127.0.0.1:11434",
+  "model": "qwen3:14b",
+  "max_steps": 16,
+  "evidence_review": true,
+  "timeout": 300,
+  "num_ctx": 16384,
+  "num_predict": 2048,
+  "seed": 42
+}

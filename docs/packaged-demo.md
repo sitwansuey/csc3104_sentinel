@@ -89,7 +89,7 @@ Do not interrupt bootstrap while binary image export/import is running.
 Evidence is retained under:
 
 ```text
-runs/packaged-boutique-<timestamp>-<id>/
+data/sentinel/runs/packaged-boutique-<timestamp>-<id>/
   package-session.json        image identity, published URL and cluster
   host-cleanup.json           host teardown results
   bootstrap/environment.json  reviewed image digests and fixed cluster scope
@@ -109,7 +109,7 @@ image caches are intentionally not deleted or globally pruned.
 
 | File | Responsibility |
 | --- | --- |
-| `infra/demo-runner.Dockerfile` | Multi-stage UI build/test and non-root Python/kubectl runtime |
+| `deploy/docker/demo-runner.Dockerfile` | Multi-stage UI build/test and non-root Python/kubectl runtime |
 | `.dockerignore` | Keeps Git history, credentials, run evidence and host build caches out of the build context |
 | `scripts/demo-start.ps1` | Host build/preparation, new cluster, image import, internal kubeconfig, mounts/port and foreground run |
 | `scripts/packaged-demo-common.ps1` | Fixed names, tool lookup, digest checks, binary-safe imports and scoped teardown |
@@ -152,7 +152,7 @@ Option B: transfer the already-built runner image plus the matching repository
 version. On the original machine:
 
 ```powershell
-docker save --output .\runs\sentinel-boutique-runner.tar sentinel-boutique-runner:0.3.0
+docker save --output .\data\sentinel\runs\sentinel-boutique-runner.tar sentinel-boutique-runner:0.3.0
 ```
 
 Copy that tar separately. On the laptop:
@@ -203,9 +203,9 @@ recorded Enter prompts do not validate the current three-prompt sequence.
 | Cleanup | Runner and named cluster removed; host operator and restricted executor credential files removed; evidence retained |
 | Runtime boundary | Inspected non-root UID 10001, read-only root, dropped ALL capabilities, read-only bootstrap mount, writable data mount, kind network and host-loopback UI publication; Docker/kind/Node/npm absent |
 
-Online-prepared run: `runs/packaged-boutique-20261026-014835-a3aa07/`.
-Cached/browser run: `runs/packaged-boutique-20261026-021759-2f6ab0/`.
-Interactive/boundary run: `runs/packaged-boutique-20261026-022320-26a851/`.
+Online-prepared run: `data/sentinel/runs/packaged-boutique-20261026-014835-a3aa07/`.
+Cached/browser run: `data/sentinel/runs/packaged-boutique-20261026-021759-2f6ab0/`.
+Interactive/boundary run: `data/sentinel/runs/packaged-boutique-20261026-022320-26a851/`.
 These directories are ignored local evidence. The browser run includes
 `browser-validation.json` and UI screenshots; both include the normal experiment
 evidence under `data/evidence/` and `host-cleanup.json`. Initial unsuccessful

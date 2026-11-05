@@ -13,7 +13,7 @@ from urllib.request import urlopen
 
 from scripts.boutique_dashboard import BoutiqueDashboard
 from scripts.guard_rejection_demo import UNCHANGED_FIELDS
-from services.coordinator import SQLiteStore
+from services.coordinator.core import SQLiteStore
 
 
 class BoutiqueDashboardTests(unittest.TestCase):
@@ -156,6 +156,25 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
         self.assertEqual((result["incidents"], result["applied_actions"], result["rejected_actions"]), (3, 2, 1))
         self.assertEqual((result["role6_outcomes"], result["dependency_results"]), (2, 3))
         self.assertEqual(result["executor_patch_attempts_for_rejected_action"], 0)
+
+    def test_agent_dashboard_requires_model_call_and_matching_verifier_outcome(self):
+        snapshot = deepcopy(self.snapshot)
+        for field in ("incidents", "actions", "approvals"):
+            snapshot[field] = snapshot[field][:1]
+        snapshot["messages"] = [m for m in snapshot["messages"] if m["message"]["action_id"] == "ACT-0"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "approved-rollback").mkdir()
+            calls = root / "approved-rollback/model-calls.json"
+            calls.write_text(json.dumps([{"role": "Recovery Planner"}]))
+            dashboard = BoutiqueDashboard(root, context="test-context", cluster_id="test-cluster",
+                                          namespace="test-namespace", port=0)
+            dashboard.url = "http://127.0.0.1:9999"
+            with patch.object(dashboard, "_snapshot", return_value=snapshot):
+                self.assertEqual(dashboard.verify_agent()["status"], "PASS")
+                calls.write_text("[]")
+                with self.assertRaisesRegex(RuntimeError, "model planning"):
+                    dashboard.verify_agent()
 
     def test_standalone_refusal_still_validates_one_rejected_proposal(self):
         for field in ("incidents", "actions", "reports"):

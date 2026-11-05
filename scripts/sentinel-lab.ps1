@@ -16,11 +16,11 @@ $script:Image = 'sentinel-demo:0.1.0'
 $script:PythonExe = $null
 $script:PythonPrefix = @()
 $runName = 'windows-lab-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0, 6)
-$script:RunDirectory = Join-Path $projectRoot ('runs\' + $runName)
+$script:RunDirectory = Join-Path $projectRoot ('data\sentinel\runs\' + $runName)
 New-Item -ItemType Directory -Force -Path $script:RunDirectory | Out-Null
-$script:BaselineFile = Join-Path $projectRoot 'runs\windows-lab-baseline.json'
-$script:CoordinatorDb = 'runs/coordinator.sqlite3'
-$script:TelemetryDb = 'runs/telemetry.sqlite3'
+$script:BaselineFile = Join-Path $projectRoot 'data\sentinel\runs\windows-lab-baseline.json'
+$script:CoordinatorDb = 'data/sentinel/runs/coordinator.sqlite3'
+$script:TelemetryDb = 'data/sentinel/runs/telemetry.sqlite3'
 $script:DashboardWindows = @()
 
 function Require-Tool([string]$Name) {
@@ -123,13 +123,13 @@ function Setup-Lab {
     if ($clusters -contains $script:Cluster) {
         Write-Host 'Reusing the existing sentinel-lab cluster.'
     } else {
-        Invoke-Tool 'kind' @('create', 'cluster', '--name', $script:Cluster, '--config', 'infra/kind.yaml', '--wait', '120s')
+        Invoke-Tool 'kind' @('create', 'cluster', '--name', $script:Cluster, '--config', 'deploy/kind/kind.yaml', '--wait', '120s')
     }
     # Restore this named cluster's context if the user has removed its kubeconfig entry.
     Invoke-Tool 'kind' @('export', 'kubeconfig', '--name', $script:Cluster)
-    Invoke-Tool 'docker' @('build', '-t', $script:Image, 'demo')
+    Invoke-Tool 'docker' @('build', '-t', $script:Image, 'experiments/workloads/demo')
     Invoke-Tool 'kind' @('load', 'docker-image', $script:Image, '--name', $script:Cluster)
-    Invoke-Kube @('apply', '-f', 'infra/demo.yaml')
+    Invoke-Kube @('apply', '-f', 'deploy/workloads/demo.yaml')
     Invoke-Kube @('rollout', 'status', 'deployment/demo-api', '--timeout=120s')
     Test-Health
     Save-Deployment 'setup' | Out-Null
@@ -232,7 +232,7 @@ function Cleanup-Lab {
     } else {
         Write-Host 'Demo image is already absent.'
     }
-    Write-Host 'PASS: Local lab cleanup complete. Logs are retained under runs/.' -ForegroundColor Green
+    Write-Host 'PASS: Local lab cleanup complete. Logs are retained under data/sentinel/runs/.' -ForegroundColor Green
     Write-Host 'Stop any separate port-forward or dashboard windows with Ctrl+C. Docker Desktop can then be closed.'
 }
 

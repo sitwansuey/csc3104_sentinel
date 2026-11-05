@@ -64,9 +64,9 @@ Requirements are Docker Desktop's Linux engine, kind, kubectl, Python 3.12+ and
 OpenSSL on PATH. No host Go installation or Python packages are needed.
 
 ```powershell
-python scripts/build_security_candidate.py --directory runs/shipping-candidate
-$candidate = Get-Content runs/shipping-candidate/candidate.json -Raw | ConvertFrom-Json
-python scripts/scan_image_security.py --local-image $candidate.image_id --output runs/shipping-candidate/scan.json
+python scripts/build_security_candidate.py --directory data/sentinel/runs/shipping-candidate
+$candidate = Get-Content data/sentinel/runs/shipping-candidate/candidate.json -Raw | ConvertFrom-Json
+python scripts/scan_image_security.py --local-image $candidate.image_id --output data/sentinel/runs/shipping-candidate/scan.json
 ```
 
 This checks the upstream release commit, builds with Go 1.27.3 and
@@ -84,7 +84,7 @@ only while comparing the same repository and exact digest.
 ## Start, test and review
 
 ```powershell
-python scripts/boutique_security.py start --directory runs/boutique-security --candidate runs/shipping-candidate/candidate.json
+python scripts/boutique_security.py start --directory data/sentinel/runs/boutique-security --candidate data/sentinel/runs/shipping-candidate/candidate.json
 ```
 
 The candidate must have an adjacent successful scan for its exact identity with
@@ -109,7 +109,7 @@ and email services are demos.
 To rerun tests against a retained run, close the current launcher first:
 
 ```powershell
-python scripts/boutique_security.py test --directory runs/boutique-security
+python scripts/boutique_security.py test --directory data/sentinel/runs/boutique-security
 ```
 
 To reopen the UI/forward without injecting faults, use `serve` with that run
@@ -122,7 +122,7 @@ need a reviewed Guard policy and evidence/RBAC handoff before combining workflow
 ## Daily scans and alerts
 
 ```powershell
-python scripts/watch_security.py --inventory runs/boutique-security/scan-inventory.json --journal runs/boutique-security/telemetry.sqlite3 --directory runs/boutique-security/scans --interval-seconds 86400
+python scripts/watch_security.py --inventory data/sentinel/runs/boutique-security/scan-inventory.json --journal data/sentinel/runs/boutique-security/telemetry.sqlite3 --directory data/sentinel/runs/boutique-security/scans --interval-seconds 86400
 ```
 
 The inventory is the immutable image set captured at deployment, including local
@@ -153,13 +153,13 @@ heartbeat older than 45 seconds as stale and does not imply an active scheduler.
 Request monitor shutdown after its current bounded scan:
 
 ```powershell
-python scripts/watch_security.py --stop --journal runs/boutique-security/telemetry.sqlite3 --directory runs/boutique-security/scans
+python scripts/watch_security.py --stop --journal data/sentinel/runs/boutique-security/telemetry.sqlite3 --directory data/sentinel/runs/boutique-security/scans
 ```
 
 Stop the named cluster and request owned UI/monitor shutdown:
 
 ```powershell
-python scripts/boutique_security.py stop --directory runs/boutique-security
+python scripts/boutique_security.py stop --directory data/sentinel/runs/boutique-security
 ```
 
 Evidence/images remain. The matching run directory matters for host process
@@ -167,6 +167,9 @@ shutdown. Each UI run records its PID/port-forward PID; each monitor records its
 PID. A fresh start uses a new directory, after stopping the previous named lab.
 
 ## Recorded validation: 4 November 2026
+
+The recorded evidence path below predates the data-layout migration; current
+commands use `data/sentinel/runs/`.
 
 Actual run: `runs/boutique-security-20261104-complete/`. All 11 application
 services were ready; actual frontend and checkout shipping requests appeared in

@@ -19,8 +19,8 @@ from runtime.otlp_receiver import MAX_BYTES, make_receiver
 from runtime.observer_pipeline import LocalCoordinatorSink, ObserverStore
 from runtime.observer_fleet import load_targets, state_path, run_fleet
 from runtime.observer_pipeline import status_file
-from services import observer_cli
-from services.observer import Observer
+from services.observer import cli as observer_cli
+from services.observer.core import Observer
 from services.observer_telemetry import TelemetryError, TelemetryStore, normalize
 
 NOW = datetime(2026, 10, 26, 0, 0, 30, tzinfo=timezone.utc)
@@ -54,7 +54,7 @@ def payload(signal, at=NOW, *, pod="pod-1", service="demo-api", namespace="senti
 
 
 def observation(at=NOW):
-    item = json.loads((ROOT / "samples/observations.json").read_text())["healthy"][0]
+    item = json.loads((ROOT / "data/sentinel/samples/observations.json").read_text())["healthy"][0]
     item["captured_at"] = at.isoformat()
     item["deployment"]["metadata"]["uid"] = "deployment-1"
     item["pods"][0]["metadata"]["uid"] = "pod-1"

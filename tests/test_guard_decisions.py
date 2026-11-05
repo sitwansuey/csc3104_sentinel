@@ -10,12 +10,12 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.guard import (
+from services.guard.core import (
     GuardInputError, assert_decision_usable, evaluate_with_report,
     proposal_fingerprint, template_sha256,
 )
-from services.guard_common import json_sha256
-from services.guard_decisions import validate_policy
+from services.guard.common import json_sha256
+from services.guard.decisions import validate_policy
 from shared.contracts import ContractError, validate_message
 
 
@@ -32,11 +32,11 @@ def fixture(path):
 
 class GuardDecisionTests(unittest.TestCase):
     def setUp(self):
-        self.proposal = fixture("samples/messages/proposal.json")
-        self.live = fixture("samples/observations.json")["failed-rollout"][-1]
-        self.policy = fixture("samples/policy.json")
-        self.baseline = fixture("samples/baseline.json")
-        self.dependencies = fixture("samples/messages/dependency-result.json")
+        self.proposal = fixture("data/sentinel/samples/messages/proposal.json")
+        self.live = fixture("data/sentinel/samples/observations.json")["failed-rollout"][-1]
+        self.policy = fixture("data/sentinel/samples/policy.json")
+        self.baseline = fixture("data/sentinel/samples/baseline.json")
+        self.dependencies = fixture("data/sentinel/samples/messages/dependency-result.json")
         self.approval = {
             "action_id": self.proposal["action_id"],
             "proposal_sha256": proposal_fingerprint(self.proposal),
@@ -257,7 +257,7 @@ class GuardDecisionTests(unittest.TestCase):
                     self.usable(decision)
 
     def test_legacy_wire_contract_still_valid_but_cannot_authorize_execution(self):
-        legacy = fixture("samples/messages/guard-result.json")
+        legacy = fixture("data/sentinel/samples/messages/guard-result.json")
         legacy["verdict"] = "ALLOW"
         validate_message(legacy)
         with self.assertRaises(GuardInputError):

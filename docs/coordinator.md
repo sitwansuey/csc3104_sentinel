@@ -22,13 +22,13 @@ uses a temporary SQLite database, a fixed clock and no Kubernetes writes. It
 demonstrates the route through approval and verification, not live recovery.
 
 For a persistent local coordinator, the CLI accepts one contract-valid JSON
-message at a time. The database defaults to `runs/coordinator.sqlite3` relative
-to the working directory. `runs/` is already ignored by Git.
+message at a time. The database defaults to `data/sentinel/runs/coordinator.sqlite3` relative
+to the working directory. `data/sentinel/runs/` is already ignored by Git.
 
 ```bash
-python scripts/coordinator.py ingest samples/messages/incident.json
-python scripts/coordinator.py ingest samples/messages/proposal.json
-python scripts/coordinator.py ingest samples/messages/guard-result.json
+python scripts/coordinator.py ingest data/sentinel/samples/messages/incident.json
+python scripts/coordinator.py ingest data/sentinel/samples/messages/proposal.json
+python scripts/coordinator.py ingest data/sentinel/samples/messages/guard-result.json
 python scripts/coordinator.py approve ACT-DEMO-001 local-operator
 python scripts/coordinator.py status INC-DEMO-001
 python scripts/coordinator.py pending
@@ -93,10 +93,10 @@ and obtain fresh Guard validation under its own execution coordination.
 
 ## Local routing and restart recovery
 
-Public Python interfaces live in `services/coordinator.py`:
+Public Python interfaces live in `services/coordinator/core.py`:
 
 ```python
-with SQLiteStore("runs/coordinator.sqlite3") as store:
+with SQLiteStore("data/sentinel/runs/coordinator.sqlite3") as store:
     bus = LocalEventBus()
     def consume(event):
         # Process event["payload"] using the service adapter.
@@ -153,11 +153,11 @@ unfinished planner or executor subscribers.
 The CLI can process all currently pending requests once:
 
 ```powershell
-python scripts/coordinator.py guard --policy runs/policy.json --baseline runs/baseline.json --state runs/state.json --dependencies runs/dependency-result.json
+python scripts/coordinator.py guard --policy data/sentinel/runs/policy.json --baseline data/sentinel/runs/baseline.json --state data/sentinel/runs/state.json --dependencies data/sentinel/runs/dependency-result.json
 ```
 
 These paths are caller-supplied inputs, not files created by the command. `--state`
-expects a single observation object, such as one entry in `samples/observations.json`.
+expects a single observation object, such as one entry in `data/sentinel/samples/observations.json`.
 The baseline must have the format described in `docs/recovery-guard.md`; the lab's
 revision-only rollback record is not a Guard baseline. The policy and baseline
 must match the actual target identity. Do not treat synthetic sample UIDs or
@@ -167,7 +167,7 @@ For current Kubernetes state, replace `--state` with an explicit context and
 cluster ID (only a read-only Deployment GET is performed):
 
 ```powershell
-python scripts/coordinator.py guard --policy runs/policy.json --baseline runs/baseline.json --context kind-sentinel-lab --cluster-id sentinel-lab
+python scripts/coordinator.py guard --policy data/sentinel/runs/policy.json --baseline data/sentinel/runs/baseline.json --context kind-sentinel-lab --cluster-id sentinel-lab
 ```
 
 Without `--dependencies`, the worker uses the latest dependency result already

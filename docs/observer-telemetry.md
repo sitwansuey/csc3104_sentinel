@@ -1,5 +1,8 @@
 # Buddy 2: connected telemetry
 
+Recorded evidence locations below predate the data-layout migration. New runs
+and the current commands use `data/sentinel/runs/`.
+
 ## Review-branch validation, 26 October 2026
 
 Rebased onto the current main through the original teammate-authored telemetry
@@ -27,8 +30,8 @@ python scripts/test_observer_otel_live.py
 The script builds `sentinel-observer:0.3.0` and
 `sentinel-otel-validation:0.1.0`, then creates a dedicated kind cluster named
 `sentinel-observer-otel`. It uses its own kubeconfig under a unique
-`runs/observer-otel-*` directory. Existing Sentinel review containers and other
-clusters are left running. The test cluster is removed on completion; use
+`data/sentinel/runs/observer-otel-*` directory. Existing Sentinel review containers
+and other clusters are left running. The test cluster is removed on completion; use
 `--keep-cluster` to inspect it, and `--skip-build` only when the images match
 the current source. An existing cluster with the reserved name is rejected.
 
@@ -62,9 +65,9 @@ or PVC. A target file is a JSON array of 1–20 explicit workloads:
 ```
 
 ```powershell
-python -m runtime.otlp_receiver --db runs/otel.sqlite3
-python -m services.observer_cli run --context kind-your-cluster --cluster-id your-cluster --targets targets.json --telemetry-db runs/otel.sqlite3 --state runs/observer.sqlite3 --policy policy.json
-python -m services.observer_cli fleet-health --state runs/observer.sqlite3 --targets targets.json --cluster-id your-cluster
+python -m runtime.otlp_receiver --db data/sentinel/runs/otel.sqlite3
+python -m services.observer.cli run --context kind-your-cluster --cluster-id your-cluster --targets targets.json --telemetry-db data/sentinel/runs/otel.sqlite3 --state data/sentinel/runs/observer.sqlite3 --policy policy.json
+python -m services.observer.cli fleet-health --state data/sentinel/runs/observer.sqlite3 --targets targets.json --cluster-id your-cluster
 ```
 
 Run the first two commands in separate terminals. A single workload can instead

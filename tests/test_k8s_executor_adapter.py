@@ -14,9 +14,9 @@ import unittest
 from unittest.mock import patch
 
 from scripts.demo_guard import load_fixtures
-from services.executor import ACTION_ANNOTATION, ConditionalWriteConflict, ReadUnavailable, encode_evidence
-from services.executor_store import fingerprint
-from services.k8s_executor_adapter import KubectlDeploymentAPI, LiveAdapterError, WriteOutcomeUnknown
+from services.executor.core import ACTION_ANNOTATION, ConditionalWriteConflict, ReadUnavailable, encode_evidence
+from services.executor.store import fingerprint
+from services.executor.kubernetes_adapter import KubectlDeploymentAPI, LiveAdapterError, WriteOutcomeUnknown
 
 
 NOW = datetime(2026, 10, 25, 0, 0, tzinfo=timezone.utc)
@@ -260,7 +260,7 @@ class KubernetesExecutorAdapterTests(unittest.TestCase):
             created.append(path)
             raise OSError("Cannot set private permissions")
 
-        with patch("services.k8s_executor_adapter._private_file", side_effect=refuse):
+        with patch("services.executor.kubernetes_adapter._private_file", side_effect=refuse):
             with self.assertRaises(OSError):
                 self.restore()
         self.assertEqual(self.adapter.stats["write_attempts"], 0)

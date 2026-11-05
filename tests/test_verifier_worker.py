@@ -6,9 +6,9 @@ import unittest
 from unittest.mock import patch
 
 from runtime.verifier_pipeline import process_verifier_requests
-from services.coordinator import LocalEventBus, SQLiteStore, handle
-from services.verifier_store import VerificationStore
-from services.verifier import VerifierInputError
+from services.coordinator.core import LocalEventBus, SQLiteStore, handle
+from services.verifier.store import VerificationStore
+from services.verifier.core import VerifierInputError
 from tests.test_verifier_store import fixture
 
 START = datetime(2026, 10, 10, 12, 0, 50, tzinfo=timezone.utc)

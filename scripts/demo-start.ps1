@@ -22,7 +22,7 @@ if (-not $SkipBuild -and -not $Offline) {
         $revision = & git rev-parse HEAD 2>$null
         if ($LASTEXITCODE -eq 0) { $sourceRevision = $revision }
     }
-    & $DemoDocker build --pull --build-arg "SOURCE_REVISION=$sourceRevision" -f infra/demo-runner.Dockerfile -t $PackagedImage .
+    & $DemoDocker build --pull --build-arg "SOURCE_REVISION=$sourceRevision" -f deploy/docker/demo-runner.Dockerfile -t $PackagedImage .
     if ($LASTEXITCODE -ne 0) { throw 'Demo image build failed.' }
 }
 & $DemoDocker image inspect $PackagedImage --format '{{.Id}}'
@@ -40,7 +40,7 @@ $client = Get-PackagedDigest $ProbeImage
 if ($LASTEXITCODE -ne 0) { throw 'The pinned kind node image must be cached for offline setup.' }
 
 $runName = 'packaged-boutique-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,6)
-$runRoot = Join-Path $projectRoot ('runs\' + $runName)
+$runRoot = Join-Path $projectRoot ('data\sentinel\runs\' + $runName)
 $bootstrap = Join-Path $runRoot 'bootstrap'
 $data = Join-Path $runRoot 'data'
 New-Item -ItemType Directory -Path $bootstrap, $data -Force | Out-Null
@@ -49,7 +49,7 @@ $resultCode = 1
 $created = $false
 try {
     $created = $true
-    & $DemoKind create cluster --name $PackagedCluster --image kindest/node:v1.37.0 --config infra/kind.yaml --wait 120s
+    & $DemoKind create cluster --name $PackagedCluster --image kindest/node:v1.37.0 --config deploy/kind/kind.yaml --wait 120s
     if ($LASTEXITCODE -ne 0) { throw 'Packaged kind cluster creation failed.' }
     $node = $PackagedCluster + '-control-plane'
     foreach ($item in @(@{Name='shipping';Image=$ShippingImage;Info=$shipping}, @{Name='client';Image=$ProbeImage;Info=$client})) {

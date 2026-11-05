@@ -40,7 +40,7 @@ host rather than deploying the separate Observer container.
 
 The same strict Guard and restricted executor used by the original demo operate
 on the shipping target. The harness supplies the proposal. Role 6 evaluates the reviewed single-service
-graph in `infra/boutique-dependencies.json` against the current Deployment identity
+graph in `deploy/boutique/dependencies.json` against the current Deployment identity
 and version; this is scoped dependency analysis, not automatic graph discovery. The Guard checks actual state, baseline,
 policy, registry/account, resource budgets, approval and optional admission
 preview. Missing approval, hard rejection and stale state make zero executor
@@ -73,13 +73,16 @@ contains two RECOVERED incidents and one REJECTED false-alarm incident. Use
 [Guard rejection demo](guard-rejection-demo.md). Historical results below predate
 that additional scenario.
 
-There is no LLM call, automatic dependency discovery, Chaos Mesh experiment or
-whole-Boutique/cloud deployment. The dashboard is read-only. Missing Metrics API
-usage remains unavailable rather than becoming fabricated resource measurements.
+The default three-scenario suite makes no LLM call. Optional
+[agent mode](boutique-demo-handbook.md#live-agent-recovery-mode) uses RCA and
+Ollama planning for one recovery. Automatic dependency discovery, Chaos Mesh and
+whole-Boutique/cloud deployment are outside this single-service lab. The
+dashboard is read-only. Missing Metrics API usage remains unavailable rather than
+becoming fabricated resource measurements.
 On failure, an explicitly labelled administrator restoration can run as teardown;
 it never counts as successful executor recovery.
 
-Evidence lives under ignored `runs/boutique-live-*`: baseline, image references,
+Evidence lives under ignored `data/sentinel/runs/boutique-live-*`: baseline, image references,
 observations/incidents, policies/proposals/approvals, journals, execution results,
 quote samples and dashboard validation. Temporary executor credentials are removed.
 The wrapper optionally deletes only the named test cluster; caches/evidence remain.
@@ -88,8 +91,8 @@ Historical results below predate live Role 6 integration and therefore ended at
 VERIFYING. Do not treat those old runs as evidence of the new outcome path.
 
 The first shipping experiment passed on 25 October 2026 in
-`runs/boutique-live-20261025T131709Z-ac6908/`. The later full Observer/dashboard run
-passed in `runs/boutique-live-20261025T150203Z-404085/`. See the
+`data/sentinel/runs/boutique-live-20261025T131709Z-ac6908/`. The later full Observer/dashboard run
+passed in `data/sentinel/runs/boutique-live-20261025T150203Z-404085/`. See the
 [recorded integrated validation](boutique-demo-handbook.md#recorded-integrated-validation)
 for exact checks, browser evidence and limitations.
 

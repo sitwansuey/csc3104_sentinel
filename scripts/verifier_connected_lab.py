@@ -16,15 +16,15 @@ from uuid import uuid4
 
 from runtime.executor_pipeline import GuardAuthorizer
 from scripts.verifier_lab_manifest import COLLECTOR, IMAGE, manifest
-from services.coordinator import LocalEventBus, SQLiteStore, approve, handle
-from services.executor import ExecutionAdapters, execute
-from services.executor_store import LocalTargetCoordinator, SQLiteExecutionLedger, fingerprint
-from services.guard import evaluate
-from services.guard_preview import _private_file
-from services.k8s_executor_adapter import KubectlDeploymentAPI
-from services.observer_kubernetes import KubectlReader
-from services.verifier_http import EvidenceHTTP
-from services.verifier_live import LiveEvidenceCollector
+from services.coordinator.core import LocalEventBus, SQLiteStore, approve, handle
+from services.executor.core import ExecutionAdapters, execute
+from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedger, fingerprint
+from services.guard.core import evaluate
+from services.guard.preview import _private_file
+from services.executor.kubernetes_adapter import KubectlDeploymentAPI
+from services.observer.kubernetes import KubectlReader
+from services.verifier.http import EvidenceHTTP
+from services.verifier.live import LiveEvidenceCollector
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTEXT = "kind-sentinel-lab"
@@ -166,7 +166,7 @@ class VerifierLab:
         folder.mkdir()
         current = self.deployment("checkout")
         target = self.inventory["services"]["checkout"]["target"]
-        policy = json.loads((ROOT / "samples/policy.json").read_text())
+        policy = json.loads((ROOT / "data/sentinel/samples/policy.json").read_text())
         policy.update(targets=[target], policy_id="verifier-live-lab", policy_version="verifier-live-lab-v1")
         policy["health"] = {"minimum_samples": 3, "stable_window_seconds": 6, "max_sample_gap_seconds": 12,
                             "required_http_status": 200, "required_dependencies": ["payment"],
@@ -175,13 +175,13 @@ class VerifierLab:
         baseline = {"source": "operator-reviewed-live-lab", "baseline_id": "BASE-" + uuid4().hex[:10],
                     "target": target, "healthy_observed_at": utc(), "pod_template": current["spec"]["template"],
                     "template_sha256": fingerprint(current["spec"]["template"])}
-        proposal = json.loads((ROOT / "samples/messages/proposal.json").read_text())
+        proposal = json.loads((ROOT / "data/sentinel/samples/messages/proposal.json").read_text())
         proposal.update(target=target, incident_id="INC-" + uuid4().hex[:12], action_id="ACT-" + uuid4().hex[:12],
                         based_on_resource_version=current["metadata"]["resourceVersion"],
                         rationale="Operator-authorized lab restore to an observed healthy template; no Planner is invoked",
                         evidence_refs=["LAB-" + name],
                         parameters={"baseline_id": baseline["baseline_id"], "template_sha256": baseline["template_sha256"]})
-        incident = json.loads((ROOT / "samples/messages/incident.json").read_text())
+        incident = json.loads((ROOT / "data/sentinel/samples/messages/incident.json").read_text())
         incident.update(target=target, incident_id=proposal["incident_id"], observed_at=utc(),
                         observed_resource_version=proposal["based_on_resource_version"], observed_generation=current["metadata"]["generation"])
         incident["signals"] = [{"evidence_id": "LAB-" + name, "source": "deployment_status",

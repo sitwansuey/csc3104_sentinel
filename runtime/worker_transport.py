@@ -5,7 +5,7 @@ import json
 import time
 from uuid import uuid4
 
-from services.coordinator import LocalEventBus, acknowledge, dispatch_pending, record_message
+from services.coordinator.core import LocalEventBus, acknowledge, dispatch_pending, record_message
 from shared.contracts import validate_message
 
 

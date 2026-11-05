@@ -8,6 +8,8 @@ then restores the exact template and removes the cluster. It exercises detection
 only. No Planner, recovery authorization or automatic recovery is claimed.
 
 Fresh evidence: `runs/boutique-observer-20261026T115202Z-0a29a5`.
+This historical location predates the data-layout migration; new runs use
+`data/sentinel/runs/boutique-observer-*`.
 The retained `images.json`, `healthy-baseline.json`, `policy.json`, per-poll
 observations, `polls.json` and `summary.json` record image digests, workload UID,
 readiness, timestamps, actual Pod/events/logs and persisted incident identity.

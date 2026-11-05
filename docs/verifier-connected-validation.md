@@ -17,7 +17,7 @@ Refresh-ToolPaths
 python scripts/test_verifier_connected_live.py --setup
 ```
 
-Setup builds `demo/verifier-lab`, loads that image, and pulls the pinned Collector
+Setup builds `experiments/workloads/verifier-lab`, loads that image, and pulls the pinned Collector
 inside the kind node. Pulling the Collector in-node avoids incomplete
 multi-platform Docker archive imports. Subsequent runs may omit `--setup` only
 when the cached images match current sources.
@@ -47,7 +47,7 @@ port forwarding. Its fault-control HTTP endpoints are lab-only, not production A
 26 October 2026, **18:46:58–18:48:32 Singapore time**, on Docker Desktop's real
 single-node kind cluster. Evidence directory (ignored by Git):
 
-`runs/verifier-connected-20261026T104658Z-c17129/`
+`data/sentinel/runs/verifier-connected-20261026T104658Z-c17129/`
 
 | Scenario | Verifier outcome | Coordinator state | Saved readings | Monitoring wall time |
 | --- | --- | --- | --- | --- |
@@ -85,7 +85,7 @@ the unique test namespace was confirmed absent, and the original
 `sentinel-demo/demo-api` remained ready (1/1).
 
 An earlier full successful run is retained at
-`runs/verifier-connected-20261026T104115Z-84447f/`. Initial setup/propagation
+`data/sentinel/runs/verifier-connected-20261026T104115Z-84447f/`. Initial setup/propagation
 failures were retained separately and do not count as passing results.
 
 Regression validation: **652 Python tests**, all six shared message-contract

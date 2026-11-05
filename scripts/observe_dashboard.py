@@ -15,9 +15,9 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from runtime.cluster_metrics import collect_cluster_snapshot
 from runtime.telemetry import emit_cluster_snapshot, emit_event
-from services.coordinator import LocalEventBus, SQLiteStore, handle
-from services.k8s_observer_adapter import deployment_to_observation
-from services.observer import Observer, validate_observation
+from services.coordinator.core import LocalEventBus, SQLiteStore, handle
+from services.observer.kubernetes_adapter import deployment_to_observation
+from services.observer.core import Observer, validate_observation
 
 
 def collect_once(*, context, cluster_id, namespace, observer, store, telemetry,
@@ -56,9 +56,9 @@ def main():
     parser.add_argument("--context", required=True)
     parser.add_argument("--cluster-id", required=True)
     parser.add_argument("--namespace", required=True)
-    parser.add_argument("--policy", type=Path, default=Path("samples/policy.json"))
-    parser.add_argument("--db", type=Path, default=Path("runs/coordinator.sqlite3"))
-    parser.add_argument("--telemetry", type=Path, default=Path("runs/telemetry.sqlite3"))
+    parser.add_argument("--policy", type=Path, default=Path("data/sentinel/samples/policy.json"))
+    parser.add_argument("--db", type=Path, default=Path("data/sentinel/runs/coordinator.sqlite3"))
+    parser.add_argument("--telemetry", type=Path, default=Path("data/sentinel/runs/telemetry.sqlite3"))
     parser.add_argument("--interval", type=float, default=3)
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()

@@ -1,5 +1,11 @@
 # Repository consolidation review — 5 November 2026
 
+This records the consolidation audit before the repository-layout migration and
+optional live-agent integration. Its LLM limitations describe that audit and the
+default harness scenarios. For the current optional RCA/Ollama path, see
+[live agent recovery mode](boutique-demo-handbook.md#live-agent-recovery-mode).
+The evidence locations below retain their historical paths.
+
 ## Publication and GitHub status
 
 The tested consolidation is prepared on `overall-integration-cleanup` for review.

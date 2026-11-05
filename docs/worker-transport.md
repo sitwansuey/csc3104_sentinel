@@ -7,11 +7,11 @@ The Coordinator owns one SQLite database and exposes JSON over HTTP. Workers con
 The following PowerShell example starts a loopback server with temporary credentials, then the tests exercise client/server delivery without a Kubernetes cluster or model key.
 
 ```powershell
-New-Item -Type Directory -Force runs | Out-Null
+New-Item -Type Directory -Force data/sentinel/runs | Out-Null
 $env:SENTINEL_PLANNER_TOKEN = python -c "import secrets; print(secrets.token_urlsafe(32))"
 $env:SENTINEL_OBSERVER_TOKEN = python -c "import secrets; print(secrets.token_urlsafe(32))"
-'{"planner-1":{"role":"planner","token_env":"SENTINEL_PLANNER_TOKEN"},"observer-1":{"role":"observer","token_env":"SENTINEL_OBSERVER_TOKEN"}}' | Set-Content runs/worker-identities.json
-python -m runtime.worker_http --db runs/coordinator.sqlite3 --identities runs/worker-identities.json
+'{"planner-1":{"role":"planner","token_env":"SENTINEL_PLANNER_TOKEN"},"observer-1":{"role":"observer","token_env":"SENTINEL_OBSERVER_TOKEN"}}' | Set-Content data/sentinel/runs/worker-identities.json
+python -m runtime.worker_http --db data/sentinel/runs/coordinator.sqlite3 --identities data/sentinel/runs/worker-identities.json
 ```
 
 In another terminal, run `python -m unittest tests.test_worker_transport -v`. It starts its own disposable server and validates authentication, authorization, restart, timeout, redelivery, lost response, duplicate result, retention and rollback. For deployment, supply tokens from Secrets, mount the Coordinator's durable volume, and provide `--cert` and `--key` for non-loopback binds. Use `WorkerClient(url, identity, token, tls_context=...)` with a trusted CA for private TLS. Rotate credentials by updating the secret and restarting the server. Configure one role per identity and one distinct token per identity. This service exposes no operator approval endpoint.

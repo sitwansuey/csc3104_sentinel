@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import sqlite3
 
-from services.observer import Observer, validate_observation
+from services.observer.core import Observer, validate_observation
 from shared.contracts import validate_message
 
 
@@ -169,7 +169,7 @@ class LocalCoordinatorSink:
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def __call__(self, incident):
-        from services.coordinator import SQLiteStore, record_message
+        from services.coordinator.core import SQLiteStore, record_message
         with SQLiteStore(self.path) as store:
             store.db.execute("BEGIN IMMEDIATE")
             try:

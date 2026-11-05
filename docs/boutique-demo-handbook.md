@@ -4,8 +4,10 @@ The canonical current procedure is [the connected Boutique guide](boutique-conne
 It deploys the storefront, checkout and supporting services: eleven Deployments
 in total. Fault injection and restricted repair currently target shipping only.
 Roles 1, 2, 4, 5 and 6 run their actual implementations through the local harness.
-The harness supplies the recovery proposal and records a demo approval; no LLM
-call or authenticated human approval portal is claimed.
+By default, the harness supplies the recovery proposal and records a demo
+approval. The optional [live agent mode](#live-agent-recovery-mode) uses RCA and
+Ollama planning for one recovery. Neither mode provides an authenticated human
+approval portal.
 
 ## 1. Prepare the host
 
@@ -74,14 +76,14 @@ metrics remain unavailable unless the Metrics API supplies actual measurements.
 
 | Stage | Main files |
 | --- | --- |
-| Host checks and cluster ownership | `scripts/install-dependencies.ps1`, `scripts/test-boutique-live.ps1`, `infra/kind.yaml` |
-| Connected workload and shopping probes | `scripts/boutique_connected.py`, `scripts/boutique_storefront.py`, pinned `infra/boutique-connected-upstream.yaml` |
+| Host checks and cluster ownership | `scripts/install-dependencies.ps1`, `scripts/test-boutique-live.ps1`, `deploy/kind/kind.yaml` |
+| Connected workload and shopping probes | `experiments/boutique/harness/connected.py`, `experiments/boutique/traffic/storefront.py`, pinned `deploy/boutique/upstream.yaml` |
 | Harness proposal, injection and scenarios | `scripts/test_executor_live.py`, `scripts/test_boutique_live.py`, `runtime/lab_control.py`, `scripts/guard_rejection_demo.py` |
-| Observation and incident delivery | `services/observer.py`, `services/observer_kubernetes.py`, `runtime/observer_pipeline.py`, `services/coordinator.py` |
-| Dependency findings and authorization | `services/verifier.py`, `runtime/guard_pipeline.py`, `services/guard.py` |
-| Conditional repair and reconciliation | `runtime/live_executor.py`, `runtime/executor_pipeline.py`, `services/executor.py`, `services/executor_store.py`, `services/k8s_executor_adapter.py` |
-| Independent outcome | `runtime/verifier_pipeline.py`, `runtime/verifier_durable.py`, `services/verifier_store.py` |
-| UI and operational projections | `scripts/boutique_dashboard.py`, `runtime/dashboard.py`, `services/coordinator_read.py`, `runtime/cluster_metrics.py`, `runtime/boutique_observability.py`, `dashboard/src/` |
+| Observation and incident delivery | `services/observer/core.py`, `services/observer/kubernetes.py`, `runtime/observer_pipeline.py`, `services/coordinator/core.py` |
+| Dependency findings and authorization | `services/verifier/core.py`, `runtime/guard_pipeline.py`, `services/guard/core.py` |
+| Conditional repair and reconciliation | `runtime/live_executor.py`, `runtime/executor_pipeline.py`, `services/executor/core.py`, `services/executor/store.py`, `services/executor/kubernetes_adapter.py` |
+| Independent outcome | `runtime/verifier_pipeline.py`, `runtime/verifier_durable.py`, `services/verifier/store.py` |
+| UI and operational projections | `experiments/boutique/harness/dashboard.py`, `runtime/dashboard.py`, `services/coordinator_read.py`, `runtime/cluster_metrics.py`, `runtime/boutique_observability.py`, `dashboard/src/` |
 
 ## 5. Clean up
 
@@ -99,13 +101,45 @@ kind get clusters
 
 ## Other modes
 
+- [Live agent recovery](#live-agent-recovery-mode): RCA and Ollama planning
+  through the same Guard, restricted Executor and Verifier.
 - [Security lab](security-connected.md): separate opt-in mTLS/inspection/CVE
   experiment. It does not yet run the guarded recovery pipeline; issue #69 tracks
   that integration.
 - [Provider integration](provider-recovery.md): optional trusted provider adapter
-  boundary. Offline mock planning exists; actual LLM integration remains pending.
+  boundary with its own policy and operator approval controls.
 - [Packaged runner](packaged-demo.md): the exported 0.3.0 image is historical and
   lacks these latest connected/UI changes. Use source for the current system.
 
-See [the consolidation review](repository-review-2026-11-05.md) for exact tests,
-branch decisions, issue status and remaining limitations.
+See [the consolidation review](repository-review-2026-11-05.md) for the recorded
+connected-demo tests, branch decisions, issue status and remaining limitations.
+
+## Live agent recovery mode
+
+Install the Python dependencies with `python -m pip install -r requirements.txt`.
+Run a local Ollama server with the model configured in
+`data/sentinel/samples/rca-config.json` available (default `qwen3:14b`). Then use
+the same dedicated lab wrapper:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Agent -Dashboard -PauseBeforeInjection -Cleanup
+```
+
+Add `-Connected` for storefront and checkout verification. Use `-AgentConfig`
+with a JSON file to override the Ollama settings. The direct command for an
+already prepared lab is
+`python scripts/test_boutique_live.py --agent --dashboard --pause-before-injection`.
+
+This mode exports actual Observer metrics and logs, runs RCA, retrieves recovery
+knowledge and asks the model for a typed recovery decision. A supported rollback
+must identify the allowed shipping target and the measured healthy baseline.
+Guard and Executor independently revalidate the resulting proposal; an
+unsupported decision or model failure does not authorize a repair. The harness
+records the local test's approval, so this remains a supervised lab workflow.
+
+Agent mode runs **one incident and recovery**. Run the default mode separately
+for duplicate/race checks, post-write crash reconciliation and the final
+unnecessary-rollback rejection. Use the printed run directory to inspect
+`approved-rollback/agent/`, `model-calls.json`, `model-proposal.json`, Guard
+reports and the independent Verifier outcome. Model output alone is not evidence
+of successful recovery.

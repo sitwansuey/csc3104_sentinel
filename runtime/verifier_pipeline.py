@@ -8,8 +8,8 @@ This worker has no Kubernetes mutation or proposal-generation authority.
 from copy import deepcopy
 import json
 
-from services.coordinator import acknowledge, dispatch_pending, record_message
-from services.verifier import verify
+from services.coordinator.core import acknowledge, dispatch_pending, record_message
+from services.verifier.core import verify
 
 
 def _eligible(store, request):

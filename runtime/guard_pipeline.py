@@ -10,8 +10,8 @@ import json
 from pathlib import Path
 import subprocess
 
-from services.coordinator import CoordinatorError, acknowledge, dispatch_pending, record_message
-from services.guard import assert_decision_usable, evaluate_with_report
+from services.coordinator.core import CoordinatorError, acknowledge, dispatch_pending, record_message
+from services.guard.core import assert_decision_usable, evaluate_with_report
 from shared.contracts import validate_message
 
 

@@ -6,7 +6,7 @@ Verifier evaluator. They do not write Kubernetes or generate recovery proposals.
 
 ## Configure an application
 
-Copy `samples/verifier-live-inventory.json` to an ignored file under `runs/`.
+Copy `data/sentinel/samples/verifier-live-inventory.json` to an ignored file under `data/sentinel/runs/`.
 Replace the placeholder Deployment UID with the actual cluster/namespace/name/UID,
 configure trusted health URLs, and review the application's dependency inventory.
 Each Deployment name must be unique within this inventory; external services
@@ -30,8 +30,8 @@ that a proposed rollback will be causally safe.
 Use an explicit Kubernetes context and appropriately scoped read credentials:
 
 ```text
-python -m services.verifier_live_cli --inventory runs/inventory.json --context YOUR_CONTEXT sample --service YOUR_SERVICE
-python -m services.verifier_live_cli --inventory runs/inventory.json --context YOUR_CONTEXT --trace-url http://127.0.0.1:18081/traces dependencies --proposal runs/proposal.json
+python -m services.verifier.live_cli --inventory data/sentinel/runs/inventory.json --context YOUR_CONTEXT sample --service YOUR_SERVICE
+python -m services.verifier.live_cli --inventory data/sentinel/runs/inventory.json --context YOUR_CONTEXT --trace-url http://127.0.0.1:18081/traces dependencies --proposal data/sentinel/runs/proposal.json
 ```
 
 `--trace-file` accepts one current OTLP JSON export; `--trace-url` GETs an export
@@ -58,7 +58,7 @@ A Coordinator database must already contain a matching active APPLIED/NOOP
 execution. Use a separate persistent Verifier database:
 
 ```text
-python -m services.verifier_live_worker --coordinator-db runs/coordinator.sqlite3 --state runs/verifier.sqlite3 --inventory runs/inventory.json --policy runs/policy.json --context YOUR_CONTEXT --trace-url http://127.0.0.1:18081/traces --watch --poll-seconds 5
+python -m services.verifier.live_worker --coordinator-db data/sentinel/runs/coordinator.sqlite3 --state data/sentinel/runs/verifier.sqlite3 --inventory data/sentinel/runs/inventory.json --policy data/sentinel/runs/policy.json --context YOUR_CONTEXT --trace-url http://127.0.0.1:18081/traces --watch --poll-seconds 5
 ```
 
 Each pass checkpoints actual readings, source identity and edge provenance.

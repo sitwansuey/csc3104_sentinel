@@ -67,7 +67,7 @@ def manifest():
                   "--state=/data/observer.sqlite3", "--coordinator-db=/data/coordinator.sqlite3",
                   "--telemetry-db=/data/telemetry.sqlite3", "--policy=/config/policy.json", "--interval-seconds=2", "--collect-logs"],
          "volumeMounts": [{"name": "data", "mountPath": "/data"}, {"name": "config", "mountPath": "/config", "readOnly": True}],
-         "readinessProbe": {"exec": {"command": ["python", "-m", "services.observer_cli", "fleet-health",
+         "readinessProbe": {"exec": {"command": ["python", "-m", "services.observer.cli", "fleet-health",
              "--state=/data/observer.sqlite3", "--targets=/config/targets.json", "--cluster-id=sentinel-observer-otel"]},
              "initialDelaySeconds": 5, "periodSeconds": 5, "timeoutSeconds": 5}},
         {"name": "receiver", "image": OBSERVER_IMAGE, "imagePullPolicy": "Never",

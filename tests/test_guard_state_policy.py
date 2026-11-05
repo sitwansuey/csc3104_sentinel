@@ -5,7 +5,7 @@ from datetime import timedelta
 import unittest
 
 from scripts.demo_guard_v2 import build_inputs
-from services.guard import GuardInputError, assess_state_policy, evaluate_with_report
+from services.guard.core import GuardInputError, assess_state_policy, evaluate_with_report
 
 
 STATE_POLICY_REASONS = {

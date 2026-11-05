@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 
 from runtime.security_store import record, update_alert
 from scripts.scan_image_security import run_scan
-from services.executor_store import LocalTargetCoordinator, TargetBusy
+from services.executor.store import LocalTargetCoordinator, TargetBusy
 from services.image_security import image_reference
 
 

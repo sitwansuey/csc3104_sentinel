@@ -14,13 +14,13 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.k8s_observer_adapter import DeploymentObservationMonitor
-from services.observer import Observer
+from services.observer.kubernetes_adapter import DeploymentObservationMonitor
+from services.observer.core import Observer
 from shared.contracts import validate_message
 from scripts.observer_live_checks import assess_report
 
 
-DEFAULT_POLICY = ROOT / "samples" / "policy.json"
+DEFAULT_POLICY = ROOT / "data/sentinel/samples" / "policy.json"
 
 
 class KubectlAppsApi:

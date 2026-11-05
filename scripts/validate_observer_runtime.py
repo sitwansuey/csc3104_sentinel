@@ -11,7 +11,7 @@ REPO = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--output", type=Path, help="New evidence directory; must not already exist")
 args = parser.parse_args()
-RUN = args.output or (REPO / "runs" / ("observer-runtime-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:6]))
+RUN = args.output or (REPO / "data/sentinel/runs" / ("observer-runtime-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:6]))
 RUN.mkdir(parents=True, exist_ok=False)
 print("Evidence: " + str(RUN), flush=True)
 PREFIX = ["kubectl", "--context", "kind-sentinel-lab", "--namespace", "sentinel-demo", "--request-timeout=10s"]

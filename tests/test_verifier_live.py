@@ -4,15 +4,15 @@ import json
 from pathlib import Path
 import unittest
 
-from services.verifier_live import LiveEvidenceCollector, collect_window
-from services.verifier import verify
+from services.verifier.live import LiveEvidenceCollector, collect_window
+from services.verifier.core import verify
 from tests.test_verifier_traces import export
 
 NOW = datetime(2026, 10, 26, tzinfo=timezone.utc)
 
 
 def fixture(name):
-    return json.loads((Path(__file__).resolve().parents[1] / "samples" / name).read_text(encoding="utf-8"))
+    return json.loads((Path(__file__).resolve().parents[1] / "data/sentinel/samples" / name).read_text(encoding="utf-8"))
 
 
 def configuration():

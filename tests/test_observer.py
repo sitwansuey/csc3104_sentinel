@@ -7,8 +7,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from services import coordinator
-from services.observer import Observer, ObservationError, detect, detect_all
+from services.coordinator import core as coordinator
+from services.observer.core import Observer, ObservationError, detect, detect_all
 from shared.contracts import validate_message
 
 
@@ -18,8 +18,8 @@ def fixture(path):
 
 class ObserverDetectionTests(unittest.TestCase):
     def setUp(self):
-        self.observations = fixture("samples/observations.json")
-        self.policy = fixture("samples/policy.json")
+        self.observations = fixture("data/sentinel/samples/observations.json")
+        self.policy = fixture("data/sentinel/samples/policy.json")
 
     def test_healthy_observations_do_not_create_incident(self):
         self.assertEqual(detect_all(self.observations["healthy"], self.policy), [])

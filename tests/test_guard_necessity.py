@@ -8,9 +8,9 @@ import tempfile
 import unittest
 
 from runtime.executor_pipeline import GuardAuthorizer
-from services.executor import ExecutionAdapters, execute
-from services.executor_store import LocalTargetCoordinator, SQLiteExecutionLedger
-from services.guard import (
+from services.executor.core import ExecutionAdapters, execute
+from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedger
+from services.guard.core import (
     GuardInputError, assert_decision_usable, evaluate_with_report,
     proposal_fingerprint, template_sha256,
 )
@@ -27,11 +27,11 @@ def fixture(path):
 
 class GuardNecessityTests(unittest.TestCase):
     def setUp(self):
-        self.proposal = fixture("samples/messages/proposal.json")
-        self.live = fixture("samples/observations.json")["failed-rollout"][-1]
-        self.policy = fixture("samples/policy.json")
-        self.baseline = fixture("samples/baseline.json")
-        self.dependencies = fixture("samples/messages/dependency-result.json")
+        self.proposal = fixture("data/sentinel/samples/messages/proposal.json")
+        self.live = fixture("data/sentinel/samples/observations.json")["failed-rollout"][-1]
+        self.policy = fixture("data/sentinel/samples/policy.json")
+        self.baseline = fixture("data/sentinel/samples/baseline.json")
+        self.dependencies = fixture("data/sentinel/samples/messages/dependency-result.json")
         self.approval = {
             "action_id": self.proposal["action_id"],
             "proposal_sha256": proposal_fingerprint(self.proposal),

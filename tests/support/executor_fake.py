@@ -3,7 +3,7 @@
 from copy import deepcopy
 from threading import RLock
 
-from services.executor import ACTION_ANNOTATION, ConditionalWriteConflict, encode_evidence
+from services.executor.core import ACTION_ANNOTATION, ConditionalWriteConflict, encode_evidence
 
 
 class FakeDeploymentAPI:

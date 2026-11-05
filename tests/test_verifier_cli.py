@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from services.verifier_cli import main
+from services.verifier.cli import main
 from tests.test_verifier_store import fixture
 from tests.test_verifier_worker import ready_store
 

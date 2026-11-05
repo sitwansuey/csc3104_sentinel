@@ -163,7 +163,7 @@ def prepare(directory, port):
     directory.mkdir(parents=True, mode=0o700)
     certificates(directory)
     images = {"envoy": resolve(ENVOY), "shipping": resolve(SHIPPING), "client": resolve(CLIENT)}
-    run(["docker", "build", "-f", ROOT / "infra/security-inspector.Dockerfile", "-t", INSPECTOR, ROOT], timeout=300)
+    run(["docker", "build", "-f", ROOT / "deploy/docker/security-inspector.Dockerfile", "-t", INSPECTOR, ROOT], timeout=300)
     images["inspector"] = json.loads(run(["docker", "image", "inspect", INSPECTOR]).stdout)[0]["Id"]
     save(directory / "images.json", images)
     for side in ("gateway", "upstream"):
@@ -195,7 +195,7 @@ def prepare(directory, port):
                               "depends_on": ["gateway"], "command": ["--journal", "/data/telemetry.sqlite3"],
                               "volumes": [mount(data, "/data", False)]}
     services["client"] = {**base, "image": images["client"], "profiles": ["validation"], "networks": ["front"],
-                           "volumes": [mount(directory / "client", "/client"), mount(ROOT / "demo/security", "/proto")]}
+                           "volumes": [mount(directory / "client", "/client"), mount(ROOT / "experiments/workloads/security", "/proto")]}
     save(directory / "compose.json", {"services": services, "networks": {"front": {}, "backend": {"internal": True}}})
 
 
@@ -251,7 +251,7 @@ def validate(directory):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("start", "test", "stop"))
-    parser.add_argument("--directory", type=Path, default=ROOT / "runs/security-lab")
+    parser.add_argument("--directory", type=Path, default=ROOT / "data/sentinel/runs/security-lab")
     parser.add_argument("--port", type=int, default=8443)
     args = parser.parse_args()
     directory = args.directory.resolve()

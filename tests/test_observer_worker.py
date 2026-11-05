@@ -10,8 +10,8 @@ import unittest
 from unittest.mock import patch
 
 from runtime.observer_pipeline import LocalCoordinatorSink, ObserverStore, is_ready, status_file
-from services.observer import Observer, ObservationError
-from services import observer_cli
+from services.observer.core import Observer, ObservationError
+from services.observer import cli as observer_cli
 
 ROOT = Path(__file__).resolve().parents[1]
 POLICY = {"detection": {"failure_duration_seconds": 30, "max_sample_gap_seconds": 45}}
@@ -20,7 +20,7 @@ START = datetime(2026, 10, 25, tzinfo=timezone.utc)
 
 
 def sample(seconds, *, healthy=False, generation=2):
-    fixtures = json.loads((ROOT / "samples/observations.json").read_text(encoding="utf-8"))
+    fixtures = json.loads((ROOT / "data/sentinel/samples/observations.json").read_text(encoding="utf-8"))
     observation = copy.deepcopy(fixtures["healthy" if healthy else "failed-rollout"][0])
     observation["captured_at"] = (START + timedelta(seconds=seconds)).isoformat()
     observation["deployment"]["metadata"]["generation"] = generation
@@ -196,7 +196,7 @@ class DurableWorkerTests(unittest.TestCase):
             code = observer_cli.main(["run", "--context", "lab", "--namespace", "sentinel-demo",
                                       "--deployment", "demo-api", "--cluster-id", "sentinel-lab",
                                       "--state", str(self.state), "--coordinator-db", str(self.coordinator),
-                                      "--policy", str(ROOT / "samples/policy.json"), "--poll-count", "1"])
+                                      "--policy", str(ROOT / "data/sentinel/samples/policy.json"), "--poll-count", "1"])
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(output.getvalue())["kind"], "observer.collection_error")
         self.assertEqual(status_file(self.state)["collection_errors"], 1)

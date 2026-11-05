@@ -17,14 +17,14 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.verifier_connected_lab import VerifierLab, require, save, utc
 from scripts.verifier_lab_manifest import COLLECTOR, IMAGE
-from services.coordinator import SQLiteStore
-from services.verifier_store import VerificationStore
+from services.coordinator.core import SQLiteStore
+from services.verifier.store import VerificationStore
 
 
 def monitor(lab, folder, *, inventory=None, trace_url=None, restart=False):
     inventory_path = folder / "inventory.json"
     save(inventory_path, inventory or lab.inventory)
-    command = [sys.executable, "-m", "services.verifier_live_worker", "--coordinator-db", str(folder / "coordinator.sqlite3"),
+    command = [sys.executable, "-m", "services.verifier.live_worker", "--coordinator-db", str(folder / "coordinator.sqlite3"),
                "--state", str(folder / "verifier.sqlite3"), "--policy", str(folder / "policy.json"),
                "--inventory", str(inventory_path), "--context", lab.verifier_context,
                "--trace-url", trace_url or lab.urls["collector"] + "/traces", "--watch", "--poll-seconds", "2.5"]
@@ -113,11 +113,11 @@ def main(argv=None):
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     if args.setup:
-        for command in (["docker", "build", "-t", IMAGE, "demo/verifier-lab"], ["docker", "pull", COLLECTOR],
+        for command in (["docker", "build", "-f", "experiments/workloads/verifier-lab/Dockerfile", "-t", IMAGE, "."], ["docker", "pull", COLLECTOR],
                         ["kind", "load", "docker-image", IMAGE, "--name", "sentinel-lab"],
                         ["docker", "exec", "sentinel-lab-control-plane", "crictl", "pull", COLLECTOR]):
             subprocess.run(command, cwd=ROOT, check=True, timeout=600)
-    directory = args.output or ROOT / "runs" / ("verifier-connected-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:6])
+    directory = args.output or ROOT / "data/sentinel/runs" / ("verifier-connected-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:6])
     lab = VerifierLab(directory)
     report = {"status": "RUNNING", "mode": "real_kubernetes_http_sdk_collector_executor_verifier",
               "started_at": utc(), "namespace": lab.namespace, "scenarios": [],

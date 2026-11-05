@@ -6,12 +6,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from services.coordinator import (
+from services.coordinator.core import (
     CoordinatorError, LocalEventBus, SQLiteStore, approve, dispatch_pending, handle,
 )
-from services.guard import GuardInputError, evaluate, evaluate_with_report
-from services.guard_common import json_sha256
-from services.verifier import inspect_dependencies
+from services.guard.core import GuardInputError, evaluate, evaluate_with_report
+from services.guard.common import json_sha256
+from services.verifier.core import inspect_dependencies
 from tests import test_guard_integration as fixtures
 
 

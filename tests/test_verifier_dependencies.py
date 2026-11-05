@@ -4,7 +4,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
-from services.verifier import VerifierInputError, inspect_dependencies
+from services.verifier.core import VerifierInputError, inspect_dependencies
 from shared.contracts import validate_message
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,7 +12,7 @@ NOW = datetime(2026, 10, 10, 12, 0, 40, tzinfo=timezone.utc)
 
 
 def sample(name):
-    return json.loads((ROOT / "samples" / name).read_text())
+    return json.loads((ROOT / "data/sentinel/samples" / name).read_text())
 
 
 class DependencyTests(unittest.TestCase):

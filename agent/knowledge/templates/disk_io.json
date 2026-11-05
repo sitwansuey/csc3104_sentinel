@@ -1,0 +1,37 @@
+{
+  "id": "wf-disk-io",
+  "name": "disk_io",
+  "description": "Diagnostic workflow for disk read/write I/O load, I/O consumption, and disk space usage.",
+  "control": "sequence",
+  "tags": ["disk", "io", "read", "write", "storage", "space", "filesystem", "iops", "throughput"],
+  "steps": [
+    {
+      "step_id": "s1_disk_kpis",
+      "goal": "Inspect disk I/O read/write rates, await time, and disk capacity utilization.",
+      "tool": "metrics",
+      "tool_args": { "kpi_column": "kpi_name", "value_column": "value" }
+    },
+    {
+      "step_id": "s2_differentiate_space_vs_io",
+      "goal": "Differentiate between static space exhaustion and active I/O throughput bottlenecks.",
+      "tool": "metrics"
+    },
+    {
+      "step_id": "s3_corroborate_io_logs",
+      "goal": "Check system logs for disk I/O timeout, read-only filesystem, or disk full errors.",
+      "tool": "logs"
+    },
+    {
+      "step_id": "s4_check_downstream_latency",
+      "goal": "Trace API call latency waiting on disk-intensive components such as database nodes.",
+      "tool": "traces"
+    }
+  ],
+  "rules": [
+    "Disk space exhaustion shows monotonic capacity growth prior to incident onset.",
+    "Disk I/O saturation typically causes upstream service request timeouts.",
+    "Corroborate high I/O metrics with storage logs before concluding root cause."
+  ],
+  "tools": ["metrics", "logs", "traces"]
+}
+

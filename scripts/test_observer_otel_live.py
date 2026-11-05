@@ -28,7 +28,7 @@ def main(argv=None):
     parser.add_argument("--keep-cluster", action="store_true")
     parser.add_argument("--skip-build", action="store_true")
     args = parser.parse_args(argv)
-    directory = ROOT / "runs" / ("observer-otel-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + uuid4().hex[:6])
+    directory = ROOT / "data/sentinel/runs" / ("observer-otel-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + uuid4().hex[:6])
     directory.mkdir(parents=True)
     environment = {**os.environ, "KUBECONFIG": str(directory / "kubeconfig")}
     report = {"status": "RUNNING", "scope": "real instrumented validation services; not Boutique tracing", "checks": {}}
@@ -108,12 +108,12 @@ print(json.dumps(result))
         if CLUSTER in run(["kind", "get", "clusters"]).split():
             raise RuntimeError("Reserved live-test cluster already exists; inspect it before rerunning")
         if not args.skip_build:
-            run(["docker", "build", "-t", OBSERVER_IMAGE, "-f", "services/observer.Dockerfile", "."], timeout=600)
-            run(["docker", "build", "-t", WORKLOAD_IMAGE, "demo/otel"], timeout=600)
+            run(["docker", "build", "-t", OBSERVER_IMAGE, "-f", "deploy/docker/observer.Dockerfile", "."], timeout=600)
+            run(["docker", "build", "-t", WORKLOAD_IMAGE, "experiments/workloads/otel"], timeout=600)
         run(["docker", "pull", COLLECTOR_IMAGE], timeout=600)
         created = True
         print("Creating the dedicated Buddy 2 cluster...", flush=True)
-        run(["kind", "create", "cluster", "--name", CLUSTER, "--config", "infra/kind.yaml", "--wait", "120s"], timeout=300)
+        run(["kind", "create", "cluster", "--name", CLUSTER, "--config", "deploy/kind/kind.yaml", "--wait", "120s"], timeout=300)
         run(["kind", "load", "docker-image", OBSERVER_IMAGE, WORKLOAD_IMAGE, "--name", CLUSTER], timeout=300)
         kube("create", "namespace", NAMESPACE)
         # Secret is sent on stdin and never saved in the evidence or command line.

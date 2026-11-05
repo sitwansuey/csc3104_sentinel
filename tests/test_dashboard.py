@@ -22,14 +22,14 @@ from runtime.guard_pipeline import process_guard_requests
 from runtime.telemetry import emit_event
 from scripts.observe_dashboard import collect_once
 from scripts.dashboard import ensure_frontend, main as dashboard_main
-from services.coordinator import LocalEventBus, SQLiteStore, handle
-from services.observer import Observer
+from services.coordinator.core import LocalEventBus, SQLiteStore, handle
+from services.observer.core import Observer
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def fixture(name):
-    return json.loads((ROOT / "samples" / name).read_text(encoding="utf-8"))
+    return json.loads((ROOT / "data/sentinel/samples" / name).read_text(encoding="utf-8"))
 
 
 class DashboardTests(unittest.TestCase):
@@ -214,7 +214,7 @@ class DashboardTests(unittest.TestCase):
                     self.assertEqual(response.status, 200)
                     self.assertEqual(response.headers["Cache-Control"], "no-store")
                     self.assertNotIn("Access-Control-Allow-Origin", response.headers)
-            for path in ("/../services/coordinator.py", "/api/approve", "/assets/../package.json", "/assets/%2e%2e/package.json", "/src/App.tsx", "/package.json", "/node_modules/react/index.js"):
+            for path in ("/../services/coordinator/core.py", "/api/approve", "/assets/../package.json", "/assets/%2e%2e/package.json", "/src/App.tsx", "/package.json", "/node_modules/react/index.js"):
                 with self.assertRaises(HTTPError) as error:
                     urlopen(base + path, timeout=3)
                 self.assertEqual(error.exception.code, 404)

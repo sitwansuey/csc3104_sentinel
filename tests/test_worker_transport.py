@@ -8,13 +8,13 @@ from unittest.mock import patch
 
 from runtime.worker_http import handler, WorkerClient
 from runtime.worker_transport import Delivery, ProtocolError
-from services.coordinator import SQLiteStore
+from services.coordinator.core import SQLiteStore
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def sample(name):
-    return json.loads((ROOT / 'samples' / 'messages' / (name + '.json')).read_text())
+    return json.loads((ROOT / 'data/sentinel/samples' / 'messages' / (name + '.json')).read_text())
 
 
 class TransportTests(unittest.TestCase):

@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts import evaluate_guard as evaluation
-from services.guard_common import json_sha256
+from services.guard.common import json_sha256
 
 
 class GuardEvaluationTests(unittest.TestCase):
@@ -191,7 +191,7 @@ class GuardEvaluationTests(unittest.TestCase):
         self.assertEqual(self.result["suite_sha256"], json_sha256(self.suite))
         provenance = evaluation.provenance(evaluation.DEFAULT_CASES)
         for path in (evaluation.DEFAULT_CASES, evaluation.ROOT / "scripts/evaluate_guard.py",
-                     evaluation.ROOT / "services/guard.py", evaluation.ROOT / "shared/contracts.py"):
+                     evaluation.ROOT / "services/guard/core.py", evaluation.ROOT / "shared/contracts.py"):
             self.assertEqual(provenance["source_sha256"][path.relative_to(evaluation.ROOT).as_posix()],
                              hashlib.sha256(path.read_bytes()).hexdigest())
         self.assertRegex(provenance["revision"], r"^[0-9a-f]{40}$")

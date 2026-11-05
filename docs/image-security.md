@@ -13,7 +13,7 @@ On 27 October 2026 (Singapore time), the final runtime image was scanned with
 Docker Scout v1.27.0 using:
 
 ```powershell
-docker scout cves --platform linux/amd64 --locations --format sarif --output .\runs\image-build-20261027\release-runner.sarif.json --exit-code local://sentinel-boutique-runner:0.3.0
+docker scout cves --platform linux/amd64 --locations --format sarif --output .\data\sentinel\runs\image-build-20261027\release-runner.sarif.json --exit-code local://sentinel-boutique-runner:0.3.0
 ```
 
 Scout indexed **137 packages and reported zero detected vulnerabilities**. The
@@ -61,7 +61,7 @@ An initial Kubernetes root-module build also produced ambiguous root-module
 version attribution/server advisories. The final client-only build retains
 normal module metadata for its actual client dependencies; metadata is not
 stripped to conceal findings. Raw candidate reports/logs remain in the ignored
-`runs/image-build-20261027/` folder.
+`data/sentinel/runs/image-build-20261027/` folder.
 
 References: [Docker build guidance](https://docs.docker.com/build/building/best-practices/),
 [Go security release history](https://go.dev/doc/devel/release),
@@ -85,7 +85,7 @@ may contain simulated PASS messages; those are not live Kubernetes evidence.
 
 ## Actual packaged Kubernetes validation
 
-Run `runs/packaged-boutique-20261027-004815-7b4d32/` used the exact final image
+Run `data/sentinel/runs/packaged-boutique-20261027-004815-7b4d32/` used the exact final image
 above with `scripts/demo-start.ps1 -SkipBuild -Unattended`. It created a fresh
 real kind cluster and completed all **13 checkpoints**, exiting with code 0.
 

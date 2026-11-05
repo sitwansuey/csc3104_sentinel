@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 
-from services.coordinator import acknowledge, dispatch_pending, record_message
-from services.verifier import VerifierInputError
+from services.coordinator.core import acknowledge, dispatch_pending, record_message
+from services.verifier.core import VerifierInputError
 from shared.contracts import validate_message
 
 

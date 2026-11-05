@@ -1,0 +1,8 @@
+{
+  "repo_id": "phamquiluan/RCAEval",
+  "revision": "afeacb11bcc94dadfd1c8f483ee4377b2b8b614e",
+  "suites": ["RE1", "RE2"],
+  "systems": {"ob": "Online Boutique", "ss": "Sock Shop", "tt": "Train Ticket"},
+  "faults": ["cpu", "mem", "disk", "delay", "loss", "socket"],
+  "expected_counts": {"RE1-OB": 125, "RE1-SS": 125, "RE1-TT": 125, "RE2-OB": 90, "RE2-SS": 90, "RE2-TT": 90}
+}

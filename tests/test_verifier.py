@@ -3,14 +3,14 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 
-from services.verifier import VerifierInputError, verify
+from services.verifier.core import VerifierInputError, verify
 from shared.contracts import validate_message
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def load_sample(name):
-    return json.loads((ROOT / "samples" / name).read_text())
+    return json.loads((ROOT / "data/sentinel/samples" / name).read_text())
 
 
 class VerifierTests(unittest.TestCase):

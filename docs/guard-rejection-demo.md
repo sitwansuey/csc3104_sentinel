@@ -107,7 +107,7 @@ Do not reuse an overnight baseline: the live baseline policy expires after
 
 After inspection, press **Ctrl+C** in that window and let cleanup finish. The
 `-Cleanup` option removes only `sentinel-boutique-lab`. Evidence and cached
-images remain under the repository's `runs\boutique-live-*` directory printed
+images remain under the repository's `data\sentinel\runs\boutique-live-*` directory printed
 at startup. The separate packaged runner and its cluster remain available.
 
 Useful files inside that run:
@@ -148,5 +148,5 @@ check. After deliberately rebuilding and rehearsing the updated image, cached
 images can be used according to the packaged demo guide.
 
 Packaged evidence is under
-`runs\packaged-boutique-*\data\evidence\`. Host and packaged routes use the
+`data\sentinel\runs\packaged-boutique-*\data\evidence\`. Host and packaged routes use the
 same Guard check and safety assertions.

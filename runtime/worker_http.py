@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from runtime.worker_transport import Delivery, INGRESS, ProtocolError, TOPICS
-from services.coordinator import SQLiteStore
+from services.coordinator.core import SQLiteStore
 
 MAX_BODY = 1024 * 1024
 

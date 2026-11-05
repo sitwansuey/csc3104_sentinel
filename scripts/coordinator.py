@@ -9,7 +9,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from services.coordinator import (
+from services.coordinator.core import (
     CoordinatorError, LocalEventBus, SQLiteStore, acknowledge, approve,
     dispatch_pending, handle,
 )
@@ -19,7 +19,7 @@ from runtime.telemetry import emit_event
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--db", default="runs/coordinator.sqlite3")
+    parser.add_argument("--db", default="data/sentinel/runs/coordinator.sqlite3")
     parser.add_argument("--telemetry", type=Path, help="Optionally journal CLI/worker errors for the dashboard")
     commands = parser.add_subparsers(dest="command", required=True)
     ingest = commands.add_parser("ingest", help="Record one wire-message JSON file")

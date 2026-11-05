@@ -11,8 +11,8 @@ import time
 from runtime.dashboard import ROOT, snapshot
 from runtime.guard_pipeline import process_guard_requests
 from runtime.telemetry import emit_cluster_snapshot, emit_event
-from services.coordinator import LocalEventBus, SQLiteStore, approve, handle
-from services.observer import detect
+from services.coordinator.core import LocalEventBus, SQLiteStore, approve, handle
+from services.observer.core import detect
 
 
 def start_demo():
@@ -22,7 +22,7 @@ def start_demo():
     frames = []
 
     def fixture(name):
-        return json.loads((ROOT / "samples" / name).read_text(encoding="utf-8"))
+        return json.loads((ROOT / "data/sentinel/samples" / name).read_text(encoding="utf-8"))
 
     policy = fixture("policy.json")
     observations = fixture("observations.json")["failed-rollout"]

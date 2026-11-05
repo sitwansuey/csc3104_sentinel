@@ -1,5 +1,5 @@
 """Advance one observed incident through durable component handoffs."""
-from services.coordinator import approve
+from services.coordinator.core import approve
 
 
 def advance(store, incident_id, *, plan, assess, guard, operator, execute, verify):
@@ -34,4 +34,3 @@ def advance(store, incident_id, *, plan, assess, guard, operator, execute, verif
     if state() == "VERIFYING":
         verify(proposal, store.action(action_id)["execution_result"])
     return state()
-

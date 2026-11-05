@@ -8,7 +8,7 @@ import re
 import sqlite3
 
 from runtime.observer_pipeline import ObserverStore, is_ready, status_file
-from services.observer_kubernetes import KubernetesEvidenceCollector
+from services.observer.kubernetes import KubernetesEvidenceCollector
 from services.observer_telemetry import CorrelatedEvidenceCollector, TelemetryStore
 
 

@@ -18,6 +18,5 @@ stale state, unhealthy outcomes, duplicate incident/planning delivery, restart
 before execution and failed delivery after a committed Executor write. The
 same saved action is replayed without a second write.
 
-Merge the separate Planner prerequisite PR before retargeting this integration
-PR to main. This demonstrates the offline milestone, not live end-to-end AI
+This demonstrates the offline milestone, not live end-to-end AI
 recovery or distributed transport. Local SQLite/lock limits still apply.

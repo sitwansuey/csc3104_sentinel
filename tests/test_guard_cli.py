@@ -13,11 +13,11 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from services.guard import proposal_fingerprint
-from services.guard_adapters import (
+from services.guard.core import proposal_fingerprint
+from services.guard.adapters import (
     AdapterError, KUBECTL_TIMEOUT_SECONDS, load_json, read_deployment,
 )
-from services.guard_cli import main
+from services.guard.cli import main
 from shared.contracts import validate_message
 
 
@@ -33,14 +33,14 @@ class GuardCliTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.directory = Path(self.temp.name)
-        self.proposal = fixture("samples/messages/proposal.json")
-        self.policy = fixture("samples/policy.json")
-        self.live = fixture("samples/observations.json")["failed-rollout"][-1]
+        self.proposal = fixture("data/sentinel/samples/messages/proposal.json")
+        self.policy = fixture("data/sentinel/samples/policy.json")
+        self.live = fixture("data/sentinel/samples/observations.json")["failed-rollout"][-1]
         self.values = {
             "proposal": self.proposal,
             "policy": self.policy,
-            "baseline": fixture("samples/baseline.json"),
-            "dependencies": fixture("samples/messages/dependency-result.json"),
+            "baseline": fixture("data/sentinel/samples/baseline.json"),
+            "dependencies": fixture("data/sentinel/samples/messages/dependency-result.json"),
             "live-state": self.live,
             "approval": {
                 "action_id": self.proposal["action_id"],
@@ -74,7 +74,7 @@ class GuardCliTests(unittest.TestCase):
 
     def run_cli(self, args=None):
         return subprocess.run(
-            [sys.executable, "-m", "services.guard_cli", *(self.args() if args is None else args)],
+            [sys.executable, "-m", "services.guard.cli", *(self.args() if args is None else args)],
             cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=15,
         )
 
@@ -168,7 +168,7 @@ class GuardCliTests(unittest.TestCase):
 
     def test_live_mode_forbids_fixture_clock_before_running_kubectl(self):
         args = [*self.args(live=False), "--context", "team-context", "--cluster-id", "sentinel-lab"]
-        with patch("services.guard_adapters.subprocess.run") as run:
+        with patch("services.guard.adapters.subprocess.run") as run:
             with patch("sys.stderr", new_callable=io.StringIO) as stderr:
                 code = main(args)
             self.assertEqual(code, 1)
@@ -200,7 +200,7 @@ class GuardCliTests(unittest.TestCase):
         self.use_live_inputs()
         args = [*self.args(live=False, now=False), "--context", "team-context", "--cluster-id", "sentinel-lab"]
         failure = subprocess.CompletedProcess([], 1, stdout=b"", stderr=b"secret-token")
-        with patch("services.guard_adapters.subprocess.run", return_value=failure):
+        with patch("services.guard.adapters.subprocess.run", return_value=failure):
             with patch("sys.stderr", new_callable=io.StringIO) as stderr:
                 with patch("sys.stdout", new_callable=io.StringIO) as stdout:
                     code = main(args)
@@ -213,7 +213,7 @@ class GuardCliTests(unittest.TestCase):
         self.use_live_inputs()
         args = [*self.args(live=False, now=False, approval=False), "--context", "team-context", "--cluster-id", "different-cluster"]
         completed = subprocess.CompletedProcess([], 0, json.dumps(self.live["deployment"]).encode(), b"")
-        with patch("services.guard_adapters.subprocess.run", return_value=completed):
+        with patch("services.guard.adapters.subprocess.run", return_value=completed):
             with patch("sys.stdout", new_callable=io.StringIO) as stdout:
                 with patch("sys.stderr", new_callable=io.StringIO) as stderr:
                     code = main(args)
@@ -223,13 +223,13 @@ class GuardCliTests(unittest.TestCase):
 
 class GuardAdapterTests(unittest.TestCase):
     def setUp(self):
-        self.target = fixture("samples/messages/proposal.json")["target"]
-        self.deployment = fixture("samples/observations.json")["failed-rollout"][-1]["deployment"]
+        self.target = fixture("data/sentinel/samples/messages/proposal.json")["target"]
+        self.deployment = fixture("data/sentinel/samples/observations.json")["failed-rollout"][-1]["deployment"]
 
     def test_live_reader_binds_context_and_target_and_uses_only_get(self):
         before = datetime.now(timezone.utc)
         completed = subprocess.CompletedProcess([], 0, json.dumps(self.deployment).encode(), b"")
-        with patch("services.guard_adapters.subprocess.run", return_value=completed) as run:
+        with patch("services.guard.adapters.subprocess.run", return_value=completed) as run:
             snapshot = read_deployment(self.target, context="explicit-team-context", cluster_id="independent-cluster-label")
         run.assert_called_once_with(
             ["kubectl", "--context=explicit-team-context", "--namespace=sentinel-demo",
@@ -244,7 +244,7 @@ class GuardAdapterTests(unittest.TestCase):
 
     def test_private_kubeconfig_is_a_single_argument_without_environment_mutation(self):
         completed = subprocess.CompletedProcess([], 0, json.dumps(self.deployment).encode(), b"")
-        with patch("services.guard_adapters.subprocess.run", return_value=completed) as run:
+        with patch("services.guard.adapters.subprocess.run", return_value=completed) as run:
             read_deployment(self.target, context="team-context", cluster_id="sentinel-lab",
                             kubeconfig="C:/private config/team.yaml")
         command = run.call_args.args[0]
@@ -258,7 +258,7 @@ class GuardAdapterTests(unittest.TestCase):
             (subprocess.TimeoutExpired(["private-command"], 15, stderr=b"secret"), "LIVE_STATE_TIMEOUT"),
         ):
             with self.subTest(code=code):
-                with patch("services.guard_adapters.subprocess.run", side_effect=failure):
+                with patch("services.guard.adapters.subprocess.run", side_effect=failure):
                     with self.assertRaises(AdapterError) as caught:
                         read_deployment(self.target, context="team-context", cluster_id="sentinel-lab")
                 self.assertEqual(caught.exception.code, code)
@@ -269,7 +269,7 @@ class GuardAdapterTests(unittest.TestCase):
         for payload in (b"not json", b"\xff", b'{"x":NaN}'):
             with self.subTest(payload=payload):
                 completed = subprocess.CompletedProcess([], 0, payload, b"")
-                with patch("services.guard_adapters.subprocess.run", return_value=completed):
+                with patch("services.guard.adapters.subprocess.run", return_value=completed):
                     with self.assertRaises(AdapterError) as caught:
                         read_deployment(self.target, context="team-context", cluster_id="sentinel-lab")
                 self.assertEqual(caught.exception.code, "INVALID_JSON")
@@ -281,7 +281,7 @@ class GuardAdapterTests(unittest.TestCase):
                 changed = copy.deepcopy(self.target)
                 changed[field] = value
                 cases.append((changed, "team-context"))
-        with patch("services.guard_adapters.subprocess.run") as run:
+        with patch("services.guard.adapters.subprocess.run") as run:
             for target, context in cases:
                 with self.subTest(target=target, context=context):
                     with self.assertRaises(AdapterError):
@@ -291,7 +291,7 @@ class GuardAdapterTests(unittest.TestCase):
     def test_empty_cluster_id_and_empty_kubeconfig_are_rejected(self):
         for cluster_id, kubeconfig in (("", None), (" ", None), ("sentinel-lab", "")):
             with self.subTest(cluster_id=cluster_id, kubeconfig=kubeconfig):
-                with patch("services.guard_adapters.subprocess.run") as run:
+                with patch("services.guard.adapters.subprocess.run") as run:
                     with self.assertRaises(AdapterError):
                         read_deployment(self.target, context="team-context", cluster_id=cluster_id, kubeconfig=kubeconfig)
                     run.assert_not_called()
@@ -300,7 +300,7 @@ class GuardAdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "input.json"
             path.write_bytes(b" " * 101)
-            with patch("services.guard_adapters.MAX_JSON_BYTES", 100):
+            with patch("services.guard.adapters.MAX_JSON_BYTES", 100):
                 with self.assertRaises(AdapterError) as caught:
                     load_json(path, "policy")
         self.assertEqual(caught.exception.code, "INPUT_TOO_LARGE")

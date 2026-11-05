@@ -2,8 +2,8 @@
 from copy import deepcopy
 import json
 
-from services.coordinator import acknowledge, dispatch_pending, record_message
-from services.planner import propose
+from services.coordinator.core import acknowledge, dispatch_pending, record_message
+from services.planner.core import propose
 
 
 def process_planner_requests(store, bus, *, baseline_reader, retriever, provider):

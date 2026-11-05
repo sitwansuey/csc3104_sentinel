@@ -1,0 +1,15 @@
+{
+  "base_url": "http://127.0.0.1:11434",
+  "model": "qwen3:14b",
+  "role_models": {},
+  "num_ctx": 16384,
+  "num_predict": 2048,
+  "timeout": 300,
+  "seed": 42,
+  "max_rounds": 3,
+  "max_steps": 16,
+  "max_depth": 4,
+  "confidence_threshold": 0.8,
+  "allow_abstention": false,
+  "max_rows": 1000000
+}

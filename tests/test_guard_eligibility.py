@@ -10,8 +10,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.guard_common import GuardInputError
-from services.guard_eligibility import assess, referenced_objects, validate_policy
+from services.guard.common import GuardInputError
+from services.guard.eligibility import assess, referenced_objects, validate_policy
 
 
 NOW = datetime(2026, 10, 10, 12, 0, 40, tzinfo=timezone.utc)
@@ -23,9 +23,9 @@ def fixture(path):
 
 class EligibilityTests(unittest.TestCase):
     def setUp(self):
-        self.proposal = fixture("samples/messages/proposal.json")
-        self.live = fixture("samples/observations.json")["failed-rollout"][-1]
-        self.baseline = fixture("samples/baseline.json")
+        self.proposal = fixture("data/sentinel/samples/messages/proposal.json")
+        self.live = fixture("data/sentinel/samples/observations.json")["failed-rollout"][-1]
+        self.baseline = fixture("data/sentinel/samples/baseline.json")
         self.policy = {
             "baseline_constraints": {
                 "max_age_seconds": 300,

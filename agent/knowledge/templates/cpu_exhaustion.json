@@ -1,0 +1,37 @@
+{
+  "id": "wf-cpu-exhaustion",
+  "name": "cpu_exhaustion",
+  "description": "Diagnostic workflow for high CPU load, CPU spikes, CPU faults, and thread saturation.",
+  "control": "sequence",
+  "tags": ["cpu", "load", "spike", "fault", "processor", "utilization", "throttle", "starvation"],
+  "steps": [
+    {
+      "step_id": "s1_inspect_cpu_kpis",
+      "goal": "Inspect CPU utilization and run-queue metrics across candidate components.",
+      "tool": "metrics",
+      "tool_args": { "kpi_column": "kpi_name", "value_column": "value" }
+    },
+    {
+      "step_id": "s2_detect_sustained_onset",
+      "goal": "Identify the earliest sustained CPU elevation (>= 3 samples) exceeding baseline.",
+      "tool": "metrics"
+    },
+    {
+      "step_id": "s3_check_io_contention",
+      "goal": "Verify whether high CPU is an independent root cause or a symptom of I/O wait.",
+      "tool": "metrics"
+    },
+    {
+      "step_id": "s4_correlate_logs_traces",
+      "goal": "Check logs and downstream trace latency to confirm impact propagation.",
+      "tool": "traces"
+    }
+  ],
+  "rules": [
+    "High CPU can be a downstream symptom of thread locking or I/O waits.",
+    "Node-level CPU load impacts all co-located pods; isolate node vs container level.",
+    "Require persistent onset (> 2 minutes) rather than an isolated transient spike."
+  ],
+  "tools": ["metrics", "traces", "logs"]
+}
+

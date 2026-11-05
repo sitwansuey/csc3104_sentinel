@@ -9,12 +9,12 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.verifier import inspect_dependencies, verify
+from services.verifier.core import inspect_dependencies, verify
 
 
 def main():
     def load(name):
-        return json.loads((ROOT / "samples" / name).read_text(encoding="utf-8"))
+        return json.loads((ROOT / "data/sentinel/samples" / name).read_text(encoding="utf-8"))
 
     proposal = load("messages/proposal.json")
     execution = load("messages/execution-result.json")

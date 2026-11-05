@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from services.observer_kubernetes import CollectionError, InClusterReader, KubectlReader, KubernetesEvidenceCollector, NoRedirect, selector_text
+from services.observer.kubernetes import CollectionError, InClusterReader, KubectlReader, KubernetesEvidenceCollector, NoRedirect, selector_text
 
 
 NOW = datetime(2026, 10, 25, tzinfo=timezone.utc)

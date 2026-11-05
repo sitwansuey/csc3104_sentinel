@@ -12,18 +12,18 @@ from runtime.planner_pipeline import process_planner_requests
 from runtime.guard_pipeline import process_guard_requests
 from runtime.executor_pipeline import GuardAuthorizer, process_executor_requests
 from runtime.verifier_pipeline import process_verifier_requests
-from services.coordinator import SQLiteStore, LocalEventBus, approve, handle
-from services.executor import ExecutionAdapters
-from services.executor_store import SQLiteExecutionLedger, LocalTargetCoordinator
-from services.observer import detect
-from services.planner import retrieve_runbooks, mock_provider
-from services.verifier import inspect_dependencies
-from services.verifier_store import VerificationStore
+from services.coordinator.core import SQLiteStore, LocalEventBus, approve, handle
+from services.executor.core import ExecutionAdapters
+from services.executor.store import SQLiteExecutionLedger, LocalTargetCoordinator
+from services.observer.core import detect
+from services.planner.core import retrieve_runbooks, mock_provider
+from services.verifier.core import inspect_dependencies
+from services.verifier.store import VerificationStore
 from tests.support.executor_fake import FakeDeploymentAPI
 
 
 def fixture(name):
-    return json.loads((ROOT / 'samples' / name).read_text(encoding='utf-8'))
+    return json.loads((ROOT / 'data/sentinel/samples' / name).read_text(encoding='utf-8'))
 
 
 class OfflineFlow:

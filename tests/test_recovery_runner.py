@@ -6,10 +6,10 @@ from unittest.mock import patch
 from runtime.planner_pipeline import process_planner_requests
 from runtime.recovery_runner import advance
 from scripts.demo_offline_flow import OfflineFlow, fixture
-from services.coordinator import handle
-from services.observer import detect
-from services.planner import mock_provider, retrieve_runbooks
-from services.verifier import inspect_dependencies
+from services.coordinator.core import handle
+from services.observer.core import detect
+from services.planner.core import mock_provider, retrieve_runbooks
+from services.verifier.core import inspect_dependencies
 
 
 class RunnerTests(unittest.TestCase):

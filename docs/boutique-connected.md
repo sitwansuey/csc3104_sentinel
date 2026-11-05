@@ -2,8 +2,10 @@
 
 This opt-in source experiment deploys the real v0.10.7 Boutique application:
 frontend, checkout, shipping, cart/Redis, product catalog, currency, payment,
-email, advertisements and recommendations. Planner is still harness-authored;
-it is not required to test real dependency impact and restricted recovery.
+email, advertisements and recommendations. The default scenario suite uses
+harness-authored proposals to test real dependency impact and restricted recovery.
+Add `-Agent` for [one RCA/Ollama-planned recovery](boutique-demo-handbook.md#live-agent-recovery-mode)
+with connected post-action verification.
 
 The existing single-service experiment stays available. Connected mode uses its
 own `sentinel-boutique-connected` cluster and namespace. Only shippingservice is
@@ -131,7 +133,7 @@ explicitly separate from post-action business-flow verification.
 
 ## Evidence and cleanup
 
-Each `runs/boutique-live-<id>/` folder records:
+Each `data/sentinel/runs/boutique-live-<id>/` folder records:
 
 | File | Meaning |
 | --- | --- |
@@ -173,7 +175,7 @@ after a failed test is recorded separately and never counted as Executor success
   and the shopping evidence table under **Online Boutique**.
 - `scripts/test_boutique_live.py`: selects the connected subclass and reuses the
   existing Observer, Coordinator, Guard, Executor, Verifier and UI sequence.
-- `infra/boutique-connected-upstream.yaml`: unchanged upstream manifest from
+- `deploy/boutique/upstream.yaml`: unchanged upstream manifest from
   source commit `5b608cb1dfe317d05e4f1bb8c99b7618452fde87`, checked by SHA-256;
   the adjacent license preserves the upstream Apache license.
 
@@ -185,10 +187,11 @@ shipping uses the existing reviewed rollback template configuration.
 
 The recovery core and shared event contracts are unchanged. This remains a
 single-node lab with local coordination, a configured dependency graph and one
-injected fault type. It does not establish full application coverage, concurrent
-fault handling, load resilience, automatic discovery, AI diagnosis or public
-cloud readiness. Separate workload images have not been certified by the older
-runner's zero-CVE scan.
+injected fault type. The default suite uses harness proposals; optional agent
+mode retains its diagnosis and model calls for separate acceptance. This lab
+does not establish full application coverage, concurrent fault handling, load
+resilience, automatic discovery or public cloud readiness. Separate workload
+images have not been certified by the older runner's zero-CVE scan.
 
 ## Adding other fault targets later
 
@@ -203,9 +206,9 @@ Do not widen the current UI scope or RBAC to every service just to add buttons.
 ## Recorded validation: 4 November 2026
 
 The first successful connected run was
-`runs/boutique-live-20261103T183311Z-d600a1/`. A repeat with stricter extraction
+`data/sentinel/runs/boutique-live-20261103T183311Z-d600a1/`. A repeat with stricter extraction
 of the upstream `Confirmation #` field passed as
-`runs/boutique-live-20261103T185418Z-6ba362/`. Run identifiers use UTC; both runs
+`data/sentinel/runs/boutique-live-20261103T185418Z-6ba362/`. Run identifiers use UTC; both runs
 occurred on 4 November in Singapore.
 
 - All **709 Python tests** and six contract fixtures passed offline. Eleven
@@ -224,7 +227,7 @@ occurred on 4 November in Singapore.
   The final unnecessary rollback was REJECTED with zero repair patch attempts.
 - Installed Edge clicked all three live UI buttons, each receiving HTTP 202,
   with zero page JavaScript errors. The actual storefront and dashboard were
-  rendered and screenshots retained under `runs/connected-boutique-validation/`.
+  rendered and screenshots retained under `data/sentinel/runs/connected-boutique-validation/`.
 - Dashboard assertions passed for three incidents, two APPLIED executions, two
   passing outcomes, three dependency results and seven Guard reports. The
   cluster, port forward, dashboard threads and private Executor credentials were
@@ -239,7 +242,7 @@ this change did not rebuild a runner image or establish a new CVE scan result.
 ## Observability increment: 4 November 2026
 
 The new **Online Boutique** page was exercised against the actual cluster in
-`runs/boutique-live-20261103T201446Z-ccdc4a/`. All fifteen Kubernetes checkpoints
+`data/sentinel/runs/boutique-live-20261103T201446Z-ccdc4a/`. All fifteen Kubernetes checkpoints
 passed, with two RECOVERED incidents and the final unnecessary rollback REJECTED.
 The dashboard assertions checked eleven Deployment entries, both real fault
 measurements (homepage 200, cart/checkout 500), and six passing post-action
@@ -256,7 +259,7 @@ table, clicked all three injection controls (HTTP 202), opened an incident from
 the table, and checked desktop/mobile layouts with no page JavaScript errors or
 page-wide horizontal overflow. The wide results table scrolls horizontally on
 narrow screens. Screenshots and browser evidence are in
-`runs/connected-boutique-validation/observability-*`.
+`data/sentinel/runs/connected-boutique-validation/observability-*`.
 
 The dedicated kind cluster, frontend port-forward, dashboard server/collector
 and private Executor credentials were removed after the run. Cached images and

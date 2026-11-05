@@ -2,7 +2,8 @@
 
 Use [the local demo handbook](boutique-demo-handbook.md) for setup, injection and
 cleanup. The default demonstration uses the connected Boutique application and
-harness-authored proposals. It makes no actual LLM claim.
+harness-authored proposals. The optional [live agent recovery mode](boutique-demo-handbook.md#live-agent-recovery-mode)
+runs RCA and Ollama planning for one incident through the same guarded path.
 
 ## Role coverage
 
@@ -10,7 +11,7 @@ harness-authored proposals. It makes no actual LLM claim.
 | --- | --- |
 | 1 Coordinator | Persists actual incidents, proposals, approvals, lifecycle and request/result routing. APPLIED creates verification work; only a passing independent outcome closes an incident as RECOVERED. |
 | 2 Observer | Collects shipping Deployment/owned Pod/event/diagnostic evidence, detects sustained failure, persists a checkpoint/outbox and delivers the incident. Namespace inventory covers all Boutique Pods. Optional multi-workload OTLP capability has a separate instrumented validation lab. |
-| 3 Planner | Offline runbook/proposal validation and an injected provider boundary now exist. The default live demonstration still uses explicit harness proposals; real RAG/LLM integration remains pending. |
+| 3 Planner | Offline runbook/proposal validation and an injected provider boundary exist. The default live demonstration uses explicit harness proposals; optional agent mode diagnoses live Observer telemetry, retrieves recovery knowledge and asks Ollama for a typed decision bound to the measured baseline. |
 | 4 Guard | Validates current state, exact baseline, policy, resources, dependency evidence and approval. New dependency evidence revokes queued authorization and requires a newly bound decision/report. |
 | 5 Executor | Revalidates under a local target lock, journals the immutable action/attempt, uses UID/resource-version conditional writes and restores the exact approved Pod template. Duplicate IDs replay saved results; changed intent conflicts; crashes reconcile action evidence without blindly repeating a mutation. |
 | 6 Verifier | Evaluates configured dependencies and independently checkpoints sustained shipping gRPC, replica/template/identity and actual storefront/cart/checkout evidence before publishing the outcome. |
@@ -31,8 +32,9 @@ exact healthy Pod template and its hash. A dashboard button releases a fixed
 harness scenario that injects an invalid startup port. Kubernetes keeps trying
 the faulty configuration; our Observer records evidence of sustained failure.
 
-“While the real Planner integration is pending, the harness proposes restoring
-the saved baseline. The Coordinator records the proposal and demo approval.
+“In the default scenario suite, the harness proposes restoring the saved
+baseline. Optional agent mode uses RCA and Ollama to select a recovery decision.
+The Coordinator records the proposal and demo approval.
 Guard checks live state, policy, resources, dependencies and approval. Approval
 cannot override a hard constraint.
 
@@ -57,7 +59,7 @@ flowchart TD
     D --> E[UI gate releases fixed fault injection]
     E --> F[Role 2: sustained failure evidence]
     F --> G[Role 1: persist incident]
-    G --> H[Harness proposal; real Planner integration pending]
+    G --> H[Harness proposal; optional RCA and Ollama planning]
     H --> I[Role 6: dependency assessment]
     I --> J[Role 4: Guard evaluation]
     J -->|Approval required| K[Role 1: record demo approval and request revalidation]
@@ -89,3 +91,9 @@ lab; they are not silently enabled in the recovery demo. Trusted baseline storag
 authenticated human approvals, cross-host Executor coordination, deployment of
 remote workers and actual LLM acceptance remain tracked work. The old exported
 runner image predates the current connected source.
+
+Agent mode exercises one recovery and retains model calls, diagnosis and the
+proposal beside Guard and Verifier evidence. The default scenario suite remains
+the path for crash reconciliation and redundant-repair refusal checks. A live
+model run must still demonstrate a passing independent recovery outcome before
+it is counted as accepted.

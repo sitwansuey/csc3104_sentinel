@@ -16,8 +16,8 @@ from time import perf_counter_ns
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services.guard import assess_state_policy, assert_decision_usable, evaluate
-from services.guard_common import json_sha256, utc_timestamp
+from services.guard.core import assess_state_policy, assert_decision_usable, evaluate
+from services.guard.common import json_sha256, utc_timestamp
 
 
 DEFAULT_CASES = ROOT / "evaluation/guard/v1/cases.json"
@@ -125,7 +125,7 @@ def provenance(cases_path):
                                    text=True, timeout=10, check=True)
         return completed.stdout.strip()
     paths = [ROOT / "scripts/evaluate_guard.py", ROOT / "shared/contracts.py", Path(cases_path)]
-    paths += sorted((ROOT / "services").glob("guard*.py"))
+    paths += sorted((ROOT / "services/guard").glob("*.py"))
     sources = {(path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else "case_suite.json"):
                hashlib.sha256(path.read_bytes()).hexdigest()
                for path in paths}

@@ -19,15 +19,15 @@ import os
 from pathlib import Path
 import sys
 
-from services.executor import ExecutionAdapters, GuardCheck, execute, reconcile
-from services.executor_store import (
+from services.executor.core import ExecutionAdapters, GuardCheck, execute, reconcile
+from services.executor.store import (
     ActionConflict, LocalTargetCoordinator, SQLiteExecutionLedger, TargetBusy, target_key,
 )
-from services.guard import GuardInputError, assert_decision_usable, evaluate
-from services.guard_adapters import AdapterError, load_json, read_reference_versions
-from services.guard_decisions import validate_policy
-from services.guard_eligibility import referenced_objects
-from services.guard_preview import server_dry_run as collect_server_preview
+from services.guard.core import GuardInputError, assert_decision_usable, evaluate
+from services.guard.adapters import AdapterError, load_json, read_reference_versions
+from services.guard.decisions import validate_policy
+from services.guard.eligibility import referenced_objects
+from services.guard.preview import server_dry_run as collect_server_preview
 from shared.contracts import ContractError, validate_message
 
 
@@ -132,7 +132,7 @@ def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, 
     defers those files entirely because the core reconciliation path is read-only.
     The caller owns and must close adapters.ledger.
     """
-    from services.k8s_executor_adapter import KubectlDeploymentAPI
+    from services.executor.kubernetes_adapter import KubectlDeploymentAPI
 
     scope_path = allowed_targets if isinstance(allowed_targets, (str, Path)) else None
     targets = load_json(scope_path, "allowed_targets") if scope_path is not None else deepcopy(allowed_targets)

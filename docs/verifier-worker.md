@@ -30,7 +30,7 @@ The Coordinator database must already exist and contain an active applied/no-op
 execution. Use a different file for the Verifier checkpoint store.
 
 ```text
-python -m services.verifier_cli --coordinator-db runs/coordinator.sqlite3 --state runs/verifier.sqlite3 --policy runs/policy.json --samples runs/readings.json
+python -m services.verifier.cli --coordinator-db data/sentinel/runs/coordinator.sqlite3 --state data/sentinel/runs/verifier.sqlite3 --policy data/sentinel/runs/policy.json --samples data/sentinel/runs/readings.json
 ```
 
 `readings.json` is a JSON list in #9's documented health-reading format for the

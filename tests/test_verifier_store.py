@@ -5,15 +5,15 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from services.verifier import VerifierInputError
-from services.verifier_store import VerificationStore
+from services.verifier.core import VerifierInputError
+from services.verifier.store import VerificationStore
 
 ROOT = Path(__file__).resolve().parents[1]
 NOW = datetime(2026, 10, 10, 12, 0, 45, tzinfo=timezone.utc)
 
 
 def fixture(name):
-    return json.loads((ROOT / "samples" / name).read_text(encoding="utf-8"))
+    return json.loads((ROOT / "data/sentinel/samples" / name).read_text(encoding="utf-8"))
 
 
 class VerificationStoreTests(unittest.TestCase):

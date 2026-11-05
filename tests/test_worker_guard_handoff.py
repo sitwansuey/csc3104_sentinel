@@ -9,8 +9,8 @@ from http.server import ThreadingHTTPServer
 
 from runtime.worker_http import handler, WorkerClient
 from runtime.worker_transport import Delivery, ProtocolError
-from services.coordinator import SQLiteStore, handle
-from services.guard import evaluate_with_report
+from services.coordinator.core import SQLiteStore, handle
+from services.guard.core import evaluate_with_report
 from tests import test_guard_integration as fixtures
 
 

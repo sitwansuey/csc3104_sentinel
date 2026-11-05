@@ -10,7 +10,7 @@ from scripts.test_boutique_live import (
     BoutiqueExperiment, CLIENT_IMAGE, SHIPPING_IMAGE, repository_digest, shipping_manifest, validate_quote,
 )
 from scripts.test_executor_live import Experiment
-from services.observer_kubernetes import CollectionError
+from services.observer.kubernetes import CollectionError
 
 
 class BoutiqueLabTests(unittest.TestCase):

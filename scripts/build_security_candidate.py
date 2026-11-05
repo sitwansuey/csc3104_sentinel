@@ -31,7 +31,7 @@ def build(directory):
     context.mkdir()
     shutil.copytree(source / "src/shippingservice", context / "shipping")
     shutil.copyfile(source / "LICENSE", context / "LICENSE")
-    shutil.copyfile(ROOT / "demo/security/shipping-candidate.Dockerfile", context / "Dockerfile")
+    shutil.copyfile(ROOT / "experiments/workloads/security/shipping-candidate.Dockerfile", context / "Dockerfile")
     # Pin the resolved non-root runtime manifest in the build evidence.
     runtime = "gcr.io/distroless/static:nonroot"
     command(["docker", "pull", runtime])

@@ -64,7 +64,7 @@ python scripts/security_lab.py start
 ```
 
 This builds the non-root inspector, pulls digest-pinned Envoy/Boutique/grpcurl
-images, creates private material under `runs/security-lab`, and runs real gRPC
+images, creates private material under `data/sentinel/runs/security-lab`, and runs real gRPC
 checks. It leaves this lab running for inspection. No Kubernetes credentials or
 Docker socket are mounted into these containers. Re-run validation and stop with:
 
@@ -74,7 +74,7 @@ python scripts/security_lab.py stop
 ```
 
 Saved evidence remains. A fresh start requires a new directory, for example
-`--directory runs/security-lab-2`; supply that directory to test/stop as well.
+`--directory data/sentinel/runs/security-lab-2`; supply that directory to test/stop as well.
 The Compose project name is fixed, so only one security lab runs at a time.
 Stop the previous run before preparing another. Existing Boutique clusters and
 their images are outside this cleanup scope. Do not share the generated keys.
@@ -91,8 +91,8 @@ Public registry and database access require network access.
 Use the actual shipping manifest recorded by the lab:
 
 ```powershell
-$images = Get-Content .\runs\security-lab\images.json -Raw | ConvertFrom-Json
-python scripts/scan_image_security.py --image $images.shipping --output runs/security-lab/shipping-scan.json --journal runs/security-lab/data/telemetry.sqlite3
+$images = Get-Content .\data\sentinel\runs\security-lab\images.json -Raw | ConvertFrom-Json
+python scripts/scan_image_security.py --image $images.shipping --output data/sentinel/runs/security-lab/shipping-scan.json --journal data/sentinel/runs/security-lab/data/telemetry.sqlite3
 ```
 
 The same command can scan `$images.envoy`. For another workload, supply its exact
@@ -116,7 +116,7 @@ no image replacement, package installation, repair action or approval endpoint.
 ## Review in the dashboard
 
 ```powershell
-python scripts/dashboard.py --telemetry runs/security-lab/data/telemetry.sqlite3 --port 8766 --open-browser
+python scripts/dashboard.py --telemetry data/sentinel/runs/security-lab/data/telemetry.sqlite3 --port 8766 --open-browser
 ```
 
 Select **Security**. It reads inspection decisions and the latest scan per image
@@ -142,6 +142,9 @@ before widening routes. Response-body inspection, general IDS signatures and
 automated remediation remain outside this first implementation.
 
 ### Recorded validation: 4 November 2026
+
+The recorded evidence paths below predate the data-layout migration; current
+commands use `data/sentinel/runs/`.
 
 Source is based on main `b5266ff`, with this feature kept on `security-hardening`.
 All **734 Python tests**, six shared contract fixtures, frontend type-check/build

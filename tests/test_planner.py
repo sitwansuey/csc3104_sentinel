@@ -3,15 +3,15 @@ import json
 from pathlib import Path
 import unittest
 
-from services.planner import propose, retrieve_runbooks, mock_provider
+from services.planner.core import propose, retrieve_runbooks, mock_provider
 from shared.contracts import ContractError, validate_message
 
 ROOT = Path(__file__).parents[1]
 
 class PlannerTests(unittest.TestCase):
     def setUp(self):
-        self.incident = json.loads((ROOT / 'samples/messages/incident.json').read_text())
-        self.baseline = json.loads((ROOT / 'samples/baseline.json').read_text())
+        self.incident = json.loads((ROOT / 'data/sentinel/samples/messages/incident.json').read_text())
+        self.baseline = json.loads((ROOT / 'data/sentinel/samples/baseline.json').read_text())
 
     def propose(self, baselines=None, provider=mock_provider):
         return propose(self.incident, [self.baseline] if baselines is None else baselines,

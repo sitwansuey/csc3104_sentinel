@@ -8,8 +8,8 @@ from runtime.executor_pipeline import process_executor_requests
 from runtime.guard_pipeline import process_guard_requests
 from runtime.planner_pipeline import process_planner_requests
 from runtime.recovery_runner import advance
-from services.coordinator import handle
-from services.planner import retrieve_runbooks
+from services.coordinator.core import handle
+from services.planner.core import retrieve_runbooks
 from scripts.test_executor_live import save, utc
 
 
@@ -73,4 +73,3 @@ def run_provider_case(lab, incident):
                        incident_id=incident["incident_id"], provider_state=state)
     if state != "RECOVERED":
         raise RuntimeError(f"Provider recovery stopped at {state}")
-
