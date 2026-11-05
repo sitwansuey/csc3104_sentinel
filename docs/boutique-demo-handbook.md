@@ -77,9 +77,9 @@ metrics remain unavailable unless the Metrics API supplies actual measurements.
 | Host checks and cluster ownership | `scripts/install-dependencies.ps1`, `scripts/test-boutique-live.ps1`, `infra/kind.yaml` |
 | Connected workload and shopping probes | `scripts/boutique_connected.py`, `scripts/boutique_storefront.py`, pinned `infra/boutique-connected-upstream.yaml` |
 | Harness proposal, injection and scenarios | `scripts/test_executor_live.py`, `scripts/test_boutique_live.py`, `runtime/lab_control.py`, `scripts/guard_rejection_demo.py` |
-| Observation and incident delivery | `services/observer.py`, `services/observer_kubernetes.py`, `runtime/observer_pipeline.py`, `services/coordinator.py` |
+| Observation and incident delivery | `services/observer.py`, `services/observer_kubernetes.py`, `runtime/observer_pipeline.py`, `services/coordinator.py`, `services/coordinator_store.py` |
 | Dependency findings and authorization | `services/verifier.py`, `runtime/guard_pipeline.py`, `services/guard.py` |
-| Conditional repair and reconciliation | `runtime/live_executor.py`, `runtime/executor_pipeline.py`, `services/executor.py`, `services/executor_store.py`, `services/k8s_executor_adapter.py` |
+| Conditional repair and reconciliation | `runtime/live_executor.py`, `runtime/executor_pipeline.py`, `services/executor.py`, `services/executor_store.py`, `services/executor_delivery_store.py`, `services/k8s_executor_adapter.py` |
 | Independent outcome | `runtime/verifier_pipeline.py`, `runtime/verifier_durable.py`, `services/verifier_store.py` |
 | UI and operational projections | `scripts/boutique_dashboard.py`, `runtime/dashboard.py`, `services/coordinator_read.py`, `runtime/cluster_metrics.py`, `runtime/boutique_observability.py`, `dashboard/src/` |
 

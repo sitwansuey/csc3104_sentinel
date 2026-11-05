@@ -1,9 +1,14 @@
 # Runner image security and validation
 
+This is a historical scan record. The old local runner images were removed on
+5 November 2026; no image built from the consolidated source has been scanned
+yet. Retained scan/checksum evidence under ignored `runs/` is historical too;
+the obsolete runner TAR and matching source ZIP were also removed.
+
 The previously exported laptop package is `sentinel-boutique-runner:0.3.0`, built
 for `linux/amd64` from main `d94d5d8` plus the packaging changes recorded here.
-Its base revision label identifies that main revision; use the exported matching
-source ZIP and its checksum to reproduce that package. The later browser
+Its base revision label identifies that main revision; the matching source ZIP
+and checksum were recorded with that retired package. The later browser
 injection controls, connected Boutique mode and service overview are source
 updates; they are not included in that TAR or covered by its scan result.
 
@@ -127,4 +132,4 @@ Coordinator and Executor coordination remain local; cross-host fencing is not
 implemented. Planner remains a harness substitute. The exported Windows/amd64
 image does not establish Apple Silicon, macOS, cloud or second-laptop success.
 
-Use [the laptop quickstart](laptop-demo-quickstart.md) for transfer and rehearsal.
+Use [the packaged demo guide](packaged-demo.md#laptop-prerequisites-and-transfer) for transfer and rehearsal.

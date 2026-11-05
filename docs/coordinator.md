@@ -6,6 +6,14 @@ outbox. Lifecycle changes and generated commands commit in the same transaction.
 `BEGIN IMMEDIATE` serializes competing local writers; SQLite is not coordination
 across hosts. Use a separate store connection per worker.
 
+`services/coordinator.py` owns lifecycle and routing decisions;
+`services/coordinator_store.py` owns the existing SQLite schema and queries.
+`SQLiteStore` and `CoordinatorError` remain importable from `services.coordinator`.
+Workers use `pending_routes`, `route`, report storage and `transaction()` without
+embedding Coordinator-table SQL. The transaction context still uses
+`BEGIN IMMEDIATE`; result persistence and request acknowledgment share the same
+commit. No schema migration or ORM is introduced.
+
 ## Run locally
 
 From the repository root, with Python 3.12+:

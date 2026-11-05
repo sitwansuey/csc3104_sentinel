@@ -13,6 +13,9 @@ import json
 from services.coordinator import acknowledge, dispatch_pending, record_message
 from services.executor import GuardCheck, execute, reconcile
 from services.executor_store import TargetBusy
+from services.executor_delivery_store import (
+    _ensure_reviews, _record_review, execution_delivery_reviews,
+)
 from services.guard import assert_decision_usable, evaluate
 
 
@@ -90,45 +93,6 @@ def _eligible(store, request):
     return action
 
 
-def _ensure_reviews(store):
-    store.db.execute("""
-        CREATE TABLE IF NOT EXISTS executor_delivery_reviews (
-            id INTEGER PRIMARY KEY, event_id INTEGER NOT NULL,
-            action_id TEXT NOT NULL, result TEXT NOT NULL, reason TEXT NOT NULL,
-            coordinator_state TEXT, guard_result TEXT,
-            UNIQUE(event_id, action_id, result)
-        )
-    """)
-
-
-def _record_review(store, event_id, result, reason):
-    action = store.action(result["action_id"])
-    encoded = json.dumps(result, sort_keys=True, separators=(",", ":"), allow_nan=False)
-    guard = json.dumps(action["guard_result"], sort_keys=True) if action else None
-    store.db.execute(
-        "INSERT OR IGNORE INTO executor_delivery_reviews"
-        "(event_id,action_id,result,reason,coordinator_state,guard_result) VALUES(?,?,?,?,?,?)",
-        (event_id, result["action_id"], encoded, reason, action["state"] if action else None, guard),
-    )
-
-
-def execution_delivery_reviews(store):
-    """Read durable conflicts needing manual lifecycle reconciliation.
-
-    Saved executor results remain unchanged. A later Guard decision or terminal
-    lifecycle state can prevent automatic delivery without disproving a past write.
-    Event ID zero identifies reconciliation without a pending routing command.
-    """
-    _ensure_reviews(store)
-    reviews = []
-    for row in store.db.execute("SELECT * FROM executor_delivery_reviews ORDER BY id"):
-        item = dict(row)
-        for field in ("result", "guard_result"):
-            item[field] = json.loads(item[field]) if item[field] is not None else None
-        reviews.append(item)
-    return reviews
-
-
 def reconcile_pending_executions(adapters):
     """Observe every unfinished write independently of Coordinator eligibility.
 
@@ -185,22 +149,18 @@ def process_executor_requests(store, event_bus, *, adapters):
     """
     _ensure_reviews(store)
     reconciled = {result["action_id"]: result for result in reconcile_pending_executions(adapters)}
-    pending = store.db.execute(
-        "SELECT id FROM outbox WHERE topic IN ('executor.request','executor.reconcile') "
-        "AND delivered=0 ORDER BY id"
-    ).fetchall()
+    pending = store.pending_routes("executor.request", "executor.reconcile")
     results = []
     seen_actions = set()
     for pending_row in pending:
-        request = store.db.execute("SELECT * FROM outbox WHERE id=?", (pending_row[0],)).fetchone()
+        request = store.route(pending_row[0])
         if request["delivered"]:
             continue
         seen_actions.add(request["action_id"])
         action = _eligible(store, request)
         if action is None:
             saved = adapters.ledger.get(request["action_id"])
-            store.db.execute("BEGIN IMMEDIATE")
-            try:
+            with store.transaction():
                 if saved and saved["result"]:
                     conflict = _delivery_conflict(store, saved["result"])
                     latest = store.action(saved["result"]["action_id"])
@@ -208,10 +168,6 @@ def process_executor_requests(store, event_bus, *, adapters):
                         _record_review(store, request["id"], saved["result"], conflict or
                                        "Execution result belongs to an obsolete routing command; inspect current lifecycle.")
                 acknowledge(store, request["id"])
-                store.db.execute("COMMIT")
-            except BaseException:
-                store.db.execute("ROLLBACK")
-                raise
             if saved and saved["result"]:
                 adapters.ledger.acknowledge_result(saved["result"])
             continue
@@ -221,9 +177,8 @@ def process_executor_requests(store, event_bus, *, adapters):
         result = reconciled.get(action["action_id"])
         if result is None:
             result = execute(deepcopy(action["proposal"]), request_adapters)
-        store.db.execute("BEGIN IMMEDIATE")
-        try:
-            current = store.db.execute("SELECT delivered FROM outbox WHERE id=?", (request["id"],)).fetchone()
+        with store.transaction():
+            current = store.route(request["id"])
             conflict = _delivery_conflict(store, result)
             if current["delivered"]:
                 latest = store.action(result["action_id"])
@@ -237,23 +192,14 @@ def process_executor_requests(store, event_bus, *, adapters):
                     record_message(result, store)
                     results.append(result)
                 acknowledge(store, request["id"])
-            store.db.execute("COMMIT")
-        except BaseException:
-            store.db.execute("ROLLBACK")
-            raise
         adapters.ledger.acknowledge_result(result)
     for action_id, result in reconciled.items():
         if action_id not in seen_actions:
-            store.db.execute("BEGIN IMMEDIATE")
-            try:
+            with store.transaction():
                 action = store.action(action_id)
                 if action is None or action["execution_result"] != result:
                     _record_review(store, 0, result,
                                    "Execution result has no pending command; inspect lifecycle before delivery.")
-                store.db.execute("COMMIT")
-            except BaseException:
-                store.db.execute("ROLLBACK")
-                raise
             adapters.ledger.acknowledge_result(result)
     dispatch_pending(store, event_bus)
     return results

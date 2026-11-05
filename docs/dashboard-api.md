@@ -8,8 +8,9 @@ Representative populated mock responses are produced by the explicitly labelled
 
 The response contains `generated_at` (UTC), `mode`, `limit`, `sources`,
 `incidents`, `actions`, `messages`, `approvals`, `outbox`, `reports`, `telemetry`
-and `cluster_history`. Lists are newest first and bounded (600 records, 60
-cluster snapshots). Shared message envelopes retain their own contract versions.
+and `cluster_history`. Optional `boutique_history` and `security_events` come
+from their respective journals when available. Lists are newest first and
+bounded (600 records, 60 cluster snapshots, 180 Boutique samples). Shared message envelopes retain their own contract versions.
 Missing data uses empty lists and explicit disconnected/unavailable sources.
 
 Example empty response, with unavailable storage:
@@ -30,7 +31,9 @@ desired/ready/available counts and observation timestamps. Cluster history holds
 configured cluster identity, namespace, observations and per-source availability.
 Connection success is not proof of producer freshness. Workload health does not
 change recorded incident lifecycle; only a recorded Verifier outcome supports
-RECOVERED. No request may approve, execute or mutate Kubernetes resources.
+RECOVERED. Snapshot reads do not approve, execute or mutate Kubernetes resources.
+Opt-in lab controls use separate fixed scenario gates; they release a trusted
+harness step and do not grant approval or arbitrary command execution.
 
 Coordinator records come from `services.coordinator_read.read_records`, a public
 bounded read interface owned by Coordinator. Only that service knows its tables.

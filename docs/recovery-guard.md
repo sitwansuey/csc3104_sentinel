@@ -18,8 +18,31 @@ policy enables them, until their checks are implemented.
 
 See the [version-2 guide](guard-v2.md) for baseline health/age, configuration
 compatibility, security, whole-workload resource budgets, admission previews and
-detailed audit reports. The [Member 4 role guide](guard-role.md) explains what
-the Guard owner contributes and where teammates supply trusted inputs.
+detailed audit reports. The ownership section below explains what the Guard
+owner contributes and where teammates supply trusted inputs.
+
+## Ownership (Member 4)
+
+The Guard owner maintains the rules between a suggested recovery and the
+Executor's cluster write:
+
+- Maintain versioned, workload-configured policies and explain ALLOW, REJECT
+  and ESCALATE decisions, with hard constraints taking precedence over approval.
+- Maintain the expiring proposal/input fingerprints and reports consumed by the
+  Coordinator and Executor; new dependency evidence must revoke stale permission.
+- Test invalid/stale identity, unsafe templates, resource constraints, missing
+  evidence and approval failures, including zero writes after refusal.
+- Record expected decisions, actual reasons, input fingerprints and latency for
+  reproducible evaluation; distinguish synthetic evaluation from live evidence.
+- Coordinate trusted state with Observer, proposal/baseline identity with
+  Planner, approval/lifecycle with Coordinator and dependency/health evidence
+  with Verifier. The Executor independently requests fresh Guard validation.
+
+These local handoffs now run in the [connected Boutique experiment](boutique-connected.md).
+Its proposals are harness-authored; real Planner/RCA and protected recovery
+remain separate integration work. See the [integration contract](guard-integration-contract.md)
+for the detailed owner boundaries. Code alone does not establish authenticated
+provenance or named-person agreement.
 
 ## Run the standalone demo
 

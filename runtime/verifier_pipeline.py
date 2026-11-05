@@ -46,12 +46,10 @@ requests pending. A committed outcome and acknowledgment are replay-safe.
                                policy_reader=bound_policy, clock=clock)
     # Compatibility for callers that already collect a complete window in one call.
     # Incremental/live workers must supply a VerificationStore to persist readings.
-    pending = store.db.execute(
-        "SELECT id FROM outbox WHERE topic='verifier.request' AND delivered=0 ORDER BY id"
-    ).fetchall()
+    pending = store.pending_routes("verifier.request")
     outcomes = []
     for row in pending:
-        request = store.db.execute("SELECT * FROM outbox WHERE id=?", (row[0],)).fetchone()
+        request = store.route(row[0])
         action = _eligible(store, request)
         if action is None:
             acknowledge(store, row[0])
@@ -69,17 +67,12 @@ requests pending. A committed outcome and acknowledgment are replay-safe.
         if collection_error:
             outcome["checks"].append({"name": "evidence_collection", "passed": False,
                                       "detail": "Post-action collection unavailable: " + collection_error})
-        store.db.execute("BEGIN IMMEDIATE")
-        try:
-            current = store.db.execute("SELECT * FROM outbox WHERE id=?", (row[0],)).fetchone()
+        with store.transaction():
+            current = store.route(row[0])
             latest = _eligible(store, current)
             if latest is not None and latest["execution_result"] == execution:
                 record_message(outcome, store)
                 outcomes.append(outcome)
             acknowledge(store, row[0])
-            store.db.execute("COMMIT")
-        except BaseException:
-            store.db.execute("ROLLBACK")
-            raise
     dispatch_pending(store, event_bus)
     return outcomes

@@ -1,9 +1,24 @@
 # Packaged Boutique demo on a Windows laptop
 
-For the load-image → start → test → cleanup sequence, use the
-[short laptop instructions](laptop-demo-quickstart.md). The current launcher
-selects `sentinel-boutique-runner:0.3.0`; older exported images do not contain
-the latest Verifier/Guard integration or packaging security fixes.
+This is the single packaged-demo guide for Windows/Intel/AMD laptops. The
+packaged launcher runs the shipping-only lab; use the [connected source guide](boutique-connected.md)
+for the current full storefront and browser injection experiment.
+
+The launcher currently selects `sentinel-boutique-runner:0.3.0`, but the old
+locally built images were retired during the 5 November cleanup. A new image
+from the consolidated source has not been built, scanned or accepted yet. Build
+and rehearse before using `-SkipBuild` or `-Offline`; historical scan results do
+not describe a future build.
+
+## Laptop prerequisites and transfer
+
+Install Docker Desktop with a running Linux engine, kind and PowerShell.
+Check `docker version`, `docker info --format '{{.OSType}}/{{.Architecture}}'`
+and `kind version`; the intended laptop is `linux/amd64`. Clone the matching
+repository version and build using the command below. For a future exported
+release, copy its matching source, TAR and checksums, verify with `Get-FileHash`,
+then use `docker load --input <runner.tar>` and inspect its architecture before
+choosing `-SkipBuild`. Do not combine an old TAR with newer source instructions.
 
 This runs the existing real Boutique recovery experiment from a Docker image.
 You need Docker Desktop with a running Linux engine, kind and PowerShell on the
@@ -104,6 +119,27 @@ kubeconfig is removed after the runner stops. Force-closing the host process can
 skip host cleanup: run the stop script, then check the printed run's `bootstrap/`
 for a leftover `operator-kubeconfig.yaml` and remove that exact file. Evidence and
 image caches are intentionally not deleted or globally pruned.
+
+## Optional second terminal
+
+Watch Pods after the packaged cluster is ready, using kubectl inside its node:
+
+```powershell
+docker exec sentinel-boutique-package-control-plane kubectl --kubeconfig=/etc/kubernetes/admin.conf -n sentinel-boutique get pods -w
+```
+
+To inject the first fault manually, wait at the first baseline-ready prompt and
+run the following before starting that watcher. Then press Enter in the main
+terminal to start detection/recovery; the paused harness reasserts that fault.
+
+```powershell
+docker exec sentinel-boutique-package-control-plane kubectl --kubeconfig=/etc/kubernetes/admin.conf -n sentinel-boutique set env deployment/shippingservice --containers=server PORT=invalid-port
+```
+
+Let later scenarios inject automatically and avoid configuration changes during
+recovery. Before presenting, rehearse the new image on the actual laptop, then
+try `demo-start.ps1 -Offline -Unattended` with all required images cached. Cached
+startup does not prove operation with network connectivity disabled.
 
 ## What each file does
 

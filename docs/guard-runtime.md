@@ -5,7 +5,7 @@ from any directory, can read a live Deployment and reference metadata, and can
 request a non-persisting server-side admission preview. It returns a version-2
 decision and never applies recovery or creates an approval. Python 3.12 or newer
 is recommended. See the [version-2 guide](guard-v2.md) for the policy rules and
-the [Member 4 role guide](guard-role.md) for ownership.
+the [Member 4 ownership guide](recovery-guard.md#ownership-member-4) for ownership.
 
 ## Run offline on Windows, macOS or Linux
 

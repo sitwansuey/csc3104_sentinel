@@ -119,12 +119,10 @@ class Delivery:
                         or not isinstance(report.get("input_fingerprints"), dict)
                         or latest is not None and report["input_fingerprints"].get("dependencies") != digest(latest)):
                     raise ProtocolError(409, "Guard result needs its report bound to current evidence")
-                previous = db.execute("SELECT report FROM guard_reports WHERE decision_sha256=?",
-                                      (digest(result),)).fetchone()
-                if previous and json.loads(previous[0]) != report:
+                previous = self.store.guard_report(digest(result))
+                if previous and previous != report:
                     raise ProtocolError(409, "Guard report conflicts with stored evidence")
-                db.execute("INSERT OR IGNORE INTO guard_reports(decision_sha256,action_id,report) VALUES(?,?,?)",
-                           (digest(result), source["action_id"], json.dumps(report, allow_nan=False)))
+                self.store.save_guard_report(source["action_id"], report)
             elif report is not None:
                 raise ProtocolError(403, "Only the Guard may submit an authorization report")
             record_message(result, self.store)

@@ -329,9 +329,9 @@ the live checks above are separate real-cluster evidence. Three
 PowerShell scripts passed syntax parsing. Only Windows/Python 3.15.1 was run
 locally; Linux/Python 3.12 remain CI targets.
 
-Local evidence is in
-[`runs/executor-live-20261024T220006Z-06e2dd`](../runs/executor-live-20261024T220006Z-06e2dd/summary.json).
-The directory includes inputs, execution results, HTTP samples, restricted-role
+Historical local evidence was recorded under
+`runs/executor-live-20261024T220006Z-06e2dd/summary.json`; ignored run artifacts
+are not included in a fresh clone. That directory included inputs, execution results, HTTP samples, restricted-role
 checks, the crash write receipt, restart transport counters, final Deployment,
 both SQLite ledgers, cleanup proof and an offline evidence-verification script.
 That verification confirmed two journaled attempts and two APPLIED actions,

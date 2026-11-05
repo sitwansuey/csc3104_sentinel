@@ -41,21 +41,13 @@ def _deliver(store, ledger, outcome):
     deduplicates it even after the incident reaches a terminal state.
     """
     job = ledger.get(outcome["action_id"])
-    store.db.execute("BEGIN IMMEDIATE")
-    try:
+    with store.transaction():
         _execution(store, job["execution"], active=False)
         record_message(outcome, store)
-        requests = store.db.execute(
-            "SELECT id,payload FROM outbox WHERE topic='verifier.request' AND action_id=? AND delivered=0",
-            (outcome["action_id"],),
-        ).fetchall()
+        requests = store.pending_routes("verifier.request", action_id=outcome["action_id"])
         for request in requests:
             if json.loads(request["payload"]).get("execution") == job["execution"]:
                 acknowledge(store, request["id"])
-        store.db.execute("COMMIT")
-    except BaseException:
-        store.db.execute("ROLLBACK")
-        raise
     ledger.acknowledge_outcome(outcome)
 
 
@@ -74,11 +66,9 @@ def process_verifier_requests(store, event_bus, *, ledger, policy_reader,
     for outcome in ledger.pending_outcomes():
         _deliver(store, ledger, outcome)
         delivered.append(outcome)
-    pending = store.db.execute(
-        "SELECT id FROM outbox WHERE topic='verifier.request' AND delivered=0 ORDER BY id"
-    ).fetchall()
+    pending = store.pending_routes("verifier.request")
     for row in pending:
-        request = store.db.execute("SELECT * FROM outbox WHERE id=?", (row[0],)).fetchone()
+        request = store.route(row[0])
         if request["delivered"]:
             continue
         payload = json.loads(request["payload"])

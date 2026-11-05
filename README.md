@@ -30,11 +30,13 @@ each stage and cleanup. The [5 November consolidation review](docs/repository-re
 records branch/PR decisions, exact tests, role coverage and remaining work.
 The previously exported runner image predates these source changes.
 
+Use the [documentation map](docs/README.md) to find role designs, specialised
+acceptance tests and optional security/provider modes.
+
 ## Start here: local setup on Windows
 
 For the container-packaged Boutique demo, use the
-[short Windows laptop instructions](docs/laptop-demo-quickstart.md) or the
-[detailed packaged demo guide](docs/packaged-demo.md). That route needs Docker
+[packaged demo guide](docs/packaged-demo.md). That route needs Docker
 Desktop and kind on the host; Python, kubectl and the built UI run in the image.
 The instructions below remain the host-development route.
 
@@ -426,7 +428,7 @@ resource constraints, temporary approval format and decision scenarios. The
 Kubernetes reads, exit codes and the Guard container. The
 [version-2 guide](docs/guard-v2.md) covers strict live policy, health/security and
 workload budgets, bound decisions, admission previews and audit reports. The
-[Member 4 role guide](docs/guard-role.md) describes your contribution and teammate
+[Member 4 ownership guide](docs/recovery-guard.md#ownership-member-4) describes your contribution and teammate
 handoffs. The demos use synthetic fixtures and a fixed UTC clock; they make no
 cluster writes. Version-2 demo approvals, health records and server previews are
 fabricated and have no live authority. The
