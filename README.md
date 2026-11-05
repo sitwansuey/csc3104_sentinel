@@ -38,8 +38,8 @@ resource notes in [setup](docs/setup.md) before using Apple Silicon.
 [Run and observe](docs/run.md) explains manual/automatic injection, evidence,
 the files used at each stage and interrupted cleanup. [Planner mode](docs/planner.md)
 adds `-Agent`; it requires a reachable Ollama server and a model you installed.
-Real-model acceptance is still pending. [Current verification status](docs/status.md)
-distinguishes actual Kubernetes tests from injected-model tests.
+Real-model acceptance is still pending. [Testing](docs/testing.md) explains
+how to validate each mode and distinguish live recovery from injected-model tests.
 
 ## Team responsibilities
 

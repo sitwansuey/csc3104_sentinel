@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import unittest
 
 from experiments.validation.demo_guard import load_fixtures
-from scripts.guard_rejection_demo import (
+from experiments.boutique.harness.rejection import (
     REASON, UNCHANGED_FIELDS, require_valid_approval, validate_rejection_proof,
 )
 from services.guard.core import evaluate_with_report, proposal_fingerprint

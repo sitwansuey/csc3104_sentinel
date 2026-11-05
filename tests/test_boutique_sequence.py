@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts.guard_rejection_demo import run_unnecessary_rollback
+from experiments.boutique.harness.rejection import run_unnecessary_rollback
 from scripts.test_boutique_live import BoutiqueExperiment
 
 
@@ -36,7 +36,7 @@ class BoutiqueSequenceTests(unittest.TestCase):
                 patch.object(experiment, "positive", side_effect=positive), \
                 patch.object(experiment, "crash_restart", side_effect=crash), \
                 patch.object(experiment, "deployment", return_value={"test": "final snapshot"}), \
-                patch("scripts.guard_rejection_demo.run_unnecessary_rollback", side_effect=refuse) as final:
+                patch("experiments.boutique.harness.rejection.run_unnecessary_rollback", side_effect=refuse) as final:
             if crash_error:
                 with self.assertRaisesRegex(RuntimeError, "verification failed"):
                     experiment.run()
@@ -71,7 +71,7 @@ class BoutiqueSequenceTests(unittest.TestCase):
             experiment.pause_before_injection = True
             try:
                 with patch("builtins.input", side_effect=KeyboardInterrupt) as prompt, \
-                        patch("scripts.guard_rejection_demo.workload_proof") as proof:
+                        patch("experiments.boutique.harness.rejection.workload_proof") as proof:
                     with self.assertRaises(KeyboardInterrupt):
                         run_unnecessary_rollback(experiment)
                     self.assertIn("unnecessary rollback proposal", prompt.call_args.args[0])

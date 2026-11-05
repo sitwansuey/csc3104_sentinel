@@ -5,7 +5,8 @@
 - `sources/rcaeval.json`: pinned published dataset revision/selection metadata.
 - `config/rcaeval-model.json`: optional benchmark model overrides.
 - `datasets/`: downloaded benchmark data, ignored by Git.
-- `schemas/`: Chaos Mesh experiment evidence contracts.
+- `schemas/run-manifest-v1.schema.json`: the local Chaos Mesh evidence contract,
+  separate from RCAEval, whose published source remains in Parquet format.
 - `runs/`: generated tasks, scores, model traces and experiment evidence, ignored.
 
 Dataset downloads and scoring are optional. See [RCAEval](../../agent/datasets/README.md).

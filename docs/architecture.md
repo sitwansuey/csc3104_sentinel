@@ -83,4 +83,6 @@ database read-only without creating/migrating it. Source freshness and formal
 incident outcome remain separate. Schema/ownership details live beside each
 role's implementation; shared wire contracts remain in `shared/contracts.py`.
 
-Current limits and exact fake/live evidence are in [status](status.md).
+Use [testing](testing.md) for acceptance procedures and [Planner mode](planner.md)
+for the model configuration and remaining acceptance boundaries. Record each run's
+actual results in its generated evidence rather than a versioned progress report.

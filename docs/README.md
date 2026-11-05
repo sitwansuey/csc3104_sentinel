@@ -6,7 +6,6 @@ Read these in order:
 2. [Run and observe](run.md): launch, browser/manual/automatic injection, evidence and cleanup.
 3. [Architecture](architecture.md): role handoffs and safety/ownership boundaries.
 4. [Testing](testing.md): offline regressions, live acceptance and specialised checks.
-5. [Current status](status.md): tested revisions, actual results and remaining limitations.
 
 Use [Planner mode](planner.md), [Chaos Mesh](chaos.md), [security](security.md) or
 [packaging](packaging.md) only when using that optional mode. Benchmarks are

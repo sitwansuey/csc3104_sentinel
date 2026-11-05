@@ -12,7 +12,7 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 from experiments.boutique.harness.dashboard import BoutiqueDashboard
-from scripts.guard_rejection_demo import UNCHANGED_FIELDS
+from experiments.boutique.harness.rejection import UNCHANGED_FIELDS
 from services.coordinator.core import SQLiteStore
 
 
