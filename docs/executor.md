@@ -11,6 +11,22 @@ offline regression tests use isolated test doubles. Both exercise the same
 execution ledger and state machine. Planner and Verifier remain separate
 responsibilities.
 
+The main files separate execution decisions from persistence:
+
+- `services/executor.py`: restricted execution and uncertain-write reconciliation.
+- `services/executor_store.py`: durable action/attempt/result ledger and local
+  workload locks.
+- `services/k8s_executor_adapter.py`: restricted Kubernetes reads and conditional
+  template writes.
+- `runtime/executor_pipeline.py`: Coordinator eligibility, delivery and restart
+  orchestration.
+- `services/executor_delivery_store.py`: SQL for delivery-conflict audit records;
+  these records do not overwrite saved execution results or incident decisions.
+
+The Coordinator's SQLite queries live in `services/coordinator_store.py`.
+Its result/acknowledgment transaction remains separate from the Kubernetes write
+and the Executor ledger; that gap still requires reconciliation.
+
 Run the offline regression tests from the repository root with Python 3.12+:
 
 ```bash

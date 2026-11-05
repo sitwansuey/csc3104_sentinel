@@ -12,7 +12,7 @@ but the execution-consumer helper refuses them. Messages are validated by
 [runner guide](guard-runtime.md) describes commands and the
 [Guard guide](recovery-guard.md) defines the input fields and reason codes. The
 [version-2 guide](guard-v2.md) describes the stronger policy gates and reports;
-the [Member 4 role guide](guard-role.md) explains the owner's concrete tasks.
+the [Member 4 ownership guide](recovery-guard.md#ownership-member-4) explains the owner's concrete tasks.
 
 ## Owners and handoffs
 

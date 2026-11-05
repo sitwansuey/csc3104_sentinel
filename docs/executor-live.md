@@ -16,9 +16,9 @@ Role 1 can mark the incident `RECOVERED`.
 
 | File | Responsibility |
 | --- | --- |
-| `services/executor/kubernetes_adapter.py` | Explicit-cluster reads and conditional template/evidence writes |
+| `services/k8s_executor_adapter.py` | Explicit-cluster reads and conditional template/evidence writes |
 | `runtime/live_executor.py` | Live CLI, strict Guard inputs, current approvals and optional admission preview |
-| `deploy/sentinel/executor-rbac.yaml` | Lab ServiceAccount restricted to the selected Deployment |
+| `infra/executor-rbac.yaml` | Lab ServiceAccount restricted to the selected Deployment |
 | `scripts/test_executor_live.py` | Real-cluster execution experiment and captured evidence |
 | `scripts/test-executor-live.ps1` | Windows launch, optional lab setup and cleanup |
 | `scripts/install-dependencies.ps1` / `.bat` | Check tools and install missing Windows prerequisites |
@@ -57,7 +57,7 @@ Existing compatible tools are kept. Start Docker Desktop and finish any required
 first-run/WSL setup before the live experiment. `-Setup` uses the existing lab
 setup to create/reuse `sentinel-lab` and deploy `demo-api`; omit it when those are
 already ready. `-Cleanup` removes the named lab after the run and retains evidence
-under `data/sentinel/runs/`. Execution policy changes only for that PowerShell process.
+under `runs/`. Execution policy changes only for that PowerShell process.
 
 The Python executor, real Guard and local Coordinator run on the desktop.
 Kubernetes runs the demo workload inside kind's node container. The executor
@@ -218,7 +218,7 @@ identities, versions, template hashes and measurements for its run.
 For a directory containing authoritative files, use:
 
 ```powershell
-$run = 'data\sentinel\runs\team-inputs'
+$run = 'runs\team-inputs'
 python -m runtime.live_executor `
   --context sentinel-executor --cluster-id sentinel-lab `
   --kubeconfig "$run\executor-kubeconfig.json" `
@@ -329,14 +329,14 @@ the live checks above are separate real-cluster evidence. Three
 PowerShell scripts passed syntax parsing. Only Windows/Python 3.15.1 was run
 locally; Linux/Python 3.12 remain CI targets.
 
-Local evidence is in
-[`data/sentinel/runs/executor-live-20261024T220006Z-06e2dd`](../data/sentinel/runs/executor-live-20261024T220006Z-06e2dd/summary.json).
-The directory includes inputs, execution results, HTTP samples, restricted-role
+Historical local evidence was recorded under
+`runs/executor-live-20261024T220006Z-06e2dd/summary.json`; ignored run artifacts
+are not included in a fresh clone. That directory included inputs, execution results, HTTP samples, restricted-role
 checks, the crash write receipt, restart transport counters, final Deployment,
 both SQLite ledgers, cleanup proof and an offline evidence-verification script.
 That verification confirmed two journaled attempts and two APPLIED actions,
 matching final template/action evidence, zero restart writes and both incidents
-still VERIFYING. `data/sentinel/runs/` is Git-ignored: preserve/share sanitized evidence
+still VERIFYING. `runs/` is Git-ignored: preserve/share sanitized evidence
 separately when handing results to teammates. The private token kubeconfig was
 removed, and no token is included in the summary.
 
@@ -347,7 +347,7 @@ the missing-package installation path has not been exercised on a clean machine.
 ## Cleanup and remaining integration
 
 `test-executor-live.ps1 -Cleanup` removes the named kind lab after testing and
-retains evidence under `data/sentinel/runs/`. The experiment removes its private execution
+retains evidence under `runs/`. The experiment removes its private execution
 credential file. Deleting the node container releases the cluster's CPU/RAM;
 Docker Desktop and unrelated resources are outside this cleanup scope.
 Downloaded image caches may remain on disk.
