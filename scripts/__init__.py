@@ -1,1 +1,1 @@
-"""Categorized Sentinel tools."""
+"""scripts tools."""

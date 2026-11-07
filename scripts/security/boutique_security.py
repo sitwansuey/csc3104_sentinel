@@ -21,10 +21,10 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from runtime.security_store import import_inspections
-from scripts.boutique.boutique_connected import APPLICATIONS, UPSTREAM, UPSTREAM_SHA256, connected_manifest, decoded_resources, image_digest
-from scripts.boutique.boutique_dashboard import BoutiqueDashboard
+from experiments.boutique.harness.connected import APPLICATIONS, UPSTREAM, UPSTREAM_SHA256, connected_manifest, decoded_resources, image_digest
+from experiments.boutique.harness.dashboard import BoutiqueDashboard
 from scripts.security.boutique_security_manifest import NAMESPACE, overlay
-from scripts.boutique.boutique_storefront import StorefrontProbe
+from experiments.boutique.traffic.storefront import StorefrontProbe
 from scripts.security.security_lab import CLIENT, ENVOY, INSPECTOR, certificates
 from runtime.boutique_observability import emit_observation, service_inventory
 

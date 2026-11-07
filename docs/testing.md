@@ -1,0 +1,86 @@
+# Test Sentinel
+
+Use a project virtual environment. Core RCA tests need the root requirements;
+the full suite also exercises the optional native RCAEval adapter:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -r agent/datasets/requirements.txt
+.\.venv\Scripts\python.exe scripts/check_contracts.py
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
+```
+
+On Linux/macOS substitute `.venv/bin/python`. pip installs code dependencies,
+not the benchmark dataset or an Ollama model. Optional benchmark tests report
+skips when their dependencies are absent; do not describe a skipped adapter as
+tested. CI installs both requirement sets and runs on Windows/Linux with Python
+3.12. The source has also been exercised on Windows/Python 3.15.1.
+
+```text
+cd dashboard
+npm ci
+npm test
+npm run build
+```
+
+The frontend tests use mocked data; the production build includes TypeScript
+checking. A non-failing bundle-size warning is currently expected.
+
+## Meaningful regression boundaries
+
+Tests cover approval/refusal and hard constraints, immutable action IDs,
+changed payloads, stale UID/version state, competing workers, bounded reads,
+uncertain writes, crashes before/after mutation, restart delivery, evidence-bound
+Guard revalidation and independent sustained health outcomes. New agent-flow
+tests use the actual RCA/Planner/Coordinator/Guard/Executor/Verifier code with a
+scripted model and fake Kubernetes. They do not establish real-model accuracy.
+
+For a small offline cross-role demonstration:
+
+```powershell
+python experiments/validation/demo_offline_flow.py
+python experiments/validation/demo_dependency_revalidation.py
+```
+
+Other component demonstrations are grouped under `experiments/validation/`.
+They support deterministic regressions and teaching; none substitutes for a live
+cluster. Guard case inputs and their [comparison guide](../data/experimentation/guard/README.md)
+are separate from harness-authored action proposals.
+
+## Connected live acceptance
+
+Use the [three-scenario browser run](run.md), or execute it unattended:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Connected -Dashboard -ExitAfterTest -Cleanup
+```
+
+Expected evidence: eleven observed Deployments; actual cart/checkout failures
+during two shipping faults; two APPLIED executions followed by two independent
+RECOVERED outcomes; no second repair write after the post-patch worker crash;
+one REJECTED unnecessary rollback with zero write attempts. Refusal/RBAC/CAS/
+competition/replay checks must pass as well. Inspect the printed run's summary,
+dashboard validation and teardown files. Do not infer recovery from fixture results.
+
+Real-model acceptance requires a configured Ollama instance and an explicit
+[agent run](planner.md). It remains deferred; passing injected-model tests or
+the default harness test does not complete it. Chaos Mesh has its own
+[injection demonstration](chaos.md), not automatic guarded repair.
+
+## Specialised role checks
+
+These opt-in scripts create/use dedicated labs and retain evidence. Read `--help`
+and the module's cleanup rules before running. They are not necessary for a
+normal presentation run:
+
+| Check | Script |
+| --- | --- |
+| Restricted Executor with a small HTTP fixture | `scripts/test-executor-live.ps1 -Setup -Cleanup` |
+| Observer real SDK/Collector telemetry | `scripts/validation/test_observer_otel_live.py` |
+| Timed Boutique detection/duplicate suppression | `scripts/validation/test_boutique_observer_acceptance.py` |
+| Observer deployed runtime | `scripts/validation/validate_observer_runtime.py` |
+| Verifier connected telemetry/read-only permissions | `scripts/validation/test_verifier_connected_live.py` |
+
+The workload fixtures in `experiments/workloads/` are used by these tests.
+They are not the Boutique app and are not unused runtime stubs. Do not delete
+their SDK dependency files or replace their outcomes with fabricated readings.
+All live tests need Docker/kind/kubectl; default unit tests need no cluster.

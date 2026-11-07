@@ -4,7 +4,8 @@ import json
 
 from agent.llm import Ollama
 from services.rca.core import DEFAULT_CONFIG, propose_from_telemetry
-from scripts.executor.test_executor_live import require, save
+from services.guard.common import json_sha256
+from experiments.recovery.live import require, save
 
 
 def export_telemetry(directory, target, destination):
@@ -90,7 +91,7 @@ class AgentPlanningMixin:
         finally:
             save(folder / "model-calls.json", llm.calls)
         save(folder / "model-proposal.json", proposal)
-        require(proposal["action"] == "ROLLBACK", "Agent did not authorize a supported rollback: " + proposal["action"])
+        require(proposal["action"] == "ROLLBACK", "Agent did not propose a supported rollback: " + proposal["action"])
         current = self.deployment()
         require(current["metadata"]["uid"] == before["metadata"]["uid"]
                 and current["spec"]["template"] == before["spec"]["template"],
@@ -98,6 +99,11 @@ class AgentPlanningMixin:
         # Status updates can change RV during inference. Bind the proposal to a fresh read;
         # Guard and Executor still independently re-read and enforce their normal checks.
         proposal["based_on_resource_version"] = current["metadata"]["resourceVersion"]
+        # Resource version is part of intent. Rebinding it must produce a new
+        # identity instead of reusing an ID for a different proposal payload.
+        proposal["action_id"] = "ACT-" + json_sha256({
+            key: value for key, value in proposal.items() if key != "action_id"})[:24]
+        save(folder / "model-proposal.json", proposal)
         save(folder / "planning-state.json", current)
         self.summary.update(planning="Live RCA agent and Ollama Recovery Planner", model=config["model"],
                             scope="Online Boutique shippingservice; real Observer/Coordinator/Agent/Guard/Executor/Verifier",

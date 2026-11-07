@@ -28,9 +28,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install -r requirements.txt
-      - run: python scripts/cli/check_contracts.py
-      - run: python scripts/demos/demo_offline_flow.py
+      - run: python -m pip install -r requirements.txt -r agent/datasets/requirements.txt
+      - run: python scripts/check_contracts.py
+      - run: python experiments/validation/demo_offline_flow.py
       - run: python -m unittest discover -s tests -p "test_*.py" -v
-      - run: bash -n scripts/executor/lab.sh
+      - run: bash -n scripts/run-sentinel.sh
         if: runner.os == 'Linux'

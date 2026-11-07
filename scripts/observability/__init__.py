@@ -1,1 +1,0 @@
-"""Categorized Sentinel tools."""

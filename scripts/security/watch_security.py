@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 from runtime.security_store import record, update_alert
 from scripts.security.scan_image_security import run_scan
 from services.executor.store import LocalTargetCoordinator, TargetBusy
-from services.security.image_security import image_reference
+from services.image_security import image_reference
 
 
 def stamp():

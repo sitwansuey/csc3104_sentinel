@@ -15,7 +15,7 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from services.security.grpc_inspection import MAX_BODY, METHODS
+from services.grpc_inspection import MAX_BODY, METHODS
 
 # Reviewed release manifests: Envoy 1.40.2, Boutique 0.10.7, grpcurl 1.9.3.
 ENVOY = "envoyproxy/envoy@sha256:8de97e654644827d62afdbf7e1d3dc9fee01a8690d410dd1c63a30dc6b6cecbb"

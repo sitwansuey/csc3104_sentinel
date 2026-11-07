@@ -8,13 +8,11 @@ from services.planner.core import propose
 
 def process_planner_requests(store, bus, *, baseline_reader, retriever, provider):
     proposals = []
-    pending = store.db.execute("SELECT id FROM outbox WHERE topic='planner.request' AND delivered=0 ORDER BY id").fetchall()
+    pending = store.pending_routes("planner.request")
     for row in pending:
-        store.db.execute('BEGIN IMMEDIATE')
-        try:
-            request = store.db.execute('SELECT * FROM outbox WHERE id=?', (row[0],)).fetchone()
+        with store.transaction():
+            request = store.route(row[0])
             if request['delivered']:
-                store.db.execute('COMMIT')
                 continue
             incident = json.loads(request['payload'])['incident']
             current = store.incident(incident['incident_id'])
@@ -23,9 +21,5 @@ def process_planner_requests(store, bus, *, baseline_reader, retriever, provider
                 record_message(proposal, store)
                 proposals.append(proposal)
             acknowledge(store, row[0])
-            store.db.execute('COMMIT')
-        except BaseException:
-            store.db.execute('ROLLBACK')
-            raise
     dispatch_pending(store, bus)
     return proposals

@@ -16,7 +16,7 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from scripts.executor.test_executor_live import Experiment, crash_worker, now, require, save, utc
+from experiments.recovery.live import Experiment, crash_worker, now, require, save, utc
 from runtime.observer_pipeline import LocalCoordinatorSink, ObserverStore
 from runtime.verifier_pipeline import process_verifier_requests
 from services.verifier.core import inspect_dependencies
@@ -112,7 +112,7 @@ class BoutiqueExperiment(Experiment):
     namespace = "sentinel-boutique"
     name = "shippingservice"
     restricted_context = "sentinel-executor-boutique"
-    entrypoint = ROOT / "scripts/boutique/test_boutique_live.py"
+    entrypoint = ROOT / "scripts/test_boutique_live.py"
     health_source = "sentinel-boutique-lab-grpc"
     health_description = "gRPC quote and replica health"
     allowed_registries = ["us-central1-docker.pkg.dev"]
@@ -127,7 +127,7 @@ class BoutiqueExperiment(Experiment):
     def after_recovery_scenarios(self):
         """Finish the default walkthrough by refusing a redundant third repair."""
         if self.provider_script is None:
-            from scripts.demos.guard_rejection_demo import run_unnecessary_rollback
+            from experiments.boutique.harness.rejection import run_unnecessary_rollback
             run_unnecessary_rollback(self)
 
     def close(self):
@@ -146,7 +146,7 @@ class BoutiqueExperiment(Experiment):
     def recover_incident(self, incident):
         if self.provider_script is None:
             return super().recover_incident(incident)
-        from scripts.boutique.boutique_provider import run_provider_case
+        from scripts.boutique_provider import run_provider_case
         return run_provider_case(self, incident)
 
     def prepare(self):
@@ -501,7 +501,7 @@ def main():
             experiment.dashboard = dashboard
             dashboard.start()
         if args.guard_rejection:
-            from scripts.demos.guard_rejection_demo import run_unnecessary_rollback
+            from experiments.boutique.harness.rejection import run_unnecessary_rollback
             experiment.prepare()
             experiment.permissions()
             run_unnecessary_rollback(experiment)

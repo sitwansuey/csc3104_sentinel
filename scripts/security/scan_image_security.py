@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from runtime.security_store import record
-from services.security.image_security import image_reference, summarize
+from services.image_security import image_reference, summarize
 
 
 # Trivy 0.76.1, reviewed release manifest. Updating it is a source change.

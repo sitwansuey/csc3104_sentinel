@@ -340,7 +340,7 @@ def run(tasks_root, output, method, timeout, *, resume=False, config=None):
         case_output = output / "cases" / case_id
         case_output.mkdir(parents=True, exist_ok=True)
         result_path = case_output / "result.json"
-        command = [sys.executable, str(ROOT / "scripts/evaluation/evaluate_rcaeval.py"), "_worker", "--task-dir",
+        command = [sys.executable, str(ROOT / "scripts/evaluate_rcaeval.py"), "_worker", "--task-dir",
                    str(tasks_root / "cases" / case_id), "--out", str(result_path), "--method", method]
         if config:
             command.extend(["--config", str(config.resolve())])

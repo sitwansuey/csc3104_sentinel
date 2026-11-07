@@ -40,6 +40,8 @@ class Ollama:
                     raise ValueError("Expected a JSON object")
                 return result
             except (urllib.error.URLError, TimeoutError, ValueError, KeyError) as exc:
+                if isinstance(exc, urllib.error.HTTPError):
+                    exc.close()
                 last_error = exc
                 if attempt == 0:
                     time.sleep(1)

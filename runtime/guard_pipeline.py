@@ -86,23 +86,18 @@ def process_guard_requests(store, event_bus, *, state_reader, policy_reader,
     Uses one SQLite transaction per request; readers should be short and bounded.
     """
     clock = clock or (lambda: datetime.now(timezone.utc))
-    pending = store.db.execute(
-        "SELECT id FROM outbox WHERE topic='guard.request' AND delivered=0 ORDER BY id"
-    ).fetchall()
+    pending = store.pending_routes("guard.request")
     decisions = []
     for pending_row in pending:
-        store.db.execute("BEGIN IMMEDIATE")
-        try:
-            request = store.db.execute("SELECT * FROM outbox WHERE id=?", (pending_row[0],)).fetchone()
+        with store.transaction():
+            request = store.route(pending_row[0])
             if request["delivered"]:
-                store.db.execute("COMMIT")
                 continue
             action = store.action(request["action_id"])
             incident = store.incident(action["incident_id"]) if action else None
             if (not action or incident["active_action_id"] != action["action_id"]
                     or action["state"] not in {"VALIDATING", "AWAITING_APPROVAL"}):
                 acknowledge(store, request["id"])
-                store.db.execute("COMMIT")
                 continue
             proposal = action["proposal"]
             policy = policy_reader(deepcopy(proposal))
@@ -119,21 +114,13 @@ def process_guard_requests(store, event_bus, *, state_reader, policy_reader,
             if decision["verdict"] == "ALLOW":
                 assert_decision_usable(decision, proposal, state, policy, baseline,
                                        dependencies, approval, now=now)
-            store.db.execute(
-                "INSERT OR IGNORE INTO guard_reports(decision_sha256,action_id,report) VALUES(?,?,?)",
-                (report["decision_sha256"], action["action_id"], json.dumps(report, allow_nan=False)))
+            store.save_guard_report(action["action_id"], report)
             record_message(decision, store)
             # Every queued request for this action is covered by the newest
             # evidence read under this same transaction, including a provider
             # finding ingested above. Avoid evaluating superseded requests twice.
-            for covered in store.db.execute(
-                    "SELECT id FROM outbox WHERE topic='guard.request' AND action_id=? AND delivered=0",
-                    (action["action_id"],)).fetchall():
+            for covered in store.pending_routes("guard.request", action_id=action["action_id"]):
                 acknowledge(store, covered[0])
-            store.db.execute("COMMIT")
             decisions.append(decision)
-        except BaseException:
-            store.db.execute("ROLLBACK")
-            raise
     dispatch_pending(store, event_bus)
     return decisions
