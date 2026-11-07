@@ -67,6 +67,50 @@ describe("shadcn dashboard",()=>{
     expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(screen.getByText("Updates paused")).toBeInTheDocument()
   })
+  it.each(["snapshot","error"] as const)("discards a late automatic %s after pausing and permits manual refresh and resume",async(result)=>{
+    vi.useFakeTimers()
+    render(<App/>)
+    await act(async()=>{await Promise.resolve()})
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    type Response = {ok:boolean;json:()=>Promise<Snapshot>}
+    let resolveRequest!:(response:Response)=>void
+    let rejectRequest!:(reason:Error)=>void
+    // Deliberately ignore AbortSignal: a cancelled request can still finish.
+    const pending=new Promise<Response>((resolve,reject)=>{resolveRequest=resolve;rejectRequest=reject})
+    fetchMock.mockImplementationOnce(()=>pending)
+    const late=structuredClone(data)
+    late.demo_step="Late automatic snapshot"
+    await act(async()=>{await vi.advanceTimersByTimeAsync(2000)})
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    act(()=>screen.getByRole("button",{name:"Pause updates"}).click())
+    expect(screen.getByText("Updates paused")).toBeInTheDocument()
+
+    // An abandoned poll must not block an explicit refresh while paused.
+    data.demo_step="Manual paused snapshot"
+    await act(async()=>{screen.getByRole("button",{name:"Refresh dashboard"}).click();await Promise.resolve()})
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(screen.getByText(/Manual paused snapshot/)).toBeInTheDocument()
+
+    await act(async()=>{
+      if(result==="snapshot")resolveRequest({ok:true,json:async()=>late})
+      else rejectRequest(new Error("late automatic failure"))
+      await Promise.resolve()
+    })
+    expect(screen.getByText(/Manual paused snapshot/)).toBeInTheDocument()
+    expect(screen.queryByText(/Late automatic snapshot/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Dashboard connection lost/)).not.toBeInTheDocument()
+    await act(async()=>{await vi.advanceTimersByTimeAsync(4000)})
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+
+    data.demo_step="Resumed automatic snapshot"
+    await act(async()=>{screen.getByRole("button",{name:"Resume updates"}).click();await Promise.resolve()})
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(screen.getByText(/Resumed automatic snapshot/)).toBeInTheDocument()
+    expect(screen.queryByText("Updates paused")).not.toBeInTheDocument()
+    await act(async()=>{await vi.advanceTimersByTimeAsync(2000)})
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+  })
   it("supports tab keyboard navigation and text-safe producer content",async()=>{
     data.messages.find(r=>r.message.kind==="proposal")!.message.rationale="<img src=x onerror=alert(1)>"
     await ready()
@@ -82,6 +126,8 @@ describe("shadcn dashboard",()=>{
     fetchMock.mockRejectedValue(new Error("offline"))
     await userEvent.click(screen.getByRole("button",{name:"Refresh dashboard"}))
     await screen.findByText(/Dashboard connection lost/)
+    await userEvent.click(screen.getByRole("button",{name:"Pause updates"}))
+    expect(screen.getByText(/Automatic retries are paused/)).toBeInTheDocument()
     await tab("Kubernetes")
     expect(screen.getByText(/Dashboard connection lost/)).toBeInTheDocument()
     fetchMock.mockImplementation(async()=>({ok:true,json:async()=>structuredClone(data)}))
