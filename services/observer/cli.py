@@ -12,7 +12,7 @@ import threading
 
 from runtime.observer_pipeline import LocalCoordinatorSink, ObserverStore, is_ready, status_file
 from services.observer.kubernetes import InClusterReader, KubectlReader, KubernetesEvidenceCollector
-from services.observer_telemetry import CorrelatedEvidenceCollector, TelemetryStore
+from services.observer.telemetry import CorrelatedEvidenceCollector, TelemetryStore
 from runtime.observer_fleet import fleet_health, load_targets, run_fleet
 
 

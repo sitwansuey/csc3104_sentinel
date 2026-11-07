@@ -4,13 +4,14 @@ Each service has its own Python package. Core interfaces live in `core.py`; supp
 
 | Package | Responsibility |
 | --- | --- |
-| `coordinator/` | Incident lifecycle, approvals, persistence and event routing |
-| `observer/` | Incident detection and Kubernetes evidence collection |
+| `coordinator/` | Incident lifecycle, approvals, persistence, event routing and bounded read projections |
+| `observer/` | Incident detection, Kubernetes evidence collection and correlated telemetry |
 | `planner/` | Recovery proposals |
 | `rca/` | Incident integration and CLI for the RCA engine |
 | `guard/` | Policy, resource, dependency and preview validation |
 | `executor/` | Conditional Kubernetes actions and durable execution state |
 | `verifier/` | Recovery verification, health evidence and live workers |
+| `security/` | Bounded gRPC inspection and image vulnerability findings |
 
 Examples: `from services.planner.core import propose`, `python -m services.observer.cli --help`, and `python -m services.verifier.live_worker --help`.
 

@@ -13,7 +13,7 @@ def import_inspections(path, events):
     if not isinstance(events, list) or len(events) > 1000:
         raise ValueError("Inspection import must be a bounded batch")
     allowed = {"kind", "at", "method", "bytes", "verdict", "rule", "items"}
-    from services.grpc_inspection import METHODS
+    from services.security.grpc_inspection import METHODS
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(path, timeout=5)) as db:

@@ -9,7 +9,7 @@ import sqlite3
 
 from runtime.observer_pipeline import ObserverStore, is_ready, status_file
 from services.observer.kubernetes import KubernetesEvidenceCollector
-from services.observer_telemetry import CorrelatedEvidenceCollector, TelemetryStore
+from services.observer.telemetry import CorrelatedEvidenceCollector, TelemetryStore
 
 
 def load_targets(path):

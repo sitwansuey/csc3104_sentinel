@@ -4,7 +4,7 @@ import json
 
 from agent.llm import Ollama
 from services.rca.core import DEFAULT_CONFIG, propose_from_telemetry
-from scripts.test_executor_live import require, save
+from scripts.executor.test_executor_live import require, save
 
 
 def export_telemetry(directory, target, destination):

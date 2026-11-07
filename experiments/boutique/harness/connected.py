@@ -17,7 +17,7 @@ from urllib.request import urlopen
 
 from experiments.boutique.traffic.storefront import StorefrontProbe
 from experiments.boutique.harness.live import BoutiqueExperiment, CLIENT_IMAGE, command, shipping_manifest
-from scripts.test_executor_live import now, require, save, utc
+from scripts.executor.test_executor_live import now, require, save, utc
 from services.executor.store import fingerprint
 from services.observer.kubernetes import KubernetesEvidenceCollector, KubectlReader
 from services.verifier.core import inspect_dependencies

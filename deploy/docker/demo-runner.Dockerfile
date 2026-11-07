@@ -59,7 +59,7 @@ COPY --from=frontend /frontend/dist/ dashboard/dist/
 # A cached frontend stage can predate freshly checked-out source timestamps.
 # These exact sources were already built above; stamp that build without Node.
 RUN touch dashboard/dist/index.html \
-    && python -c "from scripts.dashboard import ensure_frontend; ensure_frontend()" \
+    && python -c "from scripts.observability.dashboard import ensure_frontend; ensure_frontend()" \
     && mkdir /data && chown 10001:10001 /data \
     && apk del --no-cache ca-certificates alpine-baselayout busybox busybox-binsh \
     && ! apk info -e busybox \
@@ -67,4 +67,4 @@ RUN touch dashboard/dist/index.html \
 # The runtime executes Python/kubectl directly; no shell or BusyBox is needed.
 USER 10001:10001
 EXPOSE 8765
-ENTRYPOINT ["python", "scripts/test_boutique_live.py"]
+ENTRYPOINT ["python", "scripts/boutique/test_boutique_live.py"]

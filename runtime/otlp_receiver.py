@@ -10,7 +10,7 @@ from pathlib import Path
 import sqlite3
 import zlib
 
-from services.observer_telemetry import TelemetryError, TelemetryStore
+from services.observer.telemetry import TelemetryError, TelemetryStore
 
 MAX_BYTES = 1_000_000
 

@@ -14,7 +14,7 @@ With Docker Desktop's Linux engine running and kind, kubectl, Python and the
 dashboard build tools installed, run from the repository root:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Connected -Dashboard -UIControls -Cleanup
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\boutique\test-boutique-live.ps1 -Setup -Connected -Dashboard -UIControls -Cleanup
 ```
 
 Open **http://127.0.0.1:8765/#overview** for injection/recovery and
@@ -22,23 +22,23 @@ Open **http://127.0.0.1:8765/#overview** for injection/recovery and
 and 6 with harness-authored proposals and demo approval. Eleven Deployments are
 observed; supported faults and repairs currently target shipping. The **Online
 Boutique** page shows service readiness, shopping measurements, Pods/restarts
-and warning events. The optional [live agent mode](docs/boutique-demo-handbook.md#live-agent-recovery-mode)
+and warning events. The optional [live agent mode](docs/boutique/boutique-demo-handbook.md#live-agent-recovery-mode)
 uses RCA and Ollama planning for one guarded recovery; the default demo keeps
 harness-authored proposals.
 
-Use the [demo handbook](docs/boutique-demo-handbook.md) and
-[connected guide](docs/boutique-connected.md) for prerequisites, code used at
-each stage and cleanup. The [5 November consolidation review](docs/repository-review-2026-11-05.md)
+Use the [demo handbook](docs/boutique/boutique-demo-handbook.md) and
+[connected guide](docs/boutique/boutique-connected.md) for prerequisites, code used at
+each stage and cleanup. The [5 November consolidation review](docs/archive/repository-review-2026-11-05.md)
 records branch/PR decisions, exact tests, role coverage and remaining work.
 The previously exported runner image predates these source changes.
 
 ## Repository organization
 
-To test live recovery with your agent, see [live agent recovery mode](docs/boutique-demo-handbook.md#live-agent-recovery-mode): `python scripts/test_boutique_live.py --agent --dashboard --pause-before-injection`.
+To test live recovery with your agent, see [live agent recovery mode](docs/boutique/boutique-demo-handbook.md#live-agent-recovery-mode): `python scripts/boutique/test_boutique_live.py --agent --dashboard --pause-before-injection`.
 
 All project data is under `data/`: `data/sentinel/` contains application fixtures, settings and runtime evidence; `data/experimentation/` contains benchmark datasets, experiment settings and evaluation results. Existing `sample-100` results are at `data/experimentation/runs/sample-100/`. See the [data layout](data/README.md).
 
-See the [repository layout](docs/repository-layout.md) and [shared Boutique experiment environment](experiments/boutique/README.md). Deployment resources live in `deploy/`; Boutique harness and traffic code live in `experiments/boutique/`; dataset conventions live in `data/`. Existing recovery-demo launch commands remain supported. The [Chaos Mesh demo guide](docs/boutique-chaos-demo.md) documents live faults; the [RCAEval guide](docs/rcaeval.md) documents the published offline benchmark.
+See the [repository layout](docs/repository-layout.md), [categorized commands](scripts/README.md) and [shared Boutique experiment environment](experiments/boutique/README.md). Scripts, Python tests and guides are grouped by feature. Deployment resources live in `deploy/`; Boutique harness and traffic code live in `experiments/boutique/`; dataset conventions live in `data/`. Use the categorized command paths shown below. The [Chaos Mesh demo guide](docs/boutique/boutique-chaos-demo.md) documents live faults; the [RCAEval guide](docs/evaluation/rcaeval.md) documents the published offline benchmark.
 
 ## RCAEval benchmark and live chaos demo
 
@@ -46,21 +46,21 @@ Offline evaluation uses **645 non-code RCAEval cases**: RE1 and RE2 across Onlin
 
 ```powershell
 python -m pip install -r requirements.txt
-python scripts/download_rcaeval.py
-python scripts/evaluate_rcaeval.py export --out data/experimentation/runs/rcaeval-eval
-python scripts/evaluate_rcaeval.py run --tasks data/experimentation/runs/rcaeval-eval/tasks --out data/experimentation/runs/rcaeval-eval/results --method casetoolkit
-python scripts/evaluate_rcaeval.py score --answers data/experimentation/runs/rcaeval-eval/answers.jsonl --predictions data/experimentation/runs/rcaeval-eval/results/predictions.jsonl --out data/experimentation/runs/rcaeval-eval/scores
+python scripts/evaluation/download_rcaeval.py
+python scripts/evaluation/evaluate_rcaeval.py export --out data/experimentation/runs/rcaeval-eval
+python scripts/evaluation/evaluate_rcaeval.py run --tasks data/experimentation/runs/rcaeval-eval/tasks --out data/experimentation/runs/rcaeval-eval/results --method casetoolkit
+python scripts/evaluation/evaluate_rcaeval.py score --answers data/experimentation/runs/rcaeval-eval/answers.jsonl --predictions data/experimentation/runs/rcaeval-eval/results/predictions.jsonl --out data/experimentation/runs/rcaeval-eval/scores
 ```
 
 To test your local model with upstream CaseToolkit, install `requirements.txt` and run the evaluator with `--method casetoolkit`. Model settings default to `data/sentinel/samples/rca-config.json`; `--config data/experimentation/config/rcaeval-model.json` supplies overrides. Tool requests, results and scored predictions are saved for inspection.
 
-See [RCAEval selection, model evaluation and scoring](docs/rcaeval.md). For live demonstrations, use `python scripts/run_boutique_chaos.py --setup --faults network`; see [the demo guide](docs/boutique-chaos-demo.md).
+See [RCAEval selection, model evaluation and scoring](docs/evaluation/rcaeval.md). For live demonstrations, use `python scripts/boutique/run_boutique_chaos.py --setup --faults network`; see [the demo guide](docs/boutique/boutique-chaos-demo.md).
 
 ## Start here: local setup on Windows
 
 For the container-packaged Boutique demo, use the
-[short Windows laptop instructions](docs/laptop-demo-quickstart.md) or the
-[detailed packaged demo guide](docs/packaged-demo.md). That route needs Docker
+[short Windows laptop instructions](docs/setup/laptop-demo-quickstart.md) or the
+[detailed packaged demo guide](docs/setup/packaged-demo.md). That route needs Docker
 Desktop and kind on the host; Python, kubectl and the built UI run in the image.
 The instructions below remain the host-development route.
 
@@ -92,7 +92,7 @@ Install the Python packages and benchmark data below in addition to the tools.
 The agent uses a local Ollama model; no cloud account or LLM API key is required.
 Package installation, dataset downloads and the first container-image downloads
 need network access. Docker Desktop also needs its supported Windows/WSL 2 and
-hardware-virtualization prerequisites; the [dependency guide](docs/dependencies.md)
+hardware-virtualization prerequisites; the [dependency guide](docs/setup/dependencies.md)
 links the platform requirements.
 
 ### Install Python packages and download RCAEval
@@ -101,7 +101,7 @@ After installing Python through either tool setup method, run from the repositor
 
 ```powershell
 python -m pip install -r requirements.txt
-python scripts/download_rcaeval.py
+python scripts/evaluation/download_rcaeval.py
 ```
 
 `requirements.txt` is the single Python dependency file for the agent, benchmark
@@ -109,7 +109,7 @@ tools and instrumented Verifier lab. The downloader saves all **645 RE1/RE2
 non-code cases** (about **3.11 GB**) under
 `data/experimentation/datasets/rcaeval-non-code/`; RE3 code faults are excluded.
 It checks source hashes and reuses verified files when rerun. To fetch only the
-filtered index, use `python scripts/download_rcaeval.py --index-only`.
+filtered index, use `python scripts/evaluation/download_rcaeval.py --index-only`.
 The underlying module also remains available as `python -m agent.datasets.rcaeval`.
 
 Evaluation outputs belong under `data/experimentation/runs/`; application outputs
@@ -120,10 +120,10 @@ belong under `data/sentinel/runs/`. All directories named `runs/` are Git-ignore
 #### 1. Install missing dependencies
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-dependencies.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup\install-dependencies.ps1
 ```
 
-Alternatively, double-click `scripts\install-dependencies.bat`. The installer
+Alternatively, double-click `scripts\setup\install-dependencies.bat`. The installer
 keeps existing compatible tools and installs missing ones. Review installer
 prompts and finish Docker Desktop's first-run setup. Windows feature changes,
 WSL setup and reboots are not automated. If the tools install but Docker is not
@@ -136,7 +136,7 @@ The lab uses kind, so Docker Desktop's separate built-in Kubernetes cluster need
 not be enabled. Then check without installing or creating anything:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-dependencies.ps1 -CheckOnly
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup\install-dependencies.ps1 -CheckOnly
 ```
 
 Expected result: all four tools are found and the Docker Linux engine responds,
@@ -151,7 +151,7 @@ after installation, or use the executable paths printed by the checker.
 With a working Python command:
 
 ```powershell
-python scripts/check_contracts.py
+python scripts/cli/check_contracts.py
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
@@ -163,7 +163,7 @@ paths deterministically; passing them is not evidence of live Kubernetes recover
 For the complete local Role 5 experiment, use:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-executor-live.ps1 -Setup -Cleanup
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\executor\test-executor-live.ps1 -Setup -Cleanup
 ```
 
 This creates/reuses the single-node `sentinel-lab` kind cluster, builds and loads
@@ -188,7 +188,7 @@ experiment evidence separately.
 To keep the healthy cluster available for development, omit `-Cleanup`:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-executor-live.ps1 -Setup
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\executor\test-executor-live.ps1 -Setup
 ```
 
 Remove a retained cluster when finished. From a terminal where kind is available:
@@ -245,7 +245,7 @@ that intended lab instead of creating it again. The Deployment should reach
 `1/1` ready. Then run the actual Executor experiment against this prepared lab:
 
 ```powershell
-python scripts/test_executor_live.py
+python scripts/executor/test_executor_live.py
 ```
 
 The experiment still measures the healthy baseline, provisions a restricted
@@ -267,27 +267,27 @@ This removes the named cluster and its workload containers, while retaining
 during live testing; neither requires enabling its separate Kubernetes cluster.
 
 For detailed installation/troubleshooting and Linux/macOS prerequisites, read
-[dependencies.md](docs/dependencies.md). For the live Executor's design, inputs,
+[dependencies.md](docs/setup/dependencies.md). For the live Executor's design, inputs,
 CLI, measured results, RBAC and limitations, read
-[executor-live.md](docs/executor-live.md). The [Local lab](#local-lab) section
+[executor-live.md](docs/executor/executor-live.md). The [Local lab](#local-lab) section
 below describes the older operator-run experiment and its menu separately.
 
 ## Current implementation
 
-The opt-in [security lab](docs/security.md) adds an mTLS gRPC reverse proxy,
+The opt-in [security lab](docs/security/security.md) adds an mTLS gRPC reverse proxy,
 schema-aware shipping request inspection, image CVE detection and package patch
 recommendations in the dashboard's Security view. It is isolated from existing
 Kubernetes labs; scanning does not automatically patch or deploy images.
-The [connected security lab](docs/security-connected.md) runs the full storefront
+The [connected security lab](docs/security/security-connected.md) runs the full storefront
 with inspected shipping traffic, enforced Calico policies, candidate validation
 and scheduled image scans/alerts in its own kind cluster.
 
 For opt-in browser buttons that inject the Boutique lab scenarios and display
-their measured outcomes, see [browser-controlled experiments](docs/experiment-controls.md).
+their measured outcomes, see [browser-controlled experiments](docs/dashboard/experiment-controls.md).
 The default dashboard remains read-only; the experiment controls do not approve
 proposals or bypass Guard/Executor checks.
 For connected-service testing with the real storefront and checkout, see the
-[connected Boutique lab](docs/boutique-connected.md). It keeps shipping-only
+[connected Boutique lab](docs/boutique/boutique-connected.md). It keeps shipping-only
 Executor permissions and adds actual downstream shopping-flow verification.
 Its **Online Boutique** dashboard page shows all eleven Deployment readiness
 cards and measured homepage/cart/checkout results before, during and after faults.
@@ -299,25 +299,25 @@ shippingservice. The last scenario rejects a redundant rollback with zero Execut
 repair patch attempts; it does not crash the pod again. The default interactive
 run has three Enter prompts and ends with two `RECOVERED` incidents and one
 `REJECTED` incident. Rebuild the packaged runner to include the new sequence.
-For only the final scenario, run `scripts\start-guard-rejection.bat` or use
-`-GuardRejection`. See [the Guard rejection demo](docs/guard-rejection-demo.md).
+For only the final scenario, run `scripts\demos\start-guard-rejection.bat` or use
+`-GuardRejection`. See [the Guard rejection demo](docs/guard/guard-rejection-demo.md).
 
 For an opt-in experiment using the real Online Boutique shipping service, see
-[the single-service Boutique guide](docs/boutique-live.md). It reuses the Guard
+[the single-service Boutique guide](docs/boutique/boutique-live.md). It reuses the Guard
 and restricted Executor with harness-authored proposals. Role 6 now evaluates
 the reviewed dependency graph and publishes outcomes from live gRPC, readiness
 and template evidence. Add `--agent` to use RCA and Ollama planning for one
 recovery; the default three-scenario run uses harness-authored proposals.
-The [Boutique demo instruction book](docs/boutique-demo-handbook.md) explains
+The [Boutique demo instruction book](docs/boutique/boutique-demo-handbook.md) explains
 integrated live dashboard startup, injection, role coverage, evidence and cleanup.
 For team handover and presentations, see the
-[current-system script and flowchart](docs/current-system-demo.md).
+[current-system script and flowchart](docs/architecture/current-system-demo.md).
 
 The demo lab, message validator, synthetic samples and contract tests are provided.
 The Coordinator now has SQLite lifecycle/approval persistence, durable local event
 routing, a CLI and an offline integration demo. The Observer has threshold-based detection, ownership-correlated Pod/event/log
 collection, a persistent worker/outbox, local Coordinator handoff and a restricted
-Kubernetes deployment. Its [connected telemetry runtime](docs/observer-telemetry.md)
+Kubernetes deployment. Its [connected telemetry runtime](docs/observer/observer-telemetry.md)
 adds bounded OTLP traces/metrics/logs, current-Pod correlation, gauge thresholds
 and independent monitoring of multiple configured Deployments. Boutique tracing
 instrumentation and shared-cloud transport remain integration work.
@@ -339,16 +339,16 @@ Guard/Coordinator integration tests. Offline Planner validation and a provider
 adapter boundary are implemented; the default live demo still uses the harness.
 Boutique now consumes durable verification requests and supplies real gRPC,
 readiness and template evidence; successful outcomes close its incidents as
-RECOVERED. See [the current workflow](docs/current-system-demo.md).
+RECOVERED. See [the current workflow](docs/architecture/current-system-demo.md).
 Trusted production baseline storage, authenticated human approvals, deployed
 remote worker adapters and cross-host target ownership still need integration.
 An optional authenticated worker-delivery interface exists; it is not the
 transport used by the local harness or proof of distributed execution. Sample
 results are not live authorisations or measured outcomes.
 
-The [Executor core guide](docs/executor.md) explains durable action records,
+The [Executor core guide](docs/executor/executor.md) explains durable action records,
 coordination and crash reconciliation. The
-[live Executor write-up](docs/executor-live.md) describes actual Kubernetes
+[live Executor write-up](docs/executor/executor-live.md) describes actual Kubernetes
 execution, restricted RBAC, team handoff, reproducible testing and cleanup.
 
 ## Ownership and deliverables
@@ -357,7 +357,7 @@ execution, restricted RBAC, team handoff, reproducible testing and cleanup.
 | --- | --- | --- |
 | **1 — [Coordinator](services/coordinator/core.py) + environment** | SQLite incident lifecycle, approval records and local event routing; support the lab | Persistent lifecycle and approvals, reliable event routing, restart handling, shared workload/fault automation |
 | **2 — [Observer](services/observer/core.py)** | Convert sample observations into incidents; filter transient failures and duplicates | Live Kubernetes and telemetry collection, threshold-based detection and correlated incident context |
-| **3 — [RCA / Planner](docs/rca.md)** | Imported Sentinel RCA engine and diagnostic runbooks; validate proposals from an injected provider | Evidence-backed diagnosis, typed actions, evidence references and explicit failure/escalation paths |
+| **3 — [RCA / Planner](docs/architecture/rca.md)** | Imported Sentinel RCA engine and diagnostic runbooks; validate proposals from an injected provider | Evidence-backed diagnosis, typed actions, evidence references and explicit failure/escalation paths |
 | **4 — [Guard](services/guard/core.py)** | Check target/action policy, current state, baseline and approval | State, policy, resource and dependency validation; ALLOW/REJECT/ESCALATE decisions; approval and optional preview gates |
 | **5 — [Executor](services/executor/core.py)** | Restore an explicit template through a fake API; persist attempts and handle duplicates/conflicts | Restricted Kubernetes execution, per-target coordination, conditional writes, idempotency, bounded retries and crash reconciliation |
 | **6 — [Verifier](services/verifier/core.py)** | Traverse a sample dependency graph and verify a health window | Observed dependency graph, impact-check results, sustained service/dependency health verification and recovery metrics |
@@ -437,22 +437,22 @@ fault settings, workload/model/prompt versions and repeated-run results.
 Use Python 3.12+. No external packages are needed for the starter checks.
 
 ```bash
-python scripts/check_contracts.py
+python scripts/cli/check_contracts.py
 python -m unittest discover -s tests -p "test_*.py" -v
-python scripts/demo_guard.py
-python scripts/demo_coordinator.py
-python scripts/demo_guard_handoff.py
-python scripts/demo_guard_v2.py
-python scripts/demo_verifier.py
+python scripts/demos/demo_guard.py
+python scripts/demos/demo_coordinator.py
+python scripts/demos/demo_guard_handoff.py
+python scripts/demos/demo_guard_v2.py
+python scripts/demos/demo_verifier.py
 ```
 
-The [Verifier guide](docs/verifier.md) explains graph traversal and health windows.
-The [durable worker](docs/verifier-worker.md) preserves readings/deadlines through
-restart; [live adapters](docs/verifier-live.md) read Kubernetes, HTTP and OTLP
-evidence. The [connected validation](docs/verifier-connected-validation.md) records
+The [Verifier guide](docs/verifier/verifier.md) explains graph traversal and health windows.
+The [durable worker](docs/verifier/verifier-worker.md) preserves readings/deadlines through
+restart; [live adapters](docs/verifier/verifier-live.md) read Kubernetes, HTTP and OTLP
+evidence. The [connected validation](docs/verifier/verifier-connected-validation.md) records
 real Collector, dependency-failure, timeout and worker-restart acceptance cases.
 
-The [Coordinator guide](docs/coordinator.md) describes persistence, lifecycle,
+The [Coordinator guide](docs/architecture/coordinator.md) describes persistence, lifecycle,
 approval and routing contracts, CLI usage and restart recovery. Its demo connects
 the real Observer and Guard with synthetic planner/executor/verifier responses.
 Executor regression tests exercise the real Coordinator, Guard and Executor
@@ -461,30 +461,30 @@ execution; APPLIED still requires independent outcome verification.
 
 For installation and the actual live Executor experiment, follow
 [Start here: local setup on Windows](#start-here-local-setup-on-windows).
-The [live guide](docs/executor-live.md) explains measured baseline evidence, the
+The [live guide](docs/executor/executor-live.md) explains measured baseline evidence, the
 restricted identity and the remaining production limits.
 
-The [Observer runtime guide](docs/observer-runtime.md) covers Buddy 2 startup,
+The [Observer runtime guide](docs/observer/observer-runtime.md) covers Buddy 2 startup,
 read-only deployment, durable delivery, live restart evidence and remaining
 completion gates.
 
-The [Recovery Guard guide](docs/recovery-guard.md) explains its local inputs,
+The [Recovery Guard guide](docs/guard/recovery-guard.md) explains its local inputs,
 resource constraints, temporary approval format and decision scenarios. The
-[runner guide](docs/guard-runtime.md) covers arbitrary JSON inputs, explicit live
+[runner guide](docs/guard/guard-runtime.md) covers arbitrary JSON inputs, explicit live
 Kubernetes reads, exit codes and the Guard container. The
-[version-2 guide](docs/guard-v2.md) covers strict live policy, health/security and
+[version-2 guide](docs/guard/guard-v2.md) covers strict live policy, health/security and
 workload budgets, bound decisions, admission previews and audit reports. The
-[Member 4 role guide](docs/guard-role.md) describes your contribution and teammate
+[Member 4 role guide](docs/guard/guard-role.md) describes your contribution and teammate
 handoffs. The demos use synthetic fixtures and a fixed UTC clock; they make no
 cluster writes. Version-2 demo approvals, health records and server previews are
 fabricated and have no live authority. The
 handoff demo exercises fresh validation and conditional writes against a fake API.
-The [Guard evaluation guide](docs/guard-evaluation.md) provides versioned safe/unsafe
+The [Guard evaluation guide](docs/evaluation/guard-evaluation.md) provides versioned safe/unsafe
 cases, a state/policy versus full-validation runner, explicit metrics and preliminary
 fixture results. Final scoring still requires the accepted frozen release.
-The [dependency revalidation guide](docs/dependency-revalidation.md) demonstrates
+The [dependency revalidation guide](docs/guard/dependency-revalidation.md) demonstrates
 real Verifier findings invalidating queued authorization through Coordinator.
-The [Guard integration contract](docs/guard-integration-contract.md) records
+The [Guard integration contract](docs/guard/guard-integration-contract.md) records
 producer/consumer responsibilities, failure handling and proposed approval lookup
 semantics, with a pending owner-review checklist for team agreement.
 
@@ -519,10 +519,10 @@ Tailwind CSS and Recharts.
 
 | Goal | Command |
 | --- | --- |
-| Demo without a cluster | Double-click `scripts\start-dashboard.bat`, or run `python scripts/dashboard.py --demo` and open **http://127.0.0.1:8765** |
-| Watch the local lab live | In `scripts\sentinel-lab.bat`, choose **9** (dashboard + collector windows), then **3** (live test) |
-| Inspect a live Executor run | `python scripts/dashboard.py --db data/sentinel/runs/executor-live-<id>/coordinator.sqlite` |
-| Connect your own records | `python scripts/dashboard.py` with `scripts/observe_dashboard.py`; see the [dashboard guide](docs/dashboard.md) |
+| Demo without a cluster | Double-click `scripts\observability\start-dashboard.bat`, or run `python scripts/observability/dashboard.py --demo` and open **http://127.0.0.1:8765** |
+| Watch the local lab live | In `scripts\executor\sentinel-lab.bat`, choose **9** (dashboard + collector windows), then **3** (live test) |
+| Inspect a live Executor run | `python scripts/observability/dashboard.py --db data/sentinel/runs/executor-live-<id>/coordinator.sqlite` |
+| Connect your own records | `python scripts/observability/dashboard.py` with `scripts/observability/observe_dashboard.py`; see the [dashboard guide](docs/dashboard/dashboard.md) |
 
 The first start builds the frontend with Node.js 20.19+ or 22.12+ and npm; later
 starts reuse the build until frontend sources change. Python needs no extra
@@ -535,12 +535,12 @@ Executor's own attempt store. The default demonstration uses harness proposals;
 offline Planner validation and an optional provider boundary are also present.
 The Boutique experiment publishes real Role 6 dependency and health outcomes;
 generic/demo playback records retain their producer-specific behavior. The
-[dashboard guide](docs/dashboard.md) covers live setup, permissions, fault markers,
+[dashboard guide](docs/dashboard/dashboard.md) covers live setup, permissions, fault markers,
 producer integration and limitations.
 
 ## Local lab
 
-On Windows, keep Docker Desktop running and launch `scripts\sentinel-lab.bat`
+On Windows, keep Docker Desktop running and launch `scripts\executor\sentinel-lab.bat`
 from PowerShell or by double-clicking it. A persistent terminal provides a menu
 for setup, Python tests, live failure/recovery testing, status and cleanup.
 Choose **7** to set up the cluster and run both test stages, then **6** when ready
@@ -551,7 +551,7 @@ windows; the live test records fault and recovery markers on its timeline. The
 former `cleanup-sentinel.bat` also opens this menu. Install Docker Desktop, kind, kubectl and Python 3.12+
 before using it; missing tools are reported without starting the selected action.
 
-The [Observer live-test guide](docs/observer-live-test.md) records issue #3 commands,
+The [Observer live-test guide](docs/observer/observer-live-test.md) records issue #3 commands,
 acceptance checks and evidence. The Windows live test saves a healthy revision,
 checks the Observer against a healthy workload for at least 60 seconds, injects
 the startup fault, verifies threshold timing and 60 seconds of duplicate
@@ -567,12 +567,12 @@ With Docker, kind and kubectl available, run from the repo root. Inspect the fau
 before restoring it; the fault command's rollout timeout is expected.
 
 ```bash
-bash scripts/lab.sh up
-bash scripts/lab.sh health
-bash scripts/lab.sh fault
-bash scripts/lab.sh inspect
-bash scripts/lab.sh recover
-bash scripts/lab.sh health
+bash scripts/executor/lab.sh up
+bash scripts/executor/lab.sh health
+bash scripts/executor/lab.sh fault
+bash scripts/executor/lab.sh inspect
+bash scripts/executor/lab.sh recover
+bash scripts/executor/lab.sh health
 ```
 
 This is an operator-run baseline, not Sentinel's automated executor. Lab evidence

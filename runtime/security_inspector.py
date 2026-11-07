@@ -5,7 +5,7 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from runtime.security_store import record
-from services.grpc_inspection import MAX_BODY, inspect_request
+from services.security.grpc_inspection import MAX_BODY, inspect_request
 
 
 def make_server(journal, *, port=9001, stdout_events=False):

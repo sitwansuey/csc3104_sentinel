@@ -2,7 +2,7 @@
 
 This evaluator performs no I/O. Its baseline, policy and approval inputs must
 come from trusted stores when live adapters replace the development fixtures.
-See docs/recovery-guard.md for the temporary local input contracts.
+See docs/guard/recovery-guard.md for the temporary local input contracts.
 """
 
 from copy import deepcopy

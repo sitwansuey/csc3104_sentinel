@@ -12,7 +12,7 @@ from pathlib import Path
 import sqlite3
 from urllib.parse import urlsplit
 
-from services.coordinator_read import read_records
+from services.coordinator.read import read_records
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "dashboard" / "dist"
@@ -142,7 +142,7 @@ def make_server(db_path, telemetry_path, *, port=8765, provider=None, bind="127.
                         "The dashboard frontend has not been built. From the repository root, run:\n\n"
                         "npm --prefix dashboard ci\n"
                         "npm --prefix dashboard run build\n\n"
-                        "Then restart python scripts/dashboard.py --demo.\n"
+                        "Then restart python scripts/observability/dashboard.py --demo.\n"
                     ).encode("utf-8"), "text/plain; charset=utf-8")
                     return
                 content_type = "text/html; charset=utf-8"

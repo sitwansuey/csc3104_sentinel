@@ -13,8 +13,8 @@ from runtime.cluster_metrics import collect_cluster_snapshot
 from runtime.boutique_observability import emit_observation
 from runtime.dashboard import make_server
 from runtime.telemetry import emit_cluster_snapshot, emit_event
-from scripts.dashboard import ensure_frontend
-from scripts.test_executor_live import require, save
+from scripts.observability.dashboard import ensure_frontend
+from scripts.executor.test_executor_live import require, save
 
 
 class BoutiqueDashboard:
@@ -107,7 +107,7 @@ class BoutiqueDashboard:
                         and row["message"]["action_id"] == action["action_id"] for row in snapshot["messages"]),
                 "Refused modification must not claim execution or a recovery outcome")
         proof = json.loads((self.directory / "unnecessary-rollback" / "proof.json").read_text(encoding="utf-8"))
-        from scripts.guard_rejection_demo import validate_rejection_proof
+        from scripts.demos.guard_rejection_demo import validate_rejection_proof
         validate_rejection_proof(proof, incident_id=incident["incident_id"],
                                  action_id=action["action_id"], target_uid=incident["target"]["uid"])
         require(any(event["component"] == 5 and event["action_id"] == action["action_id"]

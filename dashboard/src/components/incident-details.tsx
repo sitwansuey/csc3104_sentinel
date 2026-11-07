@@ -28,17 +28,17 @@ const messageTimestamp = (message: WireMessage) =>
   message.checked_at || message.recorded_at || message.observed_at || message.window_end
 
 function DetailSection({ title, member, children }: { title: string; member?: string; children: ReactNode }) {
-  return <Card className="gap-0 overflow-hidden border-border/70 py-0 shadow-none">
-    <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
-      <CardTitle className="text-sm font-medium">{title}</CardTitle>
-      {member && <Badge variant="secondary" className="text-[10px] font-normal">{member}</Badge>}
+  return <Card className="panel gap-0 overflow-hidden border-border py-0 shadow-none">
+    <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3.5">
+      <CardTitle className="panel-title">{title}</CardTitle>
+      {member && <Badge variant="outline" className="rounded border-primary/25 bg-primary/[.06] font-mono text-[9.5px] font-normal tracking-wide text-primary">{member}</Badge>}
     </CardHeader>
     <CardContent className="space-y-4 p-4">{children}</CardContent>
   </Card>
 }
 
 function AwaitingRecord({ detail }: { detail: string }) {
-  return <div className="flex items-start gap-3 rounded-lg bg-muted/30 p-3 text-xs">
+  return <div className="flex items-start gap-3 rounded-lg border border-dashed border-border bg-foreground/[.02] dark:bg-white/[.02] p-3 text-xs">
     <FileSearch className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
     <div><p className="font-medium">Awaiting record</p><p className="mt-1 leading-relaxed text-muted-foreground">{detail} The result is unknown.</p></div>
   </div>
@@ -47,9 +47,9 @@ function AwaitingRecord({ detail }: { detail: string }) {
 function RecordedJson({ value, label = "Inspect recorded JSON" }: { value: unknown; label?: string }) {
   const text = JSON.stringify(value, null, 2)
   const limit = 16000
-  return <details className="min-w-0 rounded-lg border border-border/60">
-    <summary className="cursor-pointer px-3 py-2.5 text-xs text-muted-foreground">{label}</summary>
-    <pre className="max-h-72 overflow-auto border-t bg-muted/20 p-3 text-[11px] leading-relaxed">{text.slice(0, limit)}{text.length > limit ? "\n… Preview truncated; full record remains at the source." : ""}</pre>
+  return <details className="disclosure min-w-0 overflow-hidden rounded-lg border border-border bg-[var(--surface-inset)]">
+    <summary className="cursor-pointer px-3 py-2.5 font-mono text-[11px] tracking-wide text-muted-foreground transition-colors hover:text-foreground">{label}</summary>
+    <pre className="max-h-72 overflow-auto border-t border-border bg-[var(--surface-code)] p-3 text-[11px] leading-relaxed text-foreground/85">{text.slice(0, limit)}{text.length > limit ? "\n… Preview truncated; full record remains at the source." : ""}</pre>
   </details>
 }
 
@@ -107,15 +107,15 @@ export function IncidentDetails({ snapshot, incidentId, open, onOpenChange }: In
 
   return <Sheet open={open} onOpenChange={onOpenChange}>
     <SheetContent className="w-full gap-0 overflow-hidden sm:max-w-[760px] lg:max-w-[880px]">
-      <SheetHeader className="shrink-0 border-b px-5 pb-4 pt-5 pr-12 sm:px-6 sm:pr-12">
-        <div className="mb-1 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground"><Layers3 className="size-3.5" /> Incident workspace</div>
-        <SheetTitle className="break-all text-xl tracking-tight">{incidentId || "Incident details"}</SheetTitle>
+      <SheetHeader className="shrink-0 border-b border-border px-5 pb-5 pt-6 pr-12 sm:px-7 sm:pr-12">
+        <div className="eyebrow bare mb-2"><Layers3 className="size-3.5" /> Incident workspace</div>
+        <SheetTitle className="break-all font-display text-4xl font-normal italic leading-none tracking-tight">{incidentId || "Incident details"}</SheetTitle>
         <SheetDescription>Follow the recorded detection, proposal, Guard decision, execution and verification for one incident.</SheetDescription>
       </SheetHeader>
-      <div className="min-h-0 flex-1 space-y-5 overflow-x-hidden overflow-y-auto px-5 py-5 sm:px-6">
+      <div className="stagger min-h-0 flex-1 space-y-5 overflow-x-hidden overflow-y-auto px-5 py-6 sm:px-7">
         {!incident ? <AwaitingRecord detail="This incident is unavailable in the current bounded snapshot. It may have moved outside the record window." /> : <>
-          <div className="flex items-start gap-2.5 rounded-xl border bg-muted/20 p-3.5 text-xs leading-relaxed text-muted-foreground">
-            <LockKeyhole className="mt-0.5 size-4 shrink-0" /><p>{synthetic ? "Fixture clock / synthetic. All records illustrate the workflow and provide no execution authority. " : "Recorded history is read-only and does not grant execution permission. "}This drawer does not approve actions or consume execution requests.</p>
+          <div className="advisory text-xs">
+            <LockKeyhole className="mt-0.5 size-4 shrink-0 text-primary" /><p>{synthetic ? "Fixture clock / synthetic. All records illustrate the workflow and provide no execution authority. " : "Recorded history is read-only and does not grant execution permission. "}This drawer does not approve actions or consume execution requests.</p>
           </div>
           <DetailSection title="Target & lifecycle" member="Member 1 · Coordinator">
             <div className="flex flex-wrap items-center gap-2"><Status value={incident.state} /><span className="text-xs text-muted-foreground">Recorded incident lifecycle</span></div>
