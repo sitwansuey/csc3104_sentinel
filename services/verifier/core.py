@@ -50,6 +50,10 @@ def _health_policy(policy):
     for key in ("minimum_samples", "stable_window_seconds", "max_sample_gap_seconds"):
         if type(rules.get(key)) is not int or rules[key] < 1:
             raise VerifierInputError(f"policy.health.{key} must be a positive integer")
+    if "convergence_grace_seconds" in rules and (
+            type(rules["convergence_grace_seconds"]) is not int
+            or not 1 <= rules["convergence_grace_seconds"] <= 600):
+        raise VerifierInputError("policy.health.convergence_grace_seconds must be an integer from 1 to 600")
     if protocol == "http":
         status = rules.get("required_http_status")
         if type(status) is not int or not 100 <= status <= 599:
@@ -165,12 +169,8 @@ def inspect_dependencies(proposal: dict, graph: dict, live_state: dict,
     return result
 
 
-def verify(execution: dict, samples: list[dict], policy: dict) -> dict:
-    """Assess one ordered post-action window; missing evidence is UNKNOWN.
-
-    This offline function checks supplied evidence, not current cluster health.
-    A caller may retry with a new complete window after an unhealthy result.
-    """
+def _assess(execution, samples, policy):
+    """Legacy strict assessment of one window; verify() adds the opt-in convergence rule."""
     validate_message(execution)
     if execution["kind"] != "execution_result":
         raise VerifierInputError("Expected an execution_result")
@@ -284,5 +284,61 @@ def verify(execution: dict, samples: list[dict], policy: dict) -> dict:
     result.update(status=status, checks=checks,
                   window_start=_format_time(stamps[0]) if valid_times else _format_time(executed_at),
                   window_end=_format_time(stamps[-1]) if valid_times else _format_time(executed_at))
+    validate_message(result)
+    return result
+
+
+def verify(execution: dict, samples: list[dict], policy: dict, *, final: bool = True) -> dict:
+    """Assess one ordered post-action window; missing evidence is UNKNOWN.
+
+    This offline function checks supplied evidence, not current cluster health.
+    With policy.health.convergence_grace_seconds, a leading run of complete,
+    approved-template, known-unhealthy readings inside that grace may be set
+    aside, but only when the readings after it alone pass every unchanged rule.
+    Relapse, template drift, missing evidence and later readings always count.
+    final=False is only for a ledger that will keep collecting: it defers that
+    leading run instead of deciding on it and can never by itself give RECOVERED.
+    """
+    if type(final) is not bool:
+        raise VerifierInputError("final must be a boolean")
+    strict = _assess(execution, samples, policy)
+    grace = policy["health"].get("convergence_grace_seconds")
+    if grace is None:
+        return strict
+    limit = _timestamp(execution["recorded_at"]) + timedelta(seconds=grace)
+    lead, causes = 0, set()
+    # NOT_RECOVERED means the whole window is trustworthy: object readings,
+    # valid ordered stamps and complete evidence. Only then is a start judged.
+    if strict["status"] == "NOT_RECOVERED":
+        for sample in samples:
+            alone = _assess(execution, [sample], policy)
+            failed = {check["name"] for check in alone["checks"] if not check["passed"]}
+            if (_timestamp(sample["at"]) > limit or alone["status"] != "NOT_RECOVERED"
+                    or "sample_configuration" in failed):
+                break
+            if "service_health" in failed:
+                causes.add("service")
+            causes.update("dependency " + name for name, healthy in sample["dependencies"].items()
+                          if healthy is False)
+            lead += 1
+    settled = _assess(execution, samples[lead:], policy) if lead else None
+    if lead:
+        names = sorted(causes)
+        span = (f"{lead} unhealthy reading(s) from {samples[0]['at']} to {samples[lead - 1]['at']}, within {grace} "
+                "seconds of execution (" + ", ".join(names[:8])
+                + (f", +{len(names) - 8} more" if len(names) > 8 else "") + ")")
+    if lead and settled["status"] == "RECOVERED":
+        result, passed = settled, True
+        detail = "Excluded " + span + "; sustained health was assessed only on the readings after them"
+    elif lead and settled["status"] == "UNKNOWN" and not final:
+        result, passed = dict(strict, status="UNKNOWN"), False
+        detail = "Deferred " + span + "; awaiting sustained health before the observation deadline"
+    elif lead:
+        result, passed = strict, False
+        detail = "Counted " + span + "; no sustained healthy window followed"
+    else:
+        result, passed = strict, True
+        detail = f"No reading was excluded; the {grace}-second convergence allowance was not used"
+    result["checks"] = result["checks"] + [_check("convergence", passed, detail)]
     validate_message(result)
     return result

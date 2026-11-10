@@ -4,6 +4,7 @@ The collector never writes Coordinator records or participates in authorization.
 The experiment owns all processes/threads so cleanup needs no PID guessing.
 """
 
+from datetime import datetime
 import json
 from pathlib import Path
 import threading
@@ -15,6 +16,10 @@ from runtime.dashboard import make_server
 from runtime.telemetry import emit_cluster_snapshot, emit_event
 from scripts.dashboard import ensure_frontend
 from experiments.recovery.live import require, save
+
+
+def _instant(value):
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 class BoutiqueDashboard:
@@ -215,11 +220,19 @@ class BoutiqueDashboard:
                         and measured["journey"]["passed"] is False,
                         "Dashboard must show actual downstream shopping failures")
             measured = [item for item in observations if item["stage"] == "verification"]
-            require(len(measured) >= 6 and all(item["journey"]["passed"] is True
-                                              and item["journey"]["order_confirmed"] for item in measured),
-                    "Dashboard must show confirmed post-action shopping results")
-            result["boutique"] = {"deployments": len(inventory["services"]),
-                                  "fault_measurements": 2, "post_action_measurements": len(measured)}
+            # A failed journey is acceptable only as convergence evidence the outcome itself discloses.
+            windows = {item["action_id"]: _instant(item["window_start"]) for item in outcomes
+                       if any(check.get("name") == "convergence" and check.get("detail", "").startswith("Excluded ")
+                              for check in item["checks"])}
+            confirmed = [item for item in measured
+                         if item["journey"]["passed"] is True and item["journey"]["order_confirmed"]]
+            require(len(confirmed) >= 6 and all(
+                item in confirmed or (item.get("action_id") in windows
+                                      and _instant(item["observed_at"]) < windows[item["action_id"]])
+                for item in measured), "Dashboard must show confirmed post-action shopping results")
+            result["boutique"] = {"deployments": len(inventory["services"]), "fault_measurements": 2,
+                                  "post_action_measurements": len(confirmed),
+                                  "convergence_measurements": len(measured) - len(confirmed)}
         save(self.directory / "dashboard-validation.json", result)
         return result
 

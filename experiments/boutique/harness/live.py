@@ -20,7 +20,7 @@ from experiments.recovery.live import Experiment, crash_worker, now, require, sa
 from runtime.observer_pipeline import LocalCoordinatorSink, ObserverStore
 from runtime.verifier_pipeline import process_verifier_requests
 from services.verifier.core import inspect_dependencies
-from services.verifier.store import VerificationStore
+from services.verifier.store import VerificationStore, observation_seconds
 from services.executor.store import fingerprint
 from services.observer.kubernetes import CollectionError, KubernetesEvidenceCollector, KubectlReader
 
@@ -157,6 +157,8 @@ class BoutiqueExperiment(Experiment):
             "max_sample_gap_seconds": 45, "required_dependencies": [],
             "require_target_identity": True, "require_template_match": True,
             "require_available_replicas": True,
+            # Callers' gRPC reconnect backoff can outlive Pod readiness; sustained health is still required afterwards.
+            "convergence_grace_seconds": 150, "verification_timeout_seconds": 300,
         }
         save(self.directory / "policy.json", self.policy)
 
@@ -171,8 +173,20 @@ class BoutiqueExperiment(Experiment):
         return result
 
     def verification_samples(self, execution):
-        """Collect protocol-native evidence; collection failures stay unknown."""
-        for index in range(3):
+        """Collect protocol-native evidence; collection failures stay unknown.
+
+        The durable worker closes this reader as soon as the ledger freezes an
+        outcome. Its own limit only ensures one reading is offered after the fixed
+        deadline, so a pass that collects without raising ends with exactly one
+        outcome. A probe that cannot report is missing evidence, never a known
+        failure: a target that never answers ends UNKNOWN at that deadline, not
+        NOT_RECOVERED after the grace. A failed cluster read raises instead and
+        leaves the saved job pending for a later pass.
+        """
+        limit = time.monotonic() + observation_seconds(self.policy["health"]) + 5
+        index = 0
+        while True:
+            last = time.monotonic() >= limit  # Decided before collecting this reading.
             before = self.deployment()
             sample = {"service": self.name, "protocol": "grpc", "dependencies": {},
                       "grpc_status": None, "application_check_passed": None}
@@ -209,14 +223,17 @@ class BoutiqueExperiment(Experiment):
             except CollectionError:
                 self.event(2, "error", "Dashboard observation unavailable during Role 6 measurement")
             yield sample
-            if index < 2:
-                time.sleep(5)
+            if last:
+                return
+            index += 1
+            time.sleep(5)
 
     def complete_recovery(self, folder, proposal, execution, *, clock=None):
         # Readiness waiting is bounded and never itself establishes recovery.
         self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=120s",
                      timeout=160, allow_failure=True)
 
+        # The sampler runs until the ledger freezes one outcome, not for a fixed count.
         def collect(current):
             return self.verification_samples(current)
 
@@ -233,13 +250,21 @@ class BoutiqueExperiment(Experiment):
                 "Expected one Role 6 outcome for the current recovery")
         outcome = outcomes[0]
         save(folder / "outcome.json", outcome)
+        disclosed = next((check["detail"] for check in outcome["checks"]
+                          if check["name"] == "convergence" and check["detail"].startswith("Excluded ")), None)
+        failed = ", ".join(check["name"] for check in outcome["checks"] if not check["passed"])
         self.event(6, "status", "Role 6 published " + outcome["status"], target=proposal["target"],
                    incident_id=proposal["incident_id"], action_id=proposal["action_id"])
-        require(outcome["status"] == "RECOVERED", "Role 6 could not verify shipping recovery: " + outcome["status"])
+        if disclosed:
+            self.event(6, "status", "Role 6 disclosed convergence: " + disclosed, target=proposal["target"],
+                       incident_id=proposal["incident_id"], action_id=proposal["action_id"])
+        require(outcome["status"] == "RECOVERED", "Role 6 could not verify shipping recovery: " + outcome["status"]
+                + (" (failed: " + failed + ")" if failed else ""))
         require(self.store.incident(proposal["incident_id"])["state"] == "RECOVERED",
                 "Coordinator did not close the verified incident")
         self.check("Role 6 verified gRPC, readiness and template; Coordinator RECOVERED",
-                   action_id=proposal["action_id"], outcome="RECOVERED")
+                   action_id=proposal["action_id"], outcome="RECOVERED",
+                   **({"convergence": disclosed} if disclosed else {}))
         if self.lab_control:
             self.lab_control.complete_scenario("RECOVERED", incident_id=proposal["incident_id"],
                                                action_id=proposal["action_id"])

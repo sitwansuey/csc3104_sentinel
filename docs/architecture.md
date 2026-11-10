@@ -76,6 +76,9 @@ it cannot correct a persistently invalid desired template. Sentinel restores a
 reviewed healthy configuration, then measures application/dependency health.
 Readiness alone and a successful patch are insufficient for recovery. In the
 connected experiment, cart and checkout must succeed as well as shipping.
+Policy may allow a bounded, disclosed convergence grace for callers that are
+still reconnecting after the rollout; it defers an unhealthy verdict but
+sustained health is still measured afterwards and a relapse fails.
 
 The dashboard projects stored role records, bounded namespace observations and
 stage-measured shopping traffic. Its public Coordinator reader opens an existing

@@ -26,6 +26,16 @@ def _time(value):
     return value.isoformat().replace("+00:00", "Z")
 
 
+def observation_seconds(health):
+    """Fixed observation budget; a convergence grace must leave room for the healthy window."""
+    grace = health.get("convergence_grace_seconds", 0)
+    timeout = health.get("verification_timeout_seconds",
+                         grace + health["stable_window_seconds"] + health["minimum_samples"] * health["max_sample_gap_seconds"])
+    if type(timeout) is not int or not grace + health["stable_window_seconds"] <= timeout <= 86400:
+        raise VerifierInputError("Verification timeout must cover the convergence grace and healthy window and be at most one day")
+    return timeout
+
+
 class VerificationStore:
     """One connection per local worker; this is not cross-host coordination."""
 
@@ -69,11 +79,7 @@ class VerificationStore:
         now = _utc(now)
         if now < _utc(execution["recorded_at"]):
             raise VerifierInputError("Monitoring cannot start before execution")
-        health = policy["health"]
-        timeout = health.get("verification_timeout_seconds",
-                             health["stable_window_seconds"] + health["minimum_samples"] * health["max_sample_gap_seconds"])
-        if type(timeout) is not int or not health["stable_window_seconds"] <= timeout <= 86400:
-            raise VerifierInputError("Verification timeout must cover the healthy window and be at most one day")
+        timeout = observation_seconds(policy["health"])
         with self._transaction():
             job = self.get(execution["action_id"])
             if job:
@@ -125,7 +131,7 @@ class VerificationStore:
         return self.get(action_id)
 
     def evaluate(self, action_id, *, now):
-        """Freeze one outcome, or keep collecting until the fixed deadline."""
+        """Freeze one outcome, or keep collecting until the fixed deadline; a convergence grace only defers an unhealthy verdict until then."""
         now = _utc(now)
         with self._transaction():
             job = self.get(action_id)
@@ -135,8 +141,9 @@ class VerificationStore:
                 return job["outcome"]
             if now < _utc(job["started_at"]) or any(_utc(row["at"]) > now for row in job["samples"]):
                 raise VerifierInputError("Clock predates saved monitoring progress")
-            result = verify(job["execution"], job["samples"], job["policy"])
-            if result["status"] == "UNKNOWN" and now < _utc(job["deadline"]):
+            final = now >= _utc(job["deadline"])
+            result = verify(job["execution"], job["samples"], job["policy"], final=final)
+            if result["status"] == "UNKNOWN" and not final:
                 return None
             self.db.execute("UPDATE verification_jobs SET outcome=? WHERE action_id=?", (_json(result), action_id))
         return result

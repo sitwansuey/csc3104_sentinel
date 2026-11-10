@@ -241,3 +241,115 @@ class VerifierWorkerTests(unittest.TestCase):
             finally:
                 coordinator.close()
                 ledger.close()
+
+    # Convergence grace. The execution is recorded at 12:00:45Z; each scenario
+    # starts its job at 12:00:47Z, so a 30-second grace ends at 12:01:15Z and
+    # the fixed deadline is 12:02:22Z.
+
+    def rearm(self):
+        """Fresh Coordinator and ledger whose policy opts in to a 30-second grace."""
+        self.store, self.ledger = ready_store(), VerificationStore()
+        self.addCleanup(self.store.close)
+        self.addCleanup(self.ledger.close)
+        self.now = START - timedelta(seconds=3)
+        self.policy = fixture("policy.json")
+        self.policy["health"]["convergence_grace_seconds"] = 30
+        self.pulled, self.closed = [], False
+
+    def unhealthy(self, at):
+        return dict(self.readings[0], at="2026-10-10T12:" + at + "Z", dependencies={"mock-db": False})
+
+    def stream(self, rows, after=lambda: None):
+        """Incremental reader; the clock advances to each reading's measurement time."""
+        def reader(execution):
+            try:
+                for row in rows:
+                    self.now = max(self.now, datetime.fromisoformat(row["at"].replace("Z", "+00:00")))
+                    self.pulled.append(row["at"])
+                    yield row
+                after()
+            except GeneratorExit:
+                self.closed = True
+                raise
+        return reader
+
+    def test_streaming_reader_outlives_tolerated_first_reading(self):
+        self.rearm()
+        rows = [self.unhealthy("00:47")] + self.readings
+        results = self.run_pass(sample_reader=self.stream(rows, lambda: self.fail("Reader was pulled after the outcome")))
+        self.assertEqual([result["status"] for result in results], ["RECOVERED"])
+        self.assertTrue(all(check["passed"] for check in results[0]["checks"]))
+        self.assertTrue(results[0]["checks"][-1]["detail"].startswith("Excluded 1 unhealthy reading(s)"))
+        self.assertEqual(results[0]["window_start"], self.readings[0]["at"])
+        self.assertEqual(self.state(), "RECOVERED")
+        self.assertEqual(self.ledger.get(self.action)["samples"], rows)
+        self.assertEqual((len(self.pulled), self.closed), (4, True))
+        self.assertEqual(self.run_pass(sample_reader=lambda execution: self.fail("duplicate collection")), [])
+        self.assertEqual(self.store.db.execute("SELECT count(*) FROM outbox WHERE topic='incident.outcome'").fetchone()[0], 1)
+
+    def test_worker_killed_during_convergence_resumes(self):
+        class WorkerKilled(BaseException):
+            pass
+
+        def interrupted(execution):
+            self.now = START - timedelta(seconds=3)
+            yield self.unhealthy("00:47")
+            raise WorkerKilled()
+
+        for resumed_late in (False, True):
+            with self.subTest(resumed_late=resumed_late):
+                self.rearm()
+                with self.assertRaises(WorkerKilled):
+                    self.run_pass(sample_reader=interrupted)
+                saved = self.ledger.get(self.action)
+                self.assertEqual((saved["samples"], saved["outcome"]), ([self.unhealthy("00:47")], None))
+                self.assertEqual(saved["deadline"], "2026-10-10T12:02:22Z")
+                self.assertEqual(self.state(), "VERIFYING")
+                if resumed_late:
+                    self.now = START + timedelta(seconds=92)
+                    results = self.run_pass(sample_reader=lambda execution: self.fail("Collected after the deadline"))
+                    self.assertEqual([result["status"] for result in results], ["NOT_RECOVERED"])
+                    self.assertTrue(results[0]["checks"][-1]["detail"].startswith("Counted 1 unhealthy reading(s)"))
+                    self.assertEqual(self.state(), "FAILED")
+                else:
+                    results = self.run_pass(sample_reader=self.stream(self.readings))
+                    self.assertEqual([result["status"] for result in results], ["RECOVERED"])
+                    self.assertTrue(results[0]["checks"][-1]["detail"].startswith("Excluded 1 unhealthy reading(s)"))
+                    self.assertEqual(self.state(), "RECOVERED")
+                    self.assertEqual(len(self.ledger.get(self.action)["samples"]), 4)
+                self.assertEqual(self.ledger.get(self.action)["deadline"], saved["deadline"])
+                self.assertEqual(self.store.db.execute(
+                    "SELECT count(*) FROM outbox WHERE topic='incident.outcome'").fetchone()[0], 1)
+
+    def test_relapse_and_never_healthy_streams_end_failed_once(self):
+        with self.subTest("relapse"):
+            self.rearm()
+            rows = [self.unhealthy("00:47"), self.readings[0], self.unhealthy("00:55"), *self.readings[1:]]
+            results = self.run_pass(sample_reader=self.stream(rows))
+            self.assertEqual([result["status"] for result in results], ["NOT_RECOVERED"])
+            self.assertEqual(results[0]["window_end"], "2026-10-10T12:00:55Z")
+            self.assertFalse(results[0]["checks"][-1]["passed"])
+            self.assertEqual((len(self.pulled), self.closed, self.state()), (3, True, "FAILED"))
+            self.assertEqual(self.ledger.get(self.action)["samples"], rows[:3])
+        with self.subTest("never healthy"):
+            self.rearm()
+            rows = [self.unhealthy(at) for at in ("00:47", "00:57", "01:07", "01:17", "01:27", "01:37")]
+            results = self.run_pass(sample_reader=self.stream(rows))
+            self.assertEqual([result["status"] for result in results], ["NOT_RECOVERED"])
+            self.assertEqual(results[0]["window_end"], "2026-10-10T12:01:17Z")
+            self.assertTrue(results[0]["checks"][-1]["detail"].startswith("Counted 3 unhealthy reading(s)"))
+            self.assertEqual((len(self.pulled), self.closed, self.state()), (4, True, "FAILED"))
+        with self.subTest("reader ends early"):
+            self.rearm()
+            rows = [self.unhealthy("00:47"), self.readings[0]]
+            self.assertEqual(self.run_pass(sample_reader=self.stream(rows)), [])
+            saved = self.ledger.get(self.action)
+            self.assertEqual((saved["samples"], saved["outcome"], saved["deadline"]),
+                             (rows, None, "2026-10-10T12:02:22Z"))
+            self.assertEqual((self.state(), self.closed), ("VERIFYING", False))
+            self.now += timedelta(seconds=30)
+            self.assertEqual(self.run_pass(sample_reader=lambda execution: []), [])
+            self.assertEqual(self.ledger.get(self.action), saved)
+            self.assertEqual(self.state(), "VERIFYING")
+        self.assertEqual(self.store.db.execute(
+            "SELECT count(*) FROM outbox WHERE topic='incident.outcome'").fetchone()[0], 0)
