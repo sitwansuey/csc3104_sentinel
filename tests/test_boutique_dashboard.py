@@ -271,6 +271,70 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "zero counters"):
             self.verify()
 
+    def verify_connected(self, journeys):
+        """Connected acceptance over fake shopping measurements: (action, observed_at, passed) rows."""
+        scope = {"cluster_id": "test-cluster", "namespace": "test-namespace", "incident_id": None, "action_id": None}
+        broken = {"home_status": 200, "add_to_cart_status": 302, "cart_status": 500, "checkout_status": 500,
+                  "passed": False, "order_confirmed": False}
+        history = [dict(scope, stage="inventory", observed_at="2026-10-26T09:59:00Z", journey=None,
+                        services=[{"name": "service-" + str(index)} for index in range(11)])]
+        history += [dict(scope, stage=stage, observed_at="2026-10-26T09:59:30Z", services=None, journey=dict(broken))
+                    for stage in ("primary-fault", "crash-fault")]
+        history += [dict(scope, stage="verification", observed_at=observed_at, services=None, action_id=action,
+                         journey=dict(broken, cart_status=200, checkout_status=200, passed=True, order_confirmed=True)
+                         if passed else dict(broken))
+                    for action, observed_at, passed in journeys]
+        snapshot = dict(self.snapshot, boutique_history=history)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "unnecessary-rollback").mkdir()
+            (root / "unnecessary-rollback" / "proof.json").write_text(json.dumps(self.proof), encoding="utf-8")
+            dashboard = BoutiqueDashboard(root, context="test-context", cluster_id="test-cluster",
+                                          namespace="test-namespace", port=0, application_collector=lambda: [])
+            dashboard.url = "http://127.0.0.1:9999"
+            with patch.object(dashboard, "_snapshot", return_value=snapshot):
+                return dashboard.verify()
+
+    def test_failed_verification_journey_needs_disclosed_pre_window_convergence(self):
+        confirmed = [(action, "2026-10-26T10:00:" + second + "Z", True)
+                     for action in ("ACT-0", "ACT-1") for second in ("10", "15", "20")]
+        result = self.verify_connected(confirmed)
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["boutique"], {"deployments": 11, "fault_measurements": 2,
+                                              "post_action_measurements": 6, "convergence_measurements": 0})
+        outcome = next(row["message"] for row in self.snapshot["messages"]
+                       if row["message"]["kind"] == "outcome" and row["message"]["action_id"] == "ACT-0")
+        outcome.update(window_start="2026-10-26T10:00:10Z", window_end="2026-10-26T10:00:20Z")
+        outcome["checks"].append({"name": "convergence", "passed": True,
+                                  "detail": "Excluded 1 unhealthy reading(s) from 2026-10-26T10:00:05Z to "
+                                            "2026-10-26T10:00:05Z, within 150 seconds of execution "
+                                            "(dependency storefront-checkout); sustained health was assessed "
+                                            "only on the readings after them"})
+        result = self.verify_connected(confirmed + [("ACT-0", "2026-10-26T10:00:04.500000Z", False)])
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual((result["boutique"]["post_action_measurements"],
+                          result["boutique"]["convergence_measurements"]), (6, 1))
+        for label, journeys in (
+                ("failure at the window start", confirmed + [("ACT-0", "2026-10-26T10:00:10Z", False)]),
+                ("failure inside the window", confirmed + [("ACT-0", "2026-10-26T10:00:12Z", False)]),
+                ("failure of an undisclosed recovery", confirmed + [("ACT-1", "2026-10-26T10:00:04Z", False)]),
+                ("failure without an action", confirmed + [(None, "2026-10-26T10:00:04Z", False)]),
+                ("too few confirmed results", confirmed[1:] + [("ACT-0", "2026-10-26T10:00:04Z", False)])):
+            with self.subTest(label), self.assertRaisesRegex(RuntimeError, "confirmed post-action shopping"):
+                self.verify_connected(journeys)
+        early = confirmed + [("ACT-0", "2026-10-26T10:00:04Z", False)]
+        for detail in (None, "No reading was excluded; the 150-second convergence allowance was not used",
+                       "Counted 1 unhealthy reading(s); no sustained healthy window followed"):
+            with self.subTest(detail=detail):
+                if detail is None:
+                    del outcome["checks"][-1]
+                else:
+                    outcome["checks"].append({"name": "convergence", "passed": True, "detail": detail})
+                with self.assertRaisesRegex(RuntimeError, "confirmed post-action shopping"):
+                    self.verify_connected(early)
+                if detail is not None:
+                    del outcome["checks"][-1]
+
 
 if __name__ == "__main__":
     unittest.main()
