@@ -62,6 +62,25 @@ untrusted-plugin sandbox. See `scripts/boutique_provider.py` and its `--help`.
 
 ## Acceptance and limits
 
+For a lower-memory Qwen run, add the checked-in profile to the connected command:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/test-boutique-live.ps1 -Setup -Connected -Agent -AgentConfig ./data/sentinel/samples/rca-gpu-profile.json -Dashboard -PauseBeforeInjection -Cleanup
+```
+
+The profile keeps `qwen3:14b` and requests an 8,192-token context instead of the
+16,384-token reference. Run `ollama ps` while the agent is working to record
+the CPU/GPU split and effective context. Placement depends on available GPU
+memory and Ollama. Compare the two profiles on the same hardware and labelled
+inputs using the elapsed seconds and token counts in `model-calls.json`.
+Use the reference profile for cases that need a larger context.
+
+Live exports keep one row per Kubernetes event occurrence even when several
+snapshots contain it. The raw observations stay available, and
+`telemetry-export.json` records repeated sightings with first and last
+observation times. New event timestamps and distinct startup log lines remain
+available to the diagnosis tools.
+
 RCA/proposal validation, abstention, wrong-baseline rejection and a complete
 cross-role handoff have injected-model regressions. The actual Ollama/model
 run has deliberately not been performed in this review. This supports

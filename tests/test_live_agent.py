@@ -64,6 +64,33 @@ class LiveAgentTests(unittest.TestCase):
                 return super().ask(role, prompt, schema)
         return LiveModel(abstain=abstain)
 
+    def test_repeated_event_sightings_export_once_without_losing_new_occurrences(self):
+        first = "2026-10-10T12:00:30Z"
+        second = "2026-10-10T12:00:35Z"
+        warning = {"lastTimestamp": first, "reason": "BackOff", "message": "Back-off restarting failed container"}
+        self.observation["events"] = [warning]
+        (self.root / "primary-0-observation.json").write_text(json.dumps(self.observation))
+        later = deepcopy(self.observation)
+        later["captured_at"] = second
+        later["events"].append({**warning, "lastTimestamp": second})
+        source = self.root / "primary-1-observation.json"
+        source.write_text(json.dumps(later))
+        out = self.root / "case/telemetry"
+        export_telemetry(self.root, self.incident["target"], out)
+
+        with (out / "logs.csv").open() as stream:
+            rows = list(csv.DictReader(stream))
+        self.assertEqual([row["timestamp"] for row in rows if row["source"] == "kubernetes_event"],
+                         [first, second])
+        self.assertEqual([row["message"] for row in rows if row["source"] == "container"],
+                         ["Error invalid startup configuration"])
+        exported = json.loads((out.parent / "telemetry-export.json").read_text())
+        self.assertEqual(exported["repeated_events"], [{
+            "event_at": first, "reason": "BackOff", "message": warning["message"],
+            "first_seen_at": first, "last_seen_at": second, "observations": 2,
+        }])
+        self.assertEqual(json.loads(source.read_text()), later)
+
     def test_actual_agent_and_planner_produce_bound_proposal(self):
         model = self.model()
         harness = self.harness()
@@ -77,6 +104,18 @@ class LiveAgentTests(unittest.TestCase):
         self.assertIn("Recovery Planner", [c["role"] for c in model.calls])
         self.assertTrue((folder / "agent/report.json").is_file())
         self.assertTrue((folder / "model-calls.json").is_file())
+
+    def test_gpu_profile_overrides_context_and_retains_the_reference_model(self):
+        harness = self.harness()
+        harness.agent_config = ROOT / "data/sentinel/samples/rca-gpu-profile.json"
+        folder = self.root / "case"
+        folder.mkdir()
+        with patch("experiments.boutique.harness.agent_live.Ollama", return_value=self.model()) as ollama:
+            proposal = harness.build_proposal(self.incident, folder)
+        config = ollama.call_args.args[0]
+        self.assertEqual(config["num_ctx"], 8192)
+        self.assertEqual(config["model"], "qwen3:14b")
+        self.assertEqual(proposal["action"], "ROLLBACK")
 
     def test_abstention_stops_recovery_without_fallback(self):
         model = self.model(abstain=True)

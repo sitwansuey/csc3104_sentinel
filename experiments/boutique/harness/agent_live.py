@@ -12,6 +12,7 @@ def export_telemetry(directory, target, destination):
     """Project saved live Observer snapshots into the agent's CSV interface."""
     destination.mkdir(parents=True, exist_ok=False)
     metrics, logs = [], set()
+    event_sightings = {}
     snapshots = []
     for path in sorted(directory.glob("*-observation.json")):
         observation = json.loads(path.read_text(encoding="utf-8"))
@@ -35,7 +36,21 @@ def export_telemetry(directory, target, destination):
         for event in observation.get("events", []):
             message = event.get("message", event.get("reason", ""))
             if message:
-                logs.add((timestamp, target["name"], str(message), "kubernetes_event"))
+                # The same event can be returned by several Observer polls.
+                # Retain new occurrences at their actual event time.
+                event_time = event.get("lastTimestamp") or timestamp
+                key = (event_time, event.get("reason", ""), str(message))
+                sightings = event_sightings.setdefault(key, set())
+                sightings.add(timestamp)
+    repeated_events = []
+    for (event_time, reason, message), sightings in sorted(event_sightings.items()):
+        logs.add((event_time, target["name"], message, "kubernetes_event"))
+        if len(sightings) > 1:
+            repeated_events.append({
+                "event_at": event_time, "reason": reason, "message": message,
+                "first_seen_at": min(sightings), "last_seen_at": max(sightings),
+                "observations": len(sightings),
+            })
     require(snapshots and metrics, "Live Observer snapshots are required for agent diagnosis")
     for name, header, rows in [
             ("metrics.csv", ["timestamp", "cmdb_id", "kpi_name", "value"], metrics),
@@ -46,7 +61,7 @@ def export_telemetry(directory, target, destination):
             writer.writerows(rows)
     save(destination.parent / "telemetry-export.json", {
         "source": "live Observer snapshots", "snapshots": snapshots, "metrics": len(metrics),
-        "log_lines": len(logs), "traces_available": False})
+        "log_lines": len(logs), "repeated_events": repeated_events, "traces_available": False})
 
 
 class AgentPlanningMixin:
