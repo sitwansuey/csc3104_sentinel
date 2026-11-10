@@ -41,6 +41,28 @@ adds `-Agent`; it requires a reachable Ollama server and a model you installed.
 Real-model acceptance is still pending. [Testing](docs/testing.md) explains
 how to validate each mode and distinguish live recovery from injected-model tests.
 
+## Known limitations
+
+The [live Qwen recovery tracker](https://github.com/sitwansuey/csc3104_sentinel/issues/87)
+records the following gaps and their acceptance criteria:
+
+- **Proposal latency.** One live Qwen run took about 7½ minutes across four
+  model calls. Evidence deduplication and an 8K context profile are under review.
+  The proposal speedup and diagnosis quality still need a controlled comparison.
+  [Performance issue](https://github.com/sitwansuey/csc3104_sentinel/issues/85)
+- **Post-rollback verification.** A live Qwen proposal passed the Guard and the
+  Executor applied it, but the first cart and checkout probes returned HTTP 500.
+  The next test will measure whether those requests recover over a bounded
+  window after one rollback.
+  [Live recovery acceptance](https://github.com/sitwansuey/csc3104_sentinel/issues/56)
+- **Dashboard progress.** Planner / RCA shows recorded activity. More detailed
+  stage and timeout feedback while Ollama is working remains open.
+  [Progress acceptance criteria](https://github.com/sitwansuey/csc3104_sentinel/issues/87)
+- **Overlapping faults.** The verified scope is one configured shipping fault at
+  a time. Concurrent incidents and safe handling of a second fault remain
+  unverified.
+  [Overlapping fault experiment](https://github.com/sitwansuey/csc3104_sentinel/issues/77)
+
 ## Team responsibilities
 
 | Role | Responsibility | Implementation guide |
