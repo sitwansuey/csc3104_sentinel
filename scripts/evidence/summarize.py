@@ -158,9 +158,9 @@ def failure_class(summary):
         failure.get("error") if isinstance(failure, dict) else failure, summary.get("error"),
         summary.get("integration_error")) if part)
     for needle, label in (("refused", "model server unreachable"), ("urlopen error", "model server unreachable"),
-                          ("not found", "model not installed"), ("ESCALATE", "agent escalated"),
-                          ("NOT_RECOVERED", "not recovered"), ("AWAITING_APPROVAL", "stopped awaiting approval")):
-        if needle in text:
+                          ("not found", "model not installed"), ("escalate", "agent escalated"),
+                          ("not_recovered", "not recovered"), ("awaiting_approval", "stopped awaiting approval")):
+        if needle in text.lower():
             return label
     return summary.get("error_type") or summary.get("integration_error") or "unspecified"
 

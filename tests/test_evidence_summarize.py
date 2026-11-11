@@ -253,6 +253,7 @@ class FailureClassTests(unittest.TestCase):
     def test_known_failures_get_short_labels(self):
         cases = {"<urlopen error [WinError 10061] ... actively refused>": "model server unreachable",
                  "HTTP 404 Not Found: model 'x' not found": "model not installed",
+                 "Ollama Planner failed for x:latest: HTTP Error 404: Not Found": "model not installed",
                  "Agent did not propose a supported rollback: ESCALATE": "agent escalated",
                  "Role 6 could not verify shipping recovery: NOT_RECOVERED": "not recovered"}
         for error, label in cases.items():
