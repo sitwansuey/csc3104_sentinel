@@ -246,6 +246,18 @@ class PathRewriteTests(unittest.TestCase):
         self.assertNotIn("Users\\", text)
         self.assertIn("<home>/run", text)
 
+    def test_private_addresses_become_a_placeholder_but_loopback_and_versions_stay(self):
+        text, count = clean({"error": 'failed to connect service \\"10.244.0.142:50051\\" within 1s',
+                             "lan": "172.18.0.2 and 192.168.1.20 and 169.254.1.1",
+                             "kept": "127.0.0.1:11434, 172.32.0.1, 8.8.8.8, v1.10.0.1.2, 110.244.0.1"})
+        value = json.loads(text)
+        self.assertEqual(value["error"], 'failed to connect service \\"<private-ip>:50051\\" within 1s')
+        self.assertEqual(value["lan"], "<private-ip> and <private-ip> and <private-ip>")
+        self.assertEqual(value["kept"], "127.0.0.1:11434, 172.32.0.1, 8.8.8.8, v1.10.0.1.2, 110.244.0.1")
+        self.assertEqual(count, 4)
+        log, _ = clean(b"dial tcp 10.96.0.1:443: i/o timeout\n", "run.log")
+        self.assertEqual(log, "dial tcp <private-ip>:443: i/o timeout\n")
+
     def test_local_user_names_are_replaced_as_whole_words(self):
         text, _ = clean({"operator": "tester ran it", "word": "protesters"})
         value = json.loads(text)

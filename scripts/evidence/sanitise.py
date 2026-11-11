@@ -3,7 +3,9 @@
 Secrets under sensitive keys are redacted to a short hash. Credential material
 (PEM blocks, JWTs, kubeconfig key data, long base64 and known token shapes)
 is a hard failure: the bundle is refused instead of partly cleaned. Absolute
-home and repository paths and the local user names become placeholders.
+home and repository paths and the local user names become placeholders, and
+private IPv4 addresses (RFC 1918 and link-local, such as kind Pod IPs) become
+<private-ip>; 127.0.0.1 is kept.
 """
 
 from dataclasses import dataclass, field
@@ -11,7 +13,7 @@ import hashlib
 import json
 import re
 
-SANITISER_VERSION = "4"
+SANITISER_VERSION = "5"
 FILE_CAP_BYTES = 256 * 1024
 BUNDLE_CAP_BYTES = 3 * 1024 * 1024
 MODEL_IO_CAP = 4096
@@ -59,6 +61,10 @@ HOME_PATTERNS = (
     re.compile(r"(?<![\w.-])/home/[^/\"'\s:;,]+"),
     re.compile(r"(?<![\w.-])/Users/[^/\"'\s:;,]+"),
 )
+
+# RFC 1918 and link-local IPv4 addresses, not part of a longer dotted number. A port stays.
+PRIVATE_IPV4 = re.compile(r"(?<![\d.])(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168|169\.254)"
+                          r"\.\d{1,3}\.\d{1,3}(?![\d]|\.\d)")
 
 
 class SanitiseError(ValueError):
@@ -132,6 +138,8 @@ def _string(value, context):
     value = TEXT_SECRET.sub(replace_text, value)
     value = rewrite_paths(value, context)
     value, count = BEARER.subn(lambda match: match.group(1) + " " + redacted(match.group(0)), value)
+    context.redactions += count
+    value, count = PRIVATE_IPV4.subn("<private-ip>", value)
     context.redactions += count
     return value
 
