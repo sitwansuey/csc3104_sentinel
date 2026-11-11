@@ -269,7 +269,7 @@ class PreflightTests(unittest.TestCase):
         """The preflight gate and docs/testing.md must not drift apart."""
         text = (ROOT / "docs/testing.md").read_text(encoding="utf-8")
         commands = {" ".join(command) for _, command in preflight.GATE}
-        documented = [script for script in re.findall(r"python(?:\.exe)? (scripts/\S+\.py(?: --?\S+)?)",
+        documented = [script for script in re.findall(r"python(?:\.exe)? (scripts/[^\s`]+\.py(?: --?[^\s`]+)?)",
                                                       text.split("## Meaningful regression boundaries")[0])
                       if "--compile" not in script]
         self.assertGreaterEqual(len(set(documented)), 9, documented)

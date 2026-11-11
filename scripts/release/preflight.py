@@ -63,6 +63,7 @@ GATE = (
     ("limitations", ["scripts/evidence/limitations.py", "--strict"]),
     ("doc links", ["scripts/check_doc_links.py"]),
     ("doc citations", ["scripts/check_doc_citations.py"]),
+    ("instruction steps", ["scripts/instructions/extract_commands.py", "--check"]),
 )
 GATE_TIMEOUT = 3600
 
