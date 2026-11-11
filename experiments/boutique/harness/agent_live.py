@@ -10,6 +10,33 @@ from services.rca.core import DEFAULT_CONFIG, propose_from_telemetry
 from services.guard.common import json_sha256
 from experiments.recovery.live import require, save
 
+# Words a model may add around a component name without naming anything else.
+_DESCRIPTORS = frozenset({"container", "containers", "pod", "pods", "deployment", "service",
+                          "workload", "app", "application", "the"})
+_SEPARATORS = str.maketrans({character: " " for character in "\t\n,;:()[]{}'\"`"})
+
+
+def names_target(component, name):
+    """True only when a diagnosed component refers to the target and nothing else.
+
+    Accepts naming variants seen from real models, such as "shippingservice container",
+    "deployment/shippingservice" or one of its Pod names. Any other remaining word,
+    for example another service, means the diagnosis is not about the target.
+    """
+    if not isinstance(component, str) or not isinstance(name, str) or not name:
+        return False
+    words = [word.rsplit("/", 1)[-1] for word in component.lower().translate(_SEPARATORS).split()]
+    rest = [word for word in words if word and word not in _DESCRIPTORS]
+    if len(rest) != 1:
+        return False
+    word, name = rest[0], name.lower()
+    if word == name:
+        return True
+    # A Pod of the target Deployment: <name>-<ReplicaSet hash>-<Pod suffix>.
+    parts = word[len(name) + 1:].split("-") if word.startswith(name + "-") else []
+    return (len(parts) == 2 and 6 <= len(parts[0]) <= 10 and len(parts[1]) == 5
+            and all(part.isascii() and part.isalnum() for part in parts))
+
 
 def _time(value):
     stamp = pd.Timestamp(value)
@@ -142,7 +169,7 @@ class AgentPlanningMixin:
 
         def provider(context):
             failures = context["diagnosis"]["prediction"].values()
-            if any(f.get("root cause component") != self.target["name"] for f in failures):
+            if any(not names_target(f.get("root cause component"), self.target["name"]) for f in failures):
                 return {"action": "ESCALATE", "parameters": {},
                         "rationale": "Agent diagnosis does not identify the allowed recovery target."}
             schema = {"type": "object", "properties": {
