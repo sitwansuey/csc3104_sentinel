@@ -169,6 +169,60 @@ class GuardIntegrationTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             reader(self.proposal)
 
+    def test_live_reader_rejects_target_names_kubectl_could_parse_as_options(self):
+        calls = []
+        reader = KubectlStateReader("kind-sentinel-lab", "sentinel-lab",
+                                    runner=lambda command, **_: calls.append(command))
+        for field, value in [("name", "-oyaml"), ("name", "--all-namespaces"), ("name", "Demo_API"),
+                             ("name", "a" * 254), ("name", "demo..api"), ("namespace", "--kubeconfig=x"),
+                             ("namespace", "a" * 64), ("namespace", "sentinel.demo")]:
+            proposal = copy.deepcopy(self.proposal)
+            proposal["target"][field] = value
+            with self.subTest(field=field, value=value[:20]), self.assertRaises(ValueError):
+                reader(proposal)
+        self.assertEqual(calls, [])
+
+    def test_live_reader_error_does_not_repeat_kubectl_stderr(self):
+        reader = KubectlStateReader("kind-sentinel-lab", "sentinel-lab", runner=lambda *a, **k:
+                                    subprocess.CompletedProcess(a[0], 1, "", "Unauthorized token=secret-value"))
+        with self.assertRaises(RuntimeError) as failure:
+            reader(self.proposal)
+        self.assertNotIn("secret-value", str(failure.exception))
+        self.assertIn("exit 1", str(failure.exception))
+
+    def test_inputs_are_read_outside_the_coordinator_write_transaction(self):
+        open_transactions = []
+
+        def reader(value):
+            def read(_proposal):
+                open_transactions.append(self.store.db.in_transaction)
+                return copy.deepcopy(value)
+            return read
+        result = self.process(state_reader=reader(self.state), policy_reader=reader(self.policy),
+                              baseline_reader=reader(self.baseline),
+                              dependency_reader=reader(self.dependencies))[0]
+        self.assertEqual(result["verdict"], "ESCALATE")
+        self.assertEqual(open_transactions, [False, False, False, False])
+
+    def test_request_finished_by_another_worker_during_reads_is_not_decided_again(self):
+        def state_reader(_proposal):
+            # Another Guard worker acknowledges the same request while this one reads.
+            with self.store.transaction():
+                for (request_id,) in self.pending_guards():
+                    self.store.db.execute("UPDATE outbox SET delivered=1 WHERE id=?", (request_id,))
+            return copy.deepcopy(self.state)
+        self.assertEqual(self.process(state_reader=state_reader), [])
+        self.assertIsNone(self.store.action(self.aid)["guard_result"])
+
+    def test_failed_input_read_leaves_the_request_pending_without_a_transaction(self):
+        def failing(_proposal):
+            raise RuntimeError("cluster unavailable")
+        with self.assertRaises(RuntimeError):
+            self.process(state_reader=failing)
+        self.assertFalse(self.store.db.in_transaction)
+        self.assertEqual(len(self.pending_guards()), 1)
+        self.assertEqual(self.process()[0]["verdict"], "ESCALATE")
+
 
 if __name__ == "__main__":
     unittest.main()

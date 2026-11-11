@@ -11,6 +11,7 @@ from pathlib import Path
 import subprocess
 
 from services.coordinator.core import CoordinatorError, acknowledge, dispatch_pending, record_message
+from services.guard.adapters import _DNS_LABEL, _DNS_SUBDOMAIN
 from services.guard.core import assert_decision_usable, evaluate_with_report
 from shared.contracts import validate_message
 
@@ -36,11 +37,18 @@ class KubectlStateReader:
         target = proposal["target"]
         if target["cluster_id"] != self.cluster_id:
             raise ValueError("Proposal cluster ID does not match the configured Kubernetes reader")
+        namespace, name = target["namespace"], target["name"]
+        # Names come from a proposal; validate them so none can reach kubectl as an option.
+        if (not isinstance(namespace, str) or len(namespace) > 63 or not _DNS_LABEL.fullmatch(namespace)
+                or not isinstance(name, str) or len(name) > 253 or not _DNS_SUBDOMAIN.fullmatch(name)
+                or any(not _DNS_LABEL.fullmatch(label) for label in name.split("."))):
+            raise ValueError("Proposal target is not a valid Kubernetes Deployment name and namespace")
         command = ["kubectl", "--context", self.context, "--namespace", target["namespace"],
                    "get", "deployment", target["name"], "-o", "json"]
         result = self.runner(command, capture_output=True, text=True, timeout=30)
         if result.returncode:
-            raise RuntimeError(result.stderr.strip() or "Could not read current Deployment")
+            # kubectl stderr can contain endpoint or credential details; do not propagate it.
+            raise RuntimeError(f"Could not read current Deployment (kubectl exit {result.returncode})")
         return {"cluster_id": self.cluster_id, "captured_at": self.clock().isoformat().replace("+00:00", "Z"),
                 "deployment": json.loads(result.stdout)}
 
@@ -83,27 +91,43 @@ def process_guard_requests(store, event_bus, *, state_reader, policy_reader,
     Reads current stored proposals/approvals, evaluates the real Guard, and
     atomically commits the decision, downstream command and request acknowledgment.
     Input failures leave requests pending and cannot create execution commands.
-    Uses one SQLite transaction per request; readers should be short and bounded.
+    Readers run before the request's SQLite write transaction, so a slow cluster read
+    does not block other workers. The transaction then re-reads the request and
+    action and skips anything that changed meanwhile; the next pass re-evaluates it.
     """
     clock = clock or (lambda: datetime.now(timezone.utc))
     pending = store.pending_routes("guard.request")
     decisions = []
+    def current(request_id):
+        request = store.route(request_id)
+        if request["delivered"]:
+            return request, None, False
+        action = store.action(request["action_id"])
+        incident = store.incident(action["incident_id"]) if action else None
+        eligible = bool(action and incident["active_action_id"] == action["action_id"]
+                        and action["state"] in {"VALIDATING", "AWAITING_APPROVAL"})
+        return request, action, eligible
+
     for pending_row in pending:
-        with store.transaction():
-            request = store.route(pending_row[0])
-            if request["delivered"]:
-                continue
-            action = store.action(request["action_id"])
-            incident = store.incident(action["incident_id"]) if action else None
-            if (not action or incident["active_action_id"] != action["action_id"]
-                    or action["state"] not in {"VALIDATING", "AWAITING_APPROVAL"}):
-                acknowledge(store, request["id"])
-                continue
+        request, action, eligible = current(pending_row[0])
+        if request["delivered"]:
+            continue
+        if eligible:
             proposal = action["proposal"]
             policy = policy_reader(deepcopy(proposal))
             baseline = baseline_reader(deepcopy(proposal)) if baseline_reader else None
             dependencies = dependency_reader(deepcopy(proposal)) if dependency_reader else None
             state = state_reader(deepcopy(proposal))
+        with store.transaction():
+            request, latest, still_eligible = current(pending_row[0])
+            if request["delivered"]:
+                continue
+            if not still_eligible:
+                acknowledge(store, request["id"])
+                continue
+            if not eligible or latest["proposal"] != proposal:
+                continue  # Changed while inputs were read; the next pass re-reads them.
+            action = latest
             now = clock()
             if not isinstance(now, datetime) or now.utcoffset() != timedelta(0):
                 raise ValueError("Guard worker clock must return timezone-aware UTC")

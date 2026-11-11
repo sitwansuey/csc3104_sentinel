@@ -233,6 +233,53 @@ class ExecutorIntegrationTests(unittest.TestCase):
         self.assertEqual(self.cluster.write_attempts, [])
         self.assertEqual(self.run_worker()[0]["status"], "APPLIED")
 
+    def uncertain_write(self):
+        class DelayedAPI(FakeDeploymentAPI):
+            restore_calls = 0
+
+            def conditional_restore(self, **kwargs):
+                self.restore_calls += 1
+                raise TimeoutError("request completion is unknown")
+
+        self.cluster = DelayedAPI(self.cluster.snapshot, clock=lambda: self.now)
+        self.adapters = replace(self.adapters, cluster=self.cluster)
+        self.prepare()
+        self.assertEqual(self.run_worker()[0]["status"], "NEEDS_RECONCILIATION")
+        self.assertEqual(self.cluster.restore_calls, 1)
+        self.now = self.now.replace(second=41)
+
+    def test_reconcile_command_never_starts_a_write_when_the_journal_is_missing(self):
+        self.uncertain_write()
+        # The executor ledger is lost or replaced; only the Coordinator still knows the action.
+        replacement = SQLiteExecutionLedger(self.path / "replacement.db")
+        self.addCleanup(replacement.close)
+        self.adapters = replace(self.adapters, ledger=replacement)
+        self.assertEqual(self.run_worker(), [])
+        self.assertEqual(self.cluster.restore_calls, 1)
+        self.assertEqual(self.state(), "NEEDS_RECONCILIATION")
+        reviews = execution_delivery_reviews(self.store)
+        self.assertEqual(len(reviews), 1)
+        self.assertIn("no write was attempted", reviews[0]["reason"])
+        pending = self.store.db.execute(
+            "SELECT count(*) FROM outbox WHERE topic='executor.reconcile' AND delivered=0").fetchone()[0]
+        self.assertEqual(pending, 0)
+        self.assertEqual(self.run_worker(), [])
+        self.assertEqual(self.cluster.restore_calls, 1)
+        self.assertEqual(len(execution_delivery_reviews(self.store)), 1)
+
+    def test_busy_reconcile_command_stays_pending_without_a_write(self):
+        from services.executor.store import TargetBusy
+
+        self.uncertain_write()
+        with self.adapters.coordination.hold(self.proposal["target"]):
+            with self.assertRaises(TargetBusy):
+                self.run_worker()
+        self.assertEqual(self.cluster.restore_calls, 1)
+        self.assertEqual(self.state(), "NEEDS_RECONCILIATION")
+        pending = self.store.db.execute(
+            "SELECT count(*) FROM outbox WHERE topic='executor.reconcile' AND delivered=0").fetchone()[0]
+        self.assertEqual(pending, 1)
+
     def crash_after_write(self):
         class ProcessCrash(BaseException):
             pass
