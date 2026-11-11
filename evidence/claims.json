@@ -143,6 +143,16 @@
       ],
       "scope_caveat": "Detects one Deployment failure mode (unavailable replicas after a bad rollout). One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.",
       "value": "3/3"
+    },
+    {
+      "id": "C-GUARD-EVAL",
+      "text": "On the versioned synthetic Guard fixtures, unsafe proposals allowed per configuration: {value}",
+      "derive": "guard_unsafe_acceptance",
+      "bundles": [
+        "guard-eval-v1-20261111-a1d7d41"
+      ],
+      "scope_caveat": "33 hand-authored synthetic fixtures (27 unsafe, 6 safe) evaluated offline in one process; not live incidents and not an estimate of production frequency or generalisation. no_validation allows every case by construction, so its row is definitional, not measured. Admission dry-run and runtime preview are not included. Status PRELIMINARY_NOT_FROZEN: the issue #63 freeze conditions are not met. One Windows/amd64 host; provenance recorded.",
+      "value": "state_policy_only 21/27, full_available 0/27, no_validation 27/27 (definitional)"
     }
   ]
 }

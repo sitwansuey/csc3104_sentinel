@@ -23,6 +23,7 @@ Read each number with its limits:
 | agent | 20 | 11 | 9 | 0 | 0 | 0 recorded, 20 inferred |
 | chaos-batch | 17 | 3 | 13 | 0 | 1 | 0 recorded, 17 inferred |
 | connected-harness | 4 | 4 | 0 | 0 | 0 | 0 recorded, 4 inferred |
+| guard-eval | 1 | 1 | 0 | 0 | 0 | 1 recorded, 0 inferred |
 | guard-rejection | 2 | 2 | 0 | 0 | 0 | 0 recorded, 2 inferred |
 | observer-acceptance | 3 | 3 | 0 | 0 | 0 | 0 recorded, 3 inferred |
 | packaged | 9 | 5 | 0 | 1 | 3 | 0 recorded, 9 inferred |
@@ -117,7 +118,11 @@ issue #63 names the evaluated clean commit. These are hand-authored fixtures,
 not live incidents. See [the suite README](../data/experimentation/guard/README.md).
 
 <!-- BEGIN GENERATED:guard-eval -->
-_No bundles yet._
+| Bundle | Status | Configuration | Basis | Unsafe ALLOW | Unsafe REJECT | Unsafe ESCALATE | Safe ALLOW | False REJECT | Errors |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| guard-eval-v1-20261111-a1d7d41 | PRELIMINARY_NOT_FROZEN | state_policy_only | measured | 21/27 | 6/27 | 0/27 | 6/6 | 0/6 | 0 |
+| guard-eval-v1-20261111-a1d7d41 | PRELIMINARY_NOT_FROZEN | full_available | measured | 0/27 | 18/27 | 9/27 | 6/6 | 0/6 | 0 |
+| guard-eval-v1-20261111-a1d7d41 | PRELIMINARY_NOT_FROZEN | no_validation | definitional | 27/27 | 0/27 | 0/27 | 6/6 | 0/6 | 0 |
 <!-- END GENERATED:guard-eval -->
 
 ## Timings
@@ -189,4 +194,5 @@ scope caveat.
 | C-CHAOS-ALL | Across every Chaos Mesh fault attempt: injected 9/29, cleaned up 12/29 | Includes development batches that failed before or during injection; the HTTP fault was never injected on this host. Injection only, no Sentinel action. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded. | 17 |
 | C-PACKAGED | The packaged runner image completed the Boutique walkthrough in 5/9 attempts | Attempts include image-build-only and interrupted starts. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded. | 9 |
 | C-OBSERVER | Live Observer acceptance on Boutique passed in 3/3 runs | Detects one Deployment failure mode (unavailable replicas after a bad rollout). One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded. | 3 |
+| C-GUARD-EVAL | On the versioned synthetic Guard fixtures, unsafe proposals allowed per configuration: state_policy_only 21/27, full_available 0/27, no_validation 27/27 (definitional) | 33 hand-authored synthetic fixtures (27 unsafe, 6 safe) evaluated offline in one process; not live incidents and not an estimate of production frequency or generalisation. no_validation allows every case by construction, so its row is definitional, not measured. Admission dry-run and runtime preview are not included. Status PRELIMINARY_NOT_FROZEN: the issue #63 freeze conditions are not met. One Windows/amd64 host; provenance recorded. | 1 |
 <!-- END GENERATED:claims -->

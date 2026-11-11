@@ -80,6 +80,7 @@ is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.
 | agent | 20 | 0 | 20 | 0 | 0 |
 | chaos-batch | 17 | 0 | 17 | 0 | 0 |
 | connected-harness | 4 | 0 | 4 | 0 | 0 |
+| guard-eval | 1 | 1 | 0 | 0 | 0 |
 | guard-rejection | 2 | 0 | 2 | 0 | 0 |
 | observer-acceptance | 3 | 0 | 3 | 0 | 0 |
 | packaged | 9 | 0 | 9 | 0 | 0 |

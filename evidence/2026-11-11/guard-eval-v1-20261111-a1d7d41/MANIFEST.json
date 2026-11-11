@@ -1,0 +1,53 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "guard-eval-v1-20261111-a1d7d41",
+  "class": "guard-eval",
+  "captured_at": "2026-11-11T19:27:38.018508Z",
+  "source_run_dir_name": "guard-eval-run",
+  "sanitiser_version": "4",
+  "provenance": {
+    "kind": "recorded",
+    "schema": "sentinel-provenance-v1",
+    "source_revision": "a1d7d413b645bee2efec787efffa7c8a3f2d0b8c",
+    "dirty": false,
+    "dirty_paths_sha256": null,
+    "dirty_path_count": 0,
+    "python": "3.13.2",
+    "host_class": "windows-amd64",
+    "tools": {},
+    "captured_by": "evaluate_guard",
+    "revision": "a1d7d413b645bee2efec787efffa7c8a3f2d0b8c",
+    "working_tree_dirty": false,
+    "source_sha256": {
+      "scripts/evaluate_guard.py": "4623d420e4864d30ae646f4a7a7184125f1f249b9c72628504b16ddf83318b47",
+      "shared/contracts.py": "949fa66f74eff8bc6f71bb949abaa8cfef341e8826aaac645889ae149b2b53f7",
+      "data/experimentation/guard/v1/cases.json": "ce6c1296ce6f6b2d289ff4468c4e979066a03a1941350bc78cd0b64a05b3012e",
+      "services/guard/__init__.py": "6f689adfbbbb73a35df564736ef4d39b59a16bc6eafc38dfdf7be2630a2701af",
+      "services/guard/adapters.py": "f8274feaeed00d975512b6656e10e9cf19a675496427ed79bd98df4437951c2a",
+      "services/guard/cli.py": "cca672e0e3cf1b77c69ef2eb2daa2006baac7e75a1d93d2a5657f600a579a891",
+      "services/guard/common.py": "ee6895932dbfcd742a0822bf9bfa6004e301af4fa60f73b7a9940de8583e9b0e",
+      "services/guard/core.py": "39ae0a0301c999260809142d9cdbcb3f1bdab85721b9fdd6edbec61baac521e9",
+      "services/guard/decisions.py": "3f9bb8a0ab0374af577f3e4183cdf1cd9376c0c0e9879a718d8164e88c2020db",
+      "services/guard/eligibility.py": "912ea3dbf102c7496ce30b5b5920993a5b5c6b9317ca0b62787fdd0be1efb2d2",
+      "services/guard/preview.py": "6bd910874b8389222bd8f38622b1a31b272d7808e0a0ee4069a70f0fba7a73f9",
+      "services/guard/resources.py": "a828cf9a255d897fe4625fae18f559dd3565d35e103584a7aa3d4d08cb45a426"
+    },
+    "platform": "Windows",
+    "architecture": "AMD64"
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "afe781b2b9d2980a889a55cd5e6a5ab6c9667a2de823edb47311160dd283396a",
+      "bytes": 4421,
+      "redactions": 0
+    },
+    {
+      "path": "results.json",
+      "sha256": "283196ebb6c8fdd223eede3b0982e654dd8dd323ca0e794766bac943578c4318",
+      "bytes": 84554,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}
