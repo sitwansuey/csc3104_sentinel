@@ -274,6 +274,17 @@ class ApproverTests(AuthorityCase):
         with self.assertRaises(ValueError):
             InteractiveApprover(self.authority, lifetime_seconds=301)
 
+    def test_operator_identity_refuses_reader_names_and_names_the_authority_would_reject(self):
+        for mode in ("interactive", "reject"):
+            for identity in (LAB_GUARD, LAB_EXECUTOR):
+                with self.subTest(mode=mode, identity=identity), self.assertRaisesRegex(ValueError, "reserved"):
+                    operator_identity(mode, identity)
+            for identity in ("", " ", "-leading-dash", "has space", "line\nbreak", "x" * 129, "café", 7):
+                with self.subTest(mode=mode, identity=identity), self.assertRaisesRegex(ValueError, "1 to 128"):
+                    operator_identity(mode, identity)
+        for identity in ("a", "operator_2.lab-B", "x" * 128):
+            self.assertEqual(operator_identity("interactive", identity), identity)
+
     def test_revocation_after_allow_before_write_gives_zero_writes(self):
         adapters = self.adapters()
         approver = self.interactive([self.proposal["action_id"]] * 2)
@@ -594,6 +605,16 @@ class EntryPointRefusalTests(unittest.TestCase):
     def test_executor_experiment_without_approval_refuses_without_a_terminal(self):
         from experiments.recovery import live
         self.assertIn("needs a terminal", self.run_main(live, []))
+
+    def test_both_harnesses_refuse_a_reserved_or_malformed_operator_before_any_cluster_change(self):
+        from experiments.boutique.harness import live as boutique
+        from experiments.recovery import live as recovery
+        for module in (boutique, recovery):
+            for identity in (LAB_GUARD, LAB_EXECUTOR):
+                with self.subTest(module=module.__name__, identity=identity):
+                    self.assertIn("reserved", self.run_main(module, ["--approval", "interactive", "--operator", identity]))
+            with self.subTest(module=module.__name__, identity="has space"):
+                self.assertIn("1 to 128", self.run_main(module, ["--approval", "interactive", "--operator", "has space"]))
 
 
 if __name__ == "__main__":

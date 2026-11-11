@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import re
 
+IDENTITY_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
+
 
 class ProtocolError(ValueError):
     def __init__(self, status, message):
@@ -19,7 +21,7 @@ def load_identities(path, allowed_roles):
         raise ValueError("Expected a nonempty identity mapping")
     configured = {}
     for name, entry in entries.items():
-        if (not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", name)
+        if (not isinstance(name, str) or not IDENTITY_NAME.fullmatch(name)
                 or not isinstance(entry, dict) or set(entry) != {"role", "token_env"}
                 or not isinstance(entry["role"], str) or entry["role"] not in allowed_roles
                 or not isinstance(entry["token_env"], str) or not entry["token_env"]):

@@ -28,6 +28,7 @@ import threading
 import time
 
 from runtime.approval_http import ApprovalClient
+from runtime.service_identity import IDENTITY_NAME
 from services.coordinator.approvals import TARGET_FIELDS
 from services.coordinator.store import _digest
 
@@ -338,6 +339,11 @@ def operator_identity(mode, operator=None):
         return AUTOMATED_LAB
     if operator == AUTOMATED_LAB:
         raise ValueError("The automated-lab identity is reserved for --approval auto-lab")
+    if operator in {LAB_GUARD, LAB_EXECUTOR}:
+        raise ValueError("The lab-guard and lab-executor identities are reserved for the read-only readers")
+    if operator is not None and not (isinstance(operator, str) and IDENTITY_NAME.fullmatch(operator)):
+        raise ValueError("An operator identity is 1 to 128 letters, digits, '.', '_' or '-', "
+                         "starting with a letter or digit")
     return operator or LAB_OPERATOR
 
 
