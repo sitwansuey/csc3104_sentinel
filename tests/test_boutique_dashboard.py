@@ -207,18 +207,34 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
 
     def test_agent_dashboard_rejects_an_escalation_that_reached_guard_or_was_not_journaled(self):
         snapshot, status = self.escalated()
-        for change in ("guard", "approval", "open", "journal"):
+        proposal = snapshot["actions"][0]["proposal"]
+        for change in ("guard", "approval", "open", "journal", "guard result", "execution result",
+                       "execution message", "outcome message"):
             with self.subTest(change=change):
                 changed, saved = deepcopy(snapshot), deepcopy(status)
+                expected = "must not reach Guard, approval, the Executor or the Verifier"
                 if change == "guard":
                     changed["outbox"] = [{"topic": "guard.request", "action_id": "ACT-0"}]
                 elif change == "approval":
                     changed["approvals"] = [{"record": {"action_id": "ACT-0"}}]
+                elif change == "guard result":
+                    # The outbox stays clean: only the action row shows the Guard decision.
+                    changed["actions"][0]["guard_result"] = {"verdict": "ALLOW"}
+                elif change == "execution result":
+                    changed["actions"][0]["execution_result"] = dict(proposal, kind="execution_result",
+                                                                     status="APPLIED")
+                elif change == "execution message":
+                    changed["messages"] = [{"message": dict(proposal, kind="execution_result", status="APPLIED")}]
+                elif change == "outcome message":
+                    changed["messages"] = [{"message": dict(proposal, kind="outcome", status="RECOVERED",
+                                                            checks=[{"passed": True}])}]
                 elif change == "open":
                     changed["incidents"][0]["state"] = "OPEN"
+                    expected = "incident in NEEDS_REVIEW"
                 else:
                     saved["delivered"] = 0
-                with self.assertRaises(RuntimeError):
+                    expected = "journal must hold the delivered ESCALATE"
+                with self.assertRaisesRegex(RuntimeError, expected):
                     self.verify_escalated(changed, saved)
 
     def test_standalone_refusal_still_validates_one_rejected_proposal(self):
