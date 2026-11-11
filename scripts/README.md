@@ -25,3 +25,6 @@ reading their original run folders only for files bundles do not keep.
 in the threat-model or distributed-model docs no longer exists, or when the
 first line of a cited Python line range no longer holds the text the citation
 names.
+
+`tracker/` holds the reviewed issue-tracker plan and dry-run tools for tracker
+and branch clean-up; see [its README](tracker/README.md).
