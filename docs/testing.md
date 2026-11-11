@@ -133,6 +133,13 @@ racing the patch, a peer host's late write landing just before ours, evidence er
 and crashes before or after every journal call. At the end every request still
 in flight is delivered or lost, and each host runs three reconcile passes.
 
+Fencing is on in the model (30 s settle delay), so a reconcile pass fences a
+write still in doubt. A fence can be answered, lose its response, stay in
+flight or never arrive, and the process can crash around every fence step. In
+the final passes the simulated API server answers each fence. Fence outcomes
+come from a second generator seeded from the same seed, so a schedule is the
+same with fencing on or off.
+
 | Check | Meaning |
 | --- | --- |
 | I1 | At most one write of the action commits; each host sends at most one |
@@ -140,17 +147,22 @@ in flight is delivered or lost, and each host runs three reconcile passes.
 | I3 | No CONFLICT or SUPERSEDED while a write of the action can still commit |
 | I4 | Once the target has moved, been deleted or replaced, the next read ends the action |
 | I5 | No final result while this host's write can still commit, or any host's (a FAILED that sent nothing excepted) |
-| L1 | After the drain, every host is done and a new proposal for the workload is admitted |
+| L1 | After the drain, every host is done and a new proposal for the workload is admitted; with fencing on, no host may stay in doubt even when the version is still V0 |
+| F1 | A fence never commits together with a write or another fence of the action, and CONFLICT/FENCED needs a committed fence of that host |
+| F2 | A host journals each fence nonce before sending it, so it never reports SUPERSEDED while its own committed fence is on the object |
 | P1 | No CONFLICT while a peer's committed write of the action is still on the object; the host reports APPLIED |
 
 P1 is not one of the design's I1-I5, which are about each host's own write.
-It catches an Executor that stays safe but ignores a peer's commit.
+It catches an Executor that stays safe but ignores a peer's commit. F1 is a
+safety check. F2, like P1, catches an Executor that stays safe but loses its
+proof that the write never committed.
 
 CI runs seeds 0 to 1999 (about 8 s). For a longer local run set
 `SENTINEL_MODEL_SEEDS`, for example `2000:22000`. A failure prints the seed and a
 shrunk trace. Meta-tests inject known-bad variants (CONFLICT on an unchanged
 timeout, APPLIED without evidence, a retried write, no peer adoption after a
-refused write) and expect the checker to catch each one.
+refused write, a fence sent before its nonce is journaled, a fence whose
+unknown outcome is taken as committed) and expect the checker to catch each one.
 
 To compare with another commit's Executor, without checking it out:
 
@@ -165,24 +177,34 @@ work after the target has moved. P1 also fails there, because main only trusts
 its own host's evidence. On the current table all of them hold.
 
 Limits: this is a model, not Kubernetes. The Guard always allows, the
-Coordinator is not modelled, and only one action runs. Seeds where every request
-was lost and nothing else wrote are reported as `unprovable`: the version is
-still V0, so no read can tell a lost request from a late one, and L1 does not
-apply. Those rows stay in doubt and escalate to an operator.
+Coordinator is not modelled, and only one action runs. Runs that end with the
+version still V0 are reported as `unprovable`: no read can tell a lost request
+from a late one. With `--no-fence`, 96 of the 2000 CI seeds end this way and
+their hosts stay in doubt (they escalate to an operator). With fencing on, the
+fence settles those same schedules as CONFLICT/FENCED; the one run still
+reported `unprovable` has no host in doubt, and L1 holds for every seed. The
+pre-table `d5b2ed9` Executor has no fence, so the checker runs it without one.
 
 The live counterpart is `scripts/validation/test_executor_wedge_live.py
---context <ctx> --scenario rv-race|delete-recreate`. It only accepts
+--context <ctx> --scenario rv-race|delete-recreate|admission-deny`. It only accepts
 `kind-sentinel-boutique-connected` or `kind-sentinel-wedge` and refuses any
 context or cluster naming `sentinel-lab`. It creates its own namespace with a
 zero-replica Deployment and a ServiceAccount limited to get/patch on it, runs
 the Executor with that token, deletes the namespace on exit and writes a
 summary without tokens, server addresses or local paths. Each result row
-counts only its own step's write attempts, successful writes and kubectl
-patch processes; reconcile passes are summed into one row. Its unit tests use a
-fake kubectl. On 11 November 2026 it ran once per scenario against
-`kind-sentinel-boutique-connected`, and once more with rv-race against main's
+counts only its own step's write attempts, successful writes, fences and kubectl
+patch processes; reconcile passes are summed into one row. `admission-deny`
+also installs a temporary ValidatingAdmissionPolicy and binding that deny Pod
+template changes to that one Deployment in that namespace, waits until a
+server-side dry run is denied, and deletes both again (also on failure). It
+expects NEEDS_RECONCILIATION before the 30 s settle delay, then CONFLICT/FENCED
+with one fence, the fence marker on the Deployment and an unchanged
+`metadata.generation`. Its unit tests use a fake kubectl. On 11 November 2026
+rv-race and delete-recreate ran once each against
+`kind-sentinel-boutique-connected`, and rv-race ran once more against main's
 Executor as the before case; the bundles and claim `C-EXECUTOR-WEDGE` are in
-[results](results.md#executor-wedge). Collect a run with
+[results](results.md#executor-wedge). Those runs predate the fence and
+`admission-deny` has not yet been run against a cluster. Collect a run with
 `scripts/evidence/collect.py --class executor-wedge`; its summary has no
 provenance block, so pass `--inferred-revision` and `--inferred-basis`.
 

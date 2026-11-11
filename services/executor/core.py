@@ -11,7 +11,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from services.executor.reconciliation import ABSENT, ACTION_ANNOTATION, Basis, classify, observe
+from services.executor.reconciliation import (
+    ABSENT, ACTION_ANNOTATION, Basis, classify, fence_marker, fence_nonce, observe,
+)
 from services.executor.store import ActionConflict, canonical_json, fingerprint
 from shared import log
 from shared.contracts import ContractError, validate_message
@@ -19,6 +21,9 @@ from shared.contracts import ContractError, validate_message
 
 LOG = log.get_logger("executor")
 ESCALATION_NOTE = "Operator action required"
+# Minimum spacing between two fences of one action. It is longer than the
+# kubectl process timeout (15 s), so an earlier fence has landed or failed.
+FENCE_RETRY_SECONDS = 30.0
 
 # Fixed sentences per basis; server text is never echoed into results.
 _SENTENCES = {
@@ -32,7 +37,9 @@ _SENTENCES = {
     Basis.ADVANCED_WITHOUT_EVIDENCE: ("The resource version moved without this action's evidence, so this conditional "
                                       "write can never commit; whether it briefly committed is unknown. "
                                       "No write was repeated; obtain a new proposal from current state."),
-    Basis.FENCED: "This action was fenced before its write could commit. No write was repeated.",
+    Basis.FENCED: ("A metadata-only fence conditioned on the same resource version committed first, so this "
+                   "write never committed and never can. No write was repeated; obtain a new proposal from "
+                   "current state."),
     Basis.DEFINITE_REJECTION: "The API server definitely rejected this write. No write was repeated.",
     Basis.UNCHANGED_IN_DOUBT: ("Live state does not confirm this attempt and the resource version is unchanged, "
                                "so a request in flight could still commit. Retain workload exclusion; "
@@ -75,6 +82,8 @@ class ExecutionAdapters:
     commit template and evidence together, or explicitly refuse the precondition.
     authorizer.validate returns GuardCheck; assert_usable checks its full binding
     and expiry. Runtime may add current lifecycle checks to that boundary.
+    With fence_after_seconds set, cluster.fence(target, version, marker) must
+    commit only the marker annotation under the same UID/version tests.
     """
 
     ledger: object
@@ -85,6 +94,10 @@ class ExecutionAdapters:
     read_attempts: int = 3
     # A write still in doubt after this long gets one 'operator action required' result.
     reconcile_escalation_seconds: float = 600.0
+    # None disables fencing. Otherwise a reconcile pass fences a write still in
+    # doubt (same UID, version V0) once it has been in doubt this long. Keep it
+    # above the kubectl process timeout so slow but successful writes are not aborted.
+    fence_after_seconds: float | None = None
 
 
 def _now(adapters):
@@ -223,21 +236,78 @@ def _observation(proposal, adapters, snapshot=None):
         return None
 
 
-def _reconcile(proposal, adapters, snapshot=None, *, schedule=True):
-    """No mutation, even if state is unchanged: an old request may still commit.
+def _classify(row, proposal, observation, adapters):
+    """Apply the table with the fence nonces this host journaled for the action."""
+    fences = adapters.ledger.fences(proposal["action_id"]) if row is not None else []
+    return classify(row, proposal, observation, fence_nonces=frozenset(fence["nonce"] for fence in fences),
+                    fence_confirmed=any(fence["committed_version"] is not None for fence in fences))
 
-    schedule=False is for the attempt's own first check, which must not delay
-    the first later reconcile pass.
+
+def _since(stamp, now):
+    return (now - datetime.fromisoformat(stamp.replace("Z", "+00:00"))).total_seconds()
+
+
+def _fence_due(decision, row, adapters, now):
+    """Fence only a write still in doubt, after the settle delay, at most once per retry interval."""
+    settle = adapters.fence_after_seconds
+    if not decision.may_fence or settle is None or row is None or not row.get("write_started_at"):
+        return False
+    fences = adapters.ledger.fences(row["action_id"])
+    if not fences:
+        return _since(row["write_started_at"], now) >= settle
+    return _since(fences[-1]["started_at"], now) >= max(settle, FENCE_RETRY_SECONDS)
+
+
+def _fence(proposal, adapters):
+    """Journal a new nonce, send one fence, then decide again from fresh state.
+
+    The fence tests UID and version V0 like the write. If it commits, the write
+    never committed and never can (CONFLICT/FENCED). If it is refused because
+    the version moved, or its outcome is unknown, the next read decides.
+    """
+    action_id, target = proposal["action_id"], proposal["target"]
+    version, nonce = proposal["based_on_resource_version"], uuid4().hex
+    # Journal first: a fence that lands after a crash is still recognised as ours.
+    adapters.ledger.record_fence(action_id, nonce, _now(adapters))
+    snapshot = None
+    try:
+        fenced = adapters.cluster.fence(target=deepcopy(target), version=version,
+                                        marker=fence_marker(action_id, nonce))
+    except ConditionalWriteConflict:
+        log.emit(LOG, "executor.fence.refused", action_id=action_id)
+    except Exception as error:  # noqa: BLE001 - an unknown fence outcome may have committed; a fresh read decides
+        log.failure(LOG, "executor.fence.indeterminate", error, action_id=action_id)
+    else:
+        observation = observe(deepcopy(fenced), target)
+        if (observation is not None and observation.uid == target["uid"] and observation.resource_version != version
+                and fence_nonce(observation.fence_annotation, action_id) == nonce):
+            adapters.ledger.confirm_fence(action_id, nonce, observation.resource_version)
+            log.emit(LOG, "executor.fence.committed", action_id=action_id)
+            snapshot = fenced
+    row = adapters.ledger.get(action_id)
+    return _classify(row, proposal, _observation(proposal, adapters, snapshot), adapters)
+
+
+def _reconcile(proposal, adapters, snapshot=None, *, schedule=True):
+    """No spec mutation, even if state is unchanged: an old request may still commit.
+
+    The only write is a precondition-guarded metadata fence, when fencing is
+    enabled and the write has stayed in doubt past the settle delay. schedule=False
+    is for the attempt's own first check, which must not delay the first later
+    reconcile pass and never fences.
     """
     row = adapters.ledger.get(proposal["action_id"])
-    decision = classify(row, proposal, _observation(proposal, adapters, snapshot))
+    decision = _classify(row, proposal, _observation(proposal, adapters, snapshot), adapters)
+    if schedule and _fence_due(decision, row, adapters, _now(adapters)):
+        decision = _fence(proposal, adapters)
+        row = adapters.ledger.get(proposal["action_id"])
     return _record(proposal, adapters, row, decision, schedule=schedule)
 
 
 def _adopted_write(proposal, adapters, snapshot=None):
     """Finish APPLIED if live state proves this action committed (for example by a peer)."""
     row = adapters.ledger.get(proposal["action_id"])
-    decision = classify(row, proposal, _observation(proposal, adapters, snapshot))
+    decision = _classify(row, proposal, _observation(proposal, adapters, snapshot), adapters)
     if decision.status != "APPLIED":
         return None
     return _finish(proposal, adapters, "APPLIED", decision.version, _details(decision))
@@ -265,11 +335,17 @@ def _check_adapters(adapters):
     limit = adapters.reconcile_escalation_seconds
     if isinstance(limit, bool) or not isinstance(limit, (int, float)) or not 0 < limit < float("inf"):
         raise ValueError("reconcile_escalation_seconds must be a positive finite number")
+    settle = adapters.fence_after_seconds
+    if settle is not None and (isinstance(settle, bool) or not isinstance(settle, (int, float))
+                               or not 0 <= settle < float("inf")):
+        raise ValueError("fence_after_seconds must be None or a non-negative finite number")
     _now(adapters)
 
 
 def reconcile(proposal: dict, adapters: ExecutionAdapters) -> dict:
-    """Inspect a write, with no path to a new mutation.
+    """Inspect a write, with no path to a spec mutation.
+
+    At most it sends a precondition-guarded metadata fence (see _fence).
 
     Runtime restart scans use this even if Coordinator canceled the command.
     A canceled permission cannot erase evidence of a write that already happened.

@@ -98,7 +98,7 @@ configures logging, so that event is not visible in its output; it prints
 
 Failure events include `executor.observe.unavailable`,
 `executor.prewrite.refused`, `executor.authorization.withdrawn`,
-`executor.write.indeterminate`, `transport.lease.lost`,
+`executor.write.indeterminate`, `executor.fence.indeterminate`, `transport.lease.lost`,
 `transport.retry.failed`, `planner.attempt.failed`,
 `observer.collection.failed`, `observer.delivery.failed`,
 `verifier.collection.failed`, `http.readiness.failed`,

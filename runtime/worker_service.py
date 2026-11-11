@@ -81,7 +81,8 @@ def adapter(config, directory, stack):
     options.update(approval_reader=approval, server_dry_run=config.get("server_dry_run", False))
     if role == "executor":
         live = build_adapters(**options, allowed_targets=config["allowed_targets"],
-                              ledger=directory / "executor.db", locks=directory / "locks")
+                              ledger=directory / "executor.db", locks=directory / "locks",
+                              fence_after_seconds=config.get("fence_after_seconds"))
         stack.callback(live.ledger.close)
         if config.get("remote_dependencies", True):
             connection = client(config)

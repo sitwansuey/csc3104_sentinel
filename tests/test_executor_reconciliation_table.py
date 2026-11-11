@@ -19,7 +19,8 @@ from services.executor.core import (
     ExecutionAdapters, encode_evidence, execute, reconcile, unchanged_uncertainty,
 )
 from services.executor.reconciliation import (
-    ABSENT, ACTION_ANNOTATION, Basis, Decision, Observation, action_attempt, classify, observe,
+    ABSENT, ACTION_ANNOTATION, FENCE_ANNOTATION, Basis, Decision, Observation, action_attempt, classify,
+    fence_marker, fence_nonce, observe, valid_fence_marker,
 )
 from services.executor.store import (
     LocalTargetCoordinator, SQLiteExecutionLedger, TargetBusy, canonical_json, fingerprint,
@@ -130,17 +131,86 @@ class DecisionTableTests(unittest.TestCase):
         self.assertEqual(stateless.writer, "peer:" + "0" * 32)
         self.assertEqual(stateless.status, "APPLIED")
 
-    def test_reserved_rows_need_explicit_fence_or_rejection(self):
+    def fenced(self, version="next", *, nonce="a" * 32, action_id=None, **observed):
+        marker = canonical_json(fence_marker(action_id or self.proposal["action_id"], nonce))
+        facts = vars(self.observation(True, "same", version, "absent", "match")) | observed
+        return Observation(**dict(facts, fence_annotation=marker))
+
+    def test_fence_row_needs_this_hosts_journaled_nonce_or_a_confirmed_fence(self):
+        nonces = frozenset({"a" * 32})
+        self.assertEqual(classify(self.row, self.proposal, self.fenced(), fence_nonces=nonces),
+                         Decision("CONFLICT", Basis.FENCED, "999"))
+        # A marker this host never journaled (a peer's fence, or a copy) proves nothing to it.
+        for observation, journaled in ((self.fenced(), frozenset()), (self.fenced(), frozenset({"b" * 32})),
+                                       (self.fenced(action_id="ACT-OTHER"), nonces)):
+            with self.subTest(observation=observation.fence_annotation, journaled=journaled):
+                decision = classify(self.row, self.proposal, observation, fence_nonces=journaled)
+                self.assertEqual(decision.basis, Basis.ADVANCED_WITHOUT_EVIDENCE)
+        # A fence whose own response showed it committed still counts if another writer stripped the marker.
+        stripped = self.observation(True, "same", "next", "absent", "match")
+        self.assertEqual(classify(self.row, self.proposal, stripped, fence_confirmed=True).basis, Basis.FENCED)
+        # A committed fence always moves the version, so a marker at V0 is impossible.
+        at_v0 = classify(self.row, self.proposal, self.fenced("V0"), fence_nonces=nonces)
+        self.assertEqual((at_v0.status, at_v0.basis), ("NEEDS_RECONCILIATION", Basis.INCONSISTENT))
+        self.assertFalse(at_v0.may_fence)
+        # Rows before R4 still win: deletion, replacement and this action's own committed evidence.
+        self.assertEqual(classify(self.row, self.proposal, ABSENT, fence_confirmed=True).basis, Basis.TARGET_DELETED)
+        replaced = self.fenced(uid="recreated-uid")
+        self.assertEqual(classify(self.row, self.proposal, replaced, fence_nonces=nonces).basis, Basis.TARGET_REPLACED)
+        applied = self.fenced(evidence_annotation=encode_evidence(self.own))
+        self.assertEqual(classify(self.row, self.proposal, applied, fence_nonces=nonces).status, "APPLIED")
+
+    def test_definite_rejection_rows_stay_reserved(self):
         in_doubt = self.observation(True, "same", "V0", "absent", "match")
         advanced = self.observation(True, "same", "next", "absent", "match")
-        fenced = Observation(**dict(vars(advanced), fence_annotation="n" * 32))
-        self.assertEqual(classify(self.row, self.proposal, fenced, fence_nonces=frozenset({"n" * 32})),
-                         Decision("CONFLICT", Basis.FENCED, "999"))
-        self.assertEqual(classify(self.row, self.proposal, fenced).basis, Basis.ADVANCED_WITHOUT_EVIDENCE)
-        self.assertEqual(classify(self.row, self.proposal, fenced, fence_nonces=frozenset({"m" * 32})).basis,
-                         Basis.ADVANCED_WITHOUT_EVIDENCE)
         self.assertEqual(classify(self.row, self.proposal, advanced, "rejected").status, "CONFLICT")
         self.assertEqual(classify(self.row, self.proposal, in_doubt, "rejected").status, "FAILED")
+
+    def test_exhaustive_fence_product_gives_conflict_only_with_proof(self):
+        markers = {"none": None, "ours": canonical_json(fence_marker(self.proposal["action_id"], "a" * 32)),
+                   "unjournaled": canonical_json(fence_marker(self.proposal["action_id"], "b" * 32)),
+                   "other-action": canonical_json(fence_marker("ACT-OTHER", "a" * 32)),
+                   "non-canonical": canonical_json(fence_marker(self.proposal["action_id"], "a" * 32)).replace(",", ", "),
+                   "malformed": "not json"}
+        for present, uid, version, evidence, marker, confirmed in product(
+                (True, False), ("same", "other"), ("V0", "next"), ("ours", "absent"), markers, (False, True)):
+            facts = dict(present=present, uid=uid, version=version, evidence=evidence, marker=marker,
+                         confirmed=confirmed)
+            with self.subTest(**facts):
+                observation = self.observation(present, uid, version, evidence, "match")
+                if present:
+                    observation = Observation(**dict(vars(observation), fence_annotation=markers[marker]))
+                decision = classify(self.row, self.proposal, observation, fence_nonces=frozenset({"a" * 32}),
+                                    fence_confirmed=confirmed)
+                proof = confirmed or marker == "ours"
+                if decision.status == "CONFLICT":
+                    self.assertIs(decision.basis, Basis.FENCED)
+                    self.assertTrue(proof and present and uid == "same" and version == "next" and evidence == "absent")
+                if present and uid == "same" and version == "next" and evidence == "absent":
+                    self.assertEqual(decision.status == "CONFLICT", proof)
+                if present and uid == "same" and version == "V0":
+                    self.assertNotIn(decision.status, DONE)
+                self.assertEqual(decision.may_fence, decision.basis is Basis.UNCHANGED_IN_DOUBT)
+
+    def test_fence_markers_are_canonical_and_bound_to_the_action(self):
+        action = self.proposal["action_id"]
+        self.assertEqual(fence_nonce(canonical_json(fence_marker(action, "a" * 32)), action), "a" * 32)
+        self.assertEqual(fence_nonce(canonical_json(fence_marker(action, "a" * 32, epoch=7)), action), "a" * 32)
+        for annotation in (None, "", "not json", "[" * 5000, canonical_json({"action_id": action}),
+                           canonical_json({"action_id": action, "nonce": "A" * 32}),
+                           canonical_json({"action_id": action, "nonce": "a" * 32, "epoch": 1.5}),
+                           canonical_json({"action_id": action, "nonce": "a" * 32, "extra": 1}),
+                           canonical_json(fence_marker("ACT-OTHER", "a" * 32)),
+                           canonical_json(fence_marker(action, "a" * 32)).replace(":", ": ")):
+            with self.subTest(annotation=annotation):
+                self.assertIsNone(fence_nonce(annotation, action))
+        self.assertTrue(valid_fence_marker(fence_marker(action, "a" * 32, epoch=0)))
+        self.assertFalse(valid_fence_marker(fence_marker(action, "a" * 32, epoch=False)))
+        snapshot = deepcopy(load_fixtures()["live_state"])
+        snapshot["deployment"]["metadata"]["annotations"] = {FENCE_ANNOTATION: "marker"}
+        self.assertEqual(observe(snapshot, self.proposal["target"]).fence_annotation, "marker")
+        snapshot["deployment"]["metadata"]["annotations"] = {FENCE_ANNOTATION: 7}
+        self.assertIsNone(observe(snapshot, self.proposal["target"]).fence_annotation)
 
     def test_journal_version_that_differs_from_the_proposal_is_inconsistent(self):
         row = dict(self.row, expected_version="something-else")
@@ -503,6 +573,29 @@ class LedgerMigrationTests(unittest.TestCase):
                 self.assertEqual(row["write_started_at"], "2026-10-10T12:00:40.000000Z")
                 self.assertEqual(row["next_reconcile_at"], "2026-10-10T12:00:42.000000Z")
                 self.assertEqual(ledger.pending_proposals(), [{"action_id": "ACT-OLD"}])
+                # The fence journal is added too, and an old in-doubt row can be fenced.
+                self.assertEqual(ledger.fences("ACT-OLD"), [])
+                ledger.record_fence("ACT-OLD", "a" * 32, NOW)
+                ledger.confirm_fence("ACT-OLD", "a" * 32, "103")
+                self.assertEqual(ledger.fences("ACT-OLD"), [{"nonce": "a" * 32, "started_at": "2026-10-10T12:00:40.000000Z",
+                                                              "committed_version": "103"}])
+
+    def test_only_an_action_still_in_doubt_can_be_fenced(self):
+        with tempfile.TemporaryDirectory() as directory, SQLiteExecutionLedger(Path(directory) / "l.db") as ledger:
+            proposal = load_fixtures()["proposal"]
+            with self.assertRaises(RuntimeError):
+                ledger.record_fence(proposal["action_id"], "a" * 32, NOW)  # Unknown action.
+            ledger.prepare(proposal)
+            with self.assertRaises(RuntimeError):
+                ledger.record_fence(proposal["action_id"], "a" * 32, NOW)  # Never written: nothing to fence.
+            ledger.adopt(proposal, NOW)
+            ledger.record_fence(proposal["action_id"], "a" * 32, NOW)
+            with self.assertRaises(sqlite3.IntegrityError):
+                ledger.record_fence(proposal["action_id"], "a" * 32, NOW)  # A nonce is journaled once.
+            ledger.finish(proposal["action_id"], {"status": "CONFLICT", "action_id": proposal["action_id"]})
+            with self.assertRaises(RuntimeError):
+                ledger.record_fence(proposal["action_id"], "b" * 32, NOW)
+            self.assertEqual(len(ledger.fences(proposal["action_id"])), 1)
 
 
 if __name__ == "__main__":

@@ -9,10 +9,12 @@ It models only what the Executor's safety argument relies on:
 - Requests that stay in flight after the client gave up. Each one may commit
   at a later step, be rejected when it arrives, or never arrive.
 - Third-party writes, delete and recreate with a new UID.
+- An optional admission check, like a ValidatingAdmissionPolicy, that can deny
+  a patch after it applied cleanly (it then commits nothing).
 
 SimDeploymentAPI is the Executor-facing adapter. It mirrors
-KubectlDeploymentAPI: a pre-read, the same four-operation patch and the same
-error mapping. SimKubectl answers the subset of kubectl commands that the real
+KubectlDeploymentAPI: a pre-read, the same four-operation patch, the same
+three-operation fence and the same error mapping. SimKubectl answers the subset of kubectl commands that the real
 adapter and the live wedge harness run, so production code can be driven
 against the simulator. Nothing here contacts a cluster.
 """
@@ -26,6 +28,7 @@ from services.executor import core as _core
 
 
 ACTION_ANNOTATION = _core.ACTION_ANNOTATION
+FENCE_ANNOTATION = "sentinel.io/fence"
 ConditionalWriteConflict = _core.ConditionalWriteConflict
 ReadUnavailable = _core.ReadUnavailable
 # Older executors have no TargetAbsent; their kubectl read failed on NotFound.
@@ -130,7 +133,10 @@ def apply_json_patch(document, operations):
 
 @dataclass
 class Request:
-    """One mutating request. state: in_flight, committed, rejected or dropped."""
+    """One mutating request. state: in_flight, committed, rejected or dropped.
+
+    kind is "write" for the Executor's template patch and "fence" for a fence.
+    """
 
     number: int
     host: str
@@ -138,6 +144,7 @@ class Request:
     operations: list
     state: str = "in_flight"
     resource_version: str | None = None
+    kind: str = "write"
 
 
 @dataclass
@@ -150,6 +157,8 @@ class SimAPIServer:
     requests: list = field(default_factory=list)
     log: list = field(default_factory=list)
     last: dict | None = None
+    # admission(old, new) returns False to deny a patch that applied cleanly.
+    admission: object = None
 
     @classmethod
     def from_snapshot(cls, snapshot):
@@ -194,12 +203,23 @@ class SimAPIServer:
         """Apply a patch now. Raise PatchFailed if absent or any operation fails."""
         if not self.present:
             raise PatchFailed("Deployment does not exist")
-        return self._commit(apply_json_patch(self.deployment, operations), actor)
+        candidate = apply_json_patch(self.deployment, operations)
+        if self.admission is not None and not self.admission(self.deployment, candidate):
+            raise PatchFailed("Denied by admission")
+        return self._commit(candidate, actor)
+
+    def allowed(self, operations):
+        """A server-side dry run: True if the patch would apply and pass admission."""
+        try:
+            candidate = apply_json_patch(self.deployment, operations) if self.present else None
+        except PatchFailed:
+            return False
+        return candidate is not None and (self.admission is None or bool(self.admission(self.deployment, candidate)))
 
     # Requests in flight -------------------------------------------------
 
-    def submit(self, host, action_id, operations):
-        request = Request(len(self.requests) + 1, host, action_id, deepcopy(operations))
+    def submit(self, host, action_id, operations, kind="write"):
+        request = Request(len(self.requests) + 1, host, action_id, deepcopy(operations), kind=kind)
         self.requests.append(request)
         return request
 
@@ -224,21 +244,20 @@ class SimAPIServer:
 
     def can_commit(self, request):
         """True if delivering this request now would commit it (a dry run)."""
-        if request.state != "in_flight" or not self.present:
-            return False
-        try:
-            apply_json_patch(self.deployment, request.operations)
-        except PatchFailed:
-            return False
-        return True
+        return request.state == "in_flight" and self.allowed(request.operations)
 
-    def in_flight(self, action_id=None, host=None):
-        return [r for r in self.requests if r.state == "in_flight"
-                and (action_id is None or r.action_id == action_id) and (host is None or r.host == host)]
+    def _select(self, state, action_id, host, kind):
+        return [r for r in self.requests if r.state == state
+                and (action_id is None or r.action_id == action_id) and (host is None or r.host == host)
+                and (kind is None or r.kind == kind)]
 
-    def committed(self, action_id=None, host=None):
-        return [r for r in self.requests if r.state == "committed"
-                and (action_id is None or r.action_id == action_id) and (host is None or r.host == host)]
+    def in_flight(self, action_id=None, host=None, kind="write"):
+        """Requests still in flight; kind=None includes fences."""
+        return self._select("in_flight", action_id, host, kind)
+
+    def committed(self, action_id=None, host=None, kind="write"):
+        """Committed requests; kind=None includes fences."""
+        return self._select("committed", action_id, host, kind)
 
     # Other writers ------------------------------------------------------
 
@@ -286,6 +305,31 @@ def restore_patch(target, version, template, evidence, annotations):
             {"op": "replace", "path": "/spec/template", "value": template}, evidence_operation]
 
 
+def fence_patch(target, version, marker, annotations):
+    """The exact operations KubectlDeploymentAPI.fence submits: metadata only."""
+    annotation = _core.canonical_json(marker)
+    fence_operation = (
+        {"op": "add", "path": "/metadata/annotations", "value": {FENCE_ANNOTATION: annotation}}
+        if annotations is None else
+        {"op": "add", "path": "/metadata/annotations/" + FENCE_ANNOTATION.replace("~", "~0").replace("/", "~1"),
+         "value": annotation}
+    )
+    return [{"op": "test", "path": "/metadata/uid", "value": target["uid"]},
+            {"op": "test", "path": "/metadata/resourceVersion", "value": version}, fence_operation]
+
+
+def is_fence(operations):
+    """True for a metadata-only patch that writes the fence annotation."""
+    if not isinstance(operations, list) or not all(isinstance(item, dict) for item in operations):
+        return False
+    paths = [str(operation.get("path", "")) for operation in operations]
+    writes_fence = any(path == "/metadata/annotations/sentinel.io~1fence"
+                       or (path == "/metadata/annotations" and isinstance(operation.get("value"), dict)
+                           and FENCE_ANNOTATION in operation["value"])
+                       for path, operation in zip(paths, operations, strict=True))
+    return writes_fence and all(path.startswith("/metadata/") for path in paths)
+
+
 class SimDeploymentAPI:
     """Executor adapter for one host, mirroring KubectlDeploymentAPI's behaviour.
 
@@ -294,7 +338,9 @@ class SimDeploymentAPI:
     times out), race (another writer bumps the version just before delivery,
     like a 422 test-op race) or peer-race (a peer host's in-flight write of
     this action, if any can commit, lands just before our pre-send read, so
-    ours is refused as a conditional conflict). point(name) is called at each adapter step so a
+    ours is refused as a conditional conflict). fence_fate decides the next
+    fence: ok, lost, queued or dropped (it never reaches the server and the
+    client times out). point(name) is called at each adapter step so a
     model checker can crash the process there.
     """
 
@@ -303,9 +349,11 @@ class SimDeploymentAPI:
         self.clock = clock
         self.point = point or (lambda name: None)
         self.fate = "ok"
+        self.fence_fate = "ok"
         self.outage = False
         self.last_read_ok = False
-        self.stats = {"read_attempts": 0, "write_attempts": 0, "successful_writes": 0}
+        self.stats = {"read_attempts": 0, "write_attempts": 0, "successful_writes": 0,
+                      "fence_attempts": 0, "successful_fences": 0}
 
     def _captured_at(self):
         return self.clock().isoformat().replace("+00:00", "Z") if self.clock else "2026-10-10T12:00:40Z"
@@ -362,6 +410,36 @@ class SimDeploymentAPI:
         self.stats["successful_writes"] += 1
         return self.server.snapshot(self._captured_at())
 
+    def fence(self, *, target, version, marker):
+        fate, self.fence_fate = self.fence_fate, "ok"
+        try:
+            snapshot = self.read(target)
+        except Exception as exc:
+            if TargetAbsent is not None and isinstance(exc, TargetAbsent):
+                raise ConditionalWriteConflict("Deployment no longer exists before the fence") from None
+            raise
+        metadata = snapshot["deployment"]["metadata"]
+        if metadata["uid"] != target["uid"] or metadata["resourceVersion"] != version:
+            raise ConditionalWriteConflict("Deployment UID or resource version changed before the fence")
+        operations = fence_patch(target, version, marker, metadata.get("annotations"))
+        self.point("fence.send.before")
+        self.stats["fence_attempts"] += 1
+        request = self.server.submit(self.host, self.action_id, operations, kind="fence")
+        self.point("fence.send.after")
+        if fate == "dropped":
+            self.server.drop(request)
+            raise SimTimeout("Fence never reached the server")
+        if fate == "queued":
+            raise SimTimeout("Fence timed out; it may still be in flight")
+        committed = self.server.deliver(request)
+        self.point("fence.commit.after")
+        if fate == "lost":
+            raise SimTimeout("Fence response was lost")
+        if not committed:
+            raise SimWriteRejected("Fence returned an error")
+        self.stats["successful_fences"] += 1
+        return self.server.snapshot(self._captured_at())
+
 
 def _bump(value):
     def mutate(deployment):
@@ -415,7 +493,8 @@ class SimKubectl:
         if verb == "patch" and words[1:2] == ["deployment"] and options.get("type") == "json":
             path = words[words.index("--patch-file") + 1]
             operations = json.loads(Path(path).read_text(encoding="utf-8"))
-            request = self.server.submit(self.host, self.action_id or "unknown", operations)
+            request = self.server.submit(self.host, self.action_id or "unknown", operations,
+                                         kind="fence" if is_fence(operations) else "write")
             if not self.server.deliver(request):
                 return self._reply(command, 1, stderr=b"The request is invalid")
             return self._reply(command, stdout=json.dumps(self.server.deployment).encode("utf-8"))

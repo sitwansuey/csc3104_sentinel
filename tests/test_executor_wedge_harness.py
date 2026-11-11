@@ -5,6 +5,8 @@ the guards, both scenarios, cleanup and the summary can be checked end to end.
 """
 
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import replace
+from datetime import datetime, timedelta, UTC
 import io
 import json
 from pathlib import Path
@@ -12,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from tests.support.sim_apiserver import SimAPIServer, SimKubectl
 
@@ -28,9 +31,23 @@ SERVER = "https://127.0.0.1:65000"
 CA = "RkFLRS1DQS1EQVRB"
 
 
-def quiet_main(argv, runner):
+def quiet_main(argv, runner, **options):
     with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-        return harness.main(argv, runner=runner)
+        return harness.main(argv, runner=runner, **options)
+
+
+class FakeTime:
+    """A clock that only moves when the harness sleeps, so the 30 s settle delay costs nothing."""
+
+    def __init__(self):
+        self.now, self.sleeps = datetime(2026, 11, 12, 9, 0, tzinfo=UTC), []
+
+    def clock(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += timedelta(seconds=seconds)
 
 
 def _merge(target, patch):
@@ -44,10 +61,19 @@ def _merge(target, patch):
 class FakeCluster(SimKubectl):
     """kubectl for one namespace; cluster is the cluster name its context points at."""
 
-    def __init__(self, *, cluster="kind-sentinel-boutique-connected", fail=None):
+    def __init__(self, *, cluster="kind-sentinel-boutique-connected", fail=None, enforce_after=1):
         super().__init__(SimAPIServer(cluster_id=CONTEXT, deployment=None, revision=500))
         self.cluster, self.fail = cluster, fail
         self.namespaces, self.uids = set(), 0
+        # Admission policies take effect only after enforce_after probes, like a real API server's delay.
+        self.policies, self.enforce_after, self.probes = set(), enforce_after, 0  # (kind, name)
+
+    def _admission(self):
+        kinds = {kind for kind, _ in self.policies}
+        if {"ValidatingAdmissionPolicy", "ValidatingAdmissionPolicyBinding"} <= kinds:
+            self.server.admission = lambda old, new: old["spec"]["template"] == new["spec"]["template"]
+        else:
+            self.server.admission = None
 
     def __call__(self, command, **kwargs):
         command = [str(item) for item in command]
@@ -56,6 +82,20 @@ class FakeCluster(SimKubectl):
         if self.fail and self.fail == words[:2]:
             self.calls.append(command)
             return self._reply(command, 1, stderr=b"injected failure")
+        if verb == "delete" and words[1:2] in (["validatingadmissionpolicy"], ["validatingadmissionpolicybinding"]):
+            self.calls.append(command)
+            self.policies = {(kind, name) for kind, name in self.policies
+                             if not (name == words[2] and kind.lower() == words[1])}
+            self._admission()
+            return self._reply(command)
+        if verb == "patch" and options.get("dry-run") == "server":
+            self.calls.append(command)
+            self.probes += 1
+            candidate = json.loads(json.dumps(self.server.deployment))
+            _merge(candidate, json.loads(words[words.index("--patch") + 1]))
+            denied = (self.server.admission is not None and self.probes > self.enforce_after
+                      and not self.server.admission(self.server.deployment, candidate))
+            return self._reply(command, 1 if denied else 0)
         if words[:2] == ["config", "view"]:
             self.calls.append(command)
             view = {"contexts": [{"name": options["context"], "context": {"cluster": self.cluster, "user": "admin"}}],
@@ -78,6 +118,9 @@ class FakeCluster(SimKubectl):
                 if item["kind"] == "Deployment" and not self.server.present:
                     self.uids += 1
                     self.server.create(item, f"uid-{self.uids}")
+                if item["kind"].startswith("ValidatingAdmissionPolicy"):
+                    self.policies.add((item["kind"], item["metadata"]["name"]))
+            self._admission()
             return self._reply(command)
         if words[:2] == ["create", "token"]:
             self.calls.append(command)
@@ -150,8 +193,9 @@ class ScenarioTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.run_dir = Path(temporary.name) / "run"
 
-    def run_harness(self, scenario, fake):
-        code = quiet_main(["--context", CONTEXT, "--scenario", scenario, "--run-dir", str(self.run_dir)], fake)
+    def run_harness(self, scenario, fake, **options):
+        code = quiet_main(["--context", CONTEXT, "--scenario", scenario, "--run-dir", str(self.run_dir)], fake,
+                          **options)
         text = (self.run_dir / (scenario + ".json")).read_text(encoding="utf-8")
         return code, json.loads(text), text
 
@@ -222,6 +266,85 @@ class ScenarioTests(unittest.TestCase):
         self.assertFalse(truth[0]["uid_is_original"])
         self.assertTrue(truth[-1]["template_is_baseline"])
         self.assertContained(fake, text)
+
+    def test_admission_deny_is_fenced_after_the_settle_delay_then_admits_a_new_proposal(self):
+        fake, time = FakeCluster(enforce_after=2), FakeTime()
+        code, summary, text = self.run_harness("admission-deny", fake, clock=time.clock, sleep=time.sleep)
+        self.assertEqual(code, 0, summary)
+        self.assertEqual(summary["status"], "PASS")
+        rows = self.rows(summary)
+        self.assertEqual([row["label"] for row in summary["results"]],
+                         ["execute", "reconcile before the settle delay", "reconcile", "second execute"])
+        # The API server denied the write: in doubt, version unchanged, and no fence before 30 s.
+        self.assertEqual((rows["execute"]["status"], rows["execute"]["basis"]),
+                         ("NEEDS_RECONCILIATION", "UNCHANGED_IN_DOUBT"))
+        self.assertEqual(self.counts(rows["execute"]), (1, 0, 1))
+        early = rows["reconcile before the settle delay"]
+        self.assertEqual((early["status"], early["fence_attempts"], early["patch_processes"]),
+                         ("NEEDS_RECONCILIATION", 0, 0))
+        # After the delay one fence commits; the write is proven never to have committed.
+        fenced = rows["reconcile"]
+        self.assertEqual((fenced["status"], fenced["basis"]), ("CONFLICT", "FENCED"))
+        self.assertEqual((fenced["fence_attempts"], fenced["successful_fences"], fenced["write_attempts"],
+                          fenced["patch_processes"]), (1, 1, 0, 1))
+        self.assertIn(harness.FENCE_AFTER_SECONDS + 1, time.sleeps)
+        truth = {row["label"]: row for row in summary["ground_truth"]}
+        before, after = truth["before first action"], truth["after first action"]
+        self.assertEqual(after["generation"], before["generation"])
+        self.assertNotEqual(after["resource_version"], before["resource_version"])
+        self.assertEqual(truth["after the denied write"]["resource_version"], before["resource_version"])
+        self.assertTrue(after["fence_action_id"].startswith("ACT-WEDGE-first-"))
+        self.assertEqual((after["template_is_baseline"], truth["after second action"]["template_is_baseline"]),
+                         (False, True))
+        self.assertEqual((summary["policy_enforced_after_probes"], summary["policy_lifted_after_probes"]), (3, 1))
+        self.assertTrue(summary["policy_deleted"])
+        self.assertEqual(fake.policies, set())
+        self.assertEqual(rows["second execute"]["status"], "APPLIED")
+        self.assertEqual(len(fake.server.committed()), 1)  # Only the second action's write.
+        self.assertEqual(len(fake.server.committed(kind="fence")), 1)
+        self.assertContained(fake, text)
+        for command in fake.calls:  # The policy is removed by the administrator context, never the Executor.
+            if "validatingadmissionpolicy" in command:
+                self.assertIn("--context=" + CONTEXT, command)
+
+    def test_admission_deny_without_fencing_stays_in_doubt_and_fails(self):
+        fake, time = FakeCluster(), FakeTime()
+        adapters = harness.WedgeHarness.adapters
+
+        def without_fencing(wedge, target, runner):  # An Executor before the fenced abort.
+            return replace(adapters(wedge, target, runner), fence_after_seconds=None)
+
+        with mock.patch.object(harness.WedgeHarness, "adapters", without_fencing):
+            code, summary, _ = self.run_harness("admission-deny", fake, clock=time.clock, sleep=time.sleep)
+        self.assertEqual((code, summary["status"]), (1, "FAIL"))
+        failed = {check["name"] for check in summary["checks"] if not check["passed"]}
+        self.assertIn("first action resolves as CONFLICT/FENCED", failed)
+        self.assertIn("a new proposal for the workload is admitted", failed)
+        self.assertEqual(self.rows(summary)["reconcile"]["status"], "NEEDS_RECONCILIATION")
+        self.assertEqual(fake.policies, set())  # Removed even though the scenario failed.
+
+    def test_admission_policy_that_never_takes_effect_fails_and_is_removed(self):
+        fake, time = FakeCluster(enforce_after=10 ** 6), FakeTime()
+        code, summary, _ = self.run_harness("admission-deny", fake, clock=time.clock, sleep=time.sleep)
+        self.assertEqual((code, summary["status"], summary["error_type"]), (1, "FAILED", "RuntimeError"))
+        self.assertEqual(len(time.sleeps), harness.POLICY_WAIT_ATTEMPTS)
+        self.assertTrue(summary["policy_deleted"])
+        self.assertEqual(fake.policies, set())
+        self.assertEqual(fake.server.requests, [])  # The Executor never ran.
+        self.assertEqual(fake.calls[-1][3:5], ["delete", "namespace"])
+
+    def test_admission_policy_matches_only_the_harness_namespace_and_target(self):
+        policy, binding = harness.admission_policy("sentinel-wedge-1234abcd-deny-template", "sentinel-wedge-1234abcd")
+        self.assertEqual(policy["spec"]["matchConstraints"]["resourceRules"],
+                         [{"apiGroups": ["apps"], "apiVersions": ["v1"], "operations": ["UPDATE"],
+                           "resources": ["deployments"]}])
+        self.assertEqual(policy["spec"]["matchConditions"][0]["expression"], "object.metadata.name == 'wedge-target'")
+        self.assertEqual(policy["spec"]["validations"][0]["expression"],
+                         "object.spec.template == oldObject.spec.template")
+        self.assertEqual(binding["spec"]["matchResources"]["namespaceSelector"]["matchLabels"],
+                         {"kubernetes.io/metadata.name": "sentinel-wedge-1234abcd"})
+        self.assertEqual((binding["spec"]["policyName"], binding["spec"]["validationActions"]),
+                         (policy["metadata"]["name"], ["Deny"]))
 
     def test_cleanup_runs_when_the_scenario_fails(self):
         fake = FakeCluster(fail=["create", "token"])

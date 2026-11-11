@@ -110,6 +110,10 @@ producer must ingest that same finding with its Verifier identity. A Guard canno
 assume the Verifier role. Conflicting/stale findings are refused. Protected approvals are
 looked up from the authenticated authority, never trusted from delivery envelopes.
 The target allowlist and strict live policy remain required for Executor writes.
+An Executor may also set `"fence_after_seconds": 30`. A write still in doubt
+with the same UID and resourceVersion after that long is then settled by a
+metadata-only fence ([Executor guide](../services/executor/README.md#fenced-abort-for-a-write-still-in-doubt)).
+Leave it out to keep fencing off, the default.
 
 Verifier uses `role: verifier`, its connection fields/state directory, `policy`,
 and `evidence` pointing to a live inventory with the format of

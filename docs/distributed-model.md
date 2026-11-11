@@ -104,7 +104,7 @@ losing that node needs a manual restore from a backup, and nothing detects a
 restore that silently drops acknowledged results.
 
 **Recovery time (RTO)** has not been measured. After repeated errors a worker
-backs off for up to 60 s (`runtime/worker_service.py:147::main::min(60`), which adds
+backs off for up to 60 s (`runtime/worker_service.py:148::main::min(60`), which adds
 to recovery time after a Coordinator restart.
 
 ## Time and ordering: the clock dependence today
@@ -128,9 +128,9 @@ processes. Each timestamp comes from the producer's own wall clock.
 
 **The Executor's local re-check.** Before writing, the Executor ignores the
 delivered decision and runs the Guard again with its own clock
-(`services/executor/core.py:349::execute::authorizer.validate`). If that
+(`services/executor/core.py:425::execute::authorizer.validate`). If that
 verdict is not ALLOW, it makes no Kubernetes write and reports FAILED
-(`services/executor/core.py:352-354::execute::check.decision["verdict"] != "ALLOW"`).
+(`services/executor/core.py:428-430::execute::check.decision["verdict"] != "ALLOW"`).
 That FAILED result still has to pass the first row of the table:
 
 - Executor ahead of the other clocks (approval looks expired, or the finding
@@ -196,7 +196,7 @@ it is kept in the Planner's own store and read only with its own clock
 | A worker result and its acknowledgment commit together; a resend is a replay | Result digest stored on the receipt | `runtime/worker_transport.py::Delivery.finish` |
 | A worker never redoes finished work after a lost response | Result saved before it is sent | `runtime/remote_worker.py::RemoteWorker.once` |
 | Only the current lease holder can renew or report | Owner, role and lease token must match; renewal cannot revive finished or expired work | `runtime/worker_transport.py::Delivery.renew` |
-| The Kubernetes write happens at most once per action on one ledger | Write intent is journalled before the call; an unclear outcome is reconciled by reading, never by writing again, through a pure decision table | `services/executor/core.py:365-378::execute::start_write`, `services/executor/reconciliation.py::classify` |
+| The Kubernetes write happens at most once per action on one ledger | Write intent is journalled before the call; an unclear outcome is reconciled by reading, never by writing again, through a pure decision table | `services/executor/core.py:441-454::execute::start_write`, `services/executor/reconciliation.py::classify` |
 
 Tests: `tests/test_coordinator.py::CoordinatorTests.test_changed_payload_under_stable_id_is_rejected`,
 `tests/test_worker_transport.py::TransportTests.test_lost_result_response_recovers_exact_receipt_after_restart`,
@@ -213,9 +213,9 @@ Delivery to workers is at least once, and receivers deduplicate by action id.
 - A lease is a work-distribution hint held at the Coordinator. It is not a
   fence at Kubernetes: a worker whose lease has expired can still be inside its
   kubectl call, which may take up to 15 s
-  (`services/executor/kubernetes_adapter.py:28::PROCESS_TIMEOUT_SECONDS::= 15`).
+  (`services/executor/kubernetes_adapter.py:30::PROCESS_TIMEOUT_SECONDS::= 15`).
 - The only check enforced by storage is the UID and resourceVersion test in
-  the patch (`services/executor/kubernetes_adapter.py:183-185::KubectlDeploymentAPI.conditional_restore::/metadata/uid`).
+  the patch (`services/executor/kubernetes_adapter.py:177-179::KubectlDeploymentAPI.conditional_restore::/metadata/uid`).
   It stops a write based on a stale read. It does not stop a writer whose read
   is still current but whose lease expired or whose approval was revoked.
 - The per-target lock is an OS file lock on one host
@@ -224,24 +224,39 @@ Delivery to workers is at least once, and receivers deduplicate by action id.
   the second can claim the same request; the resourceVersion test lets only one
   write land. The loser finds this action's evidence annotation on the
   Deployment and reports APPLIED without writing
-  (`services/executor/core.py:343::execute::Another host may already have committed`).
+  (`services/executor/core.py:419::execute::Another host may already have committed`).
   This is tested in one process only; no run has used two Executor hosts.
 - Reconciliation decides from one read. Once the target is deleted, has
   another UID or has a resourceVersion other than the one the patch tests,
   the patch can never commit, so the result is SUPERSEDED and the Coordinator
   records the action FAILED. While the UID and resourceVersion are unchanged
   the request could still commit, so the action stays NEEDS_RECONCILIATION
-  (`services/executor/reconciliation.py:163::classify::Basis.UNCHANGED_IN_DOUBT`),
-  even when the API server in fact rejected it. After 600 s (the default) the Executor adds
-  one result saying operator action is required. The argument assumes
+  (`services/executor/reconciliation.py:213::classify::Basis.UNCHANGED_IN_DOUBT`),
+  even when the API server in fact rejected it. The argument assumes
   resourceVersions never return to an earlier value, so an etcd restore must
   use `--bump-revision`.
+- Fenced abort, when configured (`fence_after_seconds`, off by default). After
+  the settle delay, a reconcile pass journals a fresh nonce and then sends a
+  patch with the same UID and resourceVersion tests that only adds this
+  action's fence annotation (sentinel.io/fence)
+  (`services/executor/kubernetes_adapter.py:210-212::KubectlDeploymentAPI.fence::/metadata/uid`).
+  etcd commits at most one request conditioned on V0. If the fence commits,
+  its own test proves our write had not committed before it, and the moved
+  version means it never can: CONFLICT with basis FENCED, and the workload is
+  released (`services/executor/core.py::_fence`). If the fence is refused or
+  its outcome is unknown, the next read decides as above. The fence changes no
+  spec field, so `metadata.generation` and the Pods are untouched. With
+  fencing off, the action stays in doubt and after 600 s (the default) the
+  Executor adds one result saying operator action is required. The fence uses
+  the same get and patch RBAC as the write. It is the Executor's own abort,
+  not yet a fence sent for an expired lease or a revoked approval (P3.04).
+  It has not been run against a cluster.
 
 ## Planned changes
 
 | Item | Change |
 | --- | --- |
-| P2.06 | A fenced abort for the in-doubt write whose resourceVersion did not change |
+| P2.06 | Live run of the fenced abort (wedge harness `admission-deny`); the code and offline tests are in place |
 | P3.02 | Trace context across outbox rows, deliveries and worker requests |
 | P3.01 | Run the roles as separate processes on one host with fault injection |
 | P3.03 | Order lifecycle events by Coordinator sequence instead of producer clocks, measure a skew bound, and make lease expiry relative |
