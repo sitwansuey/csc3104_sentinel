@@ -23,7 +23,7 @@ WORKDIR /client
 RUN cp /kubernetes/cmd/kubectl/kubectl.go main.go \
     && go mod init sentinel.local/kubectl-build \
     && go get k8s.io/kubectl@v0.37.1 k8s.io/component-base@v0.37.1 k8s.io/client-go@v0.37.1 \
-       golang.org/x/net@v0.60.0 golang.org/x/text@v0.42.0 \
+       golang.org/x/net@v0.62.0 golang.org/x/text@v0.43.0 \
     && go mod tidy \
     && CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GOMAXPROCS=4 \
        go build -p 4 -mod=mod -trimpath \
