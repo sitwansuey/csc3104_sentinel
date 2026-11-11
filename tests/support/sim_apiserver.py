@@ -291,8 +291,10 @@ class SimDeploymentAPI:
 
     fate decides what happens to the next write: ok (delivered, answered),
     lost (delivered, answer lost), queued (still in flight when the client
-    times out) or race (another writer bumps the version just before delivery,
-    like a 422 test-op race). point(name) is called at each adapter step so a
+    times out), race (another writer bumps the version just before delivery,
+    like a 422 test-op race) or peer-race (a peer host's in-flight write of
+    this action, if any can commit, lands just before our pre-send read, so
+    ours is refused as a conditional conflict). point(name) is called at each adapter step so a
     model checker can crash the process there.
     """
 
@@ -326,6 +328,13 @@ class SimDeploymentAPI:
         return self.server.snapshot(self._captured_at())
 
     def conditional_restore(self, *, target, version, template, evidence):
+        fate, self.fate = self.fate, "ok"
+        if fate == "peer-race":
+            # A peer host's in-flight write of this action lands after our pre-read, before our submission.
+            live = [r for r in self.server.in_flight(self.action_id)
+                    if r.host != self.host and self.server.can_commit(r)]
+            if live:
+                self.server.deliver(live[0])
         try:
             snapshot = self.read(target)
         except Exception as exc:
@@ -336,7 +345,6 @@ class SimDeploymentAPI:
         if metadata["uid"] != target["uid"] or metadata["resourceVersion"] != version:
             raise ConditionalWriteConflict("Deployment UID or resource version changed before submission")
         operations = restore_patch(target, version, template, evidence, metadata.get("annotations"))
-        fate, self.fate = self.fate, "ok"
         if fate == "race":
             self.server.external_write(_bump("race"), actor="third-party:race")
         self.point("send.before")

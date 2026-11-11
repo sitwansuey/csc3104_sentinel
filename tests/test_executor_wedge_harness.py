@@ -135,6 +135,14 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(harness.sanitise(value, secrets=[TOKEN], paths=[home]),
                          {"nested": [{"note": "used [redacted] from <path>"}], "keep": 3})
 
+    def test_sanitise_ignores_a_bare_root_path(self):
+        # A HOME of "/" must not turn every slash in the summary into <path>.
+        anchor = Path.cwd().anchor
+        for root in ("/", Path("/"), anchor, Path(anchor)):
+            with self.subTest(root=root):
+                self.assertEqual(harness.sanitise({"note": "a/b " + anchor + "x"}, paths=[root]),
+                                 {"note": "a/b " + anchor + "x"})
+
 
 class ScenarioTests(unittest.TestCase):
     def setUp(self):
@@ -146,6 +154,14 @@ class ScenarioTests(unittest.TestCase):
         code = quiet_main(["--context", CONTEXT, "--scenario", scenario, "--run-dir", str(self.run_dir)], fake)
         text = (self.run_dir / (scenario + ".json")).read_text(encoding="utf-8")
         return code, json.loads(text), text
+
+    @staticmethod
+    def rows(summary):
+        return {row["label"]: row for row in summary["results"]}
+
+    @staticmethod
+    def counts(row):
+        return row["write_attempts"], row["successful_writes"], row["patch_processes"]
 
     def assertContained(self, fake, text):
         # Every admin command names the allowed context; every Executor command uses the restricted one.
@@ -174,6 +190,12 @@ class ScenarioTests(unittest.TestCase):
                          ("SUPERSEDED", "ADVANCED_WITHOUT_EVIDENCE"))
         self.assertEqual(summary["results"][-1]["status"], "APPLIED")
         self.assertEqual(summary["patch_processes_for_first_action"], 1)
+        rows = self.rows(summary)
+        # execute sent the one patch the race rejected; reconcile only replays the DONE row.
+        self.assertEqual(self.counts(rows["execute"]), (1, 0, 1))
+        self.assertEqual(self.counts(rows["reconcile"]), (0, 0, 0))
+        self.assertEqual(rows["reconcile"]["passes"], harness.RECONCILE_PASSES)
+        self.assertEqual(self.counts(rows["second execute"]), (1, 1, 1))
         self.assertTrue(all(check["passed"] for check in summary["checks"]))
         self.assertTrue(summary["namespace_deleted"] and summary["private_credentials_removed"])
         self.assertEqual(len(fake.server.committed()), 1)  # Only the second action's write.
@@ -183,9 +205,18 @@ class ScenarioTests(unittest.TestCase):
         fake = FakeCluster()
         code, summary, text = self.run_harness("delete-recreate", fake)
         self.assertEqual(code, 0, summary)
-        self.assertEqual((summary["results"][0]["status"], summary["results"][0]["basis"]),
+        rows = self.rows(summary)
+        self.assertEqual([row["label"] for row in summary["results"]],
+                         ["execute (stopped before send)", "reconcile", "second execute"])
+        self.assertEqual((rows["reconcile"]["status"], rows["reconcile"]["basis"]),
                          ("SUPERSEDED", "TARGET_REPLACED"))
         self.assertEqual(summary["patch_processes_for_first_action"], 0)
+        # The stopped execute counted its attempt but never started kubectl patch; reconcile sent nothing.
+        stopped = rows["execute (stopped before send)"]
+        self.assertIsNone(stopped["status"])
+        self.assertEqual(self.counts(stopped), (1, 0, 0))
+        self.assertEqual(self.counts(rows["reconcile"]), (0, 0, 0))
+        self.assertEqual(sum(row["patch_processes"] for row in summary["results"][:2]), 0)
         self.assertEqual(summary["results"][-1]["status"], "APPLIED")
         truth = summary["ground_truth"]
         self.assertFalse(truth[0]["uid_is_original"])
@@ -202,6 +233,15 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(fake.namespaces, set())
         self.assertEqual(fake.calls[-1][3:5], ["delete", "namespace"])
         self.assertFalse((self.run_dir / ".executor-kubeconfig.json").exists())
+
+    def test_a_failed_namespace_create_is_still_cleaned_up(self):
+        # kubectl can time out after the server created the namespace, so cleanup must still try.
+        fake = FakeCluster(fail=["create", "namespace"])
+        code, summary, _ = self.run_harness("rv-race", fake)
+        self.assertEqual((code, summary["status"]), (1, "FAILED"))
+        self.assertEqual(fake.calls[-1][3:5], ["delete", "namespace"])
+        self.assertIn("--ignore-not-found", fake.calls[-1])
+        self.assertTrue(summary["namespace_deleted"])
 
     def test_a_failed_check_is_reported_as_fail(self):
         # A pre-fix Executor would stay in doubt; simulate that by refusing the expected basis.

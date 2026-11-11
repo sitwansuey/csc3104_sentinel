@@ -214,6 +214,27 @@ class AdapterFidelityTests(unittest.TestCase):
                         self.restore(build(server))
                     self.assertEqual(server.requests, [])
 
+    def test_peer_race_lands_a_peer_write_before_our_pre_send_read(self):
+        server = SimAPIServer.from_snapshot(self.snapshot)
+        peer = server.submit("B", self.proposal["action_id"], [{"op": "test", "path": "/metadata/uid",
+                                                                "value": self.target["uid"]},
+                                                               {"op": "add", "path": "/metadata/annotations",
+                                                                "value": {"peer": "1"}}])
+        other = server.submit("B", "another-action", [{"op": "add", "path": "/metadata/labels",
+                                                       "value": {"other": "1"}}])
+        simulated = self.simulated(server)
+        simulated.fate = "peer-race"
+        with self.assertRaises(ConditionalWriteConflict):
+            self.restore(simulated)
+        self.assertEqual(server.committed(), [peer])  # Never another action's request, and ours was not sent.
+        self.assertEqual((other.state, simulated.fate, len(server.requests)), ("in_flight", "ok", 2))
+        # With no peer write in flight it behaves like ok.
+        server = SimAPIServer.from_snapshot(self.snapshot)
+        simulated = self.simulated(server)
+        simulated.fate = "peer-race"
+        self.restore(simulated)
+        self.assertEqual([request.host for request in server.committed()], ["A"])
+
 
 def _legacy_classify(row, proposal, observation, rejection=None, **ignored):
     """Main's binary rule: APPLIED on this host's exact evidence, otherwise in doubt."""
@@ -242,6 +263,16 @@ def _applied_on_any_move(row, proposal, observation, rejection=None, **options):
     return decision
 
 
+def _no_adoption_after_write_conflict():
+    """Bad: after a refused conditional write, records CONFLICT without checking for a peer's commit."""
+    adopt = core._adopted_write
+
+    def variant(proposal, adapters, snapshot=None):
+        # Only the ConditionalWriteConflict path calls this without a snapshot.
+        return None if snapshot is None else adopt(proposal, adapters, snapshot)
+    return variant
+
+
 def _retrying_execute(proposal, adapters):
     """Bad: treats a timed-out write as failed and sends it again."""
     result = core.execute(proposal, adapters)
@@ -260,7 +291,7 @@ class ModelCheckerTests(unittest.TestCase):
 
     def test_invariants_and_liveness_hold_for_the_ci_seeds(self):
         report = model.check(model.seeds_from_environment())
-        self.assertHolds(report, model.SAFETY + model.LIVENESS)
+        self.assertHolds(report, model.SAFETY + model.LIVENESS + model.ADOPTION)
         self.assertGreaterEqual(report.seeds, 1)
         if report.seeds >= model.DEFAULT_SEEDS:
             # The schedules reach every outcome the table can produce today.
@@ -300,6 +331,17 @@ class ModelCheckerTests(unittest.TestCase):
                 self.assertGreater(report.failures[code], 0)
                 self.assertFalse(report.safety_holds)
 
+    def test_conflict_while_a_peer_commit_is_still_on_the_object_is_caught(self):
+        # The host's own write never committed, so I1-I5 all hold; only P1 sees the missed adoption.
+        with mock.patch.object(core, "_adopted_write", _no_adoption_after_write_conflict()):
+            report = model.check(range(600))
+            self.assertGreater(report.failures["P1"], 0)
+            self.assertHolds(report, model.SAFETY)
+            explanation = model.explain(report.first["P1"], "P1")
+        self.assertFalse(report.adoption_holds)
+        self.assertIn("peer's write of the action committed", explanation)
+        self.assertIn("peer-race -> CONFLICT", explanation)
+
     def test_main_binary_rule_stays_safe_but_wedges(self):
         with mock.patch.object(core, "classify", _legacy_classify):
             report = model.check(range(300))
@@ -307,6 +349,8 @@ class ModelCheckerTests(unittest.TestCase):
             self.assertGreater(report.failures["I4"], 0)
             self.assertGreater(report.failures["L1"], 0)
             self.assertIn("TargetBusy", model.explain(report.first["L1"], "L1"))
+            # Only this host's evidence counts, so a peer's applied write reads as a conflict.
+            self.assertGreater(report.failures["P1"], 0)
 
     @unittest.skipUnless(_commit_available(PRE_FIX), "pre-fix commit is not in this clone")
     def test_pre_fix_main_executor_wedges_but_stays_safe(self):
@@ -320,6 +364,8 @@ class ModelCheckerTests(unittest.TestCase):
         self.assertTrue(summary["safety_holds"])
         self.assertGreater(summary["failing_seeds"]["L1"], 0)
         self.assertGreater(summary["failing_seeds"]["I4"], 0)
+        self.assertGreater(summary["failing_seeds"]["P1"], 0)
+        self.assertFalse(summary["adoption_holds"])
 
     def test_seed_range_comes_from_the_environment(self):
         for value, expected in (("", range(model.DEFAULT_SEEDS)), ("50", range(50)), ("10:20", range(10, 20))):

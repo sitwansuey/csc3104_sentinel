@@ -11,8 +11,9 @@ the process is lost. At the end every request still in flight is delivered or
 lost, then each host runs restart reconcile passes with nothing else changing.
 
 The checker compares what each host records with ground truth from the
-simulator. Invariants (I) are checked on every recorded result or step; the
-liveness property (L1) after the final passes. See INVARIANTS.
+simulator. Invariants (I) and the peer-adoption check (P1) are checked on
+every recorded result or step; the liveness property (L1) after the final
+passes. See INVARIANTS.
 
 Assumptions, as in the Executor guide: other writers never write this action's
 evidence annotation; a resourceVersion never repeats; requests are tested
@@ -55,10 +56,14 @@ INVARIANTS = {
     "L1": ("After every request is delivered or lost and nothing else changes, if the target is provably "
            "beyond commit, every journaled host is done within the reconcile passes and a new proposal "
            "for the same workload is admitted."),
+    "P1": ("Peer adoption: a host never records CONFLICT while a peer's committed write of the action "
+           "is still on the object (same UID, template and evidence); it reports APPLIED instead."),
     "X": "The Executor raised an unexpected exception.",
 }
 SAFETY = ("I1", "I2", "I3", "I5", "X")
 LIVENESS = ("I4", "L1")
+# Not in the design's I1-I5: a peer-unaware Executor stays safe but reports CONFLICT for an applied action.
+ADOPTION = ("P1",)
 
 EXECUTE_CRASHES = ("ledger.prepare.before", "ledger.prepare.after", "read", "ledger.record_validation.after",
                    "ledger.start_write.before", "ledger.start_write.after", "send.before", "send.after",
@@ -70,7 +75,7 @@ _WEIGHTED_STEPS = ((("execute", "A"), 4), (("execute", "B"), 2), (("reconcile", 
                    (("clock", None), 1))
 _EXTERNAL = (("bump", 3), ("erase-evidence", 2), ("template", 2), ("restore-template", 1), ("delete", 1),
              ("recreate", 1))
-_FATES = (("ok", 25), ("lost", 20), ("queued", 40), ("race", 15))
+_FATES = (("ok", 25), ("lost", 20), ("queued", 40), ("race", 15), ("peer-race", 10))
 _KNOWN_REFUSALS = ("No journaled write exists to reconcile",)  # Pre-table executors refuse a peer reconcile.
 
 
@@ -303,6 +308,9 @@ class Run:
             self.violate("I3", f"host {host} records {status} while request #{live[0].number} can still commit")
         if status == "CONFLICT" and self.server.committed(self.action_id, host):
             self.violate("I3", f"host {host} records CONFLICT although its own write committed")
+        elif status == "CONFLICT" and self.committed_write_visible():
+            self.violate("P1", f"host {host} records CONFLICT although a peer's write of the action committed "
+                               "and is still on the object")
         if status != "NEEDS_RECONCILIATION":
             if own_live:
                 self.violate("I5", f"host {host} records {status} while its own request can still commit")
@@ -310,6 +318,20 @@ class Run:
                 self.violate("I5", f"host {host} records {status} while request #{live[0].number} can still commit")
         peer = " (peer write)" if "adopted peer write" in str(result.get("details")) else ""
         self.outcome.statuses.setdefault(host, []).append(status + _basis(result) + peer)
+
+    def committed_write_visible(self):
+        """True if the live object still is exactly what a committed write of the action left:
+        the same UID, its template and its evidence annotation."""
+        if not self.server.present:
+            return False
+        metadata = self.server.deployment["metadata"]
+        annotation = (metadata.get("annotations") or {}).get(core.ACTION_ANNOTATION)
+        for request in self.server.committed(self.action_id):
+            uid, _version, template, evidence = (operation["value"] for operation in request.operations)
+            written = evidence[core.ACTION_ANNOTATION] if isinstance(evidence, dict) else evidence
+            if (metadata["uid"], self.server.deployment["spec"]["template"], annotation) == (uid, template, written):
+                return True
+        return False
 
     def check_commits(self):
         if len(self.server.committed(self.action_id)) > 1 and not any(
@@ -542,9 +564,14 @@ class Report:
     def liveness_holds(self):
         return not any(self.failures[code] for code in LIVENESS)
 
+    @property
+    def adoption_holds(self):
+        return not any(self.failures[code] for code in ADOPTION)
+
     def summary(self):
         return {"seeds": self.seeds, "steps_per_seed": STEPS, "reconcile_passes": PASSES,
                 "safety_holds": self.safety_holds, "liveness_holds": self.liveness_holds,
+                "adoption_holds": self.adoption_holds,
                 "failing_seeds": {code: self.failures[code] for code in INVARIANTS
                                   if code != "X" or self.failures[code]},
                 "first_failing_seed": {code: outcome.schedule.seed for code, outcome in sorted(self.first.items())},
@@ -595,7 +622,7 @@ def main(argv=None):
             print("\n" + explain(outcome, code), file=sys.stderr)
     if not report.safety_holds:
         return 1
-    return 0 if report.liveness_holds else 2
+    return 0 if report.liveness_holds and report.adoption_holds else 2
 
 
 if __name__ == "__main__":

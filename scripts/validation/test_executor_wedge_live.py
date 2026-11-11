@@ -92,7 +92,7 @@ def sanitise(value, *, secrets=(), paths=()):
             if secret:
                 value = value.replace(secret, "[redacted]")
         for path in paths:
-            if path:
+            if path and len(Path(path).parts) > 1:  # Never a bare root such as "/" or "C:\".
                 value = value.replace(str(path), "<path>")
         return value
     return value
@@ -220,8 +220,9 @@ class WedgeHarness:
         return cluster
 
     def prepare(self, cluster):
-        self.kubectl("create", "namespace", self.namespace, namespaced=False)
+        # Set first: a create that fails or times out on the client may still have succeeded on the server.
         self.namespace_created = True
+        self.kubectl("create", "namespace", self.namespace, namespaced=False)
         self.kubectl("label", "namespace", self.namespace, "app.kubernetes.io/managed-by=sentinel-wedge-harness",
                      namespaced=False)
         self.deployment_manifest, rbac = manifests(self.namespace)
@@ -273,12 +274,20 @@ class WedgeHarness:
         return ExecutionAdapters(ledger=self.ledger, coordination=self.locks, cluster=api,
                                  authorizer=HarnessAuthorizer(self.baseline))
 
-    def record(self, label, result, adapters):
+    def record(self, label, result, adapters, patches_before):
+        """One summary row, counted only from the adapters and kubectl patches of this step.
+
+        result is None when the process stopped before execute() returned. adapters is
+        every ExecutionAdapters the step built (one per reconcile pass).
+        """
+        result = result or {"status": None}
         details = result.get("details", "")
         basis = details[len("[basis="):details.index("]")] if details.startswith("[basis=") else None
-        self.summary["results"].append({"label": label, "status": result["status"], "basis": basis,
-                                        "write_attempts": adapters.cluster.stats["write_attempts"],
-                                        "successful_writes": adapters.cluster.stats["successful_writes"]})
+        self.summary["results"].append({
+            "label": label, "status": result["status"], "basis": basis, "passes": len(adapters),
+            "write_attempts": sum(item.cluster.stats["write_attempts"] for item in adapters),
+            "successful_writes": sum(item.cluster.stats["successful_writes"] for item in adapters),
+            "patch_processes": self.patch_processes - patches_before})
         return result["status"], basis
 
     def counted(self, command, **kwargs):
@@ -309,20 +318,21 @@ class WedgeHarness:
         adapters = self.adapters(first["target"], self.scenario_runner())
         started = datetime.now(timezone.utc)
         try:
-            result = execute(first, adapters)
+            self.record("execute", execute(first, adapters), [adapters], 0)
         except StopBeforeSend:
-            result = None
+            # The adapter counts the attempt before it starts kubectl, so write_attempts is 1 here
+            # while patch_processes stays 0: the patch never left this process.
+            self.record("execute (stopped before send)", None, [adapters], 0)
             self.check("process stopped after journaling, before sending",
                        self.ledger.get(first["action_id"])["phase"] == "WRITE_STARTED")
             self.kubectl("delete", "deployment", NAME, "--wait=true")
             self.apply([self.deployment_manifest], "recreate")
             self.fault()
-        if result is not None:
-            self.record("execute", result, adapters)
-        reconciled = [reconcile(first, self.adapters(first["target"], self.counted))
-                      for _ in range(RECONCILE_PASSES)]
+        patches_before = self.patch_processes
+        passes = [self.adapters(first["target"], self.counted) for _ in range(RECONCILE_PASSES)]
+        reconciled = [reconcile(first, pass_adapters) for pass_adapters in passes]
         self.summary["reconcile_pass_statuses"] = [item["status"] for item in reconciled]
-        status, basis = self.record("reconcile", reconciled[-1], adapters)
+        status, basis = self.record("reconcile", reconciled[-1], passes, patches_before)
         self.summary["time_to_resolution_seconds"] = round((datetime.now(timezone.utc) - started).total_seconds(), 3)
         expected = EXPECTED[self.scenario]
         self.check("first action resolves as " + "/".join(expected), (status, basis) == expected,
@@ -341,7 +351,8 @@ class WedgeHarness:
         self.check("a new proposal for the workload is admitted", admitted)
         if admitted:
             adapters = self.adapters(second["target"], self.counted)
-            status, _ = self.record("second execute", execute(second, adapters), adapters)
+            patches_before = self.patch_processes
+            status, _ = self.record("second execute", execute(second, adapters), [adapters], patches_before)
             self.check("the new proposal is APPLIED", status == "APPLIED")
             deployment = self.ground_truth("after second action")
             self.check("the baseline template is restored",
