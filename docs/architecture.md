@@ -103,7 +103,7 @@ mock examples provide material for that review, not owner sign-off.
 | --- | --- |
 | `generated_at`, `mode`, `limit` | UTC response creation time, `recorded/live producers` or `synthetic`, and the per-list record bound (600). Response time does not establish observation freshness. |
 | `sources` | Per-source `connected` and optional safe `detail`. Connection means the journal was readable, not that a workload is healthy. Optional Boutique/security sources appear when their tables exist. |
-| `incidents`, `actions`, `messages`, `approvals`, `outbox`, `reports` | Public Coordinator read projection. Incident lifecycle is recorded state; an `APPLIED` execution alone never implies `RECOVERED`. Messages retain their shared contract payload under `message`; approvals retain their public projection under `record`. |
+| `incidents`, `actions`, `messages`, `approvals`, `outbox`, `reports`, `transitions` | Public Coordinator read projection. Incident lifecycle is recorded state; an `APPLIED` execution alone never implies `RECOVERED`. Messages retain their shared contract payload under `message`; approvals retain their public projection under `record`. `transitions` is the append-only lifecycle journal described in [observability](observability.md). |
 | `telemetry` | Up to 600 producer events, including full five-part target identity, UTC `at`, component, summary and replica/generation metrics. |
 | `cluster_history` | Up to 60 namespace-scoped cluster observations with cluster identity, UTC `observed_at`, source availability, nodes, Pods, warning events and measured resource summaries. |
 | `boutique_history`, `security_events`, `lab` | Optional experiment/service observations, bounded security evidence and explicitly enabled lab-gate state. They are not recovery authorization. |
@@ -136,7 +136,7 @@ An unavailable response has the same required list fields, for example:
     "cluster_metrics": {"connected": false, "detail": "No cluster snapshots recorded. Start the Kubernetes collector."}
   },
   "incidents": [], "actions": [], "messages": [], "approvals": [],
-  "outbox": [], "reports": [], "telemetry": [], "cluster_history": []
+  "outbox": [], "reports": [], "transitions": [], "telemetry": [], "cluster_history": []
 }
 ```
 

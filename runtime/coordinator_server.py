@@ -14,6 +14,9 @@ from runtime.worker_http import WorkerHTTPServer, handler as worker_handler, ide
 from runtime.worker_transport import Delivery
 from services.coordinator.approvals import ROLES, load_permissions
 from services.coordinator.store import SQLiteStore
+from shared import log
+
+LOG = log.get_logger("coordinator_server")
 
 
 @contextmanager
@@ -35,15 +38,19 @@ def servers(database, services, approval_services, permissions, *, bind="127.0.0
                    for server in (workers, approvals)]
         for thread in threads:
             thread.start()
+        log.emit(LOG, "coordinator.serving", port=workers.server_port)
+        log.emit(LOG, "coordinator.approvals.serving", port=approvals.server_port)
         try:
             yield workers, approvals, stopping, threads
         finally:
             stopping.set()
             for thread in threads:
                 thread.join(request_timeout + 1)
+            log.emit(LOG, "coordinator.stopped")
             # ExitStack closes and drains both sets of bounded HTTP handlers.
 
 
+@log.entrypoint("coordinator")
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", required=True)
@@ -87,6 +94,7 @@ def main(argv=None):
             print(f"Coordinator delivery :{workers.server_port}, approvals :{approvals.server_port}", flush=True)
             while not stopping.wait(0.25):
                 if any(not thread.is_alive() for thread in threads):
+                    log.emit(LOG, "coordinator.server_thread_stopped", level=log.ERROR)
                     return 1
     finally:
         for sig, value in previous.items():

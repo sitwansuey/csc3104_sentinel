@@ -2,7 +2,10 @@
 
 `core.py` owns incident/proposal/approval/result lifecycle decisions and durable
 local routing. `store.py` owns the SQLite schema, record queries, outbox and
-transaction context. `read.py` is the bounded public read-only projection used
+transaction context. Schema changes are numbered migrations in `MIGRATIONS`,
+tracked with `PRAGMA user_version` and applied in order when a store opens, so
+older databases keep working. Every state change also appends a `transitions`
+row in the same transaction ([observability](../../docs/observability.md)). `read.py` is the bounded public read-only projection used
 by the dashboard. Existing public imports are re-exported by `__init__.py`.
 
 Incoming messages have stable identities. An exact retry is ignored; changed

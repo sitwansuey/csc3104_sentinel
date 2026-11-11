@@ -7,9 +7,10 @@ write Kubernetes state. The executor must still obtain fresh Guard validation.
 from copy import deepcopy
 import json
 
+from shared import log
 from shared.contracts import validate_message
 from services.coordinator.store import (
-    CoordinatorError, SQLiteStore, _digest, _json, _require, _time,
+    CoordinatorError, LOG, SQLiteStore, _digest, _json, _require, _time,
 )
 
 
@@ -182,12 +183,17 @@ def record_message(message: dict, store: SQLiteStore) -> bool:
     _require(store.in_transaction, "record_message requires an active transaction")
     validate_message(message)
     payload, key = _json(message), _event_key(message)
+    ids = {"incident_id": message["incident_id"], "action_id": message.get("action_id"),
+           "message_kind": message["kind"]}
     old = store.message_payload(key)
     if old:
         _require(old == payload, "Stable message ID reused with changed payload")
+        store.after_commit(lambda: log.emit(LOG, "coordinator.message.duplicate", level=log.DEBUG, **ids))
         return False
-    _apply(message, store)
+    with store.transition_cause(key, message["kind"]):
+        _apply(message, store)
     store.add_message(key, payload)
+    store.after_commit(lambda: log.emit(LOG, "coordinator.message.recorded", **ids))
     return True
 
 
@@ -248,7 +254,7 @@ def approve(action_id: str, operator_id: str, store: SQLiteStore, *, expires_at:
         if expires_at is not None:
             record["expires_at"] = expires_at
         store.add_approval(action_id, record, managed=managed)
-        store.set_state(action["incident_id"], action_id, "VALIDATING")
+        store.set_state(action["incident_id"], action_id, "VALIDATING", cause="approval")
         store.enqueue("guard.request", {"proposal": action["proposal"], "approval": record}, action_id)
     return record
 

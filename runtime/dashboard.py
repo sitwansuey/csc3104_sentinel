@@ -77,13 +77,13 @@ def snapshot(db_path, telemetry_path):
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "mode": "recorded/live producers", "limit": LIMIT,
         "sources": {}, "incidents": [], "actions": [], "messages": [],
-        "approvals": [], "outbox": [], "reports": [], "telemetry": [], "cluster_history": [],
+        "approvals": [], "outbox": [], "reports": [], "transitions": [], "telemetry": [], "cluster_history": [],
     }
     try:
         result.update(read_records(db_path, limit=LIMIT))
         result["sources"]["coordinator"] = {"connected": True}
     except (sqlite3.Error, ValueError, OSError):
-        for field in ("incidents", "actions", "messages", "approvals", "outbox", "reports"):
+        for field in ("incidents", "actions", "messages", "approvals", "outbox", "reports", "transitions"):
             result[field] = []
         result["sources"]["coordinator"] = {
             "connected": False, "detail": "Coordinator database unavailable, busy or incompatible. Retrying."}

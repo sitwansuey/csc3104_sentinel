@@ -6,7 +6,8 @@ import sqlite3
 import threading
 import time
 
-from runtime.worker_transport import ProtocolError, digest
+from runtime.worker_transport import ProtocolError, delivery_ids, digest
+from shared import log
 from shared.contracts import validate_message
 
 
@@ -89,7 +90,7 @@ class Lease:
 
     def __enter__(self):
         self.ensure_current()
-        self.thread = threading.Thread(target=self._renew, daemon=True)
+        self.thread = log.context_thread(self._renew, daemon=True)  # Inherits correlation IDs.
         self.thread.start()
         return self
 
@@ -102,9 +103,12 @@ class RemoteWorker:
     def __init__(self, client, journal, adapter, *, renewal_interval=5):
         self.client, self.journal, self.adapter = client, journal, adapter
         self.renewal_interval = renewal_interval
+        # IDs of the delivery handled by the latest once(), for status log lines.
+        self.current = {}
 
     def _send(self, row):
         delivery = row["delivery"]
+        self.current = delivery_ids(delivery)
         body = {key: delivery[key] for key in ("delivery_id", "lease_token")}
         body["result"] = row["result"]
         if row["report"] is not None:
@@ -120,6 +124,7 @@ class RemoteWorker:
         return {"status": "accepted", "replay": response.get("replay", False)}
 
     def once(self):
+        self.current = {}
         for row in self.journal.pending():
             try:
                 return self._send(row)
@@ -132,10 +137,15 @@ class RemoteWorker:
         delivery = self.client.post("claim", {})["delivery"]
         if delivery is None:
             return {"status": "idle"}
+        self.current = delivery_ids(delivery)
         key = self.journal.bind(delivery)
         row = self.journal.get(key)
         if row["result"] is not None:
             return self._send(row)
+        with log.bind(**self.current):
+            return self._process(key, delivery)
+
+    def _process(self, key, delivery):
         try:
             with Lease(self.client, delivery, interval=self.renewal_interval) as lease:
                 output = self.adapter.process(deepcopy(delivery), lease)

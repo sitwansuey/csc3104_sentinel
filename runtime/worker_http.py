@@ -5,21 +5,77 @@ import json
 import math
 import signal
 import socket
+import re
 import ssl
 import threading
+import time
 from http.client import HTTPConnection, HTTPSConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
 from runtime.service_identity import authenticate, load_identities
-from runtime.worker_transport import Delivery, INGRESS, ProtocolError, TOPICS
+from runtime.worker_transport import Delivery, INGRESS, ProtocolError, TOPICS, delivery_ids
 from services.coordinator.core import SQLiteStore
+from shared import log
 
 MAX_BODY = 1024 * 1024
+LOG = log.get_logger("worker_http")
+OPERATIONS = {"/v1/" + name: name for name in ("claim", "ingest", "renew", "dependencies", "result", "retry")}
+SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
+# Denial and conflict reason classes. Messages are fixed strings from the
+# delivery protocol; anything unlisted falls back to a per-status class.
+REASONS = {
+    "Invalid credentials": "invalid_credentials",
+    "Role cannot claim requests": "role_not_permitted",
+    "Role cannot retrieve authorization evidence": "role_not_permitted",
+    "Role cannot submit this message": "role_not_permitted",
+    "Only the Guard may submit an authorization report": "role_not_permitted",
+    "Delivery belongs to another worker": "not_lease_owner",
+    "Delivery retired or lease expired/replaced": "lease_not_current",
+    "Lease has been replaced": "lease_replaced",
+    "Lease expired": "lease_expired",
+    "Delivery retired or result changed": "result_changed",
+    "Result does not correspond to claimed request": "result_mismatch",
+    "Guard result needs its report bound to current evidence": "report_not_bound",
+    "Guard report conflicts with stored evidence": "report_conflict",
+    "Evidence does not match the active proposal": "evidence_not_current",
+}
+DEFAULT_REASONS = {401: "invalid_credentials", 403: "forbidden", 409: "conflict"}
+OUTCOMES = {400: "invalid", 401: "denied", 403: "denied", 404: "not_found", 408: "timeout",
+            409: "conflict", 413: "invalid", 503: "unavailable"}
 
 
 def identities(path):
     return load_identities(path, set(TOPICS) | set(INGRESS))
+
+
+def safe_id(value):
+    """Return an identifier fit for a log line, or None. Never pass tokens here."""
+    return value if isinstance(value, str) and SAFE_ID.fullmatch(value) else (
+        value if type(value) is int else None)
+
+
+def reason_class(status, message, reasons=REASONS):
+    if status not in DEFAULT_REASONS:
+        return None
+    return reasons.get(message, DEFAULT_REASONS[status])
+
+
+def access_log(logger, operation, status, started, *, outcome=None, reason=None, error_type=None, **ids):
+    """One line per request: no headers, tokens or bodies, only IDs and codes."""
+    level = (log.ERROR if status >= 500 else log.WARNING if status >= 400
+             else log.DEBUG if outcome in {"idle", "renewed"} else log.INFO)
+    log.emit(logger, "auth.denied" if status in {401, 403} else "http.access", level=level,
+             method="POST", operation=operation, http_status=status,
+             outcome=outcome or OUTCOMES.get(status, "ok" if status < 400 else "error"),
+             reason=reason, error_type=error_type,
+             duration_ms=round((time.monotonic() - started) * 1000, 1),
+             **{key: safe_id(value) for key, value in ids.items()})
+
+
+def _message_ids(message):
+    return ({"incident_id": message.get("incident_id"), "action_id": message.get("action_id")}
+            if isinstance(message, dict) else {})
 
 
 def handler(database, services, lease_seconds=30, retention_seconds=86400,
@@ -49,10 +105,13 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
             self.reply(200, {"ready": True})
 
         def do_POST(self):
+            started, operation = time.monotonic(), OPERATIONS.get(self.path, "unknown")
+            ids, outcome, reason, error_type = {}, None, None, None
             try:
                 if stopping is not None and stopping.is_set():
                     raise ProtocolError(503, "Coordinator is stopping; retry the saved request")
                 name, role = authenticate(self.headers, services)
+                ids["identity"] = name
                 lengths = self.headers.get_all("Content-Length", [])
                 if len(lengths) != 1 or self.headers.get("Transfer-Encoding"):
                     raise ProtocolError(400, "Ambiguous request framing")
@@ -65,32 +124,47 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
                 body = json.loads(raw)
                 if not isinstance(body, dict):
                     raise ProtocolError(400, "Expected JSON object")
+                # IDs only: the lease token and the body itself are never logged.
+                ids["delivery_id"] = body.get("delivery_id")
+                ids.update(_message_ids(body.get("message") or body.get("result") or body.get("proposal")))
                 with SQLiteStore(database, clock=clock) as store:
                     delivery = Delivery(store, lease_seconds=lease_seconds, retention_seconds=retention_seconds,
                                         dependency_requests=dependency_requests)
                     if self.path == "/v1/claim":
                         answer = delivery.claim(name, role)
+                        ids.update(delivery_ids(answer["delivery"]))
+                        outcome = "claimed" if answer["delivery"] else "idle"
                     elif self.path == "/v1/ingest":
                         answer = delivery.ingest(role, body["message"])
+                        outcome = "replay" if answer.get("replay") else "accepted"
                     elif self.path == "/v1/renew":
                         answer = delivery.renew(name, role, body["delivery_id"], body["lease_token"])
+                        outcome = "renewed"
                     elif self.path == "/v1/dependencies":
                         answer = delivery.dependencies(role, body["proposal"])
                     elif self.path in ("/v1/result", "/v1/retry"):
                         answer = delivery.finish(name, role, body["delivery_id"], body["lease_token"],
                                                  body.get("result"), retry=self.path == "/v1/retry",
                                                  report=body.get("report"))
+                        outcome = ("retry" if self.path == "/v1/retry"
+                                   else "replay" if answer.get("replay") else "accepted")
                     else:
                         raise ProtocolError(404, "Unknown endpoint")
-                self.reply(200, answer)
+                status, response = 200, answer
             except ProtocolError as exc:
-                self.reply(exc.status, {"error": str(exc)})
-            except (ValueError, KeyError, TypeError):
-                self.reply(400, {"error": "Invalid input or lifecycle transition"})
+                status, reason, response = exc.status, reason_class(exc.status, str(exc)), {"error": str(exc)}
+            except (ValueError, KeyError, TypeError) as exc:
+                status, error_type = 400, type(exc).__name__
+                response = {"error": "Invalid input or lifecycle transition"}
             except (TimeoutError, socket.timeout):
-                self.reply(408, {"error": "Request timed out"})
-            except Exception:
-                self.reply(503, {"error": "Coordinator unavailable; retry the saved request"})
+                status, response = 408, {"error": "Request timed out"}
+            except Exception as exc:
+                status, error_type = 503, type(exc).__name__
+                response = {"error": "Coordinator unavailable; retry the saved request"}
+            # Log before replying, so the line exists once the client sees the answer.
+            access_log(LOG, operation, status, started, outcome=outcome, reason=reason,
+                       error_type=error_type, **ids)
+            self.reply(status, response)
 
         def reply(self, status, value):
             data = json.dumps(value, allow_nan=False).encode()
@@ -181,6 +255,7 @@ def serve_until_stopped(server, stopping):
         server.handle_request()
 
 
+@log.entrypoint("worker_http")
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", required=True)
@@ -215,6 +290,7 @@ def main(argv=None):
                         args.request_timeout, stopping), tls_context=tls,
                 request_timeout=args.request_timeout) as server:
             print(f"Coordinator worker API listening on {args.bind}:{args.port}", flush=True)
+            log.emit(LOG, "worker_http.listening", port=server.server_port)
             serve_until_stopped(server, stopping)
     finally:
         for sig, previous_handler in previous.items():

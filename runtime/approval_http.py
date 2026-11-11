@@ -8,14 +8,25 @@ import math
 from pathlib import Path
 import socket
 import ssl
+import time
 from urllib.parse import urlsplit
 
 from runtime.service_identity import ProtocolError, authenticate, load_identities
-from runtime.worker_http import WorkerHTTPServer
+from runtime.worker_http import WorkerHTTPServer, access_log, reason_class
 from services.coordinator.approvals import ApprovalAccess, OPERATIONS, ROLES, load_permissions
 from services.coordinator.store import CoordinatorError, SQLiteStore, _digest
+from shared import log
 
 MAX_BODY = 1024 * 1024
+LOG = log.get_logger("approval_http")
+REASONS = {
+    "Invalid credentials": "invalid_credentials",
+    "Approval access denied": "not_permitted",
+    "Proposal precondition changed": "precondition_changed",
+    "Revocation must name the latest approval": "not_latest_approval",
+    "Revocation retry changed": "retry_changed",
+    "Execution already reported; revocation cannot undo a write": "execution_reported",
+}
 
 
 def handler(database, services, permissions, *, clock=None, max_lifetime_seconds=300,
@@ -45,10 +56,14 @@ def handler(database, services, permissions, *, clock=None, max_lifetime_seconds
             self.reply(200, {"ready": True})
 
         def do_POST(self):
+            prefix = "/v1/approvals/"
+            operation = self.path[len(prefix):] if self.path.startswith(prefix) else ""
+            started, ids, reason, error_type = time.monotonic(), {}, None, None
             try:
                 if stopping is not None and stopping.is_set():
                     raise ProtocolError(503, "Approval authority is stopping")
                 identity, role = authenticate(self.headers, services)
+                ids["identity"] = identity
                 lengths = self.headers.get_all("Content-Length", [])
                 if len(lengths) != 1 or self.headers.get("Transfer-Encoding"):
                     raise ProtocolError(400, "Ambiguous request framing")
@@ -58,22 +73,30 @@ def handler(database, services, permissions, *, clock=None, max_lifetime_seconds
                 raw = self.rfile.read(length)
                 if len(raw) != length:
                     raise ProtocolError(400, "Incomplete request body")
-                prefix = "/v1/approvals/"
-                operation = self.path[len(prefix):] if self.path.startswith(prefix) else ""
+                body = json.loads(raw)
+                if isinstance(body, dict):
+                    ids["action_id"] = body.get("action_id")  # The approval body itself is never logged.
                 with SQLiteStore(database, clock=clock) as store:
                     answer = ApprovalAccess(store, permissions, max_lifetime_seconds=max_lifetime_seconds).call(
-                        identity, role, operation, json.loads(raw))
-                self.reply(200, answer)
+                        identity, role, operation, body)
+                status, response = 200, answer
             except ProtocolError as exc:
-                self.reply(exc.status, {"error": str(exc)})
+                status, reason = exc.status, reason_class(exc.status, str(exc), REASONS)
+                response = {"error": str(exc)}
             except CoordinatorError:
-                self.reply(409, {"error": "Approval conflicts with current lifecycle or binding"})
-            except (ValueError, KeyError, TypeError):
-                self.reply(400, {"error": "Invalid approval input"})
+                status, reason = 409, "lifecycle_conflict"
+                response = {"error": "Approval conflicts with current lifecycle or binding"}
+            except (ValueError, KeyError, TypeError) as exc:
+                status, error_type = 400, type(exc).__name__
+                response = {"error": "Invalid approval input"}
             except (TimeoutError, socket.timeout):
-                self.reply(408, {"error": "Request timed out"})
-            except Exception:
-                self.reply(503, {"error": "Approval authority unavailable"})
+                status, response = 408, {"error": "Request timed out"}
+            except Exception as exc:
+                status, error_type = 503, type(exc).__name__
+                response = {"error": "Approval authority unavailable"}
+            access_log(LOG, operation if operation in OPERATIONS else "unknown", status, started,
+                       reason=reason, error_type=error_type, **ids)
+            self.reply(status, response)
 
         def reply(self, status, value):
             data = json.dumps(value, allow_nan=False).encode()
@@ -142,6 +165,7 @@ class ApprovalClient:
         return self.post("read", {"action_id": proposal["action_id"], "proposal_sha256": _digest(proposal)})["approval"]
 
 
+@log.entrypoint("approval_http")
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", required=True)
@@ -176,4 +200,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -1,6 +1,6 @@
 """Actual component algorithms over loopback HTTP, using fake Kubernetes only."""
 from contextlib import ExitStack
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import timedelta
 import json
 import io
@@ -19,8 +19,10 @@ from runtime.worker_http import WorkerClient
 from runtime.worker_transport import ProtocolError, digest
 from services.observer.core import detect
 from services.planner.core import mock_provider
+from services.coordinator.read import read_records
 from services.planner.store import PlannerStore
 from services.verifier.core import inspect_dependencies
+from shared import log
 
 
 class RemoteWorkerTests(unittest.TestCase):
@@ -69,6 +71,17 @@ class RemoteWorkerTests(unittest.TestCase):
     def state(self):
         return self.f.store.incident(self.incident["incident_id"])["state"]
 
+    def captured_logs(self):
+        stream = io.StringIO()
+        self.stack.enter_context(log.configured("test", level="DEBUG", stream=stream))
+        return stream
+
+    def secrets(self):
+        values = [token for _, token in (*self.services.values(), *self.approval_services.values())]
+        values += [row[0] for row in self.f.store.db.execute(
+            "SELECT lease_token FROM transport_receipts WHERE lease_token IS NOT NULL")]
+        return values
+
     def plan(self):
         RemoteIngress(self.client("observer"))(self.incident)
         self.assertEqual(self.worker("planner", self.planner).once()["status"], "accepted")
@@ -110,6 +123,56 @@ class RemoteWorkerTests(unittest.TestCase):
         self.assertEqual(len(self.f.cluster.writes), 1)
         for journal in (executor.journal, verifier.journal, self.planning, self.f.ledger, self.f.verification):
             self.assertNotEqual(Path(journal.db.execute("PRAGMA database_list").fetchone()[2]), self.f.path / "coordinator.db")
+
+    def test_full_loopback_flow_logs_correlate_one_action_and_never_contain_secrets(self):
+        stream = self.captured_logs()
+        self.test_all_six_components_recover_over_http_with_managed_approval_and_owned_stores()
+        text = stream.getvalue()
+        records = [json.loads(line) for line in text.splitlines()]
+        for secret in self.secrets():
+            self.assertNotIn(secret, text)
+        for fragment in ("Bearer", "lease_token", "payload", self.proposal["parameters"]["template_sha256"]):
+            self.assertNotIn(fragment, text)
+        action_id = self.proposal["action_id"]
+        loggers = {r["logger"] for r in records if r.get("action_id") == action_id}
+        self.assertLessEqual({"sentinel.coordinator", "sentinel.worker_http", "sentinel.approval_http"}, loggers)
+        logged = [(r["seq"], r["to_state"]) for r in records if r["event"] == "coordinator.state.transition"
+                  and r.get("action_id") == action_id]
+        journal = [(t["seq"], t["to_state"]) for t in reversed(read_records(self.f.path / "coordinator.db")["transitions"])
+                   if t["action_id"] == action_id]
+        self.assertEqual(logged, journal)
+        self.assertEqual(logged[-1][1], "RECOVERED")
+        claims = [r for r in records if r["event"] == "http.access" and r["operation"] == "claim"
+                  and r["outcome"] == "claimed"]
+        self.assertTrue(claims and all({"delivery_id", "event_id", "topic", "attempt"} <= set(r) for r in claims))
+
+    def test_worker_http_denials_and_conflicts_log_exactly_one_line_without_secrets(self):
+        stream = self.captured_logs()
+        RemoteIngress(self.client("observer"))(self.incident)
+        delivery = self.client("planner").post("claim", {})["delivery"]
+        lease = {key: delivery[key] for key in ("delivery_id", "lease_token")}
+        wrong = "w" * 40
+        cases = (
+            (401, "auth.denied", "invalid_credentials",
+             lambda: WorkerClient(self.url, "planner", wrong, timeout=2).post("claim", {})),
+            (403, "auth.denied", "role_not_permitted", lambda: self.client("observer").post("claim", {})),
+            (403, "auth.denied", "not_lease_owner", lambda: self.client("guard").post("renew", lease)),
+            (409, "http.access", "lease_replaced", lambda: self.client("planner").post(
+                "result", {"delivery_id": delivery["delivery_id"], "lease_token": "f" * 32, "result": {}})),
+        )
+        for status, event, reason, call in cases:
+            with self.subTest(status=status, reason=reason):
+                offset = len(stream.getvalue())
+                with self.assertRaises(ProtocolError) as error:
+                    call()
+                self.assertEqual(error.exception.status, status)
+                (record,) = [json.loads(line) for line in stream.getvalue()[offset:].splitlines()]
+                self.assertEqual((record["event"], record["http_status"], record["reason"]), (event, status, reason))
+                self.assertEqual(record["level"], "warning")
+                self.assertEqual("identity" in record, status != 401)
+        text = stream.getvalue()
+        for secret in (*self.secrets(), wrong, delivery["lease_token"], "f" * 32, "Bearer"):
+            self.assertNotIn(secret, text)
 
     def test_remote_verification_binds_the_executed_template_and_detects_a_second_fault(self):
         from tests.test_verifier_pipeline import grpc_policy, grpc_samples
@@ -294,9 +357,18 @@ class RemoteWorkerTests(unittest.TestCase):
         config.write_text(json.dumps({"role": "planner", "url": self.url, "identity": "planner",
             "token_env": "TEST_PLANNER_CREDENTIAL", "state_directory": str(state),
             "model_config": str(model), "baselines": str(baseline)}))
+        errors = io.StringIO()
         with patch.dict("os.environ", {"TEST_PLANNER_CREDENTIAL": self.services["planner"][1]}), \
-                patch("runtime.worker_service.OllamaProvider", return_value=self.provider), redirect_stdout(io.StringIO()):
+                patch("runtime.worker_service.OllamaProvider", return_value=self.provider), \
+                redirect_stdout(io.StringIO()), redirect_stderr(errors):
             self.assertEqual(main(["--config", str(config), "--once"]), 0)
+        status = [record for record in map(json.loads, errors.getvalue().splitlines())
+                  if record["event"] == "worker.status"]
+        self.assertEqual([(s["status"], s["identity"], s["topic"]) for s in status],
+                         [("accepted", "planner", "planner.request")])
+        self.assertIn("delivery_id", status[0])
+        for secret in self.secrets():
+            self.assertNotIn(secret, errors.getvalue())
         self.assertEqual(self.state(), "VALIDATING")
         self.assertTrue((state / "planner.db").is_file())
         self.assertTrue((state / "transport.db").is_file())
