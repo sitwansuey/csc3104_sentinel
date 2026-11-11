@@ -146,7 +146,7 @@ class Experiment:
                                                operator=operator_identity(self.approval_mode, self.operator))
             authority.start()
             self.authority = authority
-            self.approver = approver_for(self.approval_mode, authority)
+            self.approver = approver_for(self.approval_mode, authority, relay=getattr(self, "approval_relay", None))
             self.summary["operator_approval"] = self.approver.describe()
         return self.authority
 
@@ -580,7 +580,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path)
     parser.add_argument("--crash-worker", help=argparse.SUPPRESS)
-    parser.add_argument("--approval", choices=MODES, default="interactive",
+    parser.add_argument("--approval", choices=[mode for mode in MODES if mode != "ui"], default="interactive",
                         help="interactive: a person types each action ID (needs a terminal); auto-lab: explicit "
                              "opt-in for unattended lab runs, recorded as automated approval; reject: refuse every approval")
     parser.add_argument("--operator", help="Interactive operator identity (default lab-operator)")

@@ -127,6 +127,7 @@ class BoutiqueExperiment(Experiment):
     service_account = "shippingservice"
     dashboard = None
     lab_control = None
+    approval_relay = None  # Dashboard approval relay; set only for --approval ui.
     pause_before_injection = False
     prepared = None
     publish_dependency_results = True
@@ -142,8 +143,10 @@ class BoutiqueExperiment(Experiment):
         """Workload-specific child processes may override this teardown hook."""
 
     def request_approval(self, proposal, decision):
-        if self.approval_mode == "interactive":
-            self.event(4, "status", "Guard needs operator approval: type the action ID at the harness terminal",
+        if self.approval_mode in {"interactive", "ui"}:
+            self.event(4, "status", "Guard needs operator approval: " + (
+                "type the action ID at the harness terminal" if self.approval_mode == "interactive" else
+                "type the action ID in the dashboard approval panel and approve"),
                        target=proposal["target"], incident_id=proposal["incident_id"], action_id=proposal["action_id"])
         record = super().request_approval(proposal, decision)
         self.event(4, "status", ("Approval recorded through the approval API by " + record["operator_id"]
@@ -507,8 +510,10 @@ def main():
     parser.add_argument("--provider-policy", type=Path, help="Trusted policy override for provider recovery")
     parser.add_argument("--approval", choices=MODES, default="interactive",
                         help="interactive (default): a person types each action ID at this terminal; auto-lab: explicit "
-                             "opt-in for unattended lab runs, recorded as automated approval; reject: refuse every approval")
-    parser.add_argument("--operator", help="Interactive operator identity (default lab-operator)")
+                             "opt-in for unattended lab runs, recorded as automated approval; reject: refuse every "
+                             "approval; ui: type the action ID and approve in the dashboard (needs --ui-controls)")
+    parser.add_argument("--operator", help="Operator identity for interactive or ui approval "
+                                           "(default lab-operator; dashboard-operator for ui)")
     args = parser.parse_args()
     if args.agent_config and not args.agent:
         parser.error("--agent-config requires --agent")
@@ -538,6 +543,8 @@ def main():
         parser.error("--exit-after-test requires --dashboard")
     if args.ui_controls and (not args.dashboard or args.pause_before_injection):
         parser.error("--ui-controls requires --dashboard and replaces --pause-before-injection")
+    if args.approval == "ui" and not args.ui_controls:
+        parser.error("--approval ui requires --dashboard --ui-controls: the approval routes use the lab session token")
     if args.connected and args.prepared_environment:
         parser.error("Connected mode requires its host lab; the old packaged bootstrap is single-service")
     if not 1 <= args.storefront_port <= 65535 or (args.connected and args.dashboard and args.storefront_port == args.dashboard_port):
@@ -572,6 +579,9 @@ def main():
         from runtime.lab_control import LabControl
         experiment.lab_control = LabControl(directory, cluster_id=experiment.cluster_id, context=experiment.context,
             namespace=experiment.namespace, deployment=experiment.name, rejection_only=args.guard_rejection)
+    if args.approval == "ui" and not args.guard_rejection:
+        from runtime.approval_relay import ApprovalRelay
+        experiment.approval_relay = ApprovalRelay()
     print("Boutique evidence: " + str(experiment.directory), flush=True)
     dashboard = None
     # Docker stop sends SIGTERM. Reuse the normal interruption/finally cleanup.
@@ -584,6 +594,7 @@ def main():
             dashboard = BoutiqueDashboard(experiment.directory, context=experiment.context,
                 cluster_id=experiment.cluster_id, namespace=experiment.namespace, port=args.dashboard_port,
                 bind=args.dashboard_bind, lab_control=experiment.lab_control,
+                approval_relay=experiment.approval_relay,
                 application_collector=getattr(experiment, "application_inventory", None))
             experiment.dashboard = dashboard
             dashboard.start()

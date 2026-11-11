@@ -1,9 +1,12 @@
 """Read-only dashboard, with optional gates for a dedicated lab harness.
 
 The default API has no mutation routes. Opt-in lab controls only release a fixed
-scenario owned by the harness; they cannot approve or execute recovery actions.
+scenario owned by the harness. With an approval relay as well (`--approval ui`),
+two more routes relay an operator's typed approval or revocation to the run's
+approval authority; they never execute a recovery action.
 """
 
+import contextlib
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -20,6 +23,9 @@ ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "dashboard" / "dist"
 LIMIT = 600
 CLUSTER_HISTORY_LIMIT = 60
+LAB_BODY_LIMIT = 2048
+DRAIN_LIMIT = 64 * 1024  # A refused body up to this size is read and dropped, never parsed.
+APPROVAL_ROUTES = {"/api/approvals/approve": "approve", "/api/approvals/revoke": "revoke"}
 
 
 def _frontend_file(relative):
@@ -118,9 +124,12 @@ def snapshot(db_path, telemetry_path):
     return result
 
 
-def make_server(db_path, telemetry_path, *, port=8765, provider=None, bind="127.0.0.1", lab_control=None):
+def make_server(db_path, telemetry_path, *, port=8765, provider=None, bind="127.0.0.1", lab_control=None,
+                approval_relay=None):
     if bind not in {"127.0.0.1", "0.0.0.0"}:
         raise ValueError("Dashboard bind must be loopback or explicit container bind")
+    if approval_relay is not None and lab_control is None:
+        raise ValueError("Dashboard approval needs lab controls: its routes authenticate with the lab session token")
     read_snapshot = provider or (lambda: snapshot(db_path, telemetry_path))
 
     class Handler(BaseHTTPRequestHandler):
@@ -152,6 +161,8 @@ def make_server(db_path, telemetry_path, *, port=8765, provider=None, bind="127.
                             self.send_error(403)
                             return
                         result = {**result, "lab": lab_control.snapshot()}
+                        if approval_relay is not None:
+                            result["approval_requests"] = approval_relay.requests()
                     body = json.dumps(result, allow_nan=False).encode("utf-8")
                 except Exception as error:  # noqa: BLE001 - a failed read answers 503 and the server keeps serving
                     log.failure(LOG, "dashboard.snapshot.failed", error)
@@ -221,21 +232,72 @@ def make_server(db_path, telemetry_path, *, port=8765, provider=None, bind="127.
     # all container interfaces and publish only on host loopback.
     class LabHandler(Handler):
         def do_POST(self):
-            from runtime.lab_control import LabConflict
-            if self.path != "/api/lab/inject":
+            if self.path == "/api/lab/inject":
+                self._inject()
+            elif approval_relay is not None and self.path in APPROVAL_ROUTES:
+                self._approval(APPROVAL_ROUTES[self.path])
+            else:
                 self.send_error(404)
-                return
+
+        def _drain(self):
+            """Read a small unread body before refusing, so the client gets the status, not a reset."""
+            lengths = self.headers.get_all("Content-Length", [])
+            with contextlib.suppress(ValueError, OSError):
+                size = int(lengths[0]) if len(lengths) == 1 and not self.headers.get("Transfer-Encoding") else 0
+                if 0 < size <= DRAIN_LIMIT:
+                    self.connection.settimeout(3)
+                    self.rfile.read(size)
+
+        def _lab_request(self):
+            """Loopback Host, same-origin Origin, the session's lab token and a JSON body, or a refusal."""
             host = self._local_host()
             if (not host or self.headers.get("Origin") != "http://" + host
                     or not lab_control.authenticates(self.headers.get("X-Sentinel-Lab-Token"))):
+                self._drain()
                 self.send_error(403)
-                return
+                return False
             if self.headers.get_content_type() != "application/json" or self.headers.get("Transfer-Encoding"):
+                self._drain()
                 self.send_error(415)
+                return False
+            return True
+
+        def _approval(self, operation):
+            from runtime.approval_relay import RelayRefused
+            if not self._lab_request():
+                return
+            status = 400
+            try:
+                lengths = self.headers.get_all("Content-Length", [])
+                size = int(lengths[0]) if len(lengths) == 1 else 0
+                if size > LAB_BODY_LIMIT:
+                    self._drain()
+                    raise RelayRefused(413, "The request body is too large.")
+                if size <= 0:
+                    raise RelayRefused(400, "Invalid approval request.")
+                self.connection.settimeout(3)
+                raw = self.rfile.read(size)
+                if len(raw) != size:
+                    raise RelayRefused(400, "Invalid approval request.")
+                result = getattr(approval_relay, operation)(json.loads(raw))
+                status, body = 200, result
+            except RelayRefused as refused:
+                status, body = refused.status, {"error": refused.message}
+            except (ValueError, TypeError, TimeoutError, RecursionError):  # Malformed JSON or a slow body.
+                body = {"error": "Invalid approval request."}
+            # Status and, once the relay matched a request, its action ID: never the body or a header.
+            log.emit(LOG, "dashboard.approval.relayed" if status == 200 else "dashboard.approval.refused",
+                     level=log.INFO if status == 200 else log.WARNING, operation=operation, http_status=status,
+                     action_id=body["action_id"] if status == 200 else None)
+            self._respond(status, json.dumps(body).encode("utf-8"), "application/json")
+
+        def _inject(self):
+            from runtime.lab_control import LabConflict
+            if not self._lab_request():
                 return
             try:
                 size = int(self.headers.get("Content-Length", "0"))
-                if not 0 < size <= 2048:
+                if not 0 < size <= LAB_BODY_LIMIT:
                     raise ValueError("Invalid body length")
                 self.connection.settimeout(3)
                 payload = json.loads(self.rfile.read(size))
