@@ -7,11 +7,8 @@ import threading
 import time
 
 from runtime.worker_transport import ProtocolError, digest
+from shared.canonical import canonical_json as encoded
 from shared.contracts import validate_message
-
-
-def encoded(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
 class WorkerJournal:

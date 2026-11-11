@@ -6,11 +6,13 @@ These locks do not implement distributed leases or fencing across hosts.
 
 from contextlib import contextmanager
 import errno
-import hashlib
 import json
 import os
 from pathlib import Path
 import sqlite3
+
+# canonical_json and fingerprint are public names; the adapter, harnesses and tests import them.
+from shared.canonical import canonical_json, sha256_hex as fingerprint
 
 
 class ActionConflict(ValueError):
@@ -19,14 +21,6 @@ class ActionConflict(ValueError):
 
 class TargetBusy(RuntimeError):
     """Another local worker owns this workload; leave delivery pending."""
-
-
-def canonical_json(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
-
-
-def fingerprint(value):
-    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def target_key(target):

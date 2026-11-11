@@ -6,21 +6,15 @@ public SQLiteStore import remain compatible with stored runs and team workers.
 """
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-import hashlib
 import json
 import sqlite3
+
+# _json and _digest stay importable for approvals.py, core.py and approval_http.py.
+from shared.canonical import canonical_json as _json, sha256_hex as _digest
 
 
 class CoordinatorError(ValueError):
     """An event conflicts with stored identity or the incident lifecycle."""
-
-
-def _json(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
-
-
-def _digest(value):
-    return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
 
 
 def _time(value):

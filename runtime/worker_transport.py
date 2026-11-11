@@ -1,12 +1,12 @@
 """Version 1 worker delivery protocol backed by the Coordinator outbox."""
 from contextlib import contextmanager
-import hashlib
 import json
 import math
 import time
 from uuid import uuid4
 
 from services.coordinator.core import LocalEventBus, acknowledge, dispatch_pending, record_message
+from shared.canonical import sha256_hex as digest
 from shared.contracts import validate_message
 from runtime.service_identity import ProtocolError
 
@@ -16,11 +16,6 @@ TOPICS = {"planner": {"planner.request": "proposal"},
           "executor": {"executor.request": "execution_result", "executor.reconcile": "execution_result"},
           "verifier": {"verifier.request": "outcome", "dependency.request": "dependency_result"}}
 INGRESS = {"observer": "incident", "verifier": "dependency_result"}
-
-
-def digest(value):
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
-    return hashlib.sha256(encoded.encode()).hexdigest()
 
 
 class Delivery:

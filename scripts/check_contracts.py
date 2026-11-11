@@ -1,12 +1,12 @@
 """Validate synthetic development messages and their cross-component links."""
 
-import hashlib
 import json
 from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from shared.canonical import sha256_hex
 from shared.contracts import validate_message
 
 
@@ -29,8 +29,8 @@ def main():
     if not set(proposal["evidence_refs"]) <= known_evidence:
         raise ValueError("Proposal references missing evidence")
     baseline = json.loads((ROOT / "data/sentinel/samples/baseline.json").read_text())
-    canonical = json.dumps(baseline["pod_template"], sort_keys=True, separators=(",", ":")).encode()
-    digest = hashlib.sha256(canonical).hexdigest()
+    # Same encoding as Guard and Executor, so NaN and Infinity are rejected here too.
+    digest = sha256_hex(baseline["pod_template"])
     if digest != proposal["parameters"]["template_sha256"] or digest != baseline["template_sha256"]:
         raise ValueError("Proposal does not reference the exact saved baseline template")
     if baseline["baseline_id"] != proposal["parameters"]["baseline_id"] or baseline["target"] != proposal["target"]:

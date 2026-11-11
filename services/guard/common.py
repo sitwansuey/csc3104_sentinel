@@ -3,11 +3,10 @@
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from fractions import Fraction
-import hashlib
-import json
 import math
 import re
 
+from shared.canonical import sha256_hex
 from shared.contracts import ContractError
 
 
@@ -40,10 +39,9 @@ def utc_timestamp(value, path):
 
 def json_sha256(value):
     try:
-        encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        return sha256_hex(value)
     except (TypeError, ValueError, RecursionError) as exc:
         raise GuardInputError("Fingerprint input must be JSON serializable") from exc
-    return hashlib.sha256(encoded).hexdigest()
 
 
 _NUMBER = r"\+?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)"

@@ -9,11 +9,8 @@ from pathlib import Path
 import sqlite3
 
 from services.observer.core import Observer, validate_observation
+from shared.canonical import canonical_json as encoded
 from shared.contracts import validate_message
-
-
-def encoded(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
 class ObserverStore:
