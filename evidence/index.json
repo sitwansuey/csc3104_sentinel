@@ -594,8 +594,8 @@
     {
       "bundle_id": "packaged-boutique-20261111-045926-b1348f",
       "class": "packaged",
-      "path": "2026-11-11/packaged-boutique-20261111-045926-b1348f",
-      "captured_at": "2026-11-11T04:59:26Z",
+      "path": "2026-11-10/packaged-boutique-20261111-045926-b1348f",
+      "captured_at": "2026-11-10T20:59:26Z",
       "source_revision": "b9fbf084aec72c9ae75ff8c875840d355a6e4474",
       "provenance": "inferred",
       "status": "current",
@@ -614,8 +614,8 @@
     {
       "bundle_id": "packaged-boutique-20261111-050418-17719f",
       "class": "packaged",
-      "path": "2026-11-11/packaged-boutique-20261111-050418-17719f",
-      "captured_at": "2026-11-11T05:04:18Z",
+      "path": "2026-11-10/packaged-boutique-20261111-050418-17719f",
+      "captured_at": "2026-11-10T21:04:18Z",
       "source_revision": "b9fbf084aec72c9ae75ff8c875840d355a6e4474",
       "provenance": "inferred",
       "status": "current",
@@ -655,8 +655,8 @@
       "bundle_id": "packaged-boutique-20261111-233224-8f36b6",
       "class": "packaged",
       "path": "2026-11-11/packaged-boutique-20261111-233224-8f36b6",
-      "captured_at": "2026-11-11T23:32:24Z",
-      "source_revision": "d5b2ed9ea2e47ab9bd93b7c905682a8ca2bf2795",
+      "captured_at": "2026-11-11T15:32:24Z",
+      "source_revision": "7537690467317b8bb0b131653053cc65bdc624d7",
       "provenance": "inferred",
       "status": "current",
       "reason": null

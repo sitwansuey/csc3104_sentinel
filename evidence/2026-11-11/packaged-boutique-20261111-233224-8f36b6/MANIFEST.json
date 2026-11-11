@@ -2,13 +2,13 @@
   "schema": "sentinel-evidence-manifest-v1",
   "bundle_id": "packaged-boutique-20261111-233224-8f36b6",
   "class": "packaged",
-  "captured_at": "2026-11-11T23:32:24Z",
+  "captured_at": "2026-11-11T15:32:24Z",
   "source_run_dir_name": "packaged-boutique-20261111-233224-8f36b6",
-  "sanitiser_version": "1",
+  "sanitiser_version": "2",
   "provenance": {
     "kind": "inferred",
-    "source_revision": "d5b2ed9ea2e47ab9bd93b7c905682a8ca2bf2795",
-    "basis": "Inferred: newest commit reachable from main whose committer date precedes the run start. The run recorded no revision and its working tree may have differed."
+    "source_revision": "7537690467317b8bb0b131653053cc65bdc624d7",
+    "basis": "Inferred: newest commit reachable from main whose committer date precedes the run start. The run recorded no revision and its working tree may have differed. The start time comes from the local-time folder name at UTC+08:00, the offset its sibling packaged runs recorded."
   },
   "files": [
     {
