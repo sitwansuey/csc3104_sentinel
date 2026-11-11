@@ -1,4 +1,148 @@
 {
   "schema": "sentinel-claims-v1",
-  "claims": []
+  "claims": [
+    {
+      "id": "C-CONNECTED-HARNESS",
+      "text": "The connected Boutique walkthrough (two verified recoveries, crash reconciliation and a refused unnecessary rollback) passed in {value} runs",
+      "derive": "pass_ratio",
+      "bundles": [
+        "boutique-live-20261110t170340z-924ad0",
+        "boutique-live-20261110t185411z-484196",
+        "boutique-live-20261110t185646z-275eb5",
+        "boutique-live-20261111t145525z-4aa779"
+      ],
+      "scope_caveat": "One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. Harness-authored proposals, no model. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.",
+      "value": "4/4"
+    },
+    {
+      "id": "C-AGENT-WARM",
+      "text": "qwen3:14b agent mode reached RECOVERED in {value} consecutive runs after the target-name fix",
+      "derive": "pass_ratio",
+      "bundles": [
+        "boutique-live-20261111t165457z-da6e95",
+        "boutique-live-20261111t165802z-914d8d",
+        "boutique-live-20261111t170034z-1cc9bc"
+      ],
+      "scope_caveat": "Three runs only, chosen as the latest consecutive set; earlier agent runs include failures (see C-AGENT-ALL). One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.",
+      "value": "3/3"
+    },
+    {
+      "id": "C-AGENT-ALL",
+      "text": "Across every recorded agent-mode attempt, {value} reached RECOVERED",
+      "derive": "pass_ratio",
+      "bundles": [
+        "boutique-live-20261110t171150z-44469c",
+        "boutique-live-20261110t171528z-3f8ebc",
+        "boutique-live-20261110t184654z-638872",
+        "boutique-live-20261110t185103z-e3d521",
+        "boutique-live-20261110t192436z-42206e",
+        "boutique-live-20261110t192628z-f6ccfc",
+        "boutique-live-20261110t192806z-88c2d9",
+        "boutique-live-20261110t193604z-2aad1c",
+        "boutique-live-20261110t193859z-7f29f5",
+        "boutique-live-20261111t144125z-81e38f",
+        "boutique-live-20261111t144310z-65663a",
+        "boutique-live-20261111t144432z-5fb1d8",
+        "boutique-live-20261111t160349z-4edbe0",
+        "boutique-live-20261111t160522z-20298d",
+        "boutique-live-20261111t160642z-6cedf0",
+        "boutique-live-20261111t160943z-f1193b",
+        "boutique-live-20261111t161243z-d4cba2",
+        "boutique-live-20261111t165457z-da6e95",
+        "boutique-live-20261111t165802z-914d8d",
+        "boutique-live-20261111t170034z-1cc9bc"
+      ],
+      "scope_caveat": "Includes deliberate negative tests (unreachable model server, missing model) and runs on older revisions. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.",
+      "value": "11/20"
+    },
+    {
+      "id": "C-GUARD-REJECTION",
+      "text": "Guard rejection of an approved but unnecessary rollback: {value}",
+      "derive": "zero_write_rejections",
+      "bundles": [
+        "boutique-live-20261110t192313z-7d573c",
+        "boutique-live-20261111t145825z-2c4075"
+      ],
+      "scope_caveat": "One scenario: the service is healthy and already at its baseline. Counts Executor recovery writes only, after setup. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.",
+      "value": "2/2 refused, 0 Executor writes"
+    },
+    {
+      "id": "C-SECURITY-LAB",
+      "text": "The protected Boutique security lab passed in {value} runs, blocking every bypass, identity and outage probe",
+      "derive": "pass_ratio",
+      "bundles": [
+        "protected-boutique",
+        "protected-boutique-context-231935",
+        "protected-boutique-pr5-230557"
+      ],
+      "scope_caveat": "Shipping path only, behind one mTLS gateway in a dedicated kind cluster; scripted probes, not an adversarial test. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.",
+      "value": "3/3"
+    },
+    {
+      "id": "C-CHAOS-BATCH",
+      "text": "The latest Chaos Mesh demo batch (network, pod, cpu): {value}",
+      "derive": "chaos_injection",
+      "bundles": [
+        "boutique-chaos-20261111t142608z-208175"
+      ],
+      "scope_caveat": "Injection and cleanup only; Sentinel takes no recovery action. One batch in demo durations; earlier batches failed (see C-CHAOS-ALL). One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.",
+      "value": "injected 3/3, cleaned up 3/3"
+    },
+    {
+      "id": "C-CHAOS-ALL",
+      "text": "Across every Chaos Mesh fault attempt: {value}",
+      "derive": "chaos_injection",
+      "bundles": [
+        "boutique-chaos-20261110t194700z-3dd57c",
+        "boutique-chaos-20261110t194718z-b6a82e",
+        "boutique-chaos-20261110t195138z-7c2d44",
+        "boutique-chaos-20261110t195417z-0132f7",
+        "boutique-chaos-20261110t195645z-9372d8",
+        "boutique-chaos-20261110t195858z-9d2d56",
+        "boutique-chaos-20261110t200246z-885ecc",
+        "boutique-chaos-20261110t200429z-5b412d",
+        "boutique-chaos-20261110t200945z-2a86f2",
+        "boutique-chaos-20261110t201145z-b5e829",
+        "boutique-chaos-20261110t201147z-4d13e4",
+        "boutique-chaos-20261110t201148z-21a330",
+        "boutique-chaos-20261110t201222z-d7bd47",
+        "boutique-chaos-20261110t201438z-247ddc",
+        "boutique-chaos-20261110t201612z-77793b",
+        "boutique-chaos-20261110t201641z-bb0f10",
+        "boutique-chaos-20261111t142608z-208175"
+      ],
+      "scope_caveat": "Includes development batches that failed before or during injection; the HTTP fault was never injected on this host. Injection only, no Sentinel action. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.",
+      "value": "injected 9/29, cleaned up 12/29"
+    },
+    {
+      "id": "C-PACKAGED",
+      "text": "The packaged runner image completed the Boutique walkthrough in {value} attempts",
+      "derive": "pass_ratio",
+      "bundles": [
+        "packaged-boutique-20261111-045926-b1348f",
+        "packaged-boutique-20261111-050129-26a07a",
+        "packaged-boutique-20261111-050418-17719f",
+        "packaged-boutique-20261111-050519-2fccaf",
+        "packaged-boutique-20261111-230027-b38052",
+        "packaged-boutique-20261111-230259-205916",
+        "packaged-boutique-20261111-233224-8f36b6",
+        "packaged-boutique-20261111-233337-6f3363",
+        "packaged-boutique-20261111-234949-19d77e"
+      ],
+      "scope_caveat": "Attempts include image-build-only and interrupted starts. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.",
+      "value": "5/9"
+    },
+    {
+      "id": "C-OBSERVER",
+      "text": "Live Observer acceptance on Boutique passed in {value} runs",
+      "derive": "pass_ratio",
+      "bundles": [
+        "boutique-observer-20261110t191257z-f68928",
+        "boutique-observer-20261110t211902z-11fb75",
+        "boutique-observer-20261111t143734z-2fd7ce"
+      ],
+      "scope_caveat": "Detects one Deployment failure mode (unavailable replicas after a bad rollout). One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.",
+      "value": "3/3"
+    }
+  ]
 }

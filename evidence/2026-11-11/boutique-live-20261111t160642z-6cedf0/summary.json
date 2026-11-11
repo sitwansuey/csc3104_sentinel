@@ -1,0 +1,45 @@
+{
+  "agent_failure": {
+    "error": "RuntimeError: Agent did not propose a supported rollback: ESCALATE",
+    "model_attempts": 2,
+    "model_calls_completed": 2,
+    "seconds": 60.7
+  },
+  "agent_model_calls": 2,
+  "checks": [
+    {
+      "at": "2026-11-11T16:07:54.332662Z",
+      "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4",
+      "name": "healthy baseline captured with real service samples and immutable image",
+      "passed": true
+    },
+    {
+      "at": "2026-11-11T16:07:55.007942Z",
+      "name": "real ServiceAccount permits only selected Deployment get/patch; forbidden write denied",
+      "passed": true
+    },
+    {
+      "at": "2026-11-11T16:08:00.964987Z",
+      "cart_status": 500,
+      "checkout_status": 500,
+      "name": "Connected cart and checkout fail while shipping configuration is broken",
+      "passed": true,
+      "scenario": "primary"
+    }
+  ],
+  "dependencies": "Configured upstream address graph; live component readiness; no trace discovery",
+  "error": "Agent did not propose a supported rollback: ESCALATE",
+  "error_type": "RuntimeError",
+  "finished_at": "2026-11-11T16:09:01.942757Z",
+  "integration_error": "RuntimeError",
+  "mode": "LIVE Kubernetes; restricted executor credentials",
+  "model": "qwen3:14b",
+  "operator_emergency_restore": true,
+  "planning": "Live RCA agent and Ollama Recovery Planner",
+  "private_executor_credentials_removed": true,
+  "scope": "Online Boutique shippingservice; real Observer/Coordinator/Agent/Guard/Executor/Verifier",
+  "started_at": "2026-11-11T16:06:43.016819Z",
+  "status": "FAILED",
+  "verification": "Actual shipping gRPC, full storefront cart/checkout and dependency readiness",
+  "workload": "Full Online Boutique v0.10.7 with synthetic checkout traffic"
+}

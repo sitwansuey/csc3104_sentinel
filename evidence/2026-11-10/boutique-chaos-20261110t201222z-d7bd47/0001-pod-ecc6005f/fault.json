@@ -1,0 +1,25 @@
+{
+  "apiVersion": "chaos-mesh.org/v1alpha1",
+  "kind": "PodChaos",
+  "metadata": {
+    "name": "fault-0001-pod-ecc6005f",
+    "namespace": "sentinel-boutique-chaos",
+    "labels": {
+      "app.kubernetes.io/managed-by": "sentinel-chaos-demo",
+      "sentinel.dev/run-id": "0001-pod-ecc6005f"
+    }
+  },
+  "spec": {
+    "action": "pod-failure",
+    "mode": "one",
+    "duration": "60s",
+    "selector": {
+      "namespaces": [
+        "sentinel-boutique-chaos"
+      ],
+      "labelSelectors": {
+        "app": "shippingservice"
+      }
+    }
+  }
+}

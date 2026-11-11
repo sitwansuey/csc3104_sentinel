@@ -1,0 +1,82 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "boutique-live-20261111t145825z-2c4075",
+  "class": "guard-rejection",
+  "captured_at": "2026-11-11T14:58:25.674638Z",
+  "source_run_dir_name": "boutique-live-20261111T145825Z-2c4075",
+  "sanitiser_version": "1",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "7976db48baae942b6fb86693fc6f60af0d173ee9",
+    "basis": "Inferred: newest commit reachable from main whose committer date precedes the run start. The run recorded no revision and its working tree may have differed."
+  },
+  "files": [
+    {
+      "path": "dashboard-validation.json",
+      "sha256": "1c54f644c65d81c34cee3b04e1b1d9f29455ca9afb2f95677ba9a9622a5eee4b",
+      "bytes": 302,
+      "redactions": 0
+    },
+    {
+      "path": "images.json",
+      "sha256": "d5760d2d3e7ebb4fbb818b3c1d0af177a286bd9a85878de990b0d8cd5820a199",
+      "bytes": 2741,
+      "redactions": 0
+    },
+    {
+      "path": "policy.json",
+      "sha256": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+      "bytes": 2352,
+      "redactions": 0
+    },
+    {
+      "path": "rbac-checks.json",
+      "sha256": "6fd5a39fb636f6959a24aceb57cd07ed4611c62e201cb11380dc99e85179acbe",
+      "bytes": 552,
+      "redactions": 0
+    },
+    {
+      "path": "summary.json",
+      "sha256": "42b517f89991a496dd75ed216cfb5f7fc1a505788364bbb660f7f3f3f5598471",
+      "bytes": 3271,
+      "redactions": 0
+    },
+    {
+      "path": "unnecessary-rollback/approved-guard-decision.json",
+      "sha256": "1e40c888785e72a9a19f25deb94a5a5181ae03b74a18be31c88c08ba9a46c0f6",
+      "bytes": 826,
+      "redactions": 0
+    },
+    {
+      "path": "unnecessary-rollback/execution.json",
+      "sha256": "470a9438910f3f983bb464bf89b5ce22d8bd9f08761b1b8b61a6077f0d1a76ee",
+      "bytes": 580,
+      "redactions": 0
+    },
+    {
+      "path": "unnecessary-rollback/guard-decision.json",
+      "sha256": "d21f34c0089dcdd633144d55d9034353b375c86efe5f1783ee218eb580fd21ce",
+      "bytes": 826,
+      "redactions": 0
+    },
+    {
+      "path": "unnecessary-rollback/proof.json",
+      "sha256": "49755f0f94761660476ebd0b04b435bf703abc07882526bb51cb9117814c232d",
+      "bytes": 1400,
+      "redactions": 0
+    },
+    {
+      "path": "unnecessary-rollback/proposal.json",
+      "sha256": "711ed5e11c5e13da8f3bb4925337104280540c0e3ad8a555c806c946016538f8",
+      "bytes": 896,
+      "redactions": 0
+    },
+    {
+      "path": "coordinator-journal.json",
+      "sha256": "da1d3773ed297d3a451feab9a5ce9247a14dd47e8711a913f184310594d3b724",
+      "bytes": 18610,
+      "redactions": 1
+    }
+  ],
+  "omitted": []
+}

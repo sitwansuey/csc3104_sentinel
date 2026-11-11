@@ -1,0 +1,44 @@
+{
+  "agent_failure": {
+    "error": "RuntimeError: Ollama Planner failed for sentinel-not-installed:latest at 127.0.0.1:11434: HTTP 404 Not Found: model 'sentinel-not-installed:latest' not found",
+    "model_calls": 0,
+    "seconds": 0.7
+  },
+  "agent_model_calls": 0,
+  "checks": [
+    {
+      "at": "2026-11-11T14:44:20.037754Z",
+      "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4",
+      "name": "healthy baseline captured with real service samples and immutable image",
+      "passed": true
+    },
+    {
+      "at": "2026-11-11T14:44:20.624823Z",
+      "name": "real ServiceAccount permits only selected Deployment get/patch; forbidden write denied",
+      "passed": true
+    },
+    {
+      "at": "2026-11-11T14:44:28.773428Z",
+      "cart_status": 500,
+      "checkout_status": 500,
+      "name": "Connected cart and checkout fail while shipping configuration is broken",
+      "passed": true,
+      "scenario": "primary"
+    }
+  ],
+  "dependencies": "Configured upstream address graph; live component readiness; no trace discovery",
+  "error": "Ollama Planner failed for sentinel-not-installed:latest at 127.0.0.1:11434: HTTP 404 Not Found: model 'sentinel-not-installed:latest' not found",
+  "error_type": "RuntimeError",
+  "finished_at": "2026-11-11T14:44:29.770974Z",
+  "integration_error": "RuntimeError",
+  "mode": "LIVE Kubernetes; restricted executor credentials",
+  "model": "sentinel-not-installed:latest",
+  "operator_emergency_restore": true,
+  "planning": "Live RCA agent and Ollama Recovery Planner",
+  "private_executor_credentials_removed": true,
+  "scope": "Online Boutique shippingservice; real Observer/Coordinator/Agent/Guard/Executor/Verifier",
+  "started_at": "2026-11-11T14:43:10.754386Z",
+  "status": "FAILED",
+  "verification": "Actual shipping gRPC, full storefront cart/checkout and dependency readiness",
+  "workload": "Full Online Boutique v0.10.7 with synthetic checkout traffic"
+}

@@ -1,0 +1,6 @@
+{
+  "detection": {
+    "failure_duration_seconds": 5,
+    "max_sample_gap_seconds": 45
+  }
+}

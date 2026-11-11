@@ -1,0 +1,30 @@
+[
+  {
+    "attempt": 1,
+    "call_id": 1,
+    "eval_duration_seconds": 11.722073,
+    "load_duration_seconds": 25.5929686,
+    "model": "qwen3:14b",
+    "output_tokens": 224,
+    "prompt_characters": 6167,
+    "prompt_eval_duration_seconds": 3.722037,
+    "prompt_tokens": 2577,
+    "role": "Analyzer",
+    "seconds": 41.137996000000385,
+    "status": "completed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 2,
+    "eval_duration_seconds": 15.702974,
+    "load_duration_seconds": 0.0052384,
+    "model": "qwen3:14b",
+    "output_tokens": 299,
+    "prompt_characters": 7456,
+    "prompt_eval_duration_seconds": 3.431558,
+    "prompt_tokens": 2839,
+    "role": "Reporter",
+    "seconds": 19.31445369999892,
+    "status": "completed"
+  }
+]

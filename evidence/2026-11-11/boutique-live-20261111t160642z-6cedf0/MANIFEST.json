@@ -1,0 +1,64 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "boutique-live-20261111t160642z-6cedf0",
+  "class": "agent",
+  "captured_at": "2026-11-11T16:06:43.016819Z",
+  "source_run_dir_name": "boutique-live-20261111T160642Z-6cedf0",
+  "sanitiser_version": "1",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "6cbb32fe7dbbbc1e0e35dc3db1a894501dec4e69",
+    "basis": "Inferred: newest commit reachable from main whose committer date precedes the run start. The run recorded no revision and its working tree may have differed."
+  },
+  "files": [
+    {
+      "path": "approved-rollback/model-calls.json",
+      "sha256": "cdf3b3f39509e860605d4deb6ef6d7bc87a3af92a18987eda68b03652820df12",
+      "bytes": 735,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/model-proposal.json",
+      "sha256": "4399268c9cc55d85dd3d8a20ef8a25818ca0e55f913655288f51f7f51d0d0b29",
+      "bytes": 769,
+      "redactions": 0
+    },
+    {
+      "path": "images.json",
+      "sha256": "d5760d2d3e7ebb4fbb818b3c1d0af177a286bd9a85878de990b0d8cd5820a199",
+      "bytes": 2741,
+      "redactions": 0
+    },
+    {
+      "path": "policy.json",
+      "sha256": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+      "bytes": 2352,
+      "redactions": 0
+    },
+    {
+      "path": "primary-incident.json",
+      "sha256": "9a35fdcaf3ad2d15f330f9ab2df7fabb7c73e2b5630d609051004f3087632a81",
+      "bytes": 3845,
+      "redactions": 0
+    },
+    {
+      "path": "primary-storefront-impact.json",
+      "sha256": "be620ec7c1593e6788fcd622178c962d09701498f9501534ac2bc2389850d382",
+      "bytes": 313,
+      "redactions": 0
+    },
+    {
+      "path": "rbac-checks.json",
+      "sha256": "6fd5a39fb636f6959a24aceb57cd07ed4611c62e201cb11380dc99e85179acbe",
+      "bytes": 552,
+      "redactions": 0
+    },
+    {
+      "path": "summary.json",
+      "sha256": "7386e5fbab393b23d40b6721bfd6328e411f1e672aa83a2e15231357fc6e33c9",
+      "bytes": 1869,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

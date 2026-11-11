@@ -1,0 +1,34 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "boutique-live-20261110t213026z-8268a2",
+  "class": "ui-session",
+  "captured_at": "2026-11-10T21:30:26Z",
+  "source_run_dir_name": "boutique-live-20261110T213026Z-8268a2",
+  "sanitiser_version": "1",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "b9fbf084aec72c9ae75ff8c875840d355a6e4474",
+    "basis": "Inferred: newest commit reachable from main whose committer date precedes the run start. The run recorded no revision and its working tree may have differed."
+  },
+  "files": [
+    {
+      "path": "images.json",
+      "sha256": "d5760d2d3e7ebb4fbb818b3c1d0af177a286bd9a85878de990b0d8cd5820a199",
+      "bytes": 2741,
+      "redactions": 0
+    },
+    {
+      "path": "lab-session.json",
+      "sha256": "56fe1fa8624bfc9747071ea6c8f81775b825523009d1464614d99f7b4a782a7e",
+      "bytes": 1439,
+      "redactions": 0
+    },
+    {
+      "path": "rbac-checks.json",
+      "sha256": "6fd5a39fb636f6959a24aceb57cd07ed4611c62e201cb11380dc99e85179acbe",
+      "bytes": 552,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

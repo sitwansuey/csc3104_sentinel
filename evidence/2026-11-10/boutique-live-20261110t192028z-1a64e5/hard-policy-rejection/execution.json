@@ -1,0 +1,17 @@
+{
+  "action_id": "ACT-LIVE-215fa9a669bb4314bc5132171a393029",
+  "details": "Fresh Guard validation refused execution: ACTION_NOT_ALLOWED",
+  "incident_id": "INC-E84AB41CE360",
+  "kind": "execution_result",
+  "recorded_at": "2026-11-10T19:21:25.357866Z",
+  "resource_version": "699",
+  "schema_version": "1.0",
+  "status": "FAILED",
+  "target": {
+    "cluster_id": "sentinel-boutique-lab",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique",
+    "uid": "b5868eed-f829-4109-8c2e-979d041845a3"
+  }
+}

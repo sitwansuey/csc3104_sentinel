@@ -1,0 +1,31 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-5be4278e1858d63abab97430",
+  "based_on_resource_version": "42934",
+  "evidence_refs": [
+    "E-BB4EF4DFCEC2",
+    "E-5B7B66B9F915",
+    "E-70F5050C9FBF",
+    "E-7F23D04E0840",
+    "E-8DEA9CC235F1",
+    "E-52CCE2023E50",
+    "E-A9EB92D761FA",
+    "E-DD66D478A109",
+    "E-2267D85379DE"
+  ],
+  "incident_id": "INC-C6AC8B4D9512",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-4664c0ca0449",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence indicates that the 'shippingservice' container is failing to start due to an attempt to bind to an invalid port, as shown in the log entry with evidence ID 'E-2267D85379DE'. This failure is causing the container to enter a 'CrashLoopBackOff' state, leading to the deployment's unavailability. The root cause is a configuration error in the container's startup settings, which is preventing it from listening on the correct port. The observed evidence supports the conclusion that a recent configuration change may have introduced this error, and the deployment is not functioning as expected. The healthy baseline, represented by 'BASE-LIVE-4664c0ca0449', is the last known good configuration, and restoring it would revert the deployment to a state where the container can start successfully. Since the evidence supports a harmful configuration rollout, the appropriate action is to rollback to the healthy baseline.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

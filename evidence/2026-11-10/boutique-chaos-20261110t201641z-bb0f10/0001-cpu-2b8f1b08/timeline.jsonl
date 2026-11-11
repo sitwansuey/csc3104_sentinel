@@ -1,0 +1,6 @@
+{"run_id": "0001-cpu-2b8f1b08", "captured_at": "2026-11-10T20:16:44.242103Z", "event": "baseline_started"}
+{"run_id": "0001-cpu-2b8f1b08", "captured_at": "2026-11-10T20:16:54.328711Z", "event": "injection_requested"}
+{"run_id": "0001-cpu-2b8f1b08", "captured_at": "2026-11-10T20:16:55.641712Z", "event": "injection_confirmed", "status": {"conditions": [{"status": "True", "type": "Selected"}, {"status": "True", "type": "AllInjected"}, {"status": "False", "type": "AllRecovered"}, {"status": "False", "type": "Paused"}], "experiment": {"containerRecords": [{"events": [{"operation": "Apply", "timestamp": "2026-11-10T20:16:54Z", "type": "Succeeded"}], "id": "sentinel-boutique-chaos/shippingservice-8699c54cb5-dn9d9/server", "injectedCount": 1, "phase": "Injected", "recoveredCount": 0, "selectorKey": "."}], "desiredPhase": "Run"}, "instances": {"sentinel-boutique-chaos/shippingservice-8699c54cb5-dn9d9/server": {"memoryStartTime": "1970-01-01T00:00:00Z", "startTime": "2026-11-10T20:16:54Z", "uid": "7027"}}}}
+{"run_id": "0001-cpu-2b8f1b08", "captured_at": "2026-11-10T20:17:06.624862Z", "event": "run_failed", "error": "KeyboardInterrupt: "}
+{"run_id": "0001-cpu-2b8f1b08", "captured_at": "2026-11-10T20:17:06.625324Z", "event": "final_cleanup_requested"}
+{"run_id": "0001-cpu-2b8f1b08", "captured_at": "2026-11-10T20:17:06.957286Z", "event": "final_cleanup_confirmed"}

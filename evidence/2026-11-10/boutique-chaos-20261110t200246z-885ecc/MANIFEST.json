@@ -1,0 +1,22 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "boutique-chaos-20261110t200246z-885ecc",
+  "class": "chaos-batch",
+  "captured_at": "2026-11-10T20:02:46.184200Z",
+  "source_run_dir_name": "boutique-chaos-20261110T200246Z-885ecc",
+  "sanitiser_version": "1",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "d013ea59998d921d29508078f946595923d544e1",
+    "basis": "Inferred: newest commit reachable from main whose committer date precedes the run start. The run recorded no revision and its working tree may have differed."
+  },
+  "files": [
+    {
+      "path": "batch.json",
+      "sha256": "cec396743e1d7e45ce65f2e73866db17cf037bfa95ec02b83f67f81260c901fb",
+      "bytes": 742,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

@@ -1,0 +1,4 @@
+{"run_id": "0001-http-f5135659", "captured_at": "2026-11-10T19:59:01.097806Z", "event": "baseline_started"}
+{"run_id": "0001-http-f5135659", "captured_at": "2026-11-10T19:59:31.179460Z", "event": "injection_requested"}
+{"run_id": "0001-http-f5135659", "captured_at": "2026-11-10T20:00:31.627941Z", "event": "run_failed", "error": "RuntimeError: Chaos Mesh did not confirm injection into selected pods"}
+{"run_id": "0001-http-f5135659", "captured_at": "2026-11-10T20:00:31.628271Z", "event": "final_cleanup_requested"}

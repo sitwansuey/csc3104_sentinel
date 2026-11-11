@@ -1,0 +1,40 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "boutique-observer-20261111t143734z-2fd7ce",
+  "class": "observer-acceptance",
+  "captured_at": "2026-11-11T14:37:34Z",
+  "source_run_dir_name": "boutique-observer-20261111T143734Z-2fd7ce",
+  "sanitiser_version": "1",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "16e3caea98c25f9f18328aa625be2415b8e02fb5",
+    "basis": "Inferred: newest commit reachable from main whose committer date precedes the run start. The run recorded no revision and its working tree may have differed."
+  },
+  "files": [
+    {
+      "path": "images.json",
+      "sha256": "9291463996b912576afaf0ab0b7d9b0f68a4086d3acd093ba4ef29f831cf5bb5",
+      "bytes": 291,
+      "redactions": 0
+    },
+    {
+      "path": "policy.json",
+      "sha256": "e62121061d861f7b27bb286d4c792b9334a1546293ba43a8827693258142e581",
+      "bytes": 93,
+      "redactions": 0
+    },
+    {
+      "path": "polls.json",
+      "sha256": "8af19ffbf0075884c989712a55e57a58b872590c7bfdd470fc4dc88abdb27374",
+      "bytes": 12440,
+      "redactions": 0
+    },
+    {
+      "path": "summary.json",
+      "sha256": "c82925f3218b452c8dde0654c782014cc94f1110577583088e53f6666e595699",
+      "bytes": 4456,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

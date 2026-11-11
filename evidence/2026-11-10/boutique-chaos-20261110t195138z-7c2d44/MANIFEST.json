@@ -1,0 +1,52 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "boutique-chaos-20261110t195138z-7c2d44",
+  "class": "chaos-batch",
+  "captured_at": "2026-11-10T19:51:38.835990Z",
+  "source_run_dir_name": "boutique-chaos-20261110T195138Z-7c2d44",
+  "sanitiser_version": "1",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "d013ea59998d921d29508078f946595923d544e1",
+    "basis": "Inferred: newest commit reachable from main whose committer date precedes the run start. The run recorded no revision and its working tree may have differed."
+  },
+  "files": [
+    {
+      "path": "0001-pod-3a80a9d9/fault.json",
+      "sha256": "7ae8c324471af1f6df16504b2ca5e01d80c68546b407ed38c1aafd2b6c4c773c",
+      "bytes": 548,
+      "redactions": 0
+    },
+    {
+      "path": "0001-pod-3a80a9d9/ground-truth.json",
+      "sha256": "05bf481f0c53e28ec3eef792f83e4150d95fba004d7d0422df2a35c2111b188e",
+      "bytes": 681,
+      "redactions": 0
+    },
+    {
+      "path": "0001-pod-3a80a9d9/manifest.json",
+      "sha256": "587b605f8f51d44bd83561b745c5008a42c15963ca1dc2ff88f86d7672b9c53f",
+      "bytes": 1281,
+      "redactions": 0
+    },
+    {
+      "path": "0001-pod-3a80a9d9/outcome.json",
+      "sha256": "e6b8dfc3e99064daf50bf9e47482cf26e7f70a263e7f8882f5c9612ac17f47c7",
+      "bytes": 722,
+      "redactions": 0
+    },
+    {
+      "path": "0001-pod-3a80a9d9/timeline.jsonl",
+      "sha256": "8d5d975a458bd176dff8aa64f581eda05fbc552c59f24a4a54a809d54ba3fde8",
+      "bytes": 2259,
+      "redactions": 0
+    },
+    {
+      "path": "batch.json",
+      "sha256": "58ccbd09161238f4d5468698c2dda441c8097c0ed32e02104e7ae62fc125233c",
+      "bytes": 1596,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

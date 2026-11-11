@@ -1,0 +1,29 @@
+{
+  "apiVersion": "chaos-mesh.org/v1alpha1",
+  "kind": "HTTPChaos",
+  "metadata": {
+    "name": "fault-0001-http-f5135659",
+    "namespace": "sentinel-boutique-chaos",
+    "labels": {
+      "app.kubernetes.io/managed-by": "sentinel-chaos-demo",
+      "sentinel.dev/run-id": "0001-http-f5135659"
+    }
+  },
+  "spec": {
+    "target": "Request",
+    "port": 8080,
+    "method": "GET",
+    "path": "/",
+    "abort": true,
+    "mode": "one",
+    "duration": "60s",
+    "selector": {
+      "namespaces": [
+        "sentinel-boutique-chaos"
+      ],
+      "labelSelectors": {
+        "app": "frontend"
+      }
+    }
+  }
+}

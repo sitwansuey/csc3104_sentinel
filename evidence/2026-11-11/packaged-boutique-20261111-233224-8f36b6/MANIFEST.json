@@ -1,0 +1,22 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "packaged-boutique-20261111-233224-8f36b6",
+  "class": "packaged",
+  "captured_at": "2026-11-11T23:32:24Z",
+  "source_run_dir_name": "packaged-boutique-20261111-233224-8f36b6",
+  "sanitiser_version": "1",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "d5b2ed9ea2e47ab9bd93b7c905682a8ca2bf2795",
+    "basis": "Inferred: newest commit reachable from main whose committer date precedes the run start. The run recorded no revision and its working tree may have differed."
+  },
+  "files": [
+    {
+      "path": "host-cleanup.json",
+      "sha256": "99735050fadb9be4e878310ee8828825265485f6bfe6614ba71d0594c7224ae5",
+      "bytes": 88,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

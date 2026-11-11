@@ -1,0 +1,12 @@
+[
+  {
+    "attempt": 1,
+    "call_id": 1,
+    "error_type": "HTTPError",
+    "model": "sentinel-not-installed:latest",
+    "prompt_characters": 6012,
+    "role": "Analyzer",
+    "seconds": 0.0360422000003382,
+    "status": "failed"
+  }
+]

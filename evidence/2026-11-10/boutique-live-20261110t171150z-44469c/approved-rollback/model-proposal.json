@@ -1,0 +1,29 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-8cfb455b749e2f3bb786f5ce",
+  "based_on_resource_version": "2088",
+  "evidence_refs": [
+    "E-AD537CFB6F62",
+    "E-8D842CB02D32",
+    "E-A280F8D476A3",
+    "E-991B932E9B75",
+    "E-1CFAF988D110",
+    "E-B785B503CD3F",
+    "E-F16BB4FC1F44"
+  ],
+  "incident_id": "INC-5EA09DE03E9F",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-e749e8865a4c",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence clearly indicates that the container for the 'shippingservice' deployment is failing to start due to an invalid port configuration, as shown in the container log (E-F16BB4FC1F44): 'failed to listen: listen tcp: lookup tcp/invalid-port: unknown port'. This is corroborated by the pod status (E-991B932E9B75), which shows the container is in a CrashLoopBackOff state, and the readiness probe failure (E-1CFAF988D110), which indicates the container is unable to connect to the service on port 50051. The deployment status (E-AD537CFB6F62 and E-A280F8D476A3) confirms that no replicas are available, which is a downstream effect of the container failure. The evidence supports the conclusion that the invalid port configuration is the root cause of the incident. The baseline configuration is healthy and was observed at '2026-11-10T17:12:59.233173Z', and restoring it would resolve the issue.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

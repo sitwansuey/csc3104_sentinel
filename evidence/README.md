@@ -60,5 +60,16 @@ is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.
 ## Bundles by class
 
 <!-- BEGIN GENERATED:index -->
-_No bundles yet._
+| Class | Bundles | Recorded | Inferred | Superseded | Withdrawn |
+| --- | --- | --- | --- | --- | --- |
+| agent | 20 | 0 | 20 | 0 | 0 |
+| chaos-batch | 17 | 0 | 17 | 0 | 0 |
+| connected-harness | 4 | 0 | 4 | 0 | 0 |
+| guard-rejection | 2 | 0 | 2 | 0 | 0 |
+| observer-acceptance | 3 | 0 | 3 | 0 | 0 |
+| packaged | 9 | 0 | 9 | 0 | 0 |
+| provider-recovery | 1 | 0 | 1 | 0 | 0 |
+| security-lab | 3 | 0 | 3 | 0 | 0 |
+| shipping-lab | 2 | 0 | 2 | 0 | 0 |
+| ui-session | 7 | 0 | 7 | 0 | 0 |
 <!-- END GENERATED:index -->

@@ -1,0 +1,103 @@
+{
+  "cluster_removed": true,
+  "detection_elapsed_seconds": 7.423794,
+  "duplicate_suppression_seconds": 61.87985759999992,
+  "healthy_seconds": 62.09970450000037,
+  "incident": {
+    "incident_id": "INC-2855C2A6677C",
+    "kind": "incident",
+    "observed_at": "2026-11-11T14:39:48.212464Z",
+    "observed_generation": 2,
+    "observed_resource_version": "720",
+    "schema_version": "1.0",
+    "signals": [
+      {
+        "at": "2026-11-11T14:39:40.788670Z",
+        "detail": "Deployment sentinel-boutique/shippingservice desired 1, ready 0, available 0; resourceVersion 720, generation 2",
+        "evidence_id": "E-155877583216",
+        "reason": "UnavailableReplicas",
+        "source": "deployment_status"
+      },
+      {
+        "at": "2026-11-11T14:39:40.788670Z",
+        "detail": "Pod shippingservice-85576d7678-r5cq6 container server is not ready; phase Running; restartCount 1; current exitCode 1; last exitCode 1",
+        "evidence_id": "E-EEFED3841664",
+        "reason": "Error",
+        "source": "pod_status"
+      },
+      {
+        "at": "2026-11-11T14:39:38Z",
+        "detail": "Deployment does not have minimum availability.",
+        "evidence_id": "E-D64CE9AE1DD2",
+        "reason": "MinimumReplicasUnavailable",
+        "source": "event"
+      },
+      {
+        "at": "2026-11-11T14:39:40Z",
+        "detail": "Readiness probe failed: timeout: failed to connect service \"10.244.0.6:50051\" within 1s: context deadline exceeded",
+        "evidence_id": "E-179272635955",
+        "reason": "Unhealthy",
+        "source": "event"
+      },
+      {
+        "at": "2026-11-11T14:39:40Z",
+        "detail": "Back-off restarting failed container server in pod shippingservice-85576d7678-r5cq6_sentinel-boutique(384984c0-8ce5-491e-bc80-c620fea93a17)",
+        "evidence_id": "E-6CAD711A6566",
+        "reason": "BackOff",
+        "source": "event"
+      },
+      {
+        "at": "2026-11-11T14:39:40.788670Z",
+        "detail": "unable to retrieve container logs for containerd://3ed50b1259d5a240ea22dd5e2dce7e27d74bec02decfca24293f33b3bb6d4cf0",
+        "evidence_id": "E-3B2C923643B6",
+        "reason": "ContainerLog",
+        "source": "container_log"
+      },
+      {
+        "at": "2026-11-11T14:39:48.212464Z",
+        "detail": "Deployment sentinel-boutique/shippingservice desired 1, ready 0, available 0; resourceVersion 720, generation 2",
+        "evidence_id": "E-0311A871C87B",
+        "reason": "UnavailableReplicas",
+        "source": "deployment_status"
+      },
+      {
+        "at": "2026-11-11T14:39:48.212464Z",
+        "detail": "Pod shippingservice-85576d7678-r5cq6 container server is not ready; phase Running; restartCount 1; back-off 10s restarting failed container=server pod=shippingservice-85576d7678-r5cq6_sentinel-boutique(384984c0-8ce5-491e-bc80-c620fea93a17); last exitCode 1",
+        "evidence_id": "E-E1AB6BD995DA",
+        "reason": "CrashLoopBackOff",
+        "source": "pod_status"
+      },
+      {
+        "at": "2026-11-11T14:39:43Z",
+        "detail": "Back-off restarting failed container server in pod shippingservice-85576d7678-r5cq6_sentinel-boutique(384984c0-8ce5-491e-bc80-c620fea93a17)",
+        "evidence_id": "E-1F98C165DE5D",
+        "reason": "BackOff",
+        "source": "event"
+      },
+      {
+        "at": "2026-11-11T14:39:48.212464Z",
+        "detail": "2026-11-11T14:39:39.547221177Z {\"message\":\"Tracing disabled.\",\"severity\":\"info\",\"timestamp\":\"2026-11-11T14:39:39.547016371Z\"}\n2026-11-11T14:39:39.547243608Z {\"message\":\"Profiling disabled.\",\"severity\":\"info\",\"timestamp\":\"2026-11-11T14:39:39.547091775Z\"}\n2026-11-11T14:39:39.547566217Z {\"message\":\"failed to listen: listen tcp: lookup tcp/invalid-port: unknown port\",\"severity\":\"fatal\",\"timestamp\":\"2026-11-11T14:39:39.547427004Z\"}\n",
+        "evidence_id": "E-005244072459",
+        "reason": "ContainerLog",
+        "source": "container_log"
+      }
+    ],
+    "target": {
+      "cluster_id": "sentinel-boutique-lab",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique",
+      "uid": "982536c8-f478-4bf3-847a-2a444b5bf684"
+    }
+  },
+  "policy": {
+    "detection": {
+      "failure_duration_seconds": 5,
+      "max_sample_gap_seconds": 45
+    }
+  },
+  "previous_poll_elapsed_seconds": 4.95534,
+  "restored_manually_by_harness": true,
+  "scope": "real Online Boutique v0.10.7 shippingservice detection only",
+  "status": "PASS"
+}

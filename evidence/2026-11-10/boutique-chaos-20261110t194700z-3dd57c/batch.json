@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "batch_id": "boutique-chaos-20261110T194700Z-3dd57c",
+  "started_at": "2026-11-10T19:47:00.238099Z",
+  "configuration": {
+    "schema_version": 1,
+    "mode": "demo",
+    "faults": [
+      "cpu",
+      "memory",
+      "pod",
+      "network",
+      "http",
+      "dns"
+    ],
+    "baseline_seconds": 30,
+    "fault_seconds": 60,
+    "recovery_seconds": 30,
+    "sample_interval": 5,
+    "traffic_interval": 1,
+    "traffic_workers": 1,
+    "operator_gates": true,
+    "target": null
+  },
+  "context": "kind-sentinel-boutique-chaos",
+  "namespace": "sentinel-boutique-chaos",
+  "order": [
+    "cpu",
+    "memory",
+    "pod",
+    "network",
+    "http",
+    "dns"
+  ],
+  "runs": [],
+  "status": "planned"
+}

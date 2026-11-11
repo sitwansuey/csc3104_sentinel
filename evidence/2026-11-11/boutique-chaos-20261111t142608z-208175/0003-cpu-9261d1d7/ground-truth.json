@@ -1,0 +1,32 @@
+{
+  "run_id": "0003-cpu-9261d1d7",
+  "fault": "cpu",
+  "target": {
+    "namespaces": [
+      "sentinel-boutique-chaos"
+    ],
+    "labelSelectors": {
+      "app": "shippingservice"
+    }
+  },
+  "windows": {
+    "baseline": [
+      "2026-11-11T14:34:50.011224Z",
+      "2026-11-11T14:35:20.012326Z"
+    ],
+    "fault": [
+      "2026-11-11T14:35:21.451039Z",
+      "2026-11-11T14:36:20.359801Z"
+    ],
+    "settle": [
+      "2026-11-11T14:36:21.645478Z",
+      "2026-11-11T14:36:27.836850Z"
+    ],
+    "recovery": [
+      "2026-11-11T14:36:27.837201Z",
+      "2026-11-11T14:36:57.837989Z"
+    ]
+  },
+  "injection_confirmed": true,
+  "note": "Host-observed windows; authoritative controller transitions are in chaos-status.jsonl. Injection is not proof of user-visible impact."
+}

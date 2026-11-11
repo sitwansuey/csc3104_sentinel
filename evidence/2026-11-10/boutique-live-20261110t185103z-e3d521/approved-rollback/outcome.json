@@ -1,0 +1,68 @@
+{
+  "action_id": "ACT-e1d98aeebf6e96f938b94d67",
+  "checks": [
+    {
+      "detail": "Requires an applied/no-op action with resource-version evidence",
+      "name": "execution",
+      "passed": true
+    },
+    {
+      "detail": "Received 3 readings; at least 3 required",
+      "name": "sample_count",
+      "passed": true
+    },
+    {
+      "detail": "All readings must belong to the execution target",
+      "name": "sample_identity",
+      "passed": true
+    },
+    {
+      "detail": "Readings must be UTC, strictly ordered and at/after execution",
+      "name": "sample_timestamps",
+      "passed": true
+    },
+    {
+      "detail": "Observed 18.4801 seconds; at least 10 required",
+      "name": "stable_window",
+      "passed": true
+    },
+    {
+      "detail": "No gap may exceed 90 seconds",
+      "name": "sample_gaps",
+      "passed": true
+    },
+    {
+      "detail": "Requires complete successful GRPC application and positive desired-replica readiness readings",
+      "name": "service_health",
+      "passed": true
+    },
+    {
+      "detail": "Every required/observed dependency must be present and healthy in every reading",
+      "name": "dependency_health",
+      "passed": true
+    },
+    {
+      "detail": "Each reading must retain the approved template and a stable observation identity",
+      "name": "sample_configuration",
+      "passed": true
+    },
+    {
+      "detail": "Excluded 3 unhealthy reading(s) from 2026-11-10T18:53:07.324353Z to 2026-11-10T18:53:25.857873Z, within 150 seconds of execution (dependency storefront-checkout); sustained health was assessed only on the readings after them",
+      "name": "convergence",
+      "passed": true
+    }
+  ],
+  "incident_id": "INC-C4FC3FE289A4",
+  "kind": "outcome",
+  "schema_version": "1.0",
+  "status": "RECOVERED",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  },
+  "window_end": "2026-11-10T18:53:53.584732Z",
+  "window_start": "2026-11-10T18:53:35.104642Z"
+}
