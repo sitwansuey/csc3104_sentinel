@@ -12,3 +12,10 @@ runs/
 experiments/results/
 node_modules/
 outputs/
+# Local quality-gate output.
+.coverage
+.coverage.*
+coverage.json
+coverage.xml
+.ruff_cache/
+.mypy_cache/

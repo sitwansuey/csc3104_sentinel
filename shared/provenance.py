@@ -11,6 +11,7 @@ from pathlib import Path
 import platform
 import re
 import subprocess
+from typing import Any, Protocol, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = "sentinel-provenance-v1"
@@ -30,21 +31,26 @@ _VERSION = re.compile(r"\bv?(\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.]+)?)")
 _REVISION = re.compile(r"[0-9a-f]{40}")
 
 
-def _default_runner(command, cwd=None):
+class Runner(Protocol):
+    def __call__(self, command: list[str], cwd: str | None = None) -> "subprocess.CompletedProcess[str]": ...
+
+
+def _default_runner(command: list[str], cwd: str | None = None) -> "subprocess.CompletedProcess[str]":
     try:
         return subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=10, check=False)
     except (OSError, subprocess.SubprocessError):
         return subprocess.CompletedProcess(command, 127, "", "")
 
 
-def source_revision(root=ROOT, runner=None):
+def source_revision(root: str | Path = ROOT, runner: Runner | None = None) -> str:
     """Return the full HEAD commit, or 'unknown' when git is unavailable."""
     result = (runner or _default_runner)(["git", "rev-parse", "HEAD"], cwd=str(root))
     value = (result.stdout or "").strip() if result.returncode == 0 else ""
     return value if _REVISION.fullmatch(value) else UNKNOWN
 
 
-def dirty_state(root=ROOT, runner=None):
+def dirty_state(root: str | Path = ROOT, runner: Runner | None = None
+                ) -> tuple[bool | None, str | None, int | None]:
     """Return (dirty, sha256 of sorted dirty paths, count); paths are never returned."""
     result = (runner or _default_runner)(["git", "status", "--porcelain"], cwd=str(root))
     if result.returncode != 0:
@@ -55,15 +61,15 @@ def dirty_state(root=ROOT, runner=None):
     return True, hashlib.sha256("\n".join(paths).encode("utf-8")).hexdigest(), len(paths)
 
 
-def version_of(text):
+def version_of(text: str | None) -> str:
     """Reduce tool output to its first version number, dropping anything else."""
     match = _VERSION.search(text or "")
     return match.group(1) if match else UNAVAILABLE
 
 
-def tool_versions(tools, runner=None):
+def tool_versions(tools: Sequence[str], runner: Runner | None = None) -> dict[str, str]:
     """Return {tool: version} for the named tools; unknown tools are 'unavailable'."""
-    versions = {}
+    versions: dict[str, str] = {}
     for tool in tools:
         command = TOOL_COMMANDS.get(tool)
         if command is None:
@@ -74,12 +80,13 @@ def tool_versions(tools, runner=None):
     return versions
 
 
-def host_class():
+def host_class() -> str:
     """Operating system and architecture only, for example 'windows-amd64'."""
     return (platform.system() or UNKNOWN).lower() + "-" + (platform.machine() or UNKNOWN).lower()
 
 
-def collect(root=ROOT, *, tools=(), runner=None, captured_by="harness"):
+def collect(root: str | Path = ROOT, *, tools: Sequence[str] = (), runner: Runner | None = None,
+            captured_by: str = "harness") -> dict[str, Any]:
     """Build the provenance block. Only git and the named tools are run."""
     dirty, dirty_hash, dirty_count = dirty_state(root, runner)
     return {"schema": SCHEMA, "source_revision": source_revision(root, runner), "dirty": dirty,

@@ -1,2 +1,4 @@
 # Optional RCA-agent runtime. The harness/Guard/Executor core uses the stdlib.
-pandas>=2.2,<4
+# Exact, hash-checked pins; edit requirements.in, then run
+# python scripts/ci/locks.py --compile
+-r requirements.lock

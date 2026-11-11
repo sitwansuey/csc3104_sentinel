@@ -25,7 +25,7 @@ import json
 import re
 from typing import Any, Mapping, Optional
 
-from services.executor.store import canonical_json, fingerprint
+from shared.canonical import canonical_json, sha256_hex as fingerprint
 
 
 ACTION_ANNOTATION = "sentinel.io/execution"
@@ -125,7 +125,7 @@ def action_attempt(annotation: Optional[str], proposal: Mapping[str, Any]) -> Op
 
 def classify(row: Optional[Mapping[str, Any]], proposal: Mapping[str, Any],
              observation: Optional[Observation], rejection: Any = None, *,
-             fence_nonces: frozenset = frozenset()) -> Decision:
+             fence_nonces: frozenset[str] = frozenset()) -> Decision:
     """Evaluate rows R0-R6 in order; the first match wins.
 
     row is the local ledger entry or None. V0 is its expected_version, or the

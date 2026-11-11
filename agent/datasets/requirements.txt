@@ -1,9 +1,4 @@
 # Offline RCAEval evaluation only; no dataset or model is downloaded by pip.
--r ../../requirements.txt
-pyarrow>=18
-numpy>=1.26
-scikit-learn>=1.4
-networkx>=3
-tqdm>=4.66
-requests>=2.32,<3
-RCAEval @ https://github.com/phamquiluan/RCAEval/archive/2f703059960517b024c504c817771fa85294aa09.zip
+# Exact, hash-checked pins (including the root requirements); edit
+# requirements.in, then run python scripts/ci/locks.py --compile
+-r requirements.lock

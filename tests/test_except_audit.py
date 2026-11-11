@@ -1,12 +1,16 @@
-"""Broad exception handlers are justified and logged by class name only."""
+"""Broad exception handlers are justified, logged by class name only, and gated by ruff."""
 import ast
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+import importlib.util
 import io
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import time
+import tomllib
 import unittest
 from unittest.mock import patch
 
@@ -15,7 +19,7 @@ from agent.progress import notify
 from experiments.validation.demo_guard import load_fixtures
 from runtime.executor_pipeline import GuardAuthorizer
 from runtime.remote_worker import Lease, RemoteWorker
-from scripts.ci import except_audit
+from scripts.ci import except_audit, ruff_baseline
 from services.executor.core import ExecutionAdapters, execute
 from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedger
 from services.guard.core import proposal_fingerprint
@@ -270,6 +274,37 @@ class AuditedSiteLoggingTests(CapturedLogs):
             self.assertIsNone(llm._optional("/api/version"))
         (record,) = self.records(stream, "model.optional.failed")
         self.assertEqual((record["error_type"], record["path"]), ("RuntimeError", "/api/version"))
+
+
+class LintGateTests(unittest.TestCase):
+    def config(self):
+        return tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+    def test_blind_except_rules_are_selected(self):
+        selected = set(self.config()["tool"]["ruff"]["lint"]["select"])
+        self.assertTrue({"BLE001", "S110", "E722"} <= selected)
+
+    def test_blind_except_rules_are_never_baselined_outside_tests(self):
+        entries = ruff_baseline.baseline((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        self.assertGreater(len(entries), 0)
+        self.assertEqual(ruff_baseline.forbidden(entries), [])
+        self.assertEqual(ruff_baseline.forbidden({"services/x.py": {"BLE001"}, "tests/t.py": {"BLE001"}}),
+                         ["services/x.py: BLE001"])
+        parsed = self.config()["tool"]["ruff"]["lint"]["per-file-ignores"]
+        self.assertEqual({path: set(codes) for path, codes in parsed.items()}, entries)
+
+    @unittest.skipUnless(importlib.util.find_spec("ruff"), "ruff is not installed (it is in requirements-dev.lock)")
+    def test_ruff_rejects_a_new_silent_broad_except(self):
+        for path in ("services/planted.py", "services/executor/core.py"):
+            with self.subTest(path=path):
+                result = subprocess.run(
+                    [sys.executable, "-m", "ruff", "check", "--no-cache", "--output-format", "concise",
+                     "--stdin-filename", path, "-"],
+                    input="def f(g):\n    try:\n        g()\n    except Exception:\n        pass\n",
+                    cwd=ROOT, capture_output=True, text=True, timeout=60, check=False)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("BLE001", result.stdout)
+                self.assertIn("S110", result.stdout)
 
 
 if __name__ == "__main__":

@@ -83,8 +83,10 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
-The core requirements supply the RCA CSV reader. The harness and restricted
-execution core use the standard library. Windows launchers prefer the project
+`requirements.txt` installs exact, hash-checked pins from `requirements.lock`
+([how to change them](testing.md#test-sentinel)). The core requirements supply
+the RCA CSV reader. The harness and restricted execution core use the
+standard library. Windows launchers prefer the project
 `.venv` so installed agent dependencies are not lost by selecting another Python.
 No global Python package install is required.
 

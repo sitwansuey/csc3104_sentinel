@@ -20,6 +20,15 @@ skips when their dependencies are absent; do not describe a skipped adapter as
 tested. CI installs both requirement sets and runs on Windows/Linux with Python
 3.12. The source has also been exercised on Windows/Python 3.15.1.
 
+Both `requirements.txt` files only include hash-locked files
+(`requirements.lock`, `agent/datasets/requirements.lock`), so pip checks every
+download against a recorded SHA-256. To change a dependency, edit the matching
+`.in` file and recompile with Python 3.12 (needs pip-tools and network access):
+
+```powershell
+python scripts/ci/locks.py --compile
+```
+
 ```text
 cd dashboard
 npm ci
@@ -29,6 +38,54 @@ npm run build
 
 The frontend tests use mocked data; the production build includes TypeScript
 checking. A non-failing bundle-size warning is currently expected.
+
+## Quality gates
+
+The `quality` CI job runs these. Locally, install the hash-locked tools first:
+
+```powershell
+python -m pip install --require-hashes -r requirements-dev.lock
+python scripts/ci/locks.py --check
+python -m ruff check .
+python scripts/ci/ruff_baseline.py --check
+python scripts/ci/except_audit.py --report
+python -m mypy
+python -m pip_audit --require-hashes --disable-pip -r requirements.lock -r agent/datasets/requirements.lock -r requirements-dev.lock
+python -m coverage run -m unittest discover -s tests -p "test_*.py"
+python -m coverage json -o coverage.json
+python scripts/ci/coverage_gate.py coverage.json
+```
+
+- **Locks.** Every entry is an exact pin with `--hash`. The header stores a
+  digest of the `.in` inputs, so an edited input without a recompile fails.
+- **Ruff.** `pyproject.toml` selects real errors (`E9`, `F`, `PLE`), likely
+  bugs (`B`), newer syntax (`UP`), `S307` (no `eval`) and the blind-except
+  rules `BLE001`, `S110` and `E722`. Code that already broke a rule when the
+  gate was added is listed per file between the `BASELINE` markers, so new
+  files get every rule. `ruff_baseline.py --check` fails on a stale entry, so
+  the list only shrinks, and it never accepts a blind-except entry outside
+  `tests/`.
+- **Broad exception handlers.** `except_audit.py` requires each `except
+  Exception` or `except BaseException` in `services/`, `runtime/`, `shared/`,
+  `agent/`, `experiments/` and `scripts/` to re-raise, or to carry
+  `# noqa: BLE001 - <reason>` and log through `shared/log.py`. See
+  [Logs](observability.md#broad-exception-handlers).
+- **mypy.** `--strict` on `shared/canonical.py`, `shared/log.py`,
+  `shared/provenance.py` and `services/executor/reconciliation.py` only. The
+  rest of the code is not type-checked yet.
+- **Coverage.** Line and branch coverage of `services`, `runtime`, `shared`
+  and `agent`, on Ubuntu only. `.coverage-floors.json` holds a floor per
+  package; the gate fails when one drops below it or is missing. The first
+  measurement (Windows, Python 3.13, 1280 tests) was 85.69% in total; floors
+  sit about one point lower. Raise them as tests improve.
+- **Audits.** `pip-audit` fails on any known vulnerability in the locked
+  packages. RCAEval is installed from a GitHub archive, not PyPI, so it is
+  reported as skipped and is not audited. `npm audit --omit=dev
+  --audit-level=high` runs in the dashboard job. On 12 November 2026 both
+  reported no known vulnerabilities.
+
+Making these checks required for merging is a repository setting that the
+owner has to enable.
 
 ## Meaningful regression boundaries
 
