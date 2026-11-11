@@ -71,7 +71,8 @@ Planner configuration, saved outside source control, is:
 
 `model_config` uses the existing RCA configuration's `base_url`, `model`, context,
 output and timeout fields. Supply an actual reachable model server; loopback
-inside a container refers to that container. The component inference lease covers
+inside a container refers to that container. A non-loopback `base_url` must use
+https or set `"allow_insecure_remote": true` (see docs/planner.md). The component inference lease covers
 both bounded Ollama attempts; delivery is renewed independently. The baselines
 file contains one baseline object or a list of observed baselines. Missing or
 invalid baselines escalate without a model call. Keep actual model/version and

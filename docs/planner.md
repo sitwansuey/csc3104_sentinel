@@ -91,6 +91,39 @@ Ollama model can be selected through a trusted JSON override:
 {"base_url": "http://127.0.0.1:11434", "model": "your-installed-model", "timeout": 120}
 ```
 
+The model client (`agent/llm.py`) talks only to `base_url`. It does not follow
+redirects and ignores `HTTP_PROXY`/`HTTPS_PROXY`. `base_url` must be an http(s)
+origin with no credentials, path, query or fragment. Plain http is accepted
+only for loopback; a remote Ollama needs https, or `"allow_insecure_remote":
+true` on a trusted network (for example a worker container). Optional settings:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `timeout` | 300 | Socket timeout in seconds for connecting, sending and each read. |
+| `request_deadline_seconds` | `timeout` | Overall limit for reading one reply: status line, headers and body, even if sent slowly. A deadline is retried once. |
+| `max_response_bytes` | 4194304 | Largest accepted response (1 KiB to 8 MiB). Larger replies fail without retry. |
+| `max_model_calls` | 32 | Model requests per planning task, retries included. Further calls fail. A planner worker resets the count for each incident. |
+| `keep_alive` | not sent | How long Ollama keeps the model loaded, as seconds or a duration such as `"30m"`. |
+| `warm_up_timeout_seconds` | `timeout` | Limit for the warm-up request. |
+
+Replies must be `application/json`. The model's answer must be a JSON object of
+at most 256 KiB that matches the requested schema; the schema is checked again
+in `agent/jsonschema_lite.py` instead of trusting Ollama's format grammar. A
+mismatch fails without retry, and errors name the JSON path without echoing the
+model's text. Schemas may use only the keywords that checker supports.
+
+In `-Agent` mode the harness checks the model before it touches the cluster. It
+lists installed models (`/api/tags`), then sends one tiny warm-up chat with the
+planning `num_ctx`, so the cold load happens before the incident clock starts.
+If Ollama is unreachable, a model is missing or the warm-up fails, the run stops
+before baseline capture and before any fault is injected. `summary.json` records
+`agent_failure` with stage `preflight` or `warm_up`. On success the run folder
+gets `model-runtime.json`: server version, model digest, family, parameter size,
+quantisation, and GPU/CPU placement from `/api/ps`, plus the warm-up load time.
+Parts Ollama does not report are recorded as `unavailable`. The harness sets
+`keep_alive` to `"30m"`, so the model stays loaded (about 10-12 GB of GPU memory
+for `qwen3:14b`) after the run; set `keep_alive` in `-AgentConfig` to change it.
+
 Run one connected agent case:
 
 ```powershell
@@ -148,7 +181,8 @@ calls and 38-109 s of model time per incident. With the Verifier convergence
 grace (#89), 5 of 5 of those recoveries were verified RECOVERED. Owner
 acceptance of the real-model path is tracked in #56.
 
-If the model is unreachable, a model is not installed, or the agent abstains,
+A model that is unreachable or not installed at the start stops the run before
+fault injection (see above). If the model fails later or the agent abstains,
 no proposal reaches Guard and no repair is attempted. The dashboard shows an
 "Agent planning stopped" event with the reason (Ollama's own message for HTTP
 errors, and the endpoint host), `summary.json` records `agent_failure`, and the

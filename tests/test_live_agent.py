@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from experiments.boutique.harness.agent_live import AgentPlanningMixin, export_telemetry, names_target
+from tests.support.fake_ollama import FakeOllama, Reply
 from tests.test_rca_integration import Model
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -258,6 +259,103 @@ class LiveAgentTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "ESCALATE"):
                 self.harness().build_proposal(self.incident, folder)
         self.assertNotIn("Recovery Planner", [c["role"] for c in model.calls])
+
+
+class ModelPreflightTests(unittest.TestCase):
+    """The model is checked and loaded before any cluster change or fault."""
+
+    def setUp(self):
+        from experiments.boutique.harness.live import BoutiqueExperiment
+        self.base = BoutiqueExperiment
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.server = FakeOllama()
+        self.server.__enter__()
+        self.addCleanup(self.server.__exit__)
+        # Any cluster or container command means the run went too far.
+        touched = patch("subprocess.run", side_effect=AssertionError("cluster command attempted"))
+        touched.start()
+        self.addCleanup(touched.stop)
+
+    def experiment(self, **config):
+        kind = type("AgentBoutiqueExperiment", (AgentPlanningMixin, self.base), {})
+        experiment = kind(self.root / "run")
+        path = self.root / "model.json"
+        path.write_text(json.dumps({"base_url": self.server.url, "model": "fixture-model", "timeout": 5,
+                                    "warm_up_timeout_seconds": 2, **config}))
+        experiment.agent_config = path
+        experiment.inject_fault = Mock()
+        experiment.event = Mock()
+        return experiment
+
+    def assert_stopped_before_injection(self, stage, pattern, **config):
+        experiment = self.experiment(**config)
+        with patch.object(self.base, "prepare") as cluster_prepare:
+            with self.assertRaisesRegex(Exception, pattern):
+                experiment.run()
+        cluster_prepare.assert_not_called()
+        experiment.inject_fault.assert_not_called()
+        summary = json.loads((experiment.directory / "summary.json").read_text())
+        self.assertEqual(summary["status"], "FAILED")
+        self.assertEqual(summary["agent_failure"]["stage"], stage)
+        self.assertFalse(summary["agent_failure"]["fault_injected"])
+        self.assertRegex(summary["agent_failure"]["error"], pattern)
+        self.assertNotIn("operator_emergency_restore", summary)
+        self.assertFalse((experiment.directory / "model-runtime.json").exists())
+        errors = [c for c in experiment.event.call_args_list if c.args[:2] == (3, "error")]
+        self.assertEqual(len(errors), 1)
+        self.assertTrue(errors[0].args[2].startswith("Agent model check failed; no fault injected: "))
+        return experiment
+
+    def test_warm_up_failure_stops_before_inject_fault(self):
+        self.server.chat = Reply({"error": "model failed to load"}, status=500)
+        self.assert_stopped_before_injection(
+            "warm_up", "Ollama warm-up failed for fixture-model at 127.0.0.1:[0-9]+: HTTP 500 .*model failed to load")
+
+    def test_missing_model_stops_before_inject_fault_without_a_chat(self):
+        self.assert_stopped_before_injection("preflight", "fixture-missing at .*model is not installed",
+                                             model="fixture-missing")
+        self.assertEqual(self.server.paths("/api/chat"), [])
+
+    def test_unreachable_ollama_stops_before_inject_fault(self):
+        with FakeOllama() as closed:
+            url = closed.url
+        self.assert_stopped_before_injection("preflight", "Ollama preflight failed for fixture-model at "
+                                             + url.split("//")[1], base_url=url)
+
+    def test_invalid_model_config_stops_before_inject_fault(self):
+        self.assert_stopped_before_injection("preflight", "base_url", base_url="http://ollama.example:11434")
+
+    def test_ready_model_records_runtime_before_cluster_preparation(self):
+        experiment = self.experiment()
+        def cluster_prepare(_self=None):
+            # The model runtime is already recorded when cluster work starts.
+            self.assertTrue((experiment.directory / "model-runtime.json").is_file())
+        with patch.object(self.base, "prepare", side_effect=cluster_prepare) as prepared:
+            experiment.prepare()
+        prepared.assert_called_once()
+        runtime = json.loads((experiment.directory / "model-runtime.json").read_text())
+        self.assertEqual(runtime["server_version"], "0.0.0-fixture")
+        self.assertEqual(runtime["keep_alive"], "30m")
+        self.assertEqual(runtime["models"]["fixture-model"]["placement"]["gpu_fraction"], .75)
+        self.assertEqual(runtime["models"]["fixture-model"]["quantization_level"], "Q4_K_M")
+        self.assertEqual(runtime["warm_up"][0]["load_duration_seconds"], .25)
+        self.assertTrue(runtime["captured_at"])
+        chat = [r["body"] for r in self.server.requests if r["path"] == "/api/chat"]
+        self.assertEqual([body["keep_alive"] for body in chat], ["30m"])
+        self.assertNotIn("agent_failure", experiment.summary)
+        ready = [c for c in experiment.event.call_args_list if c.args[:2] == (3, "status")]
+        self.assertEqual(ready[0].kwargs["progress"]["stage"], "warm_up")
+        experiment.inject_fault.assert_not_called()
+        experiment.store.close()
+
+    def test_agent_config_can_override_keep_alive(self):
+        experiment = self.experiment(keep_alive="5m")
+        with patch.object(self.base, "prepare"):
+            experiment.prepare()
+        self.assertEqual(json.loads((experiment.directory / "model-runtime.json").read_text())["keep_alive"], "5m")
+        experiment.store.close()
 
 
 if __name__ == "__main__":
