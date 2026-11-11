@@ -1,0 +1,31 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-4c98d6487a9b4a071ae2a331",
+  "based_on_resource_version": "62038",
+  "evidence_refs": [
+    "E-FDBF41E2D155",
+    "E-37CAC346E4E9",
+    "E-4A82D5C68196",
+    "E-142220638220",
+    "E-1D41FF7B8707",
+    "E-B727D8DC721E",
+    "E-FE86106E3692",
+    "E-6AEBFC023087",
+    "E-FE789921315D"
+  ],
+  "incident_id": "INC-35FD7CE1D9FF",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-757f785218a1",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence indicates that the container is failing to start due to an 'unknown port' error, as corroborated by evidence IDs E-142220638220 and E-FE789921315D. This directly prevents the container from becoming ready, leading to the 'CrashLoopBackOff' state and unavailability of the deployment. The diagnosis confirms that this is the root cause. Since the baseline template is available and represents a previously healthy state, rolling back to this baseline is appropriate to restore the deployment to a known working configuration. The evidence supports that the current configuration is harmful, and the baseline is a valid recovery point.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

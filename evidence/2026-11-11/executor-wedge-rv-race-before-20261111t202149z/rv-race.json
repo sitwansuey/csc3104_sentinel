@@ -1,0 +1,69 @@
+{
+  "checks": [
+    {
+      "name": "first action resolves as SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE",
+      "observed": [
+        "NEEDS_RECONCILIATION",
+        null
+      ],
+      "passed": false
+    },
+    {
+      "name": "ledger releases the workload",
+      "passed": false
+    },
+    {
+      "name": "a new proposal for the workload is admitted",
+      "passed": false
+    }
+  ],
+  "context": "kind-sentinel-boutique-connected",
+  "finished_at": "2026-11-11T20:21:51.764011Z",
+  "ground_truth": [
+    {
+      "evidence_action_id": null,
+      "field_managers": [],
+      "generation": 3,
+      "label": "after first action",
+      "resource_version": "60462",
+      "template_is_baseline": false,
+      "uid_is_original": true
+    }
+  ],
+  "namespace": "sentinel-wedge-45b3e955",
+  "namespace_deleted": true,
+  "patch_processes_for_first_action": 1,
+  "private_credentials_removed": true,
+  "reconcile_pass_statuses": [
+    "NEEDS_RECONCILIATION",
+    "NEEDS_RECONCILIATION",
+    "NEEDS_RECONCILIATION",
+    "NEEDS_RECONCILIATION",
+    "NEEDS_RECONCILIATION"
+  ],
+  "results": [
+    {
+      "basis": null,
+      "label": "execute",
+      "passes": 1,
+      "patch_processes": 1,
+      "status": "NEEDS_RECONCILIATION",
+      "successful_writes": 0,
+      "write_attempts": 1
+    },
+    {
+      "basis": null,
+      "label": "reconcile",
+      "passes": 5,
+      "patch_processes": 0,
+      "status": "NEEDS_RECONCILIATION",
+      "successful_writes": 0,
+      "write_attempts": 0
+    }
+  ],
+  "scenario": "rv-race",
+  "scope": "one disposable namespace on a local kind cluster; containers on one host, not separate machines; Guard not under test",
+  "started_at": "2026-11-11T20:21:50.135824Z",
+  "status": "FAIL",
+  "time_to_resolution_seconds": 0.765
+}

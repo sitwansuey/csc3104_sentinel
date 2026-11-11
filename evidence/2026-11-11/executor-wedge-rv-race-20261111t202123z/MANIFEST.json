@@ -1,0 +1,28 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "executor-wedge-rv-race-20261111t202123z",
+  "class": "executor-wedge",
+  "captured_at": "2026-11-11T20:21:23.175892Z",
+  "source_run_dir_name": "executor-wedge-rv-race-20261111T202123Z",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "4afc87992c6b76e49bc56be86a7f4114623f35e9",
+    "basis": "Operator record: the harness ran from a clean checkout of integration/phase1 whose HEAD was this revision at run time (2026-11-11); the scenario summary carries no provenance block, so the revision is stated, not stamped."
+  },
+  "files": [
+    {
+      "path": "manifests.json",
+      "sha256": "9409f118fa7c04986297b0be60913ba8160a1f8b0b063ae429ae22b1faf5ca94",
+      "bytes": 2416,
+      "redactions": 0
+    },
+    {
+      "path": "rv-race.json",
+      "sha256": "6b665ea5102faf4fecada87c3db77814a7acfb5d503ec536470b7d011bef4047",
+      "bytes": 2383,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}
