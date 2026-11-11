@@ -3,32 +3,40 @@
   "entries": [
     {
       "id": "L-EXEC-WEDGE",
-      "title": "A definite API rejection after a journaled write wedges the Executor in NEEDS_RECONCILIATION",
+      "title": "A write rejected with its resource version unchanged still waits in NEEDS_RECONCILIATION",
       "kind": "defect",
-      "status": "open",
+      "status": "mitigated",
       "since": "2026-11-11",
-      "impact": "Any non-zero kubectl exit after the write is journaled becomes NEEDS_RECONCILIATION. Reconciliation can only conclude APPLIED, so a harmless rejection keeps the workload excluded from repair.",
-      "workaround": "None in code. An operator inspects the Deployment and clears the Executor ledger row by hand.",
+      "impact": "Fixed in code for every case where the write can no longer commit. Reconciliation is now a pure decision table: a deleted or recreated target, or a resourceVersion that moved without this action's evidence, ends SUPERSEDED, which the Coordinator records as FAILED so a new proposal can follow. Still open: kubectl error text is not classified (the DEFINITE_REJECTION and FENCED rows are reserved), so a rejection that leaves the same UID at the same resourceVersion, such as an admission denial, cannot be told apart from a request still in flight. That action stays NEEDS_RECONCILIATION and the workload stays excluded from repair; after 600 s the Executor adds one 'Operator action required' result. Live verification pending: the wedge harness has not been run against a cluster and no bundle is committed.",
+      "workaround": "For the unchanged-version case, an operator inspects the Deployment and clears the Executor ledger row by hand. The deleted, recreated and moved-version cases need no workaround.",
       "cites": [
-        {"at": "services/executor/kubernetes_adapter.py:191-192", "text": "Live write returned an error; reconcile its outcome"},
-        {"at": "services/executor/core.py:140-141", "text": "Live state does not confirm this attempt"}
+        {"at": "services/executor/kubernetes_adapter.py:201", "text": "Live write returned an error; reconcile its outcome"},
+        {"at": "services/executor/reconciliation.py:18-19", "text": "FENCED and DEFINITE_REJECTION are reserved"},
+        {"at": "services/executor/reconciliation.py:163", "text": "Basis.UNCHANGED_IN_DOUBT, version, may_fence=True"},
+        {"at": "services/executor/core.py:37", "text": "Live state does not confirm this attempt"},
+        {"at": "tests/test_executor_reconciliation_table.py:255", "text": "def test_external_version_bump_supersedes_and_releases_the_workload"},
+        {"at": "tests/test_executor_reconciliation_table.py:287", "text": "def test_unchanged_version_stays_in_doubt_and_is_deduplicated"},
+        {"at": "scripts/validation/test_executor_wedge_live.py"}
       ],
-      "planned": ["P1.10", "P1.11"],
+      "planned": ["P1.11", "P2.06", "P5.08"],
       "issues": [61]
     },
     {
       "id": "L-EXEC-REDELIVERY",
-      "title": "A replacement Executor without the ledger row reports CONFLICT for a write that was applied",
+      "title": "A replacement Executor without the ledger row reported CONFLICT for a write that was applied",
       "kind": "defect",
-      "status": "open",
+      "status": "mitigated",
       "since": "2026-11-12",
-      "impact": "If another Executor host receives the request after the write landed, it sees the moved resourceVersion and reports CONFLICT, and the Coordinator records FAILED. This can only happen once Executors run on more than one host.",
-      "workaround": "Run one Executor with one ledger directory, as every documented run does.",
+      "impact": "Fixed in code, live verification pending. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it can never start that write. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. No run has used more than one Executor host.",
+      "workaround": "Run one Executor with one ledger directory, as every documented run does, until a multi-host run verifies this.",
       "cites": [
-        {"at": "services/executor/core.py:211-213", "text": "Target identity or resource version changed"},
+        {"at": "services/executor/core.py:343", "text": "# Another host may already have committed this same action."},
+        {"at": "services/executor/core.py:287", "text": "# Journal the action as in doubt here, so this host can never start it."},
+        {"at": "tests/test_executor_reconciliation_table.py:350", "text": "def test_peer_adoption_gives_applied_with_zero_writes_on_host_b"},
+        {"at": "tests/test_executor_reconciliation_table.py:405", "text": "def test_reconcile_on_a_host_with_no_row_returns_a_result"},
         {"at": "services/executor/store.py:3", "text": "Every worker must use the same ledger and lock directory"}
       ],
-      "planned": ["P1.10"],
+      "planned": ["P1.10", "P3.01", "P4.01"],
       "issues": [18, 58]
     },
     {
@@ -40,10 +48,10 @@
       "impact": "The Coordinator refuses a result whose timestamp is not later than the evidence it follows. If the Executor's clock is behind the Guard's, an applied execution result is refused with HTTP 400, and the remote worker retries it forever because it gives up only on 404 or 409. Lease renewal also mixes the Coordinator's and the worker's clocks.",
       "workaround": "Run every component on one host, so they share one clock. All committed runs did.",
       "cites": [
-        {"at": "services/coordinator/core.py:148-149", "text": "Execution predates Guard validation"},
-        {"at": "services/coordinator/core.py:166-167", "text": "Health window predates execution"},
-        {"at": "runtime/worker_http.py:88-89", "text": "except (ValueError, KeyError, TypeError):"},
-        {"at": "runtime/remote_worker.py:127", "text": "if error.status not in {404, 409}:"},
+        {"at": "services/coordinator/core.py:149-150", "text": "Execution predates Guard validation"},
+        {"at": "services/coordinator/core.py:169-170", "text": "Health window predates execution"},
+        {"at": "runtime/worker_http.py:157", "text": "except (ValueError, KeyError, TypeError) as exc:"},
+        {"at": "runtime/remote_worker.py:132", "text": "if error.status not in {404, 409}:"},
         {"at": "runtime/remote_worker.py:73", "text": "time.time()) / 3"}
       ],
       "planned": ["P3.03"],
@@ -58,7 +66,7 @@
       "impact": "Agent planning calls the RCA engine directly instead of the PlannerStore journal. A failed agent run saves no ESCALATE, nothing retries it, and the incident stays OPEN.",
       "workaround": "Read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:200", "text": "proposal = propose_from_telemetry("},
+        {"at": "experiments/boutique/harness/agent_live.py:239", "text": "proposal = propose_from_telemetry("},
         {"at": "docs/planner.md", "text": "does not yet use this"},
         {"claim": "C-AGENT-FAIL-CLOSED"}
       ],
@@ -74,8 +82,8 @@
       "impact": "Agent mode records a pre-authorised approval and the harness approves in code. The authenticated approval service exists but no live run uses it, so no evidence shows a person deciding.",
       "workaround": "Treat every live result as lab approval. Use the authenticated approval service only with explicit Guard/Executor wiring (docs/approvals.md).",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:232", "text": "pre-authorized local E2E test"},
-        {"at": "experiments/recovery/live.py:325", "text": "authorized-live-lab-operator"},
+        {"at": "experiments/boutique/harness/agent_live.py:271", "text": "pre-authorized local E2E test"},
+        {"at": "experiments/recovery/live.py:327", "text": "authorized-live-lab-operator"},
         {"claim": "C-CONNECTED-HARNESS"}
       ],
       "planned": ["P2.02", "P2.03"],
@@ -90,7 +98,7 @@
       "impact": "Container log lines are exported and quoted into model context. A crafted log line could steer the model towards a rollback to the measured baseline. Guard and the Executor still enforce the target, baseline and resourceVersion checks.",
       "workaround": "None in code. The prompt tells the model that telemetry is untrusted, which is not a control.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:94", "text": "for entry in observation.get(\"logs\", []):"},
+        {"at": "experiments/boutique/harness/agent_live.py:95", "text": "for entry in observation.get(\"logs\", []):"},
         {"at": "agent/tools.py:193-194", "text": "str(r[message])[:500]"}
       ],
       "planned": ["P2.04"],
@@ -98,17 +106,20 @@
     },
     {
       "id": "L-NO-LOGGING",
-      "title": "No structured logging in services, runtime or agent, and broad except clauses drop the cause",
+      "title": "Structured logs cover only the networked entrypoints, and no live run has collected them",
       "kind": "defect",
-      "status": "open",
+      "status": "mitigated",
       "since": "2026-11-11",
-      "impact": "A failure in a multi-process run cannot be diagnosed from logs. Many 'except Exception' sites return a fixed message and discard the original error.",
-      "workaround": "Read the per-run JSON evidence files and the dashboard event journal.",
+      "impact": "Fixed in code for the networked processes: shared/log.py writes allowlisted JSON lines; the Coordinator server, worker HTTP, approval HTTP and worker service entrypoints configure it; every request gets an access line and every 401 or 403 an auth.denied line; lifecycle transitions are journalled; and every broad except handler re-raises or logs the error class, which CI enforces. Not covered: the live harnesses, agent mode and the in-process pipelines that every recorded run used never configure logging, so their log events are dropped. Exception messages are never logged, only class names, by design. There is no cross-process tracing. No live run has collected logs yet.",
+      "workaround": "For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json.",
       "cites": [
-        {"at": "services/executor/core.py:130-132", "text": "except Exception:"},
-        {"at": "runtime/worker_http.py:92-93", "text": "Coordinator unavailable; retry the saved request"}
+        {"at": "shared/log.py:235", "text": "def entrypoint(component: str)"},
+        {"at": "runtime/worker_http.py:259", "text": "@log.entrypoint(\"worker_http\")"},
+        {"at": "services/executor/core.py:221-222", "text": "any read failure leaves the outcome unknown"},
+        {"at": "docs/observability.md", "text": "only when their entrypoint configures logging"},
+        {"at": "tests/test_except_audit.py:39", "text": "def test_repository_has_no_unjustified_broad_handler"}
       ],
-      "planned": ["P1.07"],
+      "planned": ["P1.07", "P3.02"],
       "issues": [62]
     },
     {
@@ -135,8 +146,8 @@
       "workaround": "Restart the Coordinator on the same volume; saved requests replay from SQLite.",
       "cites": [
         {"at": "deploy/sentinel/coordinator.yaml:62-64", "text": "type: Recreate"},
-        {"at": "services/coordinator/store.py:43", "text": "sqlite3.connect"},
-        {"at": "runtime/worker_transport.py:92", "text": "delay = min(60"}
+        {"at": "services/coordinator/store.py:133", "text": "sqlite3.connect"},
+        {"at": "runtime/worker_transport.py:103", "text": "delay = min(60"}
       ],
       "planned": ["P3.06", "P4.02", "P5.01"],
       "issues": [62, 63]
@@ -151,7 +162,7 @@
       "workaround": "Run every Executor on one host with one ledger and lock directory.",
       "cites": [
         {"at": "services/executor/store.py:1-4", "text": "These locks do not implement distributed leases or fencing across hosts."},
-        {"at": "services/executor/store.py:82", "text": "sqlite3.connect"}
+        {"at": "services/executor/store.py:91", "text": "sqlite3.connect"}
       ],
       "planned": ["P3.04"],
       "issues": [18, 58, 59]
@@ -166,7 +177,7 @@
       "workaround": "Single-host runs only; the restricted adapter supplies the exact conditional JSON Patch.",
       "cites": [
         {"at": "deploy/sentinel/executor-rbac.yaml:3", "text": "Kubernetes RBAC limits resources/verbs, not individual Deployment fields"},
-        {"at": "services/executor/kubernetes_adapter.py:26", "text": "PROCESS_TIMEOUT_SECONDS = 15"}
+        {"at": "services/executor/kubernetes_adapter.py:28", "text": "PROCESS_TIMEOUT_SECONDS = 15"}
       ],
       "planned": ["P2.06", "P3.04", "P3.05"],
       "issues": [18, 58, 61]
@@ -196,7 +207,7 @@
       "workaround": "Quote results only for this fault and action.",
       "cites": [
         {"at": "services/guard/core.py:161-162", "text": "ACTION_NOT_IMPLEMENTED"},
-        {"at": "services/executor/core.py:204-205", "text": "Only explicit baseline ROLLBACK is implemented."},
+        {"at": "services/executor/core.py:336", "text": "Only explicit baseline ROLLBACK is implemented."},
         {"claim": "C-CONNECTED-HARNESS"}
       ],
       "planned": ["P2.08", "P3.08", "P3.09"],
@@ -235,12 +246,15 @@
       "id": "L-MODEL-LATENCY",
       "title": "Model cold loads make agent planning slow and variable",
       "kind": "limitation",
-      "status": "open",
+      "status": "mitigated",
       "since": "2026-11-10",
-      "impact": "Incident-to-repair time in agent mode has a long tail (timings table in docs/results.md). The evaluation traced the worst case to a cold model load that waited for the client's 300 s timeout.",
-      "workaround": "Load the model once before the run so it is warm.",
+      "impact": "Incident-to-repair time in agent mode had a long tail (docs/results.md). The two measured cold calls took up to 41 s with model loads up to 26 s, and one 356 s decision stage holds only 53 s of recorded model calls, so its cause is not established. Fixed in code, live verification pending: each model call now has an overall deadline, a response size cap, no redirects or proxies and a schema check; agent mode runs a preflight and a warm-up call before any fault is injected and records model-runtime.json; keep_alive is configurable. The per-call timeout still defaults to 300 s. No agent run has been repeated since, so the tail with warm-up is unmeasured.",
+      "workaround": "Keep the model warm with keep_alive and check the warm-up load time in model-runtime.json after each run.",
       "cites": [
-        {"at": "agent/llm.py:70", "text": "self.config.get(\"timeout\", 300)"}
+        {"at": "agent/llm.py:259", "text": "self.timeout = _positive(config, \"timeout\", 300)"},
+        {"at": "agent/llm.py:416", "text": "def warm_up(self):"},
+        {"at": "experiments/boutique/harness/agent_live.py:169", "text": "llm.preflight()"},
+        {"at": "tests/test_llm_transport.py"}
       ],
       "planned": ["P1.12"],
       "issues": [85, 87]
@@ -266,27 +280,29 @@
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-11",
-      "impact": "The 11 November evaluation found High or Critical findings in 11 of 13 images. The scan monitor raises dashboard alerts; nothing in Guard, admission or CI blocks a vulnerable image.",
+      "impact": "The 11 November evaluation found High or Critical findings in 11 of 13 images. The scan monitor raises dashboard alerts; nothing in Guard, admission or CI blocks a vulnerable image. CI now fails on known vulnerabilities in the locked Python packages (pip-audit) and the dashboard's npm packages, but it scans no image.",
       "workaround": "Review scan alerts by hand before a demo.",
       "cites": [
         {"at": "scripts/security/watch_security.py:1", "text": "No automatic remediation."},
-        {"at": "scripts/security/watch_security.py:65", "text": "CVE_HIGH_CRITICAL"}
+        {"at": "scripts/security/watch_security.py:68", "text": "CVE_HIGH_CRITICAL"},
+        {"at": ".github/workflows/checks.yml:46", "text": "python -m pip_audit"}
       ],
       "planned": ["P5.02", "P5.03"],
       "issues": [72, 73]
     },
     {
       "id": "L-UNPINNED-BASE-IMAGES",
-      "title": "Sentinel component images use unpinned base image tags",
+      "title": "Sentinel component images used unpinned base image tags",
       "kind": "limitation",
-      "status": "open",
+      "status": "mitigated",
       "since": "2026-11-12",
-      "impact": "Rebuilding the same commit can pull a different base image, so builds are not reproducible. The packaged runner and security inspector are pinned by digest; the component images are not.",
-      "workaround": "Record the built image id with each run.",
+      "impact": "Fixed in code: every FROM line, the frontend stage included, is pinned by digest, a test fails on an unpinned base, and Dependabot proposes digest updates. It is recorded as mitigated, not fixed, until the pull request that merges it is known. Images built for earlier evidence used unpinned bases.",
+      "workaround": "Not needed for new builds. Record the built image id with each run.",
       "cites": [
-        {"at": "deploy/docker/coordinator.Dockerfile:1", "text": "FROM python:3.12-slim"},
-        {"at": "deploy/docker/guard.Dockerfile:2", "text": "FROM python:3.12-slim"},
-        {"at": "deploy/docker/observer.Dockerfile:1", "text": "FROM python:3.12-slim"}
+        {"at": "deploy/docker/coordinator.Dockerfile:1", "text": "FROM python:3.12-slim@sha256:"},
+        {"at": "deploy/docker/guard.Dockerfile:2", "text": "FROM python:3.12-slim@sha256:"},
+        {"at": "deploy/docker/observer.Dockerfile:1", "text": "FROM python:3.12-slim@sha256:"},
+        {"at": "tests/test_supply_chain_pins.py:57", "text": "def test_every_base_image_is_pinned_by_digest"}
       ],
       "planned": ["P1.09"],
       "issues": [73]
@@ -313,7 +329,7 @@
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-12",
-      "impact": "Every bundle predates provenance stamping, so its source revision is a best guess. No bundle yet proves which commit produced it.",
+      "impact": "Every bundle predates provenance stamping, so its source revision is a best guess. Runs now stamp a provenance block, but no live run has produced a stamped bundle yet, so no bundle proves which commit produced it.",
       "workaround": "Quote each claim with its scope caveat, which says so.",
       "cites": [
         {"claim": "C-CONNECTED-HARNESS"},
@@ -377,8 +393,8 @@
       "impact": "A reconcile command could start a write instead of only inspecting a journaled one.",
       "workaround": "Not needed.",
       "cites": [
-        {"at": "runtime/executor_pipeline.py:180-181", "text": "A reconcile command may only inspect a journaled write, never start one."},
-        {"at": "tests/test_executor_integration.py:251", "text": "def test_reconcile_command_never_starts_a_write_when_the_journal_is_missing"}
+        {"at": "runtime/executor_pipeline.py:184", "text": "A reconcile command may only inspect a write, never start one."},
+        {"at": "tests/test_executor_integration.py:255", "text": "def test_reconcile_command_never_starts_a_write_when_the_journal_is_missing"}
       ],
       "planned": [],
       "issues": [61]
@@ -409,8 +425,8 @@
       "impact": "A failed agent run looked like a stalled one, and Ollama's own error text was discarded. The incident still stays OPEN; see L-AGENT-JOURNAL.",
       "workaround": "Not needed.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:219", "text": "Agent planning stopped; no repair proposed"},
-        {"at": "tests/test_live_agent.py:163", "text": "def test_unavailable_model_stops_visibly_without_a_proposal"}
+        {"at": "experiments/boutique/harness/agent_live.py:258", "text": "Agent planning stopped; no repair proposed"},
+        {"at": "tests/test_live_agent.py:164", "text": "def test_unavailable_model_stops_visibly_without_a_proposal"}
       ],
       "planned": [],
       "issues": [87]

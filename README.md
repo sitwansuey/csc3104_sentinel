@@ -124,14 +124,14 @@ Sentinel is a single-host prototype. This list is generated from
 and the code or evidence it cites, and CI fails when a citation stops resolving.
 
 <!-- BEGIN GENERATED:limitations-summary -->
-- [L-EXEC-WEDGE](docs/limitations.md#l-exec-wedge): A definite API rejection after a journaled write wedges the Executor in NEEDS_RECONCILIATION (defect, open; planned P1.10, P1.11)
-- [L-EXEC-REDELIVERY](docs/limitations.md#l-exec-redelivery): A replacement Executor without the ledger row reports CONFLICT for a write that was applied (defect, open; planned P1.10)
 - [L-CLOCK-ORDERING](docs/limitations.md#l-clock-ordering): Lifecycle ordering compares wall-clock timestamps written by different components (defect, open; planned P3.03)
 - [L-AGENT-JOURNAL](docs/limitations.md#l-agent-journal): Agent mode bypasses the durable Planner journal (defect, open; planned P2.01)
 - [L-AGENT-APPROVAL](docs/limitations.md#l-agent-approval): Live runs use pre-authorised lab approval, not an authenticated operator (defect, open; planned P2.02, P2.03)
 - [L-RAW-LOGS-PROMPT](docs/limitations.md#l-raw-logs-prompt): Raw container log text reaches the model (defect, open; planned P2.04)
-- [L-NO-LOGGING](docs/limitations.md#l-no-logging): No structured logging in services, runtime or agent, and broad except clauses drop the cause (defect, open; planned P1.07)
 - [L-OBSERVER-ZERO-REPLICAS](docs/limitations.md#l-observer-zero-replicas): A Deployment scaled to zero replicas is treated as healthy (defect, open; planned P5.07)
+- [L-EXEC-WEDGE](docs/limitations.md#l-exec-wedge): A write rejected with its resource version unchanged still waits in NEEDS_RECONCILIATION (defect, mitigated; planned P1.11, P2.06, P5.08)
+- [L-EXEC-REDELIVERY](docs/limitations.md#l-exec-redelivery): A replacement Executor without the ledger row reported CONFLICT for a write that was applied (defect, mitigated; planned P1.10, P3.01, P4.01)
+- [L-NO-LOGGING](docs/limitations.md#l-no-logging): Structured logs cover only the networked entrypoints, and no live run has collected them (defect, mitigated; planned P1.07, P3.02)
 - [L-SINGLE-COORDINATOR](docs/limitations.md#l-single-coordinator): The Coordinator is one process with one SQLite file (limitation, open; planned P3.06, P4.02, P5.01)
 - [L-HOST-LOCAL-EXECUTOR](docs/limitations.md#l-host-local-executor): The Executor ledger and target locks are host-local (limitation, open; planned P3.04)
 - [L-NO-FENCING](docs/limitations.md#l-no-fencing): No fencing of abandoned or revoked writes across hosts (limitation, open; planned P2.06, P3.04, P3.05)
@@ -139,14 +139,14 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-ONE-FAULT-ONE-ACTION](docs/limitations.md#l-one-fault-one-action): One fault type and one repair action (limitation, open; planned P2.08, P3.08, P3.09)
 - [L-NO-DIAGNOSIS-ACCURACY](docs/limitations.md#l-no-diagnosis-accuracy): No diagnosis-accuracy evaluation (limitation, open; planned P2.07, P4.04)
 - [L-OVERLAPPING-FAULTS](docs/limitations.md#l-overlapping-faults): Only one fault at a time has been verified (limitation, open; planned P4.05)
-- [L-MODEL-LATENCY](docs/limitations.md#l-model-latency): Model cold loads make agent planning slow and variable (limitation, open; planned P1.12)
 - [L-SECURITY-SHIPPING-ONLY](docs/limitations.md#l-security-shipping-only): The security lab protects only the shipping path (limitation, open; planned P4.06, P5.04, P5.05)
 - [L-UNGATED-CVES](docs/limitations.md#l-ungated-cves): Workload image CVEs raise alerts but gate nothing (limitation, open; planned P5.02, P5.03)
-- [L-UNPINNED-BASE-IMAGES](docs/limitations.md#l-unpinned-base-images): Sentinel component images use unpinned base image tags (limitation, open; planned P1.09)
 - [L-CHAOS-NOT-WIRED](docs/limitations.md#l-chaos-not-wired): Chaos Mesh faults are injection only, and HTTP and DNS faults do not run on this host (limitation, open; planned P4.03)
 - [L-EVIDENCE-INFERRED](docs/limitations.md#l-evidence-inferred): All committed evidence has inferred provenance (limitation, open; planned P1.01, P2.09)
 - [L-NO-RELEASE](docs/limitations.md#l-no-release): No tagged, scanned release image (limitation, open; planned P2.09, P2.10)
 - [L-LAB-CERTS](docs/limitations.md#l-lab-certs): Security lab certificates are two-day fixtures with no rotation (limitation, open; planned P5.06)
+- [L-MODEL-LATENCY](docs/limitations.md#l-model-latency): Model cold loads make agent planning slow and variable (limitation, mitigated; planned P1.12)
+- [L-UNPINNED-BASE-IMAGES](docs/limitations.md#l-unpinned-base-images): Sentinel component images used unpinned base image tags (limitation, mitigated; planned P1.09)
 
 8 fixed entries stay in the register as history.
 <!-- END GENERATED:limitations-summary -->
