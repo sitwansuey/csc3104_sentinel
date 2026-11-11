@@ -69,6 +69,15 @@ def names_target(component, name):
             and all(part.isascii() and part.isalnum() for part in parts))
 
 
+def planning_budget(config):
+    """The validated planning_budget_seconds of an agent config; ValueError if unusable."""
+    budget = config.get("planning_budget_seconds", DEFAULT_BUDGET_SECONDS)
+    if (type(budget) not in (int, float) or not math.isfinite(budget)
+            or not 0 < budget <= 86400 - LEASE_MARGIN_SECONDS):
+        raise ValueError("planning_budget_seconds must be positive and leave room for the lease margin")
+    return budget
+
+
 def _model_error(error):
     """The planning error code for a model or agent failure."""
     if isinstance(error, PlanningBudgetExceeded):
@@ -95,10 +104,7 @@ class AgentPlanner:
 
     def __init__(self, config, *, folder, baseline, telemetry, deployment_reader,
                  llm_factory=_ollama, progress=None, clock=time.monotonic, lease_seconds=None):
-        budget = config.get("planning_budget_seconds", DEFAULT_BUDGET_SECONDS)
-        if (type(budget) not in (int, float) or not math.isfinite(budget)
-                or not 0 < budget <= 86400 - LEASE_MARGIN_SECONDS):
-            raise ValueError("planning_budget_seconds must be positive and leave room for the lease margin")
+        budget = planning_budget(config)
         lease = budget + LEASE_MARGIN_SECONDS if lease_seconds is None else lease_seconds
         if type(lease) not in (int, float) or not lease >= budget + LEASE_MARGIN_SECONDS:
             raise ValueError(f"lease_seconds must exceed planning_budget_seconds by at least "

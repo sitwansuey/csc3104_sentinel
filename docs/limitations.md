@@ -70,7 +70,7 @@ the fix and regenerate.
 
 - Impact: Agent mode records a pre-authorised approval and the harness approves in code. The authenticated approval service exists but no live run uses it, so no evidence shows a person deciding.
 - Workaround: Treat every live result as lab approval. Use the authenticated approval service only with explicit Guard/Executor wiring (docs/approvals.md).
-- Evidence: `experiments/boutique/harness/agent_live.py:219`; `experiments/recovery/live.py:327`; claim `C-CONNECTED-HARNESS`.
+- Evidence: `experiments/boutique/harness/agent_live.py:222`; `experiments/recovery/live.py:327`; claim `C-CONNECTED-HARNESS`.
 
 ### L-RAW-LOGS-PROMPT
 
@@ -110,7 +110,7 @@ the fix and regenerate.
 
 - Impact: Fixed in code: agent planning now runs through prepare() and the PlannerStore journal. A model failure is retried up to three times; an abstention, a diagnosis of another component, a NO_ACTION answer or a target changed during inference ends at once. Every failure ends in a saved, delivered ESCALATE, so the incident moves to NEEDS_REVIEW, and a saved proposal replays without another model call. Still open: the planning budget applies per attempt, so one incident can use three budgets, and the remote Planner worker has no agent mode. Live verification pending: no agent run has used the journal yet, and every committed agent bundle predates it, so those failed runs left the incident OPEN.
 - Workaround: For runs recorded before this change, read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.
-- Evidence: `experiments/boutique/harness/agent_live.py:207`; `services/planner/worker.py:133`; `services/planner/worker.py:146`; `tests/test_agent_journal.py:199`; `tests/test_agent_journal.py:273`; `docs/planner.md`; claim `C-AGENT-FAIL-CLOSED`.
+- Evidence: `experiments/boutique/harness/agent_live.py:210`; `services/planner/worker.py:133`; `services/planner/worker.py:146`; `tests/test_agent_journal.py:199`; `tests/test_agent_journal.py:273`; `docs/planner.md`; claim `C-AGENT-FAIL-CLOSED`.
 
 ### L-NO-LOGGING
 
@@ -230,7 +230,7 @@ the fix and regenerate.
 
 - Impact: Incident-to-repair time in agent mode had a long tail (docs/results.md). The two measured cold calls took up to 41 s with model loads up to 26 s, and one 356 s decision stage holds only 53 s of recorded model calls, so its cause is not established. Fixed in code, live verification pending: each model call now has an overall deadline, a response size cap, no redirects or proxies and a schema check; agent mode runs a preflight and a warm-up call before any fault is injected and records model-runtime.json; keep_alive is configurable. The per-call timeout still defaults to 300 s. No agent run has been repeated since, so the tail with warm-up is unmeasured.
 - Workaround: Keep the model warm with keep_alive and check the warm-up load time in model-runtime.json after each run.
-- Evidence: `agent/llm.py:285`; `agent/llm.py:455`; `experiments/boutique/harness/agent_live.py:151`; `tests/test_llm_transport.py`.
+- Evidence: `agent/llm.py:285`; `agent/llm.py:455`; `experiments/boutique/harness/agent_live.py:154`; `tests/test_llm_transport.py`.
 
 ### L-UNPINNED-BASE-IMAGES
 
@@ -270,7 +270,7 @@ the fix and regenerate.
 
 - Impact: A failed agent run looked like a stalled one, and Ollama's own error text was discarded. The incident also stayed OPEN until agent planning moved into the journal; see L-AGENT-JOURNAL.
 - Workaround: Not needed.
-- Evidence: `experiments/boutique/harness/agent_live.py:244`; `tests/test_live_agent.py:238`.
+- Evidence: `experiments/boutique/harness/agent_live.py:247`; `tests/test_live_agent.py:238`.
 
 ### L-CHAOS-SCENARIOS
 

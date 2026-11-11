@@ -426,6 +426,16 @@ class ModelPreflightTests(unittest.TestCase):
     def test_invalid_model_config_stops_before_inject_fault(self):
         self.assert_stopped_before_injection("preflight", "base_url", base_url="http://ollama.example:11434")
 
+    def test_invalid_planning_budget_stops_before_inject_fault_without_a_model_call(self):
+        base = self.root
+        for number, budget in enumerate((0, -1, "600", 86400)):
+            with self.subTest(budget=budget):
+                self.root = base / str(number)  # one run folder per case
+                self.root.mkdir()
+                self.assert_stopped_before_injection("preflight", "planning_budget_seconds",
+                                                     planning_budget_seconds=budget)
+                self.assertEqual(self.server.paths(), [])
+
     def test_ready_model_records_runtime_before_cluster_preparation(self):
         experiment = self.experiment()
         def cluster_prepare(_self=None):

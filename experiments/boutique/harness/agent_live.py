@@ -8,7 +8,7 @@ import pandas as pd
 from agent.llm import Ollama
 from services.rca.core import DEFAULT_CONFIG
 from services.guard.common import json_sha256
-from services.planner.agent_provider import AgentPlanner, names_target
+from services.planner.agent_provider import AgentPlanner, names_target, planning_budget
 from services.planner.store import PlannerStore
 from experiments.boutique.harness.durable_case import run_durable_case
 from experiments.recovery.live import require, save
@@ -147,7 +147,10 @@ class AgentPlanningMixin:
         stage = "preflight"
         started = time.monotonic()
         try:
-            llm = Ollama(self.load_agent_config())
+            config = self.load_agent_config()
+            # The Planner would refuse a bad budget only after the fault is injected.
+            planning_budget(config)
+            llm = Ollama(config)
             llm.preflight()
             stage = "warm_up"
             warm_up = llm.warm_up()

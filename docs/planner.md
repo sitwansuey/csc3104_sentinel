@@ -107,7 +107,7 @@ true` on a trusted network (for example a worker container). Optional settings:
 | `max_model_calls` | 32 | Model requests per planning task, retries included. Further calls fail. A planner worker resets the count for each incident. |
 | `keep_alive` | not sent | How long Ollama keeps the model loaded, as seconds or a duration such as `"30m"`. |
 | `warm_up_timeout_seconds` | `timeout` | Limit for the warm-up request. |
-| `planning_budget_seconds` | 600 | Agent mode: wall-clock limit for one planning attempt (diagnosis and Recovery Planner). No new agent round or model call starts after it, and no call starts with less than 5 s left. The attempt's journal lease is this plus 60 s. |
+| `planning_budget_seconds` | 600 | Agent mode: wall-clock limit for one planning attempt (diagnosis and Recovery Planner). No new agent round or model call starts after it, and no call starts with less than 5 s left. The attempt's journal lease is this plus 60 s. The live harness rejects an invalid value before any fault is injected. |
 
 Replies must be `application/json`. The model's answer must be a JSON object of
 at most 256 KiB that matches the requested schema; the schema is checked again
