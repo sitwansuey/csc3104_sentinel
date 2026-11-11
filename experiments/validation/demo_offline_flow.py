@@ -1,4 +1,9 @@
-"""Six real components; explicitly fake Kubernetes, health readings and provider."""
+"""Six real components; explicitly fake Kubernetes, health readings and provider.
+
+Planning goes through the durable Planner journal (PlannerStore) rather than the
+legacy non-journalled path. Crash replay and bounded retries are proven by
+tests/test_planner_pipeline.py; this demo shows the journalled happy path.
+"""
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
@@ -17,6 +22,7 @@ from services.executor.core import ExecutionAdapters
 from services.executor.store import SQLiteExecutionLedger, LocalTargetCoordinator
 from services.observer.core import detect
 from services.planner.core import retrieve_runbooks, mock_provider
+from services.planner.store import PlannerStore
 from services.verifier.core import inspect_dependencies
 from services.verifier.store import VerificationStore
 from tests.support.executor_fake import FakeDeploymentAPI
@@ -41,8 +47,23 @@ class OfflineFlow:
             approval_reader=lambda p: self.store.approval(p['action_id']))
         self.adapters = ExecutionAdapters(ledger=self.ledger, coordination=LocalTargetCoordinator(self.path / 'locks'),
             cluster=self.cluster, authorizer=self.authorizer, clock=lambda: self.now)
+        # Opened on first use so callers that bring their own journal are unaffected.
+        self.planner = None
+        self.provider_calls = 0
+
+    def provider(self, context):
+        self.provider_calls += 1
+        return mock_provider(context)
+
+    def plan(self):
+        if self.planner is None:
+            self.planner = PlannerStore(self.path / 'planner-journal.db', clock=lambda: self.now)
+        return process_planner_requests(self.store, self.bus, baseline_reader=lambda incident: [self.baseline],
+            retriever=retrieve_runbooks, provider=self.provider, journal=self.planner)
 
     def close(self):
+        if self.planner is not None:
+            self.planner.close()
         self.verification.close()
         self.ledger.close()
         self.store.close()
@@ -53,12 +74,14 @@ class OfflineFlow:
         self.store.close()
         self.bus = LocalEventBus()
         self.store = SQLiteStore(self.path / 'coordinator.db', clock=lambda: self.now)
+        if self.planner is not None:
+            self.planner.close()
+            self.planner = PlannerStore(self.path / 'planner-journal.db', clock=lambda: self.now)
 
     def prepare(self):
         self.incident = detect(fixture('observations.json')['failed-rollout'], self.policy)
         handle(self.incident, self.store, self.bus)
-        self.proposal = process_planner_requests(self.store, self.bus,
-            baseline_reader=lambda incident: [self.baseline], retriever=retrieve_runbooks, provider=mock_provider)[0]
+        self.proposal = self.plan()[0]
         handle(inspect_dependencies(self.proposal, self.graph, self.cluster.read(self.proposal['target']), now=self.now), self.store, self.bus)
 
     def guard(self):
@@ -94,6 +117,11 @@ def demonstrate():
             flow.prepare()
             flow.authorize()
             flow.restart()
+            # After a restart the delivered request is not planned again.
+            assert flow.plan() == []
+            assert flow.provider_calls == 1
+            saved = flow.planner.get(flow.incident['incident_id'])
+            assert saved['proposal'] == flow.proposal and saved['delivered'] and saved['attempts'] == 1
             flow.execute()
             assert flow.state() == 'VERIFYING'
             flow.now = datetime(2026, 10, 10, 12, 0, 50, tzinfo=timezone.utc)
@@ -106,6 +134,7 @@ def demonstrate():
             assert len(flow.cluster.writes) == 1
             print(json.dumps({'mode': 'offline_fake_infrastructure_mock_provider',
                 'components': ['Observer', 'Planner', 'Coordinator', 'Guard', 'Executor', 'Verifier'],
+                'planner': 'durable journal', 'provider_calls': flow.provider_calls,
                 'status': flow.state(), 'writes': len(flow.cluster.writes), 'restart': 'passed'}))
         finally:
             flow.close()

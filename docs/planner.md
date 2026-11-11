@@ -128,9 +128,10 @@ The local worker API accepts a `services.planner.store.PlannerStore` through
 `lease_seconds` configure those bounds. The caller must enforce a provider
 timeout shorter than the lease. Multiple connections on one host share the
 journal lease; SQLite is not a cross-host ownership service. Existing callers
-without a journal retain the synchronous exception-and-retry interface used by
-the original offline demonstrations. The separate `-Agent` experiment does not
-yet use this journal for its internal RCA/model phases.
+without a journal retain the synchronous exception-and-retry interface. The
+offline demonstration (`experiments/validation/demo_offline_flow.py`) plans
+through the journal. The separate `-Agent` experiment does not yet use this
+journal for its internal RCA/model phases.
 
 ## Acceptance and limits
 
