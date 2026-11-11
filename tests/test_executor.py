@@ -606,6 +606,14 @@ class PendingWrite(FakeDeploymentAPI):
         return FakeDeploymentAPI.conditional_restore(self, **self.pending)
 
 
+class FenceForbidden(PendingWrite):
+    """Every fence is refused with an unclear error, as RBAC or admission would."""
+
+    def fence(self, **kwargs):
+        self.fence_attempts.append(deepcopy(kwargs))
+        raise WriteOutcomeUnknown("Live write returned an error; reconcile its outcome")
+
+
 class FencedAbortTests(unittest.TestCase):
     """A write still in doubt with UID and version unchanged is resolved by a metadata-only fence."""
 
@@ -627,10 +635,10 @@ class FencedAbortTests(unittest.TestCase):
         self.now += timedelta(seconds=seconds)
         return reconcile(deepcopy(self.proposal), self.adapters(**changes))
 
-    def in_doubt(self, cluster_type=PendingWrite):
+    def in_doubt(self, cluster_type=PendingWrite, **changes):
         self.now = NOW
         cluster = cluster_type(self.fixtures["live_state"], clock=lambda: self.now)
-        result = self.run_action(cluster=cluster)
+        result = self.run_action(cluster=cluster, **changes)
         self.assertEqual((result["status"], basis(result)), ("NEEDS_RECONCILIATION", "UNCHANGED_IN_DOUBT"))
         self.assertEqual(cluster.fence_attempts, [])  # The attempt's own first check never fences.
         return cluster
@@ -837,12 +845,29 @@ class FencedAbortTests(unittest.TestCase):
                 self.assertEqual(result["status"], "SUPERSEDED")
                 self.assertEqual(cluster.fence_attempts, [])
 
-    def test_rejected_fence_escalates_once_without_a_busy_loop(self):
-        class FenceForbidden(PendingWrite):
-            def fence(api, **kwargs):
-                api.fence_attempts.append(deepcopy(kwargs))
-                raise WriteOutcomeUnknown("Live write returned an error; reconcile its outcome")
+    def test_zero_settle_delay_never_fences_inside_the_attempt_and_fences_on_the_next_pass(self):
+        cluster = self.in_doubt(fence_after_seconds=0.0)
+        self.assertEqual(self.ledger.fences(self.proposal["action_id"]), [])
+        self.assertEqual(len(cluster.write_attempts), 1)
+        result = self.pass_after(0, cluster=cluster, fence_after_seconds=0.0)
+        self.assertEqual((result["status"], basis(result)), ("CONFLICT", "FENCED"))
+        self.assertEqual(len(cluster.fence_attempts), 1)
+        with self.assertRaises(ConditionalWriteConflict):
+            cluster.replay()
 
+    def test_zero_settle_delay_still_spaces_failing_fences_by_the_retry_interval(self):
+        cluster = self.in_doubt(FenceForbidden, fence_after_seconds=0.0)
+        results = [self.pass_after(10, cluster=cluster, fence_after_seconds=0.0) for _ in range(30)]  # 5 minutes.
+        self.assertEqual({result["status"] for result in results}, {"NEEDS_RECONCILIATION"})
+        self.assertLessEqual(len(cluster.fence_attempts), 300 // 30 + 1)  # Not one per pass.
+        self.assertGreaterEqual(len(cluster.fence_attempts), 2)
+        started = [datetime.fromisoformat(fence["started_at"].replace("Z", "+00:00"))
+                   for fence in self.ledger.fences(self.proposal["action_id"])]
+        self.assertEqual(len(started), len(cluster.fence_attempts))  # Each attempt journaled first.
+        gaps = [(started[i + 1] - started[i]).total_seconds() for i in range(len(started) - 1)]
+        self.assertGreaterEqual(min(gaps), 30)
+
+    def test_rejected_fence_escalates_once_without_a_busy_loop(self):
         cluster = self.in_doubt(FenceForbidden)
         results = [self.pass_after(10, cluster=cluster) for _ in range(90)]  # 15 minutes of 10 s passes.
         self.assertEqual({result["status"] for result in results}, {"NEEDS_RECONCILIATION"})
