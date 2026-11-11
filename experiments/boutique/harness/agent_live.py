@@ -1,6 +1,7 @@
 """Real RCA and model planning for the existing guarded Boutique recovery path."""
 import csv
 import json
+import time
 from datetime import datetime, timedelta, timezone
 import pandas as pd
 
@@ -117,6 +118,9 @@ class AgentPlanningMixin:
         if self.agent_config:
             config.update(json.loads(self.agent_config.read_text(encoding="utf-8")))
         config["allow_abstention"] = True
+        # Record the planning mode up front so a failed run is still identifiable.
+        self.summary.update(planning="Live RCA agent and Ollama Recovery Planner", model=config["model"],
+                            scope="Online Boutique shippingservice; real Observer/Coordinator/Agent/Guard/Executor/Verifier")
         def progress(update):
             # This stream is safe operational metadata: never raw prompts,
             # application logs, generated text or hidden model reasoning.
@@ -163,17 +167,32 @@ class AgentPlanningMixin:
                     "diagnosis": {k: v for k, v in context["diagnosis"].items() if k != "workspace"}}, default=str))
             return llm.ask("Recovery Planner", prompt, schema)
 
+        started = time.monotonic()
         try:
-            proposal = propose_from_telemetry(incident, [self.baseline], telemetry,
-                                               folder / "agent", provider, config=config, llm=llm, progress=progress)
-        finally:
-            save(folder / "model-calls.json", llm.calls)
-        save(folder / "model-proposal.json", proposal)
-        require(proposal["action"] == "ROLLBACK", "Agent did not propose a supported rollback: " + proposal["action"])
-        current = self.deployment()
-        require(current["metadata"]["uid"] == before["metadata"]["uid"]
-                and current["spec"]["template"] == before["spec"]["template"],
-                "Target changed during model investigation; fresh diagnosis required")
+            try:
+                proposal = propose_from_telemetry(incident, [self.baseline], telemetry,
+                                                   folder / "agent", provider, config=config, llm=llm,
+                                                   progress=progress)
+            finally:
+                save(folder / "model-calls.json", llm.calls)
+            save(folder / "model-proposal.json", proposal)
+            require(proposal["action"] == "ROLLBACK", "Agent did not propose a supported rollback: " + proposal["action"])
+            current = self.deployment()
+            require(current["metadata"]["uid"] == before["metadata"]["uid"]
+                    and current["spec"]["template"] == before["spec"]["template"],
+                    "Target changed during model investigation; fresh diagnosis required")
+        except Exception as error:
+            # No proposal reaches Guard or Executor. Record one clear stop on the
+            # dashboard and in summary.json instead of only on stderr.
+            reason = " ".join(str(error).split())[:500]
+            completed = sum(call.get("status") == "completed" for call in llm.calls)
+            self.summary.update(agent_model_calls=len(llm.calls), agent_failure={
+                "error": type(error).__name__ + ": " + reason, "model_calls_completed": completed,
+                "model_attempts": len(llm.calls), "seconds": round(time.monotonic() - started, 1)})
+            self.event(3, "error", "Agent planning stopped; no repair proposed: " + reason[:300],
+                       target=self.target, incident_id=incident["incident_id"],
+                       progress={"stage": "planning", "status": "failed"})
+            raise
         # Status updates can change RV during inference. Bind the proposal to a fresh read;
         # Guard and Executor still independently re-read and enforce their normal checks.
         proposal["based_on_resource_version"] = current["metadata"]["resourceVersion"]
@@ -183,9 +202,7 @@ class AgentPlanningMixin:
             key: value for key, value in proposal.items() if key != "action_id"})[:24]
         save(folder / "model-proposal.json", proposal)
         save(folder / "planning-state.json", current)
-        self.summary.update(planning="Live RCA agent and Ollama Recovery Planner", model=config["model"],
-                            scope="Online Boutique shippingservice; real Observer/Coordinator/Agent/Guard/Executor/Verifier",
-                            agent_model_calls=len(llm.calls), operator_approval="pre-authorized local E2E test")
+        self.summary.update(agent_model_calls=len(llm.calls), operator_approval="pre-authorized local E2E test")
         self.event(3, "status", "Agent proposed " + proposal["action"], target=self.target,
                    incident_id=incident["incident_id"], action_id=proposal["action_id"],
                    progress={"stage": "proposal", "status": "completed"})

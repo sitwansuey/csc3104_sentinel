@@ -3,9 +3,25 @@ import json
 import time
 import threading
 import math
+import urllib.parse
 import urllib.request
 import urllib.error
 from .progress import notify
+
+
+def _error_detail(error):
+    """Ollama's own reason from a bounded read of an HTTP error body."""
+    try:
+        body = error.read(2048)
+    except Exception:
+        return ""
+    finally:
+        error.close()
+    try:
+        detail = json.loads(body).get("error", "")
+    except (ValueError, AttributeError):
+        detail = body.decode("utf-8", "replace")
+    return " ".join(str(detail).split())[:300]
 
 
 class Ollama:
@@ -29,6 +45,7 @@ class Ollama:
                         "num_ctx": self.config.get("num_ctx", 16384),
                         "num_predict": self.config.get("num_predict", 2048)},
         }
+        host = urllib.parse.urlsplit(self.config["base_url"]).netloc.rpartition("@")[2]
         last_error = None
         for attempt in range(2):
             started = time.monotonic()
@@ -64,9 +81,10 @@ class Ollama:
                 call["status"] = "completed"
                 return result
             except (urllib.error.URLError, TimeoutError, ValueError, KeyError) as exc:
-                if isinstance(exc, urllib.error.HTTPError):
-                    exc.close()
                 last_error = exc
+                if isinstance(exc, urllib.error.HTTPError):
+                    detail = _error_detail(exc)  # Also closes the response.
+                    last_error = f"HTTP {exc.code} {exc.reason}" + (f": {detail}" if detail else "")
                 call.update(status="failed", error_type=type(exc).__name__)
                 # Repeating a deterministic truncated/invalid response with the
                 # same prompt and seed only adds another full inference delay.
@@ -85,4 +103,4 @@ class Ollama:
             if attempt == 0:
                 notify(self.progress, {**call, "stage": "model", "status": "retrying"})
                 time.sleep(1)
-        raise RuntimeError(f"Ollama {role} failed for {model}: {last_error}")
+        raise RuntimeError(f"Ollama {role} failed for {model} at {host}: {last_error}")
