@@ -6,10 +6,7 @@ import json
 import sqlite3
 
 from services.verifier.core import VerifierInputError, verify
-
-
-def _json(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+from shared.canonical import canonical_json as _json
 
 
 def _utc(value):

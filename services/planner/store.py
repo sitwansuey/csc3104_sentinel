@@ -11,9 +11,7 @@ import math
 import secrets
 import sqlite3
 
-
-def _json(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+from shared.canonical import canonical_json as _json
 
 
 class PlannerStore:

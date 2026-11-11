@@ -90,6 +90,10 @@ stage-measured shopping traffic. Its public Coordinator reader opens an existing
 database read-only without creating/migrating it. Source freshness and formal
 incident outcome remain separate. Schema/ownership details live beside each
 role's implementation; shared wire contracts remain in `shared/contracts.py`.
+The one canonical JSON encoding and SHA-256 digest that bind proposals,
+templates and decisions across roles live in `shared/canonical.py`. Golden
+vectors in `tests/test_canonical.py` freeze its output, and
+`tests/test_no_duplicate_canonical.py` fails if a copy appears elsewhere.
 
 ## Dashboard response contract
 

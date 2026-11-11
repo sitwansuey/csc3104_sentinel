@@ -3,9 +3,9 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from copy import deepcopy
-import hashlib
 import json
 
+from shared.canonical import sha256_hex
 from shared.contracts import ContractError, validate_message
 from services.observer.telemetry import TelemetryError, validate_context
 
@@ -593,12 +593,9 @@ def _stable_id(prefix, *parts) -> str:
 
 def _json_sha256(value) -> str:
     try:
-        canonical = json.dumps(
-            value, sort_keys=True, separators=(",", ":"), allow_nan=False
-        ).encode("utf-8")
+        return sha256_hex(value)
     except (TypeError, ValueError) as exc:
         raise ObservationError("observation: expected JSON-serializable content") from exc
-    return hashlib.sha256(canonical).hexdigest()
 
 
 def _format_timestamp(value: datetime) -> str:

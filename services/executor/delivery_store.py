@@ -4,6 +4,8 @@ Call mutations within the Coordinator transaction; this table is audit evidence.
 """
 import json
 
+from shared.canonical import canonical_json
+
 
 def _ensure_reviews(store):
     store.db.execute("""
@@ -18,7 +20,7 @@ def _ensure_reviews(store):
 
 def _record_review(store, event_id, result, reason):
     action = store.action(result["action_id"])
-    encoded = json.dumps(result, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    encoded = canonical_json(result)
     guard = json.dumps(action["guard_result"], sort_keys=True) if action else None
     store.db.execute(
         "INSERT OR IGNORE INTO executor_delivery_reviews"

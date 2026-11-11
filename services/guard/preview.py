@@ -9,7 +9,6 @@ mapping and must still obtain fresh Guard validation before actual execution.
 
 from copy import deepcopy
 from datetime import datetime, timezone
-import json
 import os
 from pathlib import Path
 import subprocess
@@ -19,6 +18,7 @@ from services.guard.core import GuardInputError, proposal_fingerprint, template_
 from services.guard.adapters import (
     AdapterError, KUBECTL_TIMEOUT_SECONDS, _DNS_LABEL, _DNS_SUBDOMAIN, _parse_json,
 )
+from shared.canonical import canonical_json
 from shared.contracts import ContractError
 
 
@@ -143,7 +143,7 @@ def server_dry_run(proposal: dict, live_state: dict, baseline: dict, *,
         patch_path = Path(path)
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
             _private_file(patch_path)
-            json.dump(patch, stream, sort_keys=True, separators=(",", ":"), allow_nan=False)
+            stream.write(canonical_json(patch))
         command.extend(["patch", "deployment", name, "--type=json", "--patch-file",
                         str(patch_path), "--dry-run=server", "--output=json"])
         result = subprocess.run(command, capture_output=True, check=False,

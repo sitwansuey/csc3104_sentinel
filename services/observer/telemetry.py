@@ -14,6 +14,8 @@ from pathlib import Path
 import re
 import sqlite3
 
+from shared.canonical import canonical_json as encoded
+
 MAX_RECORDS = 1000
 SIGNALS = {"traces": ("resourceSpans", "scopeSpans", "spans"),
            "logs": ("resourceLogs", "scopeLogs", "logRecords"),
@@ -25,10 +27,6 @@ ATTRIBUTES = {"http.request.method", "http.response.status_code", "http.status_c
 
 class TelemetryError(ValueError):
     pass
-
-
-def encoded(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
 def stamp(value):

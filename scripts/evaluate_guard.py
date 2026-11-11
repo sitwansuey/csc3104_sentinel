@@ -124,7 +124,8 @@ def provenance(cases_path):
         completed = subprocess.run(["git", *arguments], cwd=ROOT, capture_output=True,
                                    text=True, timeout=10, check=True)
         return completed.stdout.strip()
-    paths = [ROOT / "scripts/evaluate_guard.py", ROOT / "shared/contracts.py", Path(cases_path)]
+    paths = [ROOT / "scripts/evaluate_guard.py", ROOT / "shared/contracts.py", ROOT / "shared/canonical.py",
+             Path(cases_path)]
     paths += sorted((ROOT / "services/guard").glob("*.py"))
     sources = {(path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else "case_suite.json"):
                hashlib.sha256(path.read_bytes()).hexdigest()
