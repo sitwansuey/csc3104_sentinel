@@ -16,10 +16,15 @@ def _decode(row, fields):
 
 
 def read_records(path, *, limit=600):
-    """Return incidents, actions, messages, approvals, routes and Guard reports."""
+    """Return incidents, actions, messages, approvals, routes, Guard reports and transitions.
+
+    Transitions are the newest lifecycle changes, newest first. A database made
+    before the transitions journal existed returns an empty list.
+    """
     if type(limit) is not int or not 1 <= limit <= 600:
         raise ValueError("Read limit must be an integer between 1 and 600")
-    result = {key: [] for key in ('incidents', 'actions', 'messages', 'approvals', 'outbox', 'reports')}
+    result = {key: [] for key in ('incidents', 'actions', 'messages', 'approvals', 'outbox', 'reports',
+                                  'transitions')}
     db = sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True, timeout=1)
     try:
         db.row_factory = sqlite3.Row
@@ -43,6 +48,10 @@ def read_records(path, *, limit=600):
         if db.execute("SELECT 1 FROM sqlite_master WHERE name='guard_reports'").fetchone():
             result["reports"] = [json.loads(row[0]) for row in db.execute(
                 "SELECT report FROM guard_reports ORDER BY rowid DESC LIMIT ?", (limit,))]
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='transitions'").fetchone():
+            result["transitions"] = [dict(row) for row in db.execute(
+                "SELECT seq,incident_id,action_id,from_state,to_state,cause,outbox_high_water,recorded_at "
+                "FROM transitions ORDER BY seq DESC LIMIT ?", (limit,))]
         return result
     finally:
         db.close()

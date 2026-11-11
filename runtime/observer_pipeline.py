@@ -167,11 +167,5 @@ class LocalCoordinatorSink:
 
     def __call__(self, incident):
         from services.coordinator.core import SQLiteStore, record_message
-        with SQLiteStore(self.path) as store:
-            store.db.execute("BEGIN IMMEDIATE")
-            try:
-                record_message(incident, store)
-                store.db.execute("COMMIT")
-            except BaseException:
-                store.db.execute("ROLLBACK")
-                raise
+        with SQLiteStore(self.path) as store, store.transaction():
+            record_message(incident, store)

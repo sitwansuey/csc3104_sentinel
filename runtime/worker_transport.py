@@ -18,6 +18,19 @@ TOPICS = {"planner": {"planner.request": "proposal"},
 INGRESS = {"observer": "incident", "verifier": "dependency_result"}
 
 
+def delivery_ids(delivery):
+    """Correlation IDs of a delivery for log lines; never its lease token or payload."""
+    if not isinstance(delivery, dict):
+        return {}
+    payload = delivery.get("payload") if isinstance(delivery.get("payload"), dict) else {}
+    source = next((payload[key] for key in ("proposal", "execution", "incident")
+                   if isinstance(payload.get(key), dict)), {})
+    ids = {"delivery_id": delivery.get("delivery_id"), "event_id": delivery.get("event_id"),
+           "topic": delivery.get("topic"), "attempt": delivery.get("attempt"),
+           "action_id": source.get("action_id"), "incident_id": source.get("incident_id")}
+    return {key: value for key, value in ids.items() if value is not None}
+
+
 class Delivery:
     def __init__(self, store, *, clock=time.time, lease_seconds=30, retention_seconds=86400,
                  dependency_requests=False):
@@ -40,6 +53,7 @@ class Delivery:
     def transaction(self):
         db = self.store.db
         db.execute("BEGIN IMMEDIATE")
+        self.store.discard_after_commit()
         try:
             now = self.clock()
             # Apply the Coordinator's existing revocation rules before exposing work.
@@ -60,7 +74,9 @@ class Delivery:
             db.execute("COMMIT")
         except BaseException:
             db.execute("ROLLBACK")
+            self.store.discard_after_commit()  # Rolled-back transitions are never logged.
             raise
+        self.store.run_after_commit()
 
     def claim(self, identity, role):
         topics = TOPICS.get(role)
@@ -94,7 +110,7 @@ class Delivery:
                 payload["approval"] = None
             return {"delivery": {"delivery_id": receipt["delivery_id"], "lease_token": token,
                     "expires_at": expires, "attempt": receipt["attempts"] + 1, "topic": row["topic"],
-                    "payload": payload}}
+                    "event_id": row["id"], "payload": payload}}
 
     def dependencies(self, role, proposal):
         if role not in {"guard", "executor"}:

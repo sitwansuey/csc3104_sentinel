@@ -90,6 +90,6 @@ class ApprovalAccess:
             record = {"approval_id": row["id"], "action_id": body["action_id"], "operator_id": identity,
                       "revoked_at": self.store.now(), "reason": body["reason"]}
             self.store.db.execute("INSERT INTO approval_revocations VALUES(?,?)", (row["id"], _json(record)))
-            self.store.set_state(action["incident_id"], body["action_id"], "VALIDATING")
+            self.store.set_state(action["incident_id"], body["action_id"], "VALIDATING", cause="revocation")
             self.store.enqueue("guard.request", {"proposal": action["proposal"], "approval": None}, body["action_id"])
             return {"revocation": record}

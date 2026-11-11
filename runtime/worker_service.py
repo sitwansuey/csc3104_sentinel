@@ -12,6 +12,9 @@ import threading
 from runtime.remote_adapters import ExecutorAdapter, GuardAdapter, OllamaProvider, PlannerAdapter, VerifierAdapter
 from runtime.remote_worker import RemoteWorker, WorkerJournal
 from runtime.worker_http import WorkerClient
+from shared import log
+
+LOG = log.get_logger("worker_service")
 
 
 def read_json(path):
@@ -94,6 +97,15 @@ def adapter(config, directory, stack):
         dependency_reader=authorizer.dependency_reader, approval_reader=approval, authorizer=authorizer)
 
 
+def report(status, error=None):
+    """Log one polling pass. Idle passes are DEBUG to keep 2 s polling quiet."""
+    level = log.WARNING if error is not None else log.DEBUG if status["status"] == "idle" else log.INFO
+    log.emit(LOG, "worker.status", level=level, status=status["status"], replay=status.get("replay"),
+             error_type=type(error).__name__ if error is not None else None,
+             **{key: status.get(key) for key in ("delivery_id", "event_id", "topic", "action_id", "incident_id")})
+
+
+@log.entrypoint("worker_service")
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path, help="Trusted JSON; secret values stay in environment")
@@ -118,19 +130,24 @@ def main(argv=None):
                 for sig in (signal.SIGINT, signal.SIGTERM):
                     previous[sig] = signal.signal(sig, lambda *_: stopping.set())
             failures = 0
+            stack.enter_context(log.bind(identity=config.get("identity"), role=config.get("role")))
             while not stopping.is_set():
+                error = None
                 try:
                     status = worker.once()
                     failures = 0
-                except Exception as error:
+                except Exception as caught:
+                    error = caught
                     failures += 1
                     status = {"status": "retry", "error_code": type(error).__name__}
                 print(json.dumps(status), flush=True)
+                report({**worker.current, **status}, error)
                 if args.once:
                     return int(bool(failures))
                 stopping.wait(min(60, args.poll_seconds * 2 ** min(failures, 5)))
     except Exception as error:
         print(json.dumps({"status": "configuration_error", "error_code": type(error).__name__}), flush=True)
+        log.emit(LOG, "worker.configuration_error", level=log.ERROR, error_type=type(error).__name__)
         return 1
     finally:
         for sig, value in previous.items():

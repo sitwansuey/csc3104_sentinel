@@ -17,6 +17,7 @@ Role design lives beside the implementation: [Coordinator](../services/coordinat
 [Guard](../services/guard/README.md), [Executor](../services/executor/README.md)
 and [Verifier](../services/verifier/README.md).
 
-[Remote component workers](remote-workers.md), [worker transport](../runtime/README.md) and [GitHub automation](../.github/README.md)
+[Remote component workers](remote-workers.md), [logs and the transitions journal](observability.md),
+[worker transport](../runtime/README.md) and [GitHub automation](../.github/README.md)
 are developer references. Historical acceptance reports are retained in Git;
 new run artifacts belong in ignored output directories, not additional source guides.
