@@ -13,13 +13,20 @@ For the full protected Boutique lab, inspect help and use a fresh evidence path:
 
 ```powershell
 python scripts/security/boutique_security.py --help
-python scripts/security/boutique_security.py start --directory data/experimentation/runs/protected-boutique
+python scripts/security/boutique_security.py start --directory data/experimentation/runs/protected-boutique --exit-after-test
 python scripts/security/boutique_security.py test --directory data/experimentation/runs/protected-boutique
 python scripts/security/boutique_security.py stop --directory data/experimentation/runs/protected-boutique
 ```
 
-Run these steps separately. The script owns a dedicated Calico/kind lab with
-mTLS and inspected shipping traffic. The smaller `scripts/security/security_lab.py`
+Run these steps separately. Without `--exit-after-test`, `start` keeps serving
+the storefront and dashboard until stopped, and `test` would then fail because
+the default ports are taken; use `serve` to reopen the dashboard later, or give
+`test` other ports with `--storefront-port` and `--dashboard-port`. OpenSSL
+must be on PATH for certificate generation; if it fails to open an
+`openssl.cfg`, a stale `OPENSSL_CONF` environment variable is the usual cause.
+The script owns a dedicated Calico/kind lab with mTLS and inspected shipping
+traffic. Only the shipping path is protected: the other Boutique services keep
+their upstream plaintext connections and have no NetworkPolicy. The smaller `scripts/security/security_lab.py`
 supports `start`, `test` and `stop` too. Normal connected recovery does not
 install either overlay. Read each module's setup/ownership checks before use.
 

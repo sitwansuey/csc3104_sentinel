@@ -7,6 +7,18 @@ and host bootstrap remain for the smaller shipping-only harness experiment:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\demo-start.ps1
 ```
 
+Without flags the runner starts interactively (`docker run -it`) and pauses
+before each injection, so it needs a terminal. Options:
+
+| Flag | Effect |
+| --- | --- |
+| `-Unattended` | No terminal; run every scenario and exit after the checks |
+| `-UIControls` | Start the scenarios from the dashboard buttons instead (not with `-Unattended`) |
+| `-GuardRejection` | Run only the unnecessary-rollback rejection scenario |
+| `-KeepCluster` | Keep the dedicated cluster after the run |
+| `-Port <n>` | Dashboard port on 127.0.0.1 (default 8765) |
+| `-SkipBuild`, `-Offline` | Reuse an existing image; see the caution below |
+
 `deploy/docker/demo-runner.Dockerfile` builds the UI and a restricted non-root
 Python/kubectl runtime. `scripts/demo-start.ps1` builds/prepares the dedicated
 kind cluster, imports reviewed images, supplies temporary bootstrap credentials

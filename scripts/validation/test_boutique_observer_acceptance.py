@@ -2,6 +2,7 @@
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import sys
 import time
@@ -24,6 +25,10 @@ def main():
     argparse.ArgumentParser(description=__doc__).parse_args()
     directory = ROOT / 'data/sentinel/runs' / ('boutique-observer-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ-') + uuid4().hex[:6])
     lab = BoutiqueExperiment(directory)
+    # kind switches the current-context on create and clears it on delete. Keep
+    # those writes in this run's own kubeconfig, never the user's default file.
+    kubeconfig = directory / 'kubeconfig'
+    os.environ['KUBECONFIG'] = str(kubeconfig)
     policy = {'detection': {'failure_duration_seconds': 5, 'max_sample_gap_seconds': 45}}
     report = {'status': 'RUNNING', 'scope': 'real Online Boutique v0.10.7 shippingservice detection only', 'policy': policy}
     created, template = False, None
@@ -120,6 +125,7 @@ def main():
         finally:
             lab.store.close()
             lab.credentials.unlink(missing_ok=True)
+            kubeconfig.unlink(missing_ok=True)
             save(directory / 'summary.json', report)
 
 
