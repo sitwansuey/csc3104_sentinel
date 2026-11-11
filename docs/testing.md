@@ -224,6 +224,10 @@ end in `BUDGET_EXCEEDED`, and the run passes only on that escalation. (An
 unreachable `base_url` does not test this path: the preflight stops the run
 before any fault.) Collect the run with
 `scripts/evidence/collect.py --class agent` (see [evidence](../evidence/README.md)).
+An agent run that reaches planning records `expected_outcome` in
+`summary.json`. A passing `-Expect escalated` run is not a recovery: the
+agent-mode table in [results](results.md) counts it under "Not recovered" as
+an `expected escalation`. Do not cite it in a claim about recoveries.
 
 The committed runs so far, all on one fault type with pre-authorised lab
 approval, are claims `C-AGENT-WARM` (the latest consecutive runs),

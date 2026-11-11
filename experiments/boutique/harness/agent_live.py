@@ -177,6 +177,9 @@ class AgentPlanningMixin:
         proposal without another model call.
         """
         config = self.load_agent_config()
+        # The evidence summarizer reads this to keep an expected escalation out
+        # of the RECOVERED column, since both end with status PASS.
+        self.summary["expected_outcome"] = self.expect
         folder = self.directory / PLANNING_FOLDER
         folder.mkdir(exist_ok=True)
         planner = None

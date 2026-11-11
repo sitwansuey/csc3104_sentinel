@@ -206,8 +206,20 @@ def median_text(values):
     return f"{statistics.median(values):g}" if values else "n/a"
 
 
+def expected_escalation(bundle):
+    """True for an agent run that passed because planning escalated as asked (``--expect escalated``).
+
+    Such a run ends in NEEDS_REVIEW with zero writes, so it is never a recovery.
+    """
+    return outcome(bundle) == "PASS" and summary_of(bundle).get("expected_outcome") == "escalated"
+
+
 def agent_runs(bundles):
-    """Rows per source revision; every run is in the denominator."""
+    """Rows per source revision; every run is in the denominator.
+
+    RECOVERED counts PASS runs that expected a recovery. An expected escalation
+    counts as not recovered, labelled as such.
+    """
     groups = {}
     for bundle in bundles:
         if bundle.run_class == "agent":
@@ -217,15 +229,18 @@ def agent_runs(bundles):
     for (revision, provenance), members in sorted(groups.items(), key=lambda item: min(
             b.entry.get("captured_at") or "" for b in item[1])):
         outcomes = [outcome(b) for b in members]
+        recovered = [b for b, result in zip(members, outcomes) if result == "PASS" and not expected_escalation(b)]
         failures = {}
         for bundle, result in zip(members, outcomes):
-            if result != "PASS":
+            if expected_escalation(bundle):
+                failures["expected escalation"] = failures.get("expected escalation", 0) + 1
+            elif result != "PASS":
                 label = failure_class(summary_of(bundle)) if result == "FAILED" else result.lower()
                 failures[label] = failures.get(label, 0) + 1
-        calls = [summary_of(b).get("agent_model_calls") for b in members if outcome(b) == "PASS"]
-        rows.append([revision, provenance, str(len(members)), ratio(outcomes.count("PASS"), len(members)),
-                     str(len(members) - outcomes.count("PASS")), median_text(calls),
-                     median_text([model_seconds(b) for b in members if outcome(b) == "PASS"]),
+        calls = [summary_of(b).get("agent_model_calls") for b in recovered]
+        rows.append([revision, provenance, str(len(members)), ratio(len(recovered), len(members)),
+                     str(len(members) - len(recovered)), median_text(calls),
+                     median_text([model_seconds(b) for b in recovered]),
                      "; ".join(f"{k} x{v}" for k, v in sorted(failures.items())) or "none"])
     return rows
 

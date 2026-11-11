@@ -70,7 +70,7 @@ the fix and regenerate.
 
 - Impact: Agent mode records a pre-authorised approval and the harness approves in code. The authenticated approval service exists but no live run uses it, so no evidence shows a person deciding.
 - Workaround: Treat every live result as lab approval. Use the authenticated approval service only with explicit Guard/Executor wiring (docs/approvals.md).
-- Evidence: `experiments/boutique/harness/agent_live.py:216`; `experiments/recovery/live.py:327`; claim `C-CONNECTED-HARNESS`.
+- Evidence: `experiments/boutique/harness/agent_live.py:219`; `experiments/recovery/live.py:327`; claim `C-CONNECTED-HARNESS`.
 
 ### L-RAW-LOGS-PROMPT
 
@@ -110,7 +110,7 @@ the fix and regenerate.
 
 - Impact: Fixed in code: agent planning now runs through prepare() and the PlannerStore journal. A model failure is retried up to three times; an abstention, a diagnosis of another component, a NO_ACTION answer or a target changed during inference ends at once. Every failure ends in a saved, delivered ESCALATE, so the incident moves to NEEDS_REVIEW, and a saved proposal replays without another model call. Still open: the planning budget applies per attempt, so one incident can use three budgets, and the remote Planner worker has no agent mode. Live verification pending: no agent run has used the journal yet, and every committed agent bundle predates it, so those failed runs left the incident OPEN.
 - Workaround: For runs recorded before this change, read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.
-- Evidence: `experiments/boutique/harness/agent_live.py:204`; `services/planner/worker.py:133`; `services/planner/worker.py:146`; `tests/test_agent_journal.py:199`; `tests/test_agent_journal.py:273`; `docs/planner.md`; claim `C-AGENT-FAIL-CLOSED`.
+- Evidence: `experiments/boutique/harness/agent_live.py:207`; `services/planner/worker.py:133`; `services/planner/worker.py:146`; `tests/test_agent_journal.py:199`; `tests/test_agent_journal.py:273`; `docs/planner.md`; claim `C-AGENT-FAIL-CLOSED`.
 
 ### L-NO-LOGGING
 
@@ -270,7 +270,7 @@ the fix and regenerate.
 
 - Impact: A failed agent run looked like a stalled one, and Ollama's own error text was discarded. The incident also stayed OPEN until agent planning moved into the journal; see L-AGENT-JOURNAL.
 - Workaround: Not needed.
-- Evidence: `experiments/boutique/harness/agent_live.py:241`; `tests/test_live_agent.py:238`.
+- Evidence: `experiments/boutique/harness/agent_live.py:244`; `tests/test_live_agent.py:238`.
 
 ### L-CHAOS-SCENARIOS
 

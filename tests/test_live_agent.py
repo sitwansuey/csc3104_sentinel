@@ -264,6 +264,7 @@ class LiveAgentTests(unittest.TestCase):
         self.planned(harness, self.model())
         self.assertNotIn("agent_failure", harness.summary)
         self.assertEqual(harness.summary["planning"], "Live RCA agent and Ollama Recovery Planner")
+        self.assertEqual(harness.summary["expected_outcome"], "recovered")
         self.assertEqual(self.stops(harness), [])
 
     def test_expected_escalation_passes_after_an_administrator_restore(self):
@@ -273,6 +274,8 @@ class LiveAgentTests(unittest.TestCase):
         harness.check.assert_called_once()
         self.assertEqual(harness.check.call_args.kwargs, {"error_code": "ABSTAINED", "attempts": 1})
         self.assertEqual(self.state(harness), "NEEDS_REVIEW")
+        # summary.json must say so: this PASS is not a recovery.
+        self.assertEqual(harness.summary["expected_outcome"], "escalated")
         self.assertEqual(len(self.stops(harness)), 1)
 
     def test_expected_escalation_fails_if_the_fault_cannot_be_removed(self):
