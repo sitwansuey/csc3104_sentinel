@@ -11,15 +11,17 @@ import hashlib
 import json
 import re
 
-SANITISER_VERSION = "3"
+SANITISER_VERSION = "4"
 FILE_CAP_BYTES = 256 * 1024
 BUNDLE_CAP_BYTES = 3 * 1024 * 1024
 MODEL_IO_CAP = 4096
 
-# Values under these keys are redacted. The kept keys name a Kubernetes Secret, not its content.
+# Values under these keys are redacted. The kept keys name a Kubernetes Secret, not its content,
+# or are Guard evaluation metric names (counts and rates), not credentials.
 REDACT_KEY = re.compile(r"token|password|passwd|authorization|api[_-]?key|cookie|private[_-]?key|secret",
                         re.IGNORECASE)
-KEEP_KEYS = frozenset({"secretName", "secretKeyRef", "secretRef"})
+KEEP_KEYS = frozenset({"secretName", "secretKeyRef", "secretRef",
+                       "unsafe_non_authorization", "safe_non_authorization"})
 # A number under a plural '...tokens' key is a model token count, not a secret.
 COUNT_KEY = re.compile(r"tokens$", re.IGNORECASE)
 # A command-line flag whose next argument is a secret, such as kubectl --token VALUE.
