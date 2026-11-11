@@ -80,13 +80,25 @@ These opt-in scripts create/use dedicated labs and retain evidence. Read `--help
 and the module's cleanup rules before running. They are not necessary for a
 normal presentation run:
 
-| Check | Script |
-| --- | --- |
-| Restricted Executor with a small HTTP fixture | `scripts/test-executor-live.ps1 -Setup -Cleanup` |
-| Observer real SDK/Collector telemetry | `scripts/validation/test_observer_otel_live.py` |
-| Timed Boutique detection/duplicate suppression | `scripts/validation/test_boutique_observer_acceptance.py` |
-| Observer deployed runtime | `scripts/validation/validate_observer_runtime.py` |
-| Verifier connected telemetry/read-only permissions | `scripts/validation/test_verifier_connected_live.py` |
+| Check | Script | Cluster |
+| --- | --- | --- |
+| Restricted Executor with a small HTTP fixture | `scripts/test-executor-live.ps1 -Setup -Cleanup` | `sentinel-lab` (created if absent; `-Cleanup` deletes it) |
+| Observer real SDK/Collector telemetry | `scripts/validation/test_observer_otel_live.py` | Own dedicated cluster, created and deleted |
+| Timed Boutique detection/duplicate suppression | `scripts/validation/test_boutique_observer_acceptance.py` | Own dedicated cluster, created and deleted |
+| Observer deployed runtime | `scripts/validation/validate_observer_runtime.py` | Existing `sentinel-lab` (see below) |
+| Verifier connected telemetry/read-only permissions | `scripts/validation/test_verifier_connected_live.py --setup` | Existing `sentinel-lab` (see below) |
+
+The last two checks never create a cluster. They expect the `sentinel-lab` kind
+cluster with the `sentinel-demo` namespace, so run them before, not after,
+the Executor check with `-Cleanup`, or create the lab with
+`scripts\test-executor-live.ps1 -Setup` (without `-Cleanup`). The Observer
+runtime check also needs the deployed Observer: from the repository root run
+`docker build -f deploy/docker/observer.Dockerfile -t sentinel-observer:0.2.0 .`,
+load it with `kind load docker-image sentinel-observer:0.2.0 --name sentinel-lab` and apply
+`deploy/sentinel/observer.yaml`. The Verifier check's `--setup` builds and loads
+its own fixture images; it is needed on first use. Both modify `sentinel-lab`.
+The two checks that create their own cluster write their evidence under
+`data/sentinel/runs/`.
 
 The workload fixtures in `experiments/workloads/` are used by these tests.
 They are not the Boutique app and are not unused runtime stubs. Do not delete

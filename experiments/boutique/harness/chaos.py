@@ -128,6 +128,24 @@ def workload_manifest(resources, namespace):
     return {"apiVersion": "v1", "kind": "List", "items": items}
 
 
+def current_context(cluster):
+    try:
+        return cluster.command([cluster.kubectl, "config", "current-context"]).strip() or None
+    except RuntimeError:
+        return None  # kubectl exits non-zero when no current-context is set.
+
+
+def restore_context(cluster, previous):
+    """kind switches the user's current-context on create; put the previous one back.
+
+    The runner itself always passes an explicit --context, so it does not need the switch.
+    """
+    if previous:
+        cluster.command([cluster.kubectl, "config", "use-context", previous])
+    else:
+        cluster.command([cluster.kubectl, "config", "unset", "current-context"])
+
+
 def setup(cluster, kind="kind", helm="helm"):
     if (cluster.context, cluster.namespace) != (CONTEXT, CLUSTER):
         raise ValueError("--setup only provisions the dedicated sentinel-boutique-chaos lab")
@@ -137,8 +155,12 @@ def setup(cluster, kind="kind", helm="helm"):
     if cluster.command(["docker", "info", "--format", "{{.OSType}}"], timeout=30).strip() != "linux":
         raise RuntimeError("Docker Desktop must run Linux containers")
     if CLUSTER not in cluster.command([kind, "get", "clusters"]).split():
-        cluster.command([kind, "create", "cluster", "--name", CLUSTER,
-                         "--config", str(ROOT / "deploy/kind/kind.yaml"), "--wait", "120s"], timeout=300)
+        previous = current_context(cluster)
+        try:
+            cluster.command([kind, "create", "cluster", "--name", CLUSTER,
+                             "--config", str(ROOT / "deploy/kind/kind.yaml"), "--wait", "120s"], timeout=300)
+        finally:
+            restore_context(cluster, previous)
     nodes = cluster.get("nodes")["items"]
     if [x["metadata"]["name"] for x in nodes] != [CLUSTER + "-control-plane"]:
         raise RuntimeError("Context does not point to the dedicated single-node kind lab")
