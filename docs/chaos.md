@@ -67,5 +67,7 @@ kind get clusters
 
 Abrupt host termination can leave a fault/lock; inspect the run and
 `sentinel-chaos-demo-lock` before resuming. Never strip finalizers to claim clean
-restoration. Offline scope/lifecycle tests pass; no new live Chaos Mesh acceptance
-was performed in this review. Its integration with guarded recovery remains pending.
+restoration. On 11 November the network, Pod and CPU faults each completed on
+Docker Desktop (Windows, WSL2 kernel) with injection and cleanup confirmed and a
+healthy recovery window; the memory fault completed in an earlier run. Its
+integration with guarded recovery remains pending.
