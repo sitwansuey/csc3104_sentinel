@@ -14,6 +14,12 @@ are generated from it, so every quoted number points back to a bundle here.
 - `claims.json`: quotable facts. Each has an id, a derived value, the bundles
   that support it and a mandatory scope caveat. Cite claim ids in the README,
   article, release notes and video script.
+- `evaluation/latency/<date>/timings.json`: the per-stage latency ledger from
+  `scripts/latency_report.py`. It is derived from the bundles, not a bundle.
+  It holds timing numbers, roles, statuses, model tags and token counts only.
+  `summarize.py --check` recomputes every value marked `bundle`; values marked
+  `run_folder` came from local run folders and cannot be rechecked. Add a new
+  dated folder when bundles are added; never edit an old ledger.
 
 Files here are stored byte for byte (`-text` in `.gitattributes`), so the
 MANIFEST hashes also hold on Windows checkouts.
@@ -80,6 +86,7 @@ is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.
 | agent | 20 | 0 | 20 | 0 | 0 |
 | chaos-batch | 17 | 0 | 17 | 0 | 0 |
 | connected-harness | 4 | 0 | 4 | 0 | 0 |
+| guard-eval | 1 | 1 | 0 | 0 | 0 |
 | guard-rejection | 2 | 0 | 2 | 0 | 0 |
 | observer-acceptance | 3 | 0 | 3 | 0 | 0 |
 | packaged | 9 | 0 | 9 | 0 | 0 |

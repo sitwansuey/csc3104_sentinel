@@ -21,10 +21,19 @@ From the repository root with Python 3.12+:
 ```powershell
 python -m unittest tests.test_guard_state_policy tests.test_guard_evaluation -v
 python scripts/evaluate_guard.py --repeats 30 --warmups 2 --output data/experimentation/runs/guard-evaluation-new
+python scripts/evidence/collect.py --run data/experimentation/runs/guard-evaluation-new --class guard-eval --bundle-id guard-eval-v1-<yyyymmdd>-<short sha>
+python scripts/evidence/summarize.py
 ```
 
 Choose a new output directory on each run. Existing directories are refused.
-Without `--output`, the runner prints JSON. It requires only the standard library
+`--output` also refuses a dirty working tree, because the recorded revision
+would not be the code that ran; commit first, or pass `--allow-dirty` for a
+throwaway run. Without `--output`, the runner prints JSON. The collector copies
+`results.json` and `README.md` into a `recorded` evidence bundle, and
+`summarize.py` regenerates the table in [docs/results.md](../../../docs/results.md).
+`tests/test_committed_evaluation_results.py` reruns the suite once and fails
+when any committed verdict or reason code no longer matches the current code
+or cases; regenerate and collect a new bundle when that happens. It requires only the standard library
 and Git for revision provenance; it never contacts Kubernetes, applies a repair,
 or routes a comparison result through Coordinator. A failed expectation,
 evaluation exception or inconsistent measured result exits nonzero and remains
@@ -49,6 +58,12 @@ meaning; retain old results alongside their original definitions.
 | --- | --- | --- |
 | `state_policy_only` | Target/action allowlists and implemented action, live target/UID, resource version, live snapshot freshness | Baseline, rollback necessity, health/reference evidence, security/resources, dependencies, approval, bound decision lifetime and previews |
 | `full_available` | All preceding checks plus baseline identity/hash, rollback necessity, baseline health/references, security, container/workload budgets, exact dependency identity/status/freshness, operator approval, decision binding/expiry | Server admission dry-run and runtime preview |
+| `no_validation` | None | Every check |
+
+`no_validation` is definitional, not measured: it returns ALLOW for every case,
+so all unsafe cases are accepted by construction. It is the anchor row for
+acting on a proposal with no validation. JSON and markdown label it
+`definitional`; the other two rows are `measured`.
 
 Both configurations use the same state/policy check implementation in
 `services/guard/core.py`. The partial assessor returns refusal codes only. Its
@@ -104,7 +119,14 @@ and no credentials, operator identity, application logs or Secret contents.
 
 Release acceptance
 [#63](https://github.com/sitwansuey/csc3104_sentinel/issues/63) remains separate.
-The runner therefore labels results `PRELIMINARY_NOT_FROZEN`. This work prepares
+The runner computes the label from the #63 freeze conditions instead of
+hard-coding it. It writes `FROZEN_RELEASE` only when `--release-manifest`
+names a JSON file `{tag, commit, accepted_issue: 63, accepted_at}` whose commit
+is the exact evaluated revision and the working tree is clean. Otherwise the
+result is `PRELIMINARY_NOT_FROZEN` and `release.reason` says why
+(`no_manifest`, `revision_unknown`, `commit_mismatch` or `dirty_tree`). A
+malformed manifest stops the run. No accepted manifest exists yet, so current
+results are preliminary. This work prepares
 the runner/cases and draft evidence; it does not complete issue #17's final
 frozen-release criterion or the broader repeated-recovery evaluation.
 

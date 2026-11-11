@@ -177,7 +177,8 @@ RCA/proposal validation, abstention, wrong-baseline rejection and a complete
 cross-role handoff have injected-model regressions. Real-model runs with
 `qwen3:14b` (Ollama 0.40, fully on a 16 GB GPU) on 11 November named
 shippingservice and the invalid port correctly in 7 of 7 runs, using 4-5 model
-calls and 38-109 s of model time per incident. With the Verifier convergence
+calls per incident. Measured model time and per-stage timings, including the
+cold-load tail, are in [Per-stage latency](results.md#per-stage-latency). With the Verifier convergence
 grace (#89), 5 of 5 of those recoveries were verified RECOVERED. Owner
 acceptance of the real-model path is tracked in #56.
 

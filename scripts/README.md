@@ -17,4 +17,7 @@ and optional; none runs during ordinary application setup.
 
 `evidence/collect.py` copies one run into a sanitised bundle under `evidence/`;
 `evidence/summarize.py` regenerates [docs/results.md](../docs/results.md) from the
-bundles. `check_doc_links.py` fails on dead relative Markdown links and anchors.
+bundles. `latency_report.py` builds the per-stage latency ledger under
+`evidence/evaluation/latency/` from the agent and connected-harness bundles,
+reading their original run folders only for files bundles do not keep.
+`check_doc_links.py` fails on dead relative Markdown links and anchors.

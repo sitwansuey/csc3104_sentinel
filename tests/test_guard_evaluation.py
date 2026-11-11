@@ -243,7 +243,7 @@ class GuardEvaluationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / "results"
             arguments = ["evaluate_guard.py", "--repeats", "1", "--warmups", "0",
-                         "--output", str(destination)]
+                         "--output", str(destination), "--allow-dirty"]
             with patch.object(sys, "argv", arguments), redirect_stdout(io.StringIO()):
                 self.assertEqual(evaluation.main(), 0)
             json_path, markdown_path = destination / "results.json", destination / "README.md"
@@ -273,6 +273,178 @@ class GuardEvaluationTests(unittest.TestCase):
         self.assertEqual(summary["p95_ms"], 19)
         self.assertEqual(summary["min_ms"], 1)
         self.assertEqual(summary["max_ms"], 20)
+
+
+REVISION = "0123456789abcdef0123456789abcdef01234567"
+CLEAN = {"revision": REVISION, "working_tree_dirty": False}
+
+
+class ReleaseStatusTests(unittest.TestCase):
+    """Issue #63 freeze conditions decide the label; nothing is frozen by default."""
+
+    def manifest(self, directory, **changes):
+        value = {"tag": "v1.0.0", "commit": REVISION, "accepted_issue": 63, "accepted_at": "2026-11-20T09:00:00Z"}
+        value.update(changes)
+        path = Path(directory) / "release-manifest.json"
+        path.write_text(json.dumps(value), encoding="utf-8")
+        return path
+
+    def test_no_manifest_is_preliminary_with_its_reason(self):
+        status = evaluation.release_status(CLEAN)
+        self.assertEqual((status["status"], status["reason"]), ("PRELIMINARY_NOT_FROZEN", "no_manifest"))
+        self.assertIn("#63", status["release_prerequisite"])
+        self.assertIn("no_manifest", status["release_prerequisite"])
+        self.assertIsNone(status["manifest"])
+
+    def test_commit_mismatch_and_dirty_tree_stay_preliminary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.manifest(directory)
+            mismatch = evaluation.release_status({"revision": "f" * 40, "working_tree_dirty": False}, path)
+            dirty = evaluation.release_status({"revision": REVISION, "working_tree_dirty": True}, path)
+            unknown_tree = evaluation.release_status({"revision": REVISION}, path)
+            unknown_revision = evaluation.release_status({"revision": "unknown", "working_tree_dirty": False}, path)
+        self.assertEqual((mismatch["status"], mismatch["reason"]), ("PRELIMINARY_NOT_FROZEN", "commit_mismatch"))
+        self.assertEqual((dirty["status"], dirty["reason"]), ("PRELIMINARY_NOT_FROZEN", "dirty_tree"))
+        self.assertEqual(unknown_tree["reason"], "dirty_tree")
+        self.assertEqual(unknown_revision["reason"], "revision_unknown")
+
+    def test_matching_clean_commit_is_frozen(self):
+        with tempfile.TemporaryDirectory() as directory:
+            status = evaluation.release_status(CLEAN, self.manifest(directory))
+        self.assertEqual((status["status"], status["reason"]), ("FROZEN_RELEASE", None))
+        self.assertEqual(status["manifest"]["tag"], "v1.0.0")
+        self.assertIn("v1.0.0", status["release_prerequisite"])
+
+    def test_malformed_manifest_raises(self):
+        bad = ({"commit": None}, {"commit": "ABC"}, {"commit": "g" * 40}, {"tag": ""}, {"accepted_issue": 17},
+               {"accepted_issue": "63"}, {"accepted_at": "yesterday"}, {"accepted_at": "2026-11-20T09:00:00+08:00"})
+        with tempfile.TemporaryDirectory() as directory:
+            for changes in bad:
+                with self.subTest(changes=changes), self.assertRaises(ValueError):
+                    evaluation.release_status(CLEAN, self.manifest(directory, **changes))
+            missing = Path(directory) / "missing-commit.json"
+            missing.write_text(json.dumps({"tag": "v1", "accepted_issue": 63, "accepted_at": "2026-11-20T09:00:00Z"}),
+                               encoding="utf-8")
+            with self.assertRaises(ValueError):
+                evaluation.release_status(CLEAN, missing)
+            not_json = Path(directory) / "not-json.json"
+            not_json.write_text("{tag: v1", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                evaluation.release_status(CLEAN, not_json)
+
+    def test_malformed_manifest_exits_nonzero_from_the_command_line(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.manifest(directory, commit="not-a-commit")
+            arguments = ["evaluate_guard.py", "--repeats", "1", "--warmups", "0", "--release-manifest", str(path)]
+            with patch.object(sys, "argv", arguments), redirect_stdout(io.StringIO()), \
+                    redirect_stderr(io.StringIO()), patch.object(evaluation, "provenance", return_value=CLEAN):
+                with self.assertRaises(SystemExit) as rejected:
+                    evaluation.main()
+        self.assertEqual(rejected.exception.code, 2)
+
+    def test_run_evaluation_records_the_computed_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.manifest(directory)
+            with patch.object(evaluation, "provenance", return_value=CLEAN):
+                frozen = evaluation.run_evaluation(repeats=1, warmups=0, release_manifest=path)
+                preliminary = evaluation.run_evaluation(repeats=1, warmups=0)
+        self.assertEqual(frozen["status"], "FROZEN_RELEASE")
+        self.assertEqual(frozen["release"]["manifest"]["commit"], REVISION)
+        self.assertIn("frozen release", evaluation.markdown_report(frozen))
+        self.assertEqual(preliminary["status"], "PRELIMINARY_NOT_FROZEN")
+        self.assertEqual(preliminary["release"]["reason"], "no_manifest")
+        self.assertIn("(preliminary)", evaluation.markdown_report(preliminary))
+
+
+class NoValidationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        with patch.object(evaluation, "provenance", return_value={"test_run": True}):
+            cls.result = evaluation.run_evaluation(repeats=1, warmups=0)
+
+    def test_every_case_is_allowed_by_definition(self):
+        configuration = self.result["configurations"]["no_validation"]
+        summary = configuration["summary"]
+        self.assertEqual(configuration["basis"], "definitional")
+        self.assertEqual(configuration["enabled_gates"], [])
+        self.assertEqual(summary["unsafe_acceptance"]["numerator"], summary["unsafe_cases"])
+        self.assertEqual(summary["unsafe_cases"], 27)
+        self.assertEqual(summary["safe_acceptance"]["numerator"], summary["safe_cases"])
+        self.assertEqual(summary["errors"], 0)
+        self.assertTrue(all(row["verdict"] == "ALLOW" for row in configuration["cases"]))
+        self.assertFalse(any(row["verdict"] == "ERROR" for row in configuration["cases"]))
+        self.assertTrue(self.result["expectations_met"])
+
+    def test_measured_rows_keep_their_results(self):
+        configurations = self.result["configurations"]
+        self.assertEqual(configurations["full_available"]["basis"], "measured")
+        self.assertEqual(configurations["state_policy_only"]["basis"], "measured")
+        self.assertEqual(configurations["full_available"]["summary"]["unsafe_acceptance"]["numerator"], 0)
+        self.assertEqual(configurations["state_policy_only"]["summary"]["unsafe_acceptance"]["numerator"], 21)
+
+    def test_markdown_labels_the_row_definitional(self):
+        report = evaluation.markdown_report(self.result)
+        row = next(line for line in report.splitlines() if line.startswith("| no_validation |"))
+        self.assertIn("| definitional |", row)
+        self.assertIn("| 27/27 |", row)
+        self.assertIn("not a measurement", report)
+
+
+class DirtyTreeExportTests(unittest.TestCase):
+    def export(self, destination, dirty, *extra):
+        arguments = ["evaluate_guard.py", "--repeats", "1", "--warmups", "0", "--output", str(destination), *extra]
+        record = {"revision": REVISION, "working_tree_dirty": dirty}
+        with patch.object(sys, "argv", arguments), patch.object(evaluation, "provenance", return_value=record), \
+                redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            return evaluation.main()
+
+    def test_dirty_tree_refuses_output_and_writes_nothing(self):
+        for dirty in (True, None):
+            with self.subTest(dirty=dirty), tempfile.TemporaryDirectory() as directory:
+                destination = Path(directory) / "results"
+                with self.assertRaises(SystemExit) as rejected:
+                    self.export(destination, dirty)
+                self.assertEqual(rejected.exception.code, 2)
+                self.assertFalse(destination.exists())
+
+    def test_clean_tree_or_explicit_override_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(self.export(Path(directory) / "clean", False), 0)
+            self.assertTrue((Path(directory) / "clean/results.json").exists())
+            self.assertEqual(self.export(Path(directory) / "override", True, "--allow-dirty"), 0)
+            exported = json.loads((Path(directory) / "override/results.json").read_text(encoding="utf-8"))
+            self.assertTrue(exported["provenance"]["working_tree_dirty"])
+            self.assertEqual(exported["status"], "PRELIMINARY_NOT_FROZEN")
+
+
+class VerdictDifferenceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        with patch.object(evaluation, "provenance", return_value={"test_run": True}):
+            cls.result = evaluation.run_evaluation(repeats=1, warmups=0)
+
+    def test_identical_results_have_no_differences_and_timings_are_ignored(self):
+        other = deepcopy(self.result)
+        for configuration in other["configurations"].values():
+            for row in configuration["cases"]:
+                row["latency"]["median_ms"] += 1
+        self.assertEqual(evaluation.verdict_differences(self.result, other), [])
+
+    def test_changed_verdict_reason_suite_and_cases_are_named(self):
+        changed = deepcopy(self.result)
+        row = changed["configurations"]["full_available"]["cases"][0]
+        row["verdict"] = "ALLOW" if row["verdict"] != "ALLOW" else "REJECT"
+        changed["configurations"]["state_policy_only"]["cases"][1]["reason_codes"] = ["SOMETHING_ELSE"]
+        changed["configurations"]["no_validation"]["cases"].pop()
+        changed["suite_sha256"] = "0" * 64
+        problems = evaluation.verdict_differences(changed, self.result)
+        self.assertIn("suite_sha256 differs: the case suite changed", problems)
+        self.assertTrue(any(line.startswith("full_available/" + row["case_id"] + ":") for line in problems))
+        self.assertTrue(any(line.startswith("state_policy_only/") for line in problems))
+        self.assertTrue(any("only in the current run" in line for line in problems))
+        removed = deepcopy(self.result)
+        del removed["configurations"]["no_validation"]
+        self.assertTrue(evaluation.verdict_differences(removed, self.result)[0].startswith("configurations differ"))
 
 
 if __name__ == "__main__":

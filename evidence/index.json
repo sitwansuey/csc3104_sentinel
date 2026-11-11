@@ -680,6 +680,16 @@
       "provenance": "inferred",
       "status": "current",
       "reason": null
+    },
+    {
+      "bundle_id": "guard-eval-v1-20261111-a1d7d41",
+      "class": "guard-eval",
+      "path": "2026-11-11/guard-eval-v1-20261111-a1d7d41",
+      "captured_at": "2026-11-11T19:27:38.018508Z",
+      "source_revision": "a1d7d413b645bee2efec787efffa7c8a3f2d0b8c",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
     }
   ]
 }

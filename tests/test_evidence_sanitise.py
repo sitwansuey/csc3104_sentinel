@@ -43,6 +43,17 @@ class RedactionTests(unittest.TestCase):
                                             "reason_code": "ROLLBACK_ALREADY_AT_BASELINE"})
         self.assertEqual(count, 0)
 
+    def test_guard_metric_names_are_kept_but_authorization_values_are_not(self):
+        metric = {"numerator": 27, "denominator": 27, "rate": 1.0}
+        text, count = clean({"unsafe_non_authorization": metric, "safe_non_authorization": metric,
+                             "non_authorization": "abc123secretvalue", "authorization": "abc123secretvalue"})
+        value = json.loads(text)
+        self.assertEqual(value["unsafe_non_authorization"], metric)
+        self.assertEqual(value["safe_non_authorization"], metric)
+        self.assertTrue(value["non_authorization"].startswith("<redacted:"))
+        self.assertTrue(value["authorization"].startswith("<redacted:"))
+        self.assertEqual(count, 2)
+
     def test_inline_bearer_and_text_secrets_are_redacted(self):
         text, count = clean({"detail": "sent Bearer abcdefghijklmnop to the API"})
         self.assertNotIn("abcdefghijklmnop", text)
