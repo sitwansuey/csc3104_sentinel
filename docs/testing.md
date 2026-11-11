@@ -10,12 +10,14 @@ the full suite also exercises the optional native RCAEval adapter:
 .\.venv\Scripts\python.exe scripts/evidence/summarize.py --check
 .\.venv\Scripts\python.exe scripts/evidence/limitations.py --strict
 .\.venv\Scripts\python.exe scripts/check_doc_links.py
+.\.venv\Scripts\python.exe scripts/check_doc_citations.py
 ```
 
-The last three fail when a generated table or claim quote is stale or
+The last four fail when a generated table or claim quote is stale or
 hand-edited, a claim lacks evidence, a known-stale status phrase has no claim
-id beside it, a [limitations](limitations.md) citation no longer resolves, or a
-Markdown link or anchor is dead.
+id beside it, a [limitations](limitations.md) citation no longer resolves, a
+Markdown link or anchor is dead, or a code citation in the threat or
+distributed model no longer resolves.
 
 On Linux/macOS substitute `.venv/bin/python`. pip installs code dependencies,
 not the benchmark dataset or an Ollama model. Optional benchmark tests report
