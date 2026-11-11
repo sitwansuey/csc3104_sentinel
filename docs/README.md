@@ -5,6 +5,8 @@ Read these in order:
 1. [Setup](setup.md): dependencies, script/manual installation and local environment.
 2. [Run and observe](run.md): launch, browser/manual/automatic injection, evidence and cleanup.
 3. [Architecture](architecture.md): role handoffs and safety/ownership boundaries.
+   The [threat model](threat-model.md) and [distributed model](distributed-model.md)
+   state trust boundaries, failure and timing assumptions, and known weaknesses.
 4. [Testing](testing.md): offline regressions, live acceptance and specialised checks.
 5. [Results](results.md): tables generated from the committed evidence bundles.
 

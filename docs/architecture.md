@@ -52,6 +52,10 @@ OS workload locks and SQLite serialization coordinate one host. They do not
 provide distributed leases or fencing. The optional [HTTP delivery layer](../runtime/README.md)
 has role-scoped claims/leases and replay handling; those leases do not establish
 cross-host Kubernetes mutation ownership. Production deployment remains separate.
+The [distributed model](distributed-model.md) states the failure model, why the
+Coordinator is a single consistent (CP) leader, and how lifecycle checks depend
+on clocks today. The [threat model](threat-model.md) maps trust boundaries to
+controls and residual risks.
 
 ## Guard, approval and execution
 

@@ -18,3 +18,5 @@ and optional; none runs during ordinary application setup.
 `evidence/collect.py` copies one run into a sanitised bundle under `evidence/`;
 `evidence/summarize.py` regenerates [docs/results.md](../docs/results.md) from the
 bundles. `check_doc_links.py` fails on dead relative Markdown links and anchors.
+`check_doc_citations.py` fails when a file, line range, symbol or claim id cited
+in the threat-model or distributed-model docs no longer exists.

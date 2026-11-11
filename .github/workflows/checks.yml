@@ -34,5 +34,6 @@ jobs:
       - run: python -m unittest discover -s tests -p "test_*.py" -v
       - run: python scripts/evidence/summarize.py --check
       - run: python scripts/check_doc_links.py
+      - run: python scripts/check_doc_citations.py
       - run: bash -n scripts/run-sentinel.sh
         if: runner.os == 'Linux'

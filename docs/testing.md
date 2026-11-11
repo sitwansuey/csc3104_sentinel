@@ -9,10 +9,12 @@ the full suite also exercises the optional native RCAEval adapter:
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
 .\.venv\Scripts\python.exe scripts/evidence/summarize.py --check
 .\.venv\Scripts\python.exe scripts/check_doc_links.py
+.\.venv\Scripts\python.exe scripts/check_doc_citations.py
 ```
 
-The last two fail when a generated results table is stale or hand-edited, a
-claim lacks evidence, or a Markdown link or anchor is dead.
+The last three fail when a generated results table is stale or hand-edited, a
+claim lacks evidence, a Markdown link or anchor is dead, or a code citation in
+the threat or distributed model no longer resolves.
 
 On Linux/macOS substitute `.venv/bin/python`. pip installs code dependencies,
 not the benchmark dataset or an Ollama model. Optional benchmark tests report
