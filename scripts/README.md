@@ -26,5 +26,10 @@ in the threat-model or distributed-model docs no longer exists, or when the
 first line of a cited Python line range no longer holds the text the citation
 names.
 
+`instructions/` builds `GROUP05_INSTRUCTIONS.pdf` from its tagged Markdown source
+and lists or checks its command steps; see [the instructions README](../docs/instructions/README.md).
+`submission/` holds the article claim-macro generator and the submission
+readiness gate; see [the submission kit](../docs/submission/README.md).
+
 `tracker/` holds the reviewed issue-tracker plan and dry-run tools for tracker
 and branch clean-up; see [its README](tracker/README.md).

@@ -12,7 +12,12 @@ Read these in order:
 6. [Limitations](limitations.md): known limitations and open defects, each with checked citations.
 
 Use [Planner mode](planner.md), [authenticated approvals](approvals.md), [Chaos Mesh](chaos.md), [security](security.md) or
-[packaging](packaging.md) only when using that optional mode. Benchmarks are
+[packaging](packaging.md) only when using that optional mode.
+
+For submission: the [marker instructions](instructions/README.md) are the
+source of `GROUP05_INSTRUCTIONS.pdf`, with a [rehearsal plan](instructions/rehearsal-plan.md),
+and the [submission kit](submission/README.md) holds the article outline,
+the video storyboard and the readiness gate. Benchmarks are
 documented beside their code/data: [RCAEval](../agent/datasets/README.md) and
 [Guard cases](../data/experimentation/guard/README.md).
 

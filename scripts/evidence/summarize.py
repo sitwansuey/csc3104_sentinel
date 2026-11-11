@@ -6,7 +6,7 @@ The latency tables come from the newest ledger under evidence/evaluation/latency
 (scripts/latency_report.py); --check recomputes its bundle-sourced values.
 The limitations register (docs/limitations.json) is rendered into
 docs/limitations.md and the README. A 'claim-<id>' block in the README, docs/
-or deploy/ Markdown quotes that claim with its current value and scope caveat.
+(and one folder below it) or deploy/ Markdown quotes that claim with its current value and scope caveat.
 Withdrawn bundles are excluded. Failed and incomplete runs stay in every
 denominator. With --check nothing is written: the command fails when a
 generated block was hand-edited or is stale, when a bundle's files no longer
@@ -40,7 +40,7 @@ TARGETS = {
     "README.md": ("limitations-summary",),
 }
 # Markdown that may quote claims through 'claim-<lower-case claim id>' blocks.
-QUOTE_SOURCES = ("README.md", "docs/*.md", "deploy/*.md", "deploy/*/*.md")
+QUOTE_SOURCES = ("README.md", "docs/*.md", "docs/*/*.md", "deploy/*.md", "deploy/*/*.md")
 # Status phrases that went stale once live evidence existed. Each may appear
 # only in a paragraph that also cites a claim id from evidence/claims.json.
 STALE_PHRASES = ("still pending", "remains deferred", "no new protected live run", "pending rebuild/scan",

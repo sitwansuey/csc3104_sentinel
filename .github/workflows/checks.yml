@@ -81,5 +81,7 @@ jobs:
       - run: python scripts/evidence/limitations.py --strict
       - run: python scripts/check_doc_links.py
       - run: python scripts/check_doc_citations.py
+      - name: Instructions steps name existing scripts and flags
+        run: python scripts/instructions/extract_commands.py --check
       - run: bash -n scripts/run-sentinel.sh
         if: runner.os == 'Linux'

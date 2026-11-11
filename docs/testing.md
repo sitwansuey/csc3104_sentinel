@@ -89,6 +89,12 @@ python scripts/ci/coverage_gate.py coverage.json
   --audit-level=high` runs in the dashboard job. On 12 November 2026 both
   reported no known vulnerabilities.
 
+- **Instructions.** The `test` job runs
+  `python scripts/instructions/extract_commands.py --check`. It fails when a
+  command in the [marker instructions](instructions/README.md) names a script,
+  PowerShell parameter or command-line option that no longer exists, or when a
+  command block lacks its rehearsal tag.
+
 Making these checks required for merging is a repository setting that the
 owner has to enable.
 
