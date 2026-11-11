@@ -1,6 +1,7 @@
 """Offline coverage for fault scope, evidence quality and cleanup on failure."""
 
 from copy import deepcopy
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -8,11 +9,12 @@ import unittest
 from unittest.mock import Mock, patch
 
 from experiments.boutique.harness.chaos import (
-    APPLICATIONS, CLUSTER, CONTEXT, FAULTS, Cluster, injected, scenario, validate_scope, workload_manifest,
+    APPLICATIONS, CLUSTER, CONTEXT, FAULTS, SUPPORTED, UNSUPPORTED, Cluster, injected, scenario, validate_scope,
+    workload_manifest,
 )
-from experiments.boutique.harness.collection import metric_rows, namespace_summary
+from experiments.boutique.harness.collection import metric_rows, namespace_summary, utc
 from experiments.boutique.harness.chaos_demo import (
-    OWNER, arguments, healthy_window, main, owned_remove, run_case, traffic_resources,
+    OWNER, arguments, converged, healthy_window, main, owned_remove, run_case, traffic_resources,
 )
 from experiments.boutique.traffic.storefront import StorefrontProbe
 
@@ -39,6 +41,32 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual((spec["port"], spec["path"]), (8080, "/"))
         with self.assertRaises(ValueError):
             scenario("http", CLUSTER, "case", 30, "shippingservice")
+
+    def test_network_delay_uses_a_direction_admitted_without_a_target(self):
+        # Chaos Mesh 2.8.2 rejects netem 'from'/'both' when spec.target is empty.
+        spec = scenario("network", CLUSTER, "case", 30)["spec"]
+        self.assertEqual(spec["direction"], "to")
+        self.assertNotIn("target", spec)
+
+    def test_unsupported_dns_is_refused_before_cluster_work(self):
+        self.assertEqual(set(UNSUPPORTED), {"dns"})
+        for argv in (["--faults", "dns"], ["--faults", "cpu", "dns"]):
+            with patch("sys.stderr", new=io.StringIO()) as error, self.assertRaises(SystemExit):
+                arguments(argv)
+            self.assertIn("read-only", error.getvalue())
+        _, config = arguments(["--faults", "all"])
+        self.assertEqual(config["faults"], list(SUPPORTED))
+        self.assertNotIn("dns", config["faults"])
+        self.assertIn("http", config["faults"])
+
+    def test_default_batch_runs_only_faults_this_lab_can_inject(self):
+        _, config = arguments([])
+        self.assertEqual(config["faults"], ["cpu", "memory", "pod", "network"])
+        self.assertEqual(config["settle_timeout_seconds"], 90)
+        _, config = arguments(["--settle-timeout-seconds", "0"])
+        self.assertEqual(config["settle_timeout_seconds"], 0)
+        with patch("sys.stderr", new=io.StringIO()), self.assertRaises(SystemExit):
+            arguments(["--settle-timeout-seconds", "601"])
 
     def test_scope_and_invalid_duration_rejected(self):
         for context, namespace in [("production", CLUSTER), (CONTEXT, "kube-system")]:
@@ -105,11 +133,23 @@ class EvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp, patch("experiments.boutique.harness.chaos_demo.Cluster") as cluster:
             self.assertEqual(main(["--dry-run", "--runs-dir", temp]), 0)
             cluster.assert_not_called()
-            self.assertEqual(len(list(Path(temp).glob("*/manifests/*.json"))), 6)
+            self.assertEqual(len(list(Path(temp).glob("*/manifests/*.json"))), 4)
+
+    def test_converged_needs_the_latest_journeys_after_the_rollout(self):
+        def row(start, passed):
+            return {"started_at": start, "completed_at": start, "journey": {"passed": passed}}
+        before = [row("01", False), row("02", True)]
+        self.assertFalse(converged(before, "05"))
+        self.assertFalse(converged(before + [row("06", True), row("07", True)], "05"))
+        self.assertFalse(converged(before + [row("06", True), row("07", True), row("08", False)], "05"))
+        self.assertFalse(converged(before + [row("06", True), row("07", True), row("08", None)], "05"))
+        failing_then_passing = [row("06", False), row("07", True), row("08", True), row("09", True)]
+        self.assertTrue(converged(before + failing_then_passing, "05"))
+        self.assertTrue(converged(list(reversed(before + failing_then_passing)), "05"))
 
 
 class LifecycleTests(unittest.TestCase):
-    def execute(self, temp, *, confirm=True, collector_errors=0, cleanup_error=False):
+    def execute(self, temp, *, confirm=True, collector_errors=0, cleanup_error=False, traffic=None, stamp=None):
         _, config = arguments(["--fault-seconds", "5"])
         config["operator_gates"] = False
         clock = [0]
@@ -131,7 +171,8 @@ class LifecycleTests(unittest.TestCase):
         with patch(prefix + "Collector", return_value=collector), \
                 patch(prefix + "source_revision", return_value="test"), \
                 patch(prefix + "deployments_ready", return_value=True), \
-                patch(prefix + "read_traffic", return_value=[row]), \
+                patch(prefix + "read_traffic", side_effect=traffic or (lambda *args: [row])), \
+                patch(prefix + "utc", side_effect=stamp or utc), \
                 patch(prefix + "healthy_window", return_value=True), \
                 patch(prefix + "window_rows", return_value=[row]), \
                 patch(prefix + "time.monotonic", side_effect=lambda: clock[0]), \
@@ -148,6 +189,32 @@ class LifecycleTests(unittest.TestCase):
             self.assertTrue((Path(temp) / "run-a/ground-truth.json").exists())
             self.assertTrue((Path(temp) / "run-a/checksums.json").exists())
             self.assertGreaterEqual(cleanup.call_count, 3)
+
+    def test_recovery_window_waits_for_callers_to_settle(self):
+        polls = []
+
+        def traffic(*args):
+            polls.append(1)
+            # Two failing journeys after the rollout, then passing journeys.
+            passed = len(polls) > 3
+            return [{"started_at": f"T{index:03d}", "completed_at": f"T{index:03d}",
+                     "journey": {"passed": passed or index > 2}} for index in range(1, 2 + len(polls))]
+        with tempfile.TemporaryDirectory() as temp:
+            result, _, _ = self.execute(temp, traffic=traffic, stamp=lambda: "T000")
+            timeline = [json.loads(line)["event"] for line in
+                        (Path(temp) / "run-a/timeline.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(result["status"], "complete")
+        self.assertTrue(result["settle"]["settled"])
+        self.assertEqual(result["settle"]["timeout_seconds"], 90)
+        self.assertLess(timeline.index("settle_finished"), timeline.index("recovery_window_started"))
+
+    def test_settle_timeout_still_measures_recovery(self):
+        with tempfile.TemporaryDirectory() as temp:
+            result, _, _ = self.execute(temp)
+        # No journey after the rollout ever passes: the bounded wait gives up and the
+        # normal recovery-window rule decides (patched healthy here).
+        self.assertFalse(result["settle"]["settled"])
+        self.assertEqual(result["status"], "complete")
 
     def test_unconfirmed_injection_is_excluded_and_cleaned(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -8,4 +8,4 @@ python scripts/run_boutique_chaos.py --setup --faults network
 
 Only the dedicated `kind-sentinel-boutique-chaos` context and `sentinel-boutique-chaos` namespace can be provisioned by setup. Scenario definitions are in `experiments/boutique/scenarios/`. Existing other lab contexts can be used explicitly after installation and namespace opt-in, but setup will not rewrite them.
 
-See [the live demo guide](../../docs/chaos.md). Live kernel/runtime compatibility must be verified on the target Docker/kind environment.
+See [the live demo guide](../../docs/chaos.md). Live kernel/runtime compatibility must be verified on the target Docker/kind environment. On Docker Desktop's WSL2 kernel, HTTPChaos cannot inject because the `ebtables` module is missing; DNSChaos is refused for the pinned Boutique pods because their root filesystems are read-only.

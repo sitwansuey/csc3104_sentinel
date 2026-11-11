@@ -12,7 +12,7 @@ import time
 from uuid import uuid4
 
 from experiments.boutique.harness.chaos import (
-    APPLICATIONS, CLUSTER, CONTEXT, FAULTS, KINDS, ROOT, TRAFFIC_IMAGE,
+    APPLICATIONS, CLUSTER, CONTEXT, FAULTS, KINDS, ROOT, SUPPORTED, TRAFFIC_IMAGE, UNSUPPORTED,
     Cluster, deployments_ready, injected, scenario, setup, validate_scope,
 )
 from experiments.boutique.harness.collection import Collector, Writer, metric_rows, namespace_summary, save, utc
@@ -80,6 +80,12 @@ def window_rows(rows, start, end):
 def healthy_window(rows, start, end):
     samples = window_rows(rows, start, end)
     return bool(samples) and all(r["journey"].get("passed") is True for r in samples)
+
+
+def converged(rows, since, needed=3):
+    """True once the latest journeys that started after `since` all passed."""
+    recent = sorted((r for r in rows if r["started_at"] >= since), key=lambda r: r["started_at"])
+    return len(recent) >= needed and all(r["journey"].get("passed") is True for r in recent[-needed:])
 
 
 def wait_seconds(seconds):
@@ -224,6 +230,24 @@ def run_case(cluster, config, fault, directory, environment):
         # Wait for replacement/restarted pods before measuring the recovery window.
         for name in sorted(APPLICATIONS):
             cluster.call("rollout", "status", "deployment/" + name, "--timeout=120s", timeout=140)
+        # Callers can keep failing for a short time after the target is Ready again
+        # (for example gRPC reconnect backoff). Wait, bounded, until journeys that
+        # started after the rollout pass, and disclose the wait. A timeout starts the
+        # recovery window anyway, so a real failure still fails the run.
+        settle_start = utc()
+        settle_deadline = time.monotonic() + config["settle_timeout_seconds"]
+        settled = config["settle_timeout_seconds"] == 0
+        writer.append("timeline.jsonl", event="settle_started")
+        while not settled and time.monotonic() < settle_deadline:
+            wait_seconds(min(3, max(0, settle_deadline - time.monotonic())))
+            rows = read_traffic(cluster, traffic_name, directory)
+            settled = converged(rows, settle_start)
+        windows["settle"] = [settle_start, utc()]
+        settle_rows = window_rows(rows, *windows["settle"])
+        outcome["settle"] = {"settled": settled, "timeout_seconds": config["settle_timeout_seconds"],
+                             "journeys": len(settle_rows),
+                             "failed_journeys": sum(r["journey"].get("passed") is not True for r in settle_rows)}
+        writer.append("timeline.jsonl", event="settle_finished", **outcome["settle"])
         recovery_start = utc()
         writer.append("timeline.jsonl", event="recovery_window_started")
         wait_seconds(config["recovery_seconds"])
@@ -288,13 +312,13 @@ def arguments(argv=None):
     parser.add_argument("--context", default=CONTEXT)
     parser.add_argument("--namespace", default=CLUSTER)
     parser.add_argument("--setup", action="store_true", help="Provision the dedicated kind lab and install Chaos Mesh")
-    parser.add_argument("--dry-run", action="store_true", help="Write the plan and six fault manifests without cluster access")
+    parser.add_argument("--dry-run", action="store_true", help="Write the plan and the selected fault manifests without cluster access")
     parser.add_argument("--runs-dir", type=Path, default=ROOT / "data/experimentation/runs")
     parser.add_argument("--kubectl", default="kubectl")
     parser.add_argument("--kind", default="kind")
     parser.add_argument("--helm", default="helm")
-    for key in ("baseline-seconds", "fault-seconds", "recovery-seconds", "sample-interval",
-                "traffic-interval", "traffic-workers"):
+    for key in ("baseline-seconds", "fault-seconds", "recovery-seconds", "settle-timeout-seconds",
+                "sample-interval", "traffic-interval", "traffic-workers"):
         parser.add_argument("--" + key, type=int)
     args = parser.parse_args(argv)
     config = json.loads((ROOT / "experiments/boutique/profiles" / "demo.json").read_text())
@@ -303,11 +327,15 @@ def arguments(argv=None):
         if value is not None:
             config[key] = value
     if "all" in config["faults"]:
-        config["faults"] = list(FAULTS)
+        config["faults"] = list(SUPPORTED)
+    for fault in config["faults"]:
+        if fault in UNSUPPORTED:
+            parser.error(f"{fault} is not supported: {UNSUPPORTED[fault]}")
     config["faults"] = list(dict.fromkeys(config["faults"]))
     config["target"] = args.target
     limits = {"baseline_seconds": (5, 3600), "fault_seconds": (5, 3600),
-              "recovery_seconds": (5, 3600), "sample_interval": (1, 60), "traffic_interval": (1, 60),
+              "recovery_seconds": (5, 3600), "settle_timeout_seconds": (0, 600),
+              "sample_interval": (1, 60), "traffic_interval": (1, 60),
               "traffic_workers": (1, 16)}
     for key, (minimum, maximum) in limits.items():
         if not minimum <= config[key] <= maximum:

@@ -17,23 +17,40 @@ python scripts/run_boutique_chaos.py --setup --faults network
 
 The first command checks configuration without injection. The second creates
 the dedicated lab and prompts before each selected fault. `--kind`, `--helm`
-and `--kubectl` can select executable paths.
+and `--kubectl` can select executable paths. `--dry-run` checks only local
+scope and duration rules; Chaos Mesh admission rules are checked by the
+server-side preflight once the lab exists.
 
 | Fault | Default target | Injection |
 | --- | --- | --- |
 | CPU | shippingservice | One stress worker, 90% load |
 | Memory | recommendationservice | One 256 MB worker |
 | Pod | shippingservice | Timed Pod failure |
-| Network | shippingservice | 200 ms delay, 20 ms jitter |
+| Network | shippingservice | 200 ms delay, 20 ms jitter on traffic leaving the target |
 | HTTP | frontend | Abort GET `/` on 8080 |
 | DNS | frontend | Fail catalog DNS lookups |
 
-`--target` chooses another supported service; HTTP requires frontend and Redis
-does not support the selected DNS scenario. Namespace selectors, one-Pod mode
-and 5..3600-second durations are validated. DNS caches/connections can hide
-impact; actual injection confirmation and observed failure are recorded separately.
+Without `--faults`, the batch runs CPU, memory, Pod and network. HTTP is
+opt-in (`--faults http` or `all`): the Chaos Mesh HTTP proxy needs the
+`ebtables` kernel module, which the Docker Desktop WSL2 kernel does not
+provide. There the injection is never confirmed and the HTTPChaos object can
+stay Terminating until the lab cluster is deleted. DNS is refused before any
+cluster work: DNSChaos copies `/etc/resolv.conf` with a shell inside the target
+container, and the pinned Boutique pods have read-only root filesystems (the
+frontend image has no shell either).
 
-Defaults are 30 seconds baseline, 60 fault and 30 recovery. CLI options bound
+`--target` chooses another supported service; HTTP requires frontend.
+Namespace selectors, one-Pod mode and 5..3600-second durations are validated.
+Actual injection confirmation and observed failure are recorded separately.
+
+Defaults are 30 seconds baseline, 60 fault and 30 recovery. Before the
+recovery window starts, the runner waits up to 90 seconds
+(`--settle-timeout-seconds`, 0 disables) until the latest three shopping
+journeys that started after the rollout passed: callers such as the frontend
+can keep failing for several seconds while they reconnect to a restarted
+service. The wait and the journeys that failed during it are recorded under
+`settle` in `outcome.json`. If the wait times out, the recovery window starts
+anyway and its normal all-journeys-pass rule decides. CLI options bound
 sampling/traffic/durations. Evidence under `data/experimentation/runs/` contains
 logs, Kubernetes state/events, actual kubelet usage, shopper timings, fault
 status and cleanup. Missing measurements stay missing. This runner does not

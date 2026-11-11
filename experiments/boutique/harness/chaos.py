@@ -12,6 +12,12 @@ from experiments.boutique.harness.connected import APPLICATIONS, UPSTREAM, UPSTR
 
 ROOT = Path(__file__).resolve().parents[3]
 FAULTS = ("cpu", "memory", "pod", "network", "http", "dns")
+# DNSChaos copies /etc/resolv.conf with a shell inside the target container. The
+# pinned Boutique pods have read-only root filesystems and frontend has no shell,
+# so the scenario can never be injected there. Refuse it before any cluster work.
+UNSUPPORTED = {"dns": "DNSChaos needs a shell and a writable /etc in the target container; "
+                      "the pinned Boutique pods are read-only and frontend has no shell"}
+SUPPORTED = tuple(fault for fault in FAULTS if fault not in UNSUPPORTED)
 KINDS = ("StressChaos", "PodChaos", "NetworkChaos", "HTTPChaos", "DNSChaos")
 CLUSTER = "sentinel-boutique-chaos"
 CONTEXT = "kind-" + CLUSTER

@@ -5,7 +5,7 @@
   "kind": "NetworkChaos",
   "spec": {
     "action": "delay",
-    "direction": "both",
+    "direction": "to",
     "delay": {
       "latency": "200ms",
       "correlation": "0",
