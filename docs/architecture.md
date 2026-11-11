@@ -47,8 +47,8 @@ template in one JSON Patch with UID/resourceVersion tests, and reconciles
 uncertainty by reading evidence plus live state through a pure decision table
 ([Executor guide](../services/executor/README.md#the-write-and-ledger-are-separate-commits)).
 A write that can no longer commit ends as SUPERSEDED, which the Coordinator
-treats as FAILED. An uncertain mutation is never blindly repeated. Duplicate payloads replay saved results; changed payloads under
-an existing ID are rejected. A refreshed Planner resource version gets a new ID.
+treats as FAILED. An uncertain mutation is never blindly repeated. Duplicate
+payloads replay saved results; changed payloads under an existing ID are rejected. A refreshed Planner resource version gets a new ID.
 
 OS workload locks and SQLite serialization coordinate one host. They do not
 provide distributed leases or fencing. The optional [HTTP delivery layer](../runtime/README.md)

@@ -192,6 +192,12 @@ row and no new `recorded_at`, so nothing new is delivered and the Coordinator's
 `executor.reconcile` command stays pending until the state changes. A changed
 basis is a new fact and is recorded.
 
+With several executor hosts, the Coordinator may already hold a newer
+NEEDS_RECONCILIATION result from another host. A host's own saved result that is
+not newer than it is treated the same way: the command stays pending (or is
+retried), instead of being dropped as stale and acknowledged, which would leave
+nothing to report a later commit.
+
 The restart scan backs off rows still in doubt: 2 s after the first unchanged
 pass, doubling to at most 60 s (`next_reconcile_at` and `reconcile_attempts` in
 the ledger). Remote workers return no result for unchanged uncertainty, so the

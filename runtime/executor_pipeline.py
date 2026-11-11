@@ -11,7 +11,7 @@ from datetime import datetime
 import json
 
 from services.coordinator.core import acknowledge, dispatch_pending, record_message
-from services.executor.core import GuardCheck, execute, reconcile
+from services.executor.core import GuardCheck, execute, reconcile, unchanged_uncertainty
 from services.executor.store import TargetBusy
 from services.executor.delivery_store import (
     _ensure_reviews, _record_review, execution_delivery_reviews,
@@ -202,9 +202,10 @@ def process_executor_requests(store, event_bus, *, adapters):
                 continue
         if result is None:
             result = execute(deepcopy(action["proposal"]), request_adapters)
-        if request["topic"] == "executor.reconcile" and result == action["execution_result"]:
-            # Unchanged uncertainty. Like TargetBusy, keep the command pending so a
-            # later resolution is delivered through it instead of as a review.
+        if request["topic"] == "executor.reconcile" and unchanged_uncertainty(result, action["execution_result"]):
+            # Unchanged uncertainty, or this host's older saved result after another
+            # host reported a newer one. Like TargetBusy, keep the command pending so
+            # a later resolution is delivered through it instead of as a review.
             adapters.ledger.acknowledge_result(result)
             continue
         with store.transaction():

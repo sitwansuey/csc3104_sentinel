@@ -372,6 +372,42 @@ class ExecutorIntegrationTests(unittest.TestCase):
         self.assertEqual(peer.attempts(self.proposal["action_id"]), [])
         self.assertEqual(peer.get(self.proposal["action_id"])["phase"], "DONE")
 
+    def test_older_own_uncertainty_after_a_peer_report_keeps_the_command_pending(self):
+        class DelayedAPI(FakeDeploymentAPI):
+            def conditional_restore(self, **kwargs):
+                self.pending = deepcopy(kwargs)
+                raise TimeoutError("request completion is unknown")
+
+        self.cluster = DelayedAPI(self.cluster.snapshot, clock=lambda: self.now)
+        self.adapters = replace(self.adapters, cluster=self.cluster)
+        self.prepare()
+        host_a = self.adapters
+        own = self.run_worker()[0]
+        self.assertEqual(own["status"], "NEEDS_RECONCILIATION")
+        # Host B has no ledger row and reports a newer in-doubt result.
+        peer = SQLiteExecutionLedger(self.path / "host-b.db")
+        self.addCleanup(peer.close)
+        self.adapters = replace(host_a, ledger=peer, coordination=LocalTargetCoordinator(self.path / "host-b-locks"))
+        self.now += timedelta(seconds=61)
+        newer = self.run_worker()
+        self.assertEqual([result["status"] for result in newer], ["NEEDS_RECONCILIATION"])
+        self.assertGreater(newer[0]["recorded_at"], own["recorded_at"])
+        # Host A deduplicates to its own older result. It must not be dropped as
+        # stale and acknowledge the command, or nothing reports the late commit.
+        self.adapters = host_a
+        self.now += timedelta(seconds=61)
+        self.assertEqual(self.run_worker(), [])
+        self.assertEqual(self.ledger.results(self.proposal["action_id"]), [own])
+        self.assertEqual(self.pending_reconciles(), 1)
+        self.assertEqual(execution_delivery_reviews(self.store), [])
+        self.assertEqual(self.state(), "NEEDS_RECONCILIATION")
+        FakeDeploymentAPI.conditional_restore(self.cluster, **self.cluster.pending)
+        self.now += timedelta(seconds=61)
+        self.assertEqual([result["status"] for result in self.run_worker()], ["APPLIED"])
+        self.assertEqual(self.state(), "VERIFYING")
+        self.assertEqual(self.pending_reconciles(), 0)
+        self.assertEqual(len(self.cluster.writes), 1)
+
     def test_busy_reconcile_command_stays_pending_without_a_write(self):
         from services.executor.store import TargetBusy
 

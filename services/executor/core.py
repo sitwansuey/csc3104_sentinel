@@ -286,6 +286,27 @@ def reconcile(proposal: dict, adapters: ExecutionAdapters) -> dict:
         return _reconcile(proposal, adapters)
 
 
+def unchanged_uncertainty(result: dict, known) -> bool:
+    """True when a reconcile result tells Coordinator nothing newer than ``known``.
+
+    ``known`` is Coordinator's latest execution result for the action. It may
+    come from another host, so a host's own saved, deduplicated result can be
+    older than it. Such a result would be dropped as stale and its reconcile
+    command acknowledged, leaving nothing to report a later commit. Callers keep
+    the command pending instead.
+    """
+    if result == known:
+        return True
+    if not isinstance(known, dict) or result.get("status") != "NEEDS_RECONCILIATION":
+        return False
+    try:
+        mine = datetime.fromisoformat(result["recorded_at"].replace("Z", "+00:00"))
+        theirs = datetime.fromisoformat(known["recorded_at"].replace("Z", "+00:00"))
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return False
+    return mine <= theirs
+
+
 def execute(proposal: dict, adapters: ExecutionAdapters) -> dict:
     """Execute once, replay a completed result, or reconcile an uncertain attempt.
 

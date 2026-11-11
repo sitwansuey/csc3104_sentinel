@@ -15,7 +15,9 @@ import unittest
 from experiments.validation.demo_guard import load_fixtures
 from runtime.executor_pipeline import GuardAuthorizer
 from runtime.remote_adapters import ExecutorAdapter
-from services.executor.core import ExecutionAdapters, encode_evidence, execute, reconcile
+from services.executor.core import (
+    ExecutionAdapters, encode_evidence, execute, reconcile, unchanged_uncertainty,
+)
 from services.executor.reconciliation import (
     ABSENT, ACTION_ANNOTATION, Basis, Decision, Observation, action_attempt, classify, observe,
 )
@@ -438,6 +440,33 @@ class ReconciliationScenarioTests(unittest.TestCase):
         self.assertEqual(result["status"], "SUPERSEDED")
         self.assertIsNone(report)
         self.assertEqual(cluster.writes, [])
+
+
+class UnchangedUncertaintyTests(unittest.TestCase):
+    """Which reconcile results add nothing to Coordinator's latest execution result."""
+
+    def result(self, status, recorded_at, details="[basis=UNCHANGED_IN_DOUBT] x"):
+        return {"action_id": "ACT-1", "status": status, "resource_version": "7",
+                "recorded_at": recorded_at, "details": details}
+
+    def test_equal_and_older_uncertainty_are_unchanged(self):
+        known = self.result("NEEDS_RECONCILIATION", "2026-10-10T12:01:41Z", "[basis=UNCHANGED_IN_DOUBT] peer")
+        self.assertTrue(unchanged_uncertainty(deepcopy(known), known))
+        self.assertTrue(unchanged_uncertainty(self.result("NEEDS_RECONCILIATION", "2026-10-10T12:00:40Z"), known))
+        self.assertTrue(unchanged_uncertainty(self.result("NEEDS_RECONCILIATION", "2026-10-10T12:01:41Z"), known))
+
+    def test_newer_uncertainty_and_any_resolution_are_delivered(self):
+        known = self.result("NEEDS_RECONCILIATION", "2026-10-10T12:01:41Z")
+        self.assertFalse(unchanged_uncertainty(
+            self.result("NEEDS_RECONCILIATION", "2026-10-10T12:01:41.000001Z"), known))
+        for status in DONE:
+            self.assertFalse(unchanged_uncertainty(self.result(status, "2026-10-10T12:00:40Z"), known))
+
+    def test_missing_or_malformed_known_result_is_not_unchanged(self):
+        mine = self.result("NEEDS_RECONCILIATION", "2026-10-10T12:00:40Z")
+        self.assertFalse(unchanged_uncertainty(mine, None))
+        self.assertFalse(unchanged_uncertainty(mine, {"status": "NEEDS_RECONCILIATION"}))
+        self.assertFalse(unchanged_uncertainty(mine, {"recorded_at": "not a time"}))
 
 
 class LedgerMigrationTests(unittest.TestCase):
