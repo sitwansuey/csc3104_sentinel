@@ -23,6 +23,9 @@ from .rcaeval import ROOT, checked_path, parquet, save, settings, validate_local
 LOG = log.get_logger("rcaeval")
 REFERENCE_REVISION = "2f703059960517b024c504c817771fa85294aa09"
 FAULTS = {"cpu", "mem", "disk", "delay", "loss", "socket"}
+# Non-LLM baselines (agent/datasets/baselines.py); they need no model and no configuration.
+BASELINES = ("baro", "anomaly-rank")
+METHODS = ("sentinel", "casetoolkit", *BASELINES)
 
 
 def to_service(candidate):
@@ -68,11 +71,19 @@ def read_jsonl(path):
         return [json.loads(line) for line in stream if line.strip()]
 
 
-def export_tasks(data_root, output, *, suites=None, systems=None, faults=None, limit=None, exclude_tasks=None):
+def export_tasks(data_root, output, *, suites=None, systems=None, faults=None, limit=None, exclude_tasks=None,
+                 cases=None):
+    """Export blinded tasks. cases, when given, is an explicit list of source case names (a sample split)."""
     config = settings()
     plan, indexed = validate_local_plan(data_root, config)
     rows = [r for r in indexed if (not suites or r["suite"] in suites)
             and (not systems or r["system"] in systems) and (not faults or r["fault"] in faults)]
+    if cases is not None:
+        wanted = set(cases)
+        unknown = sorted(wanted - {r["case"] for r in indexed})
+        if unknown:
+            raise ValueError("Not allowed non-code cases in this index: " + ", ".join(unknown))
+        rows = [r for r in rows if r["case"] in wanted]
     rows.sort(key=lambda r: hashlib.sha256(r["case"].encode()).hexdigest())
     excluded = set(load_tasks(exclude_tasks)) if exclude_tasks else set()
     rows = [r for r in rows if "case-" + hashlib.sha256(r["case"].encode()).hexdigest()[:16] not in excluded]
@@ -132,7 +143,8 @@ def export_tasks(data_root, output, *, suites=None, systems=None, faults=None, l
     save(task_root / "manifest.json", {"schema_version": 1, "source_repo": config["repo_id"],
          "source_revision": config["revision"], "reference_code_revision": REFERENCE_REVISION,
          "n_cases": len(tasks), "cases": tasks, "selection": {"suites": suites, "systems": systems,
-         "faults": faults, "limit": limit, "excluded_case_ids": sorted(excluded)}, "standard_window_seconds": 1200})
+         "faults": faults, "limit": limit, "excluded_case_ids": sorted(excluded),
+         "explicit_cases": len(set(cases)) if cases is not None else None}, "standard_window_seconds": 1200})
     # Answer metadata is outside the only directory supplied to diagnosis workers.
     save(output / "provenance.json", {"source_manifest_sha256": digest(data_root / "source-manifest.json"),
          "answers_sha256": digest(answers), "reference_code_revision": REFERENCE_REVISION})
@@ -303,6 +315,9 @@ def worker(task_dir, output, method, config):
         ranks, usage = predict(task_dir, task, output.parent, config)
     elif method == "sentinel":
         ranks, usage = sentinel_prediction(task_dir, task, output.parent, config)
+    elif method in BASELINES:
+        from .baselines import predict as baseline_prediction
+        ranks, usage = baseline_prediction(method, task_dir, task)
     else:
         raise ValueError("Unknown diagnosis method: " + method)
     usage["wall_time_s"] = time.monotonic() - started
@@ -327,6 +342,10 @@ def run(tasks_root, output, method, timeout, *, resume=False, config=None):
         import RCAEval.agent.toolkit as toolkit_module
         identity["casetoolkit_sha256"] = digest(Path(__file__).with_name("casetoolkit.py"))
         identity["upstream_toolkit_sha256"] = digest(Path(toolkit_module.__file__))
+        identity["rcaeval_version"] = version("RCAEval")
+    if method in BASELINES:
+        from importlib.metadata import version
+        identity["baselines_sha256"] = digest(Path(__file__).with_name("baselines.py"))
         identity["rcaeval_version"] = version("RCAEval")
     predictions_path = output / "predictions.jsonl"
     if output.exists():
@@ -378,7 +397,7 @@ def main(argv=None):
     runner = sub.add_parser("run", help="Run diagnosis with per-case timeout and resumable predictions")
     runner.add_argument("--tasks", type=Path, required=True)
     runner.add_argument("--out", type=Path, required=True)
-    runner.add_argument("--method", choices=("sentinel", "casetoolkit"), default="casetoolkit")
+    runner.add_argument("--method", choices=METHODS, default="casetoolkit")
     runner.add_argument("--timeout", type=int, default=600)
     runner.add_argument("--resume", action="store_true")
     runner.add_argument("--config", type=Path)
@@ -389,7 +408,7 @@ def main(argv=None):
     internal = sub.add_parser("_worker", help=argparse.SUPPRESS)
     internal.add_argument("--task-dir", type=Path, required=True)
     internal.add_argument("--out", type=Path, required=True)
-    internal.add_argument("--method", choices=("sentinel", "casetoolkit"), required=True)
+    internal.add_argument("--method", choices=METHODS, required=True)
     internal.add_argument("--config", type=Path)
     args = parser.parse_args(argv)
     try:
