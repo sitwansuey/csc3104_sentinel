@@ -17,7 +17,8 @@ SCHEMA = "sentinel-provenance-v1"
 UNKNOWN = "unknown"
 UNAVAILABLE = "unavailable"
 
-# Client-only version commands. None of them contacts a cluster or a model.
+# Version commands. None contacts a cluster or runs a model; 'ollama --version'
+# may ask the local Ollama server for its version.
 TOOL_COMMANDS = {
     "kubectl": ["kubectl", "version", "--client"],
     "kind": ["kind", "version"],
