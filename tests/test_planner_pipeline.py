@@ -13,6 +13,7 @@ from services.coordinator.core import SQLiteStore, handle
 from services.observer.core import detect
 from services.planner.core import mock_provider, retrieve_runbooks
 from services.planner.store import PlannerStore
+from services.planner.worker import escalation
 
 
 class DurablePlannerTests(unittest.TestCase):
@@ -160,6 +161,74 @@ class DurablePlannerTests(unittest.TestCase):
         self.assertEqual(self.step(), "NEEDS_REVIEW")
         self.provider.assert_not_called()
         self.assertEqual(self.f.cluster.writes, [])
+
+    def abstain(self, context):
+        return {"action": "ESCALATE", "parameters": {},
+                "rationale": "Evidence does not support a supported repair.",
+                "evidence_refs": [item["evidence_id"] for item in context["incident"]["signals"]]}
+
+    def test_model_abstention_is_saved_delivered_once_and_never_authorizes_a_write(self):
+        self.provider.side_effect = self.abstain
+        self.assertEqual(self.step(), "NEEDS_REVIEW")
+        saved = self.journal.get(self.incident["incident_id"])
+        self.assertEqual(saved["proposal"]["action"], "ESCALATE")
+        # The model's own answer is kept, not replaced by the exhausted-attempts escalation.
+        self.assertEqual(saved["proposal"]["rationale"], "Evidence does not support a supported repair.")
+        self.assertNotEqual(saved["proposal"], escalation(self.incident))
+        self.assertEqual(self.f.store.action(saved["proposal"]["action_id"])["proposal"], saved["proposal"])
+        self.assertEqual(saved["attempts"], 1)
+        self.assertIsNone(saved["error_code"])  # An answer, not a provider failure.
+        self.assertTrue(saved["delivered"])
+        self.restart()
+        self.assertEqual(self.plan(), [])
+        self.assertEqual(self.step(), "NEEDS_REVIEW")
+        self.assertEqual(self.provider.call_count, 1)
+        self.assertEqual(self.f.cluster.writes, [])
+        self.assertEqual(self.f.store.pending_routes("planner.request"), [])
+
+    def test_model_abstention_replays_after_delivery_crash_without_model_recall(self):
+        self.provider.side_effect = self.abstain
+        with patch("runtime.planner_pipeline.record_message", side_effect=OSError("lost result")):
+            with self.assertRaises(OSError):
+                self.plan()
+        saved = self.journal.get(self.incident["incident_id"])["proposal"]
+        self.assertEqual(saved["action"], "ESCALATE")
+        self.assertEqual(saved["rationale"], "Evidence does not support a supported repair.")
+        self.assertEqual(self.f.store.incident(self.incident["incident_id"])["state"], "OPEN")
+        self.restart()
+        self.assertEqual(self.plan(), [saved])
+        self.assertEqual(self.provider.call_count, 1)
+        self.assertEqual(self.f.store.action(saved["action_id"])["proposal"], saved)
+        self.assertEqual(self.f.cluster.writes, [])
+
+    def exhaust_with_failing_input(self, **readers):
+        options = {"baseline_reader": lambda i: [self.f.baseline], "retriever": retrieve_runbooks, **readers}
+        def plan():
+            return process_planner_requests(self.f.store, self.f.bus, provider=self.provider,
+                                            journal=self.journal, **options)
+        self.assertEqual(plan(), [])
+        self.f.now += timedelta(seconds=5)
+        self.assertEqual(plan(), [])
+        self.restart()
+        self.f.now += timedelta(seconds=10)
+        proposal = plan()[0]
+        saved = self.journal.get(self.incident["incident_id"])
+        self.assertEqual(proposal["action"], "ESCALATE")
+        self.assertEqual(saved["attempts"], 3)
+        self.assertEqual(saved["error_code"], "PROVIDER_UNAVAILABLE")
+        self.provider.assert_not_called()
+        self.assertEqual(self.f.store.incident(self.incident["incident_id"])["state"], "NEEDS_REVIEW")
+        self.assertEqual(self.f.cluster.writes, [])
+
+    def test_retrieval_failures_are_bounded_and_end_in_escalation(self):
+        def retriever(query):
+            raise TimeoutError("runbook store unavailable")
+        self.exhaust_with_failing_input(retriever=retriever)
+
+    def test_baseline_read_failures_are_bounded_and_end_in_escalation(self):
+        def baseline_reader(incident):
+            raise OSError("baseline store unavailable")
+        self.exhaust_with_failing_input(baseline_reader=baseline_reader)
 
     def test_changed_incident_payload_cannot_reuse_a_saved_result(self):
         self.journal.claim(self.incident, max_attempts=3, lease_seconds=10)

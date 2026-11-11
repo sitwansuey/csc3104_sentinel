@@ -20,6 +20,15 @@ class OfflineFlowTests(unittest.TestCase):
     def test_demo_runs_all_real_components_and_preserves_partial_verification(self):
         demonstrate()
 
+    def test_demo_plans_through_the_durable_journal(self):
+        saved = self.flow.planner.get(self.flow.incident['incident_id'])
+        self.assertEqual(saved['proposal'], self.flow.proposal)
+        self.assertTrue(saved['delivered'])
+        self.assertEqual(saved['attempts'], 1)
+        self.flow.restart()
+        self.assertEqual(self.flow.plan(), [])
+        self.assertEqual(self.flow.provider_calls, 1)
+
     def test_missing_approval_and_policy_rejection_do_not_execute(self):
         flow = self.flow
         flow.guard()
