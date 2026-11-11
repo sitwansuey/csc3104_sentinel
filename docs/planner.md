@@ -110,7 +110,12 @@ The source also retains a trusted JSON subprocess provider boundary via
 `-ProviderScript`, `-ProviderPolicy` and `-Operator`. This uses durable planning
 requests and exact interactive action confirmation. It is separate from
 `-Agent`, cannot be combined with its lab dashboard sequence, and is not an
-untrusted-plugin sandbox. See `scripts/boutique_provider.py` and its `--help`.
+untrusted-plugin sandbox. The options are listed by
+`python scripts/test_boutique_live.py --help`; the wiring is in
+`scripts/boutique_provider.py`. The provider script runs with the project
+Python, receives the planning context as JSON on stdin and must exit 0 after
+printing one JSON decision (`action`, `parameters`, `rationale`) of at most
+64 KiB. No example adapter is shipped.
 
 The subprocess-provider path persists its own `provider-recovery/planner.db`.
 It allows three attempts, with 5- and 10-second backoff, a 60-second subprocess
@@ -135,9 +140,20 @@ yet use this journal for its internal RCA/model phases.
 ## Acceptance and limits
 
 RCA/proposal validation, abstention, wrong-baseline rejection and a complete
-cross-role handoff have injected-model regressions. The actual Ollama/model
-run has deliberately not been performed in this review. This supports
-**implemented and wired**, not fully accepted AI-driven recovery.
+cross-role handoff have injected-model regressions. Real-model runs with
+`qwen3:14b` (Ollama 0.40, fully on a 16 GB GPU) on 11 November named
+shippingservice and the invalid port correctly in 7 of 7 runs, using 4-5 model
+calls and 38-109 s of model time per incident. With the Verifier convergence
+grace (#89), 5 of 5 of those recoveries were verified RECOVERED. Owner
+acceptance of the real-model path is tracked in #56.
+
+If the model is unreachable, a model is not installed, or the agent abstains,
+no proposal reaches Guard and no repair is attempted. The dashboard shows an
+"Agent planning stopped" event with the reason (Ollama's own message for HTTP
+errors, and the endpoint host), `summary.json` records `agent_failure`, and the
+harness removes the injected fault as an administrator emergency restore,
+which is not counted as Sentinel recovery. The incident stays OPEN: terminal
+escalation for planner failure belongs to the durable Planner work (#14).
 
 The agent experiment is a local one-incident path. Its inference is not a
 separately deployed durable Planner worker with complete retry/escalation

@@ -6,7 +6,7 @@ import io
 import json
 import threading
 import unittest
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from unittest.mock import patch
 
 from agent.llm import Ollama
@@ -85,3 +85,35 @@ class ModelTransportTests(unittest.TestCase):
         self.assertEqual(request.call_count, 1)
         sleep.assert_not_called()
         self.assertEqual(model.calls[0]["status"], "failed")
+
+    def test_missing_model_reports_ollamas_reason_without_retry(self):
+        body = io.BytesIO(b'{"error":"model \'fixture-model\' not found"}')
+        error = HTTPError("http://127.0.0.1:11434/api/chat", 404, "Not Found", {}, body)
+        with patch("agent.llm.urllib.request.urlopen", side_effect=[error]) as request, \
+                patch("agent.llm.time.sleep") as sleep:
+            with self.assertRaisesRegex(RuntimeError, "fixture-model at 127.0.0.1:11434: HTTP 404 Not Found: "
+                                                      "model 'fixture-model' not found"):
+                self.model().ask("Planner", "fixture", {"type": "object"})
+        self.assertEqual(request.call_count, 1)
+        sleep.assert_not_called()
+        self.assertTrue(body.closed)
+
+    def test_retried_http_errors_report_the_servers_reason(self):
+        for code in (408, 429, 500):
+            errors = [HTTPError("http://127.0.0.1:11434/api/chat", code, "Busy", {}, io.BytesIO(b"busy"))
+                      for _ in range(2)]
+            with patch("agent.llm.urllib.request.urlopen", side_effect=errors) as request, \
+                    patch("agent.llm.time.sleep"):
+                with self.assertRaisesRegex(RuntimeError, f"HTTP {code} Busy: busy"):
+                    self.model().ask("Planner", "fixture", {"type": "object"})
+            self.assertEqual(request.call_count, 2, code)
+
+    def test_unreachable_endpoint_is_named_without_credentials(self):
+        model = Ollama({"base_url": "http://user:secret@127.0.0.1:9", "model": "fixture-model", "timeout": 3})
+        refused = URLError(ConnectionRefusedError("connection refused"))
+        with patch("agent.llm.urllib.request.urlopen", side_effect=[refused, refused]), \
+                patch("agent.llm.time.sleep"):
+            with self.assertRaises(RuntimeError) as failure:
+                model.ask("Planner", "fixture", {"type": "object"})
+        self.assertIn("at 127.0.0.1:9:", str(failure.exception))
+        self.assertNotIn("secret", str(failure.exception))

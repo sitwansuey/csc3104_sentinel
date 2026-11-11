@@ -147,6 +147,52 @@ class LiveAgentTests(unittest.TestCase):
         self.assertNotIn("Recovery Planner", [c["role"] for c in model.calls])
         self.assertEqual(json.loads((folder / "model-proposal.json").read_text())["action"], "ESCALATE")
 
+    @staticmethod
+    def stops(harness):
+        return [c for c in harness.event.call_args_list
+                if c.args[:2] == (3, "error") and c.args[2].startswith("Agent planning stopped; no repair proposed: ")]
+
+    def assert_visible_stop(self, harness, folder, error_text):
+        self.assertEqual(harness.summary["planning"], "Live RCA agent and Ollama Recovery Planner")
+        self.assertTrue(harness.summary["model"])
+        self.assertIn(error_text, harness.summary["agent_failure"]["error"])
+        self.assertEqual(len(self.stops(harness)), 1)
+        self.assertEqual(self.stops(harness)[0].kwargs["incident_id"], self.incident["incident_id"])
+        self.assertTrue((folder / "model-calls.json").is_file())
+
+    def test_unavailable_model_stops_visibly_without_a_proposal(self):
+        model = Mock(calls=[])
+        model.ask.side_effect = RuntimeError("Ollama Planner failed for test-model at 127.0.0.1:9: refused")
+        harness = self.harness()
+        folder = self.root / "unavailable"
+        folder.mkdir()
+        with patch("experiments.boutique.harness.agent_live.Ollama", return_value=model):
+            with self.assertRaisesRegex(RuntimeError, "Ollama Planner failed"):
+                harness.build_proposal(self.incident, folder)
+        self.assert_visible_stop(harness, folder, "RuntimeError: Ollama Planner failed for test-model")
+        self.assertEqual(harness.summary["agent_failure"]["model_calls_completed"], 0)
+        self.assertFalse((folder / "model-proposal.json").exists())
+
+    def test_abstention_is_a_visible_stop(self):
+        harness = self.harness()
+        folder = self.root / "abstained"
+        folder.mkdir()
+        with patch("experiments.boutique.harness.agent_live.Ollama", return_value=self.model(abstain=True)):
+            with self.assertRaisesRegex(RuntimeError, "ESCALATE"):
+                harness.build_proposal(self.incident, folder)
+        self.assert_visible_stop(harness, folder, "ESCALATE")
+
+    def test_successful_planning_records_no_failure(self):
+        harness = self.harness()
+        folder = self.root / "planned"
+        folder.mkdir()
+        with patch("experiments.boutique.harness.agent_live.Ollama", return_value=self.model()):
+            harness.build_proposal(self.incident, folder)
+        self.assertNotIn("agent_failure", harness.summary)
+        self.assertEqual(harness.summary["operator_approval"], "pre-authorized local E2E test")
+        self.assertEqual(harness.summary["planning"], "Live RCA agent and Ollama Recovery Planner")
+        self.assertEqual(self.stops(harness), [])
+
     def test_refreshed_version_is_new_intent_and_gets_a_different_action_id(self):
         proposals = []
         for version in ("200", "201"):
