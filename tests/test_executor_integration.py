@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import tempfile
@@ -248,24 +248,129 @@ class ExecutorIntegrationTests(unittest.TestCase):
         self.assertEqual(self.cluster.restore_calls, 1)
         self.now = self.now.replace(second=41)
 
+    def pending_reconciles(self):
+        return self.store.db.execute(
+            "SELECT count(*) FROM outbox WHERE topic='executor.reconcile' AND delivered=0").fetchone()[0]
+
     def test_reconcile_command_never_starts_a_write_when_the_journal_is_missing(self):
         self.uncertain_write()
-        # The executor ledger is lost or replaced; only the Coordinator still knows the action.
+        # The executor ledger is lost or replaced (or this is another host); only the
+        # Coordinator still knows the action. Reconcile statelessly from the proposal.
         replacement = SQLiteExecutionLedger(self.path / "replacement.db")
         self.addCleanup(replacement.close)
         self.adapters = replace(self.adapters, ledger=replacement)
-        self.assertEqual(self.run_worker(), [])
+        results = self.run_worker()
+        self.assertEqual([result["status"] for result in results], ["NEEDS_RECONCILIATION"])
+        self.assertTrue(results[0]["details"].startswith("[basis=UNCHANGED_IN_DOUBT]"))
         self.assertEqual(self.cluster.restore_calls, 1)
         self.assertEqual(self.state(), "NEEDS_RECONCILIATION")
-        reviews = execution_delivery_reviews(self.store)
-        self.assertEqual(len(reviews), 1)
-        self.assertIn("no write was attempted", reviews[0]["reason"])
-        pending = self.store.db.execute(
-            "SELECT count(*) FROM outbox WHERE topic='executor.reconcile' AND delivered=0").fetchone()[0]
-        self.assertEqual(pending, 0)
+        self.assertEqual(execution_delivery_reviews(self.store), [])
+        self.assertEqual(replacement.get(self.proposal["action_id"])["phase"], "UNCERTAIN")
+        # Unchanged state is not delivered again; the command stays pending.
+        self.now += timedelta(seconds=61)
         self.assertEqual(self.run_worker(), [])
+        self.assertEqual(self.pending_reconciles(), 1)
+        # Another writer moves the version: the stuck write can never commit.
+        self.cluster.external_write()
+        self.now += timedelta(seconds=61)
+        results = self.run_worker()
+        self.assertEqual([result["status"] for result in results], ["SUPERSEDED"])
+        self.assertEqual(self.state(), "FAILED")
         self.assertEqual(self.cluster.restore_calls, 1)
-        self.assertEqual(len(execution_delivery_reviews(self.store)), 1)
+        self.assertEqual(execution_delivery_reviews(self.store), [])
+        self.assertEqual(self.pending_reconciles(), 0)
+
+    def execution_messages(self):
+        return [json.loads(row[0]) for row in self.store.db.execute("SELECT payload FROM messages ORDER BY rowid")
+                if json.loads(row[0])["kind"] == "execution_result"]
+
+    def test_external_version_bump_during_in_doubt_write_supersedes_and_releases_target(self):
+        self.uncertain_write()
+        self.cluster.external_write()
+        results = self.run_worker()
+        self.assertEqual([result["status"] for result in results], ["SUPERSEDED"])
+        self.assertTrue(results[0]["details"].startswith("[basis=ADVANCED_WITHOUT_EVIDENCE]"))
+        self.assertEqual(self.state(), "FAILED")
+        self.assertFalse(any(event["topic"] == "verifier.request" for event in self.bus.events))
+        self.assertEqual(self.ledger.get(self.proposal["action_id"])["phase"], "DONE")
+        self.assertEqual(self.cluster.restore_calls, 1)
+        # The workload is released: a new proposal is admitted by both stores.
+        later = dict(self.proposal, action_id="ACT-LATER")
+        handle(later, self.store, self.bus)
+        self.assertEqual(self.store.action("ACT-LATER")["state"], "VALIDATING")
+        self.assertEqual(self.ledger.prepare(later)["phase"], "PREPARED")
+
+    def test_unchanged_uncertainty_is_not_redelivered_until_it_resolves(self):
+        class DelayedAPI(FakeDeploymentAPI):
+            restore_calls = 0
+
+            def conditional_restore(self, **kwargs):
+                self.restore_calls += 1
+                self.pending = deepcopy(kwargs)
+                raise TimeoutError("request completion is unknown")
+
+        self.cluster = DelayedAPI(self.cluster.snapshot, clock=lambda: self.now)
+        self.adapters = replace(self.adapters, cluster=self.cluster)
+        self.prepare()
+        self.assertEqual(self.run_worker()[0]["status"], "NEEDS_RECONCILIATION")
+        for _ in range(5):
+            self.now += timedelta(seconds=61)
+            self.assertEqual(self.run_worker(), [])
+        self.assertEqual(len(self.ledger.results(self.proposal["action_id"])), 1)
+        self.assertEqual(len(self.execution_messages()), 1)
+        self.assertEqual(self.pending_reconciles(), 1)
+        self.assertEqual(self.ledger.get(self.proposal["action_id"])["reconcile_attempts"], 5)
+        # The original request lands late; the pending command delivers APPLIED.
+        FakeDeploymentAPI.conditional_restore(self.cluster, **self.cluster.pending)
+        self.now += timedelta(seconds=61)
+        results = self.run_worker()
+        self.assertEqual([result["status"] for result in results], ["APPLIED"])
+        self.assertEqual(self.state(), "VERIFYING")
+        self.assertEqual(execution_delivery_reviews(self.store), [])
+        self.assertEqual(self.pending_reconciles(), 0)
+        self.assertEqual(self.cluster.restore_calls, 1)
+        self.assertEqual([result["status"] for result in self.ledger.results(self.proposal["action_id"])],
+                         ["NEEDS_RECONCILIATION", "APPLIED"])
+
+    def test_reconcile_backoff_skips_passes_until_due(self):
+        self.uncertain_write()
+        self.cluster.reads = 0
+        original_read = self.cluster.read
+
+        def counted(target):
+            self.cluster.reads += 1
+            return original_read(target)
+
+        self.cluster.read = counted
+        self.assertEqual(self.run_worker(), [])  # First pass is due immediately.
+        self.assertEqual(self.cluster.reads, 1)
+        self.now += timedelta(seconds=1)
+        self.assertEqual(self.run_worker(), [])  # Within the 2 s backoff: no read.
+        self.assertEqual(self.cluster.reads, 1)
+        self.now += timedelta(seconds=1)
+        self.assertEqual(self.run_worker(), [])
+        self.assertEqual(self.cluster.reads, 2)
+        self.now += timedelta(seconds=3)
+        self.assertEqual(self.run_worker(), [])  # The next delay is 4 s.
+        self.assertEqual(self.cluster.reads, 2)
+        self.assertEqual(self.pending_reconciles(), 1)
+
+    def test_peer_host_adopts_a_committed_write_without_writing(self):
+        self.crash_after_write()
+        # Host B: separate ledger and lock directory, the same cluster.
+        peer = SQLiteExecutionLedger(self.path / "host-b.db")
+        self.addCleanup(peer.close)
+        self.adapters = replace(self.adapters, ledger=peer,
+                                coordination=LocalTargetCoordinator(self.path / "host-b-locks"))
+        self.now = self.now.replace(second=41)
+        results = self.run_worker()
+        self.assertEqual([result["status"] for result in results], ["APPLIED"])
+        self.assertIn("adopted peer write", results[0]["details"])
+        self.assertEqual(self.state(), "VERIFYING")
+        self.assertEqual(len(self.cluster.write_attempts), 1)
+        self.assertEqual(len(self.cluster.writes), 1)
+        self.assertEqual(peer.attempts(self.proposal["action_id"]), [])
+        self.assertEqual(peer.get(self.proposal["action_id"])["phase"], "DONE")
 
     def test_busy_reconcile_command_stays_pending_without_a_write(self):
         from services.executor.store import TargetBusy

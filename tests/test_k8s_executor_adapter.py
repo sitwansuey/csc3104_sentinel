@@ -14,7 +14,9 @@ import unittest
 from unittest.mock import patch
 
 from experiments.validation.demo_guard import load_fixtures
-from services.executor.core import ACTION_ANNOTATION, ConditionalWriteConflict, ReadUnavailable, encode_evidence
+from services.executor.core import (
+    ACTION_ANNOTATION, ConditionalWriteConflict, ReadUnavailable, TargetAbsent, encode_evidence,
+)
 from services.executor.store import fingerprint
 from services.executor.kubernetes_adapter import KubectlDeploymentAPI, LiveAdapterError, WriteOutcomeUnknown
 
@@ -106,7 +108,7 @@ class KubernetesExecutorAdapterTests(unittest.TestCase):
         command, options = self.runner.commands[0]
         self.assertEqual(command, ["kubectl", "--context=kind-team", "--kubeconfig=restricted credentials.json",
                                    "--namespace=sentinel-demo", "--request-timeout=10s",
-                                   "get", "deployment", "demo-api", "--output=json"])
+                                   "get", "deployment", "demo-api", "--ignore-not-found", "--output=json"])
         self.assertEqual(options, {"capture_output": True, "check": False, "timeout": 15})
         self.assertEqual(dict(os.environ), environment)
         self.assertEqual(self.adapter.stats["read_attempts"], 1)
@@ -217,6 +219,28 @@ class KubernetesExecutorAdapterTests(unittest.TestCase):
                     self.adapter.read(self.target)
                 self.assertNotIn("PRIVATE", str(failure.exception))
         self.assertEqual(self.adapter.stats["write_attempts"], 0)
+
+    def test_only_empty_success_output_means_the_target_is_absent(self):
+        for empty in (b"", b"\n", b"  \r\n"):
+            with self.subTest(empty=empty):
+                self.runner.read_error = subprocess.CompletedProcess([], 0, empty, b"")
+                with self.assertRaises(TargetAbsent):
+                    self.adapter.read(self.target)
+        # A failing command is never read as absence, even with empty output.
+        self.runner.read_error = subprocess.CompletedProcess([], 1, b"", b"")
+        with self.assertRaises(ReadUnavailable):
+            self.adapter.read(self.target)
+        self.runner.read_error = subprocess.CompletedProcess([], 0, b"garbage", b"")
+        with self.assertRaises(LiveAdapterError):
+            self.adapter.read(self.target)
+        self.assertFalse(issubclass(TargetAbsent, ReadUnavailable))
+
+    def test_absent_target_before_submission_is_a_zero_write_conflict(self):
+        self.runner.read_error = subprocess.CompletedProcess([], 0, b"", b"")
+        with self.assertRaises(ConditionalWriteConflict):
+            self.restore()
+        self.assertEqual(self.adapter.stats["write_attempts"], 0)
+        self.assertEqual(self.runner.patches, [])
 
     def test_malformed_or_duplicate_json_and_wrong_identity_cannot_be_live_state(self):
         for raw in (b"not JSON", b'{"metadata":{},"metadata":{}}', b'{"value":NaN}', b"\xff"):

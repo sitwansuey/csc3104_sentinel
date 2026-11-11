@@ -79,7 +79,10 @@ class ExecutorAdapter:
             raise ValueError("Executor received an incompatible request")
         adapters = replace(self.adapters, authorizer=_RemoteAuthority(self.adapters.authorizer, lease))
         operation = reconcile if delivery["topic"] == "executor.reconcile" else execute
-        return operation(delivery["payload"]["proposal"], adapters), None
+        result = operation(delivery["payload"]["proposal"], adapters)
+        if delivery["topic"] == "executor.reconcile" and result == delivery["payload"].get("execution"):
+            return None  # Unchanged uncertainty: the worker asks the transport to retry with backoff.
+        return result, None
 
     def acknowledge(self, result):
         self.adapters.ledger.acknowledge_result(result)

@@ -151,8 +151,10 @@ def _apply(message, store):
             _require(_time(message["recorded_at"]) > _time(action["execution_result"]["recorded_at"]),
                      "Execution result is older than the stored result")
         status = message["status"]
+        # SUPERSEDED: the write can no longer commit. Fail and replan from live state.
         next_state = {"APPLIED": "VERIFYING", "NOOP": "VERIFYING", "FAILED": "FAILED",
-                      "CONFLICT": "FAILED", "NEEDS_RECONCILIATION": "NEEDS_RECONCILIATION"}[status]
+                      "CONFLICT": "FAILED", "SUPERSEDED": "FAILED",
+                      "NEEDS_RECONCILIATION": "NEEDS_RECONCILIATION"}[status]
         if next_state == "VERIFYING":
             _require(message["resource_version"] is not None, "Successful execution needs a resource version")
         store.save_execution_result(action_id, message)

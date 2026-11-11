@@ -111,6 +111,41 @@ class RemoteWorkerTests(unittest.TestCase):
         for journal in (executor.journal, verifier.journal, self.planning, self.f.ledger, self.f.verification):
             self.assertNotEqual(Path(journal.db.execute("PRAGMA database_list").fetchone()[2]), self.f.path / "coordinator.db")
 
+    def test_unchanged_uncertainty_is_retried_with_growing_backoff_then_resolved(self):
+        self.authorize()
+        cluster, real_restore = self.f.cluster, self.f.cluster.conditional_restore
+        pending = []
+
+        def timeout(**kwargs):
+            pending.append(kwargs)
+            raise TimeoutError("request completion is unknown")
+
+        cluster.conditional_restore = timeout
+        executor = self.worker("executor", ExecutorAdapter(self.f.adapters))
+        self.assertEqual(executor.once()["status"], "accepted")
+        self.assertEqual(self.state(), "NEEDS_RECONCILIATION")
+
+        def receipt():
+            return self.f.store.db.execute("""SELECT r.attempts, r.available FROM transport_receipts r
+                JOIN outbox o ON o.id=r.event_id WHERE o.topic='executor.reconcile'""").fetchone()
+
+        gaps = []
+        for _ in range(2):
+            self.assertEqual(executor.once()["status"], "pending")
+            attempts, available = receipt()
+            gaps.append(available - time.time())
+            time.sleep(max(0, available - time.time()) + 0.05)
+        self.assertEqual(receipt()[0], 2)
+        self.assertGreater(gaps[1], gaps[0])
+        self.assertEqual(len(self.f.ledger.results(self.proposal["action_id"])), 1)
+        self.assertEqual(self.state(), "NEEDS_RECONCILIATION")
+        # The original request lands late; the next delivery reports APPLIED.
+        real_restore(**pending[0])
+        self.assertEqual(executor.once()["status"], "accepted")
+        self.assertEqual(self.state(), "VERIFYING")
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(len(cluster.writes), 1)
+
     def test_remote_verification_binds_the_executed_template_and_detects_a_second_fault(self):
         from tests.test_verifier_pipeline import grpc_policy, grpc_samples
         self.authorize()

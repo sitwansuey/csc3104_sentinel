@@ -469,6 +469,10 @@ except TargetBusy:
         self.assertEqual(len(cluster.writes), 1)
 
     def test_reconciliation_requires_exact_evidence_template_and_target_identity(self):
+        # The version moved, so none of these can be in doubt, yet none proves APPLIED.
+        expected = {"absent": "ADVANCED_WITHOUT_EVIDENCE", "malformed": "ADVANCED_WITHOUT_EVIDENCE",
+                    "action-id-only": "ADVANCED_WITHOUT_EVIDENCE",
+                    "wrong-template": "COMMITTED_THEN_OVERWRITTEN", "wrong-uid": "TARGET_REPLACED"}
         for case in ("absent", "malformed", "action-id-only", "wrong-template", "wrong-uid"):
             with self.subTest(case=case):
                 ledger = SQLiteExecutionLedger(self.directory / (case + ".db"))
@@ -493,7 +497,10 @@ except TargetBusy:
                 else:
                     metadata["uid"] = "recreated-target"
                 result = execute(proposal, self.adapters(cluster=cluster, ledger=ledger))
-                self.assertEqual(result["status"], "NEEDS_RECONCILIATION")
+                self.assertEqual(result["status"], "SUPERSEDED")
+                self.assertNotEqual(result["status"], "APPLIED")
+                self.assertTrue(result["details"].startswith("[basis=" + expected[case] + "]"))
+                self.assertEqual(ledger.get(proposal["action_id"])["phase"], "DONE")
                 self.assertEqual(len(cluster.write_attempts), 1)
 
     def test_uncertain_write_blocks_other_actions_even_after_worker_unlocks(self):

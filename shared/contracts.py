@@ -145,7 +145,8 @@ def validate_message(message):
         _timestamp(message["checked_at"], "checked_at")
 
     elif kind == "execution_result":
-        _enum(message["status"], {"APPLIED", "NOOP", "FAILED", "CONFLICT", "NEEDS_RECONCILIATION"}, "status")
+        _enum(message["status"], {"APPLIED", "NOOP", "FAILED", "CONFLICT", "SUPERSEDED",
+                                  "NEEDS_RECONCILIATION"}, "status")
         if message["resource_version"] is not None:
             _string(message["resource_version"], "resource_version")
         _timestamp(message["recorded_at"], "recorded_at")

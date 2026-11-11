@@ -104,11 +104,14 @@ def reconcile_pending_executions(adapters):
     this helper does not change incident lifecycle or reauthorize execution.
     The ledger result outbox also exposes completed writes whose delivery was
     interrupted. Its exact saved result is replayed without a new timestamp.
+    Writes still in doubt are skipped until their reconcile backoff (2 s to 60 s) ends.
     """
-    proposals = {proposal["action_id"]: proposal for proposal in adapters.ledger.pending_proposals()}
+    now = adapters.clock()
+    proposals = {proposal["action_id"]: proposal for proposal in adapters.ledger.pending_proposals(due_at=now)}
     for result in adapters.ledger.undelivered_results():
         saved = adapters.ledger.get(result["action_id"])
-        proposals[result["action_id"]] = saved["proposal"]
+        if saved["phase"] == "DONE" or adapters.ledger.reconcile_due(result["action_id"], now):
+            proposals[result["action_id"]] = saved["proposal"]
     results = []
     for proposal in proposals.values():
         try:
@@ -178,13 +181,17 @@ def process_executor_requests(store, event_bus, *, adapters):
         )
         result = reconciled.get(action["action_id"])
         if result is None and request["topic"] == "executor.reconcile":
-            # A reconcile command may only inspect a journaled write, never start one.
+            # A reconcile command may only inspect a write, never start one. With no
+            # local journal it reconciles statelessly from the proposal and live state.
             # TargetBusy propagates and leaves the command pending, as for execution.
+            if not adapters.ledger.reconcile_due(action["action_id"], adapters.clock()):
+                continue  # Backoff: leave the command pending for a later pass.
             try:
                 result = reconcile(deepcopy(action["proposal"]), request_adapters)
             except ValueError as error:
-                # No usable journal (for example a lost or replaced ledger file). Keep the
-                # action in NEEDS_RECONCILIATION and leave durable evidence for an operator.
+                # An unusable journal (for example the action ID bound to another
+                # proposal). Keep the action in NEEDS_RECONCILIATION and leave durable
+                # evidence for an operator.
                 with store.transaction():
                     if not store.route(request["id"])["delivered"]:
                         _record_review(store, request["id"], action["execution_result"],
@@ -195,6 +202,11 @@ def process_executor_requests(store, event_bus, *, adapters):
                 continue
         if result is None:
             result = execute(deepcopy(action["proposal"]), request_adapters)
+        if request["topic"] == "executor.reconcile" and result == action["execution_result"]:
+            # Unchanged uncertainty. Like TargetBusy, keep the command pending so a
+            # later resolution is delivered through it instead of as a review.
+            adapters.ledger.acknowledge_result(result)
+            continue
         with store.transaction():
             current = store.route(request["id"])
             conflict = _delivery_conflict(store, result)

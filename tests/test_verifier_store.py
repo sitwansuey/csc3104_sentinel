@@ -62,7 +62,7 @@ class VerificationStoreTests(unittest.TestCase):
                 reopened.close()
 
     def test_unapplied_execution_and_invalid_clock_are_rejected(self):
-        for status in ("FAILED", "CONFLICT", "NEEDS_RECONCILIATION"):
+        for status in ("FAILED", "CONFLICT", "SUPERSEDED", "NEEDS_RECONCILIATION"):
             with self.subTest(status=status), self.assertRaises(VerifierInputError):
                 self.store.start(dict(self.execution, status=status), self.policy, now=NOW)
         with self.assertRaises(VerifierInputError):

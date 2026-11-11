@@ -1,4 +1,4 @@
-"""Run one guarded live rollback or inspect an already journaled write.
+"""Run one guarded live rollback or inspect a possibly committed write.
 
 The caller supplies protected, authoritative policy/baseline/dependency/approval
 files and an independent execution-scope allowlist. JSON files do not authenticate
@@ -8,7 +8,9 @@ administrator's credentials. APPLIED is execution evidence, not verified health.
 build_adapters returns the same injected interface used by the local team worker.
 Its ledger and lock directory must be shared by every worker on one host. There
 are no distributed leases or fencing. Reconciliation needs only retained scope,
-credentials, proposal and journal; it never reauthorizes or starts a mutation.
+credentials and proposal (the local journal is optional); it never reauthorizes
+or starts a mutation. Exit codes: 0 APPLIED/NOOP, 2 FAILED, 3 CONFLICT,
+4 NEEDS_RECONCILIATION, 5 SUPERSEDED, 1 no result.
 """
 
 import argparse
@@ -31,7 +33,7 @@ from services.guard.preview import server_dry_run as collect_server_preview
 from shared.contracts import ContractError, validate_message
 
 
-EXIT_CODES = {"APPLIED": 0, "NOOP": 0, "FAILED": 2, "CONFLICT": 3, "NEEDS_RECONCILIATION": 4}
+EXIT_CODES = {"APPLIED": 0, "NOOP": 0, "FAILED": 2, "CONFLICT": 3, "NEEDS_RECONCILIATION": 4, "SUPERSEDED": 5}
 
 
 def _utc_now():
@@ -175,7 +177,7 @@ def _parser():
     parser.add_argument("--context", required=True, help="Explicit restricted kubectl context")
     parser.add_argument("--cluster-id", required=True, help="Trusted Sentinel cluster identity")
     parser.add_argument("--server-dry-run", action="store_true", help="Obtain optional server admission evidence before execution")
-    parser.add_argument("--reconcile", action="store_true", help="Read-only inspection of an already journaled write")
+    parser.add_argument("--reconcile", action="store_true", help="Read-only inspection of a possibly committed write")
     return parser
 
 
