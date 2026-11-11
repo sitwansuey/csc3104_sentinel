@@ -1,0 +1,22 @@
+[
+  {
+    "attempt": 1,
+    "call_id": 1,
+    "error_type": "URLError",
+    "model": "qwen3:14b",
+    "prompt_characters": 7388,
+    "role": "Analyzer",
+    "seconds": 2.0566717000001518,
+    "status": "failed"
+  },
+  {
+    "attempt": 2,
+    "call_id": 2,
+    "error_type": "URLError",
+    "model": "qwen3:14b",
+    "prompt_characters": 7388,
+    "role": "Analyzer",
+    "seconds": 2.0674998000004052,
+    "status": "failed"
+  }
+]

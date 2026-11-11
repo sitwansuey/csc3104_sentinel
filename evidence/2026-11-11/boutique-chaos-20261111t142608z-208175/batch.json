@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "batch_id": "boutique-chaos-20261111T142608Z-208175",
+  "started_at": "2026-11-11T14:26:08.403040Z",
+  "configuration": {
+    "schema_version": 1,
+    "mode": "demo",
+    "faults": [
+      "network",
+      "pod",
+      "cpu"
+    ],
+    "baseline_seconds": 30,
+    "fault_seconds": 60,
+    "recovery_seconds": 30,
+    "settle_timeout_seconds": 90,
+    "sample_interval": 5,
+    "traffic_interval": 1,
+    "traffic_workers": 1,
+    "operator_gates": true,
+    "target": null
+  },
+  "context": "kind-sentinel-boutique-chaos",
+  "namespace": "sentinel-boutique-chaos",
+  "order": [
+    "network",
+    "pod",
+    "cpu"
+  ],
+  "runs": [
+    {
+      "run_id": "0001-network-c1421580",
+      "status": "complete",
+      "injection_confirmed": true,
+      "cleanup_confirmed": true,
+      "baseline_healthy": true,
+      "recovery_healthy": true,
+      "recovery_attribution": "no_sentinel_action; chaos_expiry_or_harness_cleanup",
+      "errors": [],
+      "telemetry_complete": true,
+      "injection_end_conditions": {
+        "Selected": "True",
+        "AllInjected": "False",
+        "AllRecovered": "True",
+        "Paused": "False"
+      },
+      "settle": {
+        "settled": true,
+        "timeout_seconds": 90,
+        "journeys": 5,
+        "failed_journeys": 0
+      },
+      "collection_errors": 0,
+      "log_gaps": 0,
+      "collection_samples": 29,
+      "collection_overruns": 0,
+      "completed_at": "2026-11-11T14:32:28.613660Z",
+      "fault_window_journeys": 31,
+      "observed_failed_fault_journeys": 0
+    },
+    {
+      "run_id": "0002-pod-534f4f23",
+      "status": "complete",
+      "injection_confirmed": true,
+      "cleanup_confirmed": true,
+      "baseline_healthy": true,
+      "recovery_healthy": true,
+      "recovery_attribution": "no_sentinel_action; chaos_expiry_or_harness_cleanup",
+      "errors": [],
+      "telemetry_complete": true,
+      "injection_end_conditions": {
+        "Selected": "True",
+        "AllInjected": "False",
+        "AllRecovered": "True",
+        "Paused": "False"
+      },
+      "settle": {
+        "settled": true,
+        "timeout_seconds": 90,
+        "journeys": 15,
+        "failed_journeys": 11
+      },
+      "collection_errors": 0,
+      "log_gaps": 0,
+      "collection_samples": 29,
+      "collection_overruns": 0,
+      "completed_at": "2026-11-11T14:34:48.874481Z",
+      "fault_window_journeys": 57,
+      "observed_failed_fault_journeys": 57
+    },
+    {
+      "run_id": "0003-cpu-9261d1d7",
+      "status": "complete",
+      "injection_confirmed": true,
+      "cleanup_confirmed": true,
+      "baseline_healthy": true,
+      "recovery_healthy": true,
+      "recovery_attribution": "no_sentinel_action; chaos_expiry_or_harness_cleanup",
+      "errors": [],
+      "telemetry_complete": true,
+      "injection_end_conditions": {
+        "AllInjected": "False",
+        "AllRecovered": "True",
+        "Paused": "False",
+        "Selected": "True"
+      },
+      "settle": {
+        "settled": true,
+        "timeout_seconds": 90,
+        "journeys": 5,
+        "failed_journeys": 0
+      },
+      "collection_errors": 0,
+      "log_gaps": 0,
+      "collection_samples": 27,
+      "collection_overruns": 0,
+      "completed_at": "2026-11-11T14:37:00.186493Z",
+      "fault_window_journeys": 55,
+      "observed_failed_fault_journeys": 0
+    }
+  ],
+  "status": "complete",
+  "completed_at": "2026-11-11T14:37:00.565723Z"
+}

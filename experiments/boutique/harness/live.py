@@ -23,6 +23,7 @@ from services.verifier.core import inspect_dependencies
 from services.verifier.store import VerificationStore, observation_seconds
 from services.executor.store import fingerprint
 from services.observer.kubernetes import CollectionError, KubernetesEvidenceCollector, KubectlReader
+from shared.provenance import tool_versions
 
 # A Deployment read through kubectl can fail transiently (non-zero exit, timeout, bad JSON).
 READ_ERRORS = (RuntimeError, ValueError, OSError, subprocess.SubprocessError)
@@ -274,6 +275,7 @@ class BoutiqueExperiment(Experiment):
                 "Expected one Role 6 outcome for the current recovery")
         outcome = outcomes[0]
         save(folder / "outcome.json", outcome)
+        self.phase("outcome_recorded", folder.name)
         disclosed = next((check["detail"] for check in outcome["checks"]
                           if check["name"] == "convergence" and check["detail"].startswith("Excluded ")), None)
         failed = ", ".join(check["name"] for check in outcome["checks"] if not check["passed"])
@@ -433,6 +435,7 @@ class BoutiqueExperiment(Experiment):
         elif self.pause_before_injection:
             input("Baseline ready. Press Enter to inject the " + label + " bad rollout (Ctrl+C aborts): ")
         self.inject_fault()
+        self.phase("fault_injected", label)
         deadline = time.monotonic() + 130
         index = 0
         consecutive_errors = 0
@@ -455,6 +458,7 @@ class BoutiqueExperiment(Experiment):
             if incident:
                 # Keep the existing evidence filenames used by the original lab.
                 save(self.directory / (label + "-incident.json"), incident)
+                self.phase("incident_observed", label)
                 return incident
             index += 1
             time.sleep(2)
@@ -522,6 +526,8 @@ def main():
     experiment = experiment_type(directory, **({"storefront_port": args.storefront_port} if args.connected else {}))
     if args.agent:
         experiment.agent_config = args.agent_config
+    experiment.summary["provenance"]["tools"] = tool_versions(
+        ("kubectl", "kind", "docker", "helm") + (("ollama",) if args.agent else ()))
     experiment.provider_script = args.provider_script.resolve() if args.provider_script else None
     experiment.provider_policy = args.provider_policy
     experiment.operator = args.operator

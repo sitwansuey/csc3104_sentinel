@@ -1,0 +1,52 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "boutique-live-20261110t194214z-c5f251",
+  "class": "provider-recovery",
+  "captured_at": "2026-11-10T19:42:14.827893Z",
+  "source_run_dir_name": "boutique-live-20261110T194214Z-c5f251",
+  "sanitiser_version": "1",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "d013ea59998d921d29508078f946595923d544e1",
+    "basis": "Inferred: newest commit reachable from main whose committer date precedes the run start. The run recorded no revision and its working tree may have differed."
+  },
+  "files": [
+    {
+      "path": "images.json",
+      "sha256": "d5760d2d3e7ebb4fbb818b3c1d0af177a286bd9a85878de990b0d8cd5820a199",
+      "bytes": 2741,
+      "redactions": 0
+    },
+    {
+      "path": "policy.json",
+      "sha256": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+      "bytes": 2352,
+      "redactions": 0
+    },
+    {
+      "path": "primary-incident.json",
+      "sha256": "87c7b71f5d58937c1946a821983acc44eff0d25d02251a633a75e5159cf875c7",
+      "bytes": 4165,
+      "redactions": 0
+    },
+    {
+      "path": "provider-recovery/proposal.json",
+      "sha256": "544b88df95ac55d6b4d8d608781dfaea6e6f998af4719c02cfad9dccd9b50722",
+      "bytes": 951,
+      "redactions": 0
+    },
+    {
+      "path": "rbac-checks.json",
+      "sha256": "6fd5a39fb636f6959a24aceb57cd07ed4611c62e201cb11380dc99e85179acbe",
+      "bytes": 552,
+      "redactions": 0
+    },
+    {
+      "path": "summary.json",
+      "sha256": "d9d9dab1390ccb22b24824f299a31db20675ac3e40a9bf8ff73bf6cc1d1fcb91",
+      "bytes": 1639,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

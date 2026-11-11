@@ -1,0 +1,159 @@
+{
+  "checks": [
+    {
+      "at": "2026-11-10T21:02:32.363742Z",
+      "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4",
+      "name": "healthy baseline captured with real service samples and immutable image",
+      "passed": true
+    },
+    {
+      "at": "2026-11-10T21:02:32.640269Z",
+      "name": "real ServiceAccount permits only selected Deployment get/patch; forbidden write denied",
+      "passed": true
+    },
+    {
+      "at": "2026-11-10T21:02:43.210358Z",
+      "name": "missing-approval makes zero executor writes",
+      "passed": true,
+      "status": "FAILED"
+    },
+    {
+      "at": "2026-11-10T21:02:43.686169Z",
+      "name": "hard-policy-rejection makes zero executor writes",
+      "passed": true,
+      "status": "FAILED"
+    },
+    {
+      "at": "2026-11-10T21:02:44.107178Z",
+      "name": "stale-state makes zero executor writes",
+      "passed": true,
+      "status": "CONFLICT"
+    },
+    {
+      "at": "2026-11-10T21:02:44.452514Z",
+      "name": "real API rejects JSON Patch after resourceVersion changes",
+      "passed": true,
+      "patch_attempts": 1
+    },
+    {
+      "at": "2026-11-10T21:02:45.363176Z",
+      "name": "competing real worker is excluded before mutation",
+      "passed": true
+    },
+    {
+      "at": "2026-11-10T21:02:45.975924Z",
+      "coordinator_state": "VERIFYING",
+      "name": "approved real rollback, duplicate replay and changed-ID rejection",
+      "passed": true,
+      "status": "APPLIED",
+      "writes": 1
+    },
+    {
+      "action_id": "ACT-LIVE-df4cd754e39c488192a457714fd7f8d8",
+      "at": "2026-11-10T21:03:09.167957Z",
+      "name": "Role 6 verified gRPC, readiness and template; Coordinator RECOVERED",
+      "outcome": "RECOVERED",
+      "passed": true
+    },
+    {
+      "at": "2026-11-10T21:03:09.191858Z",
+      "name": "gRPC quote and replica health after executor rollback; Role 6 published RECOVERED",
+      "passed": true
+    },
+    {
+      "at": "2026-11-10T21:03:20.184845Z",
+      "coordinator_state": "VERIFYING",
+      "name": "actual worker process exits after live patch; restart reconciles without resubmission",
+      "original_writes": 1,
+      "passed": true,
+      "restart_writes": 0,
+      "worker_exit": 73
+    },
+    {
+      "action_id": "ACT-LIVE-098a41af9a884470ab6bb84199b57a62",
+      "at": "2026-11-10T21:03:42.117316Z",
+      "name": "Role 6 verified gRPC, readiness and template; Coordinator RECOVERED",
+      "outcome": "RECOVERED",
+      "passed": true
+    },
+    {
+      "at": "2026-11-10T21:03:43.336317Z",
+      "executor_patch_attempts": 0,
+      "name": "Guard rejects unnecessary rollback despite approval; zero Executor patch attempts",
+      "passed": true,
+      "reason_code": "ROLLBACK_ALREADY_AT_BASELINE",
+      "verdict": "REJECT"
+    }
+  ],
+  "dashboard": {
+    "applied_actions": 2,
+    "cluster_samples": 46,
+    "dependency_results": 3,
+    "executor_patch_attempts_for_rejected_action": 0,
+    "frontend_http": 200,
+    "guard_reports": 5,
+    "incidents": 3,
+    "mode": "recorded/live producers",
+    "rejected_actions": 1,
+    "role6_outcomes": 2,
+    "snapshot_http": 200,
+    "status": "PASS",
+    "url": "http://127.0.0.1:8765"
+  },
+  "dependencies": "Role 6 evaluates reviewed isolated-service graph against live identity; no automatic discovery",
+  "finished_at": "2026-11-10T21:03:43.420974Z",
+  "guard_rejection": {
+    "action_id": "ACT-LIVE-6cc4997cf1414f7d84c81b688a3e5460",
+    "after": {
+      "available": 1,
+      "desired": 1,
+      "generation": 7,
+      "observed_generation": 7,
+      "pod_uids": [
+        "f9eadc1c-4015-4878-8592-756b989b9d7c"
+      ],
+      "ready": 1,
+      "resource_version": "960",
+      "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+      "uid": "e5b1e0ff-bfa2-421f-aa6d-360d218618c5"
+    },
+    "approved_guard_verdict": "REJECT",
+    "before": {
+      "available": 1,
+      "desired": 1,
+      "generation": 7,
+      "observed_generation": 7,
+      "pod_uids": [
+        "f9eadc1c-4015-4878-8592-756b989b9d7c"
+      ],
+      "ready": 1,
+      "resource_version": "960",
+      "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+      "uid": "e5b1e0ff-bfa2-421f-aa6d-360d218618c5"
+    },
+    "executor_journal_attempts": 0,
+    "executor_patch_attempts": 0,
+    "executor_routes": 0,
+    "executor_status": "FAILED",
+    "guard_verdict": "REJECT",
+    "incident_id": "INC-FALSE-ALARM-98CC70B0CC40",
+    "measurement_scope": "After baseline/probe/RBAC setup; counts Executor recovery writes only.",
+    "reason_code": "ROLLBACK_ALREADY_AT_BASELINE",
+    "scenario": "injected false recovery recommendation; no Pod failure",
+    "unchanged": {
+      "generation": true,
+      "pod_uids": true,
+      "resource_version": true,
+      "template_sha256": true,
+      "uid": true
+    }
+  },
+  "mode": "LIVE Kubernetes; restricted executor credentials",
+  "planning": "operator-authored proposal; no model call",
+  "private_executor_credentials_removed": true,
+  "scope": "single-node kind; Roles 1/2/4/5/6 integrated; Planner proposal supplied by harness",
+  "started_at": "2026-11-10T21:02:08.470986Z",
+  "status": "PASS",
+  "verification": "Role 6 consumes real gRPC, readiness and template evidence and publishes outcomes",
+  "workload": "Online Boutique shippingservice v0.10.7"
+}

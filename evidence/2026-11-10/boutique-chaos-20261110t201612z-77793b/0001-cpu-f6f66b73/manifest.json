@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "run_id": "0001-cpu-f6f66b73",
+  "mode": "demo",
+  "scenario_id": "cpu",
+  "started_at": "2026-11-10T20:16:13.782297Z",
+  "source_revision": "d013ea59998d921d29508078f946595923d544e1",
+  "versions": {
+    "boutique": "See environment.json for actual images and pod imageIDs",
+    "chaos_mesh": "2.8.2",
+    "kubernetes": "v1.37.0"
+  },
+  "configuration": {
+    "traffic": {
+      "traffic_interval": 1,
+      "traffic_workers": 1
+    },
+    "telemetry": {
+      "sample_interval": 5,
+      "metrics_source": "kubelet-stats-summary",
+      "traces": false
+    },
+    "fault": {
+      "apiVersion": "chaos-mesh.org/v1alpha1",
+      "kind": "StressChaos",
+      "metadata": {
+        "name": "fault-0001-cpu-f6f66b73",
+        "namespace": "sentinel-boutique-chaos",
+        "labels": {
+          "app.kubernetes.io/managed-by": "sentinel-chaos-demo",
+          "sentinel.dev/run-id": "0001-cpu-f6f66b73"
+        }
+      },
+      "spec": {
+        "stressors": {
+          "cpu": {
+            "workers": 1,
+            "load": 90
+          }
+        },
+        "mode": "one",
+        "duration": "5s",
+        "selector": {
+          "namespaces": [
+            "sentinel-boutique-chaos"
+          ],
+          "labelSelectors": {
+            "app": "shippingservice"
+          }
+        }
+      }
+    }
+  },
+  "recovery_enabled": false
+}

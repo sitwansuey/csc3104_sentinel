@@ -1,0 +1,21 @@
+{
+  "run_id": "0001-http-f5135659",
+  "status": "failed",
+  "injection_confirmed": false,
+  "cleanup_confirmed": false,
+  "baseline_healthy": true,
+  "recovery_healthy": false,
+  "recovery_attribution": "no_sentinel_action; chaos_expiry_or_harness_cleanup",
+  "errors": [
+    "RuntimeError: Chaos Mesh did not confirm injection into selected pods",
+    "Fault cleanup: kubectl --context failed: error: timed out waiting for the condition on httpchaos/fault-0001-http-f5135659\n"
+  ],
+  "telemetry_complete": true,
+  "collection_errors": 0,
+  "log_gaps": 0,
+  "collection_samples": 38,
+  "collection_overruns": 0,
+  "completed_at": "2026-11-10T20:02:04.133632Z",
+  "fault_window_journeys": 0,
+  "observed_failed_fault_journeys": 0
+}

@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "batch_id": "boutique-chaos-20261110T201612Z-77793b",
+  "started_at": "2026-11-10T20:16:12.529120Z",
+  "configuration": {
+    "schema_version": 1,
+    "mode": "demo",
+    "faults": [
+      "cpu"
+    ],
+    "baseline_seconds": 5,
+    "fault_seconds": 5,
+    "recovery_seconds": 5,
+    "sample_interval": 5,
+    "traffic_interval": 1,
+    "traffic_workers": 1,
+    "operator_gates": true,
+    "target": null
+  },
+  "context": "kind-sentinel-boutique-chaos",
+  "namespace": "sentinel-boutique-chaos",
+  "order": [
+    "cpu"
+  ],
+  "runs": [
+    {
+      "run_id": "0001-cpu-f6f66b73",
+      "status": "failed",
+      "injection_confirmed": false,
+      "cleanup_confirmed": true,
+      "baseline_healthy": true,
+      "recovery_healthy": false,
+      "recovery_attribution": "no_sentinel_action; chaos_expiry_or_harness_cleanup",
+      "errors": [
+        "EOFError: EOF when reading a line"
+      ],
+      "telemetry_complete": true,
+      "collection_errors": 0,
+      "log_gaps": 0,
+      "collection_samples": 3,
+      "collection_overruns": 0,
+      "completed_at": "2026-11-10T20:16:22.341498Z",
+      "fault_window_journeys": 0,
+      "observed_failed_fault_journeys": 0
+    }
+  ],
+  "status": "failed",
+  "error": "RuntimeError: Stopping after an incomplete demonstration: EOFError: EOF when reading a line",
+  "completed_at": "2026-11-10T20:16:22.628012Z"
+}

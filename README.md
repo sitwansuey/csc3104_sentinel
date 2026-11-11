@@ -72,9 +72,13 @@ ownership remain unfinished. See [architecture](docs/architecture.md) for the ex
 | `runbooks/` | Recovery guidance; distinct from diagnostic knowledge in `agent/knowledge/` |
 | `tests/` | Meaningful component, concurrency, restart and cross-role regressions |
 | `docs/` | Setup, operation, architecture, testing and optional-mode guides |
+| `evidence/` | Sanitised, append-only run bundles, their index and the claims registry |
 
 Generated databases, logs, screenshots, model artifacts and dataset downloads
-are ignored. Preserve/share sanitised evidence separately; do not commit credentials.
+are ignored; never commit credentials. Sanitised run evidence is committed under
+[evidence/](evidence/README.md): bundles are append-only, copied through an
+allowlist, hashed and labelled `recorded` or `inferred`. Results tables in
+[docs/results.md](docs/results.md) are generated from them and checked in CI.
 
 ## Validate and extend
 

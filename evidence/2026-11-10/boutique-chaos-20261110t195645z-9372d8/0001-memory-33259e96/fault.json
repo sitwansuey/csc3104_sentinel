@@ -1,0 +1,30 @@
+{
+  "apiVersion": "chaos-mesh.org/v1alpha1",
+  "kind": "StressChaos",
+  "metadata": {
+    "name": "fault-0001-memory-33259e96",
+    "namespace": "sentinel-boutique-chaos",
+    "labels": {
+      "app.kubernetes.io/managed-by": "sentinel-chaos-demo",
+      "sentinel.dev/run-id": "0001-memory-33259e96"
+    }
+  },
+  "spec": {
+    "stressors": {
+      "memory": {
+        "workers": 1,
+        "size": "256MB"
+      }
+    },
+    "mode": "one",
+    "duration": "60s",
+    "selector": {
+      "namespaces": [
+        "sentinel-boutique-chaos"
+      ],
+      "labelSelectors": {
+        "app": "recommendationservice"
+      }
+    }
+  }
+}

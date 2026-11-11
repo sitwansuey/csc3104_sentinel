@@ -1,0 +1,180 @@
+{
+  "checks": [
+    {
+      "at": "2026-11-10T18:55:16.461603Z",
+      "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4",
+      "name": "healthy baseline captured with real service samples and immutable image",
+      "passed": true
+    },
+    {
+      "at": "2026-11-10T18:55:16.928299Z",
+      "name": "real ServiceAccount permits only selected Deployment get/patch; forbidden write denied",
+      "passed": true
+    },
+    {
+      "at": "2026-11-10T18:55:24.752521Z",
+      "cart_status": 500,
+      "checkout_status": 500,
+      "name": "Connected cart and checkout fail while shipping configuration is broken",
+      "passed": true,
+      "scenario": "primary"
+    },
+    {
+      "at": "2026-11-10T18:55:25.326114Z",
+      "name": "missing-approval makes zero executor writes",
+      "passed": true,
+      "status": "FAILED"
+    },
+    {
+      "at": "2026-11-10T18:55:25.758265Z",
+      "name": "hard-policy-rejection makes zero executor writes",
+      "passed": true,
+      "status": "FAILED"
+    },
+    {
+      "at": "2026-11-10T18:55:26.161301Z",
+      "name": "stale-state makes zero executor writes",
+      "passed": true,
+      "status": "CONFLICT"
+    },
+    {
+      "at": "2026-11-10T18:55:26.693939Z",
+      "name": "real API rejects JSON Patch after resourceVersion changes",
+      "passed": true,
+      "patch_attempts": 1
+    },
+    {
+      "at": "2026-11-10T18:55:27.214765Z",
+      "name": "competing real worker is excluded before mutation",
+      "passed": true
+    },
+    {
+      "at": "2026-11-10T18:55:27.759030Z",
+      "coordinator_state": "VERIFYING",
+      "name": "approved real rollback, duplicate replay and changed-ID rejection",
+      "passed": true,
+      "status": "APPLIED",
+      "writes": 1
+    },
+    {
+      "action_id": "ACT-LIVE-606173667d574958b02069c009b05d11",
+      "at": "2026-11-10T18:55:54.020051Z",
+      "name": "Role 6 verified gRPC, readiness and template; Coordinator RECOVERED",
+      "outcome": "RECOVERED",
+      "passed": true
+    },
+    {
+      "at": "2026-11-10T18:55:54.031139Z",
+      "name": "gRPC quote and replica health after executor rollback; Role 6 published RECOVERED",
+      "passed": true
+    },
+    {
+      "at": "2026-11-10T18:56:01.877630Z",
+      "cart_status": 500,
+      "checkout_status": 500,
+      "name": "Connected cart and checkout fail while shipping configuration is broken",
+      "passed": true,
+      "scenario": "crash"
+    },
+    {
+      "at": "2026-11-10T18:56:02.990614Z",
+      "coordinator_state": "VERIFYING",
+      "name": "actual worker process exits after live patch; restart reconciles without resubmission",
+      "original_writes": 1,
+      "passed": true,
+      "restart_writes": 0,
+      "worker_exit": 73
+    },
+    {
+      "action_id": "ACT-LIVE-2168c881b96041ab95b4051bf4cdcfc5",
+      "at": "2026-11-10T18:56:28.783682Z",
+      "name": "Role 6 verified gRPC, readiness and template; Coordinator RECOVERED",
+      "outcome": "RECOVERED",
+      "passed": true
+    },
+    {
+      "at": "2026-11-10T18:56:29.997015Z",
+      "executor_patch_attempts": 0,
+      "name": "Guard rejects unnecessary rollback despite approval; zero Executor patch attempts",
+      "passed": true,
+      "reason_code": "ROLLBACK_ALREADY_AT_BASELINE",
+      "verdict": "REJECT"
+    }
+  ],
+  "dashboard": {
+    "applied_actions": 2,
+    "boutique": {
+      "convergence_measurements": 0,
+      "deployments": 11,
+      "fault_measurements": 2,
+      "post_action_measurements": 6
+    },
+    "cluster_samples": 60,
+    "dependency_results": 3,
+    "executor_patch_attempts_for_rejected_action": 0,
+    "frontend_http": 200,
+    "guard_reports": 5,
+    "incidents": 3,
+    "mode": "recorded/live producers",
+    "rejected_actions": 1,
+    "role6_outcomes": 2,
+    "snapshot_http": 200,
+    "status": "PASS",
+    "url": "http://127.0.0.1:8765"
+  },
+  "dependencies": "Configured upstream address graph; live component readiness; no trace discovery",
+  "finished_at": "2026-11-10T18:56:30.074486Z",
+  "guard_rejection": {
+    "action_id": "ACT-LIVE-de5df5c47c6941bc961ff4e158bdac72",
+    "after": {
+      "available": 1,
+      "desired": 1,
+      "generation": 23,
+      "observed_generation": 23,
+      "pod_uids": [
+        "a76522c8-9c2a-40af-981b-5a67ee06238a"
+      ],
+      "ready": 1,
+      "resource_version": "11913",
+      "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    },
+    "approved_guard_verdict": "REJECT",
+    "before": {
+      "available": 1,
+      "desired": 1,
+      "generation": 23,
+      "observed_generation": 23,
+      "pod_uids": [
+        "a76522c8-9c2a-40af-981b-5a67ee06238a"
+      ],
+      "ready": 1,
+      "resource_version": "11913",
+      "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    },
+    "executor_journal_attempts": 0,
+    "executor_patch_attempts": 0,
+    "executor_routes": 0,
+    "executor_status": "FAILED",
+    "guard_verdict": "REJECT",
+    "incident_id": "INC-FALSE-ALARM-A0B5B83F0120",
+    "measurement_scope": "After baseline/probe/RBAC setup; counts Executor recovery writes only.",
+    "reason_code": "ROLLBACK_ALREADY_AT_BASELINE",
+    "scenario": "injected false recovery recommendation; no Pod failure",
+    "unchanged": {
+      "generation": true,
+      "pod_uids": true,
+      "resource_version": true,
+      "template_sha256": true,
+      "uid": true
+    }
+  },
+  "mode": "LIVE Kubernetes; restricted executor credentials",
+  "private_executor_credentials_removed": true,
+  "scope": "Dedicated single-node cluster; shipping-only recovery; harness planning",
+  "started_at": "2026-11-10T18:54:11.216053Z",
+  "status": "PASS",
+  "verification": "Actual shipping gRPC, full storefront cart/checkout and dependency readiness",
+  "workload": "Full Online Boutique v0.10.7 with synthetic checkout traffic"
+}

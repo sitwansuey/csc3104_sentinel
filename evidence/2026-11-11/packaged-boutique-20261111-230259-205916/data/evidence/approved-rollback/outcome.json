@@ -1,0 +1,68 @@
+{
+  "action_id": "ACT-LIVE-82a7090437a449ffa0dfb64988a869e9",
+  "checks": [
+    {
+      "detail": "Requires an applied/no-op action with resource-version evidence",
+      "name": "execution",
+      "passed": true
+    },
+    {
+      "detail": "Received 3 readings; at least 3 required",
+      "name": "sample_count",
+      "passed": true
+    },
+    {
+      "detail": "All readings must belong to the execution target",
+      "name": "sample_identity",
+      "passed": true
+    },
+    {
+      "detail": "Readings must be UTC, strictly ordered and at/after execution",
+      "name": "sample_timestamps",
+      "passed": true
+    },
+    {
+      "detail": "Observed 17.4401 seconds; at least 10 required",
+      "name": "stable_window",
+      "passed": true
+    },
+    {
+      "detail": "No gap may exceed 45 seconds",
+      "name": "sample_gaps",
+      "passed": true
+    },
+    {
+      "detail": "Requires complete successful GRPC application and positive desired-replica readiness readings",
+      "name": "service_health",
+      "passed": true
+    },
+    {
+      "detail": "Every required/observed dependency must be present and healthy in every reading",
+      "name": "dependency_health",
+      "passed": true
+    },
+    {
+      "detail": "Each reading must retain the approved template and a stable observation identity",
+      "name": "sample_configuration",
+      "passed": true
+    },
+    {
+      "detail": "No reading was excluded; the 150-second convergence allowance was not used",
+      "name": "convergence",
+      "passed": true
+    }
+  ],
+  "incident_id": "INC-81F3378025A2",
+  "kind": "outcome",
+  "schema_version": "1.0",
+  "status": "RECOVERED",
+  "target": {
+    "cluster_id": "sentinel-boutique-package",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique",
+    "uid": "7e8328e4-9ce2-424c-9605-62642db0950e"
+  },
+  "window_end": "2026-11-11T15:04:42.921658Z",
+  "window_start": "2026-11-11T15:04:25.481548Z"
+}

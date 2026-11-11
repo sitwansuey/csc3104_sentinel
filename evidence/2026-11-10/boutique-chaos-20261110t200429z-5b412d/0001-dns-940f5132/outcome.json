@@ -1,0 +1,20 @@
+{
+  "run_id": "0001-dns-940f5132",
+  "status": "failed",
+  "injection_confirmed": false,
+  "cleanup_confirmed": true,
+  "baseline_healthy": true,
+  "recovery_healthy": false,
+  "recovery_attribution": "no_sentinel_action; chaos_expiry_or_harness_cleanup",
+  "errors": [
+    "RuntimeError: Chaos Mesh did not confirm injection into selected pods"
+  ],
+  "telemetry_complete": true,
+  "collection_errors": 0,
+  "log_gaps": 0,
+  "collection_samples": 21,
+  "collection_overruns": 0,
+  "completed_at": "2026-11-10T20:09:20.491020Z",
+  "fault_window_journeys": 0,
+  "observed_failed_fault_journeys": 0
+}

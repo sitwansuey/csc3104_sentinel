@@ -1,0 +1,15 @@
+{
+  "applied_actions": 2,
+  "cluster_samples": 57,
+  "dependency_results": 3,
+  "executor_patch_attempts_for_rejected_action": 0,
+  "frontend_http": 200,
+  "guard_reports": 5,
+  "incidents": 3,
+  "mode": "recorded/live producers",
+  "rejected_actions": 1,
+  "role6_outcomes": 2,
+  "snapshot_http": 200,
+  "status": "PASS",
+  "url": "http://127.0.0.1:8766"
+}

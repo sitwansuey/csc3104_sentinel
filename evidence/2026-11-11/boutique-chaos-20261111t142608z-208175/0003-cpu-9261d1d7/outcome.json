@@ -1,0 +1,30 @@
+{
+  "run_id": "0003-cpu-9261d1d7",
+  "status": "complete",
+  "injection_confirmed": true,
+  "cleanup_confirmed": true,
+  "baseline_healthy": true,
+  "recovery_healthy": true,
+  "recovery_attribution": "no_sentinel_action; chaos_expiry_or_harness_cleanup",
+  "errors": [],
+  "telemetry_complete": true,
+  "injection_end_conditions": {
+    "AllInjected": "False",
+    "AllRecovered": "True",
+    "Paused": "False",
+    "Selected": "True"
+  },
+  "settle": {
+    "settled": true,
+    "timeout_seconds": 90,
+    "journeys": 5,
+    "failed_journeys": 0
+  },
+  "collection_errors": 0,
+  "log_gaps": 0,
+  "collection_samples": 27,
+  "collection_overruns": 0,
+  "completed_at": "2026-11-11T14:37:00.186493Z",
+  "fault_window_journeys": 55,
+  "observed_failed_fault_journeys": 0
+}

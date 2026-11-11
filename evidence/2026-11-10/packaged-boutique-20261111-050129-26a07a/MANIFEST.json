@@ -1,0 +1,166 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "packaged-boutique-20261111-050129-26a07a",
+  "class": "packaged",
+  "captured_at": "2026-11-10T21:02:08.470986Z",
+  "source_run_dir_name": "packaged-boutique-20261111-050129-26a07a",
+  "sanitiser_version": "1",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "b9fbf084aec72c9ae75ff8c875840d355a6e4474",
+    "basis": "Inferred: newest commit reachable from main whose committer date precedes the run start. The run recorded no revision and its working tree may have differed."
+  },
+  "files": [
+    {
+      "path": "bootstrap/environment.json",
+      "sha256": "3e78a8791370ede7e8a56c8f5bd02f8795acf28b64b1ef7c953b56794c574bf0",
+      "bytes": 441,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/approved-rollback/execution.json",
+      "sha256": "dd592ead1c02a5d8434410d4a01350601680713cf6e95352cb3dd62181c71e39",
+      "bytes": 580,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/approved-rollback/initial-guard.json",
+      "sha256": "d3445bc3dd675b9a7e9f1a3561b7912c43fa66643d7882e9419c1cf85fa328cf",
+      "bytes": 788,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/approved-rollback/outcome.json",
+      "sha256": "6d7e70b1b0648c81c554b24d94ab5f9b472b121c6bcf38b80d251fceb12bc2c6",
+      "bytes": 1969,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/approved-rollback/proposal.json",
+      "sha256": "03918d8fb79a67b5459abc4e771cd5a2885949da58851cc6eed094df865967f4",
+      "bytes": 765,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/crash-after-write/initial-guard.json",
+      "sha256": "f5070c9c12a40821bec409931064649a997a864154d5697fcaf3de2b5f0bcc95",
+      "bytes": 788,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/crash-after-write/outcome.json",
+      "sha256": "ac86c1f124ad54b4a83c327a2c9970ff98ffc14afc7cdeaa35d9f531a28c9f9c",
+      "bytes": 1969,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/crash-after-write/proposal.json",
+      "sha256": "791d856397508b8187664dec3596ee068a1f6f381d9b4cc292101e6606315b99",
+      "bytes": 765,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/crash-after-write/reconciliation.json",
+      "sha256": "51831c776218460ae93676c55ca510f088095cd993cb71c5cd96f75632e15f7a",
+      "bytes": 580,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/dashboard-validation.json",
+      "sha256": "cc129f158917b5a56eb3fa4579eb1631ee93caae31abec1191767a28362f7c0b",
+      "bytes": 358,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/hard-policy-rejection/execution.json",
+      "sha256": "72cbce527ae93e62c42930c3f0f5583793d450ecfd35df6dcb1fa5a2e9003e70",
+      "bytes": 544,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/hard-policy-rejection/proposal.json",
+      "sha256": "2d5f078deab31d5539fd846d97cc6f1a0beb98da56212960cbbb08c7168d4fe4",
+      "bytes": 765,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/images.json",
+      "sha256": "9291463996b912576afaf0ab0b7d9b0f68a4086d3acd093ba4ef29f831cf5bb5",
+      "bytes": 291,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/missing-approval/execution.json",
+      "sha256": "bd0a331ea82973730a20eb6c8ced3f94bc1bc04aa166f5e0e6e67ee03f468d6d",
+      "bytes": 552,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/missing-approval/proposal.json",
+      "sha256": "dcd060987664c666a11666e83536039c3a2a431ce41736cb99b22f9c758c6ec4",
+      "bytes": 765,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/rbac-checks.json",
+      "sha256": "6fd5a39fb636f6959a24aceb57cd07ed4611c62e201cb11380dc99e85179acbe",
+      "bytes": 552,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/server-cas-race/proposal.json",
+      "sha256": "b73491c117e1fc3529a47bef85f83da59b1bee90ea7c79db1d37d1b21f7e1b9a",
+      "bytes": 765,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/server-cas-race/result.json",
+      "sha256": "4a88a8f1336ebb311f1caf910e48db329ba8b860e074ed23f64fc07878b2803b",
+      "bytes": 153,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/stale-state/execution.json",
+      "sha256": "3ac2256ed4deaaebd7d554e652fc8e9f5a79bfbb7c06eaff21a3b9d1239d38d6",
+      "bytes": 568,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/stale-state/proposal.json",
+      "sha256": "1ecf7ce3470067677ced81f2f9fab6309efae19af544739f7d4c886e2cdf1e0d",
+      "bytes": 765,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/summary.json",
+      "sha256": "1cb8e6cb7455f83f25726455b70bbdf7ca542aaf9a84582696ac172c493f7819",
+      "bytes": 5445,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/unnecessary-rollback/execution.json",
+      "sha256": "dc10b0ecf3b975f275286175cbdd0063b4f04b367cf26d79adbbd77f4243ae15",
+      "bytes": 566,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/unnecessary-rollback/proposal.json",
+      "sha256": "838c5842d7fc27085ac70caccdcedf7efad64fe0e5f5e1836cdec875ad0617b6",
+      "bytes": 882,
+      "redactions": 0
+    },
+    {
+      "path": "host-cleanup.json",
+      "sha256": "3d44302d924bba05efa68de2e406b5e997b4ac52124f59bb3f7282b6822e23ec",
+      "bytes": 88,
+      "redactions": 0
+    },
+    {
+      "path": "package-session.json",
+      "sha256": "d6fccdb34e536f5fa81d5a856ba3e4e024a9ac8ef754271f8891caec92ed8b4e",
+      "bytes": 233,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

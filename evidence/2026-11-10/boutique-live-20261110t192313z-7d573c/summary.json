@@ -1,0 +1,90 @@
+{
+  "checks": [
+    {
+      "at": "2026-11-10T19:24:20.730271Z",
+      "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4",
+      "name": "healthy baseline captured with real service samples and immutable image",
+      "passed": true
+    },
+    {
+      "at": "2026-11-10T19:24:21.195569Z",
+      "name": "real ServiceAccount permits only selected Deployment get/patch; forbidden write denied",
+      "passed": true
+    },
+    {
+      "at": "2026-11-10T19:24:22.450617Z",
+      "executor_patch_attempts": 0,
+      "name": "Guard rejects unnecessary rollback despite approval; zero Executor patch attempts",
+      "passed": true,
+      "reason_code": "ROLLBACK_ALREADY_AT_BASELINE",
+      "verdict": "REJECT"
+    }
+  ],
+  "dashboard": {
+    "executor_patch_attempts": 0,
+    "executor_routes": 0,
+    "frontend_http": 200,
+    "guard_verdict": "REJECT",
+    "incident_id": "INC-FALSE-ALARM-B303F26D0558",
+    "scenario": "guard-rejection",
+    "snapshot_http": 200,
+    "status": "PASS",
+    "url": "http://127.0.0.1:8765",
+    "workload_unchanged": true
+  },
+  "dependencies": "Configured upstream address graph; live component readiness; no trace discovery",
+  "finished_at": "2026-11-10T19:24:22.458323Z",
+  "guard_rejection": {
+    "action_id": "ACT-LIVE-3e89e578f4924b90a8c1b39434ec5503",
+    "after": {
+      "available": 1,
+      "desired": 1,
+      "generation": 29,
+      "observed_generation": 29,
+      "pod_uids": [
+        "645c9fdf-b2e7-45a3-80fa-2fc2609beed9"
+      ],
+      "ready": 1,
+      "resource_version": "12999",
+      "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    },
+    "approved_guard_verdict": "REJECT",
+    "before": {
+      "available": 1,
+      "desired": 1,
+      "generation": 29,
+      "observed_generation": 29,
+      "pod_uids": [
+        "645c9fdf-b2e7-45a3-80fa-2fc2609beed9"
+      ],
+      "ready": 1,
+      "resource_version": "12999",
+      "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    },
+    "executor_journal_attempts": 0,
+    "executor_patch_attempts": 0,
+    "executor_routes": 0,
+    "executor_status": "FAILED",
+    "guard_verdict": "REJECT",
+    "incident_id": "INC-FALSE-ALARM-B303F26D0558",
+    "measurement_scope": "After baseline/probe/RBAC setup; counts Executor recovery writes only.",
+    "reason_code": "ROLLBACK_ALREADY_AT_BASELINE",
+    "scenario": "injected false recovery recommendation; no Pod failure",
+    "unchanged": {
+      "generation": true,
+      "pod_uids": true,
+      "resource_version": true,
+      "template_sha256": true,
+      "uid": true
+    }
+  },
+  "mode": "LIVE Kubernetes; restricted executor credentials",
+  "private_executor_credentials_removed": true,
+  "scope": "Dedicated single-node cluster; shipping-only recovery; harness planning",
+  "started_at": "2026-11-10T19:23:13.866846Z",
+  "status": "PASS",
+  "verification": "Actual shipping gRPC, full storefront cart/checkout and dependency readiness",
+  "workload": "Full Online Boutique v0.10.7 with synthetic checkout traffic"
+}

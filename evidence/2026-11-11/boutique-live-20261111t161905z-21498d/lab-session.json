@@ -1,0 +1,49 @@
+{
+  "session_id": "c781805a95994547950573be25a4386f",
+  "state": "READY",
+  "gate_id": "9068f07137c94f23aec78abd657f31d4",
+  "active_scenario": "primary",
+  "can_inject": true,
+  "updated_at": "2026-11-11T16:20:17.255271Z",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "namespace": "sentinel-boutique-connected",
+    "name": "shippingservice"
+  },
+  "planning": "Harness-authored proposals; no model call",
+  "scenarios": [
+    {
+      "id": "primary",
+      "title": "Bad rollout",
+      "description": "Inject an invalid PORT, then run guarded recovery.",
+      "expected": "RECOVERED",
+      "status": "READY",
+      "requested_at": null,
+      "finished_at": null,
+      "incident_id": null,
+      "action_id": null
+    },
+    {
+      "id": "crash",
+      "title": "Crash after repair",
+      "description": "Repeat the fault; crash the Executor after its write and reconcile.",
+      "expected": "RECOVERED",
+      "status": "PENDING",
+      "requested_at": null,
+      "finished_at": null,
+      "incident_id": null,
+      "action_id": null
+    },
+    {
+      "id": "unnecessary-rollback",
+      "title": "Reject an unnecessary repair",
+      "description": "Propose a rollback while healthy; expect rejection and zero repair writes.",
+      "expected": "REJECTED",
+      "status": "PENDING",
+      "requested_at": null,
+      "finished_at": null,
+      "incident_id": null,
+      "action_id": null
+    }
+  ]
+}

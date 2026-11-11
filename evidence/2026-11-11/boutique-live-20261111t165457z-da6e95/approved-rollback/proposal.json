@@ -1,0 +1,35 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-306f01390abbbb1b1807fed0",
+  "based_on_resource_version": "42437",
+  "evidence_refs": [
+    "E-F9A6458DB64A",
+    "E-4CE06F169B28",
+    "E-2E7B4D92A9FC",
+    "E-C4969C0C037A",
+    "E-76A807696CF8",
+    "E-8DDD72CC6435",
+    "E-889B89810210",
+    "E-1B7846964983",
+    "E-C6EAD39CAAEA",
+    "E-7DFC83356AEB",
+    "E-EBA91FAA60E5",
+    "E-FB9DA97124B8",
+    "E-BE0B4D82E012"
+  ],
+  "incident_id": "INC-A2B5325952D9",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-5b661702435e",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence indicates a fatal error related to an 'invalid-port' configuration (evidence_id: E-BE0B4D82E012), which caused the container to crash and enter a CrashLoopBackOff state (evidence_id: E-1B7846964983). This invalid port configuration is the root cause of the failure, as confirmed by the diagnosis. The deployment status and readiness probe failures are downstream effects of this configuration error. Since a healthy baseline (baseline_id: BASE-LIVE-5b661702435e) is available and represents a previously functional state, rolling back to this baseline is appropriate to restore the correct configuration and resolve the issue.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

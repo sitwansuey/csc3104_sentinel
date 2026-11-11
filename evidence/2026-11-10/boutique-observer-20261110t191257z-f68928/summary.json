@@ -1,0 +1,110 @@
+{
+  "cluster_removed": true,
+  "detection_elapsed_seconds": 7.216748,
+  "duplicate_suppression_seconds": 61.02763229999982,
+  "healthy_seconds": 60.79507980000017,
+  "incident": {
+    "incident_id": "INC-C4057A836224",
+    "kind": "incident",
+    "observed_at": "2026-11-10T19:15:06.635489Z",
+    "observed_generation": 2,
+    "observed_resource_version": "727",
+    "schema_version": "1.0",
+    "signals": [
+      {
+        "at": "2026-11-10T19:14:59.418741Z",
+        "detail": "Deployment sentinel-boutique/shippingservice desired 1, ready 0, available 0; resourceVersion 727, generation 2",
+        "evidence_id": "E-AC04BAB0E910",
+        "reason": "UnavailableReplicas",
+        "source": "deployment_status"
+      },
+      {
+        "at": "2026-11-10T19:14:59.418741Z",
+        "detail": "Pod shippingservice-85576d7678-fgjrz container server is not ready; phase Running; restartCount 1; current exitCode 1; last exitCode 1",
+        "evidence_id": "E-6C71D7936E18",
+        "reason": "Error",
+        "source": "pod_status"
+      },
+      {
+        "at": "2026-11-10T19:14:57Z",
+        "detail": "Deployment does not have minimum availability.",
+        "evidence_id": "E-62D8AD05E15A",
+        "reason": "MinimumReplicasUnavailable",
+        "source": "event"
+      },
+      {
+        "at": "2026-11-10T19:14:58Z",
+        "detail": "Readiness probe failed: timeout: failed to connect service \"10.244.0.6:50051\" within 1s: context deadline exceeded",
+        "evidence_id": "E-24491DAE092A",
+        "reason": "Unhealthy",
+        "source": "event"
+      },
+      {
+        "at": "2026-11-10T19:14:58Z",
+        "detail": "Back-off restarting failed container server in pod shippingservice-85576d7678-fgjrz_sentinel-boutique(7c7badb7-811a-4c39-bae2-5ea488ce9833)",
+        "evidence_id": "E-E69D4310C6F5",
+        "reason": "BackOff",
+        "source": "event"
+      },
+      {
+        "at": "2026-11-10T19:14:59.418741Z",
+        "detail": "unable to retrieve container logs for containerd://a2e3ec3d61e8dcbae9316c5c97b157464dc2999e103f2e96fb21a126e09ab329",
+        "evidence_id": "E-5D22D390A0A1",
+        "reason": "ContainerLog",
+        "source": "container_log"
+      },
+      {
+        "at": "2026-11-10T19:15:06.635489Z",
+        "detail": "Deployment sentinel-boutique/shippingservice desired 1, ready 0, available 0; resourceVersion 727, generation 2",
+        "evidence_id": "E-A3519800BC01",
+        "reason": "UnavailableReplicas",
+        "source": "deployment_status"
+      },
+      {
+        "at": "2026-11-10T19:15:06.635489Z",
+        "detail": "Pod shippingservice-85576d7678-fgjrz container server is not ready; phase Running; restartCount 1; back-off 10s restarting failed container=server pod=shippingservice-85576d7678-fgjrz_sentinel-boutique(7c7badb7-811a-4c39-bae2-5ea488ce9833); last exitCode 1",
+        "evidence_id": "E-6EA5348ECDFA",
+        "reason": "CrashLoopBackOff",
+        "source": "pod_status"
+      },
+      {
+        "at": "2026-11-10T19:14:59Z",
+        "detail": "Readiness probe failed: timeout: failed to connect service \"10.244.0.6:50051\" within 1s: context deadline exceeded",
+        "evidence_id": "E-810381CB80C3",
+        "reason": "Unhealthy",
+        "source": "event"
+      },
+      {
+        "at": "2026-11-10T19:15:02Z",
+        "detail": "Back-off restarting failed container server in pod shippingservice-85576d7678-fgjrz_sentinel-boutique(7c7badb7-811a-4c39-bae2-5ea488ce9833)",
+        "evidence_id": "E-C1D2829AA69E",
+        "reason": "BackOff",
+        "source": "event"
+      },
+      {
+        "at": "2026-11-10T19:15:06.635489Z",
+        "detail": "2026-11-10T19:14:58.128374602Z {\"message\":\"Tracing disabled.\",\"severity\":\"info\",\"timestamp\":\"2026-11-10T19:14:58.12814239Z\"}\n2026-11-10T19:14:58.128392383Z {\"message\":\"Profiling disabled.\",\"severity\":\"info\",\"timestamp\":\"2026-11-10T19:14:58.128294131Z\"}\n2026-11-10T19:14:58.128738983Z {\"message\":\"failed to listen: listen tcp: lookup tcp/invalid-port: unknown port\",\"severity\":\"fatal\",\"timestamp\":\"2026-11-10T19:14:58.128601073Z\"}\n",
+        "evidence_id": "E-B8F80BF2D700",
+        "reason": "ContainerLog",
+        "source": "container_log"
+      }
+    ],
+    "target": {
+      "cluster_id": "sentinel-boutique-lab",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique",
+      "uid": "3bf7386a-eac7-429b-b0e3-04d30fde6e36"
+    }
+  },
+  "policy": {
+    "detection": {
+      "failure_duration_seconds": 5,
+      "max_sample_gap_seconds": 45
+    }
+  },
+  "previous_poll_elapsed_seconds": 4.806603,
+  "restored_manually_by_harness": true,
+  "scope": "real Online Boutique v0.10.7 shippingservice detection only",
+  "status": "PASS"
+}

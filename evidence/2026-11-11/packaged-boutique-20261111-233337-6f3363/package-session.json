@@ -1,0 +1,7 @@
+{
+  "cluster": "sentinel-boutique-package",
+  "url": "http://127.0.0.1:8768",
+  "image_id": "sha256:85c26ca071559f8cada01a49a8efb2499f293b23c3eb2aaaa804795dd2053de3",
+  "offline": false,
+  "image": "sentinel-boutique-runner:0.3.0"
+}

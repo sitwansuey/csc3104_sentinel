@@ -1,0 +1,23 @@
+{
+  "action_id": "ACT-LIVE-2e0247ce261a4b7d99f9b916bb30b220",
+  "checked_at": "2026-11-11T15:31:32.796035Z",
+  "incident_id": "INC-527BDBDE7555",
+  "inputs_sha256": "39ae2b5c24e9c3b7ab93a7928153689ff9a772833dfa0a657e720d51ff342f24",
+  "kind": "guard_result",
+  "policy_version": "executor-live-lab-1",
+  "proposal_sha256": "ad154826e1ff7bd43e7b9d91e0ecdf926d3342845db54d6b16ec1564a768715e",
+  "reason_codes": [
+    "VALIDATION_PASSED"
+  ],
+  "schema_version": "2.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-lab",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique",
+    "uid": "273fa9b5-d828-4a18-a832-255ff6368143"
+  },
+  "valid_until": "2026-11-11T15:31:52.796035Z",
+  "validated_resource_version": "869",
+  "verdict": "ALLOW"
+}

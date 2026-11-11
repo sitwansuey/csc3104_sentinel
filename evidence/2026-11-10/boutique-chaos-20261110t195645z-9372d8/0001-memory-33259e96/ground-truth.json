@@ -1,0 +1,28 @@
+{
+  "run_id": "0001-memory-33259e96",
+  "fault": "memory",
+  "target": {
+    "namespaces": [
+      "sentinel-boutique-chaos"
+    ],
+    "labelSelectors": {
+      "app": "recommendationservice"
+    }
+  },
+  "windows": {
+    "baseline": [
+      "2026-11-10T19:56:47.517069Z",
+      "2026-11-10T19:57:17.518015Z"
+    ],
+    "fault": [
+      "2026-11-10T19:57:18.909661Z",
+      "2026-11-10T19:58:17.831726Z"
+    ],
+    "recovery": [
+      "2026-11-10T19:58:18.963581Z",
+      "2026-11-10T19:58:48.964495Z"
+    ]
+  },
+  "injection_confirmed": true,
+  "note": "Host-observed windows; authoritative controller transitions are in chaos-status.jsonl. Injection is not proof of user-visible impact."
+}

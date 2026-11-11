@@ -1,0 +1,29 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-e1d98aeebf6e96f938b94d67",
+  "based_on_resource_version": "11135",
+  "evidence_refs": [
+    "E-2BCD5D39031A",
+    "E-066D59C48982",
+    "E-79ED66EAFB27",
+    "E-C901B4402D4E",
+    "E-3FA0EEA5051D",
+    "E-77A04D935D1F",
+    "E-12FCB94A919E"
+  ],
+  "incident_id": "INC-C4FC3FE289A4",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-f51d0284c793",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence clearly indicates that the 'shippingservice' deployment is failing due to an invalid port configuration, as shown by the container log entry (E-12FCB94A919E) which states 'failed to listen: listen tcp: lookup tcp/invalid-port: unknown port'. This failure is corroborated by the pod status (E-C901B4402D4E) showing the container is in a CrashLoopBackOff state, and readiness probe failures (E-3FA0EEA5051D) indicating the service is not available on the expected port (50051). The baseline configuration (BASE-LIVE-f51d0284c793) is known to be healthy and was observed at 2026-11-10T18:52:10.720838Z. Rolling back to this baseline will restore the correct configuration and resolve the issue.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

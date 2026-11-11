@@ -1,0 +1,29 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-f49a78e5b00661500d0ab93b",
+  "based_on_resource_version": "16858",
+  "evidence_refs": [
+    "E-916CEE41CD42",
+    "E-E642290EDA58",
+    "E-38CB470B93D3",
+    "E-C4256627A196",
+    "E-F8CB6161987D",
+    "E-5165448749D6",
+    "E-4B93B947C913"
+  ],
+  "incident_id": "INC-0BAB6A187A5D",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-6f06cabe9519",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence directly points to a configuration error in the deployment, specifically the 'failed to listen: listen tcp: lookup tcp/invalid-port: unknown port' error from the container logs (E-4B93B947C913). This error indicates that the service failed to start due to an invalid port configuration, which is the root cause of the deployment failure. The deployment status (E-916CEE41CD42, E-38CB470B93D3) confirms that no replicas are available, and the readiness probe failures (E-F8CB6161987D) and CrashLoopBackOff status (E-C4256627A196) are downstream effects of the service not starting. The baseline configuration (BASE-LIVE-6f06cabe9519) is healthy and was observed before the incident, making it the appropriate configuration to restore. The evidence supports a harmful configuration rollout, and ROLLBACK is the correct action to restore the exact healthy baseline.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

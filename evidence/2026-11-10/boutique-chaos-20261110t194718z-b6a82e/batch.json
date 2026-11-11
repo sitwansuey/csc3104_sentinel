@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "batch_id": "boutique-chaos-20261110T194718Z-b6a82e",
+  "started_at": "2026-11-10T19:47:18.661200Z",
+  "configuration": {
+    "schema_version": 1,
+    "mode": "demo",
+    "faults": [
+      "network"
+    ],
+    "baseline_seconds": 30,
+    "fault_seconds": 60,
+    "recovery_seconds": 30,
+    "sample_interval": 5,
+    "traffic_interval": 1,
+    "traffic_workers": 1,
+    "operator_gates": true,
+    "target": null
+  },
+  "context": "kind-sentinel-boutique-chaos",
+  "namespace": "sentinel-boutique-chaos",
+  "order": [
+    "network"
+  ],
+  "runs": [],
+  "status": "failed",
+  "error": "RuntimeError: kubectl --context failed: Error from server (Forbidden): error when creating \"STDIN\": admission webhook \"vnetworkchaos.kb.io\" denied the request: Spec.direction: Invalid value: \"both\": `from` and `both` direction cannot be used when targets is empty in netem action\n",
+  "completed_at": "2026-11-10T19:51:04.632658Z"
+}

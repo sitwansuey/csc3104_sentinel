@@ -27,6 +27,7 @@ from scripts.security.boutique_security_manifest import NAMESPACE, overlay
 from experiments.boutique.traffic.storefront import StorefrontProbe
 from scripts.security.security_lab import CLIENT, ENVOY, INSPECTOR, certificates
 from runtime.boutique_observability import emit_observation, service_inventory
+from shared import provenance
 
 CLUSTER = "sentinel-boutique-security"
 CONTEXT = "kind-" + CLUSTER
@@ -239,7 +240,7 @@ def inventory():
 
 
 def validate(directory, storefront):
-    summary = {}
+    summary = {"provenance": provenance.collect(ROOT, tools=("kubectl", "kind", "docker"), captured_by="security-lab")}
     def journey_window(key):
         attempts = []
         for _ in range(5):

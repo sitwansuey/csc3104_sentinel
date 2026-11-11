@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "run_id": "0001-network-c1421580",
+  "mode": "demo",
+  "scenario_id": "network",
+  "started_at": "2026-11-11T14:30:08.592461Z",
+  "source_revision": "f449405cecae44d47c987837f0a8b7214565486c",
+  "versions": {
+    "boutique": "See environment.json for actual images and pod imageIDs",
+    "chaos_mesh": "2.8.2",
+    "kubernetes": "v1.37.0"
+  },
+  "configuration": {
+    "traffic": {
+      "traffic_interval": 1,
+      "traffic_workers": 1
+    },
+    "telemetry": {
+      "sample_interval": 5,
+      "metrics_source": "kubelet-stats-summary",
+      "traces": false
+    },
+    "fault": {
+      "apiVersion": "chaos-mesh.org/v1alpha1",
+      "kind": "NetworkChaos",
+      "metadata": {
+        "name": "fault-0001-network-c1421580",
+        "namespace": "sentinel-boutique-chaos",
+        "labels": {
+          "app.kubernetes.io/managed-by": "sentinel-chaos-demo",
+          "sentinel.dev/run-id": "0001-network-c1421580"
+        }
+      },
+      "spec": {
+        "action": "delay",
+        "direction": "to",
+        "delay": {
+          "latency": "200ms",
+          "correlation": "0",
+          "jitter": "20ms"
+        },
+        "mode": "one",
+        "duration": "60s",
+        "selector": {
+          "namespaces": [
+            "sentinel-boutique-chaos"
+          ],
+          "labelSelectors": {
+            "app": "shippingservice"
+          }
+        }
+      }
+    }
+  },
+  "recovery_enabled": false
+}

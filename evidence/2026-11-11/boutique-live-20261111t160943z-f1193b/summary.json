@@ -1,0 +1,71 @@
+{
+  "agent_model_calls": 3,
+  "checks": [
+    {
+      "at": "2026-11-11T16:10:55.328268Z",
+      "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4",
+      "name": "healthy baseline captured with real service samples and immutable image",
+      "passed": true
+    },
+    {
+      "at": "2026-11-11T16:10:55.877703Z",
+      "name": "real ServiceAccount permits only selected Deployment get/patch; forbidden write denied",
+      "passed": true
+    },
+    {
+      "at": "2026-11-11T16:11:03.922152Z",
+      "cart_status": 500,
+      "checkout_status": 500,
+      "name": "Connected cart and checkout fail while shipping configuration is broken",
+      "passed": true,
+      "scenario": "primary"
+    },
+    {
+      "at": "2026-11-11T16:11:56.451311Z",
+      "name": "competing real worker is excluded before mutation",
+      "passed": true
+    },
+    {
+      "at": "2026-11-11T16:11:56.990602Z",
+      "coordinator_state": "VERIFYING",
+      "name": "approved real rollback, duplicate replay and changed-ID rejection",
+      "passed": true,
+      "status": "APPLIED",
+      "writes": 1
+    },
+    {
+      "action_id": "ACT-7a5ba38902e1cc19cbae2901",
+      "at": "2026-11-11T16:12:39.660570Z",
+      "convergence": "Excluded 2 unhealthy reading(s) from 2026-11-11T16:12:02.486748Z to 2026-11-11T16:12:12.122299Z, within 150 seconds of execution (dependency storefront-checkout); sustained health was assessed only on the readings after them",
+      "name": "Role 6 verified gRPC, readiness and template; Coordinator RECOVERED",
+      "outcome": "RECOVERED",
+      "passed": true
+    },
+    {
+      "at": "2026-11-11T16:12:39.669061Z",
+      "name": "gRPC quote and replica health after executor rollback; Role 6 published RECOVERED",
+      "passed": true
+    }
+  ],
+  "dashboard": {
+    "applied_actions": 1,
+    "incidents": 1,
+    "model_calls": 3,
+    "role6_outcomes": 1,
+    "scenario": "live-agent",
+    "status": "PASS",
+    "url": "http://127.0.0.1:8765"
+  },
+  "dependencies": "Configured upstream address graph; live component readiness; no trace discovery",
+  "finished_at": "2026-11-11T16:12:39.758994Z",
+  "mode": "LIVE Kubernetes; restricted executor credentials",
+  "model": "qwen3:14b",
+  "operator_approval": "pre-authorized local E2E test",
+  "planning": "Live RCA agent and Ollama Recovery Planner",
+  "private_executor_credentials_removed": true,
+  "scope": "Online Boutique shippingservice; real Observer/Coordinator/Agent/Guard/Executor/Verifier",
+  "started_at": "2026-11-11T16:09:44.587537Z",
+  "status": "PASS",
+  "verification": "Actual shipping gRPC, full storefront cart/checkout and dependency readiness",
+  "workload": "Full Online Boutique v0.10.7 with synthetic checkout traffic"
+}

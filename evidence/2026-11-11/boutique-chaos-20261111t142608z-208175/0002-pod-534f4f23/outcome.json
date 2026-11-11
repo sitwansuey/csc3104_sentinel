@@ -1,0 +1,30 @@
+{
+  "run_id": "0002-pod-534f4f23",
+  "status": "complete",
+  "injection_confirmed": true,
+  "cleanup_confirmed": true,
+  "baseline_healthy": true,
+  "recovery_healthy": true,
+  "recovery_attribution": "no_sentinel_action; chaos_expiry_or_harness_cleanup",
+  "errors": [],
+  "telemetry_complete": true,
+  "injection_end_conditions": {
+    "Selected": "True",
+    "AllInjected": "False",
+    "AllRecovered": "True",
+    "Paused": "False"
+  },
+  "settle": {
+    "settled": true,
+    "timeout_seconds": 90,
+    "journeys": 15,
+    "failed_journeys": 11
+  },
+  "collection_errors": 0,
+  "log_gaps": 0,
+  "collection_samples": 29,
+  "collection_overruns": 0,
+  "completed_at": "2026-11-11T14:34:48.874481Z",
+  "fault_window_journeys": 57,
+  "observed_failed_fault_journeys": 57
+}

@@ -1,0 +1,112 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "boutique-chaos-20261111t142608z-208175",
+  "class": "chaos-batch",
+  "captured_at": "2026-11-11T14:26:08.403040Z",
+  "source_run_dir_name": "boutique-chaos-20261111T142608Z-208175",
+  "sanitiser_version": "1",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "f449405cecae44d47c987837f0a8b7214565486c",
+    "basis": "Inferred: newest commit reachable from main whose committer date precedes the run start. The run recorded no revision and its working tree may have differed."
+  },
+  "files": [
+    {
+      "path": "0001-network-c1421580/fault.json",
+      "sha256": "4388cc1ec62fd32892dfc9393384f93c817f02d30981538573adb4495a3b2602",
+      "bytes": 674,
+      "redactions": 0
+    },
+    {
+      "path": "0001-network-c1421580/ground-truth.json",
+      "sha256": "6f12ca91d808dfca7b3c1da9341b91573bd7218198f62ab6e89177862724d275",
+      "bytes": 785,
+      "redactions": 0
+    },
+    {
+      "path": "0001-network-c1421580/manifest.json",
+      "sha256": "51483ebf91921621c96522ecf89acd8229967fb5b21e345eb519d9e6705d2a61",
+      "bytes": 1439,
+      "redactions": 0
+    },
+    {
+      "path": "0001-network-c1421580/outcome.json",
+      "sha256": "155d8869257f7ca6b674234a296ac1d58750f617b3e35e5eb35a1ee6a2501e04",
+      "bytes": 775,
+      "redactions": 0
+    },
+    {
+      "path": "0001-network-c1421580/timeline.jsonl",
+      "sha256": "5fd857dd634d1d7de90a31fd1166b29f4641dbac7d009547cd20652d9adcb22b",
+      "bytes": 2581,
+      "redactions": 0
+    },
+    {
+      "path": "0002-pod-534f4f23/fault.json",
+      "sha256": "3ae65e98c599f7690d1c532767f2368ae877848989d65ad6b782be51b954af8f",
+      "bytes": 548,
+      "redactions": 0
+    },
+    {
+      "path": "0002-pod-534f4f23/ground-truth.json",
+      "sha256": "b059df822941af36af73eb5296763ffe5e7d182d8522e5810037cf8e0c8723c1",
+      "bytes": 777,
+      "redactions": 0
+    },
+    {
+      "path": "0002-pod-534f4f23/manifest.json",
+      "sha256": "305f22b961b1d14f00f7f17de548acd701e31844641852f76193072e82df2fcd",
+      "bytes": 1281,
+      "redactions": 0
+    },
+    {
+      "path": "0002-pod-534f4f23/outcome.json",
+      "sha256": "afac5b37dea9e1ff2d1d1f6ad11d6e567ae978dafbbe313eac05c047e360f75c",
+      "bytes": 774,
+      "redactions": 0
+    },
+    {
+      "path": "0002-pod-534f4f23/timeline.jsonl",
+      "sha256": "c1197cc1b3bf4620243f6ec96e8b9431e39ac8da9dd7968b50dc3e5a5bf98924",
+      "bytes": 2383,
+      "redactions": 0
+    },
+    {
+      "path": "0003-cpu-9261d1d7/fault.json",
+      "sha256": "978637618e0fea17dd3390491ced4824db91e932ff8822b0760018b72fcf8c7d",
+      "bytes": 612,
+      "redactions": 0
+    },
+    {
+      "path": "0003-cpu-9261d1d7/ground-truth.json",
+      "sha256": "432026f28850fbcddcc4428078e543852fe50286fb87c229ce91b82cc221168f",
+      "bytes": 777,
+      "redactions": 0
+    },
+    {
+      "path": "0003-cpu-9261d1d7/manifest.json",
+      "sha256": "5ce512576f98e2dbbe64509cacca7681f68e29777ecc163652600ffc7a642859",
+      "bytes": 1365,
+      "redactions": 0
+    },
+    {
+      "path": "0003-cpu-9261d1d7/outcome.json",
+      "sha256": "a820ad93d96573ed662ebc0a1e090986c5a6c2863817dffc99730d0adf13b7dd",
+      "bytes": 771,
+      "redactions": 0
+    },
+    {
+      "path": "0003-cpu-9261d1d7/timeline.jsonl",
+      "sha256": "d39066a13268201f9501106c05448d223f73d5c200ebc76e7c652b131ad10206",
+      "bytes": 2574,
+      "redactions": 0
+    },
+    {
+      "path": "batch.json",
+      "sha256": "fd388335d9db7d907410e742a8f1825517123e9872b9044d0d66adca7448c619",
+      "bytes": 3419,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

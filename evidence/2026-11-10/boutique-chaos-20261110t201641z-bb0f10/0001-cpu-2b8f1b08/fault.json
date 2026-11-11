@@ -1,0 +1,30 @@
+{
+  "apiVersion": "chaos-mesh.org/v1alpha1",
+  "kind": "StressChaos",
+  "metadata": {
+    "name": "fault-0001-cpu-2b8f1b08",
+    "namespace": "sentinel-boutique-chaos",
+    "labels": {
+      "app.kubernetes.io/managed-by": "sentinel-chaos-demo",
+      "sentinel.dev/run-id": "0001-cpu-2b8f1b08"
+    }
+  },
+  "spec": {
+    "stressors": {
+      "cpu": {
+        "workers": 1,
+        "load": 90
+      }
+    },
+    "mode": "one",
+    "duration": "120s",
+    "selector": {
+      "namespaces": [
+        "sentinel-boutique-chaos"
+      ],
+      "labelSelectors": {
+        "app": "shippingservice"
+      }
+    }
+  }
+}

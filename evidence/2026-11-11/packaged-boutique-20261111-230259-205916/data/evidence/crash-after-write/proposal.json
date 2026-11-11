@@ -1,0 +1,24 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-LIVE-628325d1aff342899b4dbed7bbef8e55",
+  "based_on_resource_version": "850",
+  "evidence_refs": [
+    "INC-5DC0F01CA29A",
+    "HEALTH-a7885d3e281f4ecca996cfba1b5b14af"
+  ],
+  "incident_id": "INC-5DC0F01CA29A",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-7629948f6c0d",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "Operator-authored live lab proposal: restore measured healthy template",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-package",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique",
+    "uid": "7e8328e4-9ce2-424c-9605-62642db0950e"
+  }
+}

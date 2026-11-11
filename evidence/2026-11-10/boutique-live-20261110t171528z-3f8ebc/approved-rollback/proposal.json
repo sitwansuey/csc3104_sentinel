@@ -1,0 +1,29 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-42fe7c1892fb5c48fdebedd4",
+  "based_on_resource_version": "2555",
+  "evidence_refs": [
+    "E-E3F24D990308",
+    "E-613C9B2E541A",
+    "E-2EE5ECD16930",
+    "E-8C203293D690",
+    "E-823A1BE9790D",
+    "E-E9C52AB9A3B6",
+    "E-CFBF83B74ACF"
+  ],
+  "incident_id": "INC-F2A1418A6039",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-5031ef032128",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence clearly indicates that the 'shippingservice' pod is failing to listen on an invalid port, as shown in the container log (E-CFBF83B74ACF) with the message 'failed to listen: listen tcp: lookup tcp/invalid-port: unknown port'. This failure directly leads to the readiness probe failing (E-823A1BE9790D), causing the pod to enter a CrashLoopBackOff state (E-8C203293D690). The deployment status (E-E3F24D990308 and E-2EE5ECD16930) confirms that no replicas are available, and the event logs (E-613C9B2E541A and E-E9C52AB9A3B6) indicate that the minimum number of replicas required for availability is not met. The diagnosis identifies the root cause as the service attempting to listen on an invalid port, which is a harmful configuration change. The baseline configuration (BASE-LIVE-5031ef032128) is healthy and was observed at 2026-11-10T17:16:34.302961Z, and the template_sha256 matches the healthy deployment. Therefore, rolling back to this baseline is appropriate to restore the service to a known healthy state.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

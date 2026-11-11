@@ -1,0 +1,20 @@
+{
+  "run_id": "0001-cpu-f6f66b73",
+  "status": "failed",
+  "injection_confirmed": false,
+  "cleanup_confirmed": true,
+  "baseline_healthy": true,
+  "recovery_healthy": false,
+  "recovery_attribution": "no_sentinel_action; chaos_expiry_or_harness_cleanup",
+  "errors": [
+    "EOFError: EOF when reading a line"
+  ],
+  "telemetry_complete": true,
+  "collection_errors": 0,
+  "log_gaps": 0,
+  "collection_samples": 3,
+  "collection_overruns": 0,
+  "completed_at": "2026-11-10T20:16:22.341498Z",
+  "fault_window_journeys": 0,
+  "observed_failed_fault_journeys": 0
+}

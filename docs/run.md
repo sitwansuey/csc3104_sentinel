@@ -105,8 +105,10 @@ lab-gate routes. The browser receives no kubeconfig or database paths.
 The printed run directory (normally under `data/experimentation/runs/`) contains
 Coordinator/Observer/Executor/Verifier journals, the baseline, proposal/approval,
 Guard reports, application measurements, dashboard snapshots, outcome and
-cleanup evidence. `summary.json` records actual checks. Preserve sanitised
-evidence separately; output directories and credentials are not source files.
+cleanup evidence. `summary.json` records actual checks, the source revision
+and tool versions (`provenance`) and a phase `timeline`. Output directories and
+credentials are not source files. To keep a run, collect a sanitised bundle with
+`python scripts/evidence/collect.py` as described in [evidence/](../evidence/README.md).
 
 With `-Cleanup`, Ctrl+C tears down the dedicated cluster after stopping the
 dashboard and port forward and removing private Executor credentials.

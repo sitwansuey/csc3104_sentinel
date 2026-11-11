@@ -1,0 +1,40 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "packaged-boutique-20261111-050519-2fccaf",
+  "class": "packaged",
+  "captured_at": "2026-11-10T21:05:58.963713Z",
+  "source_run_dir_name": "packaged-boutique-20261111-050519-2fccaf",
+  "sanitiser_version": "1",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "b9fbf084aec72c9ae75ff8c875840d355a6e4474",
+    "basis": "Inferred: newest commit reachable from main whose committer date precedes the run start. The run recorded no revision and its working tree may have differed."
+  },
+  "files": [
+    {
+      "path": "bootstrap/environment.json",
+      "sha256": "3e78a8791370ede7e8a56c8f5bd02f8795acf28b64b1ef7c953b56794c574bf0",
+      "bytes": 441,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/images.json",
+      "sha256": "9291463996b912576afaf0ab0b7d9b0f68a4086d3acd093ba4ef29f831cf5bb5",
+      "bytes": 291,
+      "redactions": 0
+    },
+    {
+      "path": "data/evidence/summary.json",
+      "sha256": "12ddbb08ae3aa1b910e9b1f13ccb4baf41b71579708ebcd45a6fe206e0a83fcc",
+      "bytes": 735,
+      "redactions": 0
+    },
+    {
+      "path": "package-session.json",
+      "sha256": "8bae3171ed125fc7be874c170fb2f5c42688b255e9678560254c9bbaf94689b8",
+      "bytes": 233,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

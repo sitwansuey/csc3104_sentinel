@@ -1,0 +1,58 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "boutique-live-20261111t160349z-4edbe0",
+  "class": "agent",
+  "captured_at": "2026-11-11T16:03:50.186028Z",
+  "source_run_dir_name": "boutique-live-20261111T160349Z-4edbe0",
+  "sanitiser_version": "1",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "07a9771394b9c83c4f02fb331288e31d9b8e5a64",
+    "basis": "Inferred: newest commit reachable from main whose committer date precedes the run start. The run recorded no revision and its working tree may have differed."
+  },
+  "files": [
+    {
+      "path": "approved-rollback/model-calls.json",
+      "sha256": "b9a4994c4a863618f1e1cae1ef8573035651c6335ec069fdf526fce9f5cdfb32",
+      "bytes": 431,
+      "redactions": 0
+    },
+    {
+      "path": "images.json",
+      "sha256": "d5760d2d3e7ebb4fbb818b3c1d0af177a286bd9a85878de990b0d8cd5820a199",
+      "bytes": 2741,
+      "redactions": 0
+    },
+    {
+      "path": "policy.json",
+      "sha256": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+      "bytes": 2352,
+      "redactions": 0
+    },
+    {
+      "path": "primary-incident.json",
+      "sha256": "7845e21363bdff485bff4b64b63da57088e38fd172df83ccba6601be8398e8b4",
+      "bytes": 4836,
+      "redactions": 0
+    },
+    {
+      "path": "primary-storefront-impact.json",
+      "sha256": "d3a2b8182c3b6e9d606f8b02e63d02530ff79bd6c6077c0a950ab59833044010",
+      "bytes": 313,
+      "redactions": 0
+    },
+    {
+      "path": "rbac-checks.json",
+      "sha256": "6fd5a39fb636f6959a24aceb57cd07ed4611c62e201cb11380dc99e85179acbe",
+      "bytes": 552,
+      "redactions": 0
+    },
+    {
+      "path": "summary.json",
+      "sha256": "de2528c8107128f16bfc77629df41c46ada24e8422caa1a83aaf3c1999939e11",
+      "bytes": 2084,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}
