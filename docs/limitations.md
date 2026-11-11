@@ -29,8 +29,8 @@ the fix and regenerate.
 | [L-AGENT-APPROVAL](#l-agent-approval) | defect | open | Live runs use pre-authorised lab approval, not an authenticated operator | P2.02, P2.03 | #10 |
 | [L-RAW-LOGS-PROMPT](#l-raw-logs-prompt) | defect | open | Raw container log text reaches the model | P2.04 | #51, #56 |
 | [L-OBSERVER-ZERO-REPLICAS](#l-observer-zero-replicas) | defect | open | A Deployment scaled to zero replicas is treated as healthy | P5.07 | none |
-| [L-EXEC-WEDGE](#l-exec-wedge) | defect | mitigated | A write rejected with its resource version unchanged still waits in NEEDS_RECONCILIATION | P1.11, P2.06, P5.08 | #61 |
-| [L-EXEC-REDELIVERY](#l-exec-redelivery) | defect | mitigated | A replacement Executor without the ledger row reported CONFLICT for a write that was applied | P1.10, P3.01, P4.01 | #18, #58 |
+| [L-EXEC-WEDGE](#l-exec-wedge) | defect | mitigated | A write rejected with its resource version unchanged still waits in NEEDS_RECONCILIATION | P2.06, P5.08 | #61 |
+| [L-EXEC-REDELIVERY](#l-exec-redelivery) | defect | mitigated | A replacement Executor without the ledger row reported CONFLICT for a write that was applied | P3.01, P4.01 | #18, #58 |
 | [L-NO-LOGGING](#l-no-logging) | defect | mitigated | Structured logs cover only the networked entrypoints, and no live run has collected them | P1.07, P3.02 | #62 |
 | [L-SINGLE-COORDINATOR](#l-single-coordinator) | limitation | open | The Coordinator is one process with one SQLite file | P3.06, P4.02, P5.01 | #62, #63 |
 | [L-HOST-LOCAL-EXECUTOR](#l-host-local-executor) | limitation | open | The Executor ledger and target locks are host-local | P3.04 | #18, #58, #59 |
@@ -42,11 +42,11 @@ the fix and regenerate.
 | [L-SECURITY-SHIPPING-ONLY](#l-security-shipping-only) | limitation | open | The security lab protects only the shipping path | P4.06, P5.04, P5.05 | #69, #71 |
 | [L-UNGATED-CVES](#l-ungated-cves) | limitation | open | Workload image CVEs raise alerts but gate nothing | P5.02, P5.03 | #72, #73 |
 | [L-CHAOS-NOT-WIRED](#l-chaos-not-wired) | limitation | open | Chaos Mesh faults are injection only, and HTTP and DNS faults do not run on this host | P4.03 | #76 |
-| [L-EVIDENCE-INFERRED](#l-evidence-inferred) | limitation | open | All committed evidence has inferred provenance | P1.01, P2.09 | #63 |
 | [L-NO-RELEASE](#l-no-release) | limitation | open | No tagged, scanned release image | P2.09, P2.10 | #63, #73 |
 | [L-LAB-CERTS](#l-lab-certs) | limitation | open | Security lab certificates are two-day fixtures with no rotation | P5.06 | #70 |
-| [L-MODEL-LATENCY](#l-model-latency) | limitation | mitigated | Model cold loads make agent planning slow and variable | P1.12 | #85, #87 |
+| [L-MODEL-LATENCY](#l-model-latency) | limitation | mitigated | Model cold loads make agent planning slow and variable | P2.01 | #85, #87 |
 | [L-UNPINNED-BASE-IMAGES](#l-unpinned-base-images) | limitation | mitigated | Sentinel component images used unpinned base image tags | P1.09 | #73 |
+| [L-EVIDENCE-INFERRED](#l-evidence-inferred) | limitation | mitigated | Most committed evidence has inferred provenance | P2.09 | #63 |
 | [L-VERIFIER-FIRST-READING](#l-verifier-first-reading) | defect | fixed | The Verifier judged NOT_RECOVERED on its first reading after a patch | none | #56, #87 |
 | [L-RECONCILE-AS-EXECUTE](#l-reconcile-as-execute) | defect | fixed | An executor.reconcile command was processed as a new execution | none | #61 |
 | [L-GUARD-LOCK-KUBECTL](#l-guard-lock-kubectl) | defect | fixed | The Guard held a SQLite write lock across kubectl and passed target names unchecked | none | none |
@@ -98,17 +98,17 @@ the fix and regenerate.
 
 ### L-EXEC-WEDGE
 
-**A write rejected with its resource version unchanged still waits in NEEDS_RECONCILIATION.** Defect, mitigated; recorded 2026-11-11. Planned: P1.11, P2.06, P5.08. Issues: #61.
+**A write rejected with its resource version unchanged still waits in NEEDS_RECONCILIATION.** Defect, mitigated; recorded 2026-11-11. Planned: P2.06, P5.08. Issues: #61.
 
-- Impact: Fixed in code for every case where the write can no longer commit. Reconciliation is now a pure decision table: a deleted or recreated target, or a resourceVersion that moved without this action's evidence, ends SUPERSEDED, which the Coordinator records as FAILED so a new proposal can follow. Still open: kubectl error text is not classified (the DEFINITE_REJECTION and FENCED rows are reserved), so a rejection that leaves the same UID at the same resourceVersion, such as an admission denial, cannot be told apart from a request still in flight. That action stays NEEDS_RECONCILIATION and the workload stays excluded from repair; after 600 s the Executor adds one 'Operator action required' result. Live verification pending: the wedge harness has not been run against a cluster and no bundle is committed.
+- Impact: Fixed in code and verified live for the cases where the write can no longer commit. Reconciliation is a pure decision table: a deleted or recreated target, or a resourceVersion that moved without this action's evidence, ends SUPERSEDED, which the Coordinator records as FAILED so a new proposal can follow. The live wedge harness (C-EXECUTOR-WEDGE: one run per scenario on one Windows host with kind, 2026-11-11) showed main's Executor (d5b2ed9) staying NEEDS_RECONCILIATION over 5 reconcile passes with the workload still excluded, while 4afc879 resolved the moved-resourceVersion case (rv-race) as SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE and the replaced-target case (delete-recreate) as SUPERSEDED/TARGET_REPLACED, released the workload and applied a second proposal. Still open, and not covered by the harness: kubectl error text is not classified (the DEFINITE_REJECTION and FENCED rows are reserved), so a rejection that leaves the same UID at the same resourceVersion, such as an admission denial, cannot be told apart from a request still in flight. That action stays NEEDS_RECONCILIATION, in doubt until P2.06, and the workload stays excluded from repair; after 600 s the Executor adds one 'Operator action required' result.
 - Workaround: For the unchanged-version case, an operator inspects the Deployment and clears the Executor ledger row by hand. The deleted, recreated and moved-version cases need no workaround.
-- Evidence: `services/executor/kubernetes_adapter.py:201`; `services/executor/reconciliation.py:18-19`; `services/executor/reconciliation.py:163`; `services/executor/core.py:37`; `tests/test_executor_reconciliation_table.py:255`; `tests/test_executor_reconciliation_table.py:287`; `scripts/validation/test_executor_wedge_live.py`.
+- Evidence: `services/executor/kubernetes_adapter.py:201`; `services/executor/reconciliation.py:18-19`; `services/executor/reconciliation.py:163`; `services/executor/core.py:37`; `tests/test_executor_reconciliation_table.py:255`; `tests/test_executor_reconciliation_table.py:287`; `scripts/validation/test_executor_wedge_live.py`; claim `C-EXECUTOR-WEDGE`.
 
 ### L-EXEC-REDELIVERY
 
-**A replacement Executor without the ledger row reported CONFLICT for a write that was applied.** Defect, mitigated; recorded 2026-11-12. Planned: P1.10, P3.01, P4.01. Issues: #18, #58.
+**A replacement Executor without the ledger row reported CONFLICT for a write that was applied.** Defect, mitigated; recorded 2026-11-12. Planned: P3.01, P4.01. Issues: #18, #58.
 
-- Impact: Fixed in code, live verification pending. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it can never start that write. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. No run has used more than one Executor host.
+- Impact: Fixed in code; live verification is left to P3.01 and P4.01. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host given a reconcile command with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it never starts that write. An execute command on a fresh host can still write, and the resourceVersion test in the patch lets at most one write for the action commit. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. No run has used more than one Executor host; the 2026-11-11 live runs each used one.
 - Workaround: Run one Executor with one ledger directory, as every documented run does, until a multi-host run verifies this.
 - Evidence: `services/executor/core.py:343`; `services/executor/core.py:287`; `tests/test_executor_reconciliation_table.py:350`; `tests/test_executor_reconciliation_table.py:405`; `services/executor/store.py:3`.
 
@@ -116,7 +116,7 @@ the fix and regenerate.
 
 **Structured logs cover only the networked entrypoints, and no live run has collected them.** Defect, mitigated; recorded 2026-11-11. Planned: P1.07, P3.02. Issues: #62.
 
-- Impact: Fixed in code for the networked processes: shared/log.py writes allowlisted JSON lines; the Coordinator server, worker HTTP, approval HTTP and worker service entrypoints configure it; every request gets an access line and every 401 or 403 an auth.denied line; lifecycle transitions are journalled; and every broad except handler re-raises or logs the error class, which CI enforces. Not covered: the live harnesses, agent mode and the in-process pipelines that every recorded run used never configure logging, so their log events are dropped. Exception messages are never logged, only class names, by design. There is no cross-process tracing. No live run has collected logs yet.
+- Impact: Fixed in code for the networked processes: shared/log.py writes allowlisted JSON lines; the Coordinator server, worker HTTP, approval HTTP and worker service entrypoints configure it; every POST request gets one http.access line, or an auth.denied line for a 401 or 403, while GET /healthz, GET /readyz and GET requests for unknown paths (404) get none; lifecycle transitions are journalled; and every broad except handler re-raises or logs the error class, which CI enforces. Not covered: the live harnesses (the Executor wedge harness included), agent mode and the in-process pipelines that every recorded run used never configure logging, so their log events are dropped. Exception messages are never logged, only class names, by design. There is no cross-process tracing. No live run has collected logs yet.
 - Workaround: For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json.
 - Evidence: `shared/log.py:235`; `runtime/worker_http.py:259`; `services/executor/core.py:221-222`; `docs/observability.md`; `tests/test_except_audit.py:39`.
 
@@ -200,14 +200,6 @@ the fix and regenerate.
 - Workaround: Use the CPU, memory, Pod and network faults as injection demonstrations only.
 - Evidence: claim `C-CHAOS-ALL`; `experiments/boutique/harness/chaos.py:18`; `docs/chaos.md`.
 
-### L-EVIDENCE-INFERRED
-
-**All committed evidence has inferred provenance.** Limitation, open; recorded 2026-11-12. Planned: P1.01, P2.09. Issues: #63.
-
-- Impact: Every bundle predates provenance stamping, so its source revision is a best guess. Runs now stamp a provenance block, but no live run has produced a stamped bundle yet, so no bundle proves which commit produced it.
-- Workaround: Quote each claim with its scope caveat, which says so.
-- Evidence: claim `C-CONNECTED-HARNESS`; `evidence/README.md`.
-
 ### L-NO-RELEASE
 
 **No tagged, scanned release image.** Limitation, open; recorded 2026-11-11. Planned: P2.09, P2.10. Issues: #63, #73.
@@ -226,9 +218,9 @@ the fix and regenerate.
 
 ### L-MODEL-LATENCY
 
-**Model cold loads make agent planning slow and variable.** Limitation, mitigated; recorded 2026-11-10. Planned: P1.12. Issues: #85, #87.
+**Model cold loads make agent planning slow and variable.** Limitation, mitigated; recorded 2026-11-10. Planned: P2.01. Issues: #85, #87.
 
-- Impact: Incident-to-repair time in agent mode had a long tail (docs/results.md). The two measured cold calls took up to 41 s with model loads up to 26 s, and one 356 s decision stage holds only 53 s of recorded model calls, so its cause is not established. Fixed in code, live verification pending: each model call now has an overall deadline, a response size cap, no redirects or proxies and a schema check; agent mode runs a preflight and a warm-up call before any fault is injected and records model-runtime.json; keep_alive is configurable. The per-call timeout still defaults to 300 s. No agent run has been repeated since, so the tail with warm-up is unmeasured.
+- Impact: Incident-to-repair time in agent mode had a long tail (docs/results.md). The two measured cold calls took up to 41 s with model loads up to 26 s, and one 356 s decision stage holds only 53 s of recorded model calls, so its cause is not established. The bounded transport is in code: each model call has an overall deadline, a response size cap, no redirects or proxies and a schema check; agent mode runs a preflight and a warm-up call before any fault is injected and records model-runtime.json; keep_alive is configurable. Measured live on 4afc879 (C-AGENT-RECORDED: three runs on one Windows host, 2026-11-11): with qwen3:14b Q4_K_M fully on the GPU and keep_alive 30m, all nine model calls were warm (load under 1 s), model time per run was 21.9 to 24.0 s and incident to Guard ALLOW took 23.3 to 25.6 s; the first run's warm-up loaded the model in 18.6 s before the fault was injected. The preflight stopped a missing model before fault injection (C-AGENT-PREFLIGHT-RECORDED). Not measured: a cold load during a run with the bounded transport, so the tail after an evicted or cold model is unknown. The per-call timeout still defaults to 300 s; P2.01 puts agent planning under a planning budget.
 - Workaround: Keep the model warm with keep_alive and check the warm-up load time in model-runtime.json after each run.
 - Evidence: `agent/llm.py:259`; `agent/llm.py:416`; `experiments/boutique/harness/agent_live.py:169`; `tests/test_llm_transport.py`.
 
@@ -239,6 +231,14 @@ the fix and regenerate.
 - Impact: Fixed in code: every FROM line, the frontend stage included, is pinned by digest, a test fails on an unpinned base, and Dependabot proposes digest updates. It is recorded as mitigated, not fixed, until the pull request that merges it is known. Images built for earlier evidence used unpinned bases.
 - Workaround: Not needed for new builds. Record the built image id with each run.
 - Evidence: `deploy/docker/coordinator.Dockerfile:1`; `deploy/docker/guard.Dockerfile:2`; `deploy/docker/observer.Dockerfile:1`; `tests/test_supply_chain_pins.py:57`.
+
+### L-EVIDENCE-INFERRED
+
+**Most committed evidence has inferred provenance.** Limitation, mitigated; recorded 2026-11-12. Planned: P2.09. Issues: #63.
+
+- Impact: Bundles collected before provenance stamping carry a best-guess revision: every chaos, security-lab, observer, packaged, shipping-lab, provider-recovery and ui-session bundle, the four earlier connected-harness runs, the two earlier Guard rejections and 20 agent runs. Recorded bundles now exist for the cited live classes: one connected-harness run, one Guard rejection with zero Executor patch attempts and four agent runs from 4afc879 on 2026-11-11 (C-CONNECTED-HARNESS-RECORDED, C-GUARD-REJECTION-RECORDED, C-AGENT-RECORDED, C-AGENT-PREFLIGHT-RECORDED), plus the offline Guard evaluation. The three Executor wedge bundles are inferred: the harness summary has no provenance block, so each revision is the operator's statement in the MANIFEST basis. Every live run is on one Windows host, and no release tag ties the evidence to a frozen artefact.
+- Workaround: Quote each claim with its scope caveat, which names its provenance, and prefer the claims whose bundles are recorded.
+- Evidence: claim `C-CONNECTED-HARNESS`; claim `C-CONNECTED-HARNESS-RECORDED`; claim `C-AGENT-RECORDED`; `evidence/README.md`.
 
 ### L-VERIFIER-FIRST-READING
 

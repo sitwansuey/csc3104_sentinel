@@ -7,7 +7,7 @@
       "kind": "defect",
       "status": "mitigated",
       "since": "2026-11-11",
-      "impact": "Fixed in code for every case where the write can no longer commit. Reconciliation is now a pure decision table: a deleted or recreated target, or a resourceVersion that moved without this action's evidence, ends SUPERSEDED, which the Coordinator records as FAILED so a new proposal can follow. Still open: kubectl error text is not classified (the DEFINITE_REJECTION and FENCED rows are reserved), so a rejection that leaves the same UID at the same resourceVersion, such as an admission denial, cannot be told apart from a request still in flight. That action stays NEEDS_RECONCILIATION and the workload stays excluded from repair; after 600 s the Executor adds one 'Operator action required' result. Live verification pending: the wedge harness has not been run against a cluster and no bundle is committed.",
+      "impact": "Fixed in code and verified live for the cases where the write can no longer commit. Reconciliation is a pure decision table: a deleted or recreated target, or a resourceVersion that moved without this action's evidence, ends SUPERSEDED, which the Coordinator records as FAILED so a new proposal can follow. The live wedge harness (C-EXECUTOR-WEDGE: one run per scenario on one Windows host with kind, 2026-11-11) showed main's Executor (d5b2ed9) staying NEEDS_RECONCILIATION over 5 reconcile passes with the workload still excluded, while 4afc879 resolved the moved-resourceVersion case (rv-race) as SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE and the replaced-target case (delete-recreate) as SUPERSEDED/TARGET_REPLACED, released the workload and applied a second proposal. Still open, and not covered by the harness: kubectl error text is not classified (the DEFINITE_REJECTION and FENCED rows are reserved), so a rejection that leaves the same UID at the same resourceVersion, such as an admission denial, cannot be told apart from a request still in flight. That action stays NEEDS_RECONCILIATION, in doubt until P2.06, and the workload stays excluded from repair; after 600 s the Executor adds one 'Operator action required' result.",
       "workaround": "For the unchanged-version case, an operator inspects the Deployment and clears the Executor ledger row by hand. The deleted, recreated and moved-version cases need no workaround.",
       "cites": [
         {"at": "services/executor/kubernetes_adapter.py:201", "text": "Live write returned an error; reconcile its outcome"},
@@ -16,9 +16,10 @@
         {"at": "services/executor/core.py:37", "text": "Live state does not confirm this attempt"},
         {"at": "tests/test_executor_reconciliation_table.py:255", "text": "def test_external_version_bump_supersedes_and_releases_the_workload"},
         {"at": "tests/test_executor_reconciliation_table.py:287", "text": "def test_unchanged_version_stays_in_doubt_and_is_deduplicated"},
-        {"at": "scripts/validation/test_executor_wedge_live.py"}
+        {"at": "scripts/validation/test_executor_wedge_live.py"},
+        {"claim": "C-EXECUTOR-WEDGE"}
       ],
-      "planned": ["P1.11", "P2.06", "P5.08"],
+      "planned": ["P2.06", "P5.08"],
       "issues": [61]
     },
     {
@@ -27,7 +28,7 @@
       "kind": "defect",
       "status": "mitigated",
       "since": "2026-11-12",
-      "impact": "Fixed in code, live verification pending. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it can never start that write. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. No run has used more than one Executor host.",
+      "impact": "Fixed in code; live verification is left to P3.01 and P4.01. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host given a reconcile command with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it never starts that write. An execute command on a fresh host can still write, and the resourceVersion test in the patch lets at most one write for the action commit. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. No run has used more than one Executor host; the 2026-11-11 live runs each used one.",
       "workaround": "Run one Executor with one ledger directory, as every documented run does, until a multi-host run verifies this.",
       "cites": [
         {"at": "services/executor/core.py:343", "text": "# Another host may already have committed this same action."},
@@ -36,7 +37,7 @@
         {"at": "tests/test_executor_reconciliation_table.py:405", "text": "def test_reconcile_on_a_host_with_no_row_returns_a_result"},
         {"at": "services/executor/store.py:3", "text": "Every worker must use the same ledger and lock directory"}
       ],
-      "planned": ["P1.10", "P3.01", "P4.01"],
+      "planned": ["P3.01", "P4.01"],
       "issues": [18, 58]
     },
     {
@@ -110,7 +111,7 @@
       "kind": "defect",
       "status": "mitigated",
       "since": "2026-11-11",
-      "impact": "Fixed in code for the networked processes: shared/log.py writes allowlisted JSON lines; the Coordinator server, worker HTTP, approval HTTP and worker service entrypoints configure it; every request gets an access line and every 401 or 403 an auth.denied line; lifecycle transitions are journalled; and every broad except handler re-raises or logs the error class, which CI enforces. Not covered: the live harnesses, agent mode and the in-process pipelines that every recorded run used never configure logging, so their log events are dropped. Exception messages are never logged, only class names, by design. There is no cross-process tracing. No live run has collected logs yet.",
+      "impact": "Fixed in code for the networked processes: shared/log.py writes allowlisted JSON lines; the Coordinator server, worker HTTP, approval HTTP and worker service entrypoints configure it; every POST request gets one http.access line, or an auth.denied line for a 401 or 403, while GET /healthz, GET /readyz and GET requests for unknown paths (404) get none; lifecycle transitions are journalled; and every broad except handler re-raises or logs the error class, which CI enforces. Not covered: the live harnesses (the Executor wedge harness included), agent mode and the in-process pipelines that every recorded run used never configure logging, so their log events are dropped. Exception messages are never logged, only class names, by design. There is no cross-process tracing. No live run has collected logs yet.",
       "workaround": "For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json.",
       "cites": [
         {"at": "shared/log.py:235", "text": "def entrypoint(component: str)"},
@@ -248,7 +249,7 @@
       "kind": "limitation",
       "status": "mitigated",
       "since": "2026-11-10",
-      "impact": "Incident-to-repair time in agent mode had a long tail (docs/results.md). The two measured cold calls took up to 41 s with model loads up to 26 s, and one 356 s decision stage holds only 53 s of recorded model calls, so its cause is not established. Fixed in code, live verification pending: each model call now has an overall deadline, a response size cap, no redirects or proxies and a schema check; agent mode runs a preflight and a warm-up call before any fault is injected and records model-runtime.json; keep_alive is configurable. The per-call timeout still defaults to 300 s. No agent run has been repeated since, so the tail with warm-up is unmeasured.",
+      "impact": "Incident-to-repair time in agent mode had a long tail (docs/results.md). The two measured cold calls took up to 41 s with model loads up to 26 s, and one 356 s decision stage holds only 53 s of recorded model calls, so its cause is not established. The bounded transport is in code: each model call has an overall deadline, a response size cap, no redirects or proxies and a schema check; agent mode runs a preflight and a warm-up call before any fault is injected and records model-runtime.json; keep_alive is configurable. Measured live on 4afc879 (C-AGENT-RECORDED: three runs on one Windows host, 2026-11-11): with qwen3:14b Q4_K_M fully on the GPU and keep_alive 30m, all nine model calls were warm (load under 1 s), model time per run was 21.9 to 24.0 s and incident to Guard ALLOW took 23.3 to 25.6 s; the first run's warm-up loaded the model in 18.6 s before the fault was injected. The preflight stopped a missing model before fault injection (C-AGENT-PREFLIGHT-RECORDED). Not measured: a cold load during a run with the bounded transport, so the tail after an evicted or cold model is unknown. The per-call timeout still defaults to 300 s; P2.01 puts agent planning under a planning budget.",
       "workaround": "Keep the model warm with keep_alive and check the warm-up load time in model-runtime.json after each run.",
       "cites": [
         {"at": "agent/llm.py:259", "text": "self.timeout = _positive(config, \"timeout\", 300)"},
@@ -256,7 +257,7 @@
         {"at": "experiments/boutique/harness/agent_live.py:169", "text": "llm.preflight()"},
         {"at": "tests/test_llm_transport.py"}
       ],
-      "planned": ["P1.12"],
+      "planned": ["P2.01"],
       "issues": [85, 87]
     },
     {
@@ -325,17 +326,19 @@
     },
     {
       "id": "L-EVIDENCE-INFERRED",
-      "title": "All committed evidence has inferred provenance",
+      "title": "Most committed evidence has inferred provenance",
       "kind": "limitation",
-      "status": "open",
+      "status": "mitigated",
       "since": "2026-11-12",
-      "impact": "Every bundle predates provenance stamping, so its source revision is a best guess. Runs now stamp a provenance block, but no live run has produced a stamped bundle yet, so no bundle proves which commit produced it.",
-      "workaround": "Quote each claim with its scope caveat, which says so.",
+      "impact": "Bundles collected before provenance stamping carry a best-guess revision: every chaos, security-lab, observer, packaged, shipping-lab, provider-recovery and ui-session bundle, the four earlier connected-harness runs, the two earlier Guard rejections and 20 agent runs. Recorded bundles now exist for the cited live classes: one connected-harness run, one Guard rejection with zero Executor patch attempts and four agent runs from 4afc879 on 2026-11-11 (C-CONNECTED-HARNESS-RECORDED, C-GUARD-REJECTION-RECORDED, C-AGENT-RECORDED, C-AGENT-PREFLIGHT-RECORDED), plus the offline Guard evaluation. The three Executor wedge bundles are inferred: the harness summary has no provenance block, so each revision is the operator's statement in the MANIFEST basis. Every live run is on one Windows host, and no release tag ties the evidence to a frozen artefact.",
+      "workaround": "Quote each claim with its scope caveat, which names its provenance, and prefer the claims whose bundles are recorded.",
       "cites": [
         {"claim": "C-CONNECTED-HARNESS"},
+        {"claim": "C-CONNECTED-HARNESS-RECORDED"},
+        {"claim": "C-AGENT-RECORDED"},
         {"at": "evidence/README.md", "text": "Treat these as history"}
       ],
-      "planned": ["P1.01", "P2.09"],
+      "planned": ["P2.09"],
       "issues": [63]
     },
     {

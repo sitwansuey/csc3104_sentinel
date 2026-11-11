@@ -47,9 +47,17 @@ do not show diagnosis accuracy in general. Owner acceptance is tracked in #56.
 > Scope: Three runs only, chosen as the latest consecutive set; earlier agent runs include failures (see C-AGENT-ALL). One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.
 <!-- END GENERATED:claim-c-agent-warm -->
 
+The runs above have inferred provenance. Three later runs were stamped with
+their source revision:
+
+<!-- BEGIN GENERATED:claim-c-agent-recorded -->
+> **C-AGENT-RECORDED:** At a recorded revision, qwen3:14b agent mode reached RECOVERED in 3/3 consecutive runs.
+> Scope: Three runs only, on a warm model: each bundle's model-runtime.json records qwen3:14b Q4_K_M fully on the GPU (gpu_fraction 1.0) with keep_alive 30m, and every model call loaded in under 1 s. The preflight negative test that ran just before is counted in C-AGENT-PREFLIGHT-RECORDED, not here. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 4afc879 on integration/phase1, clean tree, 2026-11-11 UTC.
+<!-- END GENERATED:claim-c-agent-recorded -->
+
 <!-- BEGIN GENERATED:claim-c-agent-all -->
-> **C-AGENT-ALL:** Across every recorded agent-mode attempt, 11/20 reached RECOVERED.
-> Scope: Includes deliberate negative tests (unreachable model server, missing model) and runs on older revisions. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.
+> **C-AGENT-ALL:** Across every recorded agent-mode attempt, 14/24 reached RECOVERED.
+> Scope: Includes deliberate negative tests (unreachable model server, missing model) and runs on older revisions. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 4 runs at 4afc879.
 <!-- END GENERATED:claim-c-agent-all -->
 
 [Testing](docs/testing.md) explains how to validate each mode and distinguish
@@ -129,8 +137,8 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-AGENT-APPROVAL](docs/limitations.md#l-agent-approval): Live runs use pre-authorised lab approval, not an authenticated operator (defect, open; planned P2.02, P2.03)
 - [L-RAW-LOGS-PROMPT](docs/limitations.md#l-raw-logs-prompt): Raw container log text reaches the model (defect, open; planned P2.04)
 - [L-OBSERVER-ZERO-REPLICAS](docs/limitations.md#l-observer-zero-replicas): A Deployment scaled to zero replicas is treated as healthy (defect, open; planned P5.07)
-- [L-EXEC-WEDGE](docs/limitations.md#l-exec-wedge): A write rejected with its resource version unchanged still waits in NEEDS_RECONCILIATION (defect, mitigated; planned P1.11, P2.06, P5.08)
-- [L-EXEC-REDELIVERY](docs/limitations.md#l-exec-redelivery): A replacement Executor without the ledger row reported CONFLICT for a write that was applied (defect, mitigated; planned P1.10, P3.01, P4.01)
+- [L-EXEC-WEDGE](docs/limitations.md#l-exec-wedge): A write rejected with its resource version unchanged still waits in NEEDS_RECONCILIATION (defect, mitigated; planned P2.06, P5.08)
+- [L-EXEC-REDELIVERY](docs/limitations.md#l-exec-redelivery): A replacement Executor without the ledger row reported CONFLICT for a write that was applied (defect, mitigated; planned P3.01, P4.01)
 - [L-NO-LOGGING](docs/limitations.md#l-no-logging): Structured logs cover only the networked entrypoints, and no live run has collected them (defect, mitigated; planned P1.07, P3.02)
 - [L-SINGLE-COORDINATOR](docs/limitations.md#l-single-coordinator): The Coordinator is one process with one SQLite file (limitation, open; planned P3.06, P4.02, P5.01)
 - [L-HOST-LOCAL-EXECUTOR](docs/limitations.md#l-host-local-executor): The Executor ledger and target locks are host-local (limitation, open; planned P3.04)
@@ -142,11 +150,11 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-SECURITY-SHIPPING-ONLY](docs/limitations.md#l-security-shipping-only): The security lab protects only the shipping path (limitation, open; planned P4.06, P5.04, P5.05)
 - [L-UNGATED-CVES](docs/limitations.md#l-ungated-cves): Workload image CVEs raise alerts but gate nothing (limitation, open; planned P5.02, P5.03)
 - [L-CHAOS-NOT-WIRED](docs/limitations.md#l-chaos-not-wired): Chaos Mesh faults are injection only, and HTTP and DNS faults do not run on this host (limitation, open; planned P4.03)
-- [L-EVIDENCE-INFERRED](docs/limitations.md#l-evidence-inferred): All committed evidence has inferred provenance (limitation, open; planned P1.01, P2.09)
 - [L-NO-RELEASE](docs/limitations.md#l-no-release): No tagged, scanned release image (limitation, open; planned P2.09, P2.10)
 - [L-LAB-CERTS](docs/limitations.md#l-lab-certs): Security lab certificates are two-day fixtures with no rotation (limitation, open; planned P5.06)
-- [L-MODEL-LATENCY](docs/limitations.md#l-model-latency): Model cold loads make agent planning slow and variable (limitation, mitigated; planned P1.12)
+- [L-MODEL-LATENCY](docs/limitations.md#l-model-latency): Model cold loads make agent planning slow and variable (limitation, mitigated; planned P2.01)
 - [L-UNPINNED-BASE-IMAGES](docs/limitations.md#l-unpinned-base-images): Sentinel component images used unpinned base image tags (limitation, mitigated; planned P1.09)
+- [L-EVIDENCE-INFERRED](docs/limitations.md#l-evidence-inferred): Most committed evidence has inferred provenance (limitation, mitigated; planned P2.09)
 
 8 fixed entries stay in the register as history.
 <!-- END GENERATED:limitations-summary -->

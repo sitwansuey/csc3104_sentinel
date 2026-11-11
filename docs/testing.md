@@ -179,7 +179,12 @@ the Executor with that token, deletes the namespace on exit and writes a
 summary without tokens, server addresses or local paths. Each result row
 counts only its own step's write attempts, successful writes and kubectl
 patch processes; reconcile passes are summed into one row. Its unit tests use a
-fake kubectl; it has not yet been run against a cluster.
+fake kubectl. On 11 November 2026 it ran once per scenario against
+`kind-sentinel-boutique-connected`, and once more with rv-race against main's
+Executor as the before case; the bundles and claim `C-EXECUTOR-WEDGE` are in
+[results](results.md#executor-wedge). Collect a run with
+`scripts/evidence/collect.py --class executor-wedge`; its summary has no
+provenance block, so pass `--inferred-revision` and `--inferred-basis`.
 
 ## Connected live acceptance
 
@@ -218,10 +223,22 @@ proposal, Guard decision or execution record. Collect the run with
 `scripts/evidence/collect.py --class agent` (see [evidence](../evidence/README.md)).
 
 The committed runs so far, all on one fault type with pre-authorised lab
-approval, are claims `C-AGENT-WARM` (the latest consecutive runs),
-`C-AGENT-ALL` (every attempt, failures included) and `C-AGENT-FAIL-CLOSED`
-(unreachable model server and missing model). Their values and caveats are in
+approval, are claims `C-AGENT-WARM` (consecutive runs with inferred
+provenance), `C-AGENT-ALL` (every attempt, failures included) and
+`C-AGENT-FAIL-CLOSED` (unreachable model server and missing model), plus
+`C-AGENT-RECORDED` and `C-AGENT-PREFLIGHT-RECORDED` from runs stamped with
+their source revision. Their values and caveats are in
 [results](results.md#claims). Owner acceptance is tracked in #56.
+
+<!-- BEGIN GENERATED:claim-c-agent-recorded -->
+> **C-AGENT-RECORDED:** At a recorded revision, qwen3:14b agent mode reached RECOVERED in 3/3 consecutive runs.
+> Scope: Three runs only, on a warm model: each bundle's model-runtime.json records qwen3:14b Q4_K_M fully on the GPU (gpu_fraction 1.0) with keep_alive 30m, and every model call loaded in under 1 s. The preflight negative test that ran just before is counted in C-AGENT-PREFLIGHT-RECORDED, not here. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 4afc879 on integration/phase1, clean tree, 2026-11-11 UTC.
+<!-- END GENERATED:claim-c-agent-recorded -->
+
+<!-- BEGIN GENERATED:claim-c-agent-preflight-recorded -->
+> **C-AGENT-PREFLIGHT-RECORDED:** At a recorded revision, agent mode given a model that is not installed failed at the model preflight, before any fault was injected and with no proposal, Guard decision or execution record, in 1/1 runs.
+> Scope: One deliberate negative test (model qwen3:does-not-exist on the local Ollama server); the run stopped after 0.1 s and its summary records fault_injected false. It shows the fail-closed stop for a missing model only, not for a model that fails mid-run. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 4afc879 on integration/phase1, clean tree, 2026-11-11 UTC.
+<!-- END GENERATED:claim-c-agent-preflight-recorded -->
 
 ## Specialised role checks
 

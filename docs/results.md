@@ -174,12 +174,14 @@ bundles. Each row is one stage over the runs that reached it, so `n` differs
 by stage and failed runs stay in the run counts. p90 is nearest rank. Read it
 with these limits:
 
-- No run here recorded its injection time, so detection starts at the first
-  failing Observer snapshot. That is a lower bound; the harness now records
-  `fault_injected_at` for new runs.
-- Planning and Guard need `planning-progress.jsonl`, which bundles do not
-  keep. Those rows come from the local run folders (`run folder`) and cannot
-  be rechecked in CI. `summarize.py --check` recomputes every `bundle` value.
+- Runs before 11 November 20:00 UTC did not record their injection time, so
+  their detection starts at the first failing Observer snapshot, a lower
+  bound. The four runs at 4afc879 record `fault_injected_at`; the Source
+  column counts each start basis.
+- Agent-mode planning and Guard need `planning-progress.jsonl`, which bundles
+  do not keep. Those rows come from the local run folders (`run folder`) and
+  cannot be rechecked in CI. `summarize.py --check` recomputes every `bundle`
+  value.
 - Guard here is wall time from the last planning record to the ALLOW verdict.
   It includes the dependency check and the lab's pre-authorised approval, so
   there is no human wait in it. In harness mode, "incident -> Guard ALLOW"
@@ -221,7 +223,10 @@ A call is cold when Ollama reports a model load over 1 s. Agent runs before
 the stage table. The 356 s decision stage of run
 `boutique-live-20261110T192806Z-88c2d9` holds only 53 s of recorded model
 calls; its files do not show where the rest went, so it is not counted as a
-cold load.
+cold load. The three qwen3:14b runs at 4afc879 used the bounded model
+transport after a warm-up; their `model-runtime.json` records Q4_K_M fully on
+the GPU with `keep_alive` 30m, and all nine of their calls were warm. No cold
+load during a run has been measured with that transport.
 
 <!-- BEGIN GENERATED:model-calls -->
 | Mode | Measure | n | Median s | p90 s | Max s |
@@ -283,7 +288,7 @@ scope caveat.
 | --- | --- | --- | --- |
 | C-CONNECTED-HARNESS | The connected Boutique walkthrough (two verified recoveries, crash reconciliation and a refused unnecessary rollback) passed in 4/4 runs | One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. Harness-authored proposals, no model. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded. | 4 |
 | C-AGENT-WARM | qwen3:14b agent mode reached RECOVERED in 3/3 consecutive runs after the target-name fix | Three runs only, chosen as the latest consecutive set; earlier agent runs include failures (see C-AGENT-ALL). One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded. | 3 |
-| C-AGENT-ALL | Across every recorded agent-mode attempt, 11/20 reached RECOVERED | Includes deliberate negative tests (unreachable model server, missing model) and runs on older revisions. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded. | 20 |
+| C-AGENT-ALL | Across every recorded agent-mode attempt, 14/24 reached RECOVERED | Includes deliberate negative tests (unreachable model server, missing model) and runs on older revisions. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 4 runs at 4afc879. | 24 |
 | C-AGENT-FAIL-CLOSED | Agent runs given an unreachable model server or a missing model stopped before any proposal reached Guard or the Executor in 6/6 runs | Deliberate negative tests. 'Stopped' is read from each bundle: the run failed with that error and wrote no proposal, Guard decision or execution record. The harness then removed the injected fault as an administrator emergency restore, which is not Sentinel recovery, and the incident stayed OPEN. One fault type (invalid shipping PORT). One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded. | 6 |
 | C-GUARD-REJECTION | Guard rejection of an approved but unnecessary rollback: 2/2 refused, 0 Executor writes | One scenario: the service is healthy and already at its baseline. Counts Executor recovery writes only, after setup. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded. | 2 |
 | C-SECURITY-LAB | The protected Boutique security lab passed in 3/3 runs, blocking every bypass, identity and outage probe | Shipping path only, behind one mTLS gateway in a dedicated kind cluster; scripted probes, not an adversarial test. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded. | 3 |
@@ -292,4 +297,9 @@ scope caveat.
 | C-PACKAGED | The packaged runner image completed the Boutique walkthrough in 5/9 attempts | Attempts include image-build-only and interrupted starts. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded. | 9 |
 | C-OBSERVER | Live Observer acceptance on Boutique passed in 3/3 runs | Detects one Deployment failure mode (unavailable replicas after a bad rollout). One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded. | 3 |
 | C-GUARD-EVAL | On the versioned synthetic Guard fixtures, unsafe proposals allowed per configuration: state_policy_only 21/27, full_available 0/27, no_validation 27/27 (definitional) | 33 hand-authored synthetic fixtures (27 unsafe, 6 safe) evaluated offline in one process; not live incidents and not an estimate of production frequency or generalisation. no_validation allows every case by construction, so its row is definitional, not measured. Admission dry-run and runtime preview are not included. Status PRELIMINARY_NOT_FROZEN: the issue #63 freeze conditions are not met. One Windows/amd64 host; provenance recorded. | 1 |
+| C-CONNECTED-HARNESS-RECORDED | At a recorded revision, the connected Boutique walkthrough (two verified recoveries, crash reconciliation and a refused unnecessary rollback) passed in 1/1 runs | One run. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. Harness-authored proposals, no model. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 4afc879 on integration/phase1, clean tree, 2026-11-11 UTC. | 1 |
+| C-GUARD-REJECTION-RECORDED | At a recorded revision, Guard rejection of an approved but unnecessary rollback: 1/1 refused, 0 Executor writes | One run of one scenario: the service is healthy and already at its baseline. The Executor made zero patch attempts for the refused action, counting recovery writes only, after setup. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 4afc879 on integration/phase1, clean tree, 2026-11-11 UTC. | 1 |
+| C-AGENT-RECORDED | At a recorded revision, qwen3:14b agent mode reached RECOVERED in 3/3 consecutive runs | Three runs only, on a warm model: each bundle's model-runtime.json records qwen3:14b Q4_K_M fully on the GPU (gpu_fraction 1.0) with keep_alive 30m, and every model call loaded in under 1 s. The preflight negative test that ran just before is counted in C-AGENT-PREFLIGHT-RECORDED, not here. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 4afc879 on integration/phase1, clean tree, 2026-11-11 UTC. | 3 |
+| C-AGENT-PREFLIGHT-RECORDED | At a recorded revision, agent mode given a model that is not installed failed at the model preflight, before any fault was injected and with no proposal, Guard decision or execution record, in 1/1 runs | One deliberate negative test (model qwen3:does-not-exist on the local Ollama server); the run stopped after 0.1 s and its summary records fault_injected false. It shows the fail-closed stop for a missing model only, not for a model that fails mid-run. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 4afc879 on integration/phase1, clean tree, 2026-11-11 UTC. | 1 |
+| C-EXECUTOR-WEDGE | Live Executor wedge harness, main's Executor before the reconcile fix and integration/phase1 after it: rv-race at d5b2ed9 FAILED: NEEDS_RECONCILIATION on 5/5 reconcile passes, second proposal not admitted; rv-race at 4afc879 PASS: SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE on 5/5 reconcile passes, second proposal APPLIED; delete-recreate at 4afc879 PASS: SUPERSEDED/TARGET_REPLACED on 5/5 reconcile passes, second proposal APPLIED | One run per scenario, each in a disposable namespace on the local kind cluster; Guard is not under test. The before run copied the harness from 4afc879 into a checkout of main d5b2ed9 and replaced its shared.log import with a no-op stub. Covers a moved resourceVersion (rv-race) and a replaced target (delete-recreate) only: a rejected write that leaves the same UID at the same resourceVersion is not covered and stays NEEDS_RECONCILIATION until P2.06. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance inferred: the scenario summaries carry no provenance block, so each revision is the operator's statement of the checkout's HEAD at run time, recorded in the bundle MANIFEST basis. | 3 |
 <!-- END GENERATED:claims -->

@@ -40,7 +40,7 @@ its level and, for exceptions, the class name.
 
 | Event | Logged by | Meaning |
 | --- | --- | --- |
-| `http.access` | worker and approval HTTP | One line per request, written before the reply, with `operation`, `http_status`, `outcome` and correlation IDs. A 409 carries a `reason` class such as `lease_replaced`. |
+| `http.access` | worker and approval HTTP | One line per POST request (GET `/healthz`, GET `/readyz` and 404 GETs get none), written before the reply, with `operation`, `http_status`, `outcome` and correlation IDs. A 409 carries a `reason` class such as `lease_replaced`. |
 | `auth.denied` | worker and approval HTTP | Every 401 and 403, with a `reason` class such as `invalid_credentials` or `not_lease_owner`. A 401 never names the claimed identity. |
 | `coordinator.state.transition` | Coordinator store | A lifecycle change, logged only after its transaction commits. |
 | `coordinator.message.recorded` / `.duplicate` | Coordinator | An accepted message, or an exact retry (`DEBUG`). |
@@ -92,7 +92,9 @@ behaviour. After the audit, 46 log with `log.failure()` or `log.emit()`, 3 are
 logged by `access_log()` or `report()` just after the handler, and 1, the in-cluster traffic shopper, cannot import
 this module and records the error class in its own output row.
 Handlers merged after the audit follow the same rules; the live Executor
-wedge harness, for example, logs `validation.wedge.failed`.
+wedge harness, for example, emits `validation.wedge.failed`. The harness never
+configures logging, so that event is not visible in its output; it prints
+`Wedge harness FAILED` with the exception class to stderr instead.
 
 Failure events include `executor.observe.unavailable`,
 `executor.prewrite.refused`, `executor.authorization.withdrawn`,

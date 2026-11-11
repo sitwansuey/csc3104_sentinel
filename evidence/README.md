@@ -46,8 +46,11 @@ MANIFEST hashes also hold on Windows checkouts.
   human review still matters. PEM blocks, JWTs,
   kubeconfig key data, long base64 and known token shapes stop the collection
   with no partial bundle. Home and repository paths become `<home>` and
-  `<repo>`, and local user names become `<user>`. Files over 256 KB are left
-  out and listed in the MANIFEST; a bundle over 3 MB is refused.
+  `<repo>`, and local user names become `<user>`. From sanitiser version 5,
+  private IPv4 addresses (RFC 1918 and link-local, such as kind Pod IPs) become
+  `<private-ip>`; 127.0.0.1 is kept, and earlier bundles keep the addresses
+  they were collected with. Files over 256 KB are left out and listed in the
+  MANIFEST; a bundle over 3 MB is refused.
 - **Failures stay in.** Failed, interrupted and incomplete runs are collected
   and count in every denominator.
 - **Human review.** Skim a new bundle before committing it.
@@ -57,9 +60,11 @@ MANIFEST hashes also hold on Windows checkouts.
 - `recorded`: the run wrote a provenance block itself (`shared/provenance.py`):
   the exact commit, whether the tree was dirty and the tool versions. Only
   recorded bundles should back release or article claims.
-- `inferred`: the run predates provenance stamping. The revision is a best
-  guess and the MANIFEST says how it was chosen. Treat these as history, not
-  proof of a specific commit.
+- `inferred`: the run files carry no provenance block, mostly because the run
+  predates provenance stamping (the Executor wedge harness does not stamp one
+  either). The revision is a best guess or an operator statement, and the
+  MANIFEST `basis` says which. Treat these as history, not proof of a specific
+  commit.
 
 ## Adding a bundle
 

@@ -53,9 +53,12 @@ What is single-host today:
   protocol. The system is not Byzantine-tolerant (see the threat model).
 - **Not tolerated:** loss of the Coordinator's disk (one volume, no replica)
   and a misbehaving Coordinator. Loss of an Executor's ledger is survivable
-  in part: another ledger reconciles the action from the proposal and live
-  state without writing (`services/executor/core.py::reconcile`), but a write
-  whose target still has the same UID and resourceVersion stays in doubt.
+  in part: a host given a reconcile command with no ledger row reconciles the
+  action from the proposal and live state without writing
+  (`services/executor/core.py::reconcile`), but a write whose target still has
+  the same UID and resourceVersion stays in doubt. An execute command on a
+  fresh host can still write; the resourceVersion test in the patch lets at
+  most one write for the action commit.
 
 ## Consistency: one Coordinator, consistent rather than available
 
