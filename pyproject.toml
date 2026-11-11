@@ -5,7 +5,7 @@
 
 [project]
 name = "sentinel"
-version = "0.0.0"  # Placeholder until the first tagged release.
+version = "1.0.0rc1"  # PEP 440 form of the VERSION file; scripts/release/preflight.py checks they agree.
 description = "Guarded, verified recovery for Kubernetes workloads (research prototype)"
 requires-python = ">=3.12"
 # The Coordinator, Guard, Executor and Verifier core uses the standard library only.

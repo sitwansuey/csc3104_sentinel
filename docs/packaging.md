@@ -53,9 +53,10 @@ published release image yet (`L-NO-RELEASE` in [limitations](limitations.md)).
 Use `-SkipBuild` or `-Offline` only with an image you built from the same
 revision. Full connected/agent packaging is not supplied by the old bootstrap.
 
-For a future release, build from the reviewed revision, record architecture and
-digest, scan the runner and separately assess workload/node images, then export
-with `docker save --output <runner.tar> <tag>`. Share its matching source revision
+The [release process](release.md) automates the following from a version tag;
+it has not run yet. For a future release, build from the reviewed revision,
+record architecture and digest, scan the runner and separately assess
+workload/node images, then export with `docker save --output <runner.tar> <tag>`. Share its matching source revision
 and checksums. The recipient verifies with `Get-FileHash`, runs
 `docker load --input <runner.tar>`, checks `docker image inspect` architecture,
 then rehearses online and cached startup on the actual laptop.
