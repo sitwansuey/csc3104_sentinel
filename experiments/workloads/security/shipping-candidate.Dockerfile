@@ -4,14 +4,14 @@ ENV GOTOOLCHAIN=local CGO_ENABLED=0
 WORKDIR /src
 COPY shipping/ ./
 # Exact dependency changes, preserving upstream application behavior.
-RUN go get golang.org/x/net@v0.60.0 && go mod tidy \
+RUN go get golang.org/x/net@v0.62.0 && go mod tidy \
     && go test ./... \
     && go build -trimpath -ldflags="-s -w" -o /out/shippingservice .
 
 FROM ${RUNTIME_IMAGE}
 ARG UPSTREAM_COMMIT
 LABEL org.opencontainers.image.title="Sentinel reviewed Boutique shipping candidate" \
-      org.opencontainers.image.version="0.10.7-security.1" \
+      org.opencontainers.image.version="0.10.7-security.2" \
       org.opencontainers.image.revision=${UPSTREAM_COMMIT}
 COPY --from=build /out/shippingservice /src/shippingservice
 COPY LICENSE /usr/share/licenses/boutique-LICENSE

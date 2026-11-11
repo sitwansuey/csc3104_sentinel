@@ -9,7 +9,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM_COMMIT = "5b608cb1dfe317d05e4f1bb8c99b7618452fde87"
-TAG = "sentinel-shipping-candidate:0.10.7-security.1"
+TAG = "sentinel-shipping-candidate:0.10.7-security.2"
 
 
 def command(args, timeout=600):
@@ -49,7 +49,7 @@ def build(directory):
         raise RuntimeError("Candidate build/tests failed; inspect " + str(directory / "build.log"))
     image = json.loads(command(["docker", "image", "inspect", TAG]))[0]
     evidence = {"tag": TAG, "image_id": image["Id"], "upstream_commit": UPSTREAM_COMMIT,
-                "runtime_manifest": candidates[0], "go": "1.27.3", "golang.org/x/net": "v0.60.0",
+                "runtime_manifest": candidates[0], "go": "1.27.3", "golang.org/x/net": "v0.62.0",
                 "upstream_go_tests_passed": True, "deployed": False}
     (directory / "candidate.json").write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
     return evidence
