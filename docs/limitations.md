@@ -25,12 +25,12 @@ the fix and regenerate.
 | Entry | Kind | Status | Title | Planned | Issues |
 | --- | --- | --- | --- | --- | --- |
 | [L-CLOCK-ORDERING](#l-clock-ordering) | defect | open | Lifecycle ordering compares wall-clock timestamps written by different components | P3.03 | #18, #63 |
-| [L-AGENT-JOURNAL](#l-agent-journal) | defect | open | Agent mode bypasses the durable Planner journal | P2.01 | #14, #54 |
 | [L-AGENT-APPROVAL](#l-agent-approval) | defect | open | Live runs use pre-authorised lab approval, not an authenticated operator | P2.02, P2.03 | #10 |
 | [L-RAW-LOGS-PROMPT](#l-raw-logs-prompt) | defect | open | Raw container log text reaches the model | P2.04 | #51, #56 |
 | [L-OBSERVER-ZERO-REPLICAS](#l-observer-zero-replicas) | defect | open | A Deployment scaled to zero replicas is treated as healthy | P5.07 | none |
 | [L-EXEC-WEDGE](#l-exec-wedge) | defect | mitigated | A write rejected with its resource version unchanged still waits in NEEDS_RECONCILIATION | P1.11, P2.06, P5.08 | #61 |
 | [L-EXEC-REDELIVERY](#l-exec-redelivery) | defect | mitigated | A replacement Executor without the ledger row reported CONFLICT for a write that was applied | P1.10, P3.01, P4.01 | #18, #58 |
+| [L-AGENT-JOURNAL](#l-agent-journal) | defect | mitigated | Agent mode bypasses the durable Planner journal | P2.01 | #14, #54 |
 | [L-NO-LOGGING](#l-no-logging) | defect | mitigated | Structured logs cover only the networked entrypoints, and no live run has collected them | P1.07, P3.02 | #62 |
 | [L-SINGLE-COORDINATOR](#l-single-coordinator) | limitation | open | The Coordinator is one process with one SQLite file | P3.06, P4.02, P5.01 | #62, #63 |
 | [L-HOST-LOCAL-EXECUTOR](#l-host-local-executor) | limitation | open | The Executor ledger and target locks are host-local | P3.04 | #18, #58, #59 |
@@ -64,21 +64,13 @@ the fix and regenerate.
 - Workaround: Run every component on one host, so they share one clock. All committed runs did.
 - Evidence: `services/coordinator/core.py:149-150`; `services/coordinator/core.py:169-170`; `runtime/worker_http.py:157`; `runtime/remote_worker.py:132`; `runtime/remote_worker.py:73`.
 
-### L-AGENT-JOURNAL
-
-**Agent mode bypasses the durable Planner journal.** Defect, open; recorded 2026-11-11. Planned: P2.01. Issues: #14, #54.
-
-- Impact: Agent planning calls the RCA engine directly instead of the PlannerStore journal. A failed agent run saves no ESCALATE, nothing retries it, and the incident stays OPEN.
-- Workaround: Read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.
-- Evidence: `experiments/boutique/harness/agent_live.py:239`; `docs/planner.md`; claim `C-AGENT-FAIL-CLOSED`.
-
 ### L-AGENT-APPROVAL
 
 **Live runs use pre-authorised lab approval, not an authenticated operator.** Defect, open; recorded 2026-11-11. Planned: P2.02, P2.03. Issues: #10.
 
 - Impact: Agent mode records a pre-authorised approval and the harness approves in code. The authenticated approval service exists but no live run uses it, so no evidence shows a person deciding.
 - Workaround: Treat every live result as lab approval. Use the authenticated approval service only with explicit Guard/Executor wiring (docs/approvals.md).
-- Evidence: `experiments/boutique/harness/agent_live.py:271`; `experiments/recovery/live.py:327`; claim `C-CONNECTED-HARNESS`.
+- Evidence: `experiments/boutique/harness/agent_live.py:216`; `experiments/recovery/live.py:327`; claim `C-CONNECTED-HARNESS`.
 
 ### L-RAW-LOGS-PROMPT
 
@@ -86,7 +78,7 @@ the fix and regenerate.
 
 - Impact: Container log lines are exported and quoted into model context. A crafted log line could steer the model towards a rollback to the measured baseline. Guard and the Executor still enforce the target, baseline and resourceVersion checks.
 - Workaround: None in code. The prompt tells the model that telemetry is untrusted, which is not a control.
-- Evidence: `experiments/boutique/harness/agent_live.py:95`; `agent/tools.py:193-194`.
+- Evidence: `experiments/boutique/harness/agent_live.py:76`; `agent/tools.py:193-194`.
 
 ### L-OBSERVER-ZERO-REPLICAS
 
@@ -111,6 +103,14 @@ the fix and regenerate.
 - Impact: Fixed in code, live verification pending. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it can never start that write. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. No run has used more than one Executor host.
 - Workaround: Run one Executor with one ledger directory, as every documented run does, until a multi-host run verifies this.
 - Evidence: `services/executor/core.py:343`; `services/executor/core.py:287`; `tests/test_executor_reconciliation_table.py:350`; `tests/test_executor_reconciliation_table.py:405`; `services/executor/store.py:3`.
+
+### L-AGENT-JOURNAL
+
+**Agent mode bypasses the durable Planner journal.** Defect, mitigated; recorded 2026-11-11. Planned: P2.01. Issues: #14, #54.
+
+- Impact: Fixed in code: agent planning now runs through prepare() and the PlannerStore journal. A model failure is retried up to three times; an abstention, a diagnosis of another component, a NO_ACTION answer or a target changed during inference ends at once. Every failure ends in a saved, delivered ESCALATE, so the incident moves to NEEDS_REVIEW, and a saved proposal replays without another model call. Still open: the planning budget applies per attempt, so one incident can use three budgets, and the remote Planner worker has no agent mode. Live verification pending: no agent run has used the journal yet, and every committed agent bundle predates it, so those failed runs left the incident OPEN.
+- Workaround: For runs recorded before this change, read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.
+- Evidence: `experiments/boutique/harness/agent_live.py:204`; `services/planner/worker.py:133`; `services/planner/worker.py:146`; `tests/test_agent_journal.py:199`; `tests/test_agent_journal.py:273`; `docs/planner.md`; claim `C-AGENT-FAIL-CLOSED`.
 
 ### L-NO-LOGGING
 
@@ -230,7 +230,7 @@ the fix and regenerate.
 
 - Impact: Incident-to-repair time in agent mode had a long tail (docs/results.md). The two measured cold calls took up to 41 s with model loads up to 26 s, and one 356 s decision stage holds only 53 s of recorded model calls, so its cause is not established. Fixed in code, live verification pending: each model call now has an overall deadline, a response size cap, no redirects or proxies and a schema check; agent mode runs a preflight and a warm-up call before any fault is injected and records model-runtime.json; keep_alive is configurable. The per-call timeout still defaults to 300 s. No agent run has been repeated since, so the tail with warm-up is unmeasured.
 - Workaround: Keep the model warm with keep_alive and check the warm-up load time in model-runtime.json after each run.
-- Evidence: `agent/llm.py:259`; `agent/llm.py:416`; `experiments/boutique/harness/agent_live.py:169`; `tests/test_llm_transport.py`.
+- Evidence: `agent/llm.py:285`; `agent/llm.py:455`; `experiments/boutique/harness/agent_live.py:151`; `tests/test_llm_transport.py`.
 
 ### L-UNPINNED-BASE-IMAGES
 
@@ -268,9 +268,9 @@ the fix and regenerate.
 
 **Agent planning failures were not shown on the dashboard or in summary.json.** Defect, fixed by #92; recorded 2026-11-11. Planned: none. Issues: #87.
 
-- Impact: A failed agent run looked like a stalled one, and Ollama's own error text was discarded. The incident still stays OPEN; see L-AGENT-JOURNAL.
+- Impact: A failed agent run looked like a stalled one, and Ollama's own error text was discarded. The incident also stayed OPEN until agent planning moved into the journal; see L-AGENT-JOURNAL.
 - Workaround: Not needed.
-- Evidence: `experiments/boutique/harness/agent_live.py:258`; `tests/test_live_agent.py:164`.
+- Evidence: `experiments/boutique/harness/agent_live.py:241`; `tests/test_live_agent.py:238`.
 
 ### L-CHAOS-SCENARIOS
 

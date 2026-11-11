@@ -8,11 +8,16 @@ from services.planner.worker import prepare
 
 
 def process_planner_requests(store, bus, *, baseline_reader, retriever, provider,
-                             journal=None, max_attempts=3, retry_seconds=5, lease_seconds=120):
+                             journal=None, max_attempts=3, retry_seconds=5, lease_seconds=120,
+                             diagnoser=None, finalize=None):
+    """Plan pending incidents. diagnoser and finalize need the durable journal (see prepare())."""
     if journal is not None:
         return _process_durable(store, bus, baseline_reader=baseline_reader, retriever=retriever,
             provider=provider, journal=journal, max_attempts=max_attempts,
-            retry_seconds=retry_seconds, lease_seconds=lease_seconds)
+            retry_seconds=retry_seconds, lease_seconds=lease_seconds,
+            diagnoser=diagnoser, finalize=finalize)
+    if diagnoser is not None or finalize is not None:
+        raise ValueError("Agent planning hooks require the durable Planner journal")
     proposals = []
     pending = store.pending_routes("planner.request")
     for row in pending:
@@ -44,7 +49,7 @@ def process_planner_requests(store, bus, *, baseline_reader, retriever, provider
 
 
 def _process_durable(store, bus, *, baseline_reader, retriever, provider, journal,
-                     max_attempts, retry_seconds, lease_seconds):
+                     max_attempts, retry_seconds, lease_seconds, diagnoser, finalize):
     proposals = []
     # A crash after Coordinator commit can precede the local delivery marker.
     # Reconcile from the exact accepted business payload, not a transport flag.
@@ -63,7 +68,8 @@ def _process_durable(store, bus, *, baseline_reader, retriever, provider, journa
             continue
         proposal = prepare(incident, journal=journal, baseline_reader=baseline_reader,
             retriever=retriever, provider=provider, max_attempts=max_attempts,
-            retry_seconds=retry_seconds, lease_seconds=lease_seconds)
+            retry_seconds=retry_seconds, lease_seconds=lease_seconds,
+            diagnoser=diagnoser, finalize=finalize)
         if proposal is None:
             continue
         with store.transaction():

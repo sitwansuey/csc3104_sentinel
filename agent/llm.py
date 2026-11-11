@@ -32,10 +32,28 @@ LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 KEEP_ALIVE = re.compile(r"-?\d{1,6}(\.\d{1,3})?(ms|s|m|h)?")
 WARM_UP_SCHEMA = {"type": "object", "properties": {"ready": {"type": "boolean"}},
                   "required": ["ready"], "additionalProperties": False}
+# A call is not started when less than this is left of the planning deadline.
+MIN_CALL_SECONDS = 5
 
 
 class ModelResponseTooLarge(ValueError):
     """The response was larger than max_response_bytes; retrying cannot help."""
+
+
+class ModelUnavailable(RuntimeError):
+    """No usable reply: the server could not be reached or returned an HTTP error."""
+
+
+class ModelOutputInvalid(RuntimeError):
+    """A reply arrived, but it was not a valid answer in the requested schema."""
+
+
+class PlanningBudgetExceeded(RuntimeError):
+    """The planning deadline or the model-call cap was used up.
+
+    A RuntimeError like the other model failures, so callers that stop on any
+    model failure keep doing so.
+    """
 
 
 class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
@@ -248,7 +266,15 @@ def _count(value):
 
 
 class Ollama:
-    def __init__(self, config, *, progress=None):
+    def __init__(self, config, *, progress=None, deadline=None):
+        """deadline: optional time.monotonic() value that ends the whole planning task.
+
+        Each call then stops at the earlier of its own deadline and this one, and
+        no call starts with less than MIN_CALL_SECONDS left.
+        """
+        if deadline is not None and (type(deadline) not in (int, float) or not math.isfinite(deadline)):
+            raise ValueError("deadline must be a finite monotonic time")
+        self.planning_deadline = deadline
         self.config = config
         self.calls = []
         self.progress = progress
@@ -339,14 +365,24 @@ class Ollama:
         ], schema, self.config.get("num_predict", 2048))
         host = self.host
         last_error = None
+        failure = ModelUnavailable
         for attempt in range(2):
             if self.requests >= self.max_model_calls:
                 if last_error is None:
                     last_error = f"max_model_calls budget of {self.max_model_calls} is exhausted"
+                    failure = PlanningBudgetExceeded
+                break
+            if (self.planning_deadline is not None
+                    and self.planning_deadline - time.monotonic() < MIN_CALL_SECONDS):
+                # Never start a call that the planning deadline would cut short.
+                last_error = f"planning deadline leaves less than {MIN_CALL_SECONDS} s for another call"
+                failure = PlanningBudgetExceeded
                 break
             self.requests += 1
             started = time.monotonic()
             deadline = started + self.deadline_seconds
+            if self.planning_deadline is not None:
+                deadline = min(deadline, self.planning_deadline)
             call = {"role": role, "model": model, "attempt": attempt + 1,
                     "call_id": len(self.calls) + 1, "status": "running",
                     "prompt_characters": len(prompt)}
@@ -377,8 +413,11 @@ class Ollama:
                 # Repeating a deterministic truncated/invalid/oversize response
                 # with the same prompt and seed only adds another inference delay.
                 retryable = not isinstance(exc, (ValueError, KeyError))
+                failure = ModelUnavailable if retryable else ModelOutputInvalid
                 if isinstance(exc, urllib.error.HTTPError) and 300 <= exc.code < 500:
                     retryable = exc.code in {408, 429}
+                if deadline == self.planning_deadline and time.monotonic() >= deadline - .1:
+                    failure = PlanningBudgetExceeded
             finally:
                 stop.set()
                 thread.join(timeout=6)
@@ -391,7 +430,7 @@ class Ollama:
             if attempt == 0 and self.requests < self.max_model_calls:
                 notify(self.progress, {**call, "stage": "model", "status": "retrying"})
                 time.sleep(1)
-        raise RuntimeError(f"Ollama {role} failed for {model} at {host}: {last_error}")
+        raise failure(f"Ollama {role} failed for {model} at {host}: {last_error}")
 
     def preflight(self):
         """Fail fast when Ollama is unreachable or a configured model is not installed."""

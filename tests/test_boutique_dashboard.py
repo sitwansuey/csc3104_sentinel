@@ -176,6 +176,51 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "model planning"):
                     dashboard.verify_agent()
 
+    def escalated(self):
+        """One agent incident that planning escalated: no Guard, approval, execution or outcome."""
+        snapshot = deepcopy(self.snapshot)
+        incident = dict(snapshot["incidents"][0], state="NEEDS_REVIEW")
+        proposal = dict(snapshot["actions"][0]["proposal"], action="ESCALATE")
+        snapshot.update(incidents=[incident], approvals=[], outbox=[], messages=[], actions=[dict(
+            snapshot["actions"][0], state="NEEDS_REVIEW", proposal=proposal, guard_result=None,
+            execution_result=None)])
+        status = {"incident_id": "INC-0", "attempts": 3, "error_code": "MODEL_UNAVAILABLE",
+                  "delivered": 1, "proposal": proposal}
+        return snapshot, status
+
+    def verify_escalated(self, snapshot, status):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "approved-rollback").mkdir()
+            (root / "approved-rollback/planning-status.json").write_text(json.dumps(status))
+            dashboard = BoutiqueDashboard(root, context="test-context", cluster_id="test-cluster",
+                                          namespace="test-namespace", port=0)
+            dashboard.url = "http://127.0.0.1:9999"
+            with patch.object(dashboard, "_snapshot", return_value=snapshot):
+                return dashboard.verify_agent("escalated")
+
+    def test_agent_dashboard_accepts_a_delivered_escalation_with_no_downstream_work(self):
+        result = self.verify_escalated(*self.escalated())
+        self.assertEqual((result["status"], result["scenario"]), ("PASS", "live-agent-escalated"))
+        self.assertEqual((result["error_code"], result["attempts"], result["applied_actions"]),
+                         ("MODEL_UNAVAILABLE", 3, 0))
+
+    def test_agent_dashboard_rejects_an_escalation_that_reached_guard_or_was_not_journaled(self):
+        snapshot, status = self.escalated()
+        for change in ("guard", "approval", "open", "journal"):
+            with self.subTest(change=change):
+                changed, saved = deepcopy(snapshot), deepcopy(status)
+                if change == "guard":
+                    changed["outbox"] = [{"topic": "guard.request", "action_id": "ACT-0"}]
+                elif change == "approval":
+                    changed["approvals"] = [{"record": {"action_id": "ACT-0"}}]
+                elif change == "open":
+                    changed["incidents"][0]["state"] = "OPEN"
+                else:
+                    saved["delivered"] = 0
+                with self.assertRaises(RuntimeError):
+                    self.verify_escalated(changed, saved)
+
     def test_standalone_refusal_still_validates_one_rejected_proposal(self):
         for field in ("incidents", "actions", "reports"):
             self.snapshot[field] = self.snapshot[field][-1:]

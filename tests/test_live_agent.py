@@ -1,7 +1,14 @@
-"""Live observation projection and the model-to-guard proposal boundary."""
+"""Live observation projection and the model-to-guard proposal boundary.
+
+Agent mode plans through the durable Planner journal (experiments/boutique/
+harness/durable_case.py). These tests run the real harness method, agent,
+journal and Coordinator with a scripted model and no cluster; they stop at the
+first Role 6 dependency check, which needs a cluster.
+"""
 from copy import deepcopy
 from datetime import datetime, timedelta
 import csv
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -9,10 +16,17 @@ import unittest
 from unittest.mock import Mock, patch
 
 from experiments.boutique.harness.agent_live import AgentPlanningMixin, export_telemetry, names_target
+from services.coordinator.core import LocalEventBus, SQLiteStore, handle
+from services.planner.store import PlannerStore
 from tests.support.fake_ollama import FakeOllama, Reply
 from tests.test_rca_integration import Model
 
 ROOT = Path(__file__).resolve().parents[1]
+MODEL = "services.planner.agent_provider.Ollama"
+
+
+class ReachedDependencyCheck(Exception):
+    """Planning delivered a ROLLBACK and the harness asked Role 6 about it."""
 
 
 class LiveAgentTests(unittest.TestCase):
@@ -30,15 +44,50 @@ class LiveAgentTests(unittest.TestCase):
             "events": [{"message": "Back-off restarting failed container"}]}
         (self.root / "primary-0-observation.json").write_text(json.dumps(self.observation))
 
-    def harness(self):
+        # Durable backoff is real time in the harness; keep these tests fast.
+        for name, value in (("RETRY_SECONDS", .01), ("POLL_SECONDS", .01)):
+            fast = patch("experiments.boutique.harness.durable_case." + name, value)
+            fast.start()
+            self.addCleanup(fast.stop)
+
+    def harness(self, directory=None, *, expect="recovered"):
         harness = AgentPlanningMixin()
-        harness.directory = self.root
+        harness.directory = directory or self.root
+        if directory:
+            directory.mkdir()
+            (directory / "primary-0-observation.json").write_text(json.dumps(self.observation))
         harness.target = self.incident["target"]
         harness.baseline = self.baseline
         harness.deployment = Mock(return_value=deepcopy(self.observation["deployment"]))
         harness.summary = {}
         harness.event = Mock()
+        harness.phase = Mock()
+        harness.check = Mock()
+        harness.emergency_restore = Mock(return_value=True)
+        harness.dependency_result = Mock(side_effect=ReachedDependencyCheck)
+        harness.expect = expect
+        harness.store = SQLiteStore(harness.directory / "coordinator.sqlite")
+        self.addCleanup(harness.store.close)
+        harness.bus = LocalEventBus()
+        handle(self.incident, harness.store, harness.bus)
         return harness
+
+    def recover(self, harness, model):
+        with patch(MODEL, return_value=model):
+            harness.recover_incident(self.incident)
+
+    def planned(self, harness, model):
+        """Run to the first dependency check; return the delivered proposal."""
+        with self.assertRaises(ReachedDependencyCheck):
+            self.recover(harness, model)
+        return harness.dependency_result.call_args.args[0]
+
+    def journal(self, harness):
+        with PlannerStore(harness.directory / "approved-rollback/planner.db") as journal:
+            return journal.get(self.incident["incident_id"])
+
+    def state(self, harness):
+        return harness.store.incident(self.incident["incident_id"])["state"]
 
     def test_projection_uses_real_observations_and_rejects_other_targets(self):
         out = self.root / "good/telemetry"
@@ -127,97 +176,132 @@ class LiveAgentTests(unittest.TestCase):
     def test_actual_agent_and_planner_produce_bound_proposal(self):
         model = self.model()
         harness = self.harness()
-        folder = self.root / "case"
-        folder.mkdir()
-        with patch("experiments.boutique.harness.agent_live.Ollama", return_value=model):
-            proposal = harness.build_proposal(self.incident, folder)
+        proposal = self.planned(harness, model)
+        folder = self.root / "approved-rollback"
         self.assertEqual(proposal["action"], "ROLLBACK")
         self.assertEqual(proposal["parameters"]["baseline_id"], self.baseline["baseline_id"])
         self.assertEqual(proposal["based_on_resource_version"], "200")
+        self.assertEqual(harness.store.action(proposal["action_id"])["proposal"], proposal)
         self.assertIn("Recovery Planner", [c["role"] for c in model.calls])
-        self.assertTrue((folder / "agent/report.json").is_file())
-        self.assertTrue((folder / "model-calls.json").is_file())
+        self.assertTrue((folder / "attempt-1/agent/report.json").is_file())
+        self.assertEqual({c["planning_attempt"] for c in json.loads((folder / "model-calls.json").read_text())}, {1})
+        status = json.loads((folder / "planning-status.json").read_text())
+        self.assertEqual((status["attempts"], status["delivered"], status["proposal"]), (1, 1, proposal))
+        self.assertEqual(status["attempt_usage"][0]["usage"]["planning_attempt"], 1)
+        self.assertEqual(json.loads((folder / "proposal.json").read_text()), proposal)
+        harness.phase.assert_called_with("proposal_saved", "approved-rollback")
+
+    def test_crash_after_save_before_delivery_replays_without_another_model_call(self):
+        model = self.model()
+        harness = self.harness()
+        with patch("runtime.planner_pipeline.record_message", side_effect=OSError("lost result")):
+            with self.assertRaises(OSError):
+                self.recover(harness, model)
+        saved = self.journal(harness)
+        self.assertEqual((saved["delivered"], self.state(harness)), (0, "OPEN"))
+        calls = len(model.calls)
+        # A restarted harness: new Coordinator connection, same run folder and journal.
+        harness.store.close()
+        harness.store = SQLiteStore(self.root / "coordinator.sqlite")
+        self.addCleanup(harness.store.close)
+        self.assertEqual(self.planned(harness, model), saved["proposal"])
+        self.assertEqual(len(model.calls), calls)
+        self.assertEqual((self.journal(harness)["attempts"], self.journal(harness)["delivered"]), (1, 1))
 
     def test_abstention_stops_recovery_without_fallback(self):
         model = self.model(abstain=True)
-        folder = self.root / "case"
-        folder.mkdir()
-        with patch("experiments.boutique.harness.agent_live.Ollama", return_value=model):
-            with self.assertRaisesRegex(RuntimeError, "ESCALATE"):
-                self.harness().build_proposal(self.incident, folder)
+        harness = self.harness()
+        with self.assertRaisesRegex(RuntimeError, "stopped at NEEDS_REVIEW; expected RECOVERED"):
+            self.recover(harness, model)
         self.assertNotIn("Recovery Planner", [c["role"] for c in model.calls])
-        self.assertEqual(json.loads((folder / "model-proposal.json").read_text())["action"], "ESCALATE")
+        saved = json.loads((self.root / "approved-rollback/model-proposal.json").read_text())
+        self.assertEqual(saved["action"], "ESCALATE")
+        self.assertEqual(self.state(harness), "NEEDS_REVIEW")
+        self.assertEqual((self.journal(harness)["error_code"], self.journal(harness)["attempts"]), ("ABSTAINED", 1))
+        harness.dependency_result.assert_not_called()
+        harness.emergency_restore.assert_not_called()  # On failure, run() restores as administrator.
 
     @staticmethod
     def stops(harness):
         return [c for c in harness.event.call_args_list
                 if c.args[:2] == (3, "error") and c.args[2].startswith("Agent planning stopped; no repair proposed: ")]
 
-    def assert_visible_stop(self, harness, folder, error_text):
+    def assert_visible_stop(self, harness, error_text):
         self.assertEqual(harness.summary["planning"], "Live RCA agent and Ollama Recovery Planner")
         self.assertTrue(harness.summary["model"])
         self.assertIn(error_text, harness.summary["agent_failure"]["error"])
+        self.assertEqual(harness.summary["agent_failure"]["incident_state"], "NEEDS_REVIEW")
         self.assertEqual(len(self.stops(harness)), 1)
         self.assertEqual(self.stops(harness)[0].kwargs["incident_id"], self.incident["incident_id"])
-        self.assertTrue((folder / "model-calls.json").is_file())
+        self.assertTrue((harness.directory / "approved-rollback/model-calls.json").is_file())
 
-    def test_unavailable_model_stops_visibly_without_a_proposal(self):
+    def test_unavailable_model_retries_then_escalates_to_needs_review(self):
         model = Mock(calls=[])
         model.ask.side_effect = RuntimeError("Ollama Planner failed for test-model at 127.0.0.1:9: refused")
         harness = self.harness()
-        folder = self.root / "unavailable"
-        folder.mkdir()
-        with patch("experiments.boutique.harness.agent_live.Ollama", return_value=model):
-            with self.assertRaisesRegex(RuntimeError, "Ollama Planner failed"):
-                harness.build_proposal(self.incident, folder)
-        self.assert_visible_stop(harness, folder, "RuntimeError: Ollama Planner failed for test-model")
+        with self.assertRaisesRegex(RuntimeError, "stopped at NEEDS_REVIEW"):
+            self.recover(harness, model)
+        self.assert_visible_stop(harness, "ESCALATE MODEL_UNAVAILABLE after 3 attempt(s): "
+                                          "RuntimeError: Ollama Planner failed for test-model")
         self.assertEqual(harness.summary["agent_failure"]["model_calls_completed"], 0)
-        self.assertFalse((folder / "model-proposal.json").exists())
+        self.assertEqual(model.ask.call_count, 3)
+        self.assertEqual(self.state(harness), "NEEDS_REVIEW")
+        saved = self.journal(harness)
+        self.assertEqual((saved["attempts"], saved["error_code"], saved["delivered"]), (3, "MODEL_UNAVAILABLE", 1))
+        self.assertEqual(harness.summary["planning_journal"],
+                         {"attempts": 3, "error_code": "MODEL_UNAVAILABLE", "delivered": 1})
+        self.assertNotIn("refused", json.dumps(saved))
+        harness.dependency_result.assert_not_called()
 
     def test_abstention_is_a_visible_stop(self):
         harness = self.harness()
-        folder = self.root / "abstained"
-        folder.mkdir()
-        with patch("experiments.boutique.harness.agent_live.Ollama", return_value=self.model(abstain=True)):
-            with self.assertRaisesRegex(RuntimeError, "ESCALATE"):
-                harness.build_proposal(self.incident, folder)
-        self.assert_visible_stop(harness, folder, "ESCALATE")
+        with self.assertRaisesRegex(RuntimeError, "NEEDS_REVIEW"):
+            self.recover(harness, self.model(abstain=True))
+        self.assert_visible_stop(harness, "ESCALATE ABSTAINED after 1 attempt(s)")
 
     def test_successful_planning_records_no_failure(self):
         harness = self.harness()
-        folder = self.root / "planned"
-        folder.mkdir()
-        with patch("experiments.boutique.harness.agent_live.Ollama", return_value=self.model()):
-            harness.build_proposal(self.incident, folder)
+        self.planned(harness, self.model())
         self.assertNotIn("agent_failure", harness.summary)
-        self.assertEqual(harness.summary["operator_approval"], "pre-authorized local E2E test")
         self.assertEqual(harness.summary["planning"], "Live RCA agent and Ollama Recovery Planner")
         self.assertEqual(self.stops(harness), [])
+
+    def test_expected_escalation_passes_after_an_administrator_restore(self):
+        harness = self.harness(expect="escalated")
+        self.recover(harness, self.model(abstain=True))
+        harness.emergency_restore.assert_called_once_with()
+        harness.check.assert_called_once()
+        self.assertEqual(harness.check.call_args.kwargs, {"error_code": "ABSTAINED", "attempts": 1})
+        self.assertEqual(self.state(harness), "NEEDS_REVIEW")
+        self.assertEqual(len(self.stops(harness)), 1)
+
+    def test_expected_escalation_fails_if_the_fault_cannot_be_removed(self):
+        harness = self.harness(expect="escalated")
+        harness.emergency_restore.return_value = False
+        with self.assertRaisesRegex(RuntimeError, "Administrator restore"):
+            self.recover(harness, self.model(abstain=True))
 
     def test_refreshed_version_is_new_intent_and_gets_a_different_action_id(self):
         proposals = []
         for version in ("200", "201"):
-            folder = self.root / ("case-" + version)
-            folder.mkdir()
-            harness = self.harness()
+            harness = self.harness(self.root / ("case-" + version))
             deployment = deepcopy(self.observation["deployment"])
             deployment["metadata"]["resourceVersion"] = version
             harness.deployment.return_value = deployment
-            with patch("experiments.boutique.harness.agent_live.Ollama", return_value=self.model()):
-                proposals.append(harness.build_proposal(self.incident, folder))
+            proposals.append(self.planned(harness, self.model()))
         self.assertNotEqual(proposals[0]["based_on_resource_version"], proposals[1]["based_on_resource_version"])
         self.assertNotEqual(proposals[0]["action_id"], proposals[1]["action_id"])
 
-    def test_template_change_during_inference_stops_the_proposal(self):
-        folder = self.root / "changed-target"
-        folder.mkdir()
+    def test_template_change_during_inference_escalates_without_a_proposal(self):
         harness = self.harness()
         changed = deepcopy(self.observation["deployment"])
         changed["spec"]["template"] = {"another": "configuration"}
         harness.deployment.side_effect = [deepcopy(self.observation["deployment"]), changed]
-        with patch("experiments.boutique.harness.agent_live.Ollama", return_value=self.model()):
-            with self.assertRaisesRegex(RuntimeError, "Target changed"):
-                harness.build_proposal(self.incident, folder)
+        with self.assertRaisesRegex(RuntimeError, "NEEDS_REVIEW"):
+            self.recover(harness, self.model())
+        self.assertEqual(self.journal(harness)["error_code"], "TARGET_CHANGED")
+        self.assert_visible_stop(harness, "ESCALATE TARGET_CHANGED after 1 attempt(s)")
+        harness.dependency_result.assert_not_called()
 
     def test_component_naming_variants_still_identify_only_the_target(self):
         for component in ("shippingservice", "shippingservice container", "ShippingService",
@@ -243,22 +327,30 @@ class LiveAgentTests(unittest.TestCase):
         return NamingModel()
 
     def test_descriptive_component_name_still_reaches_the_recovery_planner(self):
-        folder = self.root / "described"
-        folder.mkdir()
         model = self.model_naming(self.incident["target"]["name"] + " container")
-        with patch("experiments.boutique.harness.agent_live.Ollama", return_value=model):
-            proposal = self.harness().build_proposal(self.incident, folder)
+        proposal = self.planned(self.harness(), model)
         self.assertEqual(proposal["action"], "ROLLBACK")
         self.assertIn("Recovery Planner", [c["role"] for c in model.calls])
 
     def test_diagnosis_naming_another_component_still_escalates(self):
-        folder = self.root / "other-component"
-        folder.mkdir()
         model = self.model_naming("frontend calling " + self.incident["target"]["name"])
-        with patch("experiments.boutique.harness.agent_live.Ollama", return_value=model):
-            with self.assertRaisesRegex(RuntimeError, "ESCALATE"):
-                self.harness().build_proposal(self.incident, folder)
+        harness = self.harness()
+        with self.assertRaisesRegex(RuntimeError, "NEEDS_REVIEW"):
+            self.recover(harness, model)
         self.assertNotIn("Recovery Planner", [c["role"] for c in model.calls])
+        self.assertEqual(self.journal(harness)["error_code"], "DIAGNOSIS_OFF_TARGET")
+
+
+class ExpectOptionTests(unittest.TestCase):
+    def test_expect_escalated_requires_agent_mode(self):
+        from experiments.boutique.harness import live
+        errors = io.StringIO()
+        with patch("sys.argv", ["test_boutique_live.py", "--expect", "escalated"]), patch("sys.stderr", errors), \
+                patch("subprocess.run", side_effect=AssertionError("cluster command attempted")):
+            with self.assertRaises(SystemExit) as stopped:
+                live.main()
+        self.assertEqual(stopped.exception.code, 2)
+        self.assertIn("--expect escalated requires --agent", errors.getvalue())
 
 
 class ModelPreflightTests(unittest.TestCase):

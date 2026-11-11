@@ -212,9 +212,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-
 Expected evidence in the printed run folder: `summary.json` with status `PASS`
 and the agent planning mode; `approved-rollback/model-calls.json` and
 `model-proposal.json`; an `APPLIED` `execution.json`; and a `RECOVERED`
-`outcome.json`. A planning failure must instead record `agent_failure` in
-`summary.json`, show an "Agent planning stopped" dashboard event and leave no
-proposal, Guard decision or execution record. Collect the run with
+`outcome.json`; and `approved-rollback/planning-status.json` with one attempt
+and the delivered proposal. A planning failure must instead record
+`agent_failure` in `summary.json`, show an "Agent planning stopped" dashboard
+event, save and deliver an `ESCALATE` (in `planner.db`, `planning-status.json`
+and `model-proposal.json`) with the incident in NEEDS_REVIEW, and leave no
+Guard decision or execution record. To check that path on purpose, add
+`"planning_budget_seconds": 1` to the model override file and pass
+`-Expect escalated`: no model call can start inside the budget, three attempts
+end in `BUDGET_EXCEEDED`, and the run passes only on that escalation. (An
+unreachable `base_url` does not test this path: the preflight stops the run
+before any fault.) Collect the run with
 `scripts/evidence/collect.py --class agent` (see [evidence](../evidence/README.md)).
 
 The committed runs so far, all on one fault type with pre-authorised lab

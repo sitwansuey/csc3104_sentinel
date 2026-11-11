@@ -18,7 +18,9 @@ the diagnosis and supplied healthy baselines. `services/planner/core.py` binds
 target/incident/version/evidence, validates typed output and rejects invented,
 future or tampered baseline references. The live adapter accepts a supported
 rollback only after checking that the workload UID/template stayed unchanged
-during inference. A refreshed resourceVersion produces a new action ID.
+during inference, and binds it to the incident target, the trusted baseline and
+the live resourceVersion, never to identifiers the model chose. A refreshed
+resourceVersion produces a new action ID.
 Guard/Executor independently re-read their inputs before any repair.
 
 The model cannot run arbitrary Python/kubectl commands through its tools.
@@ -105,6 +107,7 @@ true` on a trusted network (for example a worker container). Optional settings:
 | `max_model_calls` | 32 | Model requests per planning task, retries included. Further calls fail. A planner worker resets the count for each incident. |
 | `keep_alive` | not sent | How long Ollama keeps the model loaded, as seconds or a duration such as `"30m"`. |
 | `warm_up_timeout_seconds` | `timeout` | Limit for the warm-up request. |
+| `planning_budget_seconds` | 600 | Agent mode: wall-clock limit for one planning attempt (diagnosis and Recovery Planner). No new agent round or model call starts after it, and no call starts with less than 5 s left. The attempt's journal lease is this plus 60 s. |
 
 Replies must be `application/json`. The model's answer must be a JSON object of
 at most 256 KiB that matches the requested schema; the schema is checked again
@@ -168,8 +171,56 @@ timeout shorter than the lease. Multiple connections on one host share the
 journal lease; SQLite is not a cross-host ownership service. Existing callers
 without a journal retain the synchronous exception-and-retry interface. The
 offline demonstration (`experiments/validation/demo_offline_flow.py`) plans
-through the journal. The separate `-Agent` experiment does not yet use this
-journal for its internal RCA/model phases.
+through the journal.
+
+### Agent mode through the journal
+
+`-Agent` mode plans through the same journal. Both modes run one incident with
+`experiments/boutique/harness/durable_case.py`; agent mode passes
+`services/planner/agent_provider.py::AgentPlanner` to `prepare()` through two
+optional hooks, `diagnoser` and `finalize`. One journaled attempt:
+
+1. reads the target and stops if its UID is not the incident's;
+2. exports the incident's telemetry to `approved-rollback/attempt-<n>/telemetry`
+   and runs the RCA agent in `attempt-<n>/agent`, so every attempt starts clean;
+3. saves a diagnosis summary in the journal, then asks the Recovery Planner,
+   unless the agent abstained or named another component (`names_target`);
+4. re-reads the target and binds a ROLLBACK to its current `resourceVersion`.
+   The UID and Pod template must be unchanged. The rebound proposal has a new
+   deterministic action ID, and it is the one saved, delivered and replayed.
+
+The journal is `approved-rollback/planner.db`: three attempts, 5 and 10 s
+backoff, and a lease of `planning_budget_seconds` plus 60 s, so a live attempt
+cannot outlive its lease. Each failure is saved by code:
+
+| Code | Retried | Meaning |
+|---|---|---|
+| `MODEL_UNAVAILABLE` | yes | No usable reply from Ollama (refused, HTTP error, timeout). |
+| `INVALID_MODEL_OUTPUT` | yes | A reply outside the schema, or a choice the Planner rejected, such as an invented baseline. |
+| `BUDGET_EXCEEDED` | yes | The attempt's deadline or `max_model_calls` was used up. |
+| `TELEMETRY_UNAVAILABLE`, `TARGET_UNREADABLE`, `AGENT_ERROR` | yes | The export, a Deployment read or another agent step failed. |
+| `ABSTAINED` | no | The agent found no supported diagnosis. |
+| `DIAGNOSIS_OFF_TARGET` | no | The diagnosis names a component other than the target. |
+| `NO_ACTION_PROPOSED` | no | The Recovery Planner proposed no repair for an observed incident. |
+| `TARGET_CHANGED` | no | The target was recreated, or its Pod template changed during the attempt. |
+
+A retried code still failing after the third attempt ends in the saved
+exhausted-attempts `ESCALATE`. A terminal code ends at once in an `ESCALATE`
+with a fixed rationale for that code. Either way the Coordinator moves the
+incident to NEEDS_REVIEW and nothing reaches Guard or the Executor. A model
+that answers `ESCALATE` itself is saved as its own answer, with no error code.
+
+The journal keeps codes, the diagnosis summary (prediction, abstained flag,
+tool names and evidence IDs) and per-attempt usage (model calls and seconds).
+It never keeps exception text, the workspace path, raw log lines or the
+Reporter's explanation. `planning-status.json` copies the row and per-attempt
+usage. The last attempt's cause text, such as Ollama's own reason and host,
+goes only to `summary.json` (`agent_failure`) and the dashboard's "Agent
+planning stopped" event. The budget applies per attempt, so one incident can
+use up to three budgets. A process that dies mid-attempt loses that attempt;
+after the lease expires the next pass starts a new one. These paths have
+offline tests with a scripted model (`tests/test_agent_journal.py`,
+`tests/test_live_agent.py`); no live run has used them yet.
 
 ## Acceptance and limits
 
@@ -196,24 +247,30 @@ about choosing between actions. Owner acceptance of the real-model path is
 tracked in #56.
 
 A model that is unreachable or not installed at the start stops the run before
-fault injection (see above). If the model fails later or the agent abstains,
-no proposal reaches Guard and no repair is attempted. The dashboard shows an
-"Agent planning stopped" event with the reason (Ollama's own message for HTTP
-errors, and the endpoint host), `summary.json` records `agent_failure`, and the
-harness removes the injected fault as an administrator emergency restore,
-which is not counted as Sentinel recovery. The incident stays OPEN: terminal
-escalation for planner failure belongs to the durable Planner work (#14 and
-`L-AGENT-JOURNAL` in [limitations](limitations.md)).
+fault injection (see above). If the model fails later, the agent abstains or
+the target changes, planning ends in a saved `ESCALATE` and the incident moves
+to NEEDS_REVIEW (see [Agent mode through the journal](#agent-mode-through-the-journal)).
+No proposal reaches Guard and no repair is attempted. The dashboard shows an
+"Agent planning stopped" event with the error code and reason, and
+`summary.json` records `agent_failure`. Such a run fails, and the harness
+removes the injected fault as an administrator emergency restore, which is not
+counted as Sentinel recovery. With `--expect escalated` (`-Expect escalated` in
+the launcher) the escalation is the expected result instead: the run passes
+only if the incident is NEEDS_REVIEW with the delivered `ESCALATE` and no
+Guard decision, approval, execution or outcome, and the administrator restore
+still removes the fault. Agent runs recorded before this change left the
+incident OPEN (`L-AGENT-JOURNAL` in [limitations](limitations.md)).
 
 <!-- BEGIN GENERATED:claim-c-agent-fail-closed -->
 > **C-AGENT-FAIL-CLOSED:** Agent runs given an unreachable model server or a missing model stopped before any proposal reached Guard or the Executor in 6/6 runs.
 > Scope: Deliberate negative tests. 'Stopped' is read from each bundle: the run failed with that error and wrote no proposal, Guard decision or execution record. The harness then removed the injected fault as an administrator emergency restore, which is not Sentinel recovery, and the incident stayed OPEN. One fault type (invalid shipping PORT). One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.
 <!-- END GENERATED:claim-c-agent-fail-closed -->
 
-The agent experiment is a local one-incident path. Its inference is not a
-separately deployed durable Planner worker with complete retry/escalation
-acceptance. An abstention currently stops that experiment before execution and
-leaves its artifacts; full production incident handling remains separate work.
+The agent experiment is a local one-incident path. It plans through the durable
+journal inside the harness process; it is not a separately deployed Planner
+worker, and the remote Planner worker does not offer agent mode yet. An
+abstention ends in NEEDS_REVIEW before execution and leaves its artifacts; full
+production incident handling remains separate work.
 No general multi-service repair or Chaos Mesh repair policy is added here.
 
 [RCAEval](../agent/datasets/README.md) is an optional offline diagnosis benchmark.

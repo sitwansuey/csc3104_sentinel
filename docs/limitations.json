@@ -61,13 +61,17 @@
       "id": "L-AGENT-JOURNAL",
       "title": "Agent mode bypasses the durable Planner journal",
       "kind": "defect",
-      "status": "open",
+      "status": "mitigated",
       "since": "2026-11-11",
-      "impact": "Agent planning calls the RCA engine directly instead of the PlannerStore journal. A failed agent run saves no ESCALATE, nothing retries it, and the incident stays OPEN.",
-      "workaround": "Read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.",
+      "impact": "Fixed in code: agent planning now runs through prepare() and the PlannerStore journal. A model failure is retried up to three times; an abstention, a diagnosis of another component, a NO_ACTION answer or a target changed during inference ends at once. Every failure ends in a saved, delivered ESCALATE, so the incident moves to NEEDS_REVIEW, and a saved proposal replays without another model call. Still open: the planning budget applies per attempt, so one incident can use three budgets, and the remote Planner worker has no agent mode. Live verification pending: no agent run has used the journal yet, and every committed agent bundle predates it, so those failed runs left the incident OPEN.",
+      "workaround": "For runs recorded before this change, read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:239", "text": "proposal = propose_from_telemetry("},
-        {"at": "docs/planner.md", "text": "does not yet use this"},
+        {"at": "experiments/boutique/harness/agent_live.py:204", "text": "state = run_durable_case(self, incident"},
+        {"at": "services/planner/worker.py:133", "text": "raise PlanningError(\"ABSTAINED\", terminal=True)"},
+        {"at": "services/planner/worker.py:146", "text": "proposal = _rebound(proposal, finalize)"},
+        {"at": "tests/test_agent_journal.py:199", "text": "def test_unavailable_model_retries_with_backoff_across_restart_then_escalates"},
+        {"at": "tests/test_agent_journal.py:273", "text": "def test_lost_delivery_replays_the_same_action_without_a_model_call"},
+        {"at": "docs/planner.md", "text": "Agent mode through the journal"},
         {"claim": "C-AGENT-FAIL-CLOSED"}
       ],
       "planned": ["P2.01"],
@@ -82,7 +86,7 @@
       "impact": "Agent mode records a pre-authorised approval and the harness approves in code. The authenticated approval service exists but no live run uses it, so no evidence shows a person deciding.",
       "workaround": "Treat every live result as lab approval. Use the authenticated approval service only with explicit Guard/Executor wiring (docs/approvals.md).",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:271", "text": "pre-authorized local E2E test"},
+        {"at": "experiments/boutique/harness/agent_live.py:216", "text": "pre-authorized local E2E test"},
         {"at": "experiments/recovery/live.py:327", "text": "authorized-live-lab-operator"},
         {"claim": "C-CONNECTED-HARNESS"}
       ],
@@ -98,7 +102,7 @@
       "impact": "Container log lines are exported and quoted into model context. A crafted log line could steer the model towards a rollback to the measured baseline. Guard and the Executor still enforce the target, baseline and resourceVersion checks.",
       "workaround": "None in code. The prompt tells the model that telemetry is untrusted, which is not a control.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:95", "text": "for entry in observation.get(\"logs\", []):"},
+        {"at": "experiments/boutique/harness/agent_live.py:76", "text": "for entry in observation.get(\"logs\", []):"},
         {"at": "agent/tools.py:193-194", "text": "str(r[message])[:500]"}
       ],
       "planned": ["P2.04"],
@@ -251,9 +255,9 @@
       "impact": "Incident-to-repair time in agent mode had a long tail (docs/results.md). The two measured cold calls took up to 41 s with model loads up to 26 s, and one 356 s decision stage holds only 53 s of recorded model calls, so its cause is not established. Fixed in code, live verification pending: each model call now has an overall deadline, a response size cap, no redirects or proxies and a schema check; agent mode runs a preflight and a warm-up call before any fault is injected and records model-runtime.json; keep_alive is configurable. The per-call timeout still defaults to 300 s. No agent run has been repeated since, so the tail with warm-up is unmeasured.",
       "workaround": "Keep the model warm with keep_alive and check the warm-up load time in model-runtime.json after each run.",
       "cites": [
-        {"at": "agent/llm.py:259", "text": "self.timeout = _positive(config, \"timeout\", 300)"},
-        {"at": "agent/llm.py:416", "text": "def warm_up(self):"},
-        {"at": "experiments/boutique/harness/agent_live.py:169", "text": "llm.preflight()"},
+        {"at": "agent/llm.py:285", "text": "self.timeout = _positive(config, \"timeout\", 300)"},
+        {"at": "agent/llm.py:455", "text": "def warm_up(self):"},
+        {"at": "experiments/boutique/harness/agent_live.py:151", "text": "llm.preflight()"},
         {"at": "tests/test_llm_transport.py"}
       ],
       "planned": ["P1.12"],
@@ -422,11 +426,11 @@
       "status": "fixed",
       "fixed_by": "#92",
       "since": "2026-11-11",
-      "impact": "A failed agent run looked like a stalled one, and Ollama's own error text was discarded. The incident still stays OPEN; see L-AGENT-JOURNAL.",
+      "impact": "A failed agent run looked like a stalled one, and Ollama's own error text was discarded. The incident also stayed OPEN until agent planning moved into the journal; see L-AGENT-JOURNAL.",
       "workaround": "Not needed.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:258", "text": "Agent planning stopped; no repair proposed"},
-        {"at": "tests/test_live_agent.py:164", "text": "def test_unavailable_model_stops_visibly_without_a_proposal"}
+        {"at": "experiments/boutique/harness/agent_live.py:241", "text": "Agent planning stopped; no repair proposed"},
+        {"at": "tests/test_live_agent.py:238", "text": "def test_unavailable_model_retries_then_escalates_to_needs_review"}
       ],
       "planned": [],
       "issues": [87]

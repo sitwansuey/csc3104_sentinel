@@ -4,11 +4,13 @@ param([switch]$Setup, [switch]$Cleanup, [switch]$Dashboard,
       [switch]$PauseBeforeInjection, [switch]$GuardRejection, [switch]$UIControls, [switch]$Connected,
       [ValidateRange(1,65535)][int]$StorefrontPort = 8080,
       [switch]$Agent, [string]$AgentConfig, [string]$ProviderScript, [string]$ProviderPolicy,
-      [string]$Operator, [string]$RunDirectory)
+      [string]$Operator, [string]$RunDirectory,
+      [ValidateSet('recovered','escalated')][string]$Expect = 'recovered')
 
 $ErrorActionPreference = 'Stop'
 if ($ExitAfterTest -and -not $Dashboard) { throw '-ExitAfterTest requires -Dashboard.' }
 if ($AgentConfig -and -not $Agent) { throw '-AgentConfig requires -Agent.' }
+if ($Expect -ne 'recovered' -and -not $Agent) { throw '-Expect escalated requires -Agent.' }
 if ($Agent -and $GuardRejection) { throw '-Agent and -GuardRejection are separate scenarios.' }
 if ($Agent -and $ProviderScript) { throw '-Agent and -ProviderScript are separate planning modes.' }
 if ($UIControls -and (-not $Dashboard -or $PauseBeforeInjection)) { throw '-UIControls requires -Dashboard and replaces -PauseBeforeInjection.' }
@@ -52,6 +54,7 @@ try {
     $testOptions = @()
     if ($Agent) { $testOptions += '--agent' }
     if ($AgentConfig) { $testOptions += @('--agent-config', $AgentConfig) }
+    if ($Expect -ne 'recovered') { $testOptions += @('--expect', $Expect) }
     if ($ProviderScript) { $testOptions += @('--provider-script', $ProviderScript) }
     if ($ProviderPolicy) { $testOptions += @('--provider-policy', $ProviderPolicy) }
     if ($Operator) { $testOptions += @('--operator', $Operator) }

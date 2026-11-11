@@ -477,6 +477,9 @@ def main():
     parser.add_argument("--run-dir", type=Path)
     parser.add_argument("--agent", action="store_true", help="Use live RCA and model planning for one guarded recovery")
     parser.add_argument("--agent-config", type=Path, help="JSON overrides for the live agent's Ollama settings")
+    parser.add_argument("--expect", choices=["recovered", "escalated"], default="recovered",
+                        help="Agent mode: the outcome that passes. 'escalated' passes only when planning ends "
+                             "in a saved ESCALATE and NEEDS_REVIEW; the administrator then removes the fault")
     parser.add_argument("--prepared-environment", type=Path, help="Trusted host-prepared packaged cluster/images; no Docker access in runtime")
     parser.add_argument("--dashboard", action="store_true", help="Serve the real UI and collect live cluster telemetry")
     parser.add_argument("--dashboard-port", type=int, default=8765, help="Loopback UI port; 0 selects a free port")
@@ -497,6 +500,8 @@ def main():
     args = parser.parse_args()
     if args.agent_config and not args.agent:
         parser.error("--agent-config requires --agent")
+    if args.expect != "recovered" and not args.agent:
+        parser.error("--expect escalated requires --agent")
     if args.agent and args.guard_rejection:
         parser.error("--agent and --guard-rejection are separate scenarios")
     if args.agent and args.provider_script:
@@ -533,6 +538,7 @@ def main():
     experiment = experiment_type(directory, **({"storefront_port": args.storefront_port} if args.connected else {}))
     if args.agent:
         experiment.agent_config = args.agent_config
+        experiment.expect = args.expect
     experiment.summary["provenance"]["tools"] = tool_versions(
         ("kubectl", "kind", "docker", "helm") + (("ollama",) if args.agent else ()))
     experiment.provider_script = args.provider_script.resolve() if args.provider_script else None
@@ -574,7 +580,7 @@ def main():
         else:
             experiment.run()
         if dashboard:
-            experiment.summary["dashboard"] = (dashboard.verify_agent() if args.agent else
+            experiment.summary["dashboard"] = (dashboard.verify_agent(args.expect) if args.agent else
                                                 dashboard.verify_rejection() if args.guard_rejection else dashboard.verify())
             print("PASS: live rejection dashboard, Guard findings and zero-write evidence"
                   if args.guard_rejection else
@@ -613,7 +619,9 @@ def main():
                 experiment.credentials.unlink(missing_ok=True)
                 save(experiment.directory / "summary.json", experiment.summary)
                 signal.signal(signal.SIGTERM, previous_term)
-    print("PASS: live agent diagnosed the fault, proposed rollback, and Coordinator verified RECOVERED"
+    print("PASS: agent planning ended in a saved ESCALATE; incident NEEDS_REVIEW with no repair"
+          if args.agent and args.expect == "escalated" else
+          "PASS: live agent diagnosed the fault, proposed rollback, and Coordinator verified RECOVERED"
           if args.agent else
           "PASS: configured provider recovery completed with an independent Verifier outcome"
           if args.provider_script else

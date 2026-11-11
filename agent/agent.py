@@ -1,6 +1,8 @@
 import json
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+import time
+from .llm import PlanningBudgetExceeded
 from .tools import CATALOG
 from .workflows import retrieve
 from .evidence import compact_evidence, corroborated_onsets, timestamp_rejection
@@ -82,8 +84,10 @@ def validate_report(final, required_fields, failure_count, allow_abstention, val
 
 
 class Agent:
-    def __init__(self, llm, telemetry, config, workspace, *, progress=None):
+    def __init__(self, llm, telemetry, config, workspace, *, progress=None, deadline=None, clock=time.monotonic):
+        """deadline: optional clock() value; no new round or report starts after it."""
         self.llm, self.telemetry, self.config = llm, telemetry, config
+        self.deadline, self.clock = deadline, clock
         self.workspace = Path(workspace)
         self.workspace.mkdir(parents=True, exist_ok=False)
         self.steps = 0
@@ -95,6 +99,11 @@ class Agent:
         self.call_history = []
         self.round_ceiling = self.config.get("max_steps", 16)
         self.progress = progress
+
+    def check_deadline(self, stage):
+        if self.deadline is not None and self.clock() >= self.deadline:
+            notify(self.progress, {"stage": stage, "status": "failed", "reason": "planning budget used up"})
+            raise PlanningBudgetExceeded("Planning budget was used up before the " + stage)
 
     def call_key(self, tool, args):
         defaults = {"time_column": "timestamp", "component_column": "cmdb_id"}
@@ -228,6 +237,7 @@ class Agent:
                 "inventory": inventory[:150], "inventory_omitted": max(0, len(inventory)-150),
                 "workflows": retrieve(instruction)}
         for round_id in range(self.config.get("max_rounds", 3)):
+            self.check_deadline("investigation")
             notify(self.progress, {"stage": "investigation", "status": "started", "round": round_id + 1})
             before_steps = self.steps
             self.round_ceiling = min(self.config.get("max_steps", 16), self.steps + 6)
@@ -259,6 +269,7 @@ class Agent:
             if (analysis.get("complete") is True and confidence >= self.config.get("confidence_threshold", .8)
                 and (not required_fields or FIELDS[0] not in required_fields or candidates)) or self.steps >= self.config.get("max_steps", 16):
                 break
+        self.check_deadline("report")
         valid_reasons, valid_components = extract_candidates(context)
         final_schema = json.loads(json.dumps(FINAL))
         if required_fields:
