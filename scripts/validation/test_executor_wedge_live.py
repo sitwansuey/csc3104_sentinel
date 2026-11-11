@@ -42,12 +42,14 @@ from services.executor.core import ACTION_ANNOTATION, ExecutionAdapters, GuardCh
 from services.executor.kubernetes_adapter import KubectlDeploymentAPI
 from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedger, TargetBusy, fingerprint
 from services.guard.preview import _private_file
+from shared import log
 
 
 ALLOWED_CONTEXTS = frozenset({"kind-sentinel-boutique-connected", "kind-sentinel-wedge"})
 PROTECTED = "sentinel-lab"
 SCENARIOS = ("rv-race", "delete-recreate")
 RESTRICTED_CONTEXT = "sentinel-wedge-executor"
+LOG = log.get_logger("validation")
 SERVICE_ACCOUNT = "sentinel-wedge-executor"
 NAME = "wedge-target"
 RECONCILE_PASSES = 5
@@ -423,7 +425,8 @@ def main(argv=None, *, runner=subprocess.run):
     except Refused as exc:
         print("Refused: " + str(exc), file=sys.stderr)
         return 2
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any harness error ends the run as FAILED with exit code 1
+        log.failure(LOG, "validation.wedge.failed", exc)
         print("Wedge harness FAILED: " + type(exc).__name__, file=sys.stderr)
         return 1
     print("Summary: " + str(harness.directory / (args.scenario + ".json")), flush=True)

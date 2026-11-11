@@ -91,6 +91,8 @@ boundary where any error must take the same path, so narrowing would change
 behaviour. After the audit, 46 log with `log.failure()` or `log.emit()`, 3 are
 logged by `access_log()` or `report()` just after the handler, and 1, the in-cluster traffic shopper, cannot import
 this module and records the error class in its own output row.
+Handlers merged after the audit follow the same rules; the live Executor
+wedge harness, for example, logs `validation.wedge.failed`.
 
 Failure events include `executor.observe.unavailable`,
 `executor.prewrite.refused`, `executor.authorization.withdrawn`,
