@@ -49,11 +49,34 @@ def save(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
+def current_context():
+    result = command(["kubectl", "config", "current-context"], required=False, timeout=30)
+    return result.stdout.strip() or None if result.returncode == 0 else None
+
+
+def restore_context(previous):
+    """Put the user's current-context back after kind changed it.
+
+    kind makes a new cluster current on create, and leaves no current-context
+    after deleting the current one. This lab always passes --context explicitly.
+    """
+    if previous == CONTEXT:
+        return  # The user had selected this lab; nothing else to restore.
+    if previous:
+        command(["kubectl", "config", "use-context", previous], required=False, timeout=30)
+    else:
+        command(["kubectl", "config", "unset", "current-context"], required=False, timeout=30)
+
+
 def setup_cluster(directory):
     clusters = command(["kind", "get", "clusters"]).stdout.split()
     if CLUSTER not in clusters:
-        command(["kind", "create", "cluster", "--name", CLUSTER, "--image", "kindest/node:v1.37.0",
-                 "--config", ROOT / "deploy/kind/kind-security.yaml", "--wait", "0s"])
+        previous = current_context()
+        try:
+            command(["kind", "create", "cluster", "--name", CLUSTER, "--image", "kindest/node:v1.37.0",
+                     "--config", ROOT / "deploy/kind/kind-security.yaml", "--wait", "0s"])
+        finally:
+            restore_context(previous)
     nodes = command(["kind", "get", "nodes", "--name", CLUSTER]).stdout.split()
     if nodes != [CLUSTER + "-control-plane"]:
         raise ValueError("This lab requires its dedicated single node")
@@ -283,7 +306,11 @@ def main():
         (directory / "stop-ui.request").touch()
         if (directory / "scans").exists():
             (directory / "scans/stop.request").touch()
-        command(["kind", "delete", "cluster", "--name", CLUSTER])
+        previous = current_context()
+        try:
+            command(["kind", "delete", "cluster", "--name", CLUSTER])
+        finally:
+            restore_context(previous)
         return
     if args.action == "start":
         prepare(directory, args.candidate)
