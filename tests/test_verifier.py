@@ -123,7 +123,7 @@ class VerifierTests(unittest.TestCase):
         self.assertEqual(self.outcome()["status"], "RECOVERED")
 
     def test_unapplied_or_uncertain_execution_is_unknown(self):
-        for status in ("FAILED", "CONFLICT", "NEEDS_RECONCILIATION"):
+        for status in ("FAILED", "CONFLICT", "SUPERSEDED", "NEEDS_RECONCILIATION"):
             with self.subTest(status=status):
                 self.execution["status"] = status
                 self.assertEqual(self.outcome()["status"], "UNKNOWN")

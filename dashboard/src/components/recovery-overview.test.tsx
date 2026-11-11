@@ -128,6 +128,19 @@ describe("focused recovery Overview", () => {
     expect(screen.queryByText("RECOVERED")).not.toBeInTheDocument()
   })
 
+  it.each(["FAILED", "CONFLICT", "SUPERSEDED"])("shows a %s execution as a blocked repair", status => {
+    const s = fixture()
+    s.incidents[0].state = "FAILED"
+    s.actions[0].state = "FAILED"
+    s.messages = s.messages.filter(r => r.message.kind !== "outcome")
+    s.messages.find(r => r.message.kind === "execution_result")!.message.status = status
+    show(s)
+    const pipeline = screen.getByRole("region", { name: "Focused recovery pipeline" })
+    const station = within(pipeline).getByRole("button", { name: "View Execute details" })
+    expect(station).toHaveAttribute("data-state", "blocked")
+    expect(within(station).getByText(status)).toHaveAttribute("data-tone", "bad")
+  })
+
   it("does not associate an outcome with the wrong target UID", () => {
     const s = fixture()
     s.messages.find(r => r.message.kind === "outcome")!.message.target = { ...s.incidents[0].target, uid: "replacement-deployment" }

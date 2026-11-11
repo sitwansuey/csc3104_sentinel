@@ -1,6 +1,7 @@
 """Actual component algorithms over loopback HTTP, using fake Kubernetes only."""
 from contextlib import ExitStack
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import replace
 from datetime import timedelta
 import json
 import io
@@ -17,6 +18,7 @@ from runtime.remote_adapters import ExecutorAdapter, GuardAdapter, PlannerAdapte
 from runtime.remote_worker import RemoteIngress, RemoteWorker, WorkerJournal
 from runtime.worker_http import WorkerClient
 from runtime.worker_transport import ProtocolError, digest
+from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedger
 from services.observer.core import detect
 from services.planner.core import mock_provider
 from services.coordinator.read import read_records
@@ -173,6 +175,84 @@ class RemoteWorkerTests(unittest.TestCase):
         text = stream.getvalue()
         for secret in (*self.secrets(), wrong, delivery["lease_token"], "f" * 32, "Bearer"):
             self.assertNotIn(secret, text)
+
+    def test_unchanged_uncertainty_is_retried_with_growing_backoff_then_resolved(self):
+        self.authorize()
+        cluster, real_restore = self.f.cluster, self.f.cluster.conditional_restore
+        pending = []
+
+        def timeout(**kwargs):
+            pending.append(kwargs)
+            raise TimeoutError("request completion is unknown")
+
+        cluster.conditional_restore = timeout
+        executor = self.worker("executor", ExecutorAdapter(self.f.adapters))
+        self.assertEqual(executor.once()["status"], "accepted")
+        self.assertEqual(self.state(), "NEEDS_RECONCILIATION")
+
+        def receipt():
+            return self.f.store.db.execute("""SELECT r.attempts, r.available FROM transport_receipts r
+                JOIN outbox o ON o.id=r.event_id WHERE o.topic='executor.reconcile'""").fetchone()
+
+        gaps = []
+        for _ in range(2):
+            self.assertEqual(executor.once()["status"], "pending")
+            attempts, available = receipt()
+            gaps.append(available - time.time())
+            time.sleep(max(0, available - time.time()) + 0.05)
+        self.assertEqual(receipt()[0], 2)
+        self.assertGreater(gaps[1], gaps[0])
+        self.assertEqual(len(self.f.ledger.results(self.proposal["action_id"])), 1)
+        self.assertEqual(self.state(), "NEEDS_RECONCILIATION")
+        # The original request lands late; the next delivery reports APPLIED.
+        real_restore(**pending[0])
+        self.assertEqual(executor.once()["status"], "accepted")
+        self.assertEqual(self.state(), "VERIFYING")
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(len(cluster.writes), 1)
+
+    def test_older_own_uncertainty_after_a_peer_report_is_retried_not_acknowledged(self):
+        self.authorize()
+        cluster, real_restore = self.f.cluster, self.f.cluster.conditional_restore
+        pending = []
+
+        def timeout(**kwargs):
+            pending.append(kwargs)
+            raise TimeoutError("request completion is unknown")
+
+        cluster.conditional_restore = timeout
+        host_a = self.worker("executor", ExecutorAdapter(self.f.adapters))
+        self.assertEqual(host_a.once()["status"], "accepted")
+        own = self.f.ledger.results(self.proposal["action_id"])
+        self.assertEqual([result["status"] for result in own], ["NEEDS_RECONCILIATION"])
+        # Host B: its own ledger, lock directory and transport journal.
+        ledger_b = SQLiteExecutionLedger(self.f.path / "host-b-ledger.db")
+        self.stack.callback(ledger_b.close)
+        adapters_b = replace(self.f.adapters, ledger=ledger_b,
+                             coordination=LocalTargetCoordinator(self.f.path / "host-b-locks"))
+        journal_b = WorkerJournal(self.f.path / "host-b-transport.db")
+        self.stack.callback(journal_b.close)
+        host_b = RemoteWorker(self.client("executor"), journal_b, ExecutorAdapter(adapters_b), renewal_interval=0.1)
+        self.f.now += timedelta(seconds=61)
+        self.assertEqual(host_b.once()["status"], "accepted")
+        self.assertEqual(self.state(), "NEEDS_RECONCILIATION")
+        # Host A deduplicates to its older saved result; the command must stay open.
+        self.f.now += timedelta(seconds=61)
+        self.assertEqual(host_a.once()["status"], "pending")
+        self.assertEqual(self.f.ledger.results(self.proposal["action_id"]), own)
+        unfinished = self.f.store.db.execute(
+            "SELECT COUNT(*) FROM outbox o LEFT JOIN transport_receipts r ON r.event_id=o.id "
+            "WHERE o.topic='executor.reconcile' AND r.finished IS NULL").fetchone()[0]
+        self.assertEqual(unfinished, 1)
+        # The original request lands late; a retry of the open command reports APPLIED.
+        real_restore(**pending[0])
+        available = self.f.store.db.execute("""SELECT MAX(r.available) FROM transport_receipts r
+            JOIN outbox o ON o.id=r.event_id WHERE o.topic='executor.reconcile'""").fetchone()[0]
+        time.sleep(max(0, available - time.time()) + 0.05)
+        self.assertEqual(host_a.once()["status"], "accepted")
+        self.assertEqual(self.state(), "VERIFYING")
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(len(cluster.writes), 1)
 
     def test_remote_verification_binds_the_executed_template_and_detects_a_second_fault(self):
         from tests.test_verifier_pipeline import grpc_policy, grpc_samples

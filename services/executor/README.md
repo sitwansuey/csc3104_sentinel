@@ -105,36 +105,112 @@ SQLite supplies durable records, while the file lock protects the whole local
 read/validate/write sequence. All cooperating workers must share these paths.
 Separate ledgers or lock directories do not coordinate. This is single-host
 coordination; it has no distributed lease, fencing token or ownership-loss
-protocol.
+protocol. Across hosts, the Deployment itself is the shared record: a write is
+recognised by its evidence annotation, never by another host's ledger.
 
 ## The write and ledger are separate commits
 
 Before calling the API, the Executor commits `WRITE_STARTED`, the checked target
-and resource version, the proposal/template hashes and a new attempt nonce to its
-ledger. The API then writes the template and matching action evidence atomically.
-Finally, the Executor saves the result. Persisting intent before the call makes
-a restart aware that a write may have happened.
+and resource version (V0), the proposal/template hashes and a new attempt nonce
+to its ledger. The API then writes the template and matching action evidence
+atomically. Finally, the Executor saves the result. Persisting intent before the
+call makes a restart aware that a write may have happened.
 
 | Interruption point | Restart behaviour |
 | --- | --- |
 | Before a write attempt is journaled | Fresh validation can precede execution |
-| After `WRITE_STARTED`, before the API call | No evidence proves whether the call happened; return NEEDS_RECONCILIATION without another mutation |
-| API commits, then response is lost or process crashes | Read current state; matching action evidence and exact template can prove APPLIED |
+| After `WRITE_STARTED`, before the API call | Reconcile from live state (table below); never call the API again |
+| API commits, then response is lost or process crashes | Read current state; this action's evidence and the exact template prove APPLIED |
 | Result commits, then command acknowledgment is lost | Return the saved result on duplicate delivery |
 
-Reconciliation requires the expected target UID, action ID, proposal fingerprint,
-attempt nonce and actual Pod-template hash to match the journal. Merely seeing
-the desired template is insufficient: another actor might have installed it, or
-it might have existed before this attempt. A copied or stale marker with changed
-template also does not prove success. A missing target, changed UID, overwritten
-evidence, unavailable read or inconsistent marker remains
-NEEDS_RECONCILIATION. Absence of evidence does not prove that an earlier write
-failed and cannot authorize a retry.
+### Reconciliation decision table
 
-This conservative rule also covers a crash immediately before the API call:
-reconciliation cannot distinguish it from a call whose outcome is unknown.
-Resolving an inconclusive attempt requires further authoritative evidence or an
-operator workflow; this increment does not automatically clear it.
+Reconciliation reads the target once and applies a pure, total decision table
+(`services/executor/reconciliation.py`). The first matching row wins. It asks two
+questions: did this action's write commit, and can it still commit?
+
+| Row | Live state | Result | Basis |
+| --- | --- | --- | --- |
+| R0 | Read failed or unusable | NEEDS_RECONCILIATION | READ_UNAVAILABLE |
+| R1 | Deployment is gone | SUPERSEDED | TARGET_DELETED |
+| R2 | UID differs from the proposal | SUPERSEDED | TARGET_REPLACED |
+| R3 | This action's evidence, version moved, template matches | APPLIED | EVIDENCE_MATCH |
+| R3 | This action's evidence, version moved, template changed | SUPERSEDED | COMMITTED_THEN_OVERWRITTEN |
+| R3 | This action's evidence, version still V0 (impossible) | NEEDS_RECONCILIATION | INCONSISTENT |
+| R4 | Fence annotation from this action (reserved, not produced yet) | CONFLICT | FENCED |
+| R5 | Version moved, no evidence for this action | SUPERSEDED | ADVANCED_WITHOUT_EVIDENCE |
+| R6 | Same UID, version still V0 | NEEDS_RECONCILIATION | UNCHANGED_IN_DOUBT |
+
+"This action's evidence" is checked at action level: the annotation must be the
+canonical evidence object with this action ID, this proposal's SHA-256, the live
+target UID, the proposal's template hash and a well-formed attempt nonce. The
+nonce need not be this host's, so a peer host's committed write of the same
+action is adopted as APPLIED with no second write. Seeing the desired template
+is never enough: another actor might have installed it. A copied marker for
+another action, or one with a forged or stale proposal hash, is not adopted.
+Rows for a definite API rejection (R5 CONFLICT, R6 FAILED) are reserved for a
+later rejection classifier; nothing produces them yet.
+
+The table relies on three Kubernetes assumptions:
+
+1. Our patch always changes the object, because it writes a fresh attempt nonce
+   in the evidence annotation. A commit therefore always advances the resource
+   version.
+2. The patch carries `test` operations on `metadata.uid` and on
+   `metadata.resourceVersion == V0`. The API server applies the patch to the
+   object it read and commits through an etcd transaction conditioned on that
+   object, so the patch can only commit while the live version is still V0.
+3. A resource version never returns to an earlier value for the same object.
+   This assumes no etcd restore without `--bump-revision`. Versions are compared
+   only for equality, never ordered.
+
+Why SUPERSEDED is safe: once the object is gone, has another UID, or has a
+version other than V0, assumptions 2 and 3 mean our request can never commit,
+even if it is still in flight. Releasing the workload exclusion is then safe.
+Any new action needs a fresh proposal, a fresh read and a fresh Guard ALLOW
+against current state, and that state already includes whatever our request did
+or did not do. SUPERSEDED claims only "can no longer commit"; whether the write
+briefly committed is unknown or irrelevant. CONFLICT keeps its meaning of
+"proven not committed". Only "same UID, version still V0" stays in doubt,
+because a timed-out request could still land.
+
+`execute()` checks adoption before it returns CONFLICT for a moved resource
+version or a refused conditional write. `reconcile()` on a host with no ledger
+row (or only a PREPARED row) journals the action as in doubt, with V0 taken
+from the proposal, and then applies the table. That host can never start the
+write afterwards.
+
+Result details start with `[basis=<code>]` and a fixed sentence; server text is
+never echoed. SUPERSEDED, like every status except NEEDS_RECONCILIATION,
+finishes the ledger row as DONE, which releases the workload exclusion.
+
+### Repeated uncertainty, backoff and escalation
+
+A pass that finds the same NEEDS_RECONCILIATION status, resource version and
+basis as the saved result returns the saved result unchanged. It adds no ledger
+row and no new `recorded_at`, so nothing new is delivered and the Coordinator's
+`executor.reconcile` command stays pending until the state changes. A changed
+basis is a new fact and is recorded.
+
+With several executor hosts, the Coordinator may already hold a newer
+NEEDS_RECONCILIATION result from another host. A host's own saved result that is
+not newer than it is treated the same way: the command stays pending (or is
+retried), instead of being dropped as stale and acknowledged, which would leave
+nothing to report a later commit.
+
+The restart scan backs off rows still in doubt: 2 s after the first unchanged
+pass, doubling to at most 60 s (`next_reconcile_at` and `reconcile_attempts` in
+the ledger). Remote workers return no result for unchanged uncertainty, so the
+transport retries the delivery with its own backoff.
+
+Once a write has been in doubt longer than `reconcile_escalation_seconds`
+(default 600) in `ExecutionAdapters`, the next pass records one new
+NEEDS_RECONCILIATION result whose details say "Operator action required". It is
+delivered and shown like any other result, and is not repeated while the state
+stays the same.
+
+Older ledgers gain the `write_started_at`, `reconcile_attempts` and
+`next_reconcile_at` columns when opened; existing rows are kept.
 
 Each new reconciliation result is retained in the ledger history. If the clock
 has not advanced beyond the previous result, its `recorded_at` advances by one
@@ -170,7 +246,9 @@ An accepted APPLIED result moves the Coordinator to VERIFYING and emits
 `verifier.request`. It does not mean RECOVERED. The Verifier owns sustained
 service/dependency health, and the Coordinator owns the final incident state.
 NEEDS_RECONCILIATION blocks ordinary replacement actions until the uncertain
-write is resolved.
+write is resolved. SUPERSEDED moves the incident to FAILED without a
+`verifier.request`; planning restarts from live state. The Verifier refuses it
+like FAILED and CONFLICT.
 
 Every worker run also calls `reconcile_pending_executions(adapters)`, scanning
 unfinished writes and undelivered completed results independently of Coordinator

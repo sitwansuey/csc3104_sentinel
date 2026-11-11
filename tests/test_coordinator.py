@@ -204,6 +204,22 @@ class CoordinatorTests(unittest.TestCase):
         with self.assertRaises(CoordinatorError):
             self.send(dict(self.execution, recorded_at="2026-10-10T12:00:46Z"))
 
+    def test_superseded_write_fails_without_verification_and_admits_a_new_action(self):
+        for first in ("READY", "NEEDS_RECONCILIATION"):
+            with self.subTest(first=first):
+                self.store = SQLiteStore(clock=lambda: NOW)
+                self.addCleanup(self.store.close)
+                self.bus = LocalEventBus()
+                self.allowed()
+                if first == "NEEDS_RECONCILIATION":
+                    self.send(dict(self.execution, status="NEEDS_RECONCILIATION"))
+                self.send(dict(self.execution, status="SUPERSEDED", recorded_at="2026-10-10T12:00:46Z"))
+                self.assertEqual(self.state(), "FAILED")
+                self.assertFalse(any(event["topic"] == "verifier.request" for event in self.bus.events))
+                self.send(dict(self.proposal, action_id="ACT-NEW"))
+                with self.assertRaises(CoordinatorError):
+                    self.send(dict(self.execution, status="APPLIED", recorded_at="2026-10-10T12:00:47Z"))
+
     def test_uncertain_write_requires_reconciliation_before_new_action(self):
         self.allowed()
         self.send(dict(self.execution, status="NEEDS_RECONCILIATION"))

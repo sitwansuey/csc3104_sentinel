@@ -10,7 +10,7 @@ import type { WireMessage } from "@/lib/types"
 import { decisionPresentation } from "@/lib/decision-display"
 
 const GOOD = ["ALLOW","PASS","CLEAR","RECOVERED","APPLIED","NOOP","HEALTHY","READY","Ready","available","RECENT","RESOLVED"]
-const BAD = ["FAIL","REJECT","REJECTED","FAILED","BLOCKED","CONFLICT","NOT_RECOVERED","error","Failed","CrashLoopBackOff","ImagePullBackOff","OOMKilled","NotReady","DENY","HIGH","CRITICAL"]
+const BAD = ["FAIL","REJECT","REJECTED","FAILED","BLOCKED","CONFLICT","SUPERSEDED","NOT_RECOVERED","error","Failed","CrashLoopBackOff","ImagePullBackOff","OOMKilled","NotReady","DENY","HIGH","CRITICAL"]
 const INFO = ["VALIDATING","VERIFYING","EXECUTING","PROPOSED","PENDING","SCANNING","RECORDED","ACKNOWLEDGED","RUNNING"]
 const WARN = ["ESCALATE","UNKNOWN","AWAITING_APPROVAL","NEEDS_REVIEW","NEEDS_RECONCILIATION","fault","STALE","Pending","unavailable","PARTIAL","BackOff","FailedScheduling","Unhealthy","WARNING","MEDIUM","FINDINGS","OPEN","NOT CONNECTED"]
 

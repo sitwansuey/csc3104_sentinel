@@ -13,7 +13,9 @@ import re
 import subprocess
 import tempfile
 
-from services.executor.core import ACTION_ANNOTATION, ConditionalWriteConflict, ReadUnavailable, encode_evidence
+from services.executor.core import (
+    ACTION_ANNOTATION, ConditionalWriteConflict, ReadUnavailable, TargetAbsent, encode_evidence,
+)
 from services.executor.store import canonical_json, fingerprint
 from services.guard.adapters import AdapterError, _DNS_LABEL, _DNS_SUBDOMAIN, _parse_json
 from services.guard.preview import _private_file
@@ -111,7 +113,8 @@ class KubectlDeploymentAPI:
         """Read only the allowlisted named Deployment, preserving its actual UID."""
         target = deepcopy(target)
         self._target(target)
-        command = self._command(target) + ["get", "deployment", target["name"], "--output=json"]
+        command = self._command(target) + ["get", "deployment", target["name"], "--ignore-not-found",
+                                           "--output=json"]
         self.stats["read_attempts"] += 1
         try:
             result = self.runner(command, capture_output=True, check=False, timeout=PROCESS_TIMEOUT_SECONDS)
@@ -119,6 +122,9 @@ class KubectlDeploymentAPI:
             raise ReadUnavailable("Live Deployment read is unavailable") from None
         if result.returncode:
             raise ReadUnavailable("Live Deployment read failed")
+        # --ignore-not-found turns only NotFound into success with empty output.
+        if isinstance(result.stdout, (bytes, str)) and not result.stdout.strip():
+            raise TargetAbsent("Deployment does not exist")
         try:
             deployment = _parse_json(result.stdout, "executor_live_state")
         except (AdapterError, TypeError):
@@ -156,7 +162,10 @@ class KubectlDeploymentAPI:
         self._evidence(target, version, template, evidence)
         # Read before preparing the annotation operation. UID/RV tests below
         # still protect the complete patch if state changes after this read.
-        snapshot = self.read(target)
+        try:
+            snapshot = self.read(target)
+        except TargetAbsent:
+            raise ConditionalWriteConflict("Deployment no longer exists before submission") from None
         deployment = snapshot["deployment"]
         metadata = deployment["metadata"]
         if _identity(deployment, self.cluster_id) != target or metadata["resourceVersion"] != version:

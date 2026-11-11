@@ -3,7 +3,7 @@
 from copy import deepcopy
 from threading import RLock
 
-from services.executor.core import ACTION_ANNOTATION, ConditionalWriteConflict, encode_evidence
+from services.executor.core import ACTION_ANNOTATION, ConditionalWriteConflict, TargetAbsent, encode_evidence
 
 
 class FakeDeploymentAPI:
@@ -19,6 +19,7 @@ class FakeDeploymentAPI:
         self.clock = clock
         self.write_attempts = []
         self.writes = []
+        self.deleted = None
         self._lock = RLock()
         self._version = 0
 
@@ -28,9 +29,46 @@ class FakeDeploymentAPI:
             snapshot["captured_at"] = self.clock().isoformat().replace("+00:00", "Z")
         return snapshot
 
+    def _advance(self, current):
+        """Return a fresh resource version; like etcd, versions never repeat."""
+        self._version += 1
+        next_version = f"fake-write-{self._version}"
+        if next_version == current:
+            self._version += 1
+            next_version = f"fake-write-{self._version}"
+        return next_version
+
     def read(self, target):
         """Return the named object, including its actual UID if recreated."""
         with self._lock:
+            if self.snapshot is None:
+                raise TargetAbsent("Deployment does not exist")
+            return self._snapshot()
+
+    def delete(self):
+        """Remove the object, as an administrator deleting the Deployment would."""
+        with self._lock:
+            self.deleted = self.snapshot
+            self.snapshot = None
+
+    def recreate(self, uid):
+        """Recreate a deleted (or live) object under the same name with a new UID."""
+        with self._lock:
+            candidate = deepcopy(self.snapshot if self.snapshot is not None else self.deleted)
+            metadata = candidate["deployment"]["metadata"]
+            metadata["uid"] = uid
+            metadata["resourceVersion"] = self._advance(metadata["resourceVersion"])
+            self.snapshot = candidate
+
+    def external_write(self, mutator=None):
+        """Apply another writer's change; any committed change advances the version."""
+        with self._lock:
+            candidate = deepcopy(self.snapshot)
+            if mutator is not None:
+                mutator(candidate["deployment"])
+            metadata = candidate["deployment"]["metadata"]
+            metadata["resourceVersion"] = self._advance(metadata["resourceVersion"])
+            self.snapshot = candidate
             return self._snapshot()
 
     def conditional_restore(self, *, target, version, template, evidence):
@@ -40,6 +78,8 @@ class FakeDeploymentAPI:
                 "target": target, "version": version,
                 "template": template, "evidence": evidence,
             }))
+            if self.snapshot is None:
+                raise ConditionalWriteConflict("Deployment does not exist")
             deployment = self.snapshot["deployment"]
             metadata = deployment["metadata"]
             actual = {
@@ -55,12 +95,7 @@ class FakeDeploymentAPI:
             candidate["deployment"]["spec"]["template"] = deepcopy(template)
             updated = candidate["deployment"]["metadata"]
             updated.setdefault("annotations", {})[ACTION_ANNOTATION] = encode_evidence(evidence)
-            self._version += 1
-            next_version = f"fake-write-{self._version}"
-            if next_version == version:
-                self._version += 1
-                next_version = f"fake-write-{self._version}"
-            updated["resourceVersion"] = next_version
+            updated["resourceVersion"] = self._advance(version)
             self.snapshot = candidate
             result = self._snapshot()
             self.writes.append(deepcopy(result))

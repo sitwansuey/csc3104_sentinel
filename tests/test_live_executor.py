@@ -295,10 +295,23 @@ class LiveExecutorTests(unittest.TestCase):
         self.assertEqual(len(self.cluster.writes), 1)
 
     def test_cli_reconcile_cannot_start_an_unjournaled_action(self):
+        # Stateless reconcile: unchanged live state stays in doubt (exit 4), never a write.
         status, stdout, stderr = self.call_cli(self.arguments(reconciliation=True))
-        self.assertEqual(status, 1)
-        self.assertEqual(stdout, "")
-        self.assertEqual(json.loads(stderr)["kind"], "executor_error")
+        self.assertEqual(status, 4, stderr)
+        result = json.loads(stdout)
+        self.assertEqual(result["status"], "NEEDS_RECONCILIATION")
+        self.assertTrue(result["details"].startswith("[basis=UNCHANGED_IN_DOUBT]"))
+        self.assertEqual(self.cluster.write_attempts, [])
+        # The adopted journal row means a later execution can only reconcile.
+        status, stdout, stderr = self.call_cli(self.arguments())
+        self.assertEqual(status, 4, stderr)
+        self.assertEqual(self.cluster.write_attempts, [])
+
+    def test_cli_exit_code_for_superseded_write(self):
+        self.cluster.external_write()
+        status, stdout, stderr = self.call_cli(self.arguments(reconciliation=True))
+        self.assertEqual(status, 5, stderr)
+        self.assertEqual(json.loads(stdout)["status"], "SUPERSEDED")
         self.assertEqual(self.cluster.write_attempts, [])
 
     def test_cli_refuses_fixture_clock_override_without_echoing_unknown_arguments(self):

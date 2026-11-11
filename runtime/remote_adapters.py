@@ -3,7 +3,7 @@ from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
 
-from services.executor.core import execute, reconcile
+from services.executor.core import execute, reconcile, unchanged_uncertainty
 from services.guard.core import assert_decision_usable, evaluate_with_report
 from services.planner.core import retrieve_runbooks
 from services.planner.worker import prepare
@@ -79,7 +79,13 @@ class ExecutorAdapter:
             raise ValueError("Executor received an incompatible request")
         adapters = replace(self.adapters, authorizer=_RemoteAuthority(self.adapters.authorizer, lease))
         operation = reconcile if delivery["topic"] == "executor.reconcile" else execute
-        return operation(delivery["payload"]["proposal"], adapters), None
+        result = operation(delivery["payload"]["proposal"], adapters)
+        if delivery["topic"] == "executor.reconcile" and unchanged_uncertainty(
+                result, delivery["payload"].get("execution")):
+            # Unchanged or older uncertainty (for example this host's saved result
+            # after a peer reported a newer one): the transport retries with backoff.
+            return None
+        return result, None
 
     def acknowledge(self, result):
         self.adapters.ledger.acknowledge_result(result)

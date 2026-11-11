@@ -114,7 +114,7 @@ export function RecoveryOverview({ data, snapshot, range, now, transportStale, n
     proposal ? "done" : "waiting",
     dependencies ? (["BLOCKED", "FAIL", "FAILED"].includes(dependencies.status || "") ? "blocked" : "done") : "waiting",
     guard ? (guard.verdict === "REJECT" ? "blocked" : guard.verdict === "ALLOW" ? "done" : "current") : "waiting",
-    execution ? (["FAILED", "CONFLICT"].includes(execution.status || "") ? "blocked" : "done") : rejectedWithoutExecution ? "skipped" : "waiting",
+    execution ? (["FAILED", "CONFLICT", "SUPERSEDED"].includes(execution.status || "") ? "blocked" : "done") : rejectedWithoutExecution ? "skipped" : "waiting",
     outcome ? (outcome.status === "RECOVERED" ? "done" : "blocked") : rejectedWithoutExecution ? "skipped" : "waiting",
   ]
   // While an incident is in flight, the next unrecorded handoff is the one the circuit is waiting on.

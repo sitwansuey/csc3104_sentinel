@@ -31,6 +31,15 @@ class ContractBoundaryTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_message(message)
 
+    def test_execution_status_vocabulary_includes_superseded_only(self):
+        message = json.loads((ROOT / "data/sentinel/samples/messages/execution-result.json").read_text())
+        for status in ("APPLIED", "NOOP", "FAILED", "CONFLICT", "SUPERSEDED", "NEEDS_RECONCILIATION"):
+            with self.subTest(status=status):
+                validate_message(dict(message, status=status))
+        for status in ("superseded", "OVERWRITTEN", "", None):
+            with self.subTest(status=status), self.assertRaises(ContractError):
+                validate_message(dict(message, status=status))
+
     def test_missing_uid_is_rejected(self):
         message = self.proposal()
         del message["target"]["uid"]
