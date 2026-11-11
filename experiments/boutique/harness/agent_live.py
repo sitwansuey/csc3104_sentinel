@@ -14,6 +14,7 @@ from experiments.recovery.live import require, save
 _DESCRIPTORS = frozenset({"container", "containers", "pod", "pods", "deployment", "service",
                           "workload", "app", "application", "the"})
 _SEPARATORS = str.maketrans({character: " " for character in "\t\n,;:()[]{}'\"`"})
+LIVE_KEEP_ALIVE = "30m"
 
 
 def names_target(component, name):
@@ -140,14 +141,52 @@ def export_telemetry(directory, target, destination, *, incident=None, lookback_
 class AgentPlanningMixin:
     agent_config = None
 
-    def build_proposal(self, incident, folder, rationale=None):
+    def load_agent_config(self):
         config = json.loads(DEFAULT_CONFIG.read_text(encoding="utf-8"))
+        # Keep the warmed model loaded through baseline, injection and detection.
+        # Ollama's own default unloads it after 5 minutes. -AgentConfig can override.
+        config["keep_alive"] = LIVE_KEEP_ALIVE
         if self.agent_config:
             config.update(json.loads(self.agent_config.read_text(encoding="utf-8")))
         config["allow_abstention"] = True
         # Record the planning mode up front so a failed run is still identifiable.
         self.summary.update(planning="Live RCA agent and Ollama Recovery Planner", model=config["model"],
                             scope="Online Boutique shippingservice; real Observer/Coordinator/Agent/Guard/Executor/Verifier")
+        return config
+
+    def prepare(self):
+        # Check and load the model before any cluster change, so a missing or
+        # cold model stops the run before a fault is injected.
+        self.prepare_model()
+        super().prepare()
+
+    def prepare_model(self):
+        """Preflight and warm up Ollama, then record its runtime in model-runtime.json."""
+        stage = "preflight"
+        started = time.monotonic()
+        try:
+            llm = Ollama(self.load_agent_config())
+            llm.preflight()
+            stage = "warm_up"
+            warm_up = llm.warm_up()
+        except Exception as error:
+            reason = " ".join(str(error).split())[:500]
+            self.summary["agent_failure"] = {"stage": stage, "error": type(error).__name__ + ": " + reason,
+                                             "fault_injected": False,
+                                             "seconds": round(time.monotonic() - started, 1)}
+            self.event(3, "error", "Agent model check failed; no fault injected: " + reason[:300],
+                       progress={"stage": stage, "status": "failed"})
+            raise
+        runtime = llm.runtime_info()
+        save(self.directory / "model-runtime.json", {
+            "captured_at": datetime.now(timezone.utc).isoformat(), **runtime, "warm_up": warm_up})
+        load = max(call["load_duration_seconds"] for call in warm_up)
+        self.event(3, "status", "Agent model is loaded and ready", progress={
+            "stage": "warm_up", "status": "completed", "load_duration_seconds": load,
+            "seconds": round(time.monotonic() - started, 2)})
+
+    def build_proposal(self, incident, folder, rationale=None):
+        config = self.load_agent_config()
         def progress(update):
             # This stream is safe operational metadata: never raw prompts,
             # application logs, generated text or hidden model reasoning.
