@@ -500,6 +500,66 @@ class HarnessApprovalTests(unittest.TestCase):
         reader = build.call_args.kwargs["approval_reader"]
         self.assertEqual((type(reader), reader.identity), (ApprovalClient, LAB_EXECUTOR))
 
+    def test_crash_restart_passes_the_executor_token_only_through_the_worker_environment(self):
+        from experiments.recovery import live
+        experiment = self.make()
+        experiment.configure_approval("auto-lab")
+        launched, worker_output = [], io.StringIO()
+
+        def worker(command, **kwargs):
+            launched.append((command, kwargs))
+            # Run the real worker entry in-process with exactly the environment it was given,
+            # stopping before Kubernetes, so its output is captured like the child's would be.
+            with patch.dict("os.environ", kwargs.get("env") or {}, clear=True), \
+                    patch.object(live, "build_adapters", side_effect=RuntimeError("stop before Kubernetes")) as build, \
+                    patch("sys.stdout", worker_output), patch("sys.stderr", worker_output):
+                with self.assertRaisesRegex(RuntimeError, "stop before Kubernetes"):
+                    live.crash_worker(command[-1])
+            reader = build.call_args.kwargs["approval_reader"]
+            self.assertEqual((type(reader), reader.identity), (ApprovalClient, LAB_EXECUTOR))
+            return Mock(returncode=73, stdout=worker_output.getvalue(), stderr="")
+
+        with patch.object(experiment, "fault", return_value=self.incident), \
+                patch.object(live.subprocess, "run", side_effect=worker), \
+                patch.object(live, "SQLiteExecutionLedger", side_effect=RuntimeError("stop after the worker")):
+            tokens = None
+            original = experiment.approval_authority
+
+            def authority():
+                nonlocal tokens
+                started = original()
+                tokens = dict(started._tokens)
+                return started
+
+            with patch.object(experiment, "approval_authority", side_effect=authority):
+                with self.assertRaisesRegex(RuntimeError, "stop after the worker"):
+                    experiment.crash_restart()
+        self.assertEqual(len(launched), 1)
+        command, kwargs = launched[0]
+        self.assertIn("--crash-worker", command)
+        environment = kwargs.get("env")
+        self.assertIsNotNone(environment, "The crash worker must receive an explicit environment")
+        self.assertEqual(environment["SENTINEL_LAB_APPROVAL_EXECUTOR_TOKEN"], tokens[LAB_EXECUTOR])
+        self.assertEqual((environment["SENTINEL_LAB_APPROVAL_IDENTITY"], environment["SENTINEL_LAB_APPROVAL_URL"]),
+                         (LAB_EXECUTOR, experiment.authority.url))
+        self.assertEqual(set(tokens), {AUTOMATED_LAB, LAB_GUARD, LAB_EXECUTOR})
+        for name in (AUTOMATED_LAB, LAB_GUARD):  # Only the read-only Executor token leaves the harness.
+            self.assertNotIn(tokens[name], environment.values())
+        config = Path(command[-1])
+        self.assertEqual(config, experiment.directory / "crash-after-write" / "worker.json")
+        self.assertEqual(set(json.loads(config.read_text(encoding="utf-8"))),
+                         {"directory", "folder", "credentials", "cluster_id", "context"})
+        summary = json.dumps(experiment.summary)
+        experiment.close_approval_authority()
+        files = [path for path in experiment.directory.rglob("*") if path.is_file()]
+        for name, token in tokens.items():
+            with self.subTest(identity=name):
+                self.assertNotIn(token, " ".join(command))
+                self.assertNotIn(token, worker_output.getvalue())
+                self.assertNotIn(token, summary)
+                for path in files:
+                    self.assertNotIn(token.encode(), path.read_bytes(), str(path.relative_to(experiment.directory)))
+
     def test_mode_is_fixed_once_the_authority_runs(self):
         experiment = self.make()
         experiment.configure_approval("auto-lab")
