@@ -7,14 +7,19 @@ A citation is an inline code span (backticks) outside fenced blocks:
   `path::Name`           Python: a class, function, method (Class.method) or
                          module-level assignment found with ast; other files:
                          the text appears in the file
-  `path:N-M::Name`       as above, and lines N-M lie inside Name's definition
-                         (Python) or contain the text (other files)
+  `path:N-M::Name::text` Python: lines N-M lie inside Name's definition, and
+                         text is on line N and on no other line of Name
+  `path:N-M::text`       other files: lines N-M contain the text
   `C-SOME-CLAIM`         a claim id in evidence/claims.json
 
 Paths are relative to the repository root. A span is treated as a path when it
-contains '/' or ends in a known file extension. A line citation into a Python
-file must name its enclosing symbol, so code that moves to another function
-fails the check. A small shift inside the same function is not detected.
+contains '/' or ends in a known file extension; other spans (prose such as
+`approve()` or `SQLiteStore.__init__`) are not checked. A line citation into
+a Python file must name its enclosing symbol and a text that occurs once in
+it, on the first cited line. Code that moves to another function, or a line
+added or removed above the cited line, then fails the check. Lines added or
+removed inside a cited range after its first line are not detected, and the
+check cannot tell whether the cited code still does what the prose says.
 Standard library only, offline.
 """
 
@@ -119,17 +124,29 @@ class Resolver:
                 return f"lines {first}-{last} outside 1-{count}"
             lines = (first, last)
         if path.suffix == ".py" and (lines or anchor):
-            if not anchor:
-                return "line citation into Python needs a ::symbol anchor"
+            parts, guard = (anchor or "").split("::"), None
+            if lines:
+                if len(parts) < 2 or not all(parts[:-1]) or not parts[-1].strip():
+                    return "line citation into Python needs ::symbol::text"
+                parts, guard = parts[:-1], parts[-1]
             try:
                 table = self.symbol_table(path)
             except SyntaxError:
                 return "file does not parse"
-            name = anchor.replace("::", ".")
+            name = ".".join(parts)
             if name not in table:
                 return f"symbol {name} not found"
             if lines and not (table[name][0] <= lines[0] and lines[1] <= table[name][1]):
                 return f"lines {lines[0]}-{lines[1]} are not inside {name} (lines {table[name][0]}-{table[name][1]})"
+            if guard is not None:
+                source = self.text(path).splitlines()
+                hits = [number for number in range(table[name][0], table[name][1] + 1)
+                        if guard in source[number - 1]]
+                if lines[0] not in hits:
+                    return f"text {guard!r} is not on line {lines[0]}"
+                if hits != [lines[0]]:
+                    shown = ", ".join(str(number) for number in hits)
+                    return f"text {guard!r} is on lines {shown} of {name}, not only line {lines[0]}"
         elif anchor:
             text = self.text(path)
             if lines:
