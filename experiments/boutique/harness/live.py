@@ -24,6 +24,9 @@ from services.verifier.store import VerificationStore, observation_seconds
 from services.executor.store import fingerprint
 from services.observer.kubernetes import CollectionError, KubernetesEvidenceCollector, KubectlReader
 
+# A Deployment read through kubectl can fail transiently (non-zero exit, timeout, bad JSON).
+READ_ERRORS = (RuntimeError, ValueError, OSError, subprocess.SubprocessError)
+
 
 SHIPPING_IMAGE = "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice:v0.10.7"
 CLIENT_IMAGE = "fullstorydev/grpcurl:v1.9.3"
@@ -180,14 +183,30 @@ class BoutiqueExperiment(Experiment):
         deadline, so a pass that collects without raising ends with exactly one
         outcome. A probe that cannot report is missing evidence, never a known
         failure: a target that never answers ends UNKNOWN at that deadline, not
-        NOT_RECOVERED after the grace. A failed cluster read raises instead and
-        leaves the saved job pending for a later pass.
+        NOT_RECOVERED after the grace. A failed cluster read skips that reading;
+        the Verifier's maximum sample gap still bounds the hole it leaves. Three
+        consecutive failed reads raise and leave the saved job pending for a later pass.
         """
         limit = time.monotonic() + observation_seconds(self.policy["health"]) + 5
-        index = 0
+        index = failures = 0
+
+        def skip(error):
+            nonlocal failures
+            failures += 1
+            self.event(6, "error", "Role 6 skipped a verification reading; cluster read failed: "
+                       + type(error).__name__, target=execution["target"],
+                       incident_id=execution["incident_id"], action_id=execution["action_id"])
+            if failures >= 3:
+                raise error
+            time.sleep(5)
+
         while True:
             last = time.monotonic() >= limit  # Decided before collecting this reading.
-            before = self.deployment()
+            try:
+                before = self.deployment()
+            except READ_ERRORS as error:
+                skip(error)
+                continue
             sample = {"service": self.name, "protocol": "grpc", "dependencies": {},
                       "grpc_status": None, "application_check_passed": None}
             try:
@@ -202,7 +221,12 @@ class BoutiqueExperiment(Experiment):
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
                 # Do not turn a timeout or unavailable probe into an invented gRPC status.
                 sample["collection_error"] = type(error).__name__
-            after = self.deployment()
+            try:
+                after = self.deployment()
+            except READ_ERRORS as error:
+                skip(error)
+                continue
+            failures = 0
             metadata, status = after["metadata"], after.get("status", {})
             sample.update(
                 at=utc(), target={"cluster_id": self.cluster_id, "namespace": self.namespace,

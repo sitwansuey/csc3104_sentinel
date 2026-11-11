@@ -215,7 +215,11 @@ def probe(directory, *, quantity=1, target="security-gateway:8443", secure=True,
 
 
 def collect_inspections(directory):
-    result = kube("logs", "deployment/security-gateway", "-c", "inspector", "--tail=500", required=False, timeout=8)
+    try:
+        result = kube("logs", "deployment/security-gateway", "-c", "inspector", "--tail=500",
+                      required=False, timeout=8)
+    except subprocess.TimeoutExpired:
+        return  # kubectl waits for a Pod while the gateway has none; try again next poll.
     if result.returncode:
         return
     events = []
@@ -354,7 +358,11 @@ def main():
         dashboard.start()
         print(f"Storefront {storefront.base_url}; dashboard http://127.0.0.1:{args.dashboard_port}/#security", flush=True)
         while not (directory / "stop-ui.request").exists():
-            collect_inspections(directory)
+            try:
+                collect_inspections(directory)
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+                # Collection is best-effort evidence; keep the dashboard serving.
+                print("Inspection collection skipped: " + type(error).__name__, flush=True)
             time.sleep(2)
     except KeyboardInterrupt:
         pass
