@@ -365,11 +365,12 @@
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-11",
-      "impact": "The packaged runner is built locally from the checkout. It was rebuilt and scanned for PR #98, but no image is tagged or published, and that scan is not a committed evidence bundle.",
+      "impact": "The packaged runner is built locally from the checkout. It was rebuilt and scanned for PR #98, but no image is tagged or published, and that scan is not a committed evidence bundle. A release preflight, a tag-triggered build with a Trivy gate, SBOMs and checksums now exist (docs/release.md) but have not run: no tag has been pushed, and the launcher still names the 0.3.0 runner.",
       "workaround": "Build the runner from the revision you are testing.",
       "cites": [
         {"claim": "C-PACKAGED"},
-        {"at": "scripts/packaged-demo-common.ps1:5", "text": "sentinel-boutique-runner:0.3.0"}
+        {"at": "scripts/packaged-demo-common.ps1:5", "text": "sentinel-boutique-runner:0.3.0"},
+        {"at": ".github/workflows/release.yml"}
       ],
       "planned": ["P2.09", "P2.10"],
       "issues": [63, 73]

@@ -1,0 +1,13 @@
+# Release scan waivers for scripts/release/build.py (see docs/release.md).
+#
+# The release gate fails on a High or Critical finding that has a fix in any
+# Sentinel-owned image. A waiver is a reviewed, time-boxed exception:
+#
+#   # <why the risk is accepted for now>; tracked in #<issue>
+#   CVE-YYYY-NNNNN exp:YYYY-MM-DD
+#
+# Each entry needs an issue in the comment block above it and an expiry at
+# most 90 days ahead; scripts/release/preflight.py refuses anything else, and
+# Trivy stops honouring an entry after its date. A blank line ends a block.
+#
+# There are no waivers.

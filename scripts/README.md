@@ -26,5 +26,9 @@ in the threat-model or distributed-model docs no longer exists, or when the
 first line of a cited Python line range no longer holds the text the citation
 names.
 
+`release/` holds the release preflight, the image build and scan gate used by
+`.github/workflows/release.yml`, and the release-notes generator; see
+[the release process](../docs/release.md).
+
 `tracker/` holds the reviewed issue-tracker plan and dry-run tools for tracker
 and branch clean-up; see [its README](tracker/README.md).
