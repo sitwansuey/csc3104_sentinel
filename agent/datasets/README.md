@@ -26,15 +26,18 @@ The dataset revision is pinned in `data/experimentation/sources/rcaeval.json` to
 
 ```powershell
 python -m pip install -r agent/datasets/requirements.txt
-python scripts/download_rcaeval.py
+python scripts/download_rcaeval.py --yes
 ```
 
-For metadata only, or one allowed case:
+For metadata only, one allowed case, or one split of a committed sample manifest:
 
 ```powershell
 python scripts/download_rcaeval.py --index-only
 python scripts/download_rcaeval.py --case re2ob_checkoutservice_cpu_1
+python scripts/download_rcaeval.py --cases-from docs/evaluation/rcaeval/sample-ob-v1.json --split dev
 ```
+
+Before any telemetry is downloaded, the downloader reads the dataset card's licence (`cardData.license`) and `gated` flag for the pinned revision. It refuses unless the licence is MIT and the dataset is not gated, and it records both values in `source-manifest.json`. `--index-only` fetches only metadata, so it still runs and prints them. A planned download above 200 MB needs `--yes`, and the full selection is about 3.11 GB. `--cases-from` refuses a sample drawn from another `cases.json`, and one that names a case outside the allowed selection. The pre-registered Online Boutique evaluation that uses it is described in [docs/evaluation/rcaeval](../../docs/evaluation/rcaeval/README.md).
 
 The downloader saves `cases.json`, `source-manifest.json`, `download-status.json` and original Parquet telemetry under `data/experimentation/datasets/rcaeval-non-code/raw/`. This directory is Git-ignored. It does not use the upstream download helpers, so RE3 cannot be pulled in accidentally. `--output` selects another dataset root.
 
@@ -48,7 +51,7 @@ python scripts/evaluate_rcaeval.py run --tasks data/experimentation/runs/rcaeval
 python scripts/evaluate_rcaeval.py score --answers data/experimentation/runs/rcaeval-eval/answers.jsonl --predictions data/experimentation/runs/rcaeval-eval/results/predictions.jsonl --out data/experimentation/runs/rcaeval-eval/scores
 ```
 
-Export supports `--suites RE1 RE2`, `--systems ob ss tt`, `--faults cpu mem disk delay loss socket` and `--limit N` for a smoke test. Every omitted filter means all allowed values. Limit selection follows a deterministic hash order, not answer-name order; a small smoke test is not a representative benchmark result.
+Export supports `--suites RE1 RE2`, `--systems ob ss tt`, `--faults cpu mem disk delay loss socket` and `--limit N` for a smoke test. `export_tasks(..., cases=[...])` exports an explicit list of case names instead; `scripts/evaluation/rcaeval_run.py` uses it for one split of the sample. Every omitted filter means all allowed values. Limit selection follows a deterministic hash order, not answer-name order; a small smoke test is not a representative benchmark result.
 
 ```text
 data/experimentation/runs/rcaeval-eval/
@@ -79,6 +82,7 @@ Task IDs are local deterministic opaque IDs. They do not claim to match the lega
 ## Diagnosis methods
 
 - **`sentinel`**: runs the existing Sentinel RCA agent with local Ollama. Metrics are converted to long-form CSV; available logs/traces are also exposed. Only blinded task information reaches the agent. It returns one most-likely service or abstains, so its indicator-level score is zero unless a future adapter explicitly predicts indicators. It does not manufacture a metric prediction from free-text reasoning.
+- **`baro`** and **`anomaly-rank`**: non-LLM baselines in `baselines.py`. They call the pinned upstream `RCAEval.e2e.baro.baro` (BARO's robust scorer: median and interquartile range before the inject time) and `RCAEval.e2e.nsigma` (the same with mean and standard deviation) unchanged, on the blinded metrics of the standard window. Rankings are cut once they hold five distinct services and five entries, which leaves AC@1 to AC@5 and Avg@5 unchanged. A frame with no change, or no samples on one side of the inject time, abstains.
 - **`casetoolkit`**: runs your configured Ollama model through the native upstream `CaseToolkit`. A bounded JSON decision loop lets the model select tools and submit a ranked answer, validated against the case's candidates. This evaluates the model with RCAEval tools; it is separate from Sentinel's existing agent workflow. The adapter converts blinded Parquet files to CSV without changing the raw column names, and the toolkit applies its own preprocessing.
 
 ```powershell
@@ -132,7 +136,7 @@ The formulas and normalization match the inspected upstream scoring/evaluator at
 
 The report includes service/indicator metrics, Chance@5, Lift@5, MRR, case coverage, errors, numeric usage totals and breakdowns by subset, system and fault. Missing predictions count as misses across the full selected case set. Duplicate, malformed and unknown case IDs are rejected. The scoring command does not discard failed cases to improve accuracy.
 
-RCAEval measures offline diagnosis accuracy, not recovery safety or live repair effectiveness. The dataset's published split is not a held-out train/test design. If tuning methods, separate complete case groups before evaluation; the importer and harness do not invent a train/test split.
+RCAEval measures offline diagnosis accuracy, not recovery safety or live repair effectiveness. The dataset's published split is not a held-out train/test design. If tuning methods, separate complete case groups before evaluation; the importer and harness do not invent a train/test split. The pre-registered Online Boutique evaluation ([protocol](../../docs/evaluation/rcaeval/PROTOCOL.md)) splits dev and eval by repetition, freezes prompt hashes after the dev runs, and adds Wilson intervals and paired tests (`scripts/evaluation/`). It is prepared but has not been run.
 
 ## Sources and license
 

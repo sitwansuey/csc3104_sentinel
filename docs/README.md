@@ -14,7 +14,9 @@ Read these in order:
 Use [Planner mode](planner.md), [authenticated approvals](approvals.md), [Chaos Mesh](chaos.md), [security](security.md) or
 [packaging](packaging.md) only when using that optional mode. Benchmarks are
 documented beside their code/data: [RCAEval](../agent/datasets/README.md) and
-[Guard cases](../data/experimentation/guard/README.md).
+[Guard cases](../data/experimentation/guard/README.md). The pre-registered RCAEval
+Online Boutique evaluation (prepared, not yet run) has its own
+[protocol and run guide](evaluation/rcaeval/README.md).
 
 Role design lives beside the implementation: [Coordinator](../services/coordinator/README.md),
 [Observer](../services/observer/README.md), [Planner](../services/planner/README.md),

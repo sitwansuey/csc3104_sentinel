@@ -220,11 +220,12 @@
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-11",
-      "impact": "There is no committed RCAEval result and no comparison of retrieval alone, retrieval with validation, and full Sentinel. Agent results show recovery on one fault, not diagnosis accuracy.",
+      "impact": "There is no committed RCAEval result and no comparison of retrieval alone, retrieval with validation, and full Sentinel. Agent results show recovery on one fault, not diagnosis accuracy. A pre-registered Online Boutique evaluation is prepared but not run: the protocol, the stratified sampler, the BARO and anomaly-rank baselines, a runner that locks the eval split until the dev runs are frozen, and a report with Wilson intervals and paired tests. All of it is tested on synthetic data only. No RCAEval telemetry has been downloaded, no model has been run under the protocol, and the licence and citation still need a person's confirmation.",
       "workaround": "None; do not quote agent recovery counts as accuracy.",
       "cites": [
         {"claim": "C-AGENT-ALL"},
-        {"at": "agent/datasets/README.md"}
+        {"at": "agent/datasets/README.md"},
+        {"at": "docs/evaluation/rcaeval/PROTOCOL.md", "text": "**Status: prepared, not run.**"}
       ],
       "planned": ["P2.07", "P4.04"],
       "issues": [17, 75]

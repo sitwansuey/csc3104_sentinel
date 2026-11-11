@@ -26,5 +26,11 @@ in the threat-model or distributed-model docs no longer exists, or when the
 first line of a cited Python line range no longer holds the text the citation
 names.
 
+`evaluation/` holds the pre-registered RCAEval Online Boutique evaluation:
+`rcaeval_sample.py` draws the stratified sample, `rcaeval_run.py` runs one method
+over one split (the eval split stays locked until the dev runs are frozen), and
+`rcaeval_report.py` computes intervals and paired tests. See
+[the run guide](../docs/evaluation/rcaeval/README.md).
+
 `tracker/` holds the reviewed issue-tracker plan and dry-run tools for tracker
 and branch clean-up; see [its README](tracker/README.md).
