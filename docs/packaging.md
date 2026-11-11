@@ -12,8 +12,8 @@ before each injection, so it needs a terminal. Options:
 
 | Flag | Effect |
 | --- | --- |
-| `-Unattended` | No terminal; run every scenario and exit after the checks |
-| `-UIControls` | Start the scenarios from the dashboard buttons instead (not with `-Unattended`) |
+| `-Unattended` | No terminal; run every scenario with automated lab approval (`auto-lab`, recorded as automated, never as a person) and exit after the checks |
+| `-UIControls` | Start the scenarios from the dashboard buttons instead (not with `-Unattended`). The run still attaches a terminal (`docker run -it`), because approval is typed there; there is no unattended UI-controls mode |
 | `-GuardRejection` | Run only the unnecessary-rollback rejection scenario |
 | `-KeepCluster` | Keep the dedicated cluster after the run |
 | `-Port <n>` | Dashboard port on 127.0.0.1 (default 8765) |

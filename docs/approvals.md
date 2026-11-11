@@ -99,14 +99,19 @@ and policy. A delayed ALLOW from a revoked record is refused. A local fixture
 approval is not promoted into an authenticated approval by this API. The legacy
 `approve()`/CLI remain trusted local/demo interfaces and preserve existing shared
 contracts; they do not authenticate remote callers. The offline demo and runner
-tests still use them (`runtime/recovery_runner.py::legacy_local_approve`); the
-live harnesses do not (next section).
+tests still use them (`runtime/recovery_runner.py::legacy_local_approve`), and so
+does the Verifier acceptance script; the four live harnesses in the next section
+do not.
 
 ## Live harness approval
 
-Every live harness path creates approvals through this API. That covers the
-Executor experiment (`scripts/test_executor_live.py`), the Boutique walkthrough,
-provider mode and agent mode. `runtime/approval_session.py` starts
+Four live harness paths create approvals through this API: the Executor
+experiment (`scripts/test_executor_live.py`), the Boutique walkthrough, provider
+mode and agent mode. The Verifier acceptance script
+(`scripts/validation/test_verifier_connected_live.py`) does not: it still calls
+the local `approve()` as `live-lab-operator` and its Executor reads that record
+straight from the store (`scripts/validation/verifier_connected_lab.py`). It
+tests the Verifier, not approval. `runtime/approval_session.py` starts
 `python -m runtime.approval_http` as a child process for each run, against the
 run's `coordinator.sqlite`, on a free loopback port (`--port 0`; the child prints
 the bound port as one JSON line). The harness generates three tokens per run
@@ -126,7 +131,7 @@ launchers):
 
 | Mode | Who decides | Recorded as |
 | --- | --- | --- |
-| `interactive` (default) | A person at the harness terminal sees the target, action, baseline ID, the first 12 characters of the template hash, the proposal digest and the Guard reason codes. The model's rationale is shown as untrusted text, cut to 500 characters. The person types the exact action ID; anything else refuses and records nothing | `lab-operator` (or `--operator NAME`), `human: true` |
+| `interactive` (default) | A person at the harness terminal sees the target, action, baseline ID, the first 12 characters of the template hash, the proposal digest and the Guard reason codes. Every field is printed with control characters replaced, and the model's rationale is shown as untrusted text, cut to 500 characters. The person types the exact action ID; anything else refuses and records nothing | `lab-operator` (or `--operator NAME`: letters, digits, `.`, `_` and `-`, not `automated-lab`, `lab-guard` or `lab-executor`; checked before any cluster change), `human: true` |
 | `auto-lab` | Nobody. This is an explicit opt-in for unattended lab runs; the harness approves every escalated proposal | `automated-lab`, `human: false`, "no person decided" |
 | `reject` | Nobody. Every approval is refused, for negative tests; the run stops before any write | no approval |
 
@@ -135,12 +140,21 @@ identity, each approval (ID, operator, times) and each refusal under
 `operator_approval`. Interactive mode needs a terminal: without one, the
 harness exits before any cluster change and asks for `--approval auto-lab`.
 With `--dashboard`, the agent and walkthrough checks also require each recovery
-approval to be a managed record from the configured identity.
+approval to be a managed record from the configured identity. A
+`--guard-rejection` run asks for no approval and starts no authority, so it
+records `operator_approval` as `not-requested` with no identity.
 
 The file-backed negative cases (`missing-approval`, `hard-policy-rejection`,
 `stale-state`, the CAS race and the unnecessary-rollback scenario) still give
 the Executor a fixed approval record that never reaches the Coordinator. They
-prove refusals, not approvals. `tests/test_approval_session.py` runs the real
+prove refusals, not approvals. One more file-backed reader remains on the
+positive path: the Executor experiment starts a rival
+`python -m runtime.live_executor --approval <case>/approval.json` while it holds
+the target lock, to show the rival is refused with `TARGET_BUSY`. That file is a
+copy of the managed record, and the rival reads it from disk, not through
+`ApprovalClient`. The rival is refused at the target lock, before it reads the
+approval (`services/executor/core.py::execute`), so it cannot write while the
+harness holds the lock. It is still not an authenticated lookup. `tests/test_approval_session.py` runs the real
 child process with the real Coordinator, Guard and Executor and a fake
 Kubernetes API. Live verification is pending: no live run has used this path
 yet, and the committed live evidence predates it, so it shows pre-authorised

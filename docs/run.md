@@ -37,7 +37,9 @@ run arbitrary Kubernetes commands. When the Guard asks for approval, the termina
 that started the run shows the action's facts and waits: type the exact action
 ID to approve it, anything else refuses. The approval is created through the
 [authenticated approval API](approvals.md#live-harness-approval); it is a typed
-confirmation, not a login portal. Human approval never bypasses hard Guard
+confirmation, not a login portal. A `-UIControls` run therefore still needs that
+terminal: there is no unattended UI-controls mode, and approving from the
+dashboard is not implemented. Human approval never bypasses hard Guard
 constraints. An APPLIED result leaves the incident VERIFYING until the
 independent outcome arrives.
 

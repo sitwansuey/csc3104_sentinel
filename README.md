@@ -75,11 +75,13 @@ live recovery from injected-model tests.
 | 6 Verifier | Dependency assessments and sustained post-action outcomes | [Verifier](services/verifier/README.md) |
 
 The current source runs these components through local workers/harnesses. It
-does not deploy six independent Sentinel microservices. Live harness approvals
-go through the [authenticated approval service](docs/approvals.md#live-harness-approval):
+does not deploy six independent Sentinel microservices. The Executor experiment
+and the Boutique harness (walkthrough, provider and agent modes) approve through
+the [authenticated approval service](docs/approvals.md#live-harness-approval):
 a person types the action ID, or an unattended run opts in to recorded automated
-lab approval. No live run has used this path yet; the committed live evidence
-used pre-authorised lab approval. Deployed
+lab approval. The Verifier acceptance script still uses local lab approval. No
+live run has used this path yet; the committed live evidence used pre-authorised
+lab approval. Deployed
 acceptance and cross-host execution ownership remain unfinished; the
 [known limitations](#known-limitations-and-open-defects) list what that means
 in code. See [architecture](docs/architecture.md) for the exact boundaries.
