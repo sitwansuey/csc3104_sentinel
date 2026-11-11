@@ -28,7 +28,11 @@ MANIFEST hashes also hold on Windows checkouts.
   certificate files and anything named like a kubeconfig are never copied, even
   if a profile asks for them.
 - **Sanitised.** Values under token, password, authorization, API-key, cookie
-  and similar keys are replaced by `<redacted:hash>`. PEM blocks, JWTs,
+  and similar keys are replaced by `<redacted:hash>`, whatever their type. So
+  are the `value` of a `name`/`value` pair with a sensitive name (env and
+  header lists), the argument after a flag such as `--token`, and inline
+  `token=...`, `Authorization: ...` and `Cookie: ...` text in logs and in JSON
+  strings. PEM blocks, JWTs,
   kubeconfig key data, long base64 and known token shapes stop the collection
   with no partial bundle. Home and repository paths become `<home>` and
   `<repo>`, and local user names become `<user>`. Files over 256 KB are left
@@ -53,6 +57,12 @@ python scripts/evidence/collect.py --run <run folder> --class <class> --bundle-i
 python scripts/evidence/summarize.py
 python scripts/evidence/summarize.py --check
 ```
+
+The capture time comes from the run's own files. If they record none, a UTC
+folder stamp (`20261110T213026Z`) is used. Packaged run folders
+(`packaged-boutique-20261111-050418-...`) are named in local time with no zone,
+so the collector refuses them unless you pass `--folder-utc-offset +08:00` (the
+offset of the machine that ran them) or `--date`.
 
 CI runs the `--check` form. It fails when a generated table was hand-edited or
 is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.

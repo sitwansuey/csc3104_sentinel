@@ -139,6 +139,51 @@ class HarnessStampTests(unittest.TestCase):
                          [("fault_injected", "primary"), ("incident_observed", "primary"),
                           ("proposal_saved", "missing-approval")])
 
+    def boutique_fault_timeline(self, experiment_class, **extra):
+        from unittest.mock import patch
+        incident = {"incident_id": "INC-1"}
+        with tempfile.TemporaryDirectory() as directory:
+            experiment = experiment_class(Path(directory) / "run")
+            try:
+                with patch.object(experiment, "inject_fault"), \
+                        patch.object(experiment, "observe", side_effect=[None, incident]), \
+                        patch("time.sleep"):
+                    for name, value in extra.items():
+                        setattr(experiment, name, value)
+                    self.assertIs(experiment.fault("primary"), incident)
+            finally:
+                experiment.store.close()
+        return [(step["phase"], step["scenario"]) for step in experiment.summary["timeline"]]
+
+    def test_boutique_fault_records_injection_and_incident_phases(self):
+        from scripts.test_boutique_live import BoutiqueExperiment
+        self.assertEqual(self.boutique_fault_timeline(BoutiqueExperiment),
+                         [("fault_injected", "primary"), ("incident_observed", "primary")])
+
+    def test_connected_boutique_fault_records_injection_and_incident_phases(self):
+        from types import SimpleNamespace
+        from experiments.boutique.harness.connected import ConnectedBoutiqueExperiment
+        impact = {"home_status": 200, "add_to_cart_status": 302, "cart_status": 500, "checkout_status": 500}
+        timeline = self.boutique_fault_timeline(
+            ConnectedBoutiqueExperiment, storefront=SimpleNamespace(journey=lambda: impact),
+            record_shopping=lambda *args, **kwargs: None)
+        self.assertEqual(timeline, [("fault_injected", "primary"), ("incident_observed", "primary")])
+
+    def test_boutique_fault_without_an_incident_records_no_incident_phase(self):
+        from unittest.mock import patch
+        from scripts.test_boutique_live import BoutiqueExperiment
+        with tempfile.TemporaryDirectory() as directory:
+            experiment = BoutiqueExperiment(Path(directory) / "run")
+            try:
+                clock = iter(range(0, 1000, 100))
+                with patch.object(experiment, "inject_fault"), patch.object(experiment, "observe", return_value=None), \
+                        patch("time.sleep"), patch("time.monotonic", side_effect=lambda: next(clock)):
+                    with self.assertRaises(RuntimeError):
+                        experiment.fault("primary")
+            finally:
+                experiment.store.close()
+        self.assertEqual([step["phase"] for step in experiment.summary["timeline"]], ["fault_injected"])
+
     def test_chaos_batch_records_provenance_without_running_cluster_tools(self):
         from experiments.boutique.harness import chaos_demo
         from unittest.mock import patch

@@ -11,7 +11,7 @@ Example:
 """
 
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import getpass
 import hashlib
 import json
@@ -106,16 +106,38 @@ def _read_json(path):
         return None
 
 
-def _stamp(value):
-    for pattern, layout in ((r"\d{8}T\d{6}Z", "%Y%m%dT%H%M%SZ"), (r"\d{8}-\d{6}", "%Y%m%d-%H%M%S")):
-        match = re.search(pattern, value)
-        if match:
-            return datetime.strptime(match.group(0), layout).replace(tzinfo=timezone.utc)
+UTC_STAMP = re.compile(r"\d{8}T\d{6}Z")
+# Packaged run folders are named from the host's local clock with no zone.
+LOCAL_STAMP = re.compile(r"\d{8}-\d{6}")
+UTC_OFFSET = re.compile(r"([+-])(\d{2}):?(\d{2})")
+
+
+def parse_utc_offset(value):
+    """'+08:00' or '-0530' as a timezone; anything else is an error."""
+    match = UTC_OFFSET.fullmatch(value or "")
+    if not match or int(match.group(2)) > 14 or int(match.group(3)) > 59:
+        raise ValueError("UTC offset must look like +08:00 or -05:30")
+    minutes = int(match.group(2)) * 60 + int(match.group(3))
+    return timezone(timedelta(minutes=-minutes if match.group(1) == "-" else minutes))
+
+
+def _stamp(value, local_offset=None):
+    """UTC time from a folder name. A zone-less local stamp needs the offset of the clock that wrote it."""
+    match = UTC_STAMP.search(value)
+    if match:
+        return datetime.strptime(match.group(0), "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+    match = LOCAL_STAMP.search(value)
+    if match and local_offset is not None:
+        local = datetime.strptime(match.group(0), "%Y%m%d-%H%M%S").replace(tzinfo=local_offset)
+        return local.astimezone(timezone.utc)
     return None
 
 
-def captured_at(run_dir):
-    """Best start time from the run's own files, else its folder name, else None."""
+def captured_at(run_dir, local_offset=None):
+    """Best start time from the run's own files, else its folder name, else None.
+
+    A local-time folder stamp is never read as UTC: without local_offset it gives None.
+    """
     for name in SUMMARY_FILES:
         value = _read_json(Path(run_dir) / name)
         if isinstance(value, dict):
@@ -125,7 +147,7 @@ def captured_at(run_dir):
             attempts = value.get("baseline_attempts")
             if isinstance(attempts, list) and attempts and isinstance(attempts[0], dict) and attempts[0].get("at"):
                 return attempts[0]["at"]
-    stamp = _stamp(Path(run_dir).name)
+    stamp = _stamp(Path(run_dir).name, local_offset)
     return stamp.isoformat().replace("+00:00", "Z") if stamp else None
 
 
@@ -172,7 +194,8 @@ def default_context(repo_root=None):
 
 def collect(run_dir, run_class, bundle_id, *, evidence_root=EVIDENCE, profiles=None, date=None,
             inferred_revision=None, inferred_basis=None, include_model_io=False, context=None,
-            file_cap=sanitise.FILE_CAP_BYTES, bundle_cap=sanitise.BUNDLE_CAP_BYTES, exports=()):
+            file_cap=sanitise.FILE_CAP_BYTES, bundle_cap=sanitise.BUNDLE_CAP_BYTES, exports=(),
+            folder_utc_offset=None):
     """Create evidence_root/<date>/<bundle_id>/ and append it to index.json."""
     run_dir, evidence_root = Path(run_dir), Path(evidence_root)
     profiles = profiles if profiles is not None else load_profiles()
@@ -185,9 +208,13 @@ def collect(run_dir, run_class, bundle_id, *, evidence_root=EVIDENCE, profiles=N
     index = load_index(evidence_root)
     if any(entry["bundle_id"] == bundle_id for entry in index["bundles"]):
         raise FileExistsError("Bundle id already in the index: " + bundle_id)
-    started = captured_at(run_dir)
+    local_offset = parse_utc_offset(folder_utc_offset) if folder_utc_offset is not None else None
+    started = captured_at(run_dir, local_offset)
     date = date or (started[:10] if started else None)
     if not date or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        if LOCAL_STAMP.search(run_dir.name) and not UTC_STAMP.search(run_dir.name):
+            raise ValueError("The run folder name is local time with no zone; pass --folder-utc-offset "
+                             "(for example +08:00) or --date YYYY-MM-DD")
         raise ValueError("Could not derive the capture date; pass --date YYYY-MM-DD")
     destination = evidence_root / date / bundle_id
     if destination.exists():
@@ -254,6 +281,9 @@ def main(argv=None):
     parser.add_argument("--bundle-id", required=True)
     parser.add_argument("--evidence-root", type=Path, default=EVIDENCE)
     parser.add_argument("--date", help="Capture date YYYY-MM-DD when the run does not record one")
+    parser.add_argument("--folder-utc-offset",
+                        help="UTC offset (such as +08:00) of the clock that named a local-time run folder "
+                             "(YYYYMMDD-HHMMSS); used only when the run files record no start time")
     parser.add_argument("--repo-root", type=Path, help="Checkout the run came from; its path becomes <repo>")
     parser.add_argument("--inferred-revision", help="Revision for runs that predate provenance stamping")
     parser.add_argument("--inferred-basis", help="How the inferred revision was chosen")
@@ -265,7 +295,8 @@ def main(argv=None):
         manifest = collect(args.run, args.run_class, args.bundle_id, evidence_root=args.evidence_root,
                            date=args.date, inferred_revision=args.inferred_revision,
                            inferred_basis=args.inferred_basis, include_model_io=args.include_model_io,
-                           context=default_context(args.repo_root), exports=tuple(args.export))
+                           context=default_context(args.repo_root), exports=tuple(args.export),
+                           folder_utc_offset=args.folder_utc_offset)
     except (SanitiseError, ValueError, FileExistsError) as error:
         print("FAIL: " + str(error), file=sys.stderr)
         return 1

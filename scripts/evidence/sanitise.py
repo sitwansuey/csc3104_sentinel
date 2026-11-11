@@ -11,7 +11,7 @@ import hashlib
 import json
 import re
 
-SANITISER_VERSION = "1"
+SANITISER_VERSION = "2"
 FILE_CAP_BYTES = 256 * 1024
 BUNDLE_CAP_BYTES = 3 * 1024 * 1024
 MODEL_IO_CAP = 4096
@@ -20,6 +20,10 @@ MODEL_IO_CAP = 4096
 REDACT_KEY = re.compile(r"token|password|passwd|authorization|api[_-]?key|cookie|private[_-]?key|"
                         r"session[_-]?secret|client[_-]?secret", re.IGNORECASE)
 KEEP_KEYS = frozenset({"secretName"})
+# A number under a plural '...tokens' key is a model token count, not a secret.
+COUNT_KEY = re.compile(r"tokens$", re.IGNORECASE)
+# A command-line flag whose next argument is a secret, such as kubectl --token VALUE.
+SECRET_FLAG = re.compile(r"--?[A-Za-z_-]*(?:token|password|passwd|api[_-]?key|secret)[A-Za-z_-]*", re.IGNORECASE)
 MODEL_IO_KEYS = frozenset({"prompt", "prompts", "response", "responses", "messages", "raw_response", "completion"})
 
 HARD_FAIL = (
@@ -35,6 +39,8 @@ HARD_FAIL = (
 BEARER = re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._~+/=-]{8,}")
 TEXT_SECRET = re.compile(r"(?i)\b((?:[a-z_-]*)(?:token|password|passwd|api[_-]?key|secret)[a-z_-]*)(\s*[:=]\s*)"
                          r"(\"[^\"]*\"|'[^']*'|[^\s,;]+)")
+# HTTP header forms: the whole value after the colon is secret, whatever the scheme.
+HEADER_SECRET = re.compile(r"(?i)\b((?:proxy-)?authorization|set-cookie|cookie)(\s*:\s*)([^\r\n\"']+)")
 HOME_PATTERNS = (
     re.compile(r"[A-Za-z]:(?:\\\\|\\|/)Users(?:\\\\|\\|/)[^\\/\"'\s:;,]+", re.IGNORECASE),
     re.compile(r"(?<![\w.-])/home/[^/\"'\s:;,]+"),
@@ -89,16 +95,39 @@ def rewrite_paths(text, context):
 
 
 def _string(value, context):
+    """Rewrite paths and redact inline secrets in any text, JSON string values included."""
+    def replace(match):
+        context.redactions += 1
+        return match.group(1) + match.group(2) + redacted(match.group(3))
+    value = HEADER_SECRET.sub(replace, value)
+    value = TEXT_SECRET.sub(replace, value)
     value = rewrite_paths(value, context)
     value, count = BEARER.subn(lambda match: match.group(1) + " " + redacted(match.group(0)), value)
     context.redactions += count
     return value
 
 
+def _sensitive(key):
+    return isinstance(key, str) and key not in KEEP_KEYS and bool(REDACT_KEY.search(key))
+
+
+def _redact_value(value, key, context):
+    """Redact anything under a sensitive key except null, flags and token counts."""
+    if value is None or value == "" or isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and COUNT_KEY.search(key):
+        return value
+    context.redactions += 1
+    text = value if isinstance(value, str) else json.dumps(value, sort_keys=True, ensure_ascii=False)
+    return redacted(text)
+
+
 def _walk(value, context, key=None):
     if isinstance(value, dict):
         if "clusters" in value and "users" in value and isinstance(value.get("users"), list):
             raise SanitiseError("refused, kubeconfig document")
+        # Kubernetes env lists and HTTP header lists carry the secret name in a sibling 'name'.
+        pair_secret = _sensitive(value.get("name"))
         result = {}
         for name, item in value.items():
             if name in MODEL_IO_KEYS and not context.include_model_io:
@@ -106,14 +135,20 @@ def _walk(value, context, key=None):
                 continue
             if name in MODEL_IO_KEYS and isinstance(item, str) and len(item) > MODEL_IO_CAP:
                 item = item[:MODEL_IO_CAP] + "...<truncated>"
-            result[rewrite_paths(name, context)] = _walk(item, context, name)
+            if _sensitive(name):
+                result[rewrite_paths(name, context)] = _redact_value(item, name, context)
+            elif pair_secret and name == "value":
+                result[name] = _redact_value(item, "value", context)
+            else:
+                result[rewrite_paths(name, context)] = _walk(item, context, name)
         return result
     if isinstance(value, list):
-        return [_walk(item, context, key) for item in value]
+        result = []
+        for index, item in enumerate(value):
+            flag = index > 0 and isinstance(value[index - 1], str) and SECRET_FLAG.fullmatch(value[index - 1])
+            result.append(_redact_value(item, "value", context) if flag else _walk(item, context, key))
+        return result
     if isinstance(value, str):
-        if key is not None and key not in KEEP_KEYS and REDACT_KEY.search(key) and value:
-            context.redactions += 1
-            return redacted(value)
         return _string(value, context)
     return value
 
@@ -124,10 +159,6 @@ def _dump(value):
 
 def sanitise_text(text, name, context):
     """Sanitise free text (logs, YAML, CSV): inline secrets are redacted."""
-    def replace(match):
-        context.redactions += 1
-        return match.group(1) + match.group(2) + redacted(match.group(3))
-    text = TEXT_SECRET.sub(replace, text)
     return _string(text, context)
 
 

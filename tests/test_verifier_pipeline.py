@@ -262,6 +262,12 @@ class BoutiqueRoleSixIntegrationTests(unittest.TestCase):
                     messages = [json.loads(row[0]) for row in experiment.store.db.execute("SELECT payload FROM messages")]
                     self.assertEqual(sum(m["kind"] == "dependency_result" for m in messages), 2)
                     self.assertEqual(sum(m["kind"] == "outcome" for m in messages), 2)
+                    phases = [(step["phase"], step["scenario"]) for step in experiment.summary["timeline"]]
+                    for label in ("approved-rollback", "crash-after-write"):
+                        self.assertIn(("guard_decision", label), phases)
+                        self.assertIn(("outcome_recorded", label), phases)
+                        self.assertLess(phases.index(("guard_decision", label)),
+                                        phases.index(("outcome_recorded", label)))
             finally:
                 experiment.store.close()
 

@@ -1,6 +1,8 @@
 """Collector: allowlist only, a code deny-list a profile cannot override, hashed MANIFEST."""
 
+import contextlib
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -142,12 +144,65 @@ class ManifestTests(unittest.TestCase):
                 collect.collect(undated, "connected-harness", "live-h", evidence_root=Path(temp) / "e",
                                 context=context())
 
-    def test_capture_date_falls_back_to_the_folder_timestamp(self):
+    def test_capture_date_falls_back_to_a_utc_folder_timestamp(self):
         with tempfile.TemporaryDirectory() as temp:
-            run = Path(temp) / "packaged-boutique-20261111-234949-19d77e"
-            write(run / "host-cleanup.json", {"exit_code": 0})
-            collect.collect(run, "packaged", "packaged-a", evidence_root=Path(temp) / "evidence", context=context())
-            self.assertTrue((Path(temp) / "evidence/2026-11-11/packaged-a/host-cleanup.json").exists())
+            run = Path(temp) / "boutique-live-20261110T213026Z-8268a2"
+            write(run / "rbac-checks.json", [])
+            manifest = collect.collect(run, "agent", "live-a", evidence_root=Path(temp) / "evidence",
+                                       context=context())
+            self.assertEqual(manifest["captured_at"], "2026-11-10T21:30:26Z")
+            self.assertTrue((Path(temp) / "evidence/2026-11-10/live-a/rbac-checks.json").exists())
+
+    def test_local_folder_timestamp_is_never_read_as_utc(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = Path(temp) / "packaged-boutique-20261111-050418-17719f"
+            write(run / "host-cleanup.json", {"exit_code": 1})
+            evidence = Path(temp) / "evidence"
+            with self.assertRaisesRegex(ValueError, "local time with no zone; pass --folder-utc-offset"):
+                collect.collect(run, "packaged", "packaged-a", evidence_root=evidence, context=context())
+            self.assertFalse(evidence.exists() and any(evidence.rglob("packaged-a")))
+            self.assertIsNone(collect.captured_at(run))
+
+    def test_local_folder_timestamp_uses_the_given_utc_offset(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = Path(temp) / "packaged-boutique-20261111-050418-17719f"
+            write(run / "host-cleanup.json", {"exit_code": 1})
+            evidence = Path(temp) / "evidence"
+            manifest = collect.collect(run, "packaged", "packaged-a", evidence_root=evidence, context=context(),
+                                       folder_utc_offset="+08:00")
+            self.assertEqual(manifest["captured_at"], "2026-11-10T21:04:18Z")
+            self.assertTrue((evidence / "2026-11-10/packaged-a/host-cleanup.json").exists())
+            entry = json.loads((evidence / "index.json").read_text(encoding="utf-8"))["bundles"][0]
+            self.assertEqual((entry["path"], entry["captured_at"]), ("2026-11-10/packaged-a", "2026-11-10T21:04:18Z"))
+            west = collect.captured_at(run, collect.parse_utc_offset("-0530"))
+            self.assertEqual(west, "2026-11-11T10:34:18Z")
+
+    def test_explicit_date_without_offset_records_no_capture_time(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = Path(temp) / "packaged-boutique-20261111-050418-17719f"
+            write(run / "host-cleanup.json", {"exit_code": 1})
+            manifest = collect.collect(run, "packaged", "packaged-a", evidence_root=Path(temp) / "evidence",
+                                       context=context(), date="2026-11-10")
+            self.assertIsNone(manifest["captured_at"])
+
+    def test_run_file_start_time_wins_over_the_folder_offset(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = Path(temp) / "packaged-boutique-20261111-050129-26a07a"
+            write(run / "data/evidence/summary.json", {"started_at": "2026-11-10T21:02:08Z"})
+            self.assertEqual(collect.captured_at(run, collect.parse_utc_offset("+05:00")), "2026-11-10T21:02:08Z")
+
+    def test_bad_utc_offsets_are_refused(self):
+        for value in ("8", "+8:00", "UTC+8", "+15:00", "+08:60", ""):
+            with self.assertRaises(ValueError):
+                collect.parse_utc_offset(value)
+        with tempfile.TemporaryDirectory() as temp:
+            run = Path(temp) / "packaged-boutique-20261111-050418-17719f"
+            write(run / "host-cleanup.json", {"exit_code": 1})
+            with contextlib.redirect_stderr(io.StringIO()) as error:
+                code = collect.main(["--run", str(run), "--class", "packaged", "--bundle-id", "packaged-a",
+                                     "--evidence-root", str(Path(temp) / "evidence"), "--folder-utc-offset", "+8"])
+            self.assertEqual(code, 1)
+            self.assertIn("UTC offset must look like", error.getvalue())
 
 
 class JournalExportTests(unittest.TestCase):

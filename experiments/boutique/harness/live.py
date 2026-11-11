@@ -435,6 +435,7 @@ class BoutiqueExperiment(Experiment):
         elif self.pause_before_injection:
             input("Baseline ready. Press Enter to inject the " + label + " bad rollout (Ctrl+C aborts): ")
         self.inject_fault()
+        self.phase("fault_injected", label)
         deadline = time.monotonic() + 130
         index = 0
         consecutive_errors = 0
@@ -457,6 +458,7 @@ class BoutiqueExperiment(Experiment):
             if incident:
                 # Keep the existing evidence filenames used by the original lab.
                 save(self.directory / (label + "-incident.json"), incident)
+                self.phase("incident_observed", label)
                 return incident
             index += 1
             time.sleep(2)

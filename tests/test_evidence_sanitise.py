@@ -52,6 +52,57 @@ class RedactionTests(unittest.TestCase):
         self.assertNotIn("hunter2hunter", log)
         self.assertEqual((count, log_count), (1, 2))
 
+    def assertGone(self, value, secret, name="file.json"):
+        text, count = clean(value, name)
+        self.assertNotIn(secret, text)
+        self.assertIn("<redacted:", text)
+        self.assertGreaterEqual(count, 1)
+        return text
+
+    def test_basic_authorization_and_cookie_headers_in_text_are_redacted(self):
+        log = self.assertGone(b'curl -H "Authorization: Basic dXNlcjpwYXNzd29yZA==" http://x\n',
+                              "dXNlcjpwYXNzd29yZA", "a.log")
+        self.assertIn('"Authorization: <redacted:', log)
+        self.assertTrue(log.rstrip().endswith('" http://x'))
+        self.assertGone(b"Cookie: session=abcdef1234567890\n", "abcdef1234567890", "b.log")
+        self.assertGone(b"Set-Cookie: sid=abcdef1234567890; HttpOnly\n", "abcdef1234567890", "c.log")
+        self.assertGone(b"Proxy-Authorization: Digest abcdef1234567890\n", "abcdef1234567890", "d.log")
+
+    def test_inline_secrets_inside_json_strings_are_redacted(self):
+        self.assertGone({"stdout": "users:\n- user:\n    token: zzzzzzzzzzzzzzzz\n"}, "zzzzzzzzzzzzzzzz")
+        self.assertGone({"args": "--token=abcdefghijklmnop"}, "abcdefghijklmnop")
+        self.assertGone({"detail": 'curl -H "Authorization: Basic dXNlcjpwYXNzd29yZA=="'}, "dXNlcjpwYXNzd29yZA")
+        self.assertGone({"detail": "Cookie: session=abcdef1234567890"}, "abcdef1234567890")
+        self.assertGone(b'{"note": "password: hunter2hunter"}\n', "hunter2hunter", "events.jsonl")
+
+    def test_name_value_pairs_with_a_sensitive_name_are_redacted(self):
+        text = self.assertGone({"headers": [{"name": "Authorization", "value": "Basic dXNlcjpwYXNzd29yZA=="}]},
+                               "dXNlcjpwYXNzd29yZA")
+        self.assertEqual(json.loads(text)["headers"][0]["name"], "Authorization")
+        self.assertGone({"env": [{"name": "API_KEY", "value": "sk-abcdef0123456789"}]}, "sk-abcdef0123456789")
+        self.assertGone({"env": [{"name": "DB_PASSWORD", "value": 123456789}]}, "123456789")
+
+    def test_argument_after_a_secret_flag_is_redacted(self):
+        text = self.assertGone({"cmd": ["kubectl", "--token", "abcdefghijklmnop", "get", "pods"]},
+                               "abcdefghijklmnop")
+        self.assertEqual(json.loads(text)["cmd"][3:], ["get", "pods"])
+        self.assertGone({"cmd": ["login", "-password", "hunter2hunter"]}, "hunter2hunter")
+
+    def test_any_non_null_value_under_a_sensitive_key_is_redacted(self):
+        self.assertGone({"token": {"value": "s3cr3tvalue"}}, "s3cr3tvalue")
+        self.assertGone({"password": 123456789}, "123456789")
+        self.assertGone({"api_key": ["k-abcdef", "k-ghijkl"]}, "k-abcdef")
+        self.assertGone({"client_secret": 1.5e10}, "15000000000")
+
+    def test_ordinary_pairs_flags_nulls_and_counts_are_kept(self):
+        value = {"env": [{"name": "PORT", "value": "8080"}, {"name": "API_KEY", "valueFrom": {"secretKeyRef":
+                 {"name": "api", "key": "k"}}}], "cmd": ["kubectl", "--context", "kind-x", "get"],
+                 "token": None, "password": "", "max_tokens": 512, "automountServiceAccountToken": False,
+                 "detail": "Guard decision recorded with reason OPERATOR_APPROVAL_REQUIRED"}
+        text, count = clean(value)
+        self.assertEqual(json.loads(text), value)
+        self.assertEqual(count, 0)
+
     def test_model_io_is_dropped_unless_requested_then_truncated(self):
         record = {"role": "Analyzer", "seconds": 3.2, "prompt": "word " * 1000, "response": "short"}
         dropped, _ = clean(record)
