@@ -18,6 +18,9 @@ sys.path.insert(0, str(ROOT))
 
 from services.guard.core import assess_state_policy, assert_decision_usable, evaluate
 from services.guard.common import json_sha256, utc_timestamp
+from shared import log
+
+LOG = log.get_logger("guard_evaluation")
 
 
 DEFAULT_CASES = ROOT / "data/experimentation/guard/v1/cases.json"
@@ -158,7 +161,8 @@ def run_evaluation(cases_path=DEFAULT_CASES, *, repeats=30, warmups=2):
                 started = perf_counter_ns()
                 try:
                     result = evaluate_configuration(name, candidate)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - a failed trial is scored as ERROR, never as a refusal
+                    log.failure(LOG, "guard_evaluation.trial.failed", exc)
                     # Errors are never scored as successful refusals. Do not echo input data.
                     result = {"verdict": "ERROR", "reason_codes": [type(exc).__name__]}
                 elapsed = (perf_counter_ns() - started) / 1_000_000

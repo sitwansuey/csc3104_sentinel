@@ -11,6 +11,9 @@ import sqlite3
 from services.observer.core import Observer, validate_observation
 from shared.canonical import canonical_json as encoded
 from shared.contracts import validate_message
+from shared import log
+
+LOG = log.get_logger("observer")
 
 
 class ObserverStore:
@@ -110,7 +113,8 @@ class ObserverStore:
         for incident in self.pending():
             try:
                 sink(deepcopy(incident))
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - the incident stays queued and is sent on the next flush
+                log.failure(LOG, "observer.delivery.failed", error, incident_id=incident.get("incident_id"))
                 self._delivery_status(type(error).__name__)
                 return {"delivered": delivered, "error": type(error).__name__}
             # A crash before this acknowledgment replays the identical message.

@@ -13,9 +13,11 @@ from uuid import uuid4
 
 from services.executor.reconciliation import ABSENT, ACTION_ANNOTATION, Basis, classify, observe
 from services.executor.store import ActionConflict, canonical_json, fingerprint
+from shared import log
 from shared.contracts import ContractError, validate_message
 
 
+LOG = log.get_logger("executor")
 ESCALATION_NOTE = "Operator action required"
 
 # Fixed sentences per basis; server text is never echoed into results.
@@ -205,6 +207,10 @@ def _record(proposal, adapters, row, decision, *, schedule):
     return result
 
 
+def _action_id(proposal):
+    return proposal.get("action_id") if isinstance(proposal, dict) else None
+
+
 def _observation(proposal, adapters, snapshot=None):
     if snapshot is not None:
         return observe(snapshot, proposal["target"])
@@ -212,7 +218,8 @@ def _observation(proposal, adapters, snapshot=None):
         return observe(_read(proposal, adapters), proposal["target"])
     except TargetAbsent:
         return ABSENT
-    except Exception:
+    except Exception as error:  # noqa: BLE001 - any read failure leaves the outcome unknown; reconcile later
+        log.failure(LOG, "executor.observe.unavailable", error, action_id=_action_id(proposal))
         return None
 
 
@@ -347,7 +354,8 @@ def execute(proposal: dict, adapters: ExecutionAdapters) -> dict:
                                "Fresh Guard validation refused execution: " + ", ".join(check.decision["reason_codes"]))
             template = _template(proposal, check.baseline)
             adapters.authorizer.assert_usable(check, now=_now(adapters))
-        except Exception:
+        except Exception as error:  # noqa: BLE001 - fail closed: any pre-write error refuses the write
+            log.failure(LOG, "executor.prewrite.refused", error, action_id=_action_id(proposal))
             return _finish(proposal, adapters, "FAILED", version,
                            "Required state, baseline or fresh authorization is unavailable or invalid; no write was attempted.")
 
@@ -359,7 +367,8 @@ def execute(proposal: dict, adapters: ExecutionAdapters) -> dict:
         # the last local point before the external mutation.
         try:
             adapters.authorizer.assert_usable(check, now=_now(adapters))
-        except Exception:
+        except Exception as error:  # noqa: BLE001 - fail closed: authority must be usable at the last moment
+            log.failure(LOG, "executor.authorization.withdrawn", error, action_id=_action_id(proposal))
             return _finish(proposal, adapters, "FAILED", version,
                            "Authorization expired or was withdrawn before the API call; no write was attempted.")
         try:
@@ -374,8 +383,9 @@ def execute(proposal: dict, adapters: ExecutionAdapters) -> dict:
                 return adopted
             return _finish(proposal, adapters, "CONFLICT", version,
                            "Conditional write was refused without committing; refresh state and create a new proposal.")
-        except Exception:
+        except Exception as error:  # noqa: BLE001 - an unknown write error may have committed; reconcile
             # Timeouts/transport errors cannot distinguish rejection from commit.
+            log.failure(LOG, "executor.write.indeterminate", error, action_id=_action_id(proposal))
             return _reconcile(proposal, adapters, schedule=False)
         # A success response also needs the exact action/template evidence. An
         # invalid or incomplete response triggers a fresh read, never a retry.

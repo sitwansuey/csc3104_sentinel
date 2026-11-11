@@ -33,7 +33,9 @@ from services.guard.preview import _private_file
 from services.executor.kubernetes_adapter import KubectlDeploymentAPI, WriteOutcomeUnknown
 from services.observer.kubernetes_adapter import deployment_to_observation
 from services.observer.core import Observer
-from shared import provenance
+from shared import log, provenance
+
+LOG = log.get_logger("recovery")
 
 
 CONTEXT = "kind-sentinel-lab"
@@ -485,7 +487,8 @@ class Experiment:
                     save(path, patch)
                     self.kubectl("patch", "deployment", self.name, "--type=json", "--patch-file", str(path))
                     self.summary["operator_emergency_restore"] = True
-                except Exception:
+                except Exception as restore_error:  # noqa: BLE001 - recorded; the original failure is re-raised below
+                    log.failure(LOG, "recovery.emergency_restore.failed", restore_error, level=log.ERROR)
                     self.summary["operator_emergency_restore"] = False
             raise
         finally:
@@ -535,7 +538,8 @@ def main():
     print("Live executor evidence: " + str(experiment.directory), flush=True)
     try:
         experiment.run()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - top-level boundary: report the failure and exit 1
+        log.failure(LOG, "recovery.experiment.failed", exc, level=log.ERROR)
         print("Live executor test FAILED: " + str(exc), file=sys.stderr)
         return 1
     print("PASS: live restricted executor and crash reconciliation; Coordinator remains VERIFYING", flush=True)

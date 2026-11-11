@@ -6,6 +6,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from runtime.security_store import record
 from services.grpc_inspection import MAX_BODY, inspect_request
+from shared import log
+
+LOG = log.get_logger("security_inspector")
 
 
 def make_server(journal, *, port=9001, stdout_events=False):
@@ -47,7 +50,8 @@ def make_server(journal, *, port=9001, stdout_events=False):
             except OSError:
                 self.send_error(503)
                 return
-            except Exception:
+            except Exception as error:  # noqa: BLE001 - fail closed: any other inspection error answers 503
+                log.failure(LOG, "inspector.request.failed", error, level=log.ERROR)
                 self.send_error(503)
                 return
             self.send_response(200 if result["verdict"] == "ALLOW" else 403)

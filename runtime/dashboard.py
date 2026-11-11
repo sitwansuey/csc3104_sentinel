@@ -13,7 +13,9 @@ import sqlite3
 from urllib.parse import urlsplit
 
 from services.coordinator.read import read_records
+from shared import log
 
+LOG = log.get_logger("dashboard")
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "dashboard" / "dist"
 LIMIT = 600
@@ -151,7 +153,8 @@ def make_server(db_path, telemetry_path, *, port=8765, provider=None, bind="127.
                             return
                         result = {**result, "lab": lab_control.snapshot()}
                     body = json.dumps(result, allow_nan=False).encode("utf-8")
-                except Exception:
+                except Exception as error:  # noqa: BLE001 - a failed read answers 503 and the server keeps serving
+                    log.failure(LOG, "dashboard.snapshot.failed", error)
                     self.send_error(503, "Snapshot unavailable")
                     return
                 content_type = "application/json; charset=utf-8"

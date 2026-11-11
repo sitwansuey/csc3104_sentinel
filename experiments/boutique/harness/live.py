@@ -23,7 +23,10 @@ from services.verifier.core import inspect_dependencies
 from services.verifier.store import VerificationStore, observation_seconds
 from services.executor.store import fingerprint
 from services.observer.kubernetes import CollectionError, KubernetesEvidenceCollector, KubectlReader
+from shared import log
 from shared.provenance import tool_versions
+
+LOG = log.get_logger("experiment")
 
 # A Deployment read through kubectl can fail transiently (non-zero exit, timeout, bad JSON).
 READ_ERRORS = (RuntimeError, ValueError, OSError, subprocess.SubprocessError)
@@ -586,7 +589,8 @@ def main():
         if experiment.lab_control:
             experiment.lab_control.finish("STOPPED")
         return 130
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - top-level boundary: record FAILED, stop the lab and exit 1
+        log.failure(LOG, "experiment.failed", exc, level=log.ERROR)
         experiment.summary.update(status="FAILED", integration_error=type(exc).__name__)
         if experiment.lab_control:
             experiment.lab_control.finish("FAILED")

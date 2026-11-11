@@ -5,6 +5,9 @@ import math
 from services.guard.common import json_sha256
 from services.planner.core import propose
 from shared.contracts import validate_message
+from shared import log
+
+LOG = log.get_logger("planner")
 
 
 def escalation(incident):
@@ -52,9 +55,11 @@ def prepare(incident, *, journal, baseline_reader, retriever, provider,
                     if isinstance(usage, dict):
                         journal.save_context(incident["incident_id"], token, snapshot, usage)
             proposal = propose(incident, baseline_reader(deepcopy(incident)), retriever, recorded_provider)
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - model and provider errors are retried, then escalated
             attempt = journal.get(incident["incident_id"])["attempts"]
             error_code = "INVALID_PROPOSAL" if isinstance(error, ValueError) else "PROVIDER_UNAVAILABLE"
+            log.failure(LOG, "planner.attempt.failed", error, incident_id=incident["incident_id"],
+                        attempt=attempt, reason=error_code)
             if attempt < max_attempts:
                 journal.retry(incident["incident_id"], token, error_code=error_code,
                               delay_seconds=min(3600, retry_seconds * 2 ** (attempt - 1)))

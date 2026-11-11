@@ -17,6 +17,9 @@ import urllib.request
 import urllib.error
 from .jsonschema_lite import check_schema, validate
 from .progress import notify
+from shared import log
+
+LOG = log.get_logger("model")
 
 DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 MAX_RESPONSE_BYTES_LIMIT = 8 * 1024 * 1024
@@ -179,7 +182,8 @@ def _error_detail(error, deadline=None):
     try:
         body = _read_limited(error, ERROR_DETAIL_BYTES,
                              time.monotonic() + 5 if deadline is None else deadline)[:ERROR_DETAIL_BYTES]
-    except Exception:
+    except Exception as caught:  # noqa: BLE001 - Ollama's reason is optional; the HTTP status is still reported
+        log.failure(LOG, "model.error_detail.unavailable", caught)
         return ""
     finally:
         error.close()
@@ -443,8 +447,8 @@ class Ollama:
         except (urllib.error.URLError, ConnectionError):
             # Do not wait on every remaining endpoint of a server that is down.
             self._unreachable = True
-        except Exception:
-            pass
+        except Exception as error:  # noqa: BLE001 - optional runtime details never stop a run
+            log.failure(LOG, "model.optional.failed", error, path=path)
         return None
 
     def runtime_info(self):

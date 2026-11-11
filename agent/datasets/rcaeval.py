@@ -12,6 +12,10 @@ import sys
 import time
 from urllib.request import Request, urlopen
 
+from shared import log
+
+LOG = log.get_logger("rcaeval")
+
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "data/experimentation/sources/rcaeval.json"
 FILENAMES = {"metrics.parquet", "logs.parquet", "traces.parquet", "inject_time.txt", "root_cause.txt"}
@@ -221,7 +225,8 @@ def main(argv=None):
                 try:
                     future.result()
                     state["verified_files"] += 1
-                except Exception as error:
+                except Exception as error:  # noqa: BLE001 - a failed file is recorded and the download continues
+                    log.failure(LOG, "rcaeval.download.failed", error)
                     state["errors"].append({"file": futures[future], "error": str(error)})
                 completed = state["verified_files"] + len(state["errors"])
                 if completed % 25 == 0 or completed == len(selected):

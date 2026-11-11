@@ -16,6 +16,9 @@ from runtime.dashboard import make_server
 from runtime.telemetry import emit_cluster_snapshot, emit_event
 from scripts.dashboard import ensure_frontend
 from experiments.recovery.live import require, save
+from shared import log
+
+LOG = log.get_logger("dashboard")
 
 
 def _instant(value):
@@ -60,14 +63,16 @@ class BoutiqueDashboard:
                 cluster = collect_cluster_snapshot(context=self.context, cluster_id=self.cluster_id, namespace=self.namespace)
                 emit_cluster_snapshot(self.telemetry, cluster)
                 self.event(2, "heartbeat", "Dashboard cluster inventory collected; missing usage metrics remain unavailable")
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - the dashboard shows the failure and retries
                 # Logs and credentials from subprocess exceptions are not published.
+                log.failure(LOG, "dashboard.collection.failed", error)
                 self.event(2, "error", "Dashboard collection failed: " + type(error).__name__)
             if self.application_collector:
                 try:
                     emit_observation(self.telemetry, cluster_id=self.cluster_id, namespace=self.namespace,
                                      stage="inventory", services=self.application_collector())
-                except Exception as error:
+                except Exception as error:  # noqa: BLE001 - the dashboard shows the failure and retries
+                    log.failure(LOG, "dashboard.inventory.failed", error)
                     self.event(2, "error", "Boutique inventory collection failed: " + type(error).__name__)
             self.stop.wait(2)
 

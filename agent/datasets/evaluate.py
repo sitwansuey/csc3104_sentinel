@@ -17,8 +17,10 @@ import subprocess
 import sys
 import time
 
+from shared import log
 from .rcaeval import ROOT, checked_path, parquet, save, settings, validate_local_plan, verify
 
+LOG = log.get_logger("rcaeval")
 REFERENCE_REVISION = "2f703059960517b024c504c817771fa85294aa09"
 FAULTS = {"cpu", "mem", "disk", "delay", "loss", "socket"}
 
@@ -353,7 +355,8 @@ def run(tasks_root, output, method, timeout, *, resume=False, config=None):
             prediction = json.loads(result_path.read_text(encoding="utf-8"))
             if prediction.get("case_id") != case_id or not isinstance(prediction.get("ranks"), list):
                 raise ValueError("Invalid worker output")
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - a failed case is scored as an error and the run continues
+            log.failure(LOG, "rcaeval.case.failed", error)
             prediction = {"case_id": case_id, "ranks": [], "status": "error", "method": method,
                           "error": str(error), "usage": {"wall_time_s": time.monotonic() - started}}
         append_jsonl(predictions_path, prediction)

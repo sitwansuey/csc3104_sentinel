@@ -21,6 +21,9 @@ from runtime.security_store import record, update_alert
 from scripts.security.scan_image_security import run_scan
 from services.executor.store import LocalTargetCoordinator, TargetBusy
 from services.image_security import image_reference
+from shared import log
+
+LOG = log.get_logger("security")
 
 
 def stamp():
@@ -96,7 +99,8 @@ def scan_cycle(inventory, journal, directory, *, scanner=run_scan, progress=None
         image = item.get("local_image") or item["image"]
         try:
             report = scanner(image, directory, cache_directory=directory / "cache", **({"local": True} if local else {}))
-        except Exception:
+        except Exception as error:  # noqa: BLE001 - a failed scan is recorded as UNKNOWN, never as clean
+            log.failure(LOG, "security.scan.failed", error)
             report = {"image": "local://"+image if local else image, "status": "UNKNOWN", "counts": {},
                       "findings": [], "automatic_patching": False, "detail": "Scan failed; retry before assessing this image."}
         record(journal, "image_scan", report)

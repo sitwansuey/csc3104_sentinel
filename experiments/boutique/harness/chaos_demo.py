@@ -15,7 +15,9 @@ from experiments.boutique.harness.chaos import (
     Cluster, deployments_ready, injected, scenario, setup, validate_scope,
 )
 from experiments.boutique.harness.collection import Collector, Writer, metric_rows, namespace_summary, save, utc
-from shared import provenance
+from shared import log, provenance
+
+LOG = log.get_logger("chaos")
 
 OWNER = "sentinel.dev/run-id"
 LOCK = "sentinel-chaos-demo-lock"
@@ -253,7 +255,8 @@ def run_case(cluster, config, fault, directory, environment):
                                         and deployments_ready(cluster.get("deployments")["items"]))
         if not outcome["recovery_healthy"]:
             raise RuntimeError("Application recovery was not confirmed")
-    except (Exception, KeyboardInterrupt) as error:
+    except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001 - the failure is recorded and cleanup still runs
+        log.failure(LOG, "chaos.run.failed", error, level=log.ERROR)
         outcome["errors"].append(type(error).__name__ + ": " + str(error))
         writer.append("timeline.jsonl", event="run_failed", error=outcome["errors"][-1])
         if isinstance(error, KeyboardInterrupt):
@@ -265,22 +268,26 @@ def run_case(cluster, config, fault, directory, environment):
             owned_remove(cluster, kind, fault_name, run_id)
             outcome["cleanup_confirmed"] = True
             writer.append("timeline.jsonl", event="final_cleanup_confirmed")
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - recorded in the outcome; the remaining cleanup still runs
+            log.failure(LOG, "chaos.cleanup.failed", error, level=log.ERROR)
             outcome["errors"].append("Fault cleanup: " + str(error))
             outcome["cleanup_confirmed"] = False
         try:
             collector.stop()
             collector.collect()
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - recorded in the outcome; the remaining cleanup still runs
+            log.failure(LOG, "chaos.collector.failed", error)
             outcome["errors"].append("Collector: " + str(error))
         try:
             rows = read_traffic(cluster, traffic_name, directory)
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - recorded in the outcome; the remaining cleanup still runs
+            log.failure(LOG, "chaos.traffic_export.failed", error)
             outcome["errors"].append("Traffic export: " + str(error))
         for resource in (traffic, cm):
             try:
                 owned_remove(cluster, resource["kind"], traffic_name, run_id)
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - recorded in the outcome; the remaining cleanup still runs
+                log.failure(LOG, "chaos.traffic_cleanup.failed", error, level=log.ERROR)
                 outcome["errors"].append("Traffic cleanup: " + str(error))
         outcome["telemetry_complete"] = collector.errors == 0 and collector.samples > 0 and bool(rows)
         outcome.update(collection_errors=collector.errors, log_gaps=collector.log_gaps, collection_samples=collector.samples,
@@ -389,7 +396,8 @@ def main(argv=None):
             if outcome["status"] != "complete":
                 raise RuntimeError("Stopping after an incomplete demonstration: " + "; ".join(outcome["errors"] or ["insufficient telemetry"]))
         batch["status"] = "complete"
-    except (Exception, KeyboardInterrupt) as error:
+    except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001 - the batch is saved as failed and the lock released
+        log.failure(LOG, "chaos.batch.failed", error, level=log.ERROR)
         batch["status"] = "failed"
         batch["error"] = type(error).__name__ + ": " + str(error)
         print(batch["error"], file=sys.stderr)
@@ -397,7 +405,8 @@ def main(argv=None):
         if locked:
             try:
                 owned_remove(cluster, "ConfigMap", LOCK, batch_id)
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - the batch is saved as failed with the lock error
+                log.failure(LOG, "chaos.lock_cleanup.failed", error, level=log.ERROR)
                 batch["status"] = "failed"
                 batch["lock_cleanup_error"] = str(error)
         signal.signal(signal.SIGTERM, previous_term)

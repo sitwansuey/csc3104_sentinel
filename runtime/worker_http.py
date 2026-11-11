@@ -99,7 +99,8 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
                 try:
                     with SQLiteStore(database, clock=clock) as store, store.transaction():
                         store.db.execute("SELECT 1 FROM outbox LIMIT 1").fetchone()
-                except Exception:
+                except Exception as error:  # noqa: BLE001 - any failure to open the store means not ready
+                    log.failure(LOG, "http.readiness.failed", error)
                     self.reply(503, {"ready": False})
                     return
             self.reply(200, {"ready": True})
@@ -158,7 +159,7 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
                 response = {"error": "Invalid input or lifecycle transition"}
             except (TimeoutError, socket.timeout):
                 status, response = 408, {"error": "Request timed out"}
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - an internal error answers 503; access_log records error_type
                 status, error_type = 503, type(exc).__name__
                 response = {"error": "Coordinator unavailable; retry the saved request"}
             # Log before replying, so the line exists once the client sees the answer.

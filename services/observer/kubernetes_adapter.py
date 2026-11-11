@@ -9,8 +9,10 @@ from copy import deepcopy
 import time
 
 from services.observer.core import ObservationError, validate_observation
+from shared import log
 
 
+LOG = log.get_logger("observer")
 DEFAULT_SOURCE = "kubernetes_api"
 FAILED_CONDITION_PRIORITY = {
     ("Progressing", "False"): 0,
@@ -102,7 +104,8 @@ class DeploymentObservationMonitor:
                     summary["incidents"].append(incident)
                     if self.on_incident is not None:
                         self.on_incident(incident)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - a failed poll is counted and retried up to a limit
+                log.failure(LOG, "observer.adapter.failed", exc)
                 summary["errors"] += 1
                 consecutive_errors += 1
                 if self.on_error is not None:

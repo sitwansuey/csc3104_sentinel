@@ -11,6 +11,8 @@ from shared import log
 from shared.canonical import canonical_json as encoded
 from shared.contracts import validate_message
 
+LOG = log.get_logger("remote_worker")
+
 
 class WorkerJournal:
     """Transport state only. Component journals remain authoritative for effects."""
@@ -81,7 +83,8 @@ class Lease:
         while not self.stop.wait(self.interval):
             try:
                 self.ensure_current()
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - ensure_current() raises it again in the worker
+                log.failure(LOG, "transport.lease.lost", error)
                 self.error = error
                 return
 
@@ -156,8 +159,8 @@ class RemoteWorker:
             if self.journal.get(key)["result"] is None:
                 try:
                     self.client.post("retry", {name: delivery[name] for name in ("delivery_id", "lease_token")})
-                except Exception:
-                    pass  # Lease expiry still makes unfinished work retryable.
+                except Exception as error:  # noqa: BLE001 - lease expiry still makes unfinished work retryable
+                    log.failure(LOG, "transport.retry.failed", error)
                 self.journal.release(key)
             raise
         if output is None:

@@ -30,9 +30,11 @@ from services.guard.adapters import AdapterError, load_json, read_reference_vers
 from services.guard.decisions import validate_policy
 from services.guard.eligibility import referenced_objects
 from services.guard.preview import server_dry_run as collect_server_preview
+from shared import log
 from shared.contracts import ContractError, validate_message
 
 
+LOG = log.get_logger("executor")
 EXIT_CODES = {"APPLIED": 0, "NOOP": 0, "FAILED": 2, "CONFLICT": 3, "NEEDS_RECONCILIATION": 4, "SUPERSEDED": 5}
 
 
@@ -202,11 +204,12 @@ def main(argv=None):
             reconcile_only=args.reconcile,
         )
         result = (reconcile if args.reconcile else execute)(proposal, adapters)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - top-level boundary: print one error code and exit 1
         code = (exc.code if isinstance(exc, AdapterError) else
                 "TARGET_BUSY" if isinstance(exc, TargetBusy) else
                 "ACTION_CONFLICT" if isinstance(exc, ActionConflict) else
                 "INVALID_EXECUTOR_INPUT" if isinstance(exc, ContractError) else "EXECUTOR_ERROR")
+        log.failure(LOG, "executor.run.failed", exc, level=log.ERROR, reason=code)
         print(json.dumps({"kind": "executor_error", "error": {"code": code,
                           "message": "Execution did not produce a result; inspect trusted inputs and local records."}}), file=sys.stderr)
         return 1

@@ -7,7 +7,10 @@ default, or key=value text. Only the identifier and status fields in FIELDS are
 written. Anything else is dropped, including tokens, Authorization headers,
 request bodies and payloads. Correlation IDs bound with bind() live in a
 contextvar; start threads with context_thread() so they inherit them.
+A handler that catches a broad exception and carries on reports it with
+failure(), which records the class name only, never the message.
 """
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 import contextvars
 from datetime import datetime, timezone
@@ -20,6 +23,11 @@ import re
 import sys
 import threading
 import time
+from typing import TYPE_CHECKING, Any, ParamSpec, TextIO, TypeVar
+
+Scalar = str | int | float | bool | None
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 ROOT = "sentinel"
 DEBUG, INFO, WARNING, ERROR = logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR
@@ -39,15 +47,16 @@ SECRET_KEY = re.compile(r"(?i)token|authori[sz]ation|secret|password|passwd|cred
 EVENT = re.compile(r"[a-z][a-z0-9_]*(\.[a-z0-9_]+)*")
 MAX_VALUE = 256
 
-_context = contextvars.ContextVar("sentinel_log_context", default=None)
-_installed = None
+_context: contextvars.ContextVar[dict[str, Scalar] | None] = contextvars.ContextVar(
+    "sentinel_log_context", default=None)
+_installed: logging.Handler | None = None
 
 _root = logging.getLogger(ROOT)
 _root.addHandler(logging.NullHandler())
 _root.propagate = False
 
 
-def _value(value):
+def _value(value: object) -> Scalar:
     if value is None or isinstance(value, bool) or type(value) is int:
         return value
     if isinstance(value, float):
@@ -57,24 +66,24 @@ def _value(value):
     return None  # Structured values could carry a body; never log them.
 
 
-def clean(fields):
+def clean(fields: Mapping[str, object]) -> dict[str, Scalar]:
     """Keep allowlisted scalar fields only; drop None and everything else."""
-    result = {}
-    for key, value in fields.items():
+    result: dict[str, Scalar] = {}
+    for key, raw in fields.items():
         if key not in FIELDS or SECRET_KEY.search(key):
             continue
-        value = _value(value)
+        value = _value(raw)
         if value is not None:
             result[key] = value
     return result
 
 
-def context():
+def context() -> dict[str, Scalar]:
     return dict(_context.get() or {})
 
 
 @contextmanager
-def bind(**fields):
+def bind(**fields: object) -> Iterator[None]:
     """Attach correlation IDs to every record emitted in this context."""
     token = _context.set({**(_context.get() or {}), **clean(fields)})
     try:
@@ -83,17 +92,18 @@ def bind(**fields):
         _context.reset(token)
 
 
-def context_thread(target, *, args=(), kwargs=None, **options):
+def context_thread(target: Callable[..., object], *, args: tuple[Any, ...] = (),
+                   kwargs: Mapping[str, Any] | None = None, **options: Any) -> threading.Thread:
     """A Thread that runs target inside a copy of the caller's log context."""
     copied = contextvars.copy_context()
-    return threading.Thread(target=copied.run, args=(target, *args), kwargs=kwargs or {}, **options)
+    return threading.Thread(target=copied.run, args=(target, *args), kwargs=dict(kwargs or {}), **options)
 
 
-def get_logger(name):
+def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(ROOT + "." + name)
 
 
-def emit(logger, event, *, level=INFO, **fields):
+def emit(logger: logging.Logger | str, event: str, *, level: int = INFO, **fields: object) -> None:
     """Log one structured event. Fields outside FIELDS are dropped."""
     if not EVENT.fullmatch(event):
         raise ValueError("Log event names are lower-case dotted identifiers")
@@ -106,8 +116,18 @@ def emit(logger, event, *, level=INFO, **fields):
                                     "sentinel_mono": time.monotonic()})
 
 
-def _record(record, component):
-    item = {
+def failure(logger: logging.Logger | str, event: str, error: BaseException, *, level: int = WARNING,
+            **fields: object) -> None:
+    """Log a caught exception that is handled, by its class name only.
+
+    The message and traceback are never written: they can hold a token, a
+    request body or raw output from a cluster or a model.
+    """
+    emit(logger, event, level=level, **{**fields, "error_type": type(error).__name__})
+
+
+def _record(record: logging.LogRecord, component: str) -> dict[str, Any]:
+    item: dict[str, Any] = {
         "ts": datetime.fromtimestamp(record.created, timezone.utc).isoformat(timespec="milliseconds")
               .replace("+00:00", "Z"),
         "mono": round(getattr(record, "sentinel_mono", time.monotonic()), 3),
@@ -122,11 +142,11 @@ def _record(record, component):
 
 
 class JsonFormatter(logging.Formatter):
-    def __init__(self, component):
+    def __init__(self, component: str) -> None:
         super().__init__()
         self.component = component
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         # ensure_ascii escapes newlines and control characters: one line per record.
         return json.dumps(_record(record, self.component), ensure_ascii=True, allow_nan=False,
                           separators=(",", ":"))
@@ -135,7 +155,7 @@ class JsonFormatter(logging.Formatter):
 class TextFormatter(JsonFormatter):
     PLAIN = re.compile(r"[A-Za-z0-9_.:/@+-]*")
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         item = _record(record, self.component)
         head = " ".join(str(item.pop(key)) for key in ("ts", "level", "component", "event"))
         item.pop("mono")
@@ -145,21 +165,28 @@ class TextFormatter(JsonFormatter):
         return " ".join([head, *parts])
 
 
-class _StderrHandler(logging.StreamHandler):
+if TYPE_CHECKING:
+    _StreamHandler = logging.StreamHandler[TextIO]
+else:
+    _StreamHandler = logging.StreamHandler
+
+
+class _StderrHandler(_StreamHandler):
     """Resolve sys.stderr on every write, so a redirected stderr is honoured."""
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(sys.stderr)
 
     @property
-    def stream(self):
+    def stream(self) -> TextIO:
         return sys.stderr
 
     @stream.setter
-    def stream(self, _value):
+    def stream(self, _value: TextIO) -> None:
         pass
 
 
-def configure(component, *, level=None, fmt=None, stream=None):
+def configure(component: str, *, level: str | None = None, fmt: str | None = None,
+              stream: TextIO | None = None) -> logging.Handler:
     """Install one handler for this process; replaces an earlier configure()."""
     global _installed
     if not isinstance(component, str) or not EVENT.fullmatch(component):
@@ -170,7 +197,7 @@ def configure(component, *, level=None, fmt=None, stream=None):
         raise ValueError("SENTINEL_LOG_LEVEL must be DEBUG, INFO, WARNING or ERROR")
     if fmt not in FORMATS:
         raise ValueError("SENTINEL_LOG_FORMAT must be json or text")
-    handler = _StderrHandler() if stream is None else logging.StreamHandler(stream)
+    handler: logging.Handler = _StderrHandler() if stream is None else logging.StreamHandler(stream)
     handler.setFormatter((JsonFormatter if fmt == "json" else TextFormatter)(component))
     if _installed is not None:
         _root.removeHandler(_installed)
@@ -180,7 +207,7 @@ def configure(component, *, level=None, fmt=None, stream=None):
     return handler
 
 
-def reset():
+def reset() -> None:
     """Remove the configured handler; the logger is silent again."""
     global _installed
     if _installed is not None:
@@ -190,7 +217,7 @@ def reset():
 
 
 @contextmanager
-def configured(component, **options):
+def configured(component: str, **options: Any) -> Iterator[logging.Handler]:
     """configure() for the lifetime of an entrypoint call, then restore."""
     global _installed
     previous, previous_level = _installed, _root.level
@@ -205,14 +232,14 @@ def configured(component, **options):
         _root.setLevel(previous_level)
 
 
-def entrypoint(component):
+def entrypoint(component: str) -> Callable[[Callable[_P, _R]], Callable[_P, _R | int]]:
     """Decorate a main(): configure logging from the environment around the call.
 
     An invalid SENTINEL_LOG_FORMAT or SENTINEL_LOG_LEVEL stops with exit code 2.
     """
-    def decorate(main):
+    def decorate(main: Callable[_P, _R]) -> Callable[_P, _R | int]:
         @functools.wraps(main)
-        def run(*args, **kwargs):
+        def run(*args: _P.args, **kwargs: _P.kwargs) -> _R | int:
             with ExitStack() as stack:
                 try:
                     stack.enter_context(configured(component))

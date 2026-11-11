@@ -136,7 +136,7 @@ def main(argv=None):
                 try:
                     status = worker.once()
                     failures = 0
-                except Exception as caught:
+                except Exception as caught:  # noqa: BLE001 - a failed pass is retried with backoff; report() logs it
                     error = caught
                     failures += 1
                     status = {"status": "retry", "error_code": type(error).__name__}
@@ -145,7 +145,7 @@ def main(argv=None):
                 if args.once:
                     return int(bool(failures))
                 stopping.wait(min(60, args.poll_seconds * 2 ** min(failures, 5)))
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - top-level boundary: log the error class and exit 1
         print(json.dumps({"status": "configuration_error", "error_code": type(error).__name__}), flush=True)
         log.emit(LOG, "worker.configuration_error", level=log.ERROR, error_type=type(error).__name__)
         return 1

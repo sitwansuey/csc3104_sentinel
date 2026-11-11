@@ -8,6 +8,9 @@ import threading
 import time
 
 from experiments.boutique.harness.chaos import APPLICATIONS
+from shared import log
+
+LOG = log.get_logger("telemetry")
 
 
 def utc():
@@ -97,7 +100,8 @@ class Collector:
                         self.error("logs", "Log byte limit reached: " + metadata["name"])
                     if previous:
                         self.previous.add(key)
-                except Exception as error:
+                except Exception as error:  # noqa: BLE001 - a pod can vanish mid-fault; the gap is recorded
+                    log.failure(LOG, "telemetry.logs.unavailable", error)
                     # A fault can remove a pod/container before its logs can be fetched.
                     # Preserve that gap; do not misclassify expected unavailability as a broken collector.
                     unavailable = (not status.get("state", {}).get("running") or previous
@@ -114,7 +118,8 @@ class Collector:
                 self.writer.append("telemetry/kubernetes/" + resource + ".jsonl", data=document)
                 if resource == "pods":
                     pods = [p for p in document["items"] if p.get("metadata", {}).get("labels", {}).get("app") in APPLICATIONS]
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - the gap is recorded and collection continues
+                log.failure(LOG, "telemetry.kubernetes.failed", error)
                 self.error(resource, error)
         nodes = sorted({p["spec"]["nodeName"] for p in pods if p.get("spec", {}).get("nodeName")})
         if not nodes:
@@ -126,7 +131,8 @@ class Collector:
                 self.writer.append("telemetry/metrics/kubelet.jsonl", node=node, data=document, containers=rows)
                 if not rows:
                     self.error("metrics", "Kubelet returned no container measurements")
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - the gap is recorded and collection continues
+                log.failure(LOG, "telemetry.metrics.failed", error)
                 self.error("metrics/" + node, error)
         with ThreadPoolExecutor(max_workers=4) as pool:
             list(pool.map(lambda pod: self.logs(pod, self.since), pods))
@@ -139,7 +145,8 @@ class Collector:
             clock = time.monotonic()
             try:
                 self.collect()
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - the gap is recorded and the next cycle still runs
+                log.failure(LOG, "telemetry.cycle.failed", error)
                 self.error("collector", error)
             elapsed = time.monotonic() - clock
             if elapsed > self.interval:

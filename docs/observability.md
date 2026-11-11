@@ -73,3 +73,35 @@ failure rolls back the whole run and keeps the old version. A database newer
 than the code is refused.
 Databases from before versioning report version 0 and are upgraded in place.
 Add a new numbered step for each schema change; never edit a released one.
+
+## Broad exception handlers
+
+A handler that catches `Exception` and carries on calls
+`log.failure(logger, event, error)`. It writes the exception class as
+`error_type` and never the message or traceback, which can hold a token, a
+request body or raw cluster or model output. Each such `except` line also
+carries `# noqa: BLE001 - <reason>`.
+
+In `services/`, `runtime/`, `shared/`, `agent/`, `experiments/` and `scripts/`
+there were 71 broad handlers before the audit. 21 re-raised. 50 carried on, and
+only 4 of those logged through this module. The others turned the error into
+a status, a return value, a printed line or a stored record, and 6 dropped it
+with `pass`. None was narrowed: each sits at a fail-closed or keep-serving
+boundary where any error must take the same path, so narrowing would change
+behaviour. After the audit, 46 log with `log.failure()` or `log.emit()`, 3 are
+logged by `access_log()` or `report()` just after the handler, and 1, the in-cluster traffic shopper, cannot import
+this module and records the error class in its own output row.
+
+Failure events include `executor.observe.unavailable`,
+`executor.prewrite.refused`, `executor.authorization.withdrawn`,
+`executor.write.indeterminate`, `transport.lease.lost`,
+`transport.retry.failed`, `planner.attempt.failed`,
+`observer.collection.failed`, `observer.delivery.failed`,
+`verifier.collection.failed`, `http.readiness.failed`,
+`dashboard.snapshot.failed`, `inspector.request.failed` and
+`progress.notify.failed`. Harness and validation scripts use `chaos.*`,
+`telemetry.*`, `experiment.*`, `recovery.*` and `validation.*` names. These
+processes print the lines only when their entrypoint configures logging.
+
+`python scripts/ci/except_audit.py --report` checks every handler and prints the
+counts. Ruff's `BLE001` and `S110` rules fail CI on a new silent broad handler.

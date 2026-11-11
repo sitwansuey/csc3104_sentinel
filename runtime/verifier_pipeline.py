@@ -10,6 +10,9 @@ import json
 
 from services.coordinator.core import acknowledge, dispatch_pending, record_message
 from services.verifier.core import verify
+from shared import log
+
+LOG = log.get_logger("verifier")
 
 
 def _eligible(store, request):
@@ -61,7 +64,8 @@ requests pending. A committed outcome and acknowledgment are replay-safe.
         collection_error = None
         try:
             samples = sample_reader(deepcopy(execution))
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - a failed collection is recorded as a failed evidence check
+            log.failure(LOG, "verifier.collection.failed", error, action_id=execution.get("action_id"))
             samples, collection_error = [], type(error).__name__
         outcome = verify(execution, samples, policy)
         if collection_error:
