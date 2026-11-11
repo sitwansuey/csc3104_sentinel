@@ -139,6 +139,75 @@ Successful runs only. `recorded` values come from the harness timeline;
 | connected-harness | repair applied -> outcome window end | 4 | 26.45 | 26.1 | 55.5 | approx |
 <!-- END GENERATED:timings -->
 
+## Per-stage latency
+
+Generated from the newest ledger in `evidence/evaluation/latency/`, which
+`python scripts/latency_report.py` builds from the agent and connected-harness
+bundles. Each row is one stage over the runs that reached it, so `n` differs
+by stage and failed runs stay in the run counts. p90 is nearest rank. Read it
+with these limits:
+
+- No run here recorded its injection time, so detection starts at the first
+  failing Observer snapshot. That is a lower bound; the harness now records
+  `fault_injected_at` for new runs.
+- Planning and Guard need `planning-progress.jsonl`, which bundles do not
+  keep. Those rows come from the local run folders (`run folder`) and cannot
+  be rechecked in CI. `summarize.py --check` recomputes every `bundle` value.
+- Guard here is wall time from the last planning record to the ALLOW verdict.
+  It includes the dependency check and the lab's pre-authorised approval, so
+  there is no human wait in it. In harness mode, "incident -> Guard ALLOW"
+  also covers the scripted negative cases that run first.
+- One fault type on one host, one model (`qwen3:14b`) and runs from several
+  revisions. These are not independent trials.
+
+<!-- BEGIN GENERATED:latency -->
+- agent: 20 runs, 11 PASS; stopped at: planning x7; verification x2.
+- harness: 4 runs, 4 PASS; stopped at: none.
+
+| Mode | Stage | n | Median s | p90 s | Min s | Max s | Source |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| agent | detection: start -> incident observed | 20 | 7.2 | 7.3 | 5.0 | 7.4 | bundle; start: first failing snapshot x20 |
+| agent | planning: incident -> last planning record | 5 | 43.9 | 57.5 | 26.1 | 57.5 | run folder |
+| agent | model calls: sum per run (part of planning) | 13 | 47.4 | 66.6 | 25.1 | 109.3 | bundle |
+| agent | Guard: planning end -> ALLOW (incl. lab approval) | 5 | 0.4 | 0.4 | 0.4 | 0.4 | run folder |
+| agent | incident -> Guard ALLOW (planning + Guard) | 13 | 49.1 | 111.8 | 26.4 | 355.8 | bundle |
+| agent | execution: ALLOW -> Executor result | 13 | 0.7 | 0.8 | 0.6 | 0.8 | bundle |
+| agent | verification: Executor result -> outcome window end | 13 | 43.6 | 55.2 | 8.0 | 61.5 | bundle |
+| agent | fault to repair: start -> Executor result | 13 | 57.0 | 119.6 | 34.2 | 363.7 | bundle; start: first failing snapshot x13 |
+| agent | total: start -> outcome window end | 13 | 102.3 | 148.5 | 65.0 | 407.0 | bundle; start: first failing snapshot x13 |
+| harness | detection: start -> incident observed | 4 | 7.2 | 7.4 | 7.1 | 7.4 | bundle; start: first failing snapshot x4 |
+| harness | planning: incident -> last planning record | 0 | n/a | n/a | n/a | n/a | - |
+| harness | model calls: sum per run (part of planning) | 0 | n/a | n/a | n/a | n/a | - |
+| harness | Guard: planning end -> ALLOW (incl. lab approval) | 0 | n/a | n/a | n/a | n/a | - |
+| harness | incident -> Guard ALLOW (planning + Guard) | 4 | 2.8 | 3.1 | 2.8 | 3.1 | bundle |
+| harness | execution: ALLOW -> Executor result | 4 | 0.6 | 0.7 | 0.6 | 0.7 | bundle |
+| harness | verification: Executor result -> outcome window end | 4 | 26.5 | 55.5 | 26.1 | 55.5 | bundle |
+| harness | fault to repair: start -> Executor result | 4 | 10.6 | 11.2 | 10.5 | 11.2 | bundle; start: first failing snapshot x4 |
+| harness | total: start -> outcome window end | 4 | 37.0 | 66.7 | 36.7 | 66.7 | bundle; start: first failing snapshot x4 |
+<!-- END GENERATED:latency -->
+
+### Model calls and cold loads
+
+A call is cold when Ollama reports a model load over 1 s. Agent runs before
+16:00 UTC on 11 November did not record load times, so their calls are
+`unclassified`, not warm. The cold-load tail is the max column here and in
+the stage table. The 356 s decision stage of run
+`boutique-live-20261110T192806Z-88c2d9` holds only 53 s of recorded model
+calls; its files do not show where the rest went, so it is not counted as a
+cold load.
+
+<!-- BEGIN GENERATED:model-calls -->
+| Mode | Measure | n | Median s | p90 s | Max s |
+| --- | --- | --- | --- | --- | --- |
+| agent | model time per run, warm runs | 4 | 38.8 | 56.1 | 56.1 |
+| agent | model time per run, cold runs | 1 | 43.1 | 43.1 | 43.1 |
+| agent | model time per run, unclassified runs | 8 | 50.3 | 109.3 | 109.3 |
+| agent | one call, warm | 15 | 11.0 | 19.7 | 22.0 |
+| agent | one call, cold | 2 | 32.5 | 41.1 | 41.1 |
+| agent | one call, unclassified | 33 | 11.2 | 28.9 | 46.3 |
+| agent | model load time of cold calls | 2 | 21.1 | 25.6 | 25.6 |
+<!-- END GENERATED:model-calls -->
+
 ## Chaos Mesh faults
 
 Injection and cleanup only: Sentinel takes no recovery action in these runs.

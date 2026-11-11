@@ -426,6 +426,10 @@ class BoutiqueExperiment(Experiment):
     def inject_fault(self):
         # Invalid PORT is a real application startup failure, not a fake API.
         self.kubectl("set", "env", "deployment/" + self.name, "--containers=server", "PORT=invalid-port")
+        # When the API server accepted the bad rollout. Latency reports measure
+        # detection from here; older runs only have the first failing snapshot.
+        # The first injection is kept; later scenarios are in the timeline.
+        self.summary.setdefault("fault_injected_at", utc())
         self.event(1, "fault", "Operator injected PORT=invalid-port into shippingservice", target=self.target)
 
     def fault(self, label):

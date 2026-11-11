@@ -2,6 +2,8 @@
 
 Tables are written between '<!-- BEGIN GENERATED:<name> -->' and
 '<!-- END GENERATED:<name> -->' markers in docs/results.md and evidence/README.md.
+The latency tables come from the newest ledger under evidence/evaluation/latency/
+(scripts/latency_report.py); --check recomputes its bundle-sourced values.
 Withdrawn bundles are excluded. Failed and incomplete runs stay in every
 denominator. With --check nothing is written: the command fails when a
 generated block was hand-edited or is stale, when a bundle's files no longer
@@ -20,9 +22,14 @@ import statistics
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from experiments.analysis import timeline  # noqa: E402
+
 TARGETS = {
     "docs/results.md": ("runs", "recovery-checks", "agent-runs", "guard-rejection", "guard-eval", "timings",
-                        "chaos", "security-lab", "observer", "claims"),
+                        "latency", "model-calls", "chaos", "security-lab", "observer", "claims"),
     "evidence/README.md": ("index",),
 }
 BLOCK = re.compile(r"(<!-- BEGIN GENERATED:(?P<name>[a-z0-9-]+) -->\n)(?P<body>.*?)(<!-- END GENERATED:(?P=name) -->)",
@@ -383,6 +390,124 @@ def observer(bundles):
     return rows
 
 
+# ----- latency ledger (scripts/latency_report.py) -----
+
+LATENCY_DIR = "evidence/evaluation/latency"
+LATENCY_CLASSES = {"agent": "agent", "connected-harness": "harness"}
+NO_LEDGER = "_No latency ledger yet._"
+STAGE_LABELS = {
+    "detection": "detection: start -> incident observed",
+    "planning": "planning: incident -> last planning record",
+    "model": "model calls: sum per run (part of planning)",
+    "guard": "Guard: planning end -> ALLOW (incl. lab approval)",
+    "decision": "incident -> Guard ALLOW (planning + Guard)",
+    "execution": "execution: ALLOW -> Executor result",
+    "verification": "verification: Executor result -> outcome window end",
+    "repair": "fault to repair: start -> Executor result",
+    "total": "total: start -> outcome window end",
+}
+BASIS_LABELS = {"fault_injected_at": "injection", "timeline": "injection (timeline)",
+                "from_first_failing_snapshot": "first failing snapshot"}
+
+
+def load_latency(root):
+    """(relative path, ledger) of the newest committed latency ledger, or (None, None)."""
+    folder = Path(root) / LATENCY_DIR
+    paths = sorted(folder.glob("*/timings.json")) if folder.is_dir() else []
+    if not paths:
+        return None, None
+    return paths[-1].relative_to(root).as_posix(), json.loads(paths[-1].read_text(encoding="utf-8"))
+
+
+def latency_rows(ledger, bundles):
+    """Ledger rows for current or superseded bundles; withdrawn bundles drop out."""
+    present = {bundle.bundle_id for bundle in bundles}
+    return [row for row in (ledger or {}).get("rows", []) if row.get("bundle_id") in present]
+
+
+def check_latency(root, bundles=None):
+    """Problems with the latency ledger: a bundle-sourced value no longer matches its bundle, or rows are missing."""
+    bundles = load_bundles(root) if bundles is None else bundles
+    relative, ledger = load_latency(root)
+    if ledger is None:
+        return []
+    problems = []
+    rows = {row.get("bundle_id"): row for row in ledger.get("rows", [])}
+    indexed = {entry["bundle_id"] for entry in load_index(root)["bundles"]}
+    for bundle_id in sorted(set(rows) - indexed, key=str):
+        problems.append(f"{relative}: row {bundle_id} is not a bundle in index.json")
+    for bundle in bundles:
+        if bundle.run_class not in LATENCY_CLASSES:
+            continue
+        row = rows.get(bundle.bundle_id)
+        if row is None:
+            problems.append(f"{relative}: bundle {bundle.bundle_id} is missing; run scripts/latency_report.py "
+                            "into a new dated folder")
+            continue
+        fresh = timeline.run_timeline([(bundle.directory, timeline.BUNDLE)], run=row.get("run"),
+                                      bundle_id=bundle.bundle_id, planning_mode=LATENCY_CLASSES[bundle.run_class])
+        for name in timeline.STAGES:
+            source = (row.get("stage_sources") or {}).get(name)
+            recorded = (row.get("stages") or {}).get(name)
+            if source not in (None, timeline.BUNDLE, timeline.RUN_FOLDER) or (
+                    source == timeline.BUNDLE and recorded != fresh["stages"][name]) or (
+                    source is None and (recorded is not None or fresh["stages"][name] is not None)):
+                problems.append(f"{relative}: {bundle.bundle_id} {name} {recorded!r} ({source}) differs from "
+                                f"the bundle ({fresh['stages'][name]!r})")
+        for key in ("planning_mode", "status", "outcome", "failure_stage", "start_basis", "calls"):
+            if row.get(key) != fresh[key]:
+                problems.append(f"{relative}: {bundle.bundle_id} {key} differs from the bundle")
+    return problems
+
+
+def seconds_text(value):
+    return "n/a" if value is None else f"{value:.1f}"
+
+
+def latency_tables(ledger, bundles):
+    """(stage table, model call table) markdown; stages with no data show n/a, never zero."""
+    rows = latency_rows(ledger, bundles)
+    if not rows:
+        return NO_LEDGER, NO_LEDGER
+    notes, stage_rows, model_rows = [], [], []
+    for mode, summary in timeline.aggregate(rows).items():
+        members = [row for row in rows if row["planning_mode"] == mode]
+        stops = "; ".join(f"{stage} x{count}" for stage, count in summary["failure_stages"].items()) or "none"
+        notes.append(f"- {mode}: {summary['runs']} runs, {summary['passed']} PASS; stopped at: {stops}.")
+        for name in timeline.STAGES:
+            values = summary["stages"][name]
+            kinds = {row["stage_sources"][name] for row in members if row["stages"][name] is not None}
+            source = {frozenset({timeline.BUNDLE}): "bundle", frozenset({timeline.RUN_FOLDER}): "run folder"}.get(
+                frozenset(kinds), "bundle + run folder" if kinds else "-")
+            if name in ("detection", "repair", "total") and kinds:
+                bases = {}
+                for row in members:
+                    if row["stages"][name] is not None:
+                        label = BASIS_LABELS.get(row["start_basis"], str(row["start_basis"]))
+                        bases[label] = bases.get(label, 0) + 1
+                source += "; start: " + ", ".join(f"{label} x{count}" for label, count in sorted(bases.items()))
+            stage_rows.append([mode, STAGE_LABELS[name], str(values["n"]), seconds_text(values["median"]),
+                               seconds_text(values["p90"]), seconds_text(values["min"]), seconds_text(values["max"]),
+                               source])
+        if any(row["calls"] for row in members):
+            for name in ("warm", "cold", "unclassified"):
+                values = summary["model_by_temperature"][name]
+                model_rows.append([mode, f"model time per run, {name} runs", str(values["n"]),
+                                   seconds_text(values["median"]), seconds_text(values["p90"]),
+                                   seconds_text(values["max"])])
+            for name in ("warm", "cold", "unclassified"):
+                values = summary["calls_by_temperature"][name]
+                model_rows.append([mode, f"one call, {name}", str(values["n"]), seconds_text(values["median"]),
+                                   seconds_text(values["p90"]), seconds_text(values["max"])])
+            values = summary["cold_load"]
+            model_rows.append([mode, "model load time of cold calls", str(values["n"]), seconds_text(values["median"]),
+                               seconds_text(values["p90"]), seconds_text(values["max"])])
+    stages = "\n".join(notes) + "\n\n" + table(
+        ["Mode", "Stage", "n", "Median s", "p90 s", "Min s", "Max s", "Source"], stage_rows)
+    model = table(["Mode", "Measure", "n", "Median s", "p90 s", "Max s"], model_rows)
+    return stages, model
+
+
 DERIVATIONS = {
     "pass_ratio": pass_ratio,
     "zero_write_rejections": zero_write_rejections,
@@ -449,6 +574,7 @@ def render_blocks(root):
     bundles = load_bundles(root)
     claims = load_claims(root)
     guard = guard_rejections(bundles)
+    latency, model_calls = latency_tables(load_latency(root)[1], bundles)
     return {
         "index": index_table(root),
         "runs": runs_table(bundles),
@@ -461,6 +587,8 @@ def render_blocks(root):
         "guard-eval": table(["Bundle", "Status", "Configuration", "Basis", "Unsafe ALLOW", "Unsafe REJECT",
                              "Unsafe ESCALATE", "Safe ALLOW", "False REJECT", "Errors"], guard_evaluation(bundles)),
         "timings": table(["Class", "Interval", "n", "Median s", "Min s", "Max s", "Source"], timings(bundles)),
+        "latency": latency,
+        "model-calls": model_calls,
         "chaos": table(["Fault", "Attempts", "Injected", "Cleaned up", "Healthy recovery window"], chaos(bundles)),
         "security-lab": table(["Bundle", "Outcome", "Valid mTLS quote", "Blocked probes", "Shopping after restore"],
                               security_lab(bundles)),
@@ -554,7 +682,7 @@ def run(root=ROOT, *, check=False, out=sys.stdout):
             print("Updated " + relative, file=out)
     if not check:
         update_claim_values(root, out)
-    claim_problems = check_claims(root)
+    claim_problems = check_claims(root) + check_latency(root)
     if claim_problems:
         failed = True
         print("\n".join("FAIL: " + p for p in claim_problems), file=out)
