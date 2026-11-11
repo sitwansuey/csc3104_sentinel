@@ -3,12 +3,13 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 from unittest.mock import patch
 
-from runtime.worker_http import handler, WorkerClient
+from runtime.worker_http import handler, WorkerClient, WorkerHTTPServer, serve_until_stopped
 from runtime.worker_transport import Delivery, ProtocolError
-from services.coordinator.core import SQLiteStore
+from services.coordinator.core import SQLiteStore, LocalEventBus, handle
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -38,6 +39,35 @@ class TransportTests(unittest.TestCase):
     def submit(self, delivery, proposal=None, identity='p'):
         return self.worker.finish(identity, 'planner', delivery['delivery_id'], delivery['lease_token'],
                                   self.proposal if proposal is None else proposal)
+
+    def test_second_fault_waits_through_verification_and_other_workloads_keep_running(self):
+        first = self.claim()
+        second = dict(self.incident, incident_id="INC-SECOND-FAULT", observed_generation=3)
+        independent = dict(self.incident, incident_id="INC-INDEPENDENT", target={
+            **self.incident["target"], "name": "other-api", "uid": "other-uid"})
+        self.worker.ingest("observer", second)
+        self.worker.ingest("observer", independent)
+        independent_work = self.claim("other-worker")
+        self.assertEqual(independent_work["payload"]["incident"], independent)
+        self.assertIsNone(self.claim("blocked-worker"))
+        self.submit(first)
+        bus = LocalEventBus()
+        guard = sample("guard-result")
+        guard.update(verdict="ALLOW", reason_codes=["VALIDATION_PASSED"])
+        handle(guard, self.store, bus)
+        handle(sample("execution-result"), self.store, bus)
+        self.assertEqual(self.store.incident(self.incident["incident_id"])["state"], "VERIFYING")
+        self.assertIsNone(self.claim("blocked-worker"))
+        outcome = sample("outcome")
+        outcome["status"] = "NOT_RECOVERED"
+        outcome["checks"][0]["passed"] = False
+        handle(outcome, self.store, bus)
+        # Queue state survives a Coordinator restart and releases after failure.
+        self.store.close()
+        self.open()
+        queued = self.claim("next-worker")
+        self.assertEqual(queued["payload"]["incident"], second)
+        self.assertEqual(self.store.incident(self.incident["incident_id"])["state"], "FAILED")
 
     def test_restart_lost_claim_response_and_old_lease(self):
         first = self.claim()
@@ -93,6 +123,32 @@ class TransportTests(unittest.TestCase):
         self.assertIsNone(self.store.action(self.proposal['action_id']))
         self.submit(d)
 
+    def test_renew_keeps_long_work_owned_without_changing_delivery_or_attempt(self):
+        d = self.claim()
+        self.now += 4
+        renewed = self.worker.renew('p', 'planner', d['delivery_id'], d['lease_token'])
+        self.assertEqual(renewed['expires_at'], self.now + 5)
+        self.now += 3
+        self.assertIsNone(self.claim('replacement'))
+        self.assertFalse(self.submit(d)['replay'])
+        with self.assertRaises(ProtocolError):
+            self.worker.renew('p', 'planner', d['delivery_id'], d['lease_token'])
+
+    def test_renew_cannot_revive_expired_replaced_or_wrong_role_work(self):
+        d = self.claim()
+        for identity, role, token in (('other', 'planner', d['lease_token']),
+                                      ('p', 'guard', d['lease_token']), ('p', 'planner', 'wrong')):
+            with self.subTest(identity=identity, role=role, token=token), self.assertRaises(ProtocolError):
+                self.worker.renew(identity, role, d['delivery_id'], token)
+        self.now += 5
+        with self.assertRaises(ProtocolError):
+            self.worker.renew('p', 'planner', d['delivery_id'], d['lease_token'])
+        self.now += 2
+        newer = self.claim('replacement')
+        with self.assertRaises(ProtocolError):
+            self.worker.renew('p', 'planner', d['delivery_id'], d['lease_token'])
+        self.assertEqual(newer['delivery_id'], d['delivery_id'])
+
     def test_receipts_expire_without_forgetting_business_ids(self):
         d = self.claim()
         self.submit(d)
@@ -123,3 +179,180 @@ class TransportTests(unittest.TestCase):
             finally:
                 server.shutdown()
                 thread.join()
+
+    def test_two_connections_cannot_claim_the_same_active_lease(self):
+        barrier = threading.Barrier(2)
+        claims, errors = [], []
+
+        def claim(identity):
+            try:
+                with SQLiteStore(self.path) as store:
+                    worker = Delivery(store, clock=lambda: self.now, lease_seconds=5)
+                    barrier.wait(timeout=3)
+                    claims.append(worker.claim(identity, 'planner')['delivery'])
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=claim, args=(name,)) for name in ('p1', 'p2')]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(5)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(sum(claim is not None for claim in claims), 1)
+
+    def test_duplicate_identity_or_authorization_headers_are_rejected(self):
+        with WorkerHTTPServer(('127.0.0.1', 0), handler(self.path, {'p': ('planner', 'good')})) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                for duplicate in ('Authorization', 'X-Service-Identity'):
+                    connection = HTTPConnection('127.0.0.1', server.server_port, timeout=2)
+                    try:
+                        connection.putrequest('POST', '/v1/claim')
+                        headers = {'Authorization': 'Bearer good', 'X-Service-Identity': 'p', 'Content-Length': '2'}
+                        for name, value in headers.items():
+                            connection.putheader(name, value)
+                            if name == duplicate:
+                                connection.putheader(name, value)
+                        connection.endheaders(b'{}')
+                        response = connection.getresponse()
+                        self.assertEqual(response.status, 401)
+                        response.read()
+                    finally:
+                        connection.close()
+                self.assertEqual(self.store.db.execute('SELECT count(*) FROM transport_receipts').fetchone()[0], 0)
+            finally:
+                server.shutdown()
+                thread.join(3)
+
+    def test_socket_timeout_after_commit_replays_the_saved_result(self):
+        committed, release = threading.Event(), threading.Event()
+        original = Delivery.finish
+
+        def paused(worker, *args, **kwargs):
+            answer = original(worker, *args, **kwargs)
+            if not answer.get('replay'):
+                committed.set()
+                release.wait(3)
+            return answer
+
+        with WorkerHTTPServer(('127.0.0.1', 0), handler(self.path, {'p': ('planner', 'good')})) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                client = WorkerClient(f'http://127.0.0.1:{server.server_port}', 'p', 'good')
+                delivery = client.post('claim', {})['delivery']
+                body = {'delivery_id': delivery['delivery_id'], 'lease_token': delivery['lease_token'],
+                        'result': self.proposal}
+                with patch.object(Delivery, 'finish', paused):
+                    with self.assertRaises(TimeoutError):
+                        WorkerClient(f'http://127.0.0.1:{server.server_port}', 'p', 'good', timeout=0.1).post('result', body)
+                    self.assertTrue(committed.wait(1))
+                    release.set()
+                    self.assertTrue(client.post('result', body)['replay'])
+                self.assertEqual(self.store.db.execute('SELECT count(*) FROM actions').fetchone()[0], 1)
+                self.assertIsNone(client.post('claim', {})['delivery'])
+            finally:
+                release.set()
+                server.shutdown()
+                thread.join(3)
+
+    def test_health_readiness_and_shutdown_fence(self):
+        stopping = threading.Event()
+        with WorkerHTTPServer(('127.0.0.1', 0), handler(self.path, {'p': ('planner', 'good')}, stopping=stopping)) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection('127.0.0.1', server.server_port, timeout=2)
+            try:
+                for path in ('/healthz', '/readyz'):
+                    connection.request('GET', path)
+                    response = connection.getresponse()
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(json.loads(response.read()), {'ready': True})
+                stopping.set()
+                connection.request('GET', '/readyz')
+                response = connection.getresponse()
+                self.assertEqual(response.status, 503)
+                response.read()
+                with self.assertRaises(ProtocolError) as error:
+                    WorkerClient(f'http://127.0.0.1:{server.server_port}', 'p', 'good').post('claim', {})
+                self.assertEqual(error.exception.status, 503)
+                self.assertEqual(self.store.db.execute('SELECT count(*) FROM transport_receipts').fetchone()[0], 0)
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(3)
+
+    def test_readiness_refuses_unavailable_storage(self):
+        with WorkerHTTPServer(('127.0.0.1', 0), handler(self.path.parent / 'missing' / 'db', {})) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection('127.0.0.1', server.server_port, timeout=2)
+            try:
+                connection.request('GET', '/readyz')
+                response = connection.getresponse()
+                self.assertEqual(response.status, 503)
+                self.assertEqual(json.loads(response.read()), {'ready': False})
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(3)
+
+    def test_graceful_loop_waits_for_an_inflight_commit(self):
+        entered, release, stopping, closed = (threading.Event() for _ in range(4))
+        original = Delivery.finish
+
+        def paused(worker, *args, **kwargs):
+            entered.set()
+            release.wait(3)
+            return original(worker, *args, **kwargs)
+
+        server = WorkerHTTPServer(('127.0.0.1', 0), handler(self.path, {'p': ('planner', 'good')}, stopping=stopping))
+
+        def serve():
+            with server:
+                serve_until_stopped(server, stopping)
+            closed.set()
+
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+        client = WorkerClient(f'http://127.0.0.1:{server.server_port}', 'p', 'good')
+        delivery = client.post('claim', {})['delivery']
+        body = {'delivery_id': delivery['delivery_id'], 'lease_token': delivery['lease_token'], 'result': self.proposal}
+        answers = []
+        sender = threading.Thread(target=lambda: answers.append(client.post('result', body)))
+        try:
+            with patch.object(Delivery, 'finish', paused):
+                sender.start()
+                self.assertTrue(entered.wait(2))
+                stopping.set()
+                self.assertFalse(closed.wait(0.4))
+                release.set()
+                sender.join(3)
+                thread.join(3)
+                self.assertEqual(answers, [{'accepted': True, 'replay': False}])
+                self.assertTrue(closed.is_set())
+                self.assertIsNotNone(self.store.action(self.proposal['action_id']))
+        finally:
+            release.set()
+            stopping.set()
+            if sender.ident is not None:
+                sender.join(3)
+            thread.join(3)
+
+    def test_client_rejects_ambiguous_urls_and_unbounded_requests(self):
+        for url in ('http://service:8766', 'https://user:secret@service', 'https://service/path',
+                    'https://service?key=secret', 'https://service#fragment', 'https://service:invalid', 'https://'):
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                WorkerClient(url, 'p', 'good')
+        for value in (0, -1, float('nan'), float('inf')):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                WorkerClient('http://127.0.0.1', 'p', 'good', timeout=value)
+            with self.assertRaises(ValueError):
+                Delivery(self.store, lease_seconds=value)
+        client = WorkerClient('http://127.0.0.1', 'p', 'good')
+        for body in ([], {'huge': 'x' * (1024 * 1024)}, {'nonfinite': float('nan')}):
+            with self.subTest(body_type=type(body)), self.assertRaises(ValueError):
+                client.post('claim', body)

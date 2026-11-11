@@ -267,11 +267,25 @@ def _assess(execution, samples, policy):
     checks.append(_check("service_health", bool(rows) and health_complete and not unhealthy_service,
                          "Requires complete successful " + rules["protocol"].upper()
                          + " application and positive desired-replica readiness readings"))
+    if rows:
+        latest = rows[-1]
+        # Only bounded measured scalars, never response bodies or collector errors.
+        fields = ("http_status", "grpc_status", "application_check_passed", "ready_replicas",
+                  "desired_replicas", "available_replicas")
+        observed = {k: latest.get(k) for k in fields if k in latest and
+                    (latest[k] is None or type(latest[k]) in (int, bool))}
+        checks[-1]["detail"] += "; latest reading: " + ", ".join(f"{k}={v}" for k, v in observed.items())
     checks.append(_check("dependency_health", bool(rows) and dependencies_complete and not unhealthy_dependency,
                          "Every required/observed dependency must be present and healthy in every reading"))
     if rules.get("require_template_match"):
         checks.append(_check("sample_configuration", bool(rows) and configuration_complete and not unhealthy_template,
                              "Each reading must retain the approved template and a stable observation identity"))
+        if rows:
+            latest_hash = rows[-1].get("template_sha256")
+            if not isinstance(latest_hash, str) or not re.fullmatch(r"[a-f0-9]{64}", latest_hash):
+                latest_hash = "unavailable"
+            checks[-1]["detail"] += (f"; expected={rules['expected_template_sha256']}; latest={latest_hash}"
+                                      f"; configuration_stable={rows[-1].get('configuration_stable') is True}")
 
     trustworthy = (usable_execution and identity_ok and timestamps_ok
                    and health_complete and dependencies_complete and configuration_complete)

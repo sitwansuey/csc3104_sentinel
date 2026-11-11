@@ -4,9 +4,11 @@ import argparse
 from contextlib import closing
 import json
 import math
+import os
 from pathlib import Path
 import signal
 import sqlite3
+import ssl
 import sys
 import threading
 
@@ -21,7 +23,12 @@ def main(argv=None):
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run")
     run.add_argument("--state", type=Path, default=Path("data/sentinel/runs/observer.sqlite3"))
-    run.add_argument("--coordinator-db", type=Path, default=Path("data/sentinel/runs/coordinator.sqlite3"))
+    destination = run.add_mutually_exclusive_group()
+    destination.add_argument("--coordinator-db", type=Path, default=Path("data/sentinel/runs/coordinator.sqlite3"))
+    destination.add_argument("--coordinator-url", help="HTTPS Coordinator origin; uses durable HTTP ingestion")
+    run.add_argument("--coordinator-identity", default="observer-1")
+    run.add_argument("--coordinator-token-env", default="SENTINEL_OBSERVER_TOKEN")
+    run.add_argument("--coordinator-ca", type=Path)
     run.add_argument("--policy", type=Path, default=Path("data/sentinel/samples/policy.json"))
     source = run.add_mutually_exclusive_group(required=True)
     source.add_argument("--context")
@@ -85,7 +92,7 @@ def main(argv=None):
                 or type(gap) is not int or gap <= args.interval_seconds
                 or args.poll_count < 0 or args.max_consecutive_errors < 1):
             parser.error("Use a positive interval below the integer max_sample_gap_seconds, nonnegative poll count and positive error limit")
-        if args.state.resolve() == args.coordinator_db.resolve():
+        if not args.coordinator_url and args.state.resolve() == args.coordinator_db.resolve():
             parser.error("Observer and Coordinator require separate database files")
         reader = InClusterReader() if args.in_cluster else KubectlReader(args.context)
         collector = None
@@ -95,7 +102,16 @@ def main(argv=None):
             if args.telemetry_db:
                 collector = CorrelatedEvidenceCollector(collector, TelemetryStore(args.telemetry_db),
                     args.service_name or [args.deployment], policy.get("telemetry", {}))
-        sink = LocalCoordinatorSink(args.coordinator_db)
+        if args.coordinator_url:
+            from runtime.remote_worker import RemoteIngress
+            from runtime.worker_http import WorkerClient
+            token = os.environ.get(args.coordinator_token_env, "")
+            if len(token) < 32:
+                raise ValueError("Missing or weak Coordinator service credential")
+            tls = ssl.create_default_context(cafile=str(args.coordinator_ca)) if args.coordinator_ca else None
+            sink = RemoteIngress(WorkerClient(args.coordinator_url, args.coordinator_identity, token, tls_context=tls))
+        else:
+            sink = LocalCoordinatorSink(args.coordinator_db)
         stop = threading.Event()
         previous_handlers = {}
         if threading.current_thread() is threading.main_thread():

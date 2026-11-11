@@ -102,6 +102,7 @@ spec:
               command: [python, -m, services.observer.cli, health, --state=/data/observer.sqlite3]
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 5
           resources:
             requests:
               cpu: 50m

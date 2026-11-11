@@ -4,6 +4,7 @@ from pathlib import Path
 from .tools import CATALOG
 from .workflows import retrieve
 from .evidence import compact_evidence, corroborated_onsets, timestamp_rejection
+from .progress import notify
 
 
 def obj(properties, required=None):
@@ -81,7 +82,7 @@ def validate_report(final, required_fields, failure_count, allow_abstention, val
 
 
 class Agent:
-    def __init__(self, llm, telemetry, config, workspace):
+    def __init__(self, llm, telemetry, config, workspace, *, progress=None):
         self.llm, self.telemetry, self.config = llm, telemetry, config
         self.workspace = Path(workspace)
         self.workspace.mkdir(parents=True, exist_ok=False)
@@ -93,6 +94,7 @@ class Agent:
         self.cache_hits = 0
         self.call_history = []
         self.round_ceiling = self.config.get("max_steps", 16)
+        self.progress = progress
 
     def call_key(self, tool, args):
         defaults = {"time_column": "timestamp", "component_column": "cmdb_id"}
@@ -174,10 +176,14 @@ class Agent:
                 self.cache_hits += 1
                 success, cached = self.cache[key]
                 outputs = [{**item, "cache_hit": True, "reused_by": branch} for item in cached]
+                notify(self.progress, {"stage": "tool", "status": "completed", "tool": tool,
+                                       "cache_hit": True, "evidence_id": branch})
             elif self.steps >= min(self.config.get("max_steps", 16), self.round_ceiling):
                 outputs = [{"error": "tool budget exhausted"}]
             else:
                 self.steps += 1
+                notify(self.progress, {"stage": "tool", "status": "started", "tool": tool,
+                                       "evidence_id": branch})
                 try:
                     result = self.telemetry.run(node["tool"], args)
                     outputs = [{"evidence_id": branch, "tool": node["tool"], "result": result}]
@@ -194,6 +200,8 @@ class Agent:
                 self.call_history.append({"tool": tool, "args": args, "evidence_id": branch,
                                           "success": bool(success)})
                 self.evidence.extend(outputs)
+                notify(self.progress, {"stage": "tool", "status": "completed" if "result" in outputs[0] else "failed",
+                                       "tool": tool, "evidence_id": branch, "tool_calls": self.steps})
         elif kind in {"sequence", "selector", "parallel"}:
             children = node.get("children", [])
             statuses = []
@@ -210,7 +218,7 @@ class Agent:
         save(directory / "result.json", {"state": "success" if success else "failure", "outputs": outputs})
         return success, outputs
 
-    def run(self, instruction, context="", required_fields=None, failure_count=None):
+    def run(self, instruction, context="", required_fields=None, failure_count=None, initial_plan=None):
         allow_abstention = self.config.get("allow_abstention", False)
         inventory = self.telemetry.inventory()
         # Exact inventory is persisted; a bounded subset is exposed and explicitly labelled.
@@ -220,13 +228,14 @@ class Agent:
                 "inventory": inventory[:150], "inventory_omitted": max(0, len(inventory)-150),
                 "workflows": retrieve(instruction)}
         for round_id in range(self.config.get("max_rounds", 3)):
+            notify(self.progress, {"stage": "investigation", "status": "started", "round": round_id + 1})
             before_steps = self.steps
             self.round_ceiling = min(self.config.get("max_steps", 16), self.steps + 6)
             prompt = json.dumps({**base, "prior_analysis": bounded(self.summaries, 6000),
                                 "completed_calls": self.call_history,
                                 "evidence": bounded(compact_evidence(self.evidence), 10000),
                                 "remaining_tools": self.config.get("max_steps", 16)-self.steps})
-            plan = self.llm.ask("Planner", prompt + "\n" + CATALOG +
+            plan = initial_plan if round_id == 0 and initial_plan is not None else self.llm.ask("Planner", prompt + "\n" + CATALOG +
                 "\nProduce a bounded behavior tree. NEVER repeat a completed call; cached results provide no new evidence. Follow up on unexamined modalities, changed windows or columns. Distinguish sustained episodes from isolated spikes and boundary-censored runs. Do not select the earliest anomaly as root cause. Use sequence for dependencies, selector for fallback, parallel for independent analyses. A metrics/logs leaf with no findings fails its diagnostic condition; truncated results also fail. Use parallel when all modalities should be inspected even if one is empty. Plan only relevant dates. No more than 6 tool leaves per round.", PLAN)
             save(self.workspace / f"plan-{round_id}.json", plan)
             _, outputs = self.execute(plan.get("plan", {}))
@@ -234,6 +243,7 @@ class Agent:
             self.ensure_coverage(inventory)
             candidates = corroborated_onsets(self.evidence)
             analysis = self.llm.ask("Analyzer", json.dumps({"task": instruction,
+                "system_context": context,
                 "outputs": bounded(compact_evidence(self.evidence)), "corroborated_onsets": candidates,
                 "previous": bounded(self.summaries, 6000)}) + "\nAssess evidence sufficiency and contradictions. Earliest anomaly does not imply root cause. Require persistent onset and independently corroborating signals, with temporal order consistent with propagation. Corroborated onsets are hypotheses, not proven causes. Name evidence IDs. State exact NEW tool/column/window corrections when needed. Do not equate successful tools with a solved diagnosis.", ANALYSIS)
             confidence = analysis.get("confidence", 0)

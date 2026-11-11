@@ -43,6 +43,35 @@ def _open_readonly(path):
     return db
 
 
+def _journal_records(db, table, limit):
+    # Table names come only from the fixed sources below, never the request.
+    records = []
+    for sequence, encoded in db.execute(
+            f"SELECT id,payload FROM {table} ORDER BY id DESC LIMIT ?", (limit,)):
+        payload = json.loads(encoded)
+        if not isinstance(payload, dict):
+            raise ValueError("Expected a journal object")
+        records.append({**payload, "sequence": sequence})
+    return records
+
+
+def _read_journal_source(db, result, *, table, field, source, reader, require_records=False):
+    """An incompatible optional journal must not hide other readable sources."""
+    try:
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (table,)).fetchone():
+            return
+        records = reader()
+        # SQLite may contain legacy/corrupt data that the producers now reject.
+        # Keep it from turning the whole HTTP snapshot into a serialization 503.
+        json.dumps(records, allow_nan=False)
+        result[field] = records
+        result["sources"][source] = {"connected": bool(records) if require_records else True}
+    except (sqlite3.Error, ValueError, TypeError, OSError):
+        result[field] = []
+        result["sources"][source] = {
+            "connected": False, "detail": "Journal unavailable, busy or incompatible. Retrying."}
+
+
 def snapshot(db_path, telemetry_path):
     result = {
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -61,19 +90,17 @@ def snapshot(db_path, telemetry_path):
     try:
         db = _open_readonly(telemetry_path)
         try:
-            if db.execute("SELECT 1 FROM sqlite_master WHERE name='telemetry'").fetchone():
-                result["telemetry"] = [{"sequence": row[0], **json.loads(row[1])} for row in db.execute(
-                    "SELECT id,payload FROM telemetry ORDER BY id DESC LIMIT ?", (LIMIT,))]
-                result["sources"]["telemetry"] = {"connected": True}
-            if db.execute("SELECT 1 FROM sqlite_master WHERE name='cluster_snapshots'").fetchone():
-                result["cluster_history"] = [{"sequence": row[0], **json.loads(row[1])} for row in db.execute(
-                    "SELECT id,payload FROM cluster_snapshots ORDER BY id DESC LIMIT ?", (CLUSTER_HISTORY_LIMIT,))]
-                result["sources"]["cluster_metrics"] = {"connected": bool(result["cluster_history"])}
-            if db.execute("SELECT 1 FROM sqlite_master WHERE name='boutique_observations'").fetchone():
-                result["boutique_history"] = [{"sequence": row[0], **json.loads(row[1])} for row in db.execute(
-                    "SELECT id,payload FROM boutique_observations ORDER BY id DESC LIMIT 180")]
+            for table, field, source, limit in (
+                    ("telemetry", "telemetry", "telemetry", LIMIT),
+                    ("cluster_snapshots", "cluster_history", "cluster_metrics", CLUSTER_HISTORY_LIMIT),
+                    ("boutique_observations", "boutique_history", "boutique", 180)):
+                _read_journal_source(db, result, table=table, field=field, source=source,
+                                     reader=lambda: _journal_records(db, table, limit),
+                                     require_records=source == "cluster_metrics")
             from runtime.security_store import recent
-            result["security_events"] = recent(db)
+            result["security_events"] = []
+            _read_journal_source(db, result, table="security_events", field="security_events", source="security",
+                                 reader=lambda: recent(db))
         finally:
             db.close()
     except (sqlite3.Error, ValueError, OSError):

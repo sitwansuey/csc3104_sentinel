@@ -41,6 +41,19 @@ class ObserverDetectionTests(unittest.TestCase):
         self.assertEqual(incident["observed_generation"], 2)
         self.assertIn("CrashLoopBackOff", {signal["reason"] for signal in incident["signals"]})
 
+    def test_overlapping_tails_are_one_signal_per_occurrence_and_emitting_container(self):
+        observations = copy.deepcopy(self.observations["failed-rollout"])
+        for observation in observations:
+            log = observation["logs"][0]
+            log["text"] = "2026-10-10T12:00:00Z Error startup failed\nError without a timestamp"
+            observation["logs"].append({**log, "pod": "another-pod"})
+        incident = detect(observations, self.policy)
+        timed = [s for s in incident["signals"] if s["source"] == "container_log"]
+        untimed = [s for s in incident["signals"] if s["source"] == "container_log_untimed"]
+        self.assertEqual(len(timed), 2)
+        self.assertEqual(len(untimed), 2)
+        self.assertTrue(all(s["at"] == "2026-10-10T12:00:00Z" for s in timed))
+
     def test_exact_duplicate_observation_does_not_create_duplicate_incident(self):
         observer = Observer(self.policy)
         emitted = []

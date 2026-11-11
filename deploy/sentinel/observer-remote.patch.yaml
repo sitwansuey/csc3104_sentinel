@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentinel-observer
+  namespace: sentinel-demo
+spec:
+  template:
+    spec:
+      containers:
+        - name: observer
+          args:
+            - run
+            - --in-cluster
+            - --namespace=sentinel-demo
+            - --deployment=demo-api
+            - --cluster-id=sentinel-lab
+            - --state=/data/observer.sqlite3
+            - --coordinator-url=https://sentinel-coordinator.sentinel-demo.svc:8766
+            - --coordinator-ca=/coordinator-ca/ca.crt
+            - --policy=/config/policy.json
+            - --collect-logs
+          env:
+            - name: SENTINEL_OBSERVER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-coordinator-workers
+                  key: SENTINEL_OBSERVER_TOKEN
+          volumeMounts:
+            - name: coordinator-ca
+              mountPath: /coordinator-ca
+              readOnly: true
+      volumes:
+        - name: coordinator-ca
+          configMap:
+            name: sentinel-coordinator-ca

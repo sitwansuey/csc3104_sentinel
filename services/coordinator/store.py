@@ -61,6 +61,13 @@ class SQLiteStore:
                 id INTEGER PRIMARY KEY, action_id TEXT NOT NULL
                     REFERENCES actions(action_id), record TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS managed_approvals (
+                approval_id INTEGER PRIMARY KEY REFERENCES approvals(id)
+            );
+            CREATE TABLE IF NOT EXISTS approval_revocations (
+                approval_id INTEGER PRIMARY KEY REFERENCES approvals(id),
+                record TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS outbox (
                 id INTEGER PRIMARY KEY, topic TEXT NOT NULL, payload TEXT NOT NULL,
                 action_id TEXT, delivered INTEGER NOT NULL DEFAULT 0
@@ -108,10 +115,60 @@ class SQLiteStore:
             result[field] = json.loads(result[field]) if result[field] else None
         return result
 
+    def planning_blocker(self, incident_id):
+        """Serialize recoveries for a workload, leaving other targets independent.
+
+        Arrival order is durable (SQLite rowid). Include the physical workload
+        name even across UID changes; Guard still checks the exact bound UID.
+        """
+        current = self.db.execute("SELECT rowid,* FROM incidents WHERE incident_id=?", (incident_id,)).fetchone()
+        if current is None:
+            raise CoordinatorError("Incident must be recorded first")
+        target = json.loads(current["target"])
+        active = {"VALIDATING", "AWAITING_APPROVAL", "READY", "VERIFYING", "NEEDS_RECONCILIATION"}
+        for row in self.db.execute("SELECT rowid,* FROM incidents ORDER BY rowid"):
+            if row["incident_id"] == incident_id:
+                continue
+            other = json.loads(row["target"])
+            if any(other[k] != target[k] for k in ("cluster_id", "namespace", "kind", "name")):
+                continue
+            if row["state"] in active or (row["state"] == "OPEN" and row["rowid"] < current["rowid"]):
+                return row["incident_id"]
+        return None
+
     def approval(self, action_id):
-        row = self.db.execute("SELECT record FROM approvals WHERE action_id=? ORDER BY id DESC LIMIT 1",
-                              (action_id,)).fetchone()
-        return json.loads(row[0]) if row else None
+        row = self.approval_row(action_id)
+        if row is None or self.db.execute(
+                "SELECT 1 FROM approval_revocations WHERE approval_id=?", (row["id"],)).fetchone():
+            return None
+        return json.loads(row["record"])
+
+    def approval_row(self, action_id):
+        return self.db.execute("SELECT * FROM approvals WHERE action_id=? ORDER BY id DESC LIMIT 1",
+                               (action_id,)).fetchone()
+
+    def has_managed_approval(self, action_id):
+        return self.db.execute("""SELECT 1 FROM managed_approvals m JOIN approvals a ON a.id=m.approval_id
+            WHERE a.action_id=? LIMIT 1""", (action_id,)).fetchone() is not None
+
+    def current_approval(self, action_id, *, managed_only=False):
+        """Read unrevoked, unexpired approval; expiry is exclusive."""
+        if managed_only:
+            row = self.approval_row(action_id)
+            if row is None or not self.db.execute(
+                    "SELECT 1 FROM managed_approvals WHERE approval_id=?", (row["id"],)).fetchone():
+                return None
+        record = self.approval(action_id)
+        if record and record.get("expires_at") and _time(self.now()) >= _time(record["expires_at"]):
+            return None
+        return record
+
+    def approval_history(self, action_id):
+        return [{"approval_id": row["id"], "approval": json.loads(row["record"]),
+                 "revocation": json.loads(row["revocation"]) if row["revocation"] else None}
+                for row in self.db.execute("""SELECT a.id,a.record,r.record AS revocation FROM approvals a
+                    LEFT JOIN approval_revocations r ON r.approval_id=a.id
+                    WHERE a.action_id=? ORDER BY a.id""", (action_id,))]
 
     def dependency_result(self, action_id):
         """Return the newest accepted immutable finding for this action."""
@@ -190,8 +247,10 @@ class SQLiteStore:
     def add_message(self, event_key, payload):
         self.db.execute("INSERT INTO messages VALUES(?,?)", (event_key, payload))
 
-    def add_approval(self, action_id, record):
-        self.db.execute("INSERT INTO approvals(action_id,record) VALUES(?,?)", (action_id, _json(record)))
+    def add_approval(self, action_id, record, *, managed=False):
+        cursor = self.db.execute("INSERT INTO approvals(action_id,record) VALUES(?,?)", (action_id, _json(record)))
+        if managed:
+            self.db.execute("INSERT INTO managed_approvals VALUES(?)", (cursor.lastrowid,))
 
     def pending_routes(self, *topics, action_id=None):
         query = "SELECT * FROM outbox WHERE delivered=0"

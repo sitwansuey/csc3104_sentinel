@@ -46,6 +46,18 @@ class DashboardTests(unittest.TestCase):
         self.assertFalse(self.telemetry.exists())
         self.assertEqual(result["incidents"], [])
 
+    def test_live_planning_progress_is_readable_without_a_proposal(self):
+        emit_event(self.telemetry, component=3, event_type="heartbeat", summary="Analyzer: running (15s)",
+                   incident_id="INC-PENDING", progress={"stage": "model", "role": "Analyzer",
+                       "status": "running", "seconds": 15, "attempt": 1, "model": "fixture"})
+        result = snapshot(self.db, self.telemetry)
+        self.assertEqual(result["actions"], [])
+        self.assertEqual(result["telemetry"][0]["progress"]["seconds"], 15)
+        self.assertEqual(result["telemetry"][0]["incident_id"], "INC-PENDING")
+        with self.assertRaises(ValueError):
+            emit_event(self.telemetry, component=3, event_type="status", summary="Invalid",
+                       progress={"stage": "model", "status": "running", "raw_prompt": "private"})
+
     def test_startup_can_select_available_port_and_open_browser(self):
         server = Mock(server_port=12345)
         server.serve_forever.side_effect = KeyboardInterrupt
@@ -100,6 +112,61 @@ class DashboardTests(unittest.TestCase):
             emit_event(self.telemetry, component=2, event_type="observation", summary="Invalid", metrics={"secret": "value"})
         with self.assertRaises(ValueError):
             emit_event(self.telemetry, component=2, event_type="error", summary="x" * 17000)
+
+    def test_corrupt_journal_source_does_not_hide_other_readable_sources(self):
+        with SQLiteStore(self.db) as store:
+            handle(fixture("messages/incident.json"), store, LocalEventBus())
+        emit_event(self.telemetry, component=2, event_type="observation", summary="Recorded observation")
+        tables = (
+            ("telemetry", "telemetry", "telemetry"),
+            ("cluster_snapshots", "cluster_history", "cluster_metrics"),
+            ("boutique_observations", "boutique_history", "boutique"),
+            ("security_events", "security_events", "security"),
+        )
+        db = sqlite3.connect(self.telemetry)
+        try:
+            for table, _, _ in tables[1:]:
+                db.execute(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY, kind TEXT, payload TEXT)")
+                db.execute(f"INSERT INTO {table}(kind,payload) VALUES('monitor',?)",
+                           (json.dumps({"marker": table}),))
+            db.commit()
+            for table, field, source in tables:
+                original = db.execute(f"SELECT payload FROM {table}").fetchone()[0]
+                for invalid in ("{invalid", "[]", '{"value":NaN}'):
+                    with self.subTest(table=table, invalid=invalid):
+                        db.execute(f"UPDATE {table} SET payload=?", (invalid,))
+                        db.commit()
+                        before = self.telemetry.read_bytes()
+                        result = snapshot(self.db, self.telemetry)
+                        self.assertEqual(result[field], [])
+                        self.assertFalse(result["sources"][source]["connected"])
+                        self.assertIn("incompatible", result["sources"][source]["detail"])
+                        self.assertTrue(result["sources"]["coordinator"]["connected"])
+                        self.assertEqual(len(result["incidents"]), 1)
+                        for other_table, other_field, other_source in tables:
+                            if other_table != table:
+                                self.assertEqual(len(result[other_field]), 1)
+                                self.assertTrue(result["sources"][other_source]["connected"])
+                        self.assertEqual(self.telemetry.read_bytes(), before)
+                        json.dumps(result, allow_nan=False)
+                db.execute(f"UPDATE {table} SET payload=?", (original,))
+                db.commit()
+        finally:
+            db.close()
+
+    def test_incompatible_security_schema_preserves_telemetry(self):
+        emit_event(self.telemetry, component=2, event_type="observation", summary="Recorded observation")
+        db = sqlite3.connect(self.telemetry)
+        try:
+            db.execute("CREATE TABLE security_events (id INTEGER PRIMARY KEY, payload TEXT)")
+            db.commit()
+        finally:
+            db.close()
+        result = snapshot(self.db, self.telemetry)
+        self.assertTrue(result["sources"]["telemetry"]["connected"])
+        self.assertEqual(result["telemetry"][0]["summary"], "Recorded observation")
+        self.assertFalse(result["sources"]["security"]["connected"])
+        self.assertEqual(result["security_events"], [])
 
     def test_guard_worker_persists_bound_reports_and_exact_retries(self):
         with SQLiteStore(self.db) as store:

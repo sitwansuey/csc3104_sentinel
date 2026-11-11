@@ -3,6 +3,8 @@
 No Ollama server or model is used; model accuracy is outside these checks.
 """
 import io
+import json
+import threading
 import unittest
 from urllib.error import HTTPError
 from unittest.mock import patch
@@ -34,4 +36,52 @@ class ModelTransportTests(unittest.TestCase):
         self.assertEqual(request.call_count, 2)
         self.assertEqual(request.call_args.kwargs["timeout"], 3)
         sleep.assert_called_once_with(1)
-        self.assertEqual(model.calls, [])
+        self.assertEqual([c["status"] for c in model.calls], ["failed", "failed"])
+        self.assertTrue(all(c["error_type"] == "TimeoutError" for c in model.calls))
+
+    def test_heartbeat_arrives_while_model_is_blocked_and_usage_includes_timings(self):
+        updates = []
+        heartbeat = threading.Event()
+        def progress(update):
+            updates.append(update)
+            if update["status"] == "running":
+                heartbeat.set()
+        class SlowResponse(io.BytesIO):
+            def read(self, *args):
+                if not heartbeat.wait(2):
+                    raise AssertionError("No progress while waiting for the model")
+                return super().read(*args)
+        response = SlowResponse(json.dumps({"message": {"content": '{"action":"ESCALATE"}'},
+            "prompt_eval_count": 321, "eval_count": 12, "load_duration": 2000000000,
+            "prompt_eval_duration": 1000000000, "eval_duration": 3000000000}).encode())
+        model = Ollama({"base_url": "http://fixture", "model": "test-model",
+                        "progress_interval_seconds": .01}, progress=progress)
+        with patch("agent.llm.urllib.request.urlopen", return_value=response):
+            result = model.ask("Analyzer", "PRIVATE TELEMETRY", {"type": "object"})
+        self.assertEqual(result, {"action": "ESCALATE"})
+        self.assertEqual(updates[0]["status"], "started")
+        self.assertEqual(updates[-1]["status"], "completed")
+        self.assertNotIn("PRIVATE TELEMETRY", json.dumps(updates))
+        self.assertEqual(model.calls[0]["prompt_tokens"], 321)
+        self.assertEqual(model.calls[0]["load_duration_seconds"], 2)
+        self.assertEqual(model.calls[0]["eval_duration_seconds"], 3)
+        self.assertTrue(response.closed)
+
+    def test_progress_sink_failure_does_not_change_model_answer(self):
+        def broken(update):
+            raise OSError("Dashboard is offline")
+        model = Ollama({"base_url": "http://fixture", "model": "test-model"}, progress=broken)
+        with patch("agent.llm.urllib.request.urlopen", return_value=io.BytesIO(
+                b'{"message":{"content":"{}"}}')):
+            self.assertEqual(model.ask("Analyzer", "fixture", {}), {})
+
+    def test_truncated_deterministic_output_fails_without_another_full_inference(self):
+        model = self.model()
+        with patch("agent.llm.urllib.request.urlopen", return_value=io.BytesIO(
+                b'{"done_reason":"length","message":{"content":"{}"}}')) as request, \
+                patch("agent.llm.time.sleep") as sleep:
+            with self.assertRaisesRegex(RuntimeError, "truncated"):
+                model.ask("Analyzer", "fixture", {})
+        self.assertEqual(request.call_count, 1)
+        sleep.assert_not_called()
+        self.assertEqual(model.calls[0]["status"], "failed")

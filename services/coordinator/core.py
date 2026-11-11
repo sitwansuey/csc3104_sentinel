@@ -67,9 +67,13 @@ def _apply(message, store):
         _require(incident["state"] in {"OPEN", "REJECTED", "FAILED"},
                  "Only one active action is permitted; recovered incidents cannot reopen")
         _require(store.action(action_id) is None, "Action ID already belongs to a proposal")
-        store.add_action(action_id, incident_id, message, "VALIDATING")
-        store.activate_action(incident_id, action_id, "VALIDATING")
-        store.enqueue("guard.request", {"proposal": message}, action_id)
+        _require(store.planning_blocker(incident_id) is None,
+                 "Another incident is recovering this workload; proposal must wait")
+        next_state = "NEEDS_REVIEW" if message["action"] == "ESCALATE" else "VALIDATING"
+        store.add_action(action_id, incident_id, message, next_state)
+        store.activate_action(incident_id, action_id, next_state)
+        store.enqueue("incident.review" if next_state == "NEEDS_REVIEW" else "guard.request",
+                      {"proposal": message}, action_id)
         return
     action = store.action(action_id)
     _require(action is not None and action["incident_id"] == incident_id
@@ -120,6 +124,17 @@ def _apply(message, store):
                          and isinstance(report.get("input_fingerprints"), dict)
                          and report["input_fingerprints"].get("dependencies") == required,
                          "Dependency revalidation requires a Guard report bound to the latest evidence")
+            if store.has_managed_approval(action_id):
+                approval = store.current_approval(action_id, managed_only=True)
+                report = store.guard_report(_digest(message), action_id) or {}
+                _require(approval is not None and message["schema_version"] == "2.0"
+                         and approval["proposal_sha256"] == _digest(action["proposal"])
+                         and approval["policy_version"] == message["policy_version"]
+                         and report.get("decision_sha256") == _digest(message)
+                         and report.get("proposal_sha256") == _digest(action["proposal"])
+                         and report.get("inputs_sha256") == message["inputs_sha256"]
+                         and report.get("input_fingerprints", {}).get("approval") == _digest(approval),
+                         "Guard ALLOW requires the current authenticated approval and bound report")
         next_state = {"ALLOW": "READY", "REJECT": "REJECTED", "ESCALATE": "AWAITING_APPROVAL"}[message["verdict"]]
         store.save_guard_result(action_id, message)
         store.set_state(incident_id, action_id, next_state)
@@ -143,7 +158,7 @@ def _apply(message, store):
         store.save_execution_result(action_id, message)
         store.set_state(incident_id, action_id, next_state)
         if next_state == "VERIFYING":
-            store.enqueue("verifier.request", {"execution": message}, action_id)
+            store.enqueue("verifier.request", {"execution": message, "proposal": action["proposal"]}, action_id)
         elif next_state == "NEEDS_RECONCILIATION":
             store.enqueue("executor.reconcile", {"proposal": action["proposal"], "execution": message}, action_id)
     elif kind == "outcome":
@@ -188,13 +203,27 @@ def handle(message: dict, store: SQLiteStore, event_bus) -> bool:
     return changed
 
 
-def approve(action_id: str, operator_id: str, store: SQLiteStore, *, expires_at: str | None = None) -> dict:
-    """Persist approval and request fresh Guard evaluation; never grant execution."""
+def approve(action_id: str, operator_id: str, store: SQLiteStore, *, expires_at: str | None = None,
+            expected_proposal_sha256=None, expected_policy_version=None, managed=False) -> dict:
+    """Persist approval and request fresh Guard evaluation; never grant execution.
+
+    Direct calls are a trusted local/demo interface. Deployed callers use the
+    authenticated approval API and its explicit proposal/policy preconditions.
+    """
     _require(isinstance(operator_id, str) and bool(operator_id.strip()), "Operator identity is required")
     with store.transaction():
         action = store.action(action_id)
+        if managed:
+            _require(action is not None and action["guard_result"] is not None
+                     and expected_proposal_sha256 == _digest(action["proposal"])
+                     and expected_policy_version == action["guard_result"]["policy_version"],
+                     "Approval proposal or policy precondition changed")
+            _require(expires_at is not None, "Authenticated approval requires expiry")
+            _require(isinstance(expires_at, str) and _time(expires_at) > _time(store.now()),
+                     "Approval expiry must be a future UTC timestamp")
         previous = store.approval(action_id)
-        if (action and action["state"] == "VALIDATING" and previous
+        if (action and action["state"] in ({"VALIDATING", "READY"} if managed else {"VALIDATING"}) and previous
+                and (not managed or previous == store.current_approval(action_id, managed_only=True))
                 and previous["operator_id"] == operator_id
                 and previous["proposal_sha256"] == _digest(action["proposal"])
                 and previous["policy_version"] == action["guard_result"]["policy_version"]
@@ -218,7 +247,7 @@ def approve(action_id: str, operator_id: str, store: SQLiteStore, *, expires_at:
                   "policy_version": guard["policy_version"], "decision": "APPROVED", "approved_at": now}
         if expires_at is not None:
             record["expires_at"] = expires_at
-        store.add_approval(action_id, record)
+        store.add_approval(action_id, record, managed=managed)
         store.set_state(action["incident_id"], action_id, "VALIDATING")
         store.enqueue("guard.request", {"proposal": action["proposal"], "approval": record}, action_id)
     return record
@@ -237,14 +266,31 @@ def dispatch_pending(store: SQLiteStore, event_bus) -> int:
             action = store.action(row["action_id"])
             payload = json.loads(row["payload"])
             eligible = {"guard.request": {"VALIDATING", "AWAITING_APPROVAL"},
+                        "dependency.request": {"VALIDATING", "AWAITING_APPROVAL", "READY"},
                         "executor.request": {"READY"}, "verifier.request": {"VERIFYING"},
                         "executor.reconcile": {"NEEDS_RECONCILIATION"}}
             obsolete = (row["topic"] in eligible and action["state"] not in eligible[row["topic"]])
             if row["topic"] == "executor.request":
                 obsolete = obsolete or action["guard_result"] != payload["guard_result"]
+                if store.has_managed_approval(row["action_id"]):
+                    obsolete = obsolete or store.current_approval(row["action_id"], managed_only=True) != payload.get("approval")
+            elif row["topic"] == "guard.request":
+                # A newer request supersedes earlier approval/dependency inputs,
+                # including a request that was already leased to a worker.
+                newest = store.db.execute("SELECT max(id) FROM outbox WHERE topic='guard.request' AND action_id=?",
+                                          (row["action_id"],)).fetchone()[0]
+                obsolete = obsolete or row["id"] != newest
+            elif row["topic"] == "dependency.request":
+                newest = store.db.execute("SELECT max(id) FROM outbox WHERE topic='guard.request' AND action_id=?",
+                                          (row["action_id"],)).fetchone()[0]
+                obsolete = obsolete or payload.get("guard_event_id") != newest
         elif row["topic"] == "planner.request":
             incident = store.incident(json.loads(row["payload"])["incident"]["incident_id"])
             obsolete = incident["state"] != "OPEN"
+            if not obsolete and store.planning_blocker(incident["incident_id"]):
+                if hasattr(event_bus, "cancel"):
+                    event_bus.cancel(row["id"])
+                continue  # Remains durable and pending until the earlier recovery ends.
         if obsolete:
             acknowledge(store, row["id"])
             if hasattr(event_bus, "cancel"):

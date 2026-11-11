@@ -54,8 +54,9 @@ how to validate each mode and distinguish live recovery from injected-model test
 
 The current source runs these components through local workers/harnesses. It
 does not deploy six independent Sentinel microservices. Demo approval is trusted
-lab approval; authenticated approval and cross-host execution ownership remain
-unfinished. See [architecture](docs/architecture.md) for the exact boundaries.
+lab approval. An [authenticated approval service](docs/approvals.md) is available
+for explicit Guard/Executor wiring; deployed acceptance and cross-host execution
+ownership remain unfinished. See [architecture](docs/architecture.md) for the exact boundaries.
 
 ## Repository map
 

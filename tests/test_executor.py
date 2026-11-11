@@ -122,7 +122,9 @@ class ExecutorTests(unittest.TestCase):
         self.assertEqual(entry["fingerprint"], proposal_fingerprint(self.proposal))
         self.assertEqual(entry["result"], result)
         self.assertEqual(len(self.ledger.attempts(self.proposal["action_id"])), 1)
-        self.assertEqual(self.approval_reads, 1)
+        # Validation, pre-journal usability and final post-journal usability
+        # each consult current authoritative approval before a new write.
+        self.assertEqual(self.approval_reads, 3)
 
     def test_missing_expired_and_rejected_approval_produce_no_write(self):
         for case in ("missing", "expired", "rejected"):
@@ -181,11 +183,14 @@ class ExecutorTests(unittest.TestCase):
 
     def test_duplicate_delivery_returns_identical_result_after_restart(self):
         original = self.run_action()
+        initial_approval_reads = self.approval_reads
+        self.assertEqual(initial_approval_reads, 3)
         self.approval = None
         repeated = self.restart()
         self.assertEqual(repeated, original)
         self.assertEqual(len(self.cluster.write_attempts), 1)
-        self.assertEqual(self.approval_reads, 1)
+        self.assertEqual(self.approval_reads, initial_approval_reads,
+                         "Result replay must not request new execution authorization")
 
     def test_changed_intent_under_same_id_is_rejected_including_changed_target(self):
         self.run_action()
@@ -317,6 +322,8 @@ except TargetBusy:
         cluster = CrashAfterCommit(self.fixtures["live_state"], clock=lambda: NOW)
         with self.assertRaises(SimulatedCrash):
             self.run_action(cluster=cluster)
+        initial_approval_reads = self.approval_reads
+        self.assertEqual(initial_approval_reads, 3)
         self.approval = None
         self.fixtures["baseline"] = None
         self.fixtures["dependencies"] = None
@@ -324,7 +331,8 @@ except TargetBusy:
         self.assertEqual(result["status"], "APPLIED")
         self.assertEqual(len(cluster.write_attempts), 1)
         self.assertEqual(len(cluster.writes), 1)
-        self.assertEqual(self.approval_reads, 1)
+        self.assertEqual(self.approval_reads, initial_approval_reads,
+                         "Committed-write reconciliation must not request new authorization")
 
     def test_write_intent_persistence_failure_prevents_the_api_call(self):
         failure = sqlite3.OperationalError("Synthetic journal write failure")
@@ -343,10 +351,13 @@ except TargetBusy:
                 self.run_action()
         self.assertEqual(self.ledger.get(self.proposal["action_id"])["phase"], "WRITE_STARTED")
         self.assertEqual(len(self.cluster.writes), 1)
+        initial_approval_reads = self.approval_reads
+        self.assertEqual(initial_approval_reads, 3)
         self.approval = None
         self.assertEqual(self.restart()["status"], "APPLIED")
         self.assertEqual(len(self.cluster.write_attempts), 1)
-        self.assertEqual(self.approval_reads, 1)
+        self.assertEqual(self.approval_reads, initial_approval_reads,
+                         "Result recovery must reconcile the existing write without reauthorization")
 
     def test_lost_write_response_reconciles_evidence_without_a_second_write(self):
         cluster = LostResponse(self.fixtures["live_state"], clock=lambda: NOW)
@@ -374,6 +385,8 @@ except TargetBusy:
                 raise TimeoutError("Server still processing original request")
         cluster = DelayedWrite(self.fixtures["live_state"], clock=lambda: NOW)
         uncertain = self.run_action(cluster=cluster)
+        initial_approval_reads = self.approval_reads
+        self.assertEqual(initial_approval_reads, 3)
         self.assertEqual(uncertain["status"], "NEEDS_RECONCILIATION")
         self.assertEqual(self.ledger.undelivered_results(), [uncertain])
         # The server finishes the already submitted request after the timeout.
@@ -389,7 +402,8 @@ except TargetBusy:
         self.assertEqual(self.ledger.undelivered_results(), [])
         self.assertEqual(cluster.requests, 1)
         self.assertEqual(len(cluster.writes), 1)
-        self.assertEqual(self.approval_reads, 1)
+        self.assertEqual(self.approval_reads, initial_approval_reads,
+                         "Delayed-write reconciliation must not authorize another mutation")
         self.assertEqual([result["status"] for result in self.ledger.results(self.proposal["action_id"])],
                          ["NEEDS_RECONCILIATION", "APPLIED"])
 

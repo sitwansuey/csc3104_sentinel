@@ -18,7 +18,15 @@ revokes queued execution and requires a bound current Guard report.
 
 Approval binds the exact proposal and policy version; it only requests new
 Guard evaluation. It cannot override hard constraints. The harness supplies
-trusted demo approval; authenticated operator access is future work.
+trusted demo approval. The optional [authenticated approval authority](../../docs/approvals.md)
+adds target-scoped operator access, bounded expiry, durable revocation and current
+Guard/Executor lookup without changing shared wire contracts.
+
+`python -m runtime.coordinator_server --help` starts the combined delivery and
+approval process. Its remote composition queues Verifier dependency work before
+Guard turns, fences stale leases and accepts component results atomically.
+The [remote worker guide](../../docs/remote-workers.md) covers owned component
+journals, network ingress and the complete key-free HTTP recovery regression.
 
 `python scripts/coordinator.py --help` exposes local ingestion/status/approval
 and worker commands. The source uses one SQLite connection per worker and

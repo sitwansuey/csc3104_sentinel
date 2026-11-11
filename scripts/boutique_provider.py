@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 from runtime.executor_pipeline import process_executor_requests
 from runtime.guard_pipeline import process_guard_requests
@@ -10,6 +11,7 @@ from runtime.planner_pipeline import process_planner_requests
 from runtime.recovery_runner import advance
 from services.coordinator.core import handle
 from services.planner.core import retrieve_runbooks
+from services.planner.store import PlannerStore
 from experiments.recovery.live import save, utc
 
 
@@ -33,7 +35,11 @@ def run_provider_case(lab, incident):
 
     def plan():
         process_planner_requests(lab.store, lab.bus, baseline_reader=lambda i: [lab.baseline],
-                                 retriever=retrieve_runbooks, provider=provider)
+                                 retriever=retrieve_runbooks, provider=provider, journal=planning)
+        record = planning.get(incident["incident_id"])
+        if record:
+            save(folder / "planning-status.json", {key: record[key] for key in
+                 ("incident_id", "attempts", "next_attempt", "error_code", "proposal", "delivered")})
 
     def assess(proposal):
         save(folder / "proposal.json", proposal)
@@ -66,9 +72,14 @@ def run_provider_case(lab, incident):
         finally:
             adapters.ledger.close()
 
-    state = advance(lab.store, incident["incident_id"], plan=plan, assess=assess, guard=guard,
-                    operator=operator, execute=execute,
-                    verify=lambda proposal, result: lab.complete_recovery(folder, proposal, result))
+    with PlannerStore(folder / "planner.db") as planning:
+        while True:
+            state = advance(lab.store, incident["incident_id"], plan=plan, assess=assess, guard=guard,
+                            operator=operator, execute=execute,
+                            verify=lambda proposal, result: lab.complete_recovery(folder, proposal, result))
+            if state != "OPEN":
+                break
+            time.sleep(1)  # Persisted bounded backoff; no fallback harness proposal.
     lab.summary.update(scope="Observed shipping incident through configured Planner provider and durable workers",
                        incident_id=incident["incident_id"], provider_state=state)
     if state != "RECOVERED":

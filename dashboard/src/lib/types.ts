@@ -12,8 +12,11 @@ export interface WireMessage {
 }
 export interface Incident { sequence: number; incident_id: string; target: Target; state: string; active_action_id: string | null }
 export interface Action { action_id: string; incident_id: string; proposal: WireMessage; state: string; guard_result: WireMessage | null; execution_result: WireMessage | null }
-export interface Telemetry { sequence: number; at: string; component: number; event_type: string; summary: string; target: Target | null; incident_id?: string | null; action_id?: string | null; metrics: Record<string, number> }
-export interface Approval { action_id: string; operator_id: string; decision: string; approved_at: string; expires_at?: string; proposal_sha256?: string; policy_version?: string }
+export interface Telemetry { sequence: number; at: string; component: number; event_type: string; summary: string; target: Target | null; incident_id?: string | null; action_id?: string | null; metrics: Record<string, number>; progress?: {stage:string;status:string;role?:string;model?:string;seconds?:number;attempt?:number;prompt_tokens?:number;output_tokens?:number} }
+export type Approval = { action_id: string; decision: string } & (
+  { protected: true } |
+  { protected?: false; operator_id: string; approved_at: string; expires_at?: string; proposal_sha256?: string; policy_version?: string }
+)
 export interface Finding { code: string; status: string; path: string; message: string; actual: unknown; expected: unknown }
 export interface GuardReport { action_id: string; checked_at: string; inputs_sha256: string; proposal_sha256: string; checks: Finding[] }
 export interface ClusterNode { name: string; ready: boolean | null; conditions: { type: string; status: string }[]; cpu_allocatable_cores: number | null; memory_allocatable_bytes: number | null; cpu_usage_cores: number | null; memory_usage_bytes: number | null; metrics_timestamp?: string | null; metrics_window_seconds?: number | null }

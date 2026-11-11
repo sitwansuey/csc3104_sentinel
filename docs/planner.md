@@ -26,6 +26,58 @@ CSV paths are confined to the provided telemetry tree. Telemetry is untrusted
 data, not instructions. See the code and tests for the bounds; no production
 identity or perfect diagnosis guarantee is implied.
 
+## Telemetry volume and planning feedback
+
+Live exports use the incident's observation time as their upper bound and retain
+ten minutes before its earliest signal. Earlier/later experiment snapshots do
+not become evidence for a different incident. Replayed metric readings are
+deduplicated by timestamp/KPI/value. Container logs retain nanosecond occurrence
+times and Pod/container identities; Kubernetes warnings retain their own event
+times and identities instead of being timestamped anew at each poll. Untimed
+tails are marked explicitly and excluded from error-burst onset calculations.
+The Observer also deduplicates overlapping container-log lines before emitting
+incident signals. `telemetry-export.json` reports the window, retained rows and
+duplicates removed. It never creates missing distributed traces.
+
+Known live CSV schemas get a deterministic first tool plan over metrics/logs.
+This avoids a model call for column/window discovery; further investigation
+still uses the model when the Analyzer requests it. Set `bootstrap_live_tools`
+to `false` to retain model-generated discovery. Recovery selection receives
+failed-rollout recovery guidance and baseline identifiers/hashes; full saved
+templates stay in the trusted Guard/Executor path instead of being repeated in
+the model prompt.
+
+The Planner / RCA dashboard shows the current phase, attempt, elapsed request
+time and completed-call token counts before a proposal exists. Pending model
+calls emit a heartbeat every five seconds (configurable with
+`progress_interval_seconds`), and missing updates become stale after fifteen
+seconds. These are operational updates, not model reasoning or percentage
+completion. `planning-progress.jsonl` and the continuously updated
+`model-calls.json` persist the same metadata. Usage separates model loading,
+prompt evaluation and generation time, including failed attempts. Invalid or
+truncated deterministic responses fail promptly rather than repeating an
+identical expensive request; transient transport failures retain one retry.
+Remote Planner workers emit operational progress as JSON on stdout.
+
+## Overlapping incidents and recovery checks
+
+The Coordinator queues incidents for a workload already recovering, including
+its verification window. Arrival order survives restart; other workload queues
+remain independent. Both local Planner paths perform slow inference outside
+Coordinator write transactions and recheck lifecycle/queue ownership before
+committing a proposal. Remote claims use the same queue rules. Queued incidents
+retain their evidence and resource versions: an intervening rollout requires
+fresh observation/planning and must not bypass Guard's conflict checks.
+
+Remote verification requests include the executed proposal so the Verifier
+binds its expected template hash to that action, rather than an old static
+policy value. Failed checks disclose measured readiness, application status and
+expected/observed template hashes. A second fault can invalidate the first
+recovery; `APPLIED` still only confirms a write. A verified `NOT_RECOVERED` ends
+that attempt as `FAILED` and releases the next queued incident. This does not
+add repair actions for arbitrary fault types or turn the single-case `-Agent`
+experiment into a continuous multi-fault controller.
+
 ## Configure and launch
 
 Install the root Python requirements into `.venv`. Separately install/start
@@ -59,6 +111,26 @@ The source also retains a trusted JSON subprocess provider boundary via
 requests and exact interactive action confirmation. It is separate from
 `-Agent`, cannot be combined with its lab dashboard sequence, and is not an
 untrusted-plugin sandbox. See `scripts/boutique_provider.py` and its `--help`.
+
+The subprocess-provider path persists its own `provider-recovery/planner.db`.
+It allows three attempts, with 5- and 10-second backoff, a 60-second subprocess
+timeout and a 120-second attempt lease. Invalid output and unavailable providers
+leave the Coordinator request pending until another eligible attempt. Exhaustion
+produces a saved `ESCALATE` proposal for operator review, never a fallback repair.
+`planning-status.json` records attempt count, stable error codes and the final
+proposal without copying provider exception text. Validated proposals are saved
+before Coordinator delivery, so a lost result response reuses the same action
+without calling the provider again. Restart the worker with the same evidence
+directory and journals; a new experiment directory represents a new run.
+
+The local worker API accepts a `services.planner.store.PlannerStore` through
+`process_planner_requests(..., journal=...)`; `max_attempts`, `retry_seconds` and
+`lease_seconds` configure those bounds. The caller must enforce a provider
+timeout shorter than the lease. Multiple connections on one host share the
+journal lease; SQLite is not a cross-host ownership service. Existing callers
+without a journal retain the synchronous exception-and-retry interface used by
+the original offline demonstrations. The separate `-Agent` experiment does not
+yet use this journal for its internal RCA/model phases.
 
 ## Acceptance and limits
 
