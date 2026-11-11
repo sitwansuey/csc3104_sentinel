@@ -1,0 +1,19 @@
+{
+  "schema": "sentinel-submission-v1",
+  "release_tag": null,
+  "instructions_pdf": "dist/GROUP05_INSTRUCTIONS.pdf",
+  "article_pdf": null,
+  "article_max_pages": null,
+  "video_link": null,
+  "video_seconds": {"min": 600, "max": 900},
+  "rehearsal_tiers": ["linux-container", "windows-fresh", "teammate-laptop"],
+  "rehearsal_records": [],
+  "manual": [
+    {"id": "M-AI-POLICY", "text": "Read the course's generative-AI policy; decide and record whether and how AI assistance may be used for the article, instructions and video, and add any declaration it requires"},
+    {"id": "M-REQUIREMENTS", "text": "Confirm the deadline, the article template, page and word limits, the video length and the file names with the lecturer, then set article_max_pages"},
+    {"id": "M-ACCESS", "text": "Give markers access to the repository (it may be private) or attach a source archive and the release assets to the submission"},
+    {"id": "M-UPLOAD", "text": "Upload the article, GROUP05_INSTRUCTIONS.pdf and the video link to the course system"},
+    {"id": "M-CONTRIBUTIONS", "text": "Write the individual contribution statements, if the course asks for them"},
+    {"id": "M-SCREEN-REVIEW", "text": "Watch the final video and check every frame for tokens, credentials, user names and home paths before upload"}
+  ]
+}

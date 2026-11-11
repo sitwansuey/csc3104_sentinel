@@ -104,6 +104,18 @@ class ClaimQuoteTests(unittest.TestCase):
         self.assertIn("> **C-AGENT:** Agent mode recovered in 2/4 runs.\n> Scope: One fault type.\n", text)
         self.assertEqual(self.run_summarize(check=True)[0], 0)
 
+    def test_quote_block_one_folder_below_docs_is_filled_and_checked(self):
+        """The instructions source (docs/instructions/) quotes claims; a stale quote there fails --check."""
+        nested = self.root / "docs/instructions/GROUP05_INSTRUCTIONS.md"
+        nested.parent.mkdir(parents=True)
+        nested.write_text("# Instructions\n\n" + QUOTE, encoding="utf-8")
+        self.assertEqual(self.run_summarize()[0], 0)
+        self.assertIn("> **C-AGENT:** Agent mode recovered in 2/4 runs.", nested.read_text(encoding="utf-8"))
+        nested.write_text(nested.read_text(encoding="utf-8").replace("2/4", "4/4"), encoding="utf-8")
+        code, output = self.run_summarize(check=True)
+        self.assertEqual(code, 1)
+        self.assertIn("docs/instructions/GROUP05_INSTRUCTIONS.md are stale or hand-edited", output)
+
     def test_hand_edited_quote_fails_check(self):
         self.run_summarize()
         self.doc.write_text(self.doc.read_text(encoding="utf-8").replace("2/4", "4/4"), encoding="utf-8")

@@ -13,7 +13,12 @@ Read these in order:
 
 Use [Planner mode](planner.md), [authenticated approvals](approvals.md), [Chaos Mesh](chaos.md), [security](security.md) or
 [packaging](packaging.md) only when using that optional mode. The [release process](release.md) covers
-version tags, the image scan gate and what a person must approve. Benchmarks are
+version tags, the image scan gate and what a person must approve.
+
+For submission: the [marker instructions](instructions/README.md) are the
+source of `GROUP05_INSTRUCTIONS.pdf`, with a [rehearsal plan](instructions/rehearsal-plan.md),
+and the [submission kit](submission/README.md) holds the article outline,
+the video storyboard and the readiness gate. Benchmarks are
 documented beside their code/data: [RCAEval](../agent/datasets/README.md) and
 [Guard cases](../data/experimentation/guard/README.md).
 
