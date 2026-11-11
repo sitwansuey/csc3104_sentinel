@@ -13,7 +13,7 @@
         {"at": "services/executor/kubernetes_adapter.py:243", "text": "Live write returned an error; reconcile its outcome"},
         {"at": "services/executor/reconciliation.py:213", "text": "Basis.UNCHANGED_IN_DOUBT, version, may_fence=True"},
         {"at": "services/executor/core.py:44", "text": "Live state does not confirm this attempt"},
-        {"at": "services/executor/core.py:270-271", "text": "adapters.ledger.record_fence(action_id, nonce, _now(adapters))"},
+        {"at": "services/executor/core.py:272-273", "text": "adapters.ledger.record_fence(action_id, nonce, _now(adapters))"},
         {"at": "services/executor/kubernetes_adapter.py:214", "text": "A fence may change metadata only"},
         {"at": "tests/test_executor_reconciliation_table.py:325", "text": "def test_external_version_bump_supersedes_and_releases_the_workload"},
         {"at": "tests/test_executor_reconciliation_table.py:357", "text": "def test_unchanged_version_stays_in_doubt_and_is_deduplicated"},
@@ -34,8 +34,8 @@
       "impact": "Fixed in code; live verification is left to P3.01 and P4.01. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host given a reconcile command with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it never starts that write. An execute command on a fresh host can still write, and the resourceVersion test in the patch lets at most one write for the action commit. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. No run has used more than one Executor host; the 2026-11-11 live runs each used one.",
       "workaround": "Run one Executor with one ledger directory, as every documented run does, until a multi-host run verifies this.",
       "cites": [
-        {"at": "services/executor/core.py:419", "text": "# Another host may already have committed this same action."},
-        {"at": "services/executor/core.py:363", "text": "# Journal the action as in doubt here, so this host can never start it."},
+        {"at": "services/executor/core.py:421", "text": "# Another host may already have committed this same action."},
+        {"at": "services/executor/core.py:365", "text": "# Journal the action as in doubt here, so this host can never start it."},
         {"at": "tests/test_executor_reconciliation_table.py:420", "text": "def test_peer_adoption_gives_applied_with_zero_writes_on_host_b"},
         {"at": "tests/test_executor_reconciliation_table.py:475", "text": "def test_reconcile_on_a_host_with_no_row_returns_a_result"},
         {"at": "services/executor/store.py:3", "text": "Every worker must use the same ledger and lock directory"}
@@ -119,7 +119,7 @@
       "cites": [
         {"at": "shared/log.py:235", "text": "def entrypoint(component: str)"},
         {"at": "runtime/worker_http.py:259", "text": "@log.entrypoint(\"worker_http\")"},
-        {"at": "services/executor/core.py:234-235", "text": "any read failure leaves the outcome unknown"},
+        {"at": "services/executor/core.py:236-237", "text": "any read failure leaves the outcome unknown"},
         {"at": "docs/observability.md", "text": "only when their entrypoint configures logging"},
         {"at": "tests/test_except_audit.py:39", "text": "def test_repository_has_no_unjustified_broad_handler"}
       ],
@@ -211,7 +211,7 @@
       "workaround": "Quote results only for this fault and action.",
       "cites": [
         {"at": "services/guard/core.py:161-162", "text": "ACTION_NOT_IMPLEMENTED"},
-        {"at": "services/executor/core.py:412", "text": "Only explicit baseline ROLLBACK is implemented."},
+        {"at": "services/executor/core.py:414", "text": "Only explicit baseline ROLLBACK is implemented."},
         {"claim": "C-CONNECTED-HARNESS"}
       ],
       "planned": ["P2.08", "P3.08", "P3.09"],

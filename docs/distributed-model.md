@@ -128,9 +128,9 @@ processes. Each timestamp comes from the producer's own wall clock.
 
 **The Executor's local re-check.** Before writing, the Executor ignores the
 delivered decision and runs the Guard again with its own clock
-(`services/executor/core.py:425::execute::authorizer.validate`). If that
+(`services/executor/core.py:427::execute::authorizer.validate`). If that
 verdict is not ALLOW, it makes no Kubernetes write and reports FAILED
-(`services/executor/core.py:428-430::execute::check.decision["verdict"] != "ALLOW"`).
+(`services/executor/core.py:430-432::execute::check.decision["verdict"] != "ALLOW"`).
 That FAILED result still has to pass the first row of the table:
 
 - Executor ahead of the other clocks (approval looks expired, or the finding
@@ -196,7 +196,7 @@ it is kept in the Planner's own store and read only with its own clock
 | A worker result and its acknowledgment commit together; a resend is a replay | Result digest stored on the receipt | `runtime/worker_transport.py::Delivery.finish` |
 | A worker never redoes finished work after a lost response | Result saved before it is sent | `runtime/remote_worker.py::RemoteWorker.once` |
 | Only the current lease holder can renew or report | Owner, role and lease token must match; renewal cannot revive finished or expired work | `runtime/worker_transport.py::Delivery.renew` |
-| The Kubernetes write happens at most once per action on one ledger | Write intent is journalled before the call; an unclear outcome is reconciled by reading, never by writing again, through a pure decision table | `services/executor/core.py:441-454::execute::start_write`, `services/executor/reconciliation.py::classify` |
+| The Kubernetes write happens at most once per action on one ledger | Write intent is journalled before the call; an unclear outcome is reconciled by reading, never by writing again, through a pure decision table | `services/executor/core.py:443-456::execute::start_write`, `services/executor/reconciliation.py::classify` |
 
 Tests: `tests/test_coordinator.py::CoordinatorTests.test_changed_payload_under_stable_id_is_rejected`,
 `tests/test_worker_transport.py::TransportTests.test_lost_result_response_recovers_exact_receipt_after_restart`,
@@ -224,7 +224,7 @@ Delivery to workers is at least once, and receivers deduplicate by action id.
   the second can claim the same request; the resourceVersion test lets only one
   write land. The loser finds this action's evidence annotation on the
   Deployment and reports APPLIED without writing
-  (`services/executor/core.py:419::execute::Another host may already have committed`).
+  (`services/executor/core.py:421::execute::Another host may already have committed`).
   This is tested in one process only; no run has used two Executor hosts.
 - Reconciliation decides from one read. Once the target is deleted, has
   another UID or has a resourceVersion other than the one the patch tests,

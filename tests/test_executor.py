@@ -867,6 +867,22 @@ class FencedAbortTests(unittest.TestCase):
         gaps = [(started[i + 1] - started[i]).total_seconds() for i in range(len(started) - 1)]
         self.assertGreaterEqual(min(gaps), 30)
 
+    def test_a_host_that_never_wrote_fences_once_the_settle_delay_has_passed_since_adoption(self):
+        cluster = self.in_doubt()
+        peer = self.open_ledger_named("peer")
+        adopted = self.pass_after(31, cluster=cluster, ledger=peer)  # The delay counts from adoption.
+        self.assertEqual(basis(adopted), "UNCHANGED_IN_DOUBT")
+        self.assertEqual(cluster.fence_attempts, [])
+        result = self.pass_after(31, cluster=cluster, ledger=peer)
+        self.assertEqual((result["status"], basis(result)), ("CONFLICT", "FENCED"))
+        self.assertEqual((len(cluster.fence_attempts), peer.attempts(self.proposal["action_id"])), (1, []))
+        with self.assertRaises(ConditionalWriteConflict):
+            cluster.replay()
+        # The writing host never journaled the peer's nonce, so it can only say the write can no longer commit.
+        own = self.pass_after(1, cluster=cluster)
+        self.assertEqual((own["status"], basis(own)), ("SUPERSEDED", "ADVANCED_WITHOUT_EVIDENCE"))
+        self.assertEqual((len(cluster.fence_attempts), cluster.writes), (1, []))
+
     def test_rejected_fence_escalates_once_without_a_busy_loop(self):
         cluster = self.in_doubt(FenceForbidden)
         results = [self.pass_after(10, cluster=cluster) for _ in range(90)]  # 15 minutes of 10 s passes.

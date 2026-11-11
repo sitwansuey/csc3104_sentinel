@@ -241,12 +241,24 @@ decides with the table: APPLIED if our evidence is there, otherwise SUPERSEDED.
   the previous one. All of them test V0, so at most one can ever commit. The
   attempt's own first check after a timeout never fences.
 - A fence that keeps failing, for example because RBAC or admission refuses
-  it, adds no ledger rows; the escalation below still applies.
+  it, adds no result rows, but the Executor keeps sending one fence per retry
+  interval (about every 30 s, with no upper bound) and journals each nonce as
+  a row in `executor_fences`. The escalation below still applies, and the
+  fences continue after it until the action is settled or an operator clears
+  the ledger row.
 - The marker is one annotation family for later Coordinator-commanded fences:
   `{action_id, nonce}` with an optional integer `epoch`.
 - Turn it on with `fence_after_seconds` in the Executor worker configuration,
   or `--fence-after SECONDS` with `runtime/live_executor.py` (0 fences at once,
   for an operator who has decided to abort).
+
+A host that never wrote the action can fence it too. A stateless reconcile
+journals the action as in doubt with `write_started_at` set to the time it
+adopted it, so with fencing on that host fences once the settle delay has
+passed from then. The fence is still safe, because it tests the same UID and
+V0 as any host's write, but it means `reconcile` can write metadata on a host
+that never sent the restore. Whether reconcile may write metadata at all still
+awaits the project owner's decision (#58).
 
 A fence that a peer host sent is not in this host's journal, so this host
 reports SUPERSEDED (can no longer commit) rather than CONFLICT. The fence has not

@@ -84,6 +84,8 @@ class ExecutionAdapters:
     and expiry. Runtime may add current lifecycle checks to that boundary.
     With fence_after_seconds set, cluster.fence(target, version, marker) must
     commit only the marker annotation under the same UID/version tests.
+    ledger follows SQLiteExecutionLedger, including record_fence, confirm_fence
+    and fences; classifying a journaled action calls fences() even with fencing off.
     """
 
     ledger: object
