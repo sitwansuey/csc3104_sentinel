@@ -229,6 +229,19 @@ class ApproverTests(AuthorityCase):
         self.assertTrue(untrusted.endswith("[truncated]"))
         self.assertLess(len(untrusted), 560)
 
+    def test_interactive_prints_every_proposal_field_without_control_characters(self):
+        self.proposal["parameters"]["baseline_id"] = "BASE\x1b]0;approved\x07" + "b" * 400
+        self.proposal["target"]["name"] = "checkout\r\x1b[1A"
+        self.proposal["action_id"] += "\x1b[2K"
+        approver = self.interactive(["no"])
+        approver(self.proposal, {"reason_codes": ["OPERATOR_APPROVAL_REQUIRED\x1b[8m"], "policy_version": "v"})
+        for line in self.said:
+            with self.subTest(line=line[:40]):
+                self.assertTrue(line.isprintable(), line)
+        baseline = next(line for line in self.said if "baseline_id:" in line)
+        self.assertTrue(baseline.endswith("[truncated]"))
+        self.assertIn("BASE ]0;approved ", baseline)
+
     def test_interactive_exact_action_id_records_the_operator_and_executes_once(self):
         approver = self.interactive([self.proposal["action_id"]])
         self.assertEqual(self.step(approver), "VERIFYING")

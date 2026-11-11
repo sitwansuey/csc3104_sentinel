@@ -43,6 +43,7 @@ TOKEN_ENV = {"operator": "SENTINEL_LAB_APPROVAL_OPERATOR_TOKEN", "guard": "SENTI
 URL_ENV, IDENTITY_ENV = "SENTINEL_LAB_APPROVAL_URL", "SENTINEL_LAB_APPROVAL_IDENTITY"
 OPERATIONS = {"operator": ["create", "read", "revoke", "history"], "guard": ["read"], "executor": ["read"]}
 RATIONALE_LIMIT = 500
+FIELD_LIMIT = 160
 
 
 class AuthorityUnavailable(RuntimeError):
@@ -277,17 +278,18 @@ class InteractiveApprover(Approver):
         self.ask, self.say = ask, say
 
     def facts(self, proposal, decision):
-        target = proposal["target"]
+        # Every proposal field is printed through _printable: in agent mode the record comes from model output.
+        target = {key: _printable(value, FIELD_LIMIT) for key, value in proposal["target"].items()}
         parameters = proposal.get("parameters", {})
         return [
             "Approval requested. Facts below come from the proposal record and the Guard decision.",
             "  target:          {cluster_id}/{namespace} {kind}/{name} uid={uid}".format(**target),
-            "  action:          " + proposal["action"],
-            "  action ID:       " + proposal["action_id"],
-            "  baseline_id:     " + str(parameters.get("baseline_id")),
-            "  template_sha256: " + str(parameters.get("template_sha256", ""))[:12],
+            "  action:          " + _printable(proposal["action"], FIELD_LIMIT),
+            "  action ID:       " + _printable(proposal["action_id"], FIELD_LIMIT),
+            "  baseline_id:     " + _printable(str(parameters.get("baseline_id")), FIELD_LIMIT),
+            "  template_sha256: " + _printable(str(parameters.get("template_sha256", ""))[:12], FIELD_LIMIT),
             "  proposal digest: " + _digest(proposal),
-            "  Guard reasons:   " + ", ".join(decision.get("reason_codes", [])),
+            "  Guard reasons:   " + _printable(", ".join(decision.get("reason_codes", [])), FIELD_LIMIT * 4),
             "  UNTRUSTED model text: " + _printable(proposal.get("rationale", ""), RATIONALE_LIMIT),
         ]
 
