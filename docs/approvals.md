@@ -98,7 +98,53 @@ the exact saved Guard report fingerprint to bind the current unexpired approval
 and policy. A delayed ALLOW from a revoked record is refused. A local fixture
 approval is not promoted into an authenticated approval by this API. The legacy
 `approve()`/CLI remain trusted local/demo interfaces and preserve existing shared
-contracts; they do not authenticate remote callers.
+contracts; they do not authenticate remote callers. The offline demo and runner
+tests still use them (`runtime/recovery_runner.py::legacy_local_approve`); the
+live harnesses do not (next section).
+
+## Live harness approval
+
+Every live harness path creates approvals through this API. That covers the
+Executor experiment (`scripts/test_executor_live.py`), the Boutique walkthrough,
+provider mode and agent mode. `runtime/approval_session.py` starts
+`python -m runtime.approval_http` as a child process for each run, against the
+run's `coordinator.sqlite`, on a free loopback port (`--port 0`; the child prints
+the bound port as one JSON line). The harness generates three tokens per run
+(`secrets.token_urlsafe(48)`) for an operator identity, `lab-guard` and
+`lab-executor`. They exist only in the harness's memory and the child's
+environment. The run folder gets `approval-identities.json`, which names only
+environment variables, and `approval-permissions.json`, which has one exact
+target grant per identity. The child's log goes to `approval-authority.log`.
+No token is written to a file, argv, `summary.json` or a log line. The
+crash-restart worker receives the Executor token through its environment.
+
+The Executor's final pre-write lookup uses `ApprovalClient` with the
+`lab-executor` identity. A revoked or expired approval, or a stopped authority,
+therefore ends in FAILED with zero writes. A local `approve()` record is never
+promoted. Choose the approver with `--approval` (`-Approval` in the PowerShell
+launchers):
+
+| Mode | Who decides | Recorded as |
+| --- | --- | --- |
+| `interactive` (default) | A person at the harness terminal sees the target, action, baseline ID, the first 12 characters of the template hash, the proposal digest and the Guard reason codes. The model's rationale is shown as untrusted text, cut to 500 characters. The person types the exact action ID; anything else refuses and records nothing | `lab-operator` (or `--operator NAME`), `human: true` |
+| `auto-lab` | Nobody. This is an explicit opt-in for unattended lab runs; the harness approves every escalated proposal | `automated-lab`, `human: false`, "no person decided" |
+| `reject` | Nobody. Every approval is refused, for negative tests; the run stops before any write | no approval |
+
+Each approval expires 180 s after creation. `summary.json` records the mode,
+identity, each approval (ID, operator, times) and each refusal under
+`operator_approval`. Interactive mode needs a terminal: without one, the
+harness exits before any cluster change and asks for `--approval auto-lab`.
+With `--dashboard`, the agent and walkthrough checks also require each recovery
+approval to be a managed record from the configured identity.
+
+The file-backed negative cases (`missing-approval`, `hard-policy-rejection`,
+`stale-state`, the CAS race and the unnecessary-rollback scenario) still give
+the Executor a fixed approval record that never reaches the Coordinator. They
+prove refusals, not approvals. `tests/test_approval_session.py` runs the real
+child process with the real Coordinator, Guard and Executor and a fake
+Kubernetes API. Live verification is pending: no live run has used this path
+yet, and the committed live evidence predates it, so it shows pre-authorised
+lab approval.
 
 ## Revocation cutoff and remaining race
 
@@ -122,7 +168,7 @@ fencing and named-owner Guard/Executor review remain deployment acceptance work.
 ## Reproduce verification
 
 ```powershell
-python -m unittest tests.test_approval_access tests.test_coordinator tests.test_coordinator_expiry tests.test_coordinator_read tests.test_dependency_revalidation tests.test_executor_integration tests.test_worker_transport -v
+python -m unittest tests.test_approval_access tests.test_approval_session tests.test_coordinator tests.test_coordinator_expiry tests.test_coordinator_read tests.test_dependency_revalidation tests.test_executor_integration tests.test_worker_transport -v
 ```
 
 `test_approval_access` starts a real loopback HTTP authority and file-backed SQLite,

@@ -22,10 +22,13 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from runtime.approval_session import (
+    MODES, LocalApprovalAuthority, approver_for, executor_client_from_environment, operator_identity, require_attended,
+)
 from runtime.executor_pipeline import process_executor_requests
 from runtime.guard_pipeline import process_guard_requests
 from runtime.live_executor import build_adapters
-from services.coordinator.core import LocalEventBus, SQLiteStore, approve, handle
+from services.coordinator.core import LocalEventBus, SQLiteStore, handle
 from services.executor.core import ACTION_ANNOTATION, execute, reconcile
 from services.executor.store import ActionConflict, SQLiteExecutionLedger, fingerprint
 from services.guard.core import proposal_fingerprint
@@ -101,6 +104,8 @@ class Experiment:
     rbac_path = ROOT / "deploy/sentinel/executor-rbac.yaml"
     publish_dependency_results = False
     health_outcome_description = " after executor rollback; Role 6 outcome remains pending"
+    approval_mode = "interactive"
+    operator = None  # Interactive operator identity; lab-operator when unset.
 
     def __init__(self, directory):
         self.directory = Path(directory).resolve()
@@ -114,6 +119,41 @@ class Experiment:
         self.target = None
         self.store = SQLiteStore(self.directory / "coordinator.sqlite")
         self.bus = LocalEventBus()
+        self.authority = self.approver = None
+        self.configure_approval(self.approval_mode, self.operator)
+
+    def configure_approval(self, mode, operator=None):
+        """Choose the approver before the run; nothing starts until a target exists."""
+        identity = operator_identity(mode, operator)
+        require(self.authority is None, "Approval mode cannot change after the authority started")
+        self.approval_mode, self.operator = mode, operator
+        self.summary["operator_approval"] = {"mode": mode, "identity": None if mode == "reject" else identity,
+                                             "via": "approval_http"}
+
+    def approval_authority(self):
+        """Start this run's approval authority once the measured target identity is known."""
+        if self.authority is None:
+            require(self.target is not None, "The approval authority needs the measured target identity")
+            authority = LocalApprovalAuthority(self.directory, self.directory / "coordinator.sqlite", self.target,
+                                               operator=operator_identity(self.approval_mode, self.operator))
+            authority.start()
+            self.authority = authority
+            self.approver = approver_for(self.approval_mode, authority)
+            self.summary["operator_approval"] = self.approver.describe()
+        return self.authority
+
+    def request_approval(self, proposal, decision):
+        """Ask this run's approver. An approval is only ever created through approval_http."""
+        self.approval_authority()
+        try:
+            return self.approver(proposal, decision)
+        finally:
+            self.summary["operator_approval"] = self.approver.describe()
+
+    def close_approval_authority(self):
+        if self.authority is not None:
+            self.authority.close()
+            self.summary["operator_approval"]["authority_stopped"] = not self.authority.running()
 
     def kubectl(self, *arguments, restricted=False, timeout=40, allow_failure=False):
         command = ["kubectl", "--context=" + (self.restricted_context if restricted else self.context),
@@ -313,7 +353,8 @@ class Experiment:
         save(folder / "proposal.json", proposal)
         self.phase("proposal_saved", label)
         save(folder / "dependencies.json", dependencies)
-        save(folder / "approval.json", record if approval else None)
+        # This fixed record serves only the file-backed negative cases; it never reaches the Coordinator.
+        save(folder / "approval.json", record if approval and not coordinator else None)
         if coordinator:
             handle(proposal, self.store, self.bus)
             if self.publish_dependency_results:
@@ -324,9 +365,9 @@ class Experiment:
             first = process_guard_requests(self.store, self.bus, **readers)[0]
             require(first["verdict"] == "ESCALATE" and first["reason_codes"] == ["OPERATOR_APPROVAL_REQUIRED"],
                     "Guard must require approval before live execution")
-            record = approve(proposal["action_id"], "authorized-live-lab-operator", self.store,
-                             expires_at=utc(now() + timedelta(seconds=180)))
+            record = self.request_approval(proposal, first)
             save(folder / "approval.json", record)
+            require(record is not None, "Operator did not approve " + proposal["action_id"] + "; no Executor write attempted")
             decision = process_guard_requests(self.store, self.bus, **readers)[0]
             save(folder / "initial-guard.json", decision)
             self.phase("guard_decision", label)
@@ -338,7 +379,7 @@ class Experiment:
             allowed_targets=self.directory / "allowed-targets.json", ledger=self.directory / "executor.sqlite",
             locks=self.directory / "locks", policy=self.directory / "policy.json", baseline=self.directory / "baseline.json",
             dependencies=folder / "dependencies.json", approval=folder / "approval.json", server_dry_run=True,
-            approval_reader=(lambda p: self.store.approval(p["action_id"])) if coordinator else None,
+            approval_reader=self.approval_authority().executor_client() if coordinator else None,
             reconcile_only=reconcile_only)
 
     def negative_cases(self, incident):
@@ -434,8 +475,10 @@ class Experiment:
         configuration = {"directory": str(self.directory), "folder": str(folder), "credentials": str(self.credentials),
                          "cluster_id": self.cluster_id, "context": self.restricted_context}
         save(folder / "worker.json", configuration)
+        # The Executor token reaches the worker only through its environment, never argv or worker.json.
         worker = subprocess.run([sys.executable, str(self.entrypoint), "--crash-worker", str(folder / "worker.json")],
-                                cwd=ROOT, capture_output=True, text=True, timeout=60)
+                                cwd=ROOT, capture_output=True, text=True, timeout=60,
+                                env={**os.environ, **self.approval_authority().executor_environment()})
         require(worker.returncode == 73, "Crash worker did not stop at the intended post-write boundary")
         with SQLiteExecutionLedger(self.directory / "executor.sqlite") as ledger:
             require(ledger.get(proposal["action_id"])["phase"] == "WRITE_STARTED", "Crash completed the ledger unexpectedly")
@@ -493,6 +536,7 @@ class Experiment:
             raise
         finally:
             self.credentials.unlink(missing_ok=True)
+            self.close_approval_authority()
             self.store.close()
             self.summary.update(finished_at=utc(), private_executor_credentials_removed=not self.credentials.exists())
             save(self.directory / "summary.json", self.summary)
@@ -502,12 +546,11 @@ def crash_worker(configuration):
     """Test-only child process: terminate AFTER a real patch, before ledger finish."""
     config = json.loads(Path(configuration).read_text(encoding="utf-8"))
     directory, folder = Path(config["directory"]), Path(config["folder"])
-    store = SQLiteStore(directory / "coordinator.sqlite")
     adapters = build_adapters(context=config.get("context", RESTRICTED_CONTEXT),
         cluster_id=config.get("cluster_id", "sentinel-lab"), kubeconfig=config["credentials"],
         allowed_targets=directory / "allowed-targets.json", ledger=directory / "executor.sqlite", locks=directory / "locks",
         policy=directory / "policy.json", baseline=directory / "baseline.json", dependencies=folder / "dependencies.json",
-        approval_reader=lambda p: store.approval(p["action_id"]), server_dry_run=True)
+        approval_reader=executor_client_from_environment(), server_dry_run=True)
     actual = adapters.cluster
 
     class CrashAfterWrite:
@@ -529,11 +572,21 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path)
     parser.add_argument("--crash-worker", help=argparse.SUPPRESS)
+    parser.add_argument("--approval", choices=MODES, default="interactive",
+                        help="interactive: a person types each action ID (needs a terminal); auto-lab: explicit "
+                             "opt-in for unattended lab runs, recorded as automated approval; reject: refuse every approval")
+    parser.add_argument("--operator", help="Interactive operator identity (default lab-operator)")
     args = parser.parse_args()
     if args.crash_worker:
         return crash_worker(args.crash_worker)
+    try:
+        operator_identity(args.approval, args.operator)
+        require_attended(args.approval)
+    except ValueError as error:
+        parser.error(str(error))
     directory = args.run_dir or ROOT / "data/sentinel/runs" / ("executor-live-" + now().strftime("%Y%m%dT%H%M%SZ-") + uuid4().hex[:6])
     experiment = Experiment(directory)
+    experiment.configure_approval(args.approval, args.operator)
     experiment.summary["provenance"]["tools"] = provenance.tool_versions(("kubectl", "kind", "docker"))
     print("Live executor evidence: " + str(experiment.directory), flush=True)
     try:

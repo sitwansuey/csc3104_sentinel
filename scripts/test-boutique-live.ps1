@@ -4,6 +4,7 @@ param([switch]$Setup, [switch]$Cleanup, [switch]$Dashboard,
       [switch]$PauseBeforeInjection, [switch]$GuardRejection, [switch]$UIControls, [switch]$Connected,
       [ValidateRange(1,65535)][int]$StorefrontPort = 8080,
       [switch]$Agent, [string]$AgentConfig, [string]$ProviderScript, [string]$ProviderPolicy,
+      [ValidateSet('interactive','auto-lab','reject')][string]$Approval = 'interactive',
       [string]$Operator, [string]$RunDirectory)
 
 $ErrorActionPreference = 'Stop'
@@ -54,6 +55,7 @@ try {
     if ($AgentConfig) { $testOptions += @('--agent-config', $AgentConfig) }
     if ($ProviderScript) { $testOptions += @('--provider-script', $ProviderScript) }
     if ($ProviderPolicy) { $testOptions += @('--provider-policy', $ProviderPolicy) }
+    $testOptions += @('--approval', $Approval)
     if ($Operator) { $testOptions += @('--operator', $Operator) }
     if ($RunDirectory) { $testOptions += @('--run-dir', $RunDirectory) }
     if ($Dashboard) { $testOptions += @('--dashboard', '--dashboard-port', "$DashboardPort") }

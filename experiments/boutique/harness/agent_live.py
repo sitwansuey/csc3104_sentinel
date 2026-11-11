@@ -268,7 +268,8 @@ class AgentPlanningMixin:
             key: value for key, value in proposal.items() if key != "action_id"})[:24]
         save(folder / "model-proposal.json", proposal)
         save(folder / "planning-state.json", current)
-        self.summary.update(agent_model_calls=len(llm.calls), operator_approval="pre-authorized local E2E test")
+        # Approval comes later, from the run's approver through approval_http (summary operator_approval).
+        self.summary.update(agent_model_calls=len(llm.calls))
         self.event(3, "status", "Agent proposed " + proposal["action"], target=self.target,
                    incident_id=incident["incident_id"], action_id=proposal["action_id"],
                    progress={"stage": "proposal", "status": "completed"})

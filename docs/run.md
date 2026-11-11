@@ -25,7 +25,7 @@ checks. Use the three ordered buttons on Overview:
 
 1. **Inject invalid PORT:** shipping's new containers cannot start; cart/checkout
    requests fail. Observer detects sustained failure; a harness proposal goes
-   through Guard, trusted demo approval, restricted execution and Verifier.
+   through Guard, operator approval, restricted execution and Verifier.
 2. **Inject fault + crash Executor:** a real patch succeeds before the worker
    exits. Restart reconciles it from live state/action evidence without another
    repair write, then Verifier measures sustained recovery.
@@ -33,18 +33,23 @@ checks. Use the three ordered buttons on Overview:
    its baseline. Guard rejects the unnecessary rollback with zero repair writes.
 
 The buttons release fixed experiment steps; they do not approve an action or
-run arbitrary Kubernetes commands. Demo approval is pre-authorized local lab
-approval, not an authenticated human approval portal. Human approval never
-bypasses hard Guard constraints. An APPLIED result leaves the incident VERIFYING
-until the independent outcome arrives.
+run arbitrary Kubernetes commands. When the Guard asks for approval, the terminal
+that started the run shows the action's facts and waits: type the exact action
+ID to approve it, anything else refuses. The approval is created through the
+[authenticated approval API](approvals.md#live-harness-approval); it is a typed
+confirmation, not a login portal. Human approval never bypasses hard Guard
+constraints. An APPLIED result leaves the incident VERIFYING until the
+independent outcome arrives.
 
-For unattended execution and automatic cleanup:
+For unattended execution and automatic cleanup, opt in to automated lab
+approval. `summary.json` records it as `auto-lab` under the `automated-lab`
+identity, never as a person:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Connected -Dashboard -ExitAfterTest -Cleanup
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Connected -Dashboard -ExitAfterTest -Approval auto-lab -Cleanup
 ```
 
-The shell equivalent is `bash scripts/run-sentinel.sh --setup --cleanup --connected --dashboard --exit-after-test`.
+The shell equivalent is `bash scripts/run-sentinel.sh --setup --cleanup --connected --dashboard --exit-after-test --approval auto-lab`.
 Omit `-Connected` on Windows for the smaller shipping-only lab. Use
 `-StorefrontPort 8081` or `-DashboardPort 8766` if a port is occupied.
 

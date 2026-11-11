@@ -109,7 +109,8 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
                 "incident_id", "action_id", "verdict", "checked_at", "inputs_sha256")})
             self.snapshot["messages"].append({"message": dict(identity, kind="dependency_result", status="CLEAR")})
             if not rejected:
-                self.snapshot["approvals"].append({"record": {"action_id": identity["action_id"]}})
+                self.snapshot["approvals"].append({"record": {"action_id": identity["action_id"],
+                                                              "decision": "APPROVED", "protected": True}})
                 self.snapshot["outbox"].append({"topic": "executor.request", "action_id": identity["action_id"]})
                 self.snapshot["messages"].append({"message": dict(identity, kind="outcome", status="RECOVERED",
                                                                   checks=[{"passed": True}])})
@@ -126,7 +127,15 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
             "before": before, "after": deepcopy(before), "unchanged": {key: True for key in UNCHANGED_FIELDS},
         }
 
-    def verify(self, *, rejection_only=False):
+    @staticmethod
+    def write_approvals(root, operator_id="lab-operator"):
+        """The managed approvals each recovery folder saved, as the live harness writes them."""
+        for folder, action_id in (("approved-rollback", "ACT-0"), ("crash-after-write", "ACT-1")):
+            (root / folder).mkdir(exist_ok=True)
+            (root / folder / "approval.json").write_text(json.dumps(
+                {"action_id": action_id, "operator_id": operator_id, "decision": "APPROVED"}), encoding="utf-8")
+
+    def verify(self, *, rejection_only=False, operator_id="lab-operator"):
         class Response(BytesIO):
             status = 200
 
@@ -134,6 +143,7 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
             root = Path(directory)
             (root / "unnecessary-rollback").mkdir()
             (root / "unnecessary-rollback" / "proof.json").write_text(json.dumps(self.proof), encoding="utf-8")
+            self.write_approvals(root)
             dashboard = BoutiqueDashboard(root, context="test-context", cluster_id="test-cluster",
                                           namespace="test-namespace", port=0)
             dashboard.url = "http://127.0.0.1:9999"
@@ -141,7 +151,8 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
                 Response(b'<html><script src="/assets/test.js"></script></html>'),
                 Response(json.dumps(self.snapshot).encode("utf-8")),
             ]) as fetch:
-                result = dashboard.verify_rejection() if rejection_only else dashboard.verify()
+                result = (dashboard.verify_rejection() if rejection_only
+                          else dashboard.verify(operator_id=operator_id))
             self.assertEqual(fetch.call_count, 2)
             self.assertEqual(json.loads((root / "dashboard-validation.json").read_text()), result)
             self.assertEqual(json.loads((root / "dashboard-snapshot.json").read_text()), self.snapshot)
@@ -167,14 +178,30 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
             (root / "approved-rollback").mkdir()
             calls = root / "approved-rollback/model-calls.json"
             calls.write_text(json.dumps([{"role": "Recovery Planner"}]))
+            self.write_approvals(root)
             dashboard = BoutiqueDashboard(root, context="test-context", cluster_id="test-cluster",
                                           namespace="test-namespace", port=0)
             dashboard.url = "http://127.0.0.1:9999"
             with patch.object(dashboard, "_snapshot", return_value=snapshot):
-                self.assertEqual(dashboard.verify_agent()["status"], "PASS")
+                self.assertEqual(dashboard.verify_agent(operator_id="lab-operator")["status"], "PASS")
                 calls.write_text("[]")
                 with self.assertRaisesRegex(RuntimeError, "model planning"):
-                    dashboard.verify_agent()
+                    dashboard.verify_agent(operator_id="lab-operator")
+
+    def test_recovery_approvals_must_be_managed_and_from_the_configured_identity(self):
+        self.assertEqual(self.verify()["status"], "PASS")
+        with self.assertRaisesRegex(RuntimeError, "not from the configured identity"):
+            self.verify(operator_id="automated-lab")
+        original = deepcopy(self.snapshot)
+        # A legacy approve() record is shown in full, without the protected marker.
+        self.snapshot["approvals"][1]["record"] = {"action_id": "ACT-1", "operator_id": "lab-operator",
+                                                   "decision": "APPROVED"}
+        with self.assertRaisesRegex(RuntimeError, "not created through the authenticated approval API"):
+            self.verify()
+        self.snapshot = original
+        self.snapshot["approvals"][0]["record"]["protected"] = False
+        with self.assertRaisesRegex(RuntimeError, "not created through the authenticated approval API"):
+            self.verify()
 
     def test_standalone_refusal_still_validates_one_rejected_proposal(self):
         for field in ("incidents", "actions", "reports"):
@@ -289,11 +316,12 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
             root = Path(directory)
             (root / "unnecessary-rollback").mkdir()
             (root / "unnecessary-rollback" / "proof.json").write_text(json.dumps(self.proof), encoding="utf-8")
+            self.write_approvals(root)
             dashboard = BoutiqueDashboard(root, context="test-context", cluster_id="test-cluster",
                                           namespace="test-namespace", port=0, application_collector=lambda: [])
             dashboard.url = "http://127.0.0.1:9999"
             with patch.object(dashboard, "_snapshot", return_value=snapshot):
-                return dashboard.verify()
+                return dashboard.verify(operator_id="lab-operator")
 
     def test_failed_verification_journey_needs_disclosed_pre_window_convergence(self):
         confirmed = [(action, "2026-10-26T10:00:" + second + "Z", True)
