@@ -106,6 +106,20 @@ refuse it and the Executor must make no write.
 | 2 | 2/2 | 0 | 0 |
 <!-- END GENERATED:guard-rejection -->
 
+## Guard fixture evaluation
+
+`scripts/evaluate_guard.py` runs the versioned synthetic Guard cases offline:
+no cluster, no model, no repair. `full_available` and `state_policy_only` are
+measured. `no_validation` is definitional: it allows every proposal by
+construction and is the anchor for acting on a proposal with no checks. The
+status stays `PRELIMINARY_NOT_FROZEN` until a release manifest accepted under
+issue #63 names the evaluated clean commit. These are hand-authored fixtures,
+not live incidents. See [the suite README](../data/experimentation/guard/README.md).
+
+<!-- BEGIN GENERATED:guard-eval -->
+_No bundles yet._
+<!-- END GENERATED:guard-eval -->
+
 ## Timings
 
 Successful runs only. `recorded` values come from the harness timeline;

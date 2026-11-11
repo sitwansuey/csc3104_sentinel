@@ -8,6 +8,7 @@ import json
 import math
 from pathlib import Path
 import platform
+import re
 import statistics
 import subprocess
 import sys
@@ -18,9 +19,23 @@ sys.path.insert(0, str(ROOT))
 
 from services.guard.core import assess_state_policy, assert_decision_usable, evaluate
 from services.guard.common import json_sha256, utc_timestamp
+from shared import provenance as shared_provenance
 
 
 DEFAULT_CASES = ROOT / "data/experimentation/guard/v1/cases.json"
+# Issue #63 freezes the evaluated release. A result is FROZEN_RELEASE only when a
+# release manifest accepted under that issue names the exact clean revision that
+# was evaluated. Anything else stays preliminary and says why.
+FREEZE_ISSUE = 63
+FROZEN = "FROZEN_RELEASE"
+PRELIMINARY = "PRELIMINARY_NOT_FROZEN"
+MANIFEST_FIELDS = ("tag", "commit", "accepted_issue", "accepted_at")
+_COMMIT = re.compile(r"[0-9a-f]{40}")
+ALL_GATES = ["target_allowlist", "action_allowlist_and_implementation", "live_target_identity", "resource_version",
+             "live_state_freshness", "baseline_identity_and_hash", "rollback_changes_template",
+             "baseline_health_and_references", "security", "resources_and_workload",
+             "dependency_identity_status_freshness", "operator_approval", "decision_binding_and_expiry",
+             "server_admission_dry_run", "runtime_preview"]
 CONFIGURATIONS = {
     "state_policy_only": {
         "enabled_gates": ["target_allowlist", "action_allowlist_and_implementation",
@@ -30,6 +45,7 @@ CONFIGURATIONS = {
                            "dependency_identity_status_freshness", "operator_approval",
                            "decision_binding_and_expiry", "server_admission_dry_run", "runtime_preview"],
         "authority": "analysis_only; this comparator does not produce an execution decision",
+        "basis": "measured",
     },
     "full_available": {
         "enabled_gates": ["target_allowlist", "action_allowlist_and_implementation",
@@ -40,8 +56,70 @@ CONFIGURATIONS = {
                           "decision_binding_and_expiry"],
         "disabled_gates": ["server_admission_dry_run", "runtime_preview"],
         "authority": "fabricated fixture inputs only; never use these decisions for live execution",
+        "basis": "measured",
+    },
+    # Anchor row for "act on the model's proposal without validation". Every
+    # case is ALLOW by construction, so its counts are definitional, not measured.
+    "no_validation": {
+        "enabled_gates": [],
+        "disabled_gates": list(ALL_GATES),
+        "authority": "analysis_only; definitional comparator that allows every proposal",
+        "basis": "definitional",
     },
 }
+
+
+def _validated_manifest(manifest):
+    if not isinstance(manifest, dict) or any(field not in manifest for field in MANIFEST_FIELDS):
+        raise ValueError("Release manifest must be a JSON object with " + ", ".join(MANIFEST_FIELDS))
+    if not isinstance(manifest["tag"], str) or not manifest["tag"].strip():
+        raise ValueError("Release manifest tag must be a non-empty string")
+    if not isinstance(manifest["commit"], str) or not _COMMIT.fullmatch(manifest["commit"]):
+        raise ValueError("Release manifest commit must be a full 40-character lower-case hex revision")
+    if type(manifest["accepted_issue"]) is not int or manifest["accepted_issue"] != FREEZE_ISSUE:
+        raise ValueError(f"Release manifest must record acceptance under issue #{FREEZE_ISSUE}")
+    if not isinstance(manifest["accepted_at"], str):
+        raise ValueError("Release manifest accepted_at must be an ISO 8601 UTC timestamp")
+    utc_timestamp(manifest["accepted_at"], "accepted_at")
+    return {field: manifest[field] for field in MANIFEST_FIELDS}
+
+
+def release_status(provenance_record, manifest_path=None):
+    """Compute the freeze status from the issue #63 conditions; never assume a freeze.
+
+    FROZEN_RELEASE needs an accepted release manifest whose commit is the exact
+    evaluated revision and a clean working tree. Otherwise the result is
+    PRELIMINARY_NOT_FROZEN with the first unmet condition as the reason. A
+    malformed manifest raises ValueError instead of being read as preliminary.
+    """
+    manifest = None
+    if manifest_path is not None:
+        try:
+            loaded = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError("Release manifest is not valid JSON") from exc
+        manifest = _validated_manifest(loaded)
+    revision = (provenance_record or {}).get("revision")
+    dirty = (provenance_record or {}).get("working_tree_dirty")
+    if manifest is None:
+        reason = "no_manifest"
+    elif not isinstance(revision, str) or not _COMMIT.fullmatch(revision):
+        reason = "revision_unknown"
+    elif manifest["commit"] != revision:
+        reason = "commit_mismatch"
+    elif dirty is not False:
+        reason = "dirty_tree"
+    else:
+        reason = None
+    status = FROZEN if reason is None else PRELIMINARY
+    if status == FROZEN:
+        prerequisite = (f"Frozen release {manifest['tag']} at {manifest['commit']}, accepted under issue "
+                        f"#{FREEZE_ISSUE} at {manifest['accepted_at']}.")
+    else:
+        prerequisite = (f"GitHub issue #{FREEZE_ISSUE} freeze conditions are not met ({reason}); rerun on the "
+                        "accepted frozen release before final scoring.")
+    return {"status": status, "reason": reason, "freeze_issue": FREEZE_ISSUE, "manifest": manifest,
+            "release_prerequisite": prerequisite}
 
 
 def load_cases(path):
@@ -74,6 +152,8 @@ def load_cases(path):
 
 
 def evaluate_configuration(configuration, values):
+    if configuration == "no_validation":
+        return {"verdict": "ALLOW", "reason_codes": ["NO_VALIDATION"]}
     if configuration == "state_policy_only":
         reasons = assess_state_policy(values["proposal"], values["live_state"],
                                       values["policy"], now=values["now"])
@@ -129,16 +209,21 @@ def provenance(cases_path):
     sources = {(path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else "case_suite.json"):
                hashlib.sha256(path.read_bytes()).hexdigest()
                for path in paths}
-    return {"revision": git("rev-parse", "HEAD"),
+    # The shared block lets the evidence collector mark this result 'recorded'.
+    return {**shared_provenance.collect(ROOT, captured_by="evaluate_guard"),
+            "revision": git("rev-parse", "HEAD"),
             "working_tree_dirty": bool(git("status", "--porcelain")),
             "source_sha256": sources, "python": platform.python_version(),
             "platform": platform.system(), "architecture": platform.machine()}
 
 
-def run_evaluation(cases_path=DEFAULT_CASES, *, repeats=30, warmups=2):
+def run_evaluation(cases_path=DEFAULT_CASES, *, repeats=30, warmups=2, release_manifest=None):
     if type(repeats) is not int or repeats < 1 or type(warmups) is not int or warmups < 0:
         raise ValueError("Use positive repeats and nonnegative warmups")
+    started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     suite, cases = load_cases(cases_path)
+    provenance_record = provenance(cases_path)
+    release = release_status(provenance_record, release_manifest)
     rows = {name: [] for name in CONFIGURATIONS}
     latencies = {name: [] for name in CONFIGURATIONS}
     for specification, serialized_inputs in cases:
@@ -182,10 +267,12 @@ def run_evaluation(cases_path=DEFAULT_CASES, *, repeats=30, warmups=2):
             latencies[name].extend(timings[name])
     return {
         "schema_version": "1.0", "suite_version": suite["suite_version"],
-        "suite_sha256": json_sha256(suite), "status": "PRELIMINARY_NOT_FROZEN",
-        "release_prerequisite": "GitHub issue #63 remains open; rerun on the accepted frozen release before final scoring.",
-        "evidence_kind": "synthetic_fixture", "generated_at": datetime.now(timezone.utc).isoformat(),
-        "provenance": provenance(cases_path),
+        "suite_sha256": json_sha256(suite), "status": release["status"],
+        "release_prerequisite": release["release_prerequisite"],
+        "release": {key: release[key] for key in ("status", "reason", "freeze_issue", "manifest")},
+        "evidence_kind": "synthetic_fixture", "started_at": started_at,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "provenance": provenance_record,
         "execution": {"cluster_contacted": False, "repair_writes_attempted": 0},
         "method": {
             "accuracy_unit": "one versioned case; repeats do not increase accuracy denominators",
@@ -195,6 +282,7 @@ def run_evaluation(cases_path=DEFAULT_CASES, *, repeats=30, warmups=2):
             "latency_scope": "in-process evaluator only; full includes report/binding creation and ALLOW usability check; excludes fixture parsing/copying, transport and producer I/O",
             "p95_method": "nearest rank", "warmups_per_case_configuration": warmups,
             "measured_repeats_per_case_configuration": repeats,
+            "definitional_rows": "no_validation allows every case by construction; its counts are not a measurement",
         },
         "limitations": [
             "Hand-authored fixture coverage is not an estimate of production incident frequency or generalization.",
@@ -202,6 +290,7 @@ def run_evaluation(cases_path=DEFAULT_CASES, *, repeats=30, warmups=2):
             "No admission dry-run or runtime preview is included; admission acceptance cannot prove recovery health.",
             "No recovery, Kubernetes health, network latency or distributed reliability was measured.",
             "State/policy-only excludes baseline integrity, dependencies and approval; its ALLOW means comparator acceptance only.",
+            "No-validation is definitional: it allows every case by construction and measures nothing.",
         ],
         "configurations": {name: {**configuration, "summary": summarize(rows[name], latencies[name]),
                                   "cases": rows[name]} for name, configuration in CONFIGURATIONS.items()},
@@ -212,22 +301,27 @@ def run_evaluation(cases_path=DEFAULT_CASES, *, repeats=30, warmups=2):
 
 def markdown_report(result):
     provenance_record = result["provenance"]
-    lines = ["# Guard validation comparison (preliminary)", "",
-             f"Suite `{result['suite_version']}`; **synthetic fixtures, not frozen-release or live evidence**.",
-             "", result["release_prerequisite"], "",
+    frozen = result["status"] == FROZEN
+    lines = ["# Guard validation comparison (" + ("frozen release" if frozen else "preliminary") + ")", "",
+             f"Suite `{result['suite_version']}`; **synthetic fixtures, not "
+             + ("live evidence" if frozen else "frozen-release or live evidence") + "**.",
+             "", f"Status: `{result['status']}`. " + result["release_prerequisite"], "",
              f"Evaluated revision: `{provenance_record.get('revision', 'unavailable')}`; "
              f"working tree dirty: `{provenance_record.get('working_tree_dirty', 'unavailable')}`. "
              f"Python {provenance_record.get('python', 'unavailable')} on {provenance_record.get('platform', 'unavailable')}. "
              f"{result['method']['measured_repeats_per_case_configuration']} measured repetitions and "
              f"{result['method']['warmups_per_case_configuration']} warmups per case/configuration.", "",
-             "| Configuration | Unsafe REJECT | Unsafe ESCALATE | Unsafe ALLOW | Safe ALLOW | False REJECT | Median / p95 ms |",
-             "| --- | --- | --- | --- | --- | --- | --- |"]
+             "| Configuration | Basis | Unsafe REJECT | Unsafe ESCALATE | Unsafe ALLOW | Safe ALLOW | False REJECT | Median / p95 ms |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- |"]
     for name, configuration in result["configurations"].items():
         summary = configuration["summary"]
         safe, unsafe = summary["verdict_counts"]["SAFE"], summary["verdict_counts"]["UNSAFE"]
         timing = summary["latency"]
-        lines.append(f"| {name} | {unsafe['REJECT']}/{summary['unsafe_cases']} | {unsafe['ESCALATE']}/{summary['unsafe_cases']} | {unsafe['ALLOW']}/{summary['unsafe_cases']} | {safe['ALLOW']}/{summary['safe_cases']} | {safe['REJECT']}/{summary['safe_cases']} | {timing['median_ms']:.3f} / {timing['p95_ms']:.3f} |")
-    lines += ["", "Each accuracy denominator counts unique cases once. ESCALATE is a refusal to authorize, "
+        lines.append(f"| {name} | {configuration.get('basis', 'measured')} | {unsafe['REJECT']}/{summary['unsafe_cases']} | {unsafe['ESCALATE']}/{summary['unsafe_cases']} | {unsafe['ALLOW']}/{summary['unsafe_cases']} | {safe['ALLOW']}/{summary['safe_cases']} | {safe['REJECT']}/{summary['safe_cases']} | {timing['median_ms']:.3f} / {timing['p95_ms']:.3f} |")
+    lines += ["", "`state_policy_only` and `full_available` are measured. `no_validation` is definitional: it "
+              "allows every case by construction, so its counts are not a measurement and its timing is only "
+              "the cost of returning a constant.",
+              "", "Each accuracy denominator counts unique cases once. ESCALATE is a refusal to authorize, "
               "and is not counted as REJECT. Errors remain in the denominators and receive no credit.",
               "", "Latency measures only the in-process checks named in JSON, including full report construction "
               "and ALLOW binding/expiry validation. It excludes producer, API and transport time. "
@@ -245,15 +339,52 @@ def markdown_report(result):
     return "\n".join(lines)
 
 
+def verdict_differences(committed, current):
+    """Where a committed result no longer matches a fresh run; timings are ignored.
+
+    Compares the suite hash, the configuration names and every case's verdict
+    and reason codes. Returns readable lines; an empty list means still current.
+    """
+    problems = []
+    if committed.get("suite_sha256") != current.get("suite_sha256"):
+        problems.append("suite_sha256 differs: the case suite changed")
+    committed_configurations = committed.get("configurations") or {}
+    current_configurations = current.get("configurations") or {}
+    if set(committed_configurations) != set(current_configurations):
+        problems.append("configurations differ: committed " + ", ".join(sorted(committed_configurations))
+                        + "; current " + ", ".join(sorted(current_configurations)))
+    for name in sorted(set(committed_configurations) & set(current_configurations)):
+        before = {row["case_id"]: row for row in committed_configurations[name].get("cases", [])}
+        after = {row["case_id"]: row for row in current_configurations[name].get("cases", [])}
+        for case_id in sorted(set(before) | set(after)):
+            old, new = before.get(case_id), after.get(case_id)
+            if old is None or new is None:
+                problems.append(f"{name}/{case_id}: case is only in the {'current' if old is None else 'committed'} run")
+            elif (old["verdict"], old["reason_codes"]) != (new["verdict"], new["reason_codes"]):
+                problems.append(f"{name}/{case_id}: committed {old['verdict']} {old['reason_codes']}, "
+                                f"current {new['verdict']} {new['reason_codes']}")
+    return problems
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
     parser.add_argument("--repeats", type=int, default=30)
     parser.add_argument("--warmups", type=int, default=2)
     parser.add_argument("--output", type=Path, help="New result directory; existing paths are refused")
+    parser.add_argument("--release-manifest", type=Path,
+                        help=f"JSON {{tag, commit, accepted_issue, accepted_at}} accepted under issue #{FREEZE_ISSUE}; "
+                             "without it, results are PRELIMINARY_NOT_FROZEN")
+    parser.add_argument("--allow-dirty", action="store_true",
+                        help="Write --output even when the working tree has uncommitted changes")
     arguments = parser.parse_args()
     try:
-        result = run_evaluation(arguments.cases, repeats=arguments.repeats, warmups=arguments.warmups)
+        result = run_evaluation(arguments.cases, repeats=arguments.repeats, warmups=arguments.warmups,
+                                release_manifest=arguments.release_manifest)
+        if arguments.output is not None and result["provenance"].get("working_tree_dirty") is not False \
+                and not arguments.allow_dirty:
+            raise ValueError("Refusing --output: the working tree is dirty or its state is unknown, so the "
+                             "recorded revision would not match the evaluated code. Commit first or pass --allow-dirty.")
         if arguments.output is not None:
             arguments.output.mkdir(parents=True, exist_ok=False)
             (arguments.output / "results.json").write_text(json.dumps(result, indent=2, allow_nan=False) + "\n", encoding="utf-8")

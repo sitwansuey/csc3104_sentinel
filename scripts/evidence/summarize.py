@@ -21,8 +21,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGETS = {
-    "docs/results.md": ("runs", "recovery-checks", "agent-runs", "guard-rejection", "timings", "chaos",
-                        "security-lab", "observer", "claims"),
+    "docs/results.md": ("runs", "recovery-checks", "agent-runs", "guard-rejection", "guard-eval", "timings",
+                        "chaos", "security-lab", "observer", "claims"),
     "evidence/README.md": ("index",),
 }
 BLOCK = re.compile(r"(<!-- BEGIN GENERATED:(?P<name>[a-z0-9-]+) -->\n)(?P<body>.*?)(<!-- END GENERATED:(?P=name) -->)",
@@ -133,7 +133,10 @@ def outcome(bundle):
             return "INCOMPLETE"
         return "PASS" if validation["passed"] is True else "FAILED"
     if bundle.run_class == "guard-eval":
-        return "PASS" if bundle.json("results.json") else "INCOMPLETE"
+        results = bundle.json("results.json")
+        if not results:
+            return "INCOMPLETE"
+        return "PASS" if results.get("expectations_met") is True else "FAILED"
     summary = bundle.json("summary.json") or bundle.json("data/evidence/summary.json") or {}
     status = summary.get("status")
     return status if status in OUTCOMES else "INCOMPLETE"
@@ -237,6 +240,35 @@ def guard_rejections(bundles):
         else:
             unknown += 1
     return {"runs": len(members), "refused": refused, "writes": writes, "writes_unknown": unknown}
+
+
+def guard_evaluation(bundles):
+    """One row per configuration of each offline Guard fixture evaluation bundle."""
+    rows = []
+    members = sorted((b for b in bundles if b.run_class == "guard-eval"),
+                     key=lambda b: (b.entry.get("captured_at") or "", b.bundle_id))
+    for bundle in members:
+        results = bundle.json("results.json") or {}
+        for name, configuration in (results.get("configurations") or {}).items():
+            summary = configuration.get("summary") or {}
+            counts = summary.get("verdict_counts") or {}
+            safe, unsafe = counts.get("SAFE") or {}, counts.get("UNSAFE") or {}
+            n_safe, n_unsafe = summary.get("safe_cases", 0), summary.get("unsafe_cases", 0)
+            rows.append([bundle.bundle_id, results.get("status", "unknown"), name, configuration.get("basis", "measured"),
+                         ratio(unsafe.get("ALLOW", 0), n_unsafe), ratio(unsafe.get("REJECT", 0), n_unsafe),
+                         ratio(unsafe.get("ESCALATE", 0), n_unsafe), ratio(safe.get("ALLOW", 0), n_safe),
+                         ratio(safe.get("REJECT", 0), n_safe), str(summary.get("errors", 0))])
+    return rows
+
+
+def guard_unsafe_acceptance(bundles):
+    """Unsafe ALLOW per configuration in the newest cited Guard evaluation."""
+    rows = guard_evaluation(bundles)
+    if not rows:
+        return "no Guard evaluation"
+    newest = rows[-1][0]
+    return ", ".join(f"{row[2]} {row[4]}" + (" (definitional)" if row[3] == "definitional" else "")
+                     for row in rows if row[0] == newest)
 
 
 def zero_write_rejections(bundles):
@@ -355,6 +387,7 @@ DERIVATIONS = {
     "pass_ratio": pass_ratio,
     "zero_write_rejections": zero_write_rejections,
     "chaos_injection": chaos_injection,
+    "guard_unsafe_acceptance": guard_unsafe_acceptance,
 }
 
 
@@ -425,6 +458,8 @@ def render_blocks(root):
         "guard-rejection": table(["Runs", "Refused", "Executor writes for the refused action", "Unmeasured"],
                                  [[str(guard["runs"]), ratio(guard["refused"], guard["runs"]), str(guard["writes"]),
                                    str(guard["writes_unknown"])]] if guard["runs"] else []),
+        "guard-eval": table(["Bundle", "Status", "Configuration", "Basis", "Unsafe ALLOW", "Unsafe REJECT",
+                             "Unsafe ESCALATE", "Safe ALLOW", "False REJECT", "Errors"], guard_evaluation(bundles)),
         "timings": table(["Class", "Interval", "n", "Median s", "Min s", "Max s", "Source"], timings(bundles)),
         "chaos": table(["Fault", "Attempts", "Injected", "Cleaned up", "Healthy recovery window"], chaos(bundles)),
         "security-lab": table(["Bundle", "Outcome", "Valid mTLS quote", "Blocked probes", "Shopping after restore"],
