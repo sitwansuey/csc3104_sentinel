@@ -107,7 +107,9 @@ do not.
 
 Four live harness paths create approvals through this API: the Executor
 experiment (`scripts/test_executor_live.py`), the Boutique walkthrough, provider
-mode and agent mode. The Verifier acceptance script
+mode and agent mode. Provider and agent modes plan through the durable Planner
+journal and share one approval call in
+`experiments/boutique/harness/durable_case.py`. The Verifier acceptance script
 (`scripts/validation/test_verifier_connected_live.py`) does not: it still calls
 the local `approve()` as `live-lab-operator` and its Executor reads that record
 straight from the store (`scripts/validation/verifier_connected_lab.py`). It
@@ -142,7 +144,10 @@ harness exits before any cluster change and asks for `--approval auto-lab`.
 With `--dashboard`, the agent and walkthrough checks also require each recovery
 approval to be a managed record from the configured identity. A
 `--guard-rejection` run asks for no approval and starts no authority, so it
-records `operator_approval` as `not-requested` with no identity.
+records `operator_approval` as `not-requested` with no identity. So does an
+agent run with `--expect escalated` (`-Expect escalated`): it passes only when
+planning ends in a saved ESCALATE, and a repair proposal there is refused
+without asking, so the run fails with no approval and no write.
 
 The file-backed negative cases (`missing-approval`, `hard-policy-rejection`,
 `stale-state`, the CAS race and the unnecessary-rollback scenario) still give
@@ -156,7 +161,8 @@ copy of the managed record, and the rival reads it from disk, not through
 approval (`services/executor/core.py::execute`), so it cannot write while the
 harness holds the lock. It is still not an authenticated lookup. `tests/test_approval_session.py` runs the real
 child process with the real Coordinator, Guard and Executor and a fake
-Kubernetes API. Live verification is pending: no live run has used this path
+Kubernetes API; `tests/test_live_agent.py::AgentApprovalSessionTests` does the
+same for agent mode through the durable journal. Live verification is pending: no live run has used this path
 yet, and the committed live evidence predates it, so it shows pre-authorised
 lab approval.
 

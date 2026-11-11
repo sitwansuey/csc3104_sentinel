@@ -527,20 +527,7 @@ class Experiment:
             self.summary["status"] = "PASS"
         except BaseException as exc:
             self.summary.update(status="FAILED", error_type=type(exc).__name__, error=str(exc)[:300])
-            # This is explicit administrator teardown, never counted as executor success.
-            if self.baseline is not None:
-                try:
-                    deployment = self.deployment()
-                    patch = [{"op": "test", "path": "/metadata/uid", "value": self.target["uid"]},
-                             {"op": "test", "path": "/metadata/resourceVersion", "value": deployment["metadata"]["resourceVersion"]},
-                             {"op": "replace", "path": "/spec/template", "value": self.baseline["pod_template"]}]
-                    path = self.directory / "emergency-cleanup-patch.json"
-                    save(path, patch)
-                    self.kubectl("patch", "deployment", self.name, "--type=json", "--patch-file", str(path))
-                    self.summary["operator_emergency_restore"] = True
-                except Exception as restore_error:  # noqa: BLE001 - recorded; the original failure is re-raised below
-                    log.failure(LOG, "recovery.emergency_restore.failed", restore_error, level=log.ERROR)
-                    self.summary["operator_emergency_restore"] = False
+            self.emergency_restore()
             raise
         finally:
             self.credentials.unlink(missing_ok=True)
@@ -548,6 +535,27 @@ class Experiment:
             self.store.close()
             self.summary.update(finished_at=utc(), private_executor_credentials_removed=not self.credentials.exists())
             save(self.directory / "summary.json", self.summary)
+
+    def emergency_restore(self):
+        """Remove the injected fault as the lab administrator; never counted as Sentinel recovery.
+
+        Records operator_emergency_restore and returns whether the patch was applied.
+        """
+        if self.baseline is None:
+            return False
+        try:
+            deployment = self.deployment()
+            patch = [{"op": "test", "path": "/metadata/uid", "value": self.target["uid"]},
+                     {"op": "test", "path": "/metadata/resourceVersion", "value": deployment["metadata"]["resourceVersion"]},
+                     {"op": "replace", "path": "/spec/template", "value": self.baseline["pod_template"]}]
+            path = self.directory / "emergency-cleanup-patch.json"
+            save(path, patch)
+            self.kubectl("patch", "deployment", self.name, "--type=json", "--patch-file", str(path))
+            self.summary["operator_emergency_restore"] = True
+        except Exception as restore_error:  # noqa: BLE001 - recorded; a failed run re-raises its original error
+            log.failure(LOG, "recovery.emergency_restore.failed", restore_error, level=log.ERROR)
+            self.summary["operator_emergency_restore"] = False
+        return self.summary["operator_emergency_restore"]
 
 
 def crash_worker(configuration):

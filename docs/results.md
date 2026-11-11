@@ -86,7 +86,9 @@ counts as not passed for the checks it never reached.
 ## Agent mode
 
 Grouped by source revision. Model seconds are the summed wall time of the
-model calls in one run.
+model calls in one run. A run that passed by escalating as asked
+(`expected_outcome` `escalated` in `summary.json`) is counted as not recovered
+and labelled `expected escalation`.
 
 <!-- BEGIN GENERATED:agent-runs -->
 | Revision | Provenance | Runs | RECOVERED | Not recovered | Model calls (median) | Model seconds (median) | Failure classes |

@@ -214,6 +214,41 @@ class SummarizeTests(unittest.TestCase):
         self.assertEqual(summarize.pass_ratio(agents), "2/4")
         self.assertEqual([summarize.outcome(b) for b in agents], ["PASS", "PASS", "FAILED", "INCOMPLETE"])
 
+    def add_escalated_agent_run(self, expected_outcome):
+        """A PASS agent run that ended, as asked, in a saved ESCALATE with no Guard or execution record."""
+        run = Path(self.temp.name) / "source" / ("e-" + str(expected_outcome))
+        fx.write(run / "approved-rollback/model-calls.json", [{"seconds": 5, "role": "Recovery Planner"}])
+        summary = {"status": "PASS", "started_at": "2026-11-11T10:10:00Z", "agent_model_calls": 1,
+                   "checks": [fx.check("agent planning failure ended in a saved ESCALATE and NEEDS_REVIEW")],
+                   "planning_journal": {"attempts": 3, "error_code": "BUDGET_EXCEEDED", "delivered": 1}}
+        if expected_outcome is not None:
+            summary["expected_outcome"] = expected_outcome
+        fx.write(run / "summary.json", summary)
+        collect.collect(run, "agent", "agent-e1", evidence_root=self.root / "evidence", context=fx.context(),
+                        inferred_revision=fx.REVISION, inferred_basis="fixture")
+
+    def agent_row(self):
+        return next(row for row in summarize.agent_runs(summarize.load_bundles(self.root)) if row[0] == "0123456")
+
+    def test_expected_escalation_passes_but_is_never_counted_as_recovered(self):
+        self.add_escalated_agent_run("escalated")
+        row = self.agent_row()
+        self.assertEqual(row[2:5], ["4", "1/4", "3"])
+        self.assertEqual(row[-1], "expected escalation x1; incomplete x1; model server unreachable x1")
+        # Model calls and seconds stay the medians of the recovered run alone.
+        self.assertEqual(row[5:7], ["3", "38"])
+        escalated = next(b for b in summarize.load_bundles(self.root) if b.bundle_id == "agent-e1")
+        self.assertEqual(summarize.outcome(escalated), "PASS")
+        self.assertTrue(summarize.expected_escalation(escalated))
+
+    def test_agent_runs_that_expected_recovery_still_count_as_recovered(self):
+        for expected_outcome in ("recovered", None):
+            with self.subTest(expected_outcome=expected_outcome):
+                self.tearDown()
+                self.setUp()
+                self.add_escalated_agent_run(expected_outcome)
+                self.assertEqual(self.agent_row()[2:5], ["4", "2/4", "2"])
+
     def test_missing_timeline_falls_back_to_approx_file_timings(self):
         bundles = [b for b in summarize.load_bundles(self.root) if b.bundle_id == "agent-a1"]
         rows = summarize.timings(bundles)

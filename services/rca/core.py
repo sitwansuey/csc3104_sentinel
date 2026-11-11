@@ -20,10 +20,12 @@ def propose_from_telemetry(incident, baselines, telemetry, workspace, provider, 
                    provider, diagnosis=diagnosis)
 
 
-def diagnose(incident, telemetry, workspace, *, config=None, llm=None, progress=None):
+def diagnose(incident, telemetry, workspace, *, config=None, llm=None, progress=None, deadline=None, clock=None):
     """Analyze exported CSV telemetry and persist the full evidence trail.
 
     The output directory must be new. No cluster actions are performed here.
+    deadline (a clock() value, time.monotonic by default) stops the agent
+    before a new round or report once the planning budget is used up.
     """
     validate_message(incident)
     if incident["kind"] != "incident":
@@ -38,8 +40,9 @@ def diagnose(incident, telemetry, workspace, *, config=None, llm=None, progress=
     for key in ("max_rounds", "max_steps", "max_depth", "max_rows", "num_ctx", "num_predict"):
         if type(settings[key]) is not int or settings[key] <= 0:
             raise ValueError(f"{key} must be a positive integer")
-    agent = Agent(llm if llm is not None else Ollama(settings, progress=progress),
-                  Telemetry(telemetry, settings["max_rows"]), settings, workspace, progress=progress)
+    timing = {"deadline": deadline} if clock is None else {"deadline": deadline, "clock": clock}
+    agent = Agent(llm if llm is not None else Ollama(settings, progress=progress, deadline=deadline),
+                  Telemetry(telemetry, settings["max_rows"]), settings, workspace, progress=progress, **timing)
     save(Path(workspace) / "incident.json", incident)
     instruction = (
         "Diagnose the initiating root cause of this incident using the supplied telemetry. "
@@ -66,4 +69,7 @@ def diagnose(incident, telemetry, workspace, *, config=None, llm=None, progress=
                            required_fields=FIELDS[1:], initial_plan=initial_plan)
     return {"incident_id": incident["incident_id"], "prediction": prediction,
             "report": json.loads((Path(workspace) / "report.json").read_text(encoding="utf-8")),
-            "workspace": str(Path(workspace).resolve())}
+            "workspace": str(Path(workspace).resolve()),
+            # Tool names and evidence IDs only: no arguments, file paths or results.
+            "tools": [{"tool": call["tool"], "evidence_id": call["evidence_id"], "success": call["success"]}
+                      for call in agent.call_history]}

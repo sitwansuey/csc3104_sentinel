@@ -65,13 +65,17 @@
       "id": "L-AGENT-JOURNAL",
       "title": "Agent mode bypasses the durable Planner journal",
       "kind": "defect",
-      "status": "open",
+      "status": "mitigated",
       "since": "2026-11-11",
-      "impact": "Agent planning calls the RCA engine directly instead of the PlannerStore journal. A failed agent run saves no ESCALATE, nothing retries it, and the incident stays OPEN.",
-      "workaround": "Read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.",
+      "impact": "Fixed in code: agent planning now runs through prepare() and the PlannerStore journal. A model failure is retried up to three times; an abstention, a diagnosis of another component, a NO_ACTION answer or a target changed during inference ends at once. Every failure ends in a saved, delivered ESCALATE, so the incident moves to NEEDS_REVIEW, and a saved proposal replays without another model call. Still open: the planning budget applies per attempt, so one incident can use three budgets, and the remote Planner worker has no agent mode. Live verification pending: no agent run has used the journal yet, and every committed agent bundle predates it, so those failed runs left the incident OPEN.",
+      "workaround": "For runs recorded before this change, read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:239", "text": "proposal = propose_from_telemetry("},
-        {"at": "docs/planner.md", "text": "does not yet use this"},
+        {"at": "experiments/boutique/harness/agent_live.py:209", "text": "state = run_durable_case(self, incident"},
+        {"at": "services/planner/worker.py:133", "text": "raise PlanningError(\"ABSTAINED\", terminal=True)"},
+        {"at": "services/planner/worker.py:146", "text": "proposal = _rebound(proposal, finalize)"},
+        {"at": "tests/test_agent_journal.py:200", "text": "def test_unavailable_model_retries_with_backoff_across_restart_then_escalates"},
+        {"at": "tests/test_agent_journal.py:274", "text": "def test_lost_delivery_replays_the_same_action_without_a_model_call"},
+        {"at": "docs/planner.md", "text": "Agent mode through the journal"},
         {"claim": "C-AGENT-FAIL-CLOSED"}
       ],
       "planned": ["P2.01"],
@@ -83,7 +87,7 @@
       "kind": "defect",
       "status": "mitigated",
       "since": "2026-11-11",
-      "impact": "Fixed in code for the four live harness paths: the Executor experiment, Boutique walkthrough, provider mode and agent mode now create approvals through the authenticated approval API, served per run by a child process with generated tokens, and the Executor's final pre-write lookup reads them through ApprovalClient. Revocation, expiry or a stopped authority therefore fails closed with zero writes, and agent mode no longer records a pre-authorised approval. An interactive run needs a person to type the exact action ID; an unattended run must opt in to auto-lab approval, recorded under the automated-lab identity and never as a person. This is proven offline with the real child process and a fake Kubernetes API. Live verification pending: no live run has used this path, so no evidence yet shows a person approving, and every committed live bundle used pre-authorised lab approval. The file-backed negative cases still give the Executor a fixed approval record that never reaches the Coordinator; they prove refusals only. The Executor experiment's rival-process check reads a file copy of the managed record, not through ApprovalClient; the target lock refuses it before it reads the approval. The Verifier acceptance script (scripts/validation/test_verifier_connected_live.py) still calls the local approve() and reads the record straight from the store; it is outside this fix. Identities are bearer tokens over loopback HTTP, not a per-person login.",
+      "impact": "Fixed in code for the four live harness paths: the Executor experiment, Boutique walkthrough, provider mode and agent mode now create approvals through the authenticated approval API, served per run by a child process with generated tokens, and the Executor's final pre-write lookup reads them through ApprovalClient. Revocation, expiry or a stopped authority therefore fails closed with zero writes, and agent mode no longer records a pre-authorised approval. An interactive run needs a person to type the exact action ID; an unattended run must opt in to auto-lab approval, recorded under the automated-lab identity and never as a person. Agent and provider modes plan through the durable Planner journal and approve through the same session, and an agent run with --expect escalated asks for no approval and starts no authority. This is proven offline with the real child process and a fake Kubernetes API. Live verification pending: no live run has used this path, so no evidence yet shows a person approving, and every committed live bundle used pre-authorised lab approval. The file-backed negative cases still give the Executor a fixed approval record that never reaches the Coordinator; they prove refusals only. The Executor experiment's rival-process check reads a file copy of the managed record, not through ApprovalClient; the target lock refuses it before it reads the approval. The Verifier acceptance script (scripts/validation/test_verifier_connected_live.py) still calls the local approve() and reads the record straight from the store; it is outside this fix. Identities are bearer tokens over loopback HTTP, not a per-person login.",
       "workaround": "Treat committed live results as lab approval. For new evidence of a person deciding, run with -Approval interactive (the default) and check operator_approval in summary.json.",
       "cites": [
         {"at": "experiments/recovery/live.py:376", "text": "record = self.request_approval(proposal, first)"},
@@ -96,6 +100,9 @@
         {"at": "tests/test_approval_session.py:346", "text": "def test_authority_down_after_allow_gives_zero_writes"},
         {"at": "tests/test_approval_session.py:383", "text": "def test_tokens_never_reach_run_folder_logs_or_argv"},
         {"at": "tests/test_approval_session.py:527", "text": "def test_crash_restart_passes_the_executor_token_only_through_the_worker_environment"},
+        {"at": "experiments/boutique/harness/agent_live.py:262", "text": "return self.request_approval(proposal, decision)"},
+        {"at": "scripts/boutique_provider.py:30", "text": "approve=lab.request_approval"},
+        {"at": "tests/test_live_agent.py:440", "text": "def test_agent_success_approves_through_the_session_and_records_the_strategy"},
         {"claim": "C-CONNECTED-HARNESS"}
       ],
       "planned": ["P2.02", "P2.03"],
@@ -110,7 +117,7 @@
       "impact": "Container log lines are exported and quoted into model context. A crafted log line could steer the model towards a rollback to the measured baseline. Guard and the Executor still enforce the target, baseline and resourceVersion checks.",
       "workaround": "None in code. The prompt tells the model that telemetry is untrusted, which is not a control.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:95", "text": "for entry in observation.get(\"logs\", []):"},
+        {"at": "experiments/boutique/harness/agent_live.py:75", "text": "for entry in observation.get(\"logs\", []):"},
         {"at": "agent/tools.py:193-194", "text": "str(r[message])[:500]"}
       ],
       "planned": ["P2.04"],
@@ -263,9 +270,9 @@
       "impact": "Incident-to-repair time in agent mode had a long tail (docs/results.md). The two measured cold calls took up to 41 s with model loads up to 26 s, and one 356 s decision stage holds only 53 s of recorded model calls, so its cause is not established. The bounded transport is in code: each model call has an overall deadline, a response size cap, no redirects or proxies and a schema check; agent mode runs a preflight and a warm-up call before any fault is injected and records model-runtime.json; keep_alive is configurable. Measured live on 4afc879 (C-AGENT-RECORDED: three runs on one Windows host, 2026-11-11): with qwen3:14b Q4_K_M fully on the GPU and keep_alive 30m, all nine model calls were warm (load under 1 s), model time per run was 21.9 to 24.0 s and incident to Guard ALLOW took 23.3 to 25.6 s; the first run's warm-up loaded the model in 18.6 s before the fault was injected. The preflight stopped a missing model before fault injection (C-AGENT-PREFLIGHT-RECORDED). Not measured: a cold load during a run with the bounded transport, so the tail after an evicted or cold model is unknown. The per-call timeout still defaults to 300 s; P2.01 puts agent planning under a planning budget.",
       "workaround": "Keep the model warm with keep_alive and check the warm-up load time in model-runtime.json after each run.",
       "cites": [
-        {"at": "agent/llm.py:259", "text": "self.timeout = _positive(config, \"timeout\", 300)"},
-        {"at": "agent/llm.py:416", "text": "def warm_up(self):"},
-        {"at": "experiments/boutique/harness/agent_live.py:169", "text": "llm.preflight()"},
+        {"at": "agent/llm.py:285", "text": "self.timeout = _positive(config, \"timeout\", 300)"},
+        {"at": "agent/llm.py:455", "text": "def warm_up(self):"},
+        {"at": "experiments/boutique/harness/agent_live.py:153", "text": "llm.preflight()"},
         {"at": "tests/test_llm_transport.py"}
       ],
       "planned": ["P2.01"],
@@ -436,11 +443,11 @@
       "status": "fixed",
       "fixed_by": "#92",
       "since": "2026-11-11",
-      "impact": "A failed agent run looked like a stalled one, and Ollama's own error text was discarded. The incident still stays OPEN; see L-AGENT-JOURNAL.",
+      "impact": "A failed agent run looked like a stalled one, and Ollama's own error text was discarded. The incident also stayed OPEN until agent planning moved into the journal; see L-AGENT-JOURNAL.",
       "workaround": "Not needed.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:258", "text": "Agent planning stopped; no repair proposed"},
-        {"at": "tests/test_live_agent.py:164", "text": "def test_unavailable_model_stops_visibly_without_a_proposal"}
+        {"at": "experiments/boutique/harness/agent_live.py:248", "text": "Agent planning stopped; no repair proposed"},
+        {"at": "tests/test_live_agent.py:238", "text": "def test_unavailable_model_retries_then_escalates_to_needs_review"}
       ],
       "planned": [],
       "issues": [87]

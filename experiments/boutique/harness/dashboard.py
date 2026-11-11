@@ -142,12 +142,22 @@ class BoutiqueDashboard:
                     and "0 patch attempts" in event["summary"] for event in snapshot["telemetry"]),
                 "Recorded Executor refusal evidence is missing from the UI")
 
-    def verify_agent(self, *, operator_id):
-        """Validate the single agent-driven recovery using the real dashboard API."""
+    def verify_agent(self, expect="recovered", *, operator_id=None):
+        """Validate the single agent-driven case using the real dashboard API.
+
+        expect="recovered" checks the guarded recovery, including that its one
+        approval came through approval_http from operator_id. expect="escalated"
+        checks the other accepted ending: planning ended in a saved ESCALATE, the
+        incident is NEEDS_REVIEW, and nothing reached Guard, approval, the Executor
+        or the Verifier; that run asks for no approval, so it has no operator_id.
+        """
         snapshot = self._snapshot()
         require(len(snapshot["incidents"]) == len(snapshot["actions"]) == 1,
                 "Agent dashboard must show exactly one incident and action")
         incident, action = snapshot["incidents"][0], snapshot["actions"][0]
+        if expect == "escalated":
+            return self._verify_agent_escalation(snapshot, incident, action)
+        require(expect == "recovered", "Unknown agent dashboard expectation")
         self._action_scope(incident, action)
         require(incident["state"] == action["state"] == "RECOVERED"
                 and action["guard_result"]["verdict"] == "ALLOW"
@@ -170,6 +180,31 @@ class BoutiqueDashboard:
         save(self.directory / "dashboard-snapshot.json", snapshot)
         result = {"status": "PASS", "scenario": "live-agent", "url": self.url,
                   "incidents": 1, "applied_actions": 1, "role6_outcomes": 1, "model_calls": len(calls)}
+        save(self.directory / "dashboard-check.json", result)
+        return result
+
+    def _verify_agent_escalation(self, snapshot, incident, action):
+        proposal = action["proposal"]
+        require(action["incident_id"] == incident["incident_id"] == proposal["incident_id"]
+                and incident["active_action_id"] == action["action_id"] == proposal["action_id"]
+                and proposal["target"] == incident["target"],
+                "Dashboard action does not match its incident")
+        require(incident["state"] == action["state"] == "NEEDS_REVIEW" and proposal["action"] == "ESCALATE",
+                "Agent dashboard must show the saved ESCALATE and the incident in NEEDS_REVIEW")
+        require(action["guard_result"] is None and action["execution_result"] is None
+                and not snapshot["approvals"]
+                and not any(row["topic"] in {"guard.request", "executor.request"} for row in snapshot["outbox"])
+                and not any(m["message"]["kind"] in {"execution_result", "outcome"} for m in snapshot["messages"]),
+                "An escalated agent case must not reach Guard, approval, the Executor or the Verifier")
+        # The approval authority writes this file when it starts; an escalated run never asks for approval.
+        require(not (self.directory / "approval-identities.json").exists(),
+                "An escalated agent case must not start the approval session")
+        status = json.loads((self.directory / "approved-rollback/planning-status.json").read_text(encoding="utf-8"))
+        require(status["proposal"] == proposal and status["delivered"],
+                "The Planner journal must hold the delivered ESCALATE")
+        save(self.directory / "dashboard-snapshot.json", snapshot)
+        result = {"status": "PASS", "scenario": "live-agent-escalated", "url": self.url, "incidents": 1,
+                  "applied_actions": 0, "error_code": status["error_code"], "attempts": status["attempts"]}
         save(self.directory / "dashboard-check.json", result)
         return result
 

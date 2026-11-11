@@ -203,6 +203,73 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "not created through the authenticated approval API"):
             self.verify()
 
+    def escalated(self):
+        """One agent incident that planning escalated: no Guard, approval, execution or outcome."""
+        snapshot = deepcopy(self.snapshot)
+        incident = dict(snapshot["incidents"][0], state="NEEDS_REVIEW")
+        proposal = dict(snapshot["actions"][0]["proposal"], action="ESCALATE")
+        snapshot.update(incidents=[incident], approvals=[], outbox=[], messages=[], actions=[dict(
+            snapshot["actions"][0], state="NEEDS_REVIEW", proposal=proposal, guard_result=None,
+            execution_result=None)])
+        status = {"incident_id": "INC-0", "attempts": 3, "error_code": "MODEL_UNAVAILABLE",
+                  "delivered": 1, "proposal": proposal}
+        return snapshot, status
+
+    def verify_escalated(self, snapshot, status, *, session_started=False):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "approved-rollback").mkdir()
+            (root / "approved-rollback/planning-status.json").write_text(json.dumps(status))
+            if session_started:  # The approval authority writes this file when it starts.
+                (root / "approval-identities.json").write_text("{}")
+            dashboard = BoutiqueDashboard(root, context="test-context", cluster_id="test-cluster",
+                                          namespace="test-namespace", port=0)
+            dashboard.url = "http://127.0.0.1:9999"
+            with patch.object(dashboard, "_snapshot", return_value=snapshot):
+                return dashboard.verify_agent("escalated")
+
+    def test_agent_dashboard_accepts_a_delivered_escalation_with_no_downstream_work(self):
+        result = self.verify_escalated(*self.escalated())
+        self.assertEqual((result["status"], result["scenario"]), ("PASS", "live-agent-escalated"))
+        self.assertEqual((result["error_code"], result["attempts"], result["applied_actions"]),
+                         ("MODEL_UNAVAILABLE", 3, 0))
+
+    def test_agent_dashboard_rejects_an_escalation_that_reached_guard_or_was_not_journaled(self):
+        snapshot, status = self.escalated()
+        proposal = snapshot["actions"][0]["proposal"]
+        for change in ("guard", "approval", "open", "journal", "guard result", "execution result",
+                       "execution message", "outcome message"):
+            with self.subTest(change=change):
+                changed, saved = deepcopy(snapshot), deepcopy(status)
+                expected = "must not reach Guard, approval, the Executor or the Verifier"
+                if change == "guard":
+                    changed["outbox"] = [{"topic": "guard.request", "action_id": "ACT-0"}]
+                elif change == "approval":
+                    changed["approvals"] = [{"record": {"action_id": "ACT-0"}}]
+                elif change == "guard result":
+                    # The outbox stays clean: only the action row shows the Guard decision.
+                    changed["actions"][0]["guard_result"] = {"verdict": "ALLOW"}
+                elif change == "execution result":
+                    changed["actions"][0]["execution_result"] = dict(proposal, kind="execution_result",
+                                                                     status="APPLIED")
+                elif change == "execution message":
+                    changed["messages"] = [{"message": dict(proposal, kind="execution_result", status="APPLIED")}]
+                elif change == "outcome message":
+                    changed["messages"] = [{"message": dict(proposal, kind="outcome", status="RECOVERED",
+                                                            checks=[{"passed": True}])}]
+                elif change == "open":
+                    changed["incidents"][0]["state"] = "OPEN"
+                    expected = "incident in NEEDS_REVIEW"
+                else:
+                    saved["delivered"] = 0
+                    expected = "journal must hold the delivered ESCALATE"
+                with self.assertRaisesRegex(RuntimeError, expected):
+                    self.verify_escalated(changed, saved)
+
+    def test_agent_dashboard_rejects_an_escalation_that_started_the_approval_session(self):
+        with self.assertRaisesRegex(RuntimeError, "must not start the approval session"):
+            self.verify_escalated(*self.escalated(), session_started=True)
+
     def test_standalone_refusal_still_validates_one_rejected_proposal(self):
         for field in ("incidents", "actions", "reports"):
             self.snapshot[field] = self.snapshot[field][-1:]
