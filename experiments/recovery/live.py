@@ -130,9 +130,17 @@ class Experiment:
         self.summary["operator_approval"] = {"mode": mode, "identity": None if mode == "reject" else identity,
                                              "via": "approval_http"}
 
+    def approval_not_requested(self, reason):
+        """Record that this scenario asks for no approval; the authority can then never start."""
+        require(self.authority is None, "Approval mode cannot change after the authority started")
+        self.approval_mode = self.operator = None
+        self.summary["operator_approval"] = {"mode": "not-requested", "identity": None, "via": None,
+                                             "human": False, "decided_by": reason}
+
     def approval_authority(self):
         """Start this run's approval authority once the measured target identity is known."""
         if self.authority is None:
+            require(self.approval_mode in MODES, "This scenario requests no approval")
             require(self.target is not None, "The approval authority needs the measured target identity")
             authority = LocalApprovalAuthority(self.directory, self.directory / "coordinator.sqlite", self.target,
                                                operator=operator_identity(self.approval_mode, self.operator))

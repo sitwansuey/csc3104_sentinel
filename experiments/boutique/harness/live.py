@@ -559,6 +559,10 @@ def main():
     experiment.provider_script = args.provider_script.resolve() if args.provider_script else None
     experiment.provider_policy = args.provider_policy
     experiment.configure_approval(args.approval, args.operator)
+    if args.guard_rejection:
+        experiment.approval_not_requested(
+            "no approval was requested: the Guard-only refusal check uses a fixed file-backed lab record "
+            "that never reaches the Coordinator and proves a refusal only")
     if args.prepared_environment:
         experiment.prepared = prepared_environment(args.prepared_environment)
         experiment.cluster_id = experiment.prepared["cluster_id"]

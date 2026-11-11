@@ -584,6 +584,17 @@ class HarnessApprovalTests(unittest.TestCase):
                 for path in files:
                     self.assertNotIn(token.encode(), path.read_bytes(), str(path.relative_to(experiment.directory)))
 
+    def test_a_scenario_without_approval_is_recorded_as_such_and_cannot_start_the_authority(self):
+        experiment = self.make()
+        experiment.approval_not_requested("no approval was requested in this scenario")
+        summary = experiment.summary["operator_approval"]
+        self.assertEqual((summary["mode"], summary["identity"], summary["via"], summary["human"]),
+                         ("not-requested", None, None, False))
+        with self.assertRaisesRegex(RuntimeError, "requests no approval"):
+            experiment.case("approved-rollback", self.incident, coordinator=True)
+        self.assertIsNone(experiment.authority)
+        self.assertFalse((experiment.directory / "approval-identities.json").exists())
+
     def test_mode_is_fixed_once_the_authority_runs(self):
         experiment = self.make()
         experiment.configure_approval("auto-lab")
@@ -618,6 +629,25 @@ class EntryPointRefusalTests(unittest.TestCase):
     def test_executor_experiment_without_approval_refuses_without_a_terminal(self):
         from experiments.recovery import live
         self.assertIn("needs a terminal", self.run_main(live, []))
+
+    def test_guard_rejection_run_records_that_no_approval_was_requested(self):
+        from experiments.boutique.harness import live
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        run_dir = Path(temp.name) / "run"
+        with patch("sys.argv", ["harness", "--run-dir", str(run_dir), "--guard-rejection"]), \
+                patch("sys.stdin", io.StringIO()), patch("sys.stderr", io.StringIO()), \
+                patch("sys.stdout", io.StringIO()), \
+                patch("subprocess.run", side_effect=AssertionError("cluster command attempted")), \
+                patch("shared.provenance.collect", return_value={"source_revision": "test"}), \
+                patch.object(live, "tool_versions", return_value={}), \
+                patch.object(live.BoutiqueExperiment, "prepare", side_effect=RuntimeError("stop before the cluster")):
+            self.assertEqual(live.main(), 1)
+        summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))["operator_approval"]
+        self.assertEqual(summary["mode"], "not-requested")  # Not 'interactive' under a person's identity.
+        self.assertEqual((summary["identity"], summary["via"], summary["human"]), (None, None, False))
+        self.assertIn("no approval was requested", summary["decided_by"])
+        self.assertFalse((run_dir / "approval-identities.json").exists())
 
     def test_both_harnesses_refuse_a_reserved_or_malformed_operator_before_any_cluster_change(self):
         from experiments.boutique.harness import live as boutique
