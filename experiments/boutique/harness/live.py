@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from experiments.recovery.live import Experiment, crash_worker, now, require, save, utc
+from runtime.approval_session import MODES, operator_identity, require_attended
 from runtime.observer_pipeline import LocalCoordinatorSink, ObserverStore
 from runtime.verifier_pipeline import process_verifier_requests
 from services.verifier.core import inspect_dependencies
@@ -139,6 +140,17 @@ class BoutiqueExperiment(Experiment):
 
     def close(self):
         """Workload-specific child processes may override this teardown hook."""
+
+    def request_approval(self, proposal, decision):
+        if self.approval_mode == "interactive":
+            self.event(4, "status", "Guard needs operator approval: type the action ID at the harness terminal",
+                       target=proposal["target"], incident_id=proposal["incident_id"], action_id=proposal["action_id"])
+        record = super().request_approval(proposal, decision)
+        self.event(4, "status", ("Approval recorded through the approval API by " + record["operator_id"]
+                                 + (" (automated lab approval)" if self.approval_mode == "auto-lab" else ""))
+                   if record else "Approval refused; no Executor write", target=proposal["target"],
+                   incident_id=proposal["incident_id"], action_id=proposal["action_id"])
+        return record
 
     provider_script = None
 
@@ -493,7 +505,10 @@ def main():
     parser.add_argument("--crash-worker", help=argparse.SUPPRESS)
     parser.add_argument("--provider-script", type=Path, help="Opt in to a trusted Planner provider adapter (JSON stdin/stdout)")
     parser.add_argument("--provider-policy", type=Path, help="Trusted policy override for provider recovery")
-    parser.add_argument("--operator", help="Lab operator identity; exact interactive action confirmation is required")
+    parser.add_argument("--approval", choices=MODES, default="interactive",
+                        help="interactive (default): a person types each action ID at this terminal; auto-lab: explicit "
+                             "opt-in for unattended lab runs, recorded as automated approval; reject: refuse every approval")
+    parser.add_argument("--operator", help="Interactive operator identity (default lab-operator)")
     args = parser.parse_args()
     if args.agent_config and not args.agent:
         parser.error("--agent-config requires --agent")
@@ -507,10 +522,16 @@ def main():
         parser.error("The dashboard acceptance sequence uses the original operator lab mode")
     if args.provider_script and args.guard_rejection:
         parser.error("Provider recovery and the harness-only rejection scenario are separate modes")
-    if (args.provider_policy or args.operator) and not args.provider_script:
-        parser.error("--provider-policy and --operator require --provider-script")
+    if args.provider_policy and not args.provider_script:
+        parser.error("--provider-policy requires --provider-script")
     if args.crash_worker:
         return crash_worker(args.crash_worker)
+    try:
+        operator_identity(args.approval, args.operator)
+        if not args.guard_rejection:  # The rejection scenario never asks for approval.
+            require_attended(args.approval)
+    except ValueError as error:
+        parser.error(str(error))
     if not 0 <= args.dashboard_port <= 65535:
         parser.error("--dashboard-port must be between 0 and 65535")
     if args.exit_after_test and not args.dashboard:
@@ -537,7 +558,11 @@ def main():
         ("kubectl", "kind", "docker", "helm") + (("ollama",) if args.agent else ()))
     experiment.provider_script = args.provider_script.resolve() if args.provider_script else None
     experiment.provider_policy = args.provider_policy
-    experiment.operator = args.operator
+    experiment.configure_approval(args.approval, args.operator)
+    if args.guard_rejection:
+        experiment.approval_not_requested(
+            "no approval was requested: the Guard-only refusal check uses a fixed file-backed lab record "
+            "that never reaches the Coordinator and proves a refusal only")
     if args.prepared_environment:
         experiment.prepared = prepared_environment(args.prepared_environment)
         experiment.cluster_id = experiment.prepared["cluster_id"]
@@ -574,8 +599,10 @@ def main():
         else:
             experiment.run()
         if dashboard:
-            experiment.summary["dashboard"] = (dashboard.verify_agent() if args.agent else
-                                                dashboard.verify_rejection() if args.guard_rejection else dashboard.verify())
+            identity = experiment.summary["operator_approval"]["identity"]
+            experiment.summary["dashboard"] = (dashboard.verify_agent(operator_id=identity) if args.agent else
+                                                dashboard.verify_rejection() if args.guard_rejection else
+                                                dashboard.verify(operator_id=identity))
             print("PASS: live rejection dashboard, Guard findings and zero-write evidence"
                   if args.guard_rejection else
                   "PASS: live dashboard HTTP, Guard reports, execution records and cluster telemetry", flush=True)
@@ -609,6 +636,7 @@ def main():
             try:
                 experiment.close()
             finally:
+                experiment.close_approval_authority()
                 experiment.store.close()
                 experiment.credentials.unlink(missing_ok=True)
                 save(experiment.directory / "summary.json", experiment.summary)

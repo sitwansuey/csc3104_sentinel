@@ -88,6 +88,22 @@ class BoutiqueDashboard:
         require(snapshot["sources"]["telemetry"]["connected"], "Dashboard cannot read experiment telemetry")
         return snapshot
 
+    def _authenticated_approvals(self, snapshot, folders, operator_id):
+        """Each recovery's approval came through approval_http from the configured identity.
+
+        The dashboard hides a managed approval's record, so the operator identity
+        is read from the approval the harness saved in each recovery folder.
+        """
+        require(isinstance(operator_id, str) and operator_id, "The configured approval identity is required")
+        for folder in folders:
+            saved = json.loads((self.directory / folder / "approval.json").read_text(encoding="utf-8"))
+            require(isinstance(saved, dict) and saved.get("operator_id") == operator_id,
+                    "Approval in " + folder + " is not from the configured identity")
+            shown = [item["record"] for item in snapshot["approvals"]
+                     if item["record"].get("action_id") == saved.get("action_id")]
+            require(len(shown) == 1 and shown[0].get("protected") is True,
+                    "Approval in " + folder + " was not created through the authenticated approval API")
+
     @staticmethod
     def _action_scope(incident, action):
         require(action["incident_id"] == incident["incident_id"]
@@ -126,7 +142,7 @@ class BoutiqueDashboard:
                     and "0 patch attempts" in event["summary"] for event in snapshot["telemetry"]),
                 "Recorded Executor refusal evidence is missing from the UI")
 
-    def verify_agent(self):
+    def verify_agent(self, *, operator_id):
         """Validate the single agent-driven recovery using the real dashboard API."""
         snapshot = self._snapshot()
         require(len(snapshot["incidents"]) == len(snapshot["actions"]) == 1,
@@ -145,6 +161,7 @@ class BoutiqueDashboard:
         require(len(snapshot["approvals"]) == 1
                 and snapshot["approvals"][0]["record"]["action_id"] == action["action_id"],
                 "Agent dashboard must expose the matching operator approval")
+        self._authenticated_approvals(snapshot, ["approved-rollback"], operator_id)
         history = snapshot["cluster_history"]
         require(history and all(h["cluster_id"] == self.cluster_id and h["namespace"] == self.namespace for h in history),
                 "Agent dashboard cluster evidence is missing or belongs to another scope")
@@ -156,7 +173,7 @@ class BoutiqueDashboard:
         save(self.directory / "dashboard-check.json", result)
         return result
 
-    def verify(self):
+    def verify(self, *, operator_id):
         """Validate two real recoveries followed by a refused unnecessary rollback."""
         snapshot = self._snapshot()
         require(len(snapshot["incidents"]) == len(snapshot["actions"]) == 3,
@@ -186,6 +203,7 @@ class BoutiqueDashboard:
         require(len(snapshot["approvals"]) == 2 and
                 {item["record"]["action_id"] for item in snapshot["approvals"]} == recovered_ids,
                 "Dashboard must show the two recovery approvals")
+        self._authenticated_approvals(snapshot, ["approved-rollback", "crash-after-write"], operator_id)
         outcomes = [item["message"] for item in snapshot["messages"] if item["message"]["kind"] == "outcome"]
         dependencies = [item["message"] for item in snapshot["messages"] if item["message"]["kind"] == "dependency_result"]
         require(len(outcomes) == 2 and all(item["status"] == "RECOVERED"

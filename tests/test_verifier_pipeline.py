@@ -231,6 +231,8 @@ class BoutiqueRoleSixIntegrationTests(unittest.TestCase):
     def test_both_boutique_actions_publish_real_dependency_and_outcome_messages(self):
         with tempfile.TemporaryDirectory() as root:
             experiment = BoutiqueExperiment(Path(root) / "run")
+            # Unattended test: approvals go through the run's approval API as automated lab approval.
+            experiment.configure_approval("auto-lab")
             try:
                 target = dict(load("messages/proposal.json")["target"], cluster_id=experiment.cluster_id,
                               namespace=experiment.namespace, name=experiment.name)
@@ -269,12 +271,15 @@ class BoutiqueRoleSixIntegrationTests(unittest.TestCase):
                         self.assertLess(phases.index(("guard_decision", label)),
                                         phases.index(("outcome_recorded", label)))
             finally:
+                experiment.close_approval_authority()
                 experiment.store.close()
 
     def recover(self, pattern):
         """One opt-in recovery; pattern is the storefront-checkout health of each offered reading."""
         with tempfile.TemporaryDirectory() as root:
             experiment = BoutiqueExperiment(Path(root) / "run")
+            # Unattended test: approvals go through the run's approval API as automated lab approval.
+            experiment.configure_approval("auto-lab")
             try:
                 target = dict(load("messages/proposal.json")["target"], cluster_id=experiment.cluster_id,
                               namespace=experiment.namespace, name=experiment.name)
@@ -315,6 +320,7 @@ class BoutiqueRoleSixIntegrationTests(unittest.TestCase):
                             "checks": experiment.summary["checks"], "events": event.call_args_list,
                             "published": [message for message in messages if message["kind"] == "outcome"]}
             finally:
+                experiment.close_approval_authority()
                 experiment.store.close()
 
     def test_complete_recovery_waits_through_convergence(self):

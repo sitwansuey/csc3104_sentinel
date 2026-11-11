@@ -26,11 +26,11 @@ the fix and regenerate.
 | --- | --- | --- | --- | --- | --- |
 | [L-CLOCK-ORDERING](#l-clock-ordering) | defect | open | Lifecycle ordering compares wall-clock timestamps written by different components | P3.03 | #18, #63 |
 | [L-AGENT-JOURNAL](#l-agent-journal) | defect | open | Agent mode bypasses the durable Planner journal | P2.01 | #14, #54 |
-| [L-AGENT-APPROVAL](#l-agent-approval) | defect | open | Live runs use pre-authorised lab approval, not an authenticated operator | P2.02, P2.03 | #10 |
 | [L-RAW-LOGS-PROMPT](#l-raw-logs-prompt) | defect | open | Raw container log text reaches the model | P2.04 | #51, #56 |
 | [L-OBSERVER-ZERO-REPLICAS](#l-observer-zero-replicas) | defect | open | A Deployment scaled to zero replicas is treated as healthy | P5.07 | none |
 | [L-EXEC-WEDGE](#l-exec-wedge) | defect | mitigated | A write rejected with its resource version unchanged waits in NEEDS_RECONCILIATION unless fencing is on | P2.06, P5.08 | #61 |
 | [L-EXEC-REDELIVERY](#l-exec-redelivery) | defect | mitigated | A replacement Executor without the ledger row reported CONFLICT for a write that was applied | P3.01, P4.01 | #18, #58 |
+| [L-AGENT-APPROVAL](#l-agent-approval) | defect | mitigated | No live run yet shows a person approving through the authenticated API | P2.02, P2.03 | #10 |
 | [L-NO-LOGGING](#l-no-logging) | defect | mitigated | Structured logs cover only the networked entrypoints, and no live run has collected them | P1.07, P3.02 | #62 |
 | [L-SINGLE-COORDINATOR](#l-single-coordinator) | limitation | open | The Coordinator is one process with one SQLite file | P3.06, P4.02, P5.01 | #62, #63 |
 | [L-HOST-LOCAL-EXECUTOR](#l-host-local-executor) | limitation | open | The Executor ledger and target locks are host-local | P3.04 | #18, #58, #59 |
@@ -72,14 +72,6 @@ the fix and regenerate.
 - Workaround: Read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.
 - Evidence: `experiments/boutique/harness/agent_live.py:239`; `docs/planner.md`; claim `C-AGENT-FAIL-CLOSED`.
 
-### L-AGENT-APPROVAL
-
-**Live runs use pre-authorised lab approval, not an authenticated operator.** Defect, open; recorded 2026-11-11. Planned: P2.02, P2.03. Issues: #10.
-
-- Impact: Agent mode records a pre-authorised approval and the harness approves in code. The authenticated approval service exists but no live run uses it, so no evidence shows a person deciding.
-- Workaround: Treat every live result as lab approval. Use the authenticated approval service only with explicit Guard/Executor wiring (docs/approvals.md).
-- Evidence: `experiments/boutique/harness/agent_live.py:271`; `experiments/recovery/live.py:327`; claim `C-CONNECTED-HARNESS`.
-
 ### L-RAW-LOGS-PROMPT
 
 **Raw container log text reaches the model.** Defect, open; recorded 2026-11-11. Planned: P2.04. Issues: #51, #56.
@@ -111,6 +103,14 @@ the fix and regenerate.
 - Impact: Fixed in code; live verification is left to P3.01 and P4.01. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host given a reconcile command with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it never starts that write. An execute command on a fresh host can still write, and the resourceVersion test in the patch lets at most one write for the action commit. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. No run has used more than one Executor host; the 2026-11-11 live runs each used one.
 - Workaround: Run one Executor with one ledger directory, as every documented run does, until a multi-host run verifies this.
 - Evidence: `services/executor/core.py:421`; `services/executor/core.py:365`; `tests/test_executor_reconciliation_table.py:420`; `tests/test_executor_reconciliation_table.py:475`; `services/executor/store.py:3`.
+
+### L-AGENT-APPROVAL
+
+**No live run yet shows a person approving through the authenticated API.** Defect, mitigated; recorded 2026-11-11. Planned: P2.02, P2.03. Issues: #10.
+
+- Impact: Fixed in code for the four live harness paths: the Executor experiment, Boutique walkthrough, provider mode and agent mode now create approvals through the authenticated approval API, served per run by a child process with generated tokens, and the Executor's final pre-write lookup reads them through ApprovalClient. Revocation, expiry or a stopped authority therefore fails closed with zero writes, and agent mode no longer records a pre-authorised approval. An interactive run needs a person to type the exact action ID; an unattended run must opt in to auto-lab approval, recorded under the automated-lab identity and never as a person. This is proven offline with the real child process and a fake Kubernetes API. Live verification pending: no live run has used this path, so no evidence yet shows a person approving, and every committed live bundle used pre-authorised lab approval. The file-backed negative cases still give the Executor a fixed approval record that never reaches the Coordinator; they prove refusals only. The Executor experiment's rival-process check reads a file copy of the managed record, not through ApprovalClient; the target lock refuses it before it reads the approval. The Verifier acceptance script (scripts/validation/test_verifier_connected_live.py) still calls the local approve() and reads the record straight from the store; it is outside this fix. Identities are bearer tokens over loopback HTTP, not a per-person login.
+- Workaround: Treat committed live results as lab approval. For new evidence of a person deciding, run with -Approval interactive (the default) and check operator_approval in summary.json.
+- Evidence: `experiments/recovery/live.py:376`; `experiments/recovery/live.py:390`; `runtime/approval_session.py:92`; `runtime/approval_session.py:311`; `experiments/recovery/live.py:365`; `experiments/recovery/live.py:445`; `scripts/validation/verifier_connected_lab.py:198`; `tests/test_approval_session.py:346`; `tests/test_approval_session.py:383`; `tests/test_approval_session.py:527`; claim `C-CONNECTED-HARNESS`.
 
 ### L-NO-LOGGING
 
@@ -286,7 +286,7 @@ the fix and regenerate.
 
 - Impact: A single transient read error ended verification with no outcome.
 - Workaround: Not needed.
-- Evidence: `tests/test_verifier_pipeline.py:476`.
+- Evidence: `tests/test_verifier_pipeline.py:482`.
 
 ### L-PACKAGED-UTF8
 

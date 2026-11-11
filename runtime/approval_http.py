@@ -173,7 +173,7 @@ def main():
     parser.add_argument("--identities", required=True)
     parser.add_argument("--permissions", required=True)
     parser.add_argument("--bind", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8767)
+    parser.add_argument("--port", type=int, default=8767, help="0 selects a free port; stdout reports the bound port")
     parser.add_argument("--cert")
     parser.add_argument("--key")
     parser.add_argument("--max-lifetime-seconds", type=int, default=300)
@@ -181,6 +181,8 @@ def main():
     if (bool(args.cert) != bool(args.key)
             or not args.cert and not ipaddress.ip_address(args.bind).is_loopback):
         parser.error("Non-loopback serving requires --cert and --key")
+    if not 0 <= args.port <= 65535:
+        parser.error("--port must be between 0 and 65535")
     if not 1 <= args.max_lifetime_seconds <= 86400:
         parser.error("Approval lifetime must be between 1 and 86400 seconds")
     services = load_identities(args.identities, ROLES)
@@ -196,7 +198,8 @@ def main():
     with WorkerHTTPServer((args.bind, args.port), handler(
             args.db, services, permissions, max_lifetime_seconds=args.max_lifetime_seconds),
             tls_context=tls) as server:
-        print(f"Coordinator approval API listening on {args.bind}:{args.port}", flush=True)
+        # One JSON line on stdout, so a parent that asked for port 0 learns the bound port.
+        print(json.dumps({"event": "listening", "bind": args.bind, "port": server.server_address[1]}), flush=True)
         server.serve_forever()
 
 

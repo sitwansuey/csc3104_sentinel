@@ -91,9 +91,12 @@ try {
         '--mount',"type=bind,source=$data,target=/data",
         '--env','KUBECONFIG=/bootstrap/operator-kubeconfig.yaml',
         '--publish',"127.0.0.1:${Port}:8765")
-    if (-not $Unattended -and -not $UIControls) { $runOptions += '-it' }
+    # Interactive approval is typed at this terminal, so every attended run attaches one.
+    if (-not $Unattended) { $runOptions += '-it' }
     $runOptions += @($PackagedImage,'--prepared-environment','/bootstrap/environment.json','--run-dir','/data/evidence',
         '--dashboard','--dashboard-bind','0.0.0.0','--dashboard-port','8765')
+    # -Unattended is the explicit opt-in to automated lab approval, recorded as such in summary.json.
+    $runOptions += @('--approval', $(if ($Unattended) { 'auto-lab' } else { 'interactive' }))
     if ($GuardRejection) { $runOptions += '--guard-rejection' }
     if ($UIControls) { $runOptions += '--ui-controls' }
     elseif ($Unattended) { $runOptions += '--exit-after-test' }

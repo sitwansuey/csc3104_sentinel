@@ -54,11 +54,9 @@ def run_provider_case(lab, incident):
             baseline_reader=lambda p: lab.baseline, policy_reader=lambda p: lab.policy,
             dependency_reader=lab.dependency_result)
 
-    def operator(proposal):
-        action_id = proposal["action_id"]
-        if lab.operator and input(f"To approve rollback, enter {action_id}: ").strip() == action_id:
-            return lab.operator
-        return None
+    def approve(proposal, decision):
+        # The harness approver creates the approval through the authenticated API.
+        return lab.request_approval(proposal, decision)
 
     def execute(proposal):
         save(folder / "approval.json", lab.store.approval(proposal["action_id"]))
@@ -75,7 +73,7 @@ def run_provider_case(lab, incident):
     with PlannerStore(folder / "planner.db") as planning:
         while True:
             state = advance(lab.store, incident["incident_id"], plan=plan, assess=assess, guard=guard,
-                            operator=operator, execute=execute,
+                            approve=approve, execute=execute,
                             verify=lambda proposal, result: lab.complete_recovery(folder, proposal, result))
             if state != "OPEN":
                 break

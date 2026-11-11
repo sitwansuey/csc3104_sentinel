@@ -1,5 +1,6 @@
 [CmdletBinding()]
-param([switch]$Setup, [switch]$Cleanup)
+param([switch]$Setup, [switch]$Cleanup,
+      [ValidateSet('interactive','auto-lab','reject')][string]$Approval = 'interactive')
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -49,7 +50,7 @@ try {
     }
     $pythonPrefix = @()
     if ((Split-Path -Leaf $pythonTool.Path) -eq 'py.exe') { $pythonPrefix = @('-3') }
-    & $pythonTool.Path @pythonPrefix (Join-Path $PSScriptRoot 'test_executor_live.py')
+    & $pythonTool.Path @pythonPrefix (Join-Path $PSScriptRoot 'test_executor_live.py') --approval $Approval
     $resultCode = $LASTEXITCODE
 } finally {
     if ($Cleanup) {

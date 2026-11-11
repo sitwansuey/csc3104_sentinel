@@ -213,10 +213,12 @@ provenance block, so pass `--inferred-revision` and `--inferred-basis`.
 Use the [three-scenario browser run](run.md), or execute it unattended:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Connected -Dashboard -ExitAfterTest -Cleanup
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Connected -Dashboard -ExitAfterTest -Approval auto-lab -Cleanup
 ```
 
-Expected evidence: eleven observed Deployments; actual cart/checkout failures
+Without `-Approval auto-lab` a person types each action ID at the terminal
+([approvals](approvals.md#live-harness-approval)); that is the only run that
+shows a person approving. Expected evidence: eleven observed Deployments; actual cart/checkout failures
 during two shipping faults; two APPLIED executions followed by two independent
 RECOVERED outcomes; no second repair write after the post-patch worker crash;
 one REJECTED unnecessary rollback with zero write attempts. Refusal/RBAC/CAS/
@@ -233,11 +235,13 @@ This needs a reachable Ollama server and a model you installed; see
 tests or the default harness run does not stand in for it. Unattended:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Connected -Agent -AgentConfig path/to/model.json -Dashboard -ExitAfterTest -Cleanup
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Connected -Agent -AgentConfig path/to/model.json -Dashboard -ExitAfterTest -Approval auto-lab -Cleanup
 ```
 
-Expected evidence in the printed run folder: `summary.json` with status `PASS`
-and the agent planning mode; `approved-rollback/model-calls.json` and
+Agent mode without `-Approval` waits for a person to type the action ID, and
+refuses to start without a terminal. Expected evidence in the printed run
+folder: `summary.json` with status `PASS`, the agent planning mode and
+`operator_approval` naming the mode and identity; `approved-rollback/model-calls.json` and
 `model-proposal.json`; an `APPLIED` `execution.json`; and a `RECOVERED`
 `outcome.json`. A planning failure must instead record `agent_failure` in
 `summary.json`, show an "Agent planning stopped" dashboard event and leave no

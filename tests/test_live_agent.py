@@ -190,7 +190,8 @@ class LiveAgentTests(unittest.TestCase):
         with patch("experiments.boutique.harness.agent_live.Ollama", return_value=self.model()):
             harness.build_proposal(self.incident, folder)
         self.assertNotIn("agent_failure", harness.summary)
-        self.assertEqual(harness.summary["operator_approval"], "pre-authorized local E2E test")
+        # Planning never claims approval; the run's approver records it through approval_http.
+        self.assertNotIn("operator_approval", harness.summary)
         self.assertEqual(harness.summary["planning"], "Live RCA agent and Ollama Recovery Planner")
         self.assertEqual(self.stops(harness), [])
 

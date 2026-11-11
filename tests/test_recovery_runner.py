@@ -4,7 +4,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from runtime.planner_pipeline import process_planner_requests
-from runtime.recovery_runner import advance
+from runtime.recovery_runner import advance, legacy_local_approve
 from experiments.validation.demo_offline_flow import OfflineFlow, fixture
 from services.coordinator.core import handle
 from services.observer.core import detect
@@ -41,7 +41,8 @@ class RunnerTests(unittest.TestCase):
             process_guard_requests(f.store, f.bus, state_reader=lambda p: f.cluster.read(p['target']),
                 policy_reader=lambda p: f.policy, baseline_reader=lambda p: f.baseline, clock=lambda: f.now)
         return advance(f.store, self.incident['incident_id'], plan=plan, assess=assess,
-                       guard=guard, operator=self.operator, execute=lambda p: f.execute(),
+                       guard=guard, approve=legacy_local_approve(f.store, self.operator),
+                       execute=lambda p: f.execute(),
                        verify=lambda p, r: f.verify(self.readings))
 
     def test_replay_and_restart_do_not_repeat_the_repair(self):
