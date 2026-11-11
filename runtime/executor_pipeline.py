@@ -175,6 +175,22 @@ def process_executor_requests(store, event_bus, *, adapters):
             adapters, authorizer=_CoordinatorAuthority(store, action, adapters.authorizer),
         )
         result = reconciled.get(action["action_id"])
+        if result is None and request["topic"] == "executor.reconcile":
+            # A reconcile command may only inspect a journaled write, never start one.
+            # TargetBusy propagates and leaves the command pending, as for execution.
+            try:
+                result = reconcile(deepcopy(action["proposal"]), request_adapters)
+            except ValueError as error:
+                # No usable journal (for example a lost or replaced ledger file). Keep the
+                # action in NEEDS_RECONCILIATION and leave durable evidence for an operator.
+                with store.transaction():
+                    if not store.route(request["id"])["delivered"]:
+                        _record_review(store, request["id"], action["execution_result"],
+                                       "Reconcile command could not inspect a journaled write ("
+                                       + type(error).__name__ + "); no write was attempted. "
+                                       "Inspect the executor ledger before any new execution.")
+                        acknowledge(store, request["id"])
+                continue
         if result is None:
             result = execute(deepcopy(action["proposal"]), request_adapters)
         with store.transaction():
