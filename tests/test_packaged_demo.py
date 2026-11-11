@@ -55,6 +55,15 @@ class PackagedDemoTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             make_server("unused", "unused", bind="192.0.2.1")
 
+    def test_image_import_streams_without_a_utf8_byte_order_mark(self):
+        # The byte-level behaviour is checked live under code pages 65001 and 437; this pins
+        # that the import switches to BOM-less UTF-8 before starting ctr and restores it.
+        script = (Path(__file__).resolve().parents[1] / "scripts/packaged-demo-common.ps1").read_text(encoding="utf-8")
+        body = script[script.index("function Import-PackagedImage"):]
+        body = body[:body.index("\nfunction ")] if "\nfunction " in body else body
+        self.assertLess(body.index("New-Object Text.UTF8Encoding $false"), body.index("$process.Start()"))
+        self.assertIn("[Console]::InputEncoding = $previousEncoding", body)
+
 
 if __name__ == "__main__":
     unittest.main()

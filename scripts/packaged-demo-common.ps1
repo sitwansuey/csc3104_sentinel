@@ -41,13 +41,21 @@ function Import-PackagedImage([string]$Archive, [string]$Node, [string]$Architec
     $start.RedirectStandardInput = $true
     $process = New-Object Diagnostics.Process
     $process.StartInfo = $start
+    # Windows PowerShell 5.1 creates the redirected input writer with the console input
+    # encoding. Under code page 65001 that writes a UTF-8 byte-order mark ahead of the
+    # tar stream and ctr rejects the archive. Use UTF-8 without a BOM while starting.
+    $previousEncoding = $null
+    try { $previousEncoding = [Console]::InputEncoding; [Console]::InputEncoding = New-Object Text.UTF8Encoding $false } catch { $previousEncoding = $null }
     try {
         [void]$process.Start()
         $stream = [IO.File]::OpenRead($Archive)
         try { $stream.CopyTo($process.StandardInput.BaseStream) } finally { $stream.Dispose(); $process.StandardInput.Close() }
         $process.WaitForExit()
         if ($process.ExitCode -ne 0) { throw 'Could not import cached image for the selected architecture.' }
-    } finally { $process.Dispose() }
+    } finally {
+        $process.Dispose()
+        if ($null -ne $previousEncoding) { try { [Console]::InputEncoding = $previousEncoding } catch { } }
+    }
 }
 
 function Stop-PackagedResources([switch]$KeepCluster) {

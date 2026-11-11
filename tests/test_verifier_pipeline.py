@@ -467,6 +467,45 @@ class BoutiqueRoleSixIntegrationTests(unittest.TestCase):
             finally:
                 experiment.store.close()
 
+    def test_sampler_skips_a_failed_cluster_read_and_stops_after_three_in_a_row(self):
+        with tempfile.TemporaryDirectory() as root:
+            experiment = BoutiqueExperiment(Path(root) / "run")
+            try:
+                experiment.policy = {"health": dict(grpc_policy()["health"], convergence_grace_seconds=150,
+                                                    verification_timeout_seconds=300)}
+                deployment = load("observations.json")["failed-rollout"][-1]["deployment"]
+                execution = load("messages/execution-result.json")
+                quote = {"costUsd": {"currencyCode": "USD", "units": "8", "nanos": 990000000}}
+                failure = RuntimeError("kubectl operation failed: get")
+                clock = Mock()
+                clock.monotonic.return_value = 1000.0
+                with patch.object(experiment, "deployment") as read, \
+                        patch.object(experiment, "quote_response", return_value=quote), \
+                        patch.object(experiment, "observe"), patch.object(experiment, "event") as event, \
+                        patch("experiments.boutique.harness.live.time", clock):
+                    def skipped():
+                        return [c for c in event.call_args_list if c.args[:2] == (6, "error")]
+
+                    # A failed read before or after the probe skips only that reading.
+                    read.side_effect = [deployment, deployment, failure, deployment, deployment,
+                                        deployment, failure, deployment, deployment]
+                    readings = list(islice(experiment.verification_samples(execution), 3))
+                    self.assertEqual(len(readings), 3)
+                    self.assertEqual(len(skipped()), 2)
+                    self.assertIn("cluster read failed: RuntimeError", skipped()[0].args[2])
+                    self.assertEqual(skipped()[0].kwargs["action_id"], execution["action_id"])
+
+                    # A successful reading resets the count; three failures in a row raise.
+                    event.reset_mock()
+                    read.side_effect = [failure, failure, deployment, deployment, failure, failure, failure]
+                    reader = experiment.verification_samples(execution)
+                    self.assertIsNotNone(next(reader))
+                    with self.assertRaisesRegex(RuntimeError, "kubectl operation failed"):
+                        next(reader)
+                    self.assertEqual(len(skipped()), 5)
+            finally:
+                experiment.store.close()
+
 
 if __name__ == "__main__":
     unittest.main()
