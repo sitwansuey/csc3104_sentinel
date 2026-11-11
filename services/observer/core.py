@@ -435,13 +435,21 @@ def _failure_signals(snapshot: ObservationSnapshot) -> list[dict]:
         ))
 
     for entry in snapshot.observation["logs"]:
-        signals.append(_signal(
-            snapshot,
-            "container_log",
-            _log_reason(entry["text"]),
-            entry["text"],
-            _utc_timestamp(entry["at"], "log.at"),
-        ))
+        identity = "/".join(str(entry.get(k, "")) for k in ("pod_uid", "pod", "container"))
+        for line in entry["text"].splitlines():
+            if not line.strip():
+                continue
+            prefix, _, _ = line.partition(" ")
+            try:
+                at = _utc_timestamp(prefix, "log.timestamp")
+                source = "container_log"
+                if at > snapshot.captured_at:
+                    continue
+            except ObservationError:
+                at = _utc_timestamp(entry["at"], "log.at")
+                source = "container_log_untimed"
+            signals.append(_signal(snapshot, source, _log_reason(line),
+                                   identity + ": " + line, at))
 
     for source, rows in snapshot.observation.get("telemetry", {}).get("records", {}).items():
         for row in rows[:5]:
@@ -542,7 +550,9 @@ def _unique_signals(signals: list[dict]) -> list[dict]:
     unique = []
     seen = set()
     for signal in signals:
-        fingerprint = (signal["source"], signal["reason"], signal["detail"], signal["at"])
+        # Collection time is not a new occurrence for overlapping untimed tails.
+        at = "" if signal["source"] == "container_log_untimed" else signal["at"]
+        fingerprint = (signal["source"], signal["reason"], signal["detail"], at)
         if fingerprint in seen:
             continue
         seen.add(fingerprint)

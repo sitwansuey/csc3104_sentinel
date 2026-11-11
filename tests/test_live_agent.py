@@ -1,5 +1,6 @@
 """Live observation projection and the model-to-guard proposal boundary."""
 from copy import deepcopy
+from datetime import datetime, timedelta
 import csv
 import json
 from pathlib import Path
@@ -63,6 +64,64 @@ class LiveAgentTests(unittest.TestCase):
                         "rationale": "Startup configuration failure in observed container logs"}
                 return super().ask(role, prompt, schema)
         return LiveModel(abstain=abstain)
+
+    def test_poll_overlap_deduplicates_occurrences_without_collapsing_pod_sources(self):
+        at = datetime.fromisoformat(self.incident["observed_at"].replace("Z", "+00:00"))
+        observation = deepcopy(self.observation)
+        observation["logs"][0].update(pod="pod-1", container="app", pod_uid="uid-1")
+        observation["logs"].append({**observation["logs"][0], "pod": "pod-2", "pod_uid": "uid-2"})
+        observation["events"][0].update(uid="event-1", lastTimestamp=at.isoformat())
+        (self.root / "primary-0-observation.json").write_text(json.dumps(observation))
+        for index in range(1, 20):
+            observation["captured_at"] = (at + timedelta(seconds=index)).isoformat()
+            (self.root / f"poll-{index}-observation.json").write_text(json.dumps(observation))
+        export_telemetry(self.root, self.incident["target"], self.root / "case/telemetry")
+        with (self.root / "case/telemetry/logs.csv").open() as stream:
+            rows = list(csv.DictReader(stream))
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(len({r["source_id"] for r in rows if r["source"] == "container"}), 2)
+        self.assertTrue(all(r["timestamp"] == at.isoformat() for r in rows))
+        manifest = json.loads((self.root / "case/telemetry-export.json").read_text())
+        self.assertEqual(manifest["duplicate_logs_removed"], 57)
+        self.assertEqual(manifest["metrics"], 60)  # Distinct measured times remain distinct.
+
+    def test_export_excludes_old_incidents_and_future_observations(self):
+        at = datetime.fromisoformat(self.incident["observed_at"].replace("Z", "+00:00"))
+        for label, offset in (("old", -3600), ("future", 1)):
+            observation = deepcopy(self.observation)
+            observation["captured_at"] = (at + timedelta(seconds=offset)).isoformat()
+            observation["logs"][0]["text"] = observation["captured_at"] + " Error from " + label
+            (self.root / (label + "-observation.json")).write_text(json.dumps(observation))
+        out = self.root / "case/telemetry"
+        export_telemetry(self.root, self.incident["target"], out, incident=self.incident)
+        self.assertNotIn("Error from", (out / "logs.csv").read_text())
+        manifest = json.loads((out.parent / "telemetry-export.json").read_text())
+        self.assertEqual(manifest["snapshots_outside_window"], 2)
+        self.assertEqual(manifest["snapshots"], ["primary-0-observation.json"])
+
+    def test_exact_snapshot_replay_and_untimed_tails_do_not_inflate_counts(self):
+        observation = deepcopy(self.observation)
+        observation["logs"][0]["text"] = "Error without an occurrence timestamp"
+        for index in range(4):
+            (self.root / f"repeat-{index}-observation.json").write_text(json.dumps(observation))
+        (self.root / "primary-0-observation.json").write_text(json.dumps(observation))
+        out = self.root / "case/telemetry"
+        export_telemetry(self.root, self.incident["target"], out)
+        manifest = json.loads((out.parent / "telemetry-export.json").read_text())
+        self.assertEqual(manifest["metrics"], 3)
+        self.assertEqual(manifest["log_lines"], 2)
+        self.assertEqual(manifest["duplicate_metrics_removed"], 12)
+        with (out / "logs.csv").open() as stream:
+            self.assertTrue(all(r["timestamp_known"] == "False" for r in csv.DictReader(stream)))
+
+    def test_nanosecond_log_timestamps_remain_distinct(self):
+        self.observation["logs"][0]["text"] = "\n".join(
+            f"2026-10-10T12:00:30.12345678{i}Z Error startup" for i in (1, 2))
+        (self.root / "primary-0-observation.json").write_text(json.dumps(self.observation))
+        out = self.root / "case/telemetry"
+        export_telemetry(self.root, self.incident["target"], out)
+        with (out / "logs.csv").open() as stream:
+            self.assertEqual(len([r for r in csv.DictReader(stream) if r["source"] == "container"]), 2)
 
     def test_actual_agent_and_planner_produce_bound_proposal(self):
         model = self.model()

@@ -53,14 +53,14 @@ version-2 result's exact input binding and expiry before mutation. The earlier
 Coordinator ALLOW is not reused as final execution authorization. Human approval
 does not override a hard Guard rejection.
 
-Approval is looked up once during that fresh validation. The Executor checks the
-bound decision's expiry before journaling and again after the journal commits,
-immediately before the API call. The runtime also checks that the Coordinator's
-active action, lifecycle and stored Guard result still match at those points.
-These checks do not repeat the approval-store lookup. Withdrawal after that
-lookup, or a lifecycle change after the final check, can still race with the
-write. A live revocation cutoff needs an agreed protocol; this increment does
-not make approval storage and Kubernetes atomic.
+Approval is looked up during fresh validation and reread before journaling and
+again after the journal commits, immediately before the API call. The runtime
+also checks that the Coordinator's active action, lifecycle and stored Guard
+result still match at those points. Use the [authenticated approval reader](../../docs/approvals.md)
+for protected execution; lookup failure, expiry or withdrawal prevents the write.
+Withdrawal after the final lookup, or a lifecycle change after the final check,
+can still race with the write. Approval storage and Kubernetes are not atomic;
+the approval guide documents the cutoff and remaining deployment review.
 
 The write preconditions use the target UID and the exact resource version that
 the Guard checked. Resource versions are opaque strings. A stale proposal is
@@ -208,5 +208,6 @@ trusted stores. The CLI does not make a fixture approval authoritative by itself
 The actual connected experiment uses Role 6 dependency and sustained outcome
 workers. Tests proved real RBAC, conditional writes, process competition and
 post-write crash reconciliation; scope/revision are recorded in the status guide.
-Cross-host ownership/fencing, authenticated approvals and protected-workload
-recovery remain separate work. Local OS locks are not distributed leases.
+Cross-host ownership/fencing and protected-workload recovery remain separate
+work. The optional authenticated approval service requires explicit reader
+wiring and target grants. Local OS locks are not distributed leases.

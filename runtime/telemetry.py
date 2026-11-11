@@ -7,6 +7,7 @@ one host; it is not a cross-host broker or a store for raw logs/Secret values.
 from datetime import datetime, timezone
 from contextlib import closing
 import json
+import math
 from pathlib import Path
 import sqlite3
 
@@ -15,7 +16,7 @@ CLUSTER_SNAPSHOT_LIMIT = 2 * 1024 * 1024
 
 
 def emit_event(path, *, component, event_type, summary, target=None, metrics=None,
-               incident_id=None, action_id=None, at=None):
+               incident_id=None, action_id=None, at=None, progress=None):
     if type(component) is not int or component not in range(1, 7):
         raise ValueError("component must be a member number from 1 to 6")
     if event_type not in EVENT_TYPES or not isinstance(summary, str) or not summary.strip():
@@ -33,9 +34,21 @@ def emit_event(path, *, component, event_type, summary, target=None, metrics=Non
             key not in {"desired", "ready", "available", "generation", "observed_generation"}
             or type(value) is not int or value < 0 for key, value in metrics.items())):
         raise ValueError("Only nonnegative replica and generation metrics are accepted")
+    if progress is not None:
+        allowed = {"stage", "status", "role", "model", "seconds", "attempt", "call_id", "tool",
+                   "round", "evidence_id", "tool_calls", "cache_hit", "prompt_characters",
+                   "prompt_tokens", "output_tokens", "error_type", "load_duration_seconds",
+                   "prompt_eval_duration_seconds", "eval_duration_seconds"}
+        if (not isinstance(progress, dict) or not {"stage", "status"} <= progress.keys()
+                or not progress.keys() <= allowed or any(
+                    not ((isinstance(v, str) and len(v) <= 200) or type(v) is bool or
+                         (type(v) in (int, float) and math.isfinite(v) and v >= 0)) for v in progress.values())):
+            raise ValueError("Only bounded operational progress metadata is accepted")
     payload = dict(component=component, event_type=event_type, summary=summary,
                    target=target, metrics=metrics or {}, incident_id=incident_id, action_id=action_id,
                    at=timestamp)
+    if progress is not None:
+        payload["progress"] = progress
     encoded = json.dumps(payload, allow_nan=False)
     if len(encoded.encode("utf-8")) > 16384:
         raise ValueError("Telemetry event exceeds 16 KiB")

@@ -57,6 +57,18 @@ class RCAIntegrationTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             diagnose(self.incident, self.telemetry, self.root / "run", llm=Model())
 
+    def test_known_live_schema_skips_discovery_call_and_reports_tool_progress(self):
+        roles, progress = [], []
+        class RecordingModel(Model):
+            def ask(self, role, prompt, schema):
+                roles.append(role)
+                return super().ask(role, prompt, schema)
+        diagnose(self.incident, self.telemetry, self.root / "run", llm=RecordingModel(), progress=progress.append)
+        self.assertEqual(roles, ["Analyzer", "Reporter"])
+        tools = [e for e in progress if e["stage"] == "tool"]
+        self.assertEqual([e["status"] for e in tools], ["started", "completed"])
+        self.assertEqual(tools[-1]["tool"], "logs")
+
     def test_abstention_escalates_without_calling_provider(self):
         provider = Mock()
         proposal = propose_from_telemetry(self.incident, [self.baseline], self.telemetry,

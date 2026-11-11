@@ -13,8 +13,14 @@ def advance(store, incident_id, *, plan, assess, guard, operator, execute, verif
         plan()
     action_id = store.incident(incident_id)["active_action_id"]
     if not action_id:
+        if state() == "OPEN":
+            return "OPEN"  # Durable Planner retry/backoff is still pending.
         raise ValueError("Planner has not delivered a proposal for this incident")
     proposal = store.action(action_id)["proposal"]
+    if proposal["action"] == "ESCALATE":
+        if state() == "VALIDATING":
+            guard()
+        return state()
     if proposal["action"] != "ROLLBACK":
         raise ValueError("Recovery requires a supported rollback proposal")
 

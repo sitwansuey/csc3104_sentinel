@@ -1,0 +1,166 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sentinel-coordinator
+  namespace: sentinel-demo
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sentinel-coordinator-data
+  namespace: sentinel-demo
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sentinel-coordinator-config
+  namespace: sentinel-demo
+data:
+  identities.json: |
+    {
+      "observer-1": {"role": "observer", "token_env": "SENTINEL_OBSERVER_TOKEN"},
+      "planner-1": {"role": "planner", "token_env": "SENTINEL_PLANNER_TOKEN"},
+      "guard-1": {"role": "guard", "token_env": "SENTINEL_GUARD_TOKEN"},
+      "executor-1": {"role": "executor", "token_env": "SENTINEL_EXECUTOR_TOKEN"},
+      "verifier-1": {"role": "verifier", "token_env": "SENTINEL_VERIFIER_TOKEN"}
+    }
+  approval-identities.json: |
+    {
+      "operator-1": {"role": "operator", "token_env": "SENTINEL_OPERATOR_TOKEN"},
+      "guard-1": {"role": "guard", "token_env": "SENTINEL_APPROVAL_GUARD_TOKEN"},
+      "executor-1": {"role": "executor", "token_env": "SENTINEL_APPROVAL_EXECUTOR_TOKEN"}
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sentinel-coordinator
+  namespace: sentinel-demo
+spec:
+  selector:
+    app: sentinel-coordinator
+  ports:
+    - name: https
+      port: 8766
+      targetPort: https
+    - name: approvals
+      port: 8767
+      targetPort: approvals
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentinel-coordinator
+  namespace: sentinel-demo
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sentinel-coordinator
+  template:
+    metadata:
+      labels:
+        app: sentinel-coordinator
+    spec:
+      serviceAccountName: sentinel-coordinator
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: coordinator
+          image: sentinel-coordinator:0.1.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --db=/data/coordinator.sqlite3
+            - --identities=/config/identities.json
+            - --approval-identities=/config/approval-identities.json
+            - --approval-permissions=/permissions/permissions.json
+            - --bind=0.0.0.0
+            - --port=8766
+            - --cert=/tls/tls.crt
+            - --key=/tls/tls.key
+            - --lease-seconds=300
+            - --retention-seconds=86400
+            - --request-timeout=15
+          ports:
+            - name: https
+              containerPort: 8766
+            - name: approvals
+              containerPort: 8767
+          envFrom:
+            - secretRef:
+                name: sentinel-coordinator-workers
+          startupProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /readyz
+              port: https
+            periodSeconds: 2
+            failureThreshold: 30
+            timeoutSeconds: 12
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /readyz
+              port: https
+            periodSeconds: 5
+            timeoutSeconds: 12
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: https
+            periodSeconds: 10
+            timeoutSeconds: 2
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: permissions
+              mountPath: /permissions
+              readOnly: true
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: sentinel-coordinator-data
+        - name: config
+          configMap:
+            name: sentinel-coordinator-config
+        - name: permissions
+          configMap:
+            name: sentinel-approval-permissions
+        - name: tls
+          secret:
+            secretName: sentinel-coordinator-tls
+            defaultMode: 0440

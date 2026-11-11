@@ -2,6 +2,13 @@
 
 Run deployment commands from the repository root.
 
+The Coordinator worker API has its own [ordered deployment and validation
+guide](sentinel/COORDINATOR.md), image, TLS Service and persistent volume. This
+is the Coordinator portion of #62. The [remote worker entrypoint](../docs/remote-workers.md)
+binds component algorithms and owned journals, and `kubectl apply -k deploy/sentinel`
+selects the HTTPS Observer composition. Complete worker rollout and whole-platform
+Kubernetes acceptance remain pending.
+
 | Directory | Contents |
 | --- | --- |
 | `boutique/` | Pinned upstream Boutique manifest, license and single-service dependency configuration |

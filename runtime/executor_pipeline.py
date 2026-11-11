@@ -44,6 +44,8 @@ class GuardAuthorizer:
         return GuardCheck(decision=decision, baseline=inputs["baseline"], inputs=inputs)
 
     def assert_usable(self, check, *, now):
+        if deepcopy(self.approval_reader(deepcopy(check.inputs["proposal"]))) != check.inputs["approval"]:
+            raise ValueError("Authoritative approval changed; fresh validation is required")
         return assert_decision_usable(check.decision, **check.inputs, now=now)
 
 

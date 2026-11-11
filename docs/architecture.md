@@ -68,6 +68,11 @@ Actual repair uses a ServiceAccount restricted to the configured Deployment's
 get/patch operations. The trusted lab harness separately holds setup/injection
 privileges. The UI gate is not approval, and demo approval is not authenticated
 operator access. Hard constraints remain mandatory after any approval.
+The separate [approval authority](approvals.md) provides authenticated target
+permissions, expiry and persisted revocation. Its current approval reader must
+be wired into deployed Guard/Executor workers; the local demonstration does not
+acquire these guarantees automatically. Planner `ESCALATE` proposals are stored
+as NEEDS_REVIEW without an approval or execution request.
 
 ## Observation and outcome
 
@@ -85,6 +90,62 @@ stage-measured shopping traffic. Its public Coordinator reader opens an existing
 database read-only without creating/migrating it. Source freshness and formal
 incident outcome remain separate. Schema/ownership details live beside each
 role's implementation; shared wire contracts remain in `shared/contracts.py`.
+
+## Dashboard response contract
+
+`GET /api/snapshot` returns JSON for the frontend types in
+[`dashboard/src/lib/types.ts`](../dashboard/src/lib/types.ts). This projection is
+separate from the shared role-message contracts. Backend/frontend owner agreement
+is still an explicit acceptance item in issues #22/#24; this description and the
+mock examples provide material for that review, not owner sign-off.
+
+| Field | Meaning |
+| --- | --- |
+| `generated_at`, `mode`, `limit` | UTC response creation time, `recorded/live producers` or `synthetic`, and the per-list record bound (600). Response time does not establish observation freshness. |
+| `sources` | Per-source `connected` and optional safe `detail`. Connection means the journal was readable, not that a workload is healthy. Optional Boutique/security sources appear when their tables exist. |
+| `incidents`, `actions`, `messages`, `approvals`, `outbox`, `reports` | Public Coordinator read projection. Incident lifecycle is recorded state; an `APPLIED` execution alone never implies `RECOVERED`. Messages retain their shared contract payload under `message`; approvals retain their public projection under `record`. |
+| `telemetry` | Up to 600 producer events, including full five-part target identity, UTC `at`, component, summary and replica/generation metrics. |
+| `cluster_history` | Up to 60 namespace-scoped cluster observations with cluster identity, UTC `observed_at`, source availability, nodes, Pods, warning events and measured resource summaries. |
+| `boutique_history`, `security_events`, `lab` | Optional experiment/service observations, bounded security evidence and explicitly enabled lab-gate state. They are not recovery authorization. |
+
+Lists are newest-first by journal insertion. Bounds apply independently: a related
+message or action can fall outside the returned window. `sequence`, where present,
+is a journal cursor, not a timestamp. UTC producer timestamps establish freshness;
+the UI marks observations older than 15 seconds as stale, separately from transport
+disconnection. Nested cluster sources use `status: available/unavailable`, with
+optional `partial` and `error_code`. Missing numeric measurements and unknown
+readiness remain `null`; consumers must not turn them into zero or healthy values.
+Authenticated approval records expose only `action_id`, recorded `decision` and
+`protected: true` here. The operator, timestamps, expiry, revocation and audit
+history require the authenticated authority; their omission is not evidence of
+an approval without an expiry or of current execution permission.
+
+For a representative complete synthetic recovery, including Guard reports and
+cluster measurements, use [`fixture()`](../dashboard/src/test/fixtures.ts). The
+same-origin runnable fixture mode is `python scripts/dashboard.py --demo`.
+An unavailable response has the same required list fields, for example:
+
+```json
+{
+  "generated_at": "2026-11-11T00:00:00Z",
+  "mode": "recorded/live producers",
+  "limit": 600,
+  "sources": {
+    "coordinator": {"connected": false, "detail": "Coordinator database unavailable, busy or incompatible. Retrying."},
+    "telemetry": {"connected": false, "detail": "No telemetry journal connected. Start the collector or emit an event."},
+    "cluster_metrics": {"connected": false, "detail": "No cluster snapshots recorded. Start the Kubernetes collector."}
+  },
+  "incidents": [], "actions": [], "messages": [], "approvals": [],
+  "outbox": [], "reports": [], "telemetry": [], "cluster_history": []
+}
+```
+
+A failed journal source returns an empty list and explicit unavailable metadata
+while other readable sources remain visible. The API returns HTTP 503 if it cannot
+produce a response at all; the frontend retains the last response with a disconnected
+warning and retries. Requests use the same origin, no cache, and no browser-held
+Kubernetes credentials or database access. The default server exposes no mutation
+routes. Startup and the separate opt-in lab gates are documented in [run](run.md).
 
 Use [testing](testing.md) for acceptance procedures and [Planner mode](planner.md)
 for the model configuration and remaining acceptance boundaries. Record each run's

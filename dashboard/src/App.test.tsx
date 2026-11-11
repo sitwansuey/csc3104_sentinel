@@ -17,6 +17,29 @@ async function ready(){render(<App/>);await screen.findByLabelText("Recovery ove
 async function tab(name:string){await userEvent.click(screen.getByRole("tab",{name}));return screen.getByRole("tabpanel")}
 
 describe("shadcn dashboard",()=>{
+  it("shows a pending model heartbeat before a proposal exists",async()=>{
+    data.mode="recorded/live producers"
+    data.messages=data.messages.filter(r=>r.message.kind!=="proposal")
+    data.telemetry.unshift({sequence:999,at:new Date().toISOString(),component:3,event_type:"heartbeat",
+      summary:"Analyzer: running (75s)",target:data.incidents[0].target,incident_id:data.incidents[0].incident_id,
+      metrics:{},progress:{stage:"model",status:"running",role:"Analyzer",model:"friend-model",seconds:75,attempt:1}})
+    await ready()
+    const panel=await tab("Planner / RCA")
+    expect(within(panel).getByText("Planning activity")).toBeInTheDocument()
+    expect(within(panel).getByText("Analyzer: running (75s)")).toBeInTheDocument()
+    expect(within(panel).getByText("RUNNING")).toBeInTheDocument()
+    expect(within(panel).getByText(/friend-model/)).toBeInTheDocument()
+  })
+  it("marks an old model heartbeat stale instead of claiming current work",async()=>{
+    data.mode="recorded/live producers"
+    data.telemetry.unshift({sequence:999,at:new Date(Date.now()-60000).toISOString(),component:3,event_type:"heartbeat",
+      summary:"Reporter: running (45s)",target:data.incidents[0].target,metrics:{},
+      progress:{stage:"model",status:"running",role:"Reporter",seconds:45}})
+    await ready()
+    const panel=await tab("Planner / RCA")
+    expect(within(panel).getByText("STALE")).toBeInTheDocument()
+    expect(within(panel).queryByText("RUNNING")).not.toBeInTheDocument()
+  })
   it("renders actual shadcn tabs, cards, selectors and all ten feeds",async()=>{
     await ready()
     expect(screen.getAllByRole("tab")).toHaveLength(10)
@@ -136,6 +159,27 @@ describe("shadcn dashboard",()=>{
   })
 })
 describe("dashboard review improvements",()=>{
+  it("labels protected approval metadata without claiming missing expiry",async()=>{
+    data.mode="recorded/live producers"
+    data.approvals=[{id:1,record:{action_id:"ACT-001",decision:"APPROVED",protected:true}}]
+    await ready()
+    const panel=await tab("Coordinator")
+    expect(within(panel).getByText("Protected approval")).toBeInTheDocument()
+    expect(within(panel).getByText("Protected metadata")).toBeInTheDocument()
+    expect(within(panel).getByText("Use authenticated authority")).toBeInTheDocument()
+    expect(within(panel).queryByText("No expiry recorded")).not.toBeInTheDocument()
+  })
+  it("identifies an unavailable optional source while retaining readable records",async()=>{
+    data.mode="recorded/live producers"
+    data.sources.security={connected:false,detail:"Journal unavailable, busy or incompatible. Retrying."}
+    await ready()
+    expect(screen.getByText("Some recorded data sources are unavailable.")).toBeInTheDocument()
+    expect(screen.getByText("Security evidence:")).toBeInTheDocument()
+    expect(screen.getByText("Journal unavailable, busy or incompatible. Retrying.")).toBeInTheDocument()
+    const panel=await tab("Coordinator")
+    expect(within(panel).getByText("Synthetic startup fault injected")).toBeInTheDocument()
+    expect(screen.queryByText(/Dashboard connection lost/)).not.toBeInTheDocument()
+  })
   it("selects the observed cluster explicitly and shows its connection status",async()=>{
     data.mode="recorded/live producers"
     render(<App/>);await screen.findByLabelText("Recovery overview")

@@ -178,6 +178,8 @@ class KubernetesEvidenceCollector:
             if not 0 <= (captured_at - parsed).total_seconds() <= 300:
                 continue
             recent_events.append({"reason": event.get("reason") or "KubernetesWarning",
+                                  "uid": event.get("metadata", {}).get("uid", ""),
+                                  "involved_uid": event.get("involvedObject", {}).get("uid", ""),
                                   "type": "Warning", "message": event.get("message") or "Kubernetes warning",
                                   "lastTimestamp": parsed.astimezone(timezone.utc).isoformat()})
         recent_events.sort(key=lambda event: event["lastTimestamp"])
@@ -197,7 +199,8 @@ class KubernetesEvidenceCollector:
                     try:
                         raw = self._get(core + f"/pods/{quote(pod['metadata']['name'], safe='')}/log", params, text=True)
                         if raw.strip():
-                            observation["logs"].append({"pod": pod["metadata"]["name"], "container": container["name"],
+                            observation["logs"].append({"pod": pod["metadata"]["name"], "pod_uid": pod["metadata"]["uid"],
+                                                        "container": container["name"],
                                                         "text": raw[-4096:], "at": observation["captured_at"]})
                     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
                         warnings.append(f"Log unavailable for {pod['metadata']['name']}/{container['name']}: {type(error).__name__}")

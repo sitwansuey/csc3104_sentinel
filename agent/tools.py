@@ -121,6 +121,8 @@ class Telemetry:
                 if message not in chunk:
                     raise ValueError(f"Missing message column {message}")
                 previous = chunk[(chunk["_time"] < start) & (chunk["_time"] >= start - pd.Timedelta(minutes=60))]
+                if "timestamp_known" in previous:
+                    previous = previous[previous["timestamp_known"].astype(str).str.lower() == "true"]
                 log_baseline_available |= not previous.empty
                 previous = previous[error_mask(previous[message])]
                 counts = previous.groupby([component, previous["_time"].dt.floor("min")]).size()
@@ -191,7 +193,11 @@ class Telemetry:
             info["examples"] = [{"component": str(r[component]), "time": str(r["_time"]),
                                  "message": str(r[message])[:500]} for _, r in matches.head(15).iterrows()]
             # Minute-level error bursts retain onset timing instead of only early log samples.
-            counts = matches.groupby([component, matches["_time"].dt.floor("min")]).size()
+            timed = matches
+            if "timestamp_known" in timed:
+                timed = timed[timed["timestamp_known"].astype(str).str.lower() == "true"]
+            info["untimed_errors"] = len(matches) - len(timed)
+            counts = timed.groupby([component, timed["_time"].dt.floor("min")]).size()
             info["events"] = []
             info["burst_baseline_available"] = bool(log_baseline_available)
             if log_baseline_available:

@@ -39,7 +39,15 @@ For a small offline cross-role demonstration:
 ```powershell
 python experiments/validation/demo_offline_flow.py
 python experiments/validation/demo_dependency_revalidation.py
+python -m unittest tests.test_planner_pipeline tests.test_recovery_runner -v
+python -m unittest tests.test_remote_workers tests.test_worker_transport tests.test_approval_access -v
 ```
+
+The Planner handoff checks inject unavailable/invalid providers, restart during
+backoff, exhaust attempts after a worker death, fence a replaced lease and replay
+a saved proposal after failed Coordinator delivery. They verify no repair on
+exhaustion and that model inference holds no Coordinator write transaction.
+These tests use injected providers and fake infrastructure.
 
 Other component demonstrations are grouped under `experiments/validation/`.
 They support deterministic regressions and teaching; none substitutes for a live

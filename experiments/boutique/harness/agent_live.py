@@ -1,6 +1,8 @@
 """Real RCA and model planning for the existing guarded Boutique recovery path."""
 import csv
 import json
+from datetime import datetime, timedelta, timezone
+import pandas as pd
 
 from agent.llm import Ollama
 from services.rca.core import DEFAULT_CONFIG, propose_from_telemetry
@@ -8,45 +10,103 @@ from services.guard.common import json_sha256
 from experiments.recovery.live import require, save
 
 
-def export_telemetry(directory, target, destination):
+def _time(value):
+    stamp = pd.Timestamp(value)
+    if stamp.tzinfo is None:
+        raise ValueError("Telemetry timestamps must include a timezone")
+    return stamp.astimezone(timezone.utc)
+
+
+def export_telemetry(directory, target, destination, *, incident=None, lookback_seconds=600):
     """Project saved live Observer snapshots into the agent's CSV interface."""
+    if type(lookback_seconds) is not int or lookback_seconds <= 0:
+        raise ValueError("lookback_seconds must be a positive integer")
+    if incident and incident["target"] != target:
+        raise ValueError("Incident telemetry belongs to another target")
     destination.mkdir(parents=True, exist_ok=False)
-    metrics, logs = [], set()
+    metrics, logs = set(), {}
     snapshots = []
+    untimed = {}
+    skipped = duplicates = raw_metrics = raw_logs = 0
+    end = _time(incident["observed_at"]) if incident else None
+    start = min([end, *(_time(s["at"]) for s in incident["signals"])]) - timedelta(
+        seconds=lookback_seconds) if incident else None
+    def in_window(at):
+        return start is None or start <= _time(at) <= end
+
+    def add_log(at, message, source, identity, time_known=True):
+        nonlocal duplicates, raw_logs
+        if not in_window(at):
+            return
+        raw_logs += 1
+        # Identity includes the emitting Pod/container or Event object. A repeated
+        # poll is not another occurrence, but equal messages from two Pods are.
+        key = (identity, at, message, source)
+        if key in logs:
+            duplicates += 1
+        logs[key] = [at, target["name"], message, source, identity, time_known]
+
     for path in sorted(directory.glob("*-observation.json")):
         observation = json.loads(path.read_text(encoding="utf-8"))
+        timestamp = observation["captured_at"]
+        if not in_window(timestamp):
+            skipped += 1
+            continue
         deployment = observation["deployment"]
         if (observation["cluster_id"] != target["cluster_id"]
                 or deployment["metadata"]["uid"] != target["uid"]):
             raise ValueError("Observer telemetry belongs to another target")
-        timestamp = observation["captured_at"]
+        timestamp = _time(timestamp).isoformat()
         snapshots.append(path.name)
         for key, value in {"desired_replicas": deployment["spec"].get("replicas", 1),
                            "ready_replicas": deployment.get("status", {}).get("readyReplicas", 0),
                            "available_replicas": deployment.get("status", {}).get("availableReplicas", 0)}.items():
-            metrics.append([timestamp, target["name"], key, value])
+            raw_metrics += 1
+            metrics.add((timestamp, target["name"], key, value))
         for entry in observation.get("logs", []):
+            identity = "/".join(str(entry.get(k, "")) for k in ("pod_uid", "pod", "container"))
             for line in entry["text"].splitlines():
                 prefix, _, message = line.partition(" ")
                 # kubectl logs --timestamps returns RFC3339 followed by the application line.
-                if "T" not in prefix or not (prefix.endswith("Z") or "+" in prefix):
-                    prefix, message = entry.get("at", timestamp), line
-                logs.add((prefix, target["name"], message, "container"))
+                try:
+                    prefix = _time(prefix).isoformat()
+                except ValueError:
+                    # Untimestamped overlapping tails cannot establish occurrence
+                    # counts. Keep one copy per emitting container, marked unknown.
+                    prefix, message = "", line
+                if prefix:
+                    add_log(prefix, message, "container", identity)
+                else:
+                    at = untimed.setdefault((identity, line), timestamp)
+                    add_log(at, message, "container_untimed", identity, False)
         for event in observation.get("events", []):
             message = event.get("message", event.get("reason", ""))
             if message:
-                logs.add((timestamp, target["name"], str(message), "kubernetes_event"))
+                at = event.get("lastTimestamp") or event.get("eventTime")
+                identity = event.get("uid") or "/".join(str(event.get(k, "")) for k in (
+                    "involved_uid", "reason", "type"))
+                # Legacy events without occurrence time have unknown timing. Do
+                # not make them look like a fresh warning at every collection.
+                if not at:
+                    identity += "/" + json_sha256(str(message))
+                    at = untimed.setdefault(("event", identity), timestamp)
+                add_log(_time(at).isoformat(), str(message), "kubernetes_event", identity,
+                        bool(event.get("lastTimestamp") or event.get("eventTime")))
     require(snapshots and metrics, "Live Observer snapshots are required for agent diagnosis")
     for name, header, rows in [
-            ("metrics.csv", ["timestamp", "cmdb_id", "kpi_name", "value"], metrics),
-            ("logs.csv", ["timestamp", "cmdb_id", "message", "source"], sorted(logs))]:
+            ("metrics.csv", ["timestamp", "cmdb_id", "kpi_name", "value"], sorted(metrics)),
+            ("logs.csv", ["timestamp", "cmdb_id", "message", "source", "source_id", "timestamp_known"], sorted(logs.values()))]:
         with (destination / name).open("w", encoding="utf-8", newline="") as stream:
             writer = csv.writer(stream)
             writer.writerow(header)
             writer.writerows(rows)
     save(destination.parent / "telemetry-export.json", {
         "source": "live Observer snapshots", "snapshots": snapshots, "metrics": len(metrics),
-        "log_lines": len(logs), "traces_available": False})
+        "log_lines": len(logs), "duplicate_metrics_removed": raw_metrics - len(metrics),
+        "duplicate_logs_removed": duplicates, "input_log_lines": raw_logs,
+        "snapshots_outside_window": skipped,
+        "window_start": start.isoformat() if start else None,
+        "window_end": end.isoformat() if end else None, "traces_available": False})
 
 
 class AgentPlanningMixin:
@@ -57,9 +117,22 @@ class AgentPlanningMixin:
         if self.agent_config:
             config.update(json.loads(self.agent_config.read_text(encoding="utf-8")))
         config["allow_abstention"] = True
-        llm = Ollama(config)
+        def progress(update):
+            # This stream is safe operational metadata: never raw prompts,
+            # application logs, generated text or hidden model reasoning.
+            with (folder / "planning-progress.jsonl").open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps({"at": datetime.now(timezone.utc).isoformat(), **update}) + "\n")
+            save(folder / "model-calls.json", llm.calls)
+            label = update.get("role") or update.get("tool") or update["stage"]
+            elapsed = f" ({update['seconds']:.0f}s)" if "seconds" in update else ""
+            self.event(3, "heartbeat" if update["status"] == "running" else
+                       "error" if update["status"] == "failed" else "status",
+                       f"{label}: {update['status']}{elapsed}", target=self.target,
+                       incident_id=incident["incident_id"], progress=update)
+
+        llm = Ollama(config, progress=progress)
         telemetry = folder / "telemetry"
-        export_telemetry(self.directory, self.target, telemetry)
+        export_telemetry(self.directory, self.target, telemetry, incident=incident)
         before = self.deployment()
         self.event(3, "status", "Agent is diagnosing live Observer telemetry", target=self.target)
 
@@ -82,12 +155,17 @@ class AgentPlanningMixin:
                 "a harmful configuration rollout. ESCALATE if evidence is insufficient or the cause requires "
                 "another action. NO_ACTION if no repair is warranted. Never invent identifiers. "
                 "For ROLLBACK copy baseline_id and template_sha256 exactly; otherwise use empty parameters. "
-                "Explain how the observed evidence supports the selected action.\n" + json.dumps(context, default=str))
+                "Explain how the observed evidence supports the selected action.\n" + json.dumps({
+                    **context, "baselines": [{k: b[k] for k in (
+                        "baseline_id", "template_sha256", "target", "healthy_observed_at")}
+                        for b in context["baselines"]],
+                    "baseline_templates_omitted": True,
+                    "diagnosis": {k: v for k, v in context["diagnosis"].items() if k != "workspace"}}, default=str))
             return llm.ask("Recovery Planner", prompt, schema)
 
         try:
             proposal = propose_from_telemetry(incident, [self.baseline], telemetry,
-                                               folder / "agent", provider, config=config, llm=llm)
+                                               folder / "agent", provider, config=config, llm=llm, progress=progress)
         finally:
             save(folder / "model-calls.json", llm.calls)
         save(folder / "model-proposal.json", proposal)
@@ -109,7 +187,8 @@ class AgentPlanningMixin:
                             scope="Online Boutique shippingservice; real Observer/Coordinator/Agent/Guard/Executor/Verifier",
                             agent_model_calls=len(llm.calls), operator_approval="pre-authorized local E2E test")
         self.event(3, "status", "Agent proposed " + proposal["action"], target=self.target,
-                   incident_id=incident["incident_id"], action_id=proposal["action_id"])
+                   incident_id=incident["incident_id"], action_id=proposal["action_id"],
+                   progress={"stage": "proposal", "status": "completed"})
         return proposal
 
     # Agent E2E mode runs one real incident/recovery. The separate executor suite

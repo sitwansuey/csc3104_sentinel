@@ -8,8 +8,8 @@ import unittest
 from http.server import ThreadingHTTPServer
 
 from runtime.worker_http import handler, WorkerClient
-from runtime.worker_transport import Delivery, ProtocolError
-from services.coordinator.core import SQLiteStore, handle
+from runtime.worker_transport import Delivery, ProtocolError, digest
+from services.coordinator.core import SQLiteStore, approve, handle
 from services.guard.core import evaluate_with_report
 from tests import test_guard_integration as fixtures
 
@@ -69,6 +69,41 @@ class WorkerGuardHandoffTests(unittest.TestCase):
         self.assertEqual(self.flow.store.action(self.flow.aid)['state'], 'VALIDATING')
         self.assertEqual(self.flow.store.db.execute('SELECT COUNT(*) FROM guard_reports').fetchone()[0], 0)
         self.assertFalse(self.finish(report=self.report)['replay'])
+
+    def test_changed_evidence_retires_leased_request_and_delivers_latest_inputs(self):
+        newer = dict(self.latest, checked_at=self.flow.time(43).isoformat().replace('+00:00', 'Z'))
+        handle(newer, self.flow.store, self.flow.bus)
+        replacement = self.delivery.claim('guard-2', 'guard')['delivery']
+        self.assertIsNotNone(replacement)
+        self.assertEqual(replacement['payload']['dependencies'], newer)
+        self.assertNotEqual(replacement['delivery_id'], self.claim['delivery_id'])
+        with self.assertRaises(ProtocolError) as error:
+            self.finish(report=self.report)
+        self.assertEqual(error.exception.status, 409)
+        self.assertEqual(self.flow.store.action(self.flow.aid)['state'], 'VALIDATING')
+        decision, report = evaluate_with_report(self.flow.proposal, self.flow.state,
+            self.flow.policy, self.flow.baseline, newer, now=self.flow.time(44))
+        answer = self.delivery.finish('guard-2', 'guard', replacement['delivery_id'],
+                                     replacement['lease_token'], decision, report=report)
+        self.assertEqual(answer, {'accepted': True, 'replay': False})
+        self.assertEqual(self.flow.store.action(self.flow.aid)['state'], 'READY')
+
+    def test_managed_approval_is_not_exposed_in_generic_worker_delivery(self):
+        flow = self.flow
+        flow.policy['require_operator_approval'] = True
+        self.decision, self.report = evaluate_with_report(flow.proposal, flow.state,
+            flow.policy, flow.baseline, self.latest, now=flow.time(42))
+        self.finish(report=self.report)
+        self.assertEqual(flow.store.action(flow.aid)['state'], 'AWAITING_APPROVAL')
+        flow.store.clock = lambda: flow.time(44)
+        record = approve(flow.aid, 'protected-operator', flow.store, managed=True,
+            expires_at=flow.time(50).isoformat().replace('+00:00', 'Z'),
+            expected_proposal_sha256=digest(flow.proposal),
+            expected_policy_version=flow.policy['policy_version'])
+        delivery = self.delivery.claim('guard-without-approval-acl', 'guard')['delivery']
+        self.assertIsNone(delivery['payload']['approval'])
+        persisted = flow.store.pending_routes('guard.request')[-1]
+        self.assertEqual(json.loads(persisted['payload'])['approval'], record)
 
     def test_actual_http_handoff_preserves_report_and_replay(self):
         with tempfile.TemporaryDirectory() as directory:

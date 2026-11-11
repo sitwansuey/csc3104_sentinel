@@ -31,8 +31,13 @@ def read_records(path, *, limit=600):
             "SELECT rowid AS sequence,* FROM actions ORDER BY rowid DESC LIMIT ?", (limit,))]
         result["messages"] = [{"sequence": row[0], "message": json.loads(row[1])} for row in db.execute(
             "SELECT rowid,payload FROM messages ORDER BY rowid DESC LIMIT ?", (limit,))]
-        result["approvals"] = [{"id": row[0], "record": json.loads(row[1])} for row in db.execute(
-            "SELECT id,record FROM approvals ORDER BY id DESC LIMIT ?", (limit,))]
+        has_managed = db.execute("SELECT 1 FROM sqlite_master WHERE name='managed_approvals'").fetchone()
+        approval_query = ("SELECT a.id,a.record,m.approval_id IS NOT NULL AS protected FROM approvals a "
+                          "LEFT JOIN managed_approvals m ON m.approval_id=a.id ORDER BY a.id DESC LIMIT ?"
+                          if has_managed else "SELECT id,record,0 AS protected FROM approvals ORDER BY id DESC LIMIT ?")
+        result["approvals"] = [{"id": row[0], "record": (
+            {"action_id": json.loads(row[1])["action_id"], "decision": "APPROVED", "protected": True}
+            if row["protected"] else json.loads(row[1]))} for row in db.execute(approval_query, (limit,))]
         result["outbox"] = [dict(row) for row in db.execute(
             "SELECT id,topic,action_id,delivered FROM outbox ORDER BY id DESC LIMIT ?", (limit,))]
         if db.execute("SELECT 1 FROM sqlite_master WHERE name='guard_reports'").fetchone():
