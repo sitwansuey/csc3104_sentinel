@@ -27,12 +27,17 @@ MANIFEST hashes also hold on Windows checkouts.
   class lists in `scripts/evidence/profiles.json`. Databases, `pki/`, key and
   certificate files and anything named like a kubeconfig are never copied, even
   if a profile asks for them.
-- **Sanitised.** Values under token, password, authorization, API-key, cookie
-  and similar keys are replaced by `<redacted:hash>`, whatever their type. So
-  are the `value` of a `name`/`value` pair with a sensitive name (env and
-  header lists), the argument after a flag such as `--token`, and inline
-  `token=...`, `Authorization: ...` and `Cookie: ...` text in logs and in JSON
-  strings. PEM blocks, JWTs,
+- **Sanitised.** Values under token, password, secret, authorization, API-key,
+  cookie and similar keys are replaced by `<redacted:hash>`, whatever their
+  type. `secretName`, `secretKeyRef` and `secretRef` name a Secret, so they are
+  kept. Also redacted: the `value` of a `name`/`value` pair with a sensitive
+  name (env and header lists), the argument after a flag such as `--token`,
+  and inline `token=...`, `"password": "..."`, `Authorization: ...` and
+  `Cookie: ...` text, quoted or not, in logs and in JSON strings. JSON held
+  inside a JSON string (such as `kubectl -o json` output) is checked like a
+  document. Limits: `name`/`value` pairs are only found in JSON, not in YAML or
+  other text, and a secret under an innocent key name is not detected, so
+  human review still matters. PEM blocks, JWTs,
   kubeconfig key data, long base64 and known token shapes stop the collection
   with no partial bundle. Home and repository paths become `<home>` and
   `<repo>`, and local user names become `<user>`. Files over 256 KB are left

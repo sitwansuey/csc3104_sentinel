@@ -11,15 +11,15 @@ import hashlib
 import json
 import re
 
-SANITISER_VERSION = "2"
+SANITISER_VERSION = "3"
 FILE_CAP_BYTES = 256 * 1024
 BUNDLE_CAP_BYTES = 3 * 1024 * 1024
 MODEL_IO_CAP = 4096
 
-# Values under these keys are redacted. 'secretName' is a resource name, not a secret.
-REDACT_KEY = re.compile(r"token|password|passwd|authorization|api[_-]?key|cookie|private[_-]?key|"
-                        r"session[_-]?secret|client[_-]?secret", re.IGNORECASE)
-KEEP_KEYS = frozenset({"secretName"})
+# Values under these keys are redacted. The kept keys name a Kubernetes Secret, not its content.
+REDACT_KEY = re.compile(r"token|password|passwd|authorization|api[_-]?key|cookie|private[_-]?key|secret",
+                        re.IGNORECASE)
+KEEP_KEYS = frozenset({"secretName", "secretKeyRef", "secretRef"})
 # A number under a plural '...tokens' key is a model token count, not a secret.
 COUNT_KEY = re.compile(r"tokens$", re.IGNORECASE)
 # A command-line flag whose next argument is a secret, such as kubectl --token VALUE.
@@ -37,10 +37,21 @@ HARD_FAIL = (
     ("long base64", re.compile(r"[A-Za-z0-9+/]{512,}={0,2}")),
 )
 BEARER = re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._~+/=-]{8,}")
-TEXT_SECRET = re.compile(r"(?i)\b((?:[a-z_-]*)(?:token|password|passwd|api[_-]?key|secret)[a-z_-]*)(\s*[:=]\s*)"
-                         r"(\"[^\"]*\"|'[^']*'|[^\s,;]+)")
-# HTTP header forms: the whole value after the colon is secret, whatever the scheme.
-HEADER_SECRET = re.compile(r"(?i)\b((?:proxy-)?authorization|set-cookie|cookie)(\s*:\s*)([^\r\n\"']+)")
+# Inline 'key: value' text. The key may be quoted ("token": or 'api_key': in JSON or a Python
+# repr, \"token\": in JSON escaped inside a log line). The value is a quoted string, an escaped
+# quoted string, or a bare word that does not open an object or list.
+_ESCAPED_VALUE = r"\\\"[^\"\r\n]*?\\\""
+TEXT_SECRET = re.compile(r"(?i)\b((?:[a-z_-]*)(?:token|password|passwd|api[_-]?key|secret)[a-z_-]*)"
+                         r"(\\?[\"']?\s*[:=]\s*)"
+                         r"(\"[^\"]*\"|'[^']*'|" + _ESCAPED_VALUE +
+                         r"|[^\s,;{}\[\]\"'\\](?:[^\s,;}\"'\\]|\\(?!\"))*)")
+# HTTP header forms: the whole value after the colon is secret, whatever the scheme. A quoted
+# value is taken whole; an empty or whitespace-only value is not a match.
+HEADER_SECRET = re.compile(r"(?i)\b((?:proxy-)?authorization|set-cookie|cookie)(\\?[\"']?[ \t]*:[ \t]*)"
+                           r"(\"[^\"\r\n]*\"|'[^'\r\n]*'|" + _ESCAPED_VALUE +
+                           r"|[^\s\"'\\](?:[^\r\n\"'\\]|\\(?!\"))*)")
+_KEEP_INLINE = frozenset({"true", "false", "null", "none"})
+_NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
 HOME_PATTERNS = (
     re.compile(r"[A-Za-z]:(?:\\\\|\\|/)Users(?:\\\\|\\|/)[^\\/\"'\s:;,]+", re.IGNORECASE),
     re.compile(r"(?<![\w.-])/home/[^/\"'\s:;,]+"),
@@ -94,13 +105,29 @@ def rewrite_paths(text, context):
     return text
 
 
+def _keep_inline(key, value):
+    """Mirror _redact_value for text: keep resource names, flags, nulls and token counts."""
+    if key in KEEP_KEYS or value.replace("\\\"", "").strip("\"'") == "" or value.lower() in _KEEP_INLINE:
+        return True
+    return COUNT_KEY.search(key) is not None and _NUMBER.fullmatch(value) is not None
+
+
 def _string(value, context):
     """Rewrite paths and redact inline secrets in any text, JSON string values included."""
     def replace(match):
+        # Keep the quotes of a quoted value so a JSON-shaped line stays well formed.
         context.redactions += 1
-        return match.group(1) + match.group(2) + redacted(match.group(3))
+        secret, quote = match.group(3), ""
+        for mark in ("\\\"", "\"", "'"):
+            if len(secret) >= 2 * len(mark) and secret.startswith(mark) and secret.endswith(mark):
+                secret, quote = secret[len(mark):-len(mark)], mark
+                break
+        return match.group(1) + match.group(2) + quote + redacted(secret) + quote
+
+    def replace_text(match):
+        return match.group(0) if _keep_inline(match.group(1), match.group(3)) else replace(match)
     value = HEADER_SECRET.sub(replace, value)
-    value = TEXT_SECRET.sub(replace, value)
+    value = TEXT_SECRET.sub(replace_text, value)
     value = rewrite_paths(value, context)
     value, count = BEARER.subn(lambda match: match.group(1) + " " + redacted(match.group(0)), value)
     context.redactions += count
@@ -149,8 +176,30 @@ def _walk(value, context, key=None):
             result.append(_redact_value(item, "value", context) if flag else _walk(item, context, key))
         return result
     if isinstance(value, str):
-        return _string(value, context)
+        nested = _nested_json(value, context)
+        return _string(value, context) if nested is None else nested
     return value
+
+
+def _nested_json(value, context):
+    """Walk JSON serialised inside a string, such as kubectl -o json stdout.
+
+    Returns the re-serialised result only when the walk redacted something, so a string with
+    nothing to hide keeps its original layout. Returns None for anything that is not a JSON
+    object or list.
+    """
+    if value.lstrip()[:1] not in ("{", "["):
+        return None
+    try:
+        parsed = json.loads(value)
+    except ValueError:
+        return None
+    probe = Context(context.repo_root, context.home, context.usernames, context.include_model_io)
+    walked = _walk(parsed, probe)
+    if not probe.redactions:
+        return None
+    context.redactions += probe.redactions
+    return json.dumps(walked, ensure_ascii=False)
 
 
 def _dump(value):

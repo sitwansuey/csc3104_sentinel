@@ -75,6 +75,74 @@ class RedactionTests(unittest.TestCase):
         self.assertGone({"detail": "Cookie: session=abcdef1234567890"}, "abcdef1234567890")
         self.assertGone(b'{"note": "password: hunter2hunter"}\n', "hunter2hunter", "events.jsonl")
 
+    def test_quoted_header_values_are_redacted_whole(self):
+        for raw in (b'Authorization: "Basic SEKRETVALUE1234"\n', b"Cookie: 'SEKRETVALUE1234'\n",
+                    b'{"Authorization": "Basic SEKRETVALUE1234"}\n'):
+            log = self.assertGone(raw, "SEKRETVALUE1234", "a.log")
+            self.assertNotIn("Basic", log)
+        self.assertGone({"detail": 'Authorization: "Basic SEKRETVALUE1234"'}, "SEKRETVALUE1234")
+        self.assertGone({"detail": "Cookie: 'SEKRETVALUE1234'"}, "SEKRETVALUE1234")
+        self.assertGone(b'{"stdout": "{\\"Cookie\\": \\"sid SEKRETVALUE1234\\"}"}\n', "SEKRETVALUE1234", "a.log")
+
+    def test_header_with_no_value_is_left_alone_and_not_counted(self):
+        raw = "Authorization: \nCookie:\nnext line\n"
+        text, count = clean(raw.encode("utf-8"), "a.log")
+        self.assertEqual((text, count), (raw, 0))
+
+    def test_quoted_keys_serialised_json_and_reprs_inside_strings_are_redacted(self):
+        secret = "SEKRETVALUE1234"
+        self.assertGone({"stdout": json.dumps({"token": secret})}, secret)
+        self.assertGone({"detail": str({"api_key": secret})}, secret)
+        self.assertGone(('{"password": "' + secret + '"}\n').encode(), secret, "worker.log")
+        self.assertGone(('{"password": "' + secret + '", broken\n').encode(), secret, "events.jsonl")
+        self.assertGone(('{"stdout": ' + json.dumps(json.dumps({"token": "a b " + secret})) + '}\n').encode(),
+                        secret, "raw.log")
+
+    def test_quoted_inline_values_keep_their_quotes_and_the_key_hash(self):
+        log, _ = clean(b'{"password": "hunter2hunter", "n": 1}\n', "worker.log")
+        self.assertEqual(json.loads(log), {"password": sanitise.redacted("hunter2hunter"), "n": 1})
+        repr_text, _ = clean(b"{'api_key': 'k-abcdef'}\n", "worker.log")
+        self.assertEqual(repr_text, "{'api_key': '" + sanitise.redacted("k-abcdef") + "'}\n")
+
+    def test_name_value_pairs_in_serialised_json_inside_a_string_are_redacted(self):
+        secret = "SEKRETVALUE1234"
+        stdout = json.dumps({"env": [{"name": "API_KEY", "value": secret}, {"name": "PORT", "value": "8080"}]})
+        text = self.assertGone({"stdout": stdout, "rc": 0}, secret)
+        inner = json.loads(json.loads(text)["stdout"])
+        self.assertEqual(inner["env"][1], {"name": "PORT", "value": "8080"})
+        self.assertEqual(json.loads(text)["rc"], 0)
+
+    def test_serialised_json_with_nothing_to_redact_is_left_as_written(self):
+        stdout = '{"items":[{"name":"PORT","value":"8080"}],  "kind": "List"}'
+        text, count = clean({"stdout": stdout, "note": "[not json"})
+        self.assertEqual(json.loads(text), {"stdout": stdout, "note": "[not json"})
+        self.assertEqual(count, 0)
+
+    def test_inline_flags_nulls_counts_and_resource_names_are_kept(self):
+        raw = ('{"max_tokens": 512, "automountServiceAccountToken": false, "token": null, '
+               '"secretName": "shipping-tls", "secretKeyRef": {"name": "api"}}\n'
+               "prompt_tokens=3124 secretName: shipping-tls\n")
+        text, count = clean(raw.encode("utf-8"), "a.log")
+        self.assertEqual((text, count), (raw, 0))
+        self.assertGone(b'{"max_tokens": "SEKRETVALUE1234"}\n', "SEKRETVALUE1234", "a.log")
+
+    def test_generic_secret_names_and_keys_are_redacted(self):
+        secret = "SEKRETVALUE1234"
+        self.assertGone({"env": [{"name": "AWS_SECRET_ACCESS_KEY", "value": secret}]}, secret)
+        self.assertGone({"env": [{"name": "SECRET_KEY", "value": secret}]}, secret)
+        self.assertGone({"SECRET_KEY": secret}, secret)
+        self.assertGone({"secret": secret}, secret)
+        self.assertGone({"data": {"webhookSecret": secret}}, secret)
+
+    def test_secret_resource_references_are_kept(self):
+        value = {"env": [{"name": "API_KEY", "valueFrom": {"secretKeyRef": {"name": "api-secret", "key": "k"}}}],
+                 "envFrom": [{"secretRef": {"name": "app-secrets"}}],
+                 "volumes": [{"name": "tls", "projected": {"sources": [{"secretName": "shipping-tls"}]}}],
+                 "rules": [{"resource": "secrets", "verb": "get"}]}
+        text, count = clean(value)
+        self.assertEqual(json.loads(text), value)
+        self.assertEqual(count, 0)
+
     def test_name_value_pairs_with_a_sensitive_name_are_redacted(self):
         text = self.assertGone({"headers": [{"name": "Authorization", "value": "Basic dXNlcjpwYXNzd29yZA=="}]},
                                "dXNlcjpwYXNzd29yZA")
