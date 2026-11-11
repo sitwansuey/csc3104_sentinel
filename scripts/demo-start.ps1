@@ -49,8 +49,12 @@ $resultCode = 1
 $created = $false
 try {
     $created = $true
-    & $DemoKind create cluster --name $PackagedCluster --image kindest/node:v1.37.0 --config deploy/kind/kind.yaml --wait 120s
-    if ($LASTEXITCODE -ne 0) { throw 'Packaged kind cluster creation failed.' }
+    $previousContext = Get-KubeCurrentContext
+    try {
+        & $DemoKind create cluster --name $PackagedCluster --image kindest/node:v1.37.0 --config deploy/kind/kind.yaml --wait 120s
+        $createExit = $LASTEXITCODE
+    } finally { Restore-KubeCurrentContext $previousContext ('kind-' + $PackagedCluster) }
+    if ($createExit -ne 0) { throw 'Packaged kind cluster creation failed.' }
     $node = $PackagedCluster + '-control-plane'
     foreach ($item in @(@{Name='shipping';Image=$ShippingImage;Info=$shipping}, @{Name='client';Image=$ProbeImage;Info=$client})) {
         $archive = Join-Path $bootstrap ($item.Name + '.tar')
