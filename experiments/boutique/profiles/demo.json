@@ -5,13 +5,12 @@
     "cpu",
     "memory",
     "pod",
-    "network",
-    "http",
-    "dns"
+    "network"
   ],
   "baseline_seconds": 30,
   "fault_seconds": 60,
   "recovery_seconds": 30,
+  "settle_timeout_seconds": 90,
   "sample_interval": 5,
   "traffic_interval": 1,
   "traffic_workers": 1,
