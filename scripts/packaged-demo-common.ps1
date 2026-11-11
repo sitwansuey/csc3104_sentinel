@@ -1,4 +1,5 @@
 # Shared fixed scope for the trusted host bootstrap and teardown scripts.
+. (Join-Path $PSScriptRoot 'kube-context.ps1')
 $script:PackagedCluster = 'sentinel-boutique-package'
 $script:PackagedContainer = 'sentinel-boutique-runner'
 $script:PackagedImage = 'sentinel-boutique-runner:0.3.0'
@@ -71,8 +72,12 @@ function Stop-PackagedResources([switch]$KeepCluster) {
     $clusters = @(& $script:DemoKind get clusters)
     if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect kind clusters.' }
     if ($clusters -contains $script:PackagedCluster) {
-        & $script:DemoKind delete cluster --name $script:PackagedCluster
-        if ($LASTEXITCODE -ne 0) { throw 'Could not delete the packaged demo cluster.' }
+        $previousContext = Get-KubeCurrentContext
+        try {
+            & $script:DemoKind delete cluster --name $script:PackagedCluster
+            $deleteExit = $LASTEXITCODE
+        } finally { Restore-KubeCurrentContext $previousContext ('kind-' + $script:PackagedCluster) }
+        if ($deleteExit -ne 0) { throw 'Could not delete the packaged demo cluster.' }
     }
     $remaining = @(& $script:DemoKind get clusters)
     if ($LASTEXITCODE -ne 0 -or $remaining -contains $script:PackagedCluster) { throw 'Packaged cluster cleanup could not be verified.' }

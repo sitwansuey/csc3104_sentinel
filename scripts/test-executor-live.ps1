@@ -6,6 +6,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
 # Reuse discovery, without installing software or changing persistent settings.
 . (Join-Path $PSScriptRoot 'install-dependencies.ps1') -FunctionsOnly
+. (Join-Path $PSScriptRoot 'kube-context.ps1')
 Refresh-ToolPaths
 $dependencies = @(Get-Dependencies)
 Show-Dependencies $dependencies
@@ -30,8 +31,12 @@ try {
         $clusters = @(& $kindTool.Path get clusters)
         if ($LASTEXITCODE -ne 0) { throw 'Could not inspect kind clusters.' }
         if ($clusters -notcontains 'sentinel-lab') {
-            & $kindTool.Path create cluster --name sentinel-lab --config (Join-Path $projectRoot 'deploy/kind/kind.yaml') --wait 120s
-            if ($LASTEXITCODE -ne 0) { throw 'Local kind lab setup failed.' }
+            $previousContext = Get-KubeCurrentContext
+            try {
+                & $kindTool.Path create cluster --name sentinel-lab --config (Join-Path $projectRoot 'deploy/kind/kind.yaml') --wait 120s
+                $createExit = $LASTEXITCODE
+            } finally { Restore-KubeCurrentContext $previousContext 'kind-sentinel-lab' }
+            if ($createExit -ne 0) { throw 'Local kind lab setup failed.' }
         }
         & $dockerTool.Path build -t sentinel-demo:0.1.0 (Join-Path $projectRoot 'experiments/workloads/demo')
         if ($LASTEXITCODE -ne 0) { throw 'Could not build the rollback fixture.' }
@@ -49,8 +54,12 @@ try {
 } finally {
     if ($Cleanup) {
         # User-selected teardown is scoped to this repository's named local lab.
-        & $kindTool.Path delete cluster --name sentinel-lab
-        if ($LASTEXITCODE -ne 0) { throw 'Could not remove the sentinel-lab cluster; inspect it manually.' }
+        $previousContext = Get-KubeCurrentContext
+        try {
+            & $kindTool.Path delete cluster --name sentinel-lab
+            $deleteExit = $LASTEXITCODE
+        } finally { Restore-KubeCurrentContext $previousContext 'kind-sentinel-lab' }
+        if ($deleteExit -ne 0) { throw 'Could not remove the sentinel-lab cluster; inspect it manually.' }
         $remaining = @(& $kindTool.Path get clusters)
         if ($LASTEXITCODE -ne 0 -or $remaining -contains 'sentinel-lab') {
             throw 'Cluster teardown could not be verified.'

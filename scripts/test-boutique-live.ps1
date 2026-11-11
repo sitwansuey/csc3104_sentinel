@@ -15,6 +15,7 @@ if ($UIControls -and (-not $Dashboard -or $PauseBeforeInjection)) { throw '-UICo
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
 . (Join-Path $PSScriptRoot 'install-dependencies.ps1') -FunctionsOnly
+. (Join-Path $PSScriptRoot 'kube-context.ps1')
 Refresh-ToolPaths
 $dependencies = @(Get-Dependencies)
 Show-Dependencies $dependencies
@@ -39,8 +40,12 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not list kind clusters.' }
     if ($clusters -notcontains $clusterName) {
         if (-not $Setup) { throw 'Run with -Setup to create the dedicated Boutique lab.' }
-        & $kindTool.Path create cluster --name $clusterName --config (Join-Path $projectRoot 'deploy/kind/kind.yaml') --wait 120s
-        if ($LASTEXITCODE -ne 0) { throw 'Boutique cluster setup failed.' }
+        $previousContext = Get-KubeCurrentContext
+        try {
+            & $kindTool.Path create cluster --name $clusterName --config (Join-Path $projectRoot 'deploy/kind/kind.yaml') --wait 120s
+            $createExit = $LASTEXITCODE
+        } finally { Restore-KubeCurrentContext $previousContext ('kind-' + $clusterName) }
+        if ($createExit -ne 0) { throw 'Boutique cluster setup failed.' }
     }
     $pythonPrefix = @()
     if ((Split-Path -Leaf $pythonTool.Path) -eq 'py.exe') { $pythonPrefix = @('-3') }
@@ -61,8 +66,12 @@ try {
     $resultCode = $LASTEXITCODE
 } finally {
     if ($Cleanup) {
-        & $kindTool.Path delete cluster --name $clusterName
-        if ($LASTEXITCODE -ne 0) { throw 'Could not remove the Boutique cluster.' }
+        $previousContext = Get-KubeCurrentContext
+        try {
+            & $kindTool.Path delete cluster --name $clusterName
+            $deleteExit = $LASTEXITCODE
+        } finally { Restore-KubeCurrentContext $previousContext ('kind-' + $clusterName) }
+        if ($deleteExit -ne 0) { throw 'Could not remove the Boutique cluster.' }
         $remaining = @(& $kindTool.Path get clusters)
         if ($LASTEXITCODE -ne 0 -or $remaining -contains $clusterName) { throw 'Boutique cleanup could not be verified.' }
         Write-Host "Removed $clusterName. Evidence and cached images are retained."

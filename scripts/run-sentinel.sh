@@ -26,6 +26,17 @@ for tool in "$python_tool" docker kind kubectl; do
   command -v "$tool" >/dev/null || { printf 'Missing dependency: %s\n' "$tool" >&2; exit 1; }
 done
 [[ "$(docker info --format '{{.OSType}}')" == linux ]] || { printf 'Start the Docker Linux engine.\n' >&2; exit 1; }
+# kind selects a new cluster on create and leaves no current-context after deleting
+# the current one. The harness passes --context explicitly, so keep the user's.
+previous_context="$(kubectl config current-context 2>/dev/null || true)"
+restore_context() {
+  if [[ "$previous_context" == "kind-$lab_cluster" ]]; then return 0; fi
+  if [[ -n "$previous_context" ]]; then
+    kubectl config use-context "$previous_context" >/dev/null 2>&1 || true
+  else
+    kubectl config unset current-context >/dev/null 2>&1 || true
+  fi
+}
 existing_clusters="$(kind get clusters)"
 cluster_found=false
 while IFS= read -r name; do
@@ -35,11 +46,13 @@ finish() {
   result=$?
   trap - EXIT
   if "$cleanup"; then kind delete cluster --name "$lab_cluster" || result=1; fi
+  restore_context
   exit "$result"
 }
 trap finish EXIT
 if ! "$cluster_found"; then
   "$setup" || { printf 'Use --setup to create %s.\n' "$lab_cluster" >&2; exit 1; }
   kind create cluster --name "$lab_cluster" --config deploy/kind/kind.yaml --wait 120s
+  restore_context
 fi
 "$python_tool" scripts/test_boutique_live.py "${arguments[@]}"
