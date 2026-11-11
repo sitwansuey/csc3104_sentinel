@@ -25,10 +25,8 @@ kubeconfig, server address or local path. It is never run by the unit tests.
 """
 
 import argparse
-from copy import deepcopy
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, UTC
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -79,7 +77,7 @@ def check_context(context):
 
 
 def utc(moment=None):
-    return (moment or datetime.now(timezone.utc)).isoformat().replace("+00:00", "Z")
+    return (moment or datetime.now(UTC)).isoformat().replace("+00:00", "Z")
 
 
 def sanitise(value, *, secrets=(), paths=()):
@@ -318,7 +316,7 @@ class WedgeHarness:
     def run_scenario(self):
         first = self.proposal("first")
         adapters = self.adapters(first["target"], self.scenario_runner())
-        started = datetime.now(timezone.utc)
+        started = datetime.now(UTC)
         try:
             self.record("execute", execute(first, adapters), [adapters], 0)
         except StopBeforeSend:
@@ -335,7 +333,7 @@ class WedgeHarness:
         reconciled = [reconcile(first, pass_adapters) for pass_adapters in passes]
         self.summary["reconcile_pass_statuses"] = [item["status"] for item in reconciled]
         status, basis = self.record("reconcile", reconciled[-1], passes, patches_before)
-        self.summary["time_to_resolution_seconds"] = round((datetime.now(timezone.utc) - started).total_seconds(), 3)
+        self.summary["time_to_resolution_seconds"] = round((datetime.now(UTC) - started).total_seconds(), 3)
         expected = EXPECTED[self.scenario]
         self.check("first action resolves as " + "/".join(expected), (status, basis) == expected,
                    observed=[status, basis])
@@ -417,7 +415,7 @@ def main(argv=None, *, runner=subprocess.run):
     except Refused as exc:
         print("Refused: " + str(exc), file=sys.stderr)
         return 2
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     directory = args.run_dir or ROOT / "data/sentinel/runs" / f"executor-wedge-{stamp}-{args.scenario}"
     harness = WedgeHarness(args.context, args.scenario, directory, runner=runner)
     try:

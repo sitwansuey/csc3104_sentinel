@@ -56,7 +56,7 @@ def _same_json(left, right):
     if isinstance(left, dict) and isinstance(right, dict):
         return left.keys() == right.keys() and all(_same_json(left[key], right[key]) for key in left)
     if isinstance(left, list) and isinstance(right, list):
-        return len(left) == len(right) and all(_same_json(a, b) for a, b in zip(left, right))
+        return len(left) == len(right) and all(_same_json(a, b) for a, b in zip(left, right, strict=True))
     if isinstance(left, (int, float)) and isinstance(right, (int, float)):
         return left == right
     return type(left) is type(right) and left == right

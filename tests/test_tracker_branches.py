@@ -1,5 +1,5 @@
 """Branch-survey tests use a fake gh runner; nothing reaches GitHub."""
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import io
 import json
 import os
@@ -15,7 +15,7 @@ from unittest.mock import patch
 from scripts.tracker import branches
 
 REPO = branches.REPOSITORY
-NOW = datetime(2026, 11, 12, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 12, tzinfo=UTC)
 
 
 class FakeGh:

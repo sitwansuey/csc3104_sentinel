@@ -24,7 +24,7 @@ modelled: Guard validation always allows, and no new action is executed.
 import argparse
 from collections import Counter
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 import json
 import os
 from pathlib import Path
@@ -37,7 +37,7 @@ from tests.support.sim_apiserver import PatchFailed, SimAPIServer, SimDeployment
 
 
 ROOT = Path(__file__).resolve().parents[2]
-START = datetime(2026, 10, 10, 12, 0, 40, tzinfo=timezone.utc)
+START = datetime(2026, 10, 10, 12, 0, 40, tzinfo=UTC)
 HOSTS = ("A", "B")
 STEPS = 30
 PASSES = 3
@@ -356,7 +356,7 @@ class Run:
         except SimulatedCrash as crash_point:
             text += f" -> crashed at {crash_point}"
             completed = False
-        except Exception as exc:  # The model reports, rather than hides, any executor error.
+        except Exception as exc:  # noqa: BLE001 - the model reports, rather than hides, any executor error
             completed = False
             if isinstance(exc, ValueError) and str(exc) in _KNOWN_REFUSALS:
                 text += " -> refused (no journaled write)"

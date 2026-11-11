@@ -293,7 +293,6 @@ MODES = {"dry-run": "Mode: DRY RUN. Nothing is written.",
 
 
 def render(plan, ops, *, mode, source):
-    fetched = mode != "offline"
     lines = [f"Tracker plan: {source} (snapshot {plan['snapshot'].get('taken', '?')}, "
              f"{len(plan['snapshot']['open_issues'])} open issues)",
              f"Repository: {plan['repository']}", MODES[mode], ""]

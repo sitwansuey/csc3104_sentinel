@@ -16,7 +16,7 @@ pushed, git refuses and the branch stays. Re-run the survey in that case.
 """
 
 import argparse
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 import json
 import shlex
 import subprocess
@@ -171,7 +171,7 @@ def main(argv=None, runner=gh, now=None, out=None):
     if args.inactive_days < 1:
         parser.error("--inactive-days must be at least 1")
     try:
-        default, rows = survey(GitHub(REPOSITORY, runner), now or datetime.now(timezone.utc), args.inactive_days)
+        default, rows = survey(GitHub(REPOSITORY, runner), now or datetime.now(UTC), args.inactive_days)
     except (BranchError, KeyError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
