@@ -1,0 +1,1088 @@
+{
+  "schema": "sentinel-tracker-plan/1",
+  "repository": "sitwansuey/csc3104_sentinel",
+  "snapshot": {
+    "taken": "2026-11-12",
+    "source": "read-only gh issue, pr and api queries",
+    "open_issues": [
+      10,
+      14,
+      15,
+      17,
+      18,
+      19,
+      22,
+      24,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      69,
+      70,
+      71,
+      72,
+      73,
+      74,
+      75,
+      76,
+      77,
+      78,
+      84,
+      85,
+      87
+    ]
+  },
+  "milestones": [
+    {
+      "id": "milestone-3b",
+      "op": "edit",
+      "number": 3,
+      "expect_title": "3. Distributed Deployment and Feature Freeze",
+      "title": "3b. Distributed acceptance",
+      "description": "The distributed track is adopted, not descoped. Acceptance follows roadmap items P3.01 to P4.02. The team sets the new due date."
+    },
+    {
+      "id": "milestone-6",
+      "op": "create",
+      "title": "6. Post-submission / future work",
+      "description": "Work planned after the course submission. No due date."
+    }
+  ],
+  "new_issues": [
+    {
+      "id": "new-executor-wedge",
+      "title": "[Executor] A failed write after journaling wedges the target until manual repair",
+      "labels": [
+        "bug",
+        "executor"
+      ],
+      "body": "## Problem\n\nAfter the write is journaled, any non-zero `kubectl patch` exit raises `WriteOutcomeUnknown` (`services/executor/kubernetes_adapter.py:191-192`). `_reconcile` in `services/executor/core.py` then returns `NEEDS_RECONCILIATION` unless it finds a positive match (`core.py:124-140`). A harmless rejected patch therefore blocks the target until someone edits the SQLite store.\n\n## Acceptance criteria\n\n- [ ] A regression test that fails on main: a rejected patch with an unchanged resourceVersion ends in a terminal state without manual edits.\n- [ ] No second write is attempted for the same action.\n- [ ] A write that did land is still recognised as applied.\n\nRoadmap items: P1.10, P1.11. Related: #61."
+    },
+    {
+      "id": "new-agent-auto-approval",
+      "title": "[Integration] Agent mode records a pre-authorized approval instead of using the approval boundary",
+      "labels": [
+        "bug",
+        "coordinator"
+      ],
+      "body": "## Problem\n\nIn agent mode the model's proposal is approved without a person: `experiments/boutique/harness/agent_live.py:232` records `operator_approval=\"pre-authorized local E2E test\"`. The authenticated boundary in `runtime/approval_http.py` (#10) is not used on this path.\n\n## Acceptance criteria\n\n- [ ] Agent mode waits for an approval through the authenticated boundary, or stops visibly without a write.\n- [ ] Tests cover missing, expired and revoked approvals on this path.\n- [ ] Docs say which demo paths are approved by a person.\n\nRoadmap item: P2.02. Related: #10, #56."
+    },
+    {
+      "id": "new-raw-log-injection",
+      "title": "[Planner] Raw container log text reaches the model without filtering",
+      "labels": [
+        "bug",
+        "planner"
+      ],
+      "body": "## Problem\n\n`export_telemetry` in `experiments/boutique/harness/agent_live.py` copies application log lines into the agent's input as written. A crafted log line could steer the diagnosis. With the pre-authorized approval in agent mode, that could lead to a rollback no person reviewed.\n\n## Acceptance criteria\n\n- [ ] Log text is bounded, quoted and marked as untrusted data in the model input.\n- [ ] A test with an instruction-like log line shows it does not change the proposed action.\n- [ ] A code-owned check, not the model, decides whether an action is allowed.\n\nRoadmap item: P2.04. Related: #51, #56."
+    },
+    {
+      "id": "new-agent-planner-bypass",
+      "title": "[Planner] Agent mode bypasses the durable Planner journal",
+      "labels": [
+        "bug",
+        "planner"
+      ],
+      "body": "## Problem\n\n`build_proposal` in `experiments/boutique/harness/agent_live.py` calls `propose_from_telemetry` directly. The model call is not recorded in `PlannerStore`, so the bounded attempts, exact replay and terminal ESCALATE added in #97 do not apply to agent mode.\n\n## Acceptance criteria\n\n- [ ] Agent-mode planning runs through the Planner journal.\n- [ ] A restart after a completed model call replays the saved proposal without another call.\n- [ ] Model failures use the same attempt budget and end in a saved ESCALATE.\n\nRoadmap item: P2.01. Related: #14, #54."
+    },
+    {
+      "id": "new-structured-logging",
+      "title": "[Runtime] Add structured logging to services, runtime and agent",
+      "labels": [
+        "enhancement"
+      ],
+      "body": "## Problem\n\nNo module under `services/`, `runtime/` or `agent/` uses logging. Failures surface only in stored state or on stderr, and one action cannot be followed across processes.\n\n## Acceptance criteria\n\n- [ ] One shared JSON log format with the incident and action ids.\n- [ ] State changes are logged after their transaction commits.\n- [ ] No secrets or raw tokens in log output, with a test.\n\nRoadmap item: P1.07. Related: #62, #63."
+    },
+    {
+      "id": "new-deliverable-article",
+      "title": "[Submission] Research article",
+      "labels": [
+        "documentation"
+      ],
+      "milestone": "5. Final Submission Ready",
+      "body": "Milestone 5 deliverable with no issue so far.\n\n- [ ] Confirm the format and deadline with the lecturer.\n- [ ] Every number in the article cites committed evidence.\n- [ ] Limitations are stated as measured, not inferred.\n\nRoadmap item: P2.11 (scaffolding only; the team writes the article)."
+    },
+    {
+      "id": "new-deliverable-instructions",
+      "title": "[Submission] Setup and run instructions document",
+      "labels": [
+        "documentation"
+      ],
+      "milestone": "5. Final Submission Ready",
+      "body": "Milestone 5 deliverable with no issue so far.\n\n- [ ] One source for the instructions, with commands that are run as written in a check.\n- [ ] Covers setup, the demo run and cleanup.\n\nRoadmap item: P2.10."
+    },
+    {
+      "id": "new-deliverable-video",
+      "title": "[Submission] Demonstration video",
+      "labels": [
+        "documentation"
+      ],
+      "milestone": "5. Final Submission Ready",
+      "body": "Milestone 5 deliverable with no issue so far.\n\n- [ ] Confirm the required length with the lecturer.\n- [ ] Record against a tagged release and show its revision.\n- [ ] Check the recording for tokens, paths and other private data before upload.\n\nRoadmap item: P2.11 (storyboard only; the team records it)."
+    },
+    {
+      "id": "new-deliverable-rehearsal",
+      "title": "[Submission] Clean-machine rehearsal of the instructions",
+      "labels": [
+        "documentation"
+      ],
+      "milestone": "5. Final Submission Ready",
+      "body": "Milestone 5 deliverable with no issue so far.\n\n- [ ] Follow the instructions literally on a machine that has never had the repository.\n- [ ] Record what failed and fix the instructions.\n\nRoadmap item: P2.10. Related: #84."
+    }
+  ],
+  "issues": [
+    {
+      "number": 10,
+      "roadmap": [
+        "P1.06",
+        "P1.13",
+        "P2.02",
+        "P2.03",
+        "P3.04",
+        "P4.01",
+        "P5.05"
+      ],
+      "actions": [
+        {
+          "id": "i10-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i10-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P1.06, P1.13, P2.02, P2.03, P3.04, P4.01, P5.05.\n- runtime/approval_http.py (merged in #97) adds an authenticated approval boundary with per-target grants (docs/approvals.md). The agent-mode demo does not use it yet: it records a pre-authorized approval (experiments/boutique/harness/agent_live.py:232). A new issue tracks that gap.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 14,
+      "roadmap": [
+        "P1.05",
+        "P1.13",
+        "P2.01",
+        "P3.08",
+        "P4.03"
+      ],
+      "actions": [
+        {
+          "id": "i14-status-label",
+          "op": "remove_label",
+          "label": "in progress"
+        },
+        {
+          "id": "i14-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"in progress\" label is removed.\n- Roadmap items (gap-remediation plan): P1.05, P1.13, P2.01, P3.08, P4.03.\n- #97 added the durable Planner journal (PlannerStore) with bounded attempts and a terminal ESCALATE. #100 runs the mock-provider handoff demo through it and tests abstention and retrieval failures. Agent mode still plans outside the journal; a new issue tracks that. Closing needs the owner's check against the acceptance criteria.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        },
+        {
+          "id": "i14-close",
+          "op": "close",
+          "reason": "completed",
+          "signed_off_by": null
+        }
+      ]
+    },
+    {
+      "number": 15,
+      "roadmap": [
+        "P2.05",
+        "P4.04"
+      ],
+      "actions": [
+        {
+          "id": "i15-status-label",
+          "op": "remove_label",
+          "label": "in progress"
+        },
+        {
+          "id": "i15-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"in progress\" label is removed.\n- Roadmap items (gap-remediation plan): P2.05, P4.04.\n- runtime/remote_adapters.py (merged in #97) adds a retrieval-backed Ollama provider for the Planner worker (docs/remote-workers.md). No run through it is committed as evidence yet.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 17,
+      "roadmap": [
+        "P1.01",
+        "P1.02",
+        "P1.04",
+        "P1.13",
+        "P2.11",
+        "P4.03",
+        "P4.04",
+        "P4.07"
+      ],
+      "actions": [
+        {
+          "id": "i17-status-label",
+          "op": "remove_label",
+          "label": "in progress"
+        },
+        {
+          "id": "i17-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"in progress\" label is removed.\n- Roadmap items (gap-remediation plan): P1.01, P1.02, P1.04, P1.13, P2.11, P4.03, P4.04, P4.07.\n- The Guard evaluation results are not committed to a tracked path yet. Roadmap item P1.02 commits them with their freeze status.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 18,
+      "roadmap": [
+        "P1.06",
+        "P1.10",
+        "P2.06",
+        "P3.01",
+        "P3.03",
+        "P3.04",
+        "P4.01"
+      ],
+      "actions": [
+        {
+          "id": "i18-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i18-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P1.06, P1.10, P2.06, P3.01, P3.03, P3.04, P4.01.\n- Milestone 3 is kept as \"3b. Distributed acceptance\": the distributed track is adopted, not descoped.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 19,
+      "roadmap": [
+        "P1.10",
+        "P3.05",
+        "P4.01"
+      ],
+      "actions": [
+        {
+          "id": "i19-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i19-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P1.10, P3.05, P4.01.\n- #97 added runtime/worker_service.py, which can run the Executor as an HTTP-bound worker (docs/remote-workers.md). A packaged, restricted Executor worker and its deployed acceptance are still open (#60, #61).\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 22,
+      "roadmap": [
+        "P1.13",
+        "P2.03"
+      ],
+      "actions": [
+        {
+          "id": "i22-status-label",
+          "op": "remove_label",
+          "label": "in progress"
+        },
+        {
+          "id": "i22-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"in progress\" label is removed.\n- Roadmap items (gap-remediation plan): P1.13, P2.03.\n- Implementation and technical checks are done. Closing waits for the API owner's sign-off, which the team agreed must not be assumed.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        },
+        {
+          "id": "i22-close",
+          "op": "close",
+          "reason": "completed",
+          "signed_off_by": null
+        }
+      ]
+    },
+    {
+      "number": 24,
+      "roadmap": [
+        "P1.13",
+        "P2.03"
+      ],
+      "actions": [
+        {
+          "id": "i24-status-label",
+          "op": "remove_label",
+          "label": "in progress"
+        },
+        {
+          "id": "i24-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"in progress\" label is removed.\n- Roadmap items (gap-remediation plan): P1.13, P2.03.\n- Implementation and technical checks are done. Closing waits for the API owner's sign-off, which the team agreed must not be assumed.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        },
+        {
+          "id": "i24-close",
+          "op": "close",
+          "reason": "completed",
+          "signed_off_by": null
+        }
+      ]
+    },
+    {
+      "number": 51,
+      "roadmap": [
+        "P1.01",
+        "P1.13",
+        "P2.01",
+        "P2.02",
+        "P2.04"
+      ],
+      "actions": [
+        {
+          "id": "i51-status-label",
+          "op": "remove_label",
+          "label": "in progress"
+        },
+        {
+          "id": "i51-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"in progress\" label is removed.\n- Roadmap items (gap-remediation plan): P1.01, P1.13, P2.01, P2.02, P2.04.\n- A local agent-mode run with qwen3:14b recovered 5 of 5 times on 11 Nov (main plus #89, since merged). Those runs are not committed as evidence yet (P1.01), and approval in that path is pre-authorized (see #10).\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 52,
+      "roadmap": [
+        "P2.05"
+      ],
+      "actions": [
+        {
+          "id": "i52-status-label",
+          "op": "remove_label",
+          "label": "in progress"
+        },
+        {
+          "id": "i52-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"in progress\" label is removed.\n- Roadmap items (gap-remediation plan): P2.05.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 53,
+      "roadmap": [
+        "P1.12",
+        "P2.05"
+      ],
+      "actions": [
+        {
+          "id": "i53-status-label",
+          "op": "remove_label",
+          "label": "in progress"
+        },
+        {
+          "id": "i53-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"in progress\" label is removed.\n- Roadmap items (gap-remediation plan): P1.12, P2.05.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 54,
+      "roadmap": [
+        "P1.13",
+        "P2.01"
+      ],
+      "actions": [
+        {
+          "id": "i54-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i54-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P1.13, P2.01.\n- #97 added the durable Planner journal and #100 exercises it with a mock provider. Agent mode calls a real model but bypasses the journal (agent_live.py, build_proposal), so a real provider through durable planning is still not shown. A new issue tracks the bypass.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 55,
+      "roadmap": [],
+      "actions": [
+        {
+          "id": "i55-status-label",
+          "op": "remove_label",
+          "label": "in progress"
+        },
+        {
+          "id": "i55-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"in progress\" label is removed.\n- No roadmap item cites this issue directly. The owner should check its remaining criteria against #92, #93 and #97.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ],
+      "roadmap_note": "no roadmap item cites this issue"
+    },
+    {
+      "number": 56,
+      "roadmap": [
+        "P1.01",
+        "P1.04",
+        "P1.13",
+        "P2.01",
+        "P2.02",
+        "P2.03",
+        "P2.04",
+        "P2.08"
+      ],
+      "actions": [
+        {
+          "id": "i56-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i56-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P1.01, P1.04, P1.13, P2.01, P2.02, P2.03, P2.04, P2.08.\n- A local agent-mode rehearsal recovered 5 of 5 times on 11 Nov (main plus #89, since merged). It used a pre-authorized approval and its runs are not committed as evidence yet (P1.01), so the acceptance record this issue asks for is still open.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 58,
+      "roadmap": [
+        "P1.06",
+        "P1.10",
+        "P2.06",
+        "P3.04",
+        "P3.05",
+        "P4.05"
+      ],
+      "actions": [
+        {
+          "id": "i58-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i58-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P1.06, P1.10, P2.06, P3.04, P3.05, P4.05.\n- Milestone 3 is kept as \"3b. Distributed acceptance\": the distributed track is adopted, not descoped.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 59,
+      "roadmap": [
+        "P1.11",
+        "P3.01",
+        "P3.02",
+        "P3.04",
+        "P4.01",
+        "P4.05"
+      ],
+      "actions": [
+        {
+          "id": "i59-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i59-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P1.11, P3.01, P3.02, P3.04, P4.01, P4.05.\n- Milestone 3 is kept as \"3b. Distributed acceptance\": the distributed track is adopted, not descoped.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 60,
+      "roadmap": [
+        "P3.07",
+        "P4.01",
+        "P5.08"
+      ],
+      "actions": [
+        {
+          "id": "i60-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i60-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P3.07, P4.01, P5.08.\n- #97 added runtime/worker_service.py and documents running it from the demo-runner image (docs/remote-workers.md). A dedicated Executor worker image with persistent state and probes is still open.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 61,
+      "roadmap": [
+        "P1.10",
+        "P1.11",
+        "P2.06",
+        "P3.05",
+        "P4.01",
+        "P5.08"
+      ],
+      "actions": [
+        {
+          "id": "i61-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i61-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P1.10, P1.11, P2.06, P3.05, P4.01, P5.08.\n- Milestone 3 is kept as \"3b. Distributed acceptance\": the distributed track is adopted, not descoped.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 62,
+      "roadmap": [
+        "P1.05",
+        "P1.07",
+        "P3.01",
+        "P3.02",
+        "P3.06",
+        "P3.07",
+        "P4.01",
+        "P4.02",
+        "P5.01"
+      ],
+      "actions": [
+        {
+          "id": "i62-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i62-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P1.05, P1.07, P3.01, P3.02, P3.06, P3.07, P4.01, P4.02, P5.01.\n- #97 added HTTP worker bindings for Planner, Guard, Executor and Verifier (runtime/worker_service.py, runtime/remote_adapters.py) and a Coordinator image. The whole-platform Kubernetes deployment is still open.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 63,
+      "roadmap": [
+        "P1.01",
+        "P1.02",
+        "P1.07",
+        "P1.09",
+        "P1.11",
+        "P2.02",
+        "P2.09",
+        "P2.10",
+        "P2.11",
+        "P3.01",
+        "P3.02",
+        "P3.03",
+        "P3.06",
+        "P4.01",
+        "P4.02",
+        "P5.01",
+        "P5.09"
+      ],
+      "actions": [
+        {
+          "id": "i63-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i63-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P1.01, P1.02, P1.07, P1.09, P1.11, P2.02, P2.09, P2.10, P2.11, P3.01, P3.02, P3.03, P3.06, P4.01, P4.02, P5.01, P5.09.\n- Milestone 3 is kept as \"3b. Distributed acceptance\": the distributed track is adopted, not descoped.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 69,
+      "roadmap": [
+        "P1.06",
+        "P4.06",
+        "P5.04",
+        "P5.05",
+        "P5.06"
+      ],
+      "actions": [
+        {
+          "id": "i69-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i69-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P1.06, P4.06, P5.04, P5.05, P5.06.\n- Proposed for milestone \"6. Post-submission / future work\", pending the owner's agreement.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        },
+        {
+          "id": "i69-milestone",
+          "op": "set_milestone",
+          "milestone": "6. Post-submission / future work",
+          "needs_sign_off": true,
+          "signed_off_by": null
+        }
+      ]
+    },
+    {
+      "number": 70,
+      "roadmap": [
+        "P1.06",
+        "P5.04",
+        "P5.05",
+        "P5.06"
+      ],
+      "actions": [
+        {
+          "id": "i70-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i70-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P1.06, P5.04, P5.05, P5.06.\n- Proposed for milestone \"6. Post-submission / future work\", pending the owner's agreement.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        },
+        {
+          "id": "i70-milestone",
+          "op": "set_milestone",
+          "milestone": "6. Post-submission / future work",
+          "needs_sign_off": true,
+          "signed_off_by": null
+        }
+      ]
+    },
+    {
+      "number": 71,
+      "roadmap": [
+        "P4.06",
+        "P5.04",
+        "P5.06"
+      ],
+      "actions": [
+        {
+          "id": "i71-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i71-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P4.06, P5.04, P5.06.\n- Proposed for milestone \"6. Post-submission / future work\", pending the owner's agreement.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        },
+        {
+          "id": "i71-milestone",
+          "op": "set_milestone",
+          "milestone": "6. Post-submission / future work",
+          "needs_sign_off": true,
+          "signed_off_by": null
+        }
+      ]
+    },
+    {
+      "number": 72,
+      "roadmap": [
+        "P5.02",
+        "P5.03"
+      ],
+      "actions": [
+        {
+          "id": "i72-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i72-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P5.02, P5.03.\n- Proposed for milestone \"6. Post-submission / future work\", pending the owner's agreement.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        },
+        {
+          "id": "i72-milestone",
+          "op": "set_milestone",
+          "milestone": "6. Post-submission / future work",
+          "needs_sign_off": true,
+          "signed_off_by": null
+        }
+      ]
+    },
+    {
+      "number": 73,
+      "roadmap": [
+        "P1.01",
+        "P1.09",
+        "P2.09",
+        "P5.02",
+        "P5.03"
+      ],
+      "actions": [
+        {
+          "id": "i73-status-label",
+          "op": "remove_label",
+          "label": "in progress"
+        },
+        {
+          "id": "i73-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"in progress\" label is removed.\n- Roadmap items (gap-remediation plan): P1.01, P1.09, P2.09, P5.02, P5.03.\n- Moved to milestone 5: the scanned demo package is a submission deliverable.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        },
+        {
+          "id": "i73-milestone",
+          "op": "set_milestone",
+          "milestone": "5. Final Submission Ready"
+        }
+      ]
+    },
+    {
+      "number": 74,
+      "roadmap": [
+        "P2.05",
+        "P2.08",
+        "P3.08",
+        "P3.09",
+        "P4.03",
+        "P4.05",
+        "P5.07"
+      ],
+      "actions": [
+        {
+          "id": "i74-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i74-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P2.05, P2.08, P3.08, P3.09, P4.03, P4.05, P5.07.\n- Proposed for milestone \"6. Post-submission / future work\", pending the owner's agreement.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        },
+        {
+          "id": "i74-milestone",
+          "op": "set_milestone",
+          "milestone": "6. Post-submission / future work",
+          "needs_sign_off": true,
+          "signed_off_by": null
+        }
+      ]
+    },
+    {
+      "number": 75,
+      "roadmap": [
+        "P2.07",
+        "P4.03",
+        "P4.04",
+        "P4.07"
+      ],
+      "actions": [
+        {
+          "id": "i75-status-label",
+          "op": "remove_label",
+          "label": "in progress"
+        },
+        {
+          "id": "i75-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"in progress\" label is removed.\n- Roadmap items (gap-remediation plan): P2.07, P4.03, P4.04, P4.07.\n- Moved to milestone 4 (evaluation).\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        },
+        {
+          "id": "i75-milestone",
+          "op": "set_milestone",
+          "milestone": "4. Evaluation Complete"
+        }
+      ]
+    },
+    {
+      "number": 76,
+      "roadmap": [
+        "P2.08",
+        "P3.08",
+        "P4.03",
+        "P4.05"
+      ],
+      "actions": [
+        {
+          "id": "i76-status-label",
+          "op": "remove_label",
+          "label": "in progress"
+        },
+        {
+          "id": "i76-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"in progress\" label is removed.\n- Roadmap items (gap-remediation plan): P2.08, P3.08, P4.03, P4.05.\n- #90 (merged 11 Nov) made the network, pod and CPU Chaos Mesh scenarios runnable and refuses DNS up front. The owner should check this issue's criteria against #90 before deciding whether it can close.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 77,
+      "roadmap": [
+        "P3.08",
+        "P4.04",
+        "P4.05"
+      ],
+      "actions": [
+        {
+          "id": "i77-status-label",
+          "op": "remove_label",
+          "label": "not started"
+        },
+        {
+          "id": "i77-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"not started\" label is removed.\n- Roadmap items (gap-remediation plan): P3.08, P4.04, P4.05.\n- Proposed for milestone \"6. Post-submission / future work\", pending the owner's agreement.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        },
+        {
+          "id": "i77-milestone",
+          "op": "set_milestone",
+          "milestone": "6. Post-submission / future work",
+          "needs_sign_off": true,
+          "signed_off_by": null
+        }
+      ]
+    },
+    {
+      "number": 78,
+      "roadmap": [
+        "P1.04",
+        "P1.05",
+        "P1.13"
+      ],
+      "actions": [
+        {
+          "id": "i78-status-label",
+          "op": "remove_label",
+          "label": "in progress"
+        },
+        {
+          "id": "i78-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Status: the Project board owns status (.github/README.md), so the \"in progress\" label is removed.\n- Roadmap items (gap-remediation plan): P1.04, P1.05, P1.13.\n- The gap-remediation roadmap maps every open issue to item ids (P1.01 to P5.09). Proposal: rewrite this issue's body as the living roadmap once that plan is committed.\n- The 5 Nov review linked above was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 84,
+      "roadmap": [
+        "P1.09",
+        "P2.09",
+        "P2.10",
+        "P2.11"
+      ],
+      "actions": [
+        {
+          "id": "i84-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Roadmap items (gap-remediation plan): P1.09, P2.09, P2.10, P2.11."
+        }
+      ]
+    },
+    {
+      "number": 85,
+      "roadmap": [
+        "P1.03",
+        "P1.12",
+        "P1.13",
+        "P4.04"
+      ],
+      "actions": [
+        {
+          "id": "i85-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Roadmap items (gap-remediation plan): P1.03, P1.12, P1.13, P4.04.\n- The GPU profile is in #86, which targets dev/integration; that branch was merged into main through #97. See #86. Proposed for milestone \"6. Post-submission / future work\", pending the owner's agreement."
+        },
+        {
+          "id": "i85-milestone",
+          "op": "set_milestone",
+          "milestone": "6. Post-submission / future work",
+          "needs_sign_off": true,
+          "signed_off_by": null
+        }
+      ]
+    },
+    {
+      "number": 87,
+      "roadmap": [
+        "P1.01",
+        "P1.03",
+        "P1.12",
+        "P2.01",
+        "P2.05",
+        "P2.08",
+        "P4.04",
+        "P4.07"
+      ],
+      "actions": [
+        {
+          "id": "i87-note",
+          "op": "comment",
+          "body": "Tracker clean-up, 12 Nov 2026.\n- Roadmap items (gap-remediation plan): P1.01, P1.03, P1.12, P2.01, P2.05, P2.08, P4.04, P4.07.\n- #89 fixed the first-reading verification failure, #92 made agent planning failures visible, and #97 added live model progress and per-workload queueing of overlapping recoveries. Proposal: track two simultaneous faults in #77 and close this tracker once the owner confirms."
+        },
+        {
+          "id": "i87-close",
+          "op": "close",
+          "reason": "completed",
+          "signed_off_by": null
+        }
+      ]
+    }
+  ],
+  "closed_issues": [
+    {
+      "number": 7,
+      "actions": [
+        {
+          "id": "c7-dead-link",
+          "op": "comment",
+          "body": "The review linked in the closing comment was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 11,
+      "actions": [
+        {
+          "id": "c11-dead-link",
+          "op": "comment",
+          "body": "The review linked in the closing comment was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 12,
+      "actions": [
+        {
+          "id": "c12-dead-link",
+          "op": "comment",
+          "body": "The review linked in the closing comment was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 13,
+      "actions": [
+        {
+          "id": "c13-dead-link",
+          "op": "comment",
+          "body": "The review linked in the closing comment was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 16,
+      "actions": [
+        {
+          "id": "c16-dead-link",
+          "op": "comment",
+          "body": "The review linked in the closing comment was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 23,
+      "actions": [
+        {
+          "id": "c23-dead-link",
+          "op": "comment",
+          "body": "The review linked in the closing comment was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 25,
+      "actions": [
+        {
+          "id": "c25-dead-link",
+          "op": "comment",
+          "body": "The review linked in the closing comment was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 48,
+      "actions": [
+        {
+          "id": "c48-dead-link",
+          "op": "comment",
+          "body": "The review linked in the closing comment was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 49,
+      "actions": [
+        {
+          "id": "c49-dead-link",
+          "op": "comment",
+          "body": "The review linked in the closing comment was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 57,
+      "actions": [
+        {
+          "id": "c57-dead-link",
+          "op": "comment",
+          "body": "The review linked in the closing comment was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 65,
+      "actions": [
+        {
+          "id": "c65-dead-link",
+          "op": "comment",
+          "body": "The review linked in the closing comment was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    },
+    {
+      "number": 66,
+      "actions": [
+        {
+          "id": "c66-dead-link",
+          "op": "comment",
+          "body": "The review linked in the closing comment was removed from main in 0639eda. Its last version: https://github.com/sitwansuey/csc3104_sentinel/blob/a90d56a3dda322bcadfa6f6ec163fea78ee167fb/docs/repository-review-2026-11-05.md"
+        }
+      ]
+    }
+  ],
+  "pulls": [
+    {
+      "number": 88,
+      "actions": [
+        {
+          "id": "p88-note",
+          "op": "comment",
+          "body": "The README limitations here are being folded into a generated known-limitations register (roadmap item P1.05, branch docs/truthful-status-and-limitations, not pushed yet). Proposal: close this PR as superseded once that PR opens, with the author's agreement."
+        },
+        {
+          "id": "p88-close",
+          "op": "close",
+          "reason": "not_planned",
+          "signed_off_by": null
+        }
+      ]
+    },
+    {
+      "number": 86,
+      "actions": [
+        {
+          "id": "p86-note",
+          "op": "comment",
+          "body": "This PR targets dev/integration, which was merged into main through #97, and GitHub reports a conflict. If the GPU tuning profile is still wanted, retarget it to main and rebase; otherwise close it with a short reason. The #85 owner decides."
+        }
+      ]
+    }
+  ],
+  "decisions_pending": [
+    "Choose the governance option: GitHub Team through GitHub Education, a public repository after grading, or staying private with the report-only merge audit.",
+    "Set new due dates for the overdue milestones 1, 2, 3b and 4, or close 1 and 2 with a summary of what was delivered.",
+    "Delete the 'not started', 'in progress' and 'ready to merge' labels once no issue uses them.",
+    "PR #86: retarget to main and rebase, or close (owner of #85).",
+    "Sign off, or drop, the blocked closures (#14, #22, #24, #87, PR #88) and milestone-6 moves (#69 to #72, #74, #77, #85) by filling signed_off_by in this file.",
+    "Closed PRs #38, #43, #44 and #46 also link the deleted review; add them to closed_issues if wanted.",
+    "Announce the batch in the team channel first: it posts about 50 comments and opens 9 issues."
+  ]
+}

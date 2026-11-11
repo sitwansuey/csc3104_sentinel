@@ -14,3 +14,6 @@ live under `experiments/validation/`.
 `demo-start.ps1`, `demo-stop.ps1` and `packaged-demo-common.ps1` retain the existing
 single-service container bootstrap. Dataset/evaluation entrypoints remain explicit
 and optional; none runs during ordinary application setup.
+
+`tracker/` holds the reviewed issue-tracker plan and dry-run tools for tracker
+and branch clean-up; see [its README](tracker/README.md).
