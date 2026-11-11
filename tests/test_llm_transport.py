@@ -226,7 +226,9 @@ class FakeServerTests(unittest.TestCase):
         with FakeOllama() as proxy:
             environment = {k: v for k, v in os.environ.items() if k.lower() != "no_proxy"}
             environment.update(HTTP_PROXY=proxy.url, HTTPS_PROXY=proxy.url, ALL_PROXY=proxy.url)
-            with patch.dict(os.environ, environment, clear=True):
+            # urllib caches its default opener, and with it the proxy settings
+            # read at first use. Clear it so this test sees the environment.
+            with patch.dict(os.environ, environment, clear=True), patch("urllib.request._opener", None):
                 self.assertEqual(self.model().ask("Analyzer", "PRIVATE TELEMETRY", {}), {})
             self.assertEqual(proxy.requests, [])
         self.assertEqual(len(self.chats()), 1)
