@@ -117,6 +117,7 @@ mock examples provide material for that review, not owner sign-off.
 | `telemetry` | Up to 600 producer events, including full five-part target identity, UTC `at`, component, summary and replica/generation metrics. |
 | `cluster_history` | Up to 60 namespace-scoped cluster observations with cluster identity, UTC `observed_at`, source availability, nodes, Pods, warning events and measured resource summaries. |
 | `boutique_history`, `security_events`, `lab` | Optional experiment/service observations, bounded security evidence and explicitly enabled lab-gate state. They are not recovery authorization. |
+| `approval_requests` | Only with lab controls and `--approval ui`: up to 20 escalated actions the harness offered to the dashboard, newest first, with code-derived facts, the untrusted rationale (at most 1000 characters), status (`PENDING`, `DECIDING`, `APPROVED`, `REVOKING`, `REVOKED`, `EXPIRED` or `CLOSED`), and the approval or revocation the relay recorded. That approval ID, operator and expiry are the relay's copy of what it sent, not a fresh read of the authority. No credential appears here; the approval authority, not this list, decides what the Executor may do. See [approvals](approvals.md#dashboard-approval-panel). |
 
 Lists are newest-first by journal insertion. Bounds apply independently: a related
 message or action can fall outside the returned window. `sequence`, where present,
