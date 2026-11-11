@@ -99,10 +99,10 @@ true` on a trusted network (for example a worker container). Optional settings:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `timeout` | 300 | Socket timeout in seconds. |
-| `request_deadline_seconds` | `timeout` | Overall limit for one request, including a slowly sent body. A deadline is retried once. |
+| `timeout` | 300 | Socket timeout in seconds for connecting, sending and each read. |
+| `request_deadline_seconds` | `timeout` | Overall limit for reading one reply: status line, headers and body, even if sent slowly. A deadline is retried once. |
 | `max_response_bytes` | 4194304 | Largest accepted response (1 KiB to 8 MiB). Larger replies fail without retry. |
-| `max_model_calls` | 32 | Model requests one client may send, retries included. Further calls fail. |
+| `max_model_calls` | 32 | Model requests per planning task, retries included. Further calls fail. A planner worker resets the count for each incident. |
 | `keep_alive` | not sent | How long Ollama keeps the model loaded, as seconds or a duration such as `"30m"`. |
 | `warm_up_timeout_seconds` | `timeout` | Limit for the warm-up request. |
 

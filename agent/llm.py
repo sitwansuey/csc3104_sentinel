@@ -6,6 +6,7 @@ response size cap, and every model result is checked against the requested
 schema instead of trusting the format grammar.
 """
 import http.client
+import io
 import json
 import time
 import threading
@@ -23,6 +24,7 @@ MAX_CONTENT_CHARACTERS = 256 * 1024
 DEFAULT_MAX_MODEL_CALLS = 32
 CHUNK_BYTES = 64 * 1024
 ERROR_DETAIL_BYTES = 2048
+DEADLINE_MESSAGE = "Ollama response exceeded the call deadline"
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 KEEP_ALIVE = re.compile(r"-?\d{1,6}(\.\d{1,3})?(ms|s|m|h)?")
 WARM_UP_SCHEMA = {"type": "object", "properties": {"ready": {"type": "boolean"}},
@@ -40,21 +42,88 @@ class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def _opener():
+class _DeadlineReader(io.RawIOBase):
+    """Socket reads that share one deadline across the status line, headers and body.
+
+    Before every receive the socket timeout is set to the smaller of the
+    configured timeout and the time left, so a server that drips any part of
+    the reply cannot keep the call open past the deadline.
+    """
+
+    def __init__(self, sock, deadline, timeout):
+        super().__init__()
+        self._sock, self._deadline, self._timeout = sock, deadline, timeout
+        self._raw = sock.makefile("rb", buffering=0)  # Keeps the socket open until closed.
+
+    def readable(self):
+        return True
+
+    def fileno(self):
+        return self._raw.fileno()
+
+    def readinto(self, buffer):
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(DEADLINE_MESSAGE)
+        self._sock.settimeout(min(self._timeout, remaining))
+        try:
+            return self._raw.readinto(buffer)
+        except TimeoutError:
+            if time.monotonic() >= self._deadline - .1:
+                raise TimeoutError(DEADLINE_MESSAGE) from None
+            raise
+
+    def close(self):
+        if not self.closed:
+            self._raw.close()
+        super().close()
+
+
+class _DeadlineSocket:
+    """What HTTPResponse needs from a socket: makefile("rb")."""
+
+    def __init__(self, sock, deadline, timeout):
+        self._sock, self._deadline, self._timeout = sock, deadline, timeout
+
+    def makefile(self, *args, **kwargs):
+        return io.BufferedReader(_DeadlineReader(self._sock, self._deadline, self._timeout))
+
+
+def _deadline_connection(base, deadline, timeout):
+    """An http.client connection class whose responses read under the deadline."""
+    class Response(http.client.HTTPResponse):
+        def __init__(self, sock, *args, **kwargs):
+            super().__init__(_DeadlineSocket(sock, deadline, timeout), *args, **kwargs)
+
+    class Connection(base):
+        response_class = Response
+    return Connection
+
+
+class _DeadlineHandler:
+    """Wraps whichever connection class urllib picks (http or https)."""
+
+    def __init__(self, deadline, timeout):
+        super().__init__()
+        self._deadline, self._timeout = deadline, timeout
+
+    def do_open(self, http_class, req, **kwargs):
+        return super().do_open(_deadline_connection(http_class, self._deadline, self._timeout), req, **kwargs)
+
+
+class _DeadlineHTTPHandler(_DeadlineHandler, urllib.request.HTTPHandler):
+    pass
+
+
+class _DeadlineHTTPSHandler(_DeadlineHandler, urllib.request.HTTPSHandler):
+    pass
+
+
+def _opener(deadline, timeout):
     # An empty ProxyHandler stops urllib reading HTTP(S)_PROXY from the environment.
-    return urllib.request.build_opener(urllib.request.ProxyHandler({}), _RefuseRedirects())
-
-
-def _socket(stream):
-    """Best-effort access to the socket under an http.client response."""
-    for _ in range(5):
-        if stream is None:
-            return None
-        sock = getattr(stream, "_sock", None)
-        if sock is not None:
-            return sock
-        stream = getattr(stream, "raw", None) or getattr(stream, "fp", None)
-    return None
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), _RefuseRedirects(),
+        _DeadlineHTTPHandler(deadline, timeout), _DeadlineHTTPSHandler(deadline, timeout))
 
 
 def _read_limited(stream, limit, deadline):
@@ -62,25 +131,15 @@ def _read_limited(stream, limit, deadline):
     chunks, total = [], 0
     read = getattr(stream, "read1", None) or stream.read
     while total <= limit:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise TimeoutError("Ollama response exceeded the call deadline")
-        sock = _socket(stream)
-        if sock is not None:
-            # One slow read cannot outlive the deadline either.
-            sock.settimeout(remaining)
-        try:
-            chunk = read(min(CHUNK_BYTES, limit + 1 - total))
-        except TimeoutError:
-            if time.monotonic() >= deadline - .1:
-                raise TimeoutError("Ollama response exceeded the call deadline") from None
-            raise
+        if time.monotonic() >= deadline:
+            raise TimeoutError(DEADLINE_MESSAGE)
+        chunk = read(min(CHUNK_BYTES, limit + 1 - total))
         if not chunk:
             break
         chunks.append(chunk)
         total += len(chunk)
     if time.monotonic() > deadline:
-        raise TimeoutError("Ollama response exceeded the call deadline")
+        raise TimeoutError(DEADLINE_MESSAGE)
     return b"".join(chunks)
 
 
@@ -211,7 +270,14 @@ class Ollama:
         self.keep_alive = keep_alive
         self.requests = 0
         self._unreachable = False
-        self._opener = _opener()
+
+    def reset_budget(self):
+        """Start a new planning task: max_model_calls counts requests per task.
+
+        A long-running client (one planner worker) calls this before each
+        incident, so the budget limits one incident and not the process.
+        """
+        self.requests = 0
 
     def models(self):
         """Every distinct model this configuration can call."""
@@ -227,7 +293,10 @@ class Ollama:
             self.origin + path, data=None if body is None else json.dumps(body).encode(),
             headers={"Content-Type": "application/json", "Accept": "application/json"},
             method="GET" if body is None else "POST")
-        with self._opener.open(request, timeout=min(self.timeout, remaining)) as response:
+        # Connect and send use the socket timeout; every read of the reply,
+        # headers included, also stops at the deadline.
+        opener = _opener(deadline, self.timeout)
+        with opener.open(request, timeout=min(self.timeout, remaining)) as response:
             return _read_json(response, self.max_response_bytes, deadline)
 
     def _payload(self, model, messages, schema, num_predict):

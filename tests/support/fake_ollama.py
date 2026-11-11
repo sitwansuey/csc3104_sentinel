@@ -2,7 +2,8 @@
 
 It binds 127.0.0.1 on an ephemeral port and records every request. Each path
 can be scripted to misbehave: a wrong status, content type or size, a missing
-Content-Length, a redirect, or a body sent one byte at a time. No model runs.
+Content-Length, a redirect, or headers or a body sent one byte at a time. No
+model runs.
 
 It can also be started by hand as a hostile endpoint for a manual check:
     python -m tests.support.fake_ollama --mode oversize
@@ -30,14 +31,15 @@ class Reply:
 
     body: a JSON-serialisable value or raw bytes. length: True sends the real
     Content-Length, False sends none, an int declares that value. drip: seconds
-    between single bytes of the body.
+    between single bytes of the body. header_drip: seconds between single bytes
+    of the status line and headers.
     """
 
     def __init__(self, body=None, *, status=200, content_type="application/json",
-                 length=True, drip=None, headers=None):
+                 length=True, drip=None, headers=None, header_drip=None):
         self.body = body if isinstance(body, bytes) else json.dumps(body).encode()
         self.status, self.content_type, self.length = status, content_type, length
-        self.drip, self.headers = drip, headers or {}
+        self.drip, self.headers, self.header_drip = drip, headers or {}, header_drip
 
 
 class FakeOllama:
@@ -128,7 +130,17 @@ class FakeOllama:
             for key, value in reply.headers.items():
                 handler.send_header(key, value)
             handler.send_header("Connection", "close")
-            handler.end_headers()
+            if reply.header_drip is None:
+                handler.end_headers()
+            else:
+                handler.send_header("X-Padding", "p" * 200)
+                head = b"".join(handler._headers_buffer) + b"\r\n"
+                handler._headers_buffer = []
+                for index in range(len(head)):
+                    if self._stop.wait(reply.header_drip):
+                        return
+                    handler.wfile.write(head[index:index + 1])
+                    handler.wfile.flush()
             if reply.drip is None:
                 handler.wfile.write(reply.body)
                 return
@@ -143,13 +155,16 @@ class FakeOllama:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=["normal", "oversize", "drip", "redirect"], default="normal")
+    parser.add_argument("--mode", choices=["normal", "oversize", "drip", "header-drip", "redirect"],
+                        default="normal")
     args = parser.parse_args()
     with FakeOllama() as server:
         if args.mode == "oversize":
             server.chat = Reply(chat_reply({}, padding="x" * (16 * 1024 * 1024)), length=False)
         elif args.mode == "drip":
             server.chat = Reply(chat_reply({}), drip=1)
+        elif args.mode == "header-drip":
+            server.chat = Reply(chat_reply({}), header_drip=1)
         elif args.mode == "redirect":
             server.chat = Reply(b"", status=302, headers={"Location": "http://127.0.0.1:9/api/chat"})
         print("Fake Ollama (" + args.mode + ") at " + server.url, flush=True)

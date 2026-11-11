@@ -17,6 +17,7 @@ from unittest.mock import patch
 from agent.agent import ANALYSIS, PLAN
 from agent.jsonschema_lite import check_schema, validate
 from agent.llm import Ollama
+from runtime.remote_adapters import OllamaProvider
 from tests.support.fake_ollama import DIGEST, FakeOllama, Reply, chat_reply
 
 OPEN = "agent.llm.urllib.request.OpenerDirector.open"
@@ -213,6 +214,24 @@ class FakeServerTests(unittest.TestCase):
         self.assert_refused(model, "timed out|deadline", {})
         self.assertLess(time.monotonic() - started, 3)
 
+    def test_slow_drip_headers_hit_the_overall_deadline(self):
+        # The status line and headers (over 300 bytes) arrive one byte every
+        # 0.2 s, inside the 10 s socket timeout. The deadline must cover them too.
+        self.server.chat = Reply(chat_reply({}), header_drip=.2)
+        model = self.model(request_deadline_seconds=1)
+        started = time.monotonic()
+        self.assert_refused(model, "deadline", {})
+        self.assertLess(time.monotonic() - started, 4.5)
+        self.assertEqual(len(self.chats()), 2)
+        self.assertEqual([c["error_type"] for c in model.calls], ["TimeoutError", "TimeoutError"])
+
+    def test_socket_timeout_still_bounds_each_read_inside_a_longer_deadline(self):
+        self.server.chat = Reply(b'{"message":{"content":"{}"}}', drip=30)
+        model = self.model(timeout=.5, request_deadline_seconds=60)
+        started = time.monotonic()
+        self.assert_refused(model, "timed out", {})
+        self.assertLess(time.monotonic() - started, 4.5)
+
     # Origin: no redirects, no environment proxies
 
     def test_redirect_is_refused_and_never_followed(self):
@@ -368,6 +387,38 @@ class FakeServerTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "HTTP 500"):
                 model.ask("Planner", "fixture", {})
         self.assertEqual(len(self.chats()), 1)
+        sleep.assert_not_called()
+
+    def test_reset_budget_starts_a_new_task(self):
+        model = self.model(max_model_calls=1)
+        self.assertEqual(model.ask("Planner", "fixture", {}), {})
+        with self.assertRaisesRegex(RuntimeError, "budget of 1 is exhausted"):
+            model.ask("Planner", "fixture", {})
+        model.reset_budget()
+        self.assertEqual(model.ask("Planner", "fixture", {}), {})
+        self.assertEqual(len(self.chats()), 2)
+
+    def test_long_lived_provider_plans_more_incidents_than_the_budget(self):
+        # One planner worker keeps one provider for its whole life.
+        self.server.chat = Reply(chat_reply({"action": "ESCALATE", "parameters": {},
+                                             "rationale": "r", "evidence_refs": []}))
+        provider = OllamaProvider({"base_url": self.server.url, "model": "fixture-model", "timeout": 5,
+                                   "max_model_calls": 2})
+        for incident in range(5):
+            self.assertEqual(provider({"incident": incident})["action"], "ESCALATE")
+        self.assertEqual(len(self.chats()), 5)
+
+    def test_long_lived_provider_still_bounds_each_incident(self):
+        self.server.chat = Reply({"error": "busy"}, status=500)
+        provider = OllamaProvider({"base_url": self.server.url, "model": "fixture-model", "timeout": 5,
+                                   "max_model_calls": 1})
+        with patch("agent.llm.time.sleep") as sleep:
+            for incident in range(3):
+                with self.assertRaisesRegex(RuntimeError, "HTTP 500"):
+                    provider({"incident": incident})
+                self.assertEqual(len(provider.usage["calls"]), 1)
+        # One request per incident: the budget of one stops the retry each time.
+        self.assertEqual(len(self.chats()), 3)
         sleep.assert_not_called()
 
     def test_keep_alive_is_sent_only_when_configured(self):
