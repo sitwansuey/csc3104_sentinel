@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from experiments.boutique.harness.agent_live import AgentPlanningMixin, export_telemetry
+from experiments.boutique.harness.agent_live import AgentPlanningMixin, export_telemetry, names_target
 from tests.test_rca_integration import Model
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -171,6 +171,47 @@ class LiveAgentTests(unittest.TestCase):
         with patch("experiments.boutique.harness.agent_live.Ollama", return_value=self.model()):
             with self.assertRaisesRegex(RuntimeError, "Target changed"):
                 harness.build_proposal(self.incident, folder)
+
+    def test_component_naming_variants_still_identify_only_the_target(self):
+        for component in ("shippingservice", "shippingservice container", "ShippingService",
+                          "deployment/shippingservice", "sentinel-boutique-connected/shippingservice",
+                          "the shippingservice pod", '"shippingservice"', "shippingservice-6d94cdf884-gzh9t"):
+            with self.subTest(accepted=component):
+                self.assertTrue(names_target(component, "shippingservice"))
+        for component in ("frontend", "frontend calling shippingservice", "shippingservice and frontend",
+                          "shippingservicex", "shipping service", "shippingservice-6d94cdf884",
+                          "shippingservice:50051", "container", "", None, 42):
+            with self.subTest(rejected=component):
+                self.assertFalse(names_target(component, "shippingservice"))
+
+    def model_naming(self, component):
+        base = self.model()
+
+        class NamingModel(type(base)):
+            def ask(self, role, prompt, schema):
+                answer = super().ask(role, prompt, schema)
+                if role not in ("Planner", "Analyzer", "Recovery Planner") and answer.get("failures"):
+                    answer["failures"][0]["root cause component"] = component
+                return answer
+        return NamingModel()
+
+    def test_descriptive_component_name_still_reaches_the_recovery_planner(self):
+        folder = self.root / "described"
+        folder.mkdir()
+        model = self.model_naming(self.incident["target"]["name"] + " container")
+        with patch("experiments.boutique.harness.agent_live.Ollama", return_value=model):
+            proposal = self.harness().build_proposal(self.incident, folder)
+        self.assertEqual(proposal["action"], "ROLLBACK")
+        self.assertIn("Recovery Planner", [c["role"] for c in model.calls])
+
+    def test_diagnosis_naming_another_component_still_escalates(self):
+        folder = self.root / "other-component"
+        folder.mkdir()
+        model = self.model_naming("frontend calling " + self.incident["target"]["name"])
+        with patch("experiments.boutique.harness.agent_live.Ollama", return_value=model):
+            with self.assertRaisesRegex(RuntimeError, "ESCALATE"):
+                self.harness().build_proposal(self.incident, folder)
+        self.assertNotIn("Recovery Planner", [c["role"] for c in model.calls])
 
 
 if __name__ == "__main__":
