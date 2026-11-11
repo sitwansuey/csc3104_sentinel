@@ -37,8 +37,25 @@ remain incomplete for a production release. `--help` on
 `scan_image_security.py`, `build_security_candidate.py` and `watch_security.py`
 documents the exact arguments.
 
-No new protected live run or CVE scan was performed in this review. Lab
-certificates are short-lived fixtures, not a rotation/revocation/workload-identity
+Results so far:
+
+<!-- BEGIN GENERATED:claim-c-security-lab -->
+> **C-SECURITY-LAB:** The protected Boutique security lab passed in 3/3 runs, blocking every bypass, identity and outage probe.
+> Scope: Shipping path only, behind one mTLS gateway in a dedicated kind cluster; scripted probes, not an adversarial test. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.
+<!-- END GENERATED:claim-c-security-lab -->
+
+For PR #98 (merged 11 November 2026) the packaged runner and the shipping
+security candidate (`0.10.7-security.2`) were rebuilt and scanned with the
+project's pinned Trivy. The PR reports 0 High and 0 Medium findings in both,
+with unrated Go findings left that need a newer toolchain. That scan output is
+not a committed evidence bundle, and no release image is tagged.
+
+Two gaps remain. Only the shipping path is protected. Workload images are
+scanned and raise dashboard alerts, but nothing gates on them: the 11 November
+evaluation found High or Critical findings in 11 of 13 images. See
+`L-SECURITY-SHIPPING-ONLY` and `L-UNGATED-CVES` in [limitations](limitations.md).
+
+Lab certificates are short-lived fixtures, not a rotation/revocation/workload-identity
 system. Availability/capacity, current-image reconciliation and protected
 Guard/Executor/Verifier integration remain tracked work. Keep credentials,
 private keys and unsanitised logs out of Git and exported image contexts.

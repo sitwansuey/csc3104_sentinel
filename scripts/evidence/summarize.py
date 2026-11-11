@@ -2,10 +2,14 @@
 
 Tables are written between '<!-- BEGIN GENERATED:<name> -->' and
 '<!-- END GENERATED:<name> -->' markers in docs/results.md and evidence/README.md.
+The limitations register (docs/limitations.json) is rendered into
+docs/limitations.md and the README. A 'claim-<id>' block in the README, docs/
+or deploy/ Markdown quotes that claim with its current value and scope caveat.
 Withdrawn bundles are excluded. Failed and incomplete runs stay in every
 denominator. With --check nothing is written: the command fails when a
 generated block was hand-edited or is stale, when a bundle's files no longer
-match its MANIFEST, or when a claim is unsupported or its value is out of date.
+match its MANIFEST, when a claim is unsupported or its value is out of date, or
+when a known-stale status phrase appears in the docs without a claim id beside it.
 """
 
 import argparse
@@ -20,11 +24,25 @@ import statistics
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.evidence import limitations  # noqa: E402
+
 TARGETS = {
     "docs/results.md": ("runs", "recovery-checks", "agent-runs", "guard-rejection", "timings", "chaos",
                         "security-lab", "observer", "claims"),
     "evidence/README.md": ("index",),
+    "docs/limitations.md": ("limitations",),
+    "README.md": ("limitations-summary",),
 }
+# Markdown that may quote claims through 'claim-<lower-case claim id>' blocks.
+QUOTE_SOURCES = ("README.md", "docs/*.md", "deploy/*.md", "deploy/*/*.md")
+# Status phrases that went stale once live evidence existed. Each may appear
+# only in a paragraph that also cites a claim id from evidence/claims.json.
+STALE_PHRASES = ("still pending", "remains deferred", "no new protected live run", "pending rebuild/scan",
+                 "no newly built/scanned image")
+CLAIM_ID = re.compile(r"\bC-[A-Z0-9]+(?:-[A-Z0-9]+)*\b")
 BLOCK = re.compile(r"(<!-- BEGIN GENERATED:(?P<name>[a-z0-9-]+) -->\n)(?P<body>.*?)(<!-- END GENERATED:(?P=name) -->)",
                    re.DOTALL)
 OUTCOMES = ("PASS", "FAILED", "INTERRUPTED", "INCOMPLETE")
@@ -351,10 +369,27 @@ def observer(bundles):
     return rows
 
 
+FAIL_CLOSED = ("model server unreachable", "model not installed")
+# Files a run writes once a proposal reaches Guard or the Executor records an attempt.
+DOWNSTREAM_RECORDS = ("proposal.json", "initial-guard.json", "execution.json")
+
+
+def _has_file(bundle, name):
+    return any(item["path"] == name or item["path"].endswith("/" + name) for item in bundle.manifest.get("files", []))
+
+
+def fail_closed(bundles):
+    """Cited runs that failed on an unreachable or missing model and left no Guard or Executor record."""
+    stopped = sum(outcome(b) == "FAILED" and failure_class(summary_of(b)) in FAIL_CLOSED
+                  and not any(_has_file(b, name) for name in DOWNSTREAM_RECORDS) for b in bundles)
+    return ratio(stopped, len(bundles))
+
+
 DERIVATIONS = {
     "pass_ratio": pass_ratio,
     "zero_write_rejections": zero_write_rejections,
     "chaos_injection": chaos_injection,
+    "fail_closed": fail_closed,
 }
 
 
@@ -412,11 +447,70 @@ def index_table(root):
     return table(["Class", "Bundles", "Recorded", "Inferred", "Superseded", "Withdrawn"], rows)
 
 
+def limitation_blocks(root):
+    """Register blocks; a missing register renders as empty, a malformed one is an error."""
+    registry = {}
+    if (Path(root) / limitations.REGISTER).exists():
+        try:
+            registry = limitations.load(root)
+        except limitations.RegisterError as error:
+            raise EvidenceError(str(error)) from error
+        errors, _ = limitations.validate(registry, root)
+        if errors:
+            raise EvidenceError(limitations.REGISTER + ": " + "; ".join(errors))
+    return {"limitations": limitations.render(registry), "limitations-summary": limitations.render_summary(registry)}
+
+
+def quote(claim, bundles):
+    statement = claim["text"].replace("{value}", derive(claim, bundles))
+    return f"> **{claim['id']}:** {statement}.\n> Scope: {claim['scope_caveat']}"
+
+
+def apply_quotes(text, claims, bundles, label):
+    """Fill every 'claim-<id>' block with that claim's current statement and caveat."""
+    newline = "\r\n" if "\r\n" in text else "\n"
+    by_block = {"claim-" + str(claim.get("id")).lower(): claim for claim in claims}
+
+    def fill(match):
+        name = match.group("name")
+        if not name.startswith("claim-"):
+            return match.group(0)
+        if name not in by_block:
+            raise EvidenceError(f"{label}: block {name} quotes a claim that is not in evidence/claims.json")
+        return match.group(1) + quote(by_block[name], bundles) + "\n" + match.group(4)
+
+    return BLOCK.sub(fill, text.replace("\r\n", "\n")).replace("\n", newline)
+
+
+def quote_files(root):
+    """Repository-relative Markdown paths that may quote claims, in a stable order."""
+    found = set()
+    for pattern in QUOTE_SOURCES:
+        found.update(path.relative_to(root).as_posix() for path in Path(root).glob(pattern) if path.is_file())
+    return sorted(found)
+
+
+def stale_statements(root, claims):
+    """Paragraphs that use a known-stale status phrase without citing an existing claim id."""
+    known = {claim.get("id") for claim in claims}
+    problems = []
+    for relative in quote_files(root):
+        text = (Path(root) / relative).read_text(encoding="utf-8").replace("\r\n", "\n")
+        for paragraph in re.split(r"\n\s*\n", text):
+            flat = " ".join(paragraph.split()).lower()
+            for phrase in STALE_PHRASES:
+                if phrase in flat and not set(CLAIM_ID.findall(paragraph)) & known:
+                    problems.append(f"{relative}: '{phrase}' needs a claim id from evidence/claims.json "
+                                    "in the same paragraph, or the statement is out of date")
+    return problems
+
+
 def render_blocks(root):
     bundles = load_bundles(root)
     claims = load_claims(root)
     guard = guard_rejections(bundles)
     return {
+        **limitation_blocks(root),
         "index": index_table(root),
         "runs": runs_table(bundles),
         "recovery-checks": table(["Class", "Check", "Passed / runs"], recovery_matrix(bundles)),
@@ -502,11 +596,15 @@ def run(root=ROOT, *, check=False, out=sys.stdout):
         print("\n".join("FAIL: " + p for p in problems), file=out)
         return 1
     blocks = render_blocks(root)
+    bundles, claims = load_bundles(root), load_claims(root)
+    files = dict(TARGETS)
+    for relative in quote_files(root):
+        files.setdefault(relative, ())
     failed = False
-    for relative, names in TARGETS.items():
+    for relative, names in files.items():
         path = root / relative
         current = path.read_bytes().decode("utf-8")
-        updated = apply_blocks(current, blocks, names, relative)
+        updated = apply_quotes(apply_blocks(current, blocks, names, relative), claims, bundles, relative)
         if check and updated.replace("\r\n", "\n") != current.replace("\r\n", "\n"):
             failed = True
             diff = difflib.unified_diff(current.replace("\r\n", "\n").splitlines(), updated.replace("\r\n", "\n")
@@ -519,7 +617,7 @@ def run(root=ROOT, *, check=False, out=sys.stdout):
             print("Updated " + relative, file=out)
     if not check:
         update_claim_values(root, out)
-    claim_problems = check_claims(root)
+    claim_problems = check_claims(root) + stale_statements(root, load_claims(root))
     if claim_problems:
         failed = True
         print("\n".join("FAIL: " + p for p in claim_problems), file=out)

@@ -67,7 +67,18 @@ kind get clusters
 
 Abrupt host termination can leave a fault/lock; inspect the run and
 `sentinel-chaos-demo-lock` before resuming. Never strip finalizers to claim clean
-restoration. On 11 November the network, Pod and CPU faults each completed on
-Docker Desktop (Windows, WSL2 kernel) with injection and cleanup confirmed and a
-healthy recovery window; the memory fault completed in an earlier run. Its
-integration with guarded recovery remains pending.
+restoration. Results on Docker Desktop (Windows, WSL2 kernel), per fault in
+[results](results.md#chaos-mesh-faults):
+
+<!-- BEGIN GENERATED:claim-c-chaos-batch -->
+> **C-CHAOS-BATCH:** The latest Chaos Mesh demo batch (network, pod, cpu): injected 3/3, cleaned up 3/3.
+> Scope: Injection and cleanup only; Sentinel takes no recovery action. One batch in demo durations; earlier batches failed (see C-CHAOS-ALL). One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.
+<!-- END GENERATED:claim-c-chaos-batch -->
+
+<!-- BEGIN GENERATED:claim-c-chaos-all -->
+> **C-CHAOS-ALL:** Across every Chaos Mesh fault attempt: injected 9/29, cleaned up 12/29.
+> Scope: Includes development batches that failed before or during injection; the HTTP fault was never injected on this host. Injection only, no Sentinel action. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.
+<!-- END GENERATED:claim-c-chaos-all -->
+
+These runs inject and clean up faults only. Wiring Chaos Mesh faults into
+guarded recovery is not built (`L-CHAOS-NOT-WIRED` in [limitations](limitations.md)).

@@ -8,11 +8,14 @@ the full suite also exercises the optional native RCAEval adapter:
 .\.venv\Scripts\python.exe scripts/check_contracts.py
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
 .\.venv\Scripts\python.exe scripts/evidence/summarize.py --check
+.\.venv\Scripts\python.exe scripts/evidence/limitations.py --strict
 .\.venv\Scripts\python.exe scripts/check_doc_links.py
 ```
 
-The last two fail when a generated results table is stale or hand-edited, a
-claim lacks evidence, or a Markdown link or anchor is dead.
+The last three fail when a generated table or claim quote is stale or
+hand-edited, a claim lacks evidence, a known-stale status phrase has no claim
+id beside it, a [limitations](limitations.md) citation no longer resolves, or a
+Markdown link or anchor is dead.
 
 On Linux/macOS substitute `.venv/bin/python`. pip installs code dependencies,
 not the benchmark dataset or an Ollama model. Optional benchmark tests report
@@ -74,10 +77,32 @@ one REJECTED unnecessary rollback with zero write attempts. Refusal/RBAC/CAS/
 competition/replay checks must pass as well. Inspect the printed run's summary,
 dashboard validation and teardown files. Do not infer recovery from fixture results.
 
-Real-model acceptance requires a configured Ollama instance and an explicit
-[agent run](planner.md). It remains deferred; passing injected-model tests or
-the default harness test does not complete it. Chaos Mesh has its own
-[injection demonstration](chaos.md), not automatic guarded repair.
+Chaos Mesh has its own [injection demonstration](chaos.md), not automatic
+guarded repair.
+
+## Agent-mode acceptance
+
+This needs a reachable Ollama server and a model you installed; see
+[Planner mode](planner.md) for the model override file. Passing injected-model
+tests or the default harness run does not stand in for it. Unattended:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Connected -Agent -AgentConfig path/to/model.json -Dashboard -ExitAfterTest -Cleanup
+```
+
+Expected evidence in the printed run folder: `summary.json` with status `PASS`
+and the agent planning mode; `approved-rollback/model-calls.json` and
+`model-proposal.json`; an `APPLIED` `execution.json`; and a `RECOVERED`
+`outcome.json`. A planning failure must instead record `agent_failure` in
+`summary.json`, show an "Agent planning stopped" dashboard event and leave no
+proposal, Guard decision or execution record. Collect the run with
+`scripts/evidence/collect.py --class agent` (see [evidence](../evidence/README.md)).
+
+The committed runs so far, all on one fault type with pre-authorised lab
+approval, are claims `C-AGENT-WARM` (the latest consecutive runs),
+`C-AGENT-ALL` (every attempt, failures included) and `C-AGENT-FAIL-CLOSED`
+(unreachable model server and missing model). Their values and caveats are in
+[results](results.md#claims). Owner acceptance is tracked in #56.
 
 ## Specialised role checks
 
