@@ -184,6 +184,19 @@ Result details start with `[basis=<code>]` and a fixed sentence; server text is
 never echoed. SUPERSEDED, like every status except NEEDS_RECONCILIATION,
 finishes the ledger row as DONE, which releases the workload exclusion.
 
+### Model check
+
+`tests/test_executor_reconcile_model.py` runs the real `execute()` and
+`reconcile()` of two hosts against a simulated API server whose requests can
+commit late or never, with other writers, delete/recreate and crashes at every
+journal point. Safety (at most one commit, APPLIED only after a commit, no
+CONFLICT/SUPERSEDED or final result while a write can still commit) holds for
+both this table and the earlier binary rule. The earlier rule fails liveness: a
+host stays NEEDS_RECONCILIATION after the target has moved. One case is still
+undecidable without fencing: every request was lost and nothing else wrote, so
+the version is still V0. That row stays in doubt and escalates as described
+below. See [testing](../../docs/testing.md#executor-model-check).
+
 ### Repeated uncertainty, backoff and escalation
 
 A pass that finds the same NEEDS_RECONCILIATION status, resource version and
