@@ -277,6 +277,10 @@ class ModelPreflightTests(unittest.TestCase):
         touched = patch("subprocess.run", side_effect=AssertionError("cluster command attempted"))
         touched.start()
         self.addCleanup(touched.stop)
+        # Provenance runs git and tool version commands; keep it out of this guard.
+        stamped = patch("shared.provenance.collect", return_value={"source_revision": "test"})
+        stamped.start()
+        self.addCleanup(stamped.stop)
 
     def experiment(self, **config):
         kind = type("AgentBoutiqueExperiment", (AgentPlanningMixin, self.base), {})
