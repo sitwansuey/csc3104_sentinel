@@ -2,7 +2,13 @@
 from datetime import datetime, timezone
 import io
 import json
+import os
+from pathlib import Path
 import re
+import shlex
+import shutil
+import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -68,13 +74,23 @@ class BranchSurveyTests(unittest.TestCase):
     def test_merged_branch_is_archived_before_delete(self):
         code, out, _, _ = run()
         self.assertEqual(code, 0)
-        lines = out.splitlines()
-        tag = next(i for i, line in enumerate(lines) if "git tag -a archive/old-merged" in line)
-        push = next(i for i, line in enumerate(lines) if "git push origin refs/tags/archive/old-merged" in line)
-        delete = next(i for i, line in enumerate(lines) if "git push origin --delete refs/heads/old-merged" in line)
-        self.assertLess(tag, push)
-        self.assertLess(push, delete)
-        self.assertIn("a" * 40, lines[tag])
+        line = next(line for line in out.splitlines() if "git tag -a archive/old-merged" in line)
+        steps = line.strip().split(" && ")
+        self.assertEqual(len(steps), 3)
+        self.assertTrue(steps[0].startswith("git tag -a archive/old-merged " + "a" * 40))
+        self.assertEqual(steps[1], "git push origin refs/tags/archive/old-merged")
+        self.assertEqual(steps[2], f"git push --force-with-lease=refs/heads/old-merged:{'a' * 40} "
+                                   "origin --delete refs/heads/old-merged")
+
+    def test_delete_is_leased_on_the_surveyed_sha(self):
+        _, out, _, _ = run(["--json"])
+        rows = {row["name"]: row for row in json.loads(out)["branches"]}
+        delete = rows["old-merged"]["commands"][2]
+        self.assertIn(f"--force-with-lease=refs/heads/old-merged:{'a' * 40}", delete)
+        self.assertNotIn("git push origin --delete", out)
+        self.assertEqual(rows["old-merged"]["command_line"], " && ".join(rows["old-merged"]["commands"]))
+        # Inactive branches get the tag steps only, still chained.
+        self.assertEqual(rows["idle-work"]["command_line"].count(" && "), 1)
 
     def test_every_delete_in_json_output_follows_its_tag(self):
         _, out, _, _ = run(["--json"])
@@ -155,7 +171,61 @@ class BranchSurveyTests(unittest.TestCase):
         responses[f"repos/{REPO}/branches/odd%3Bname"] = {
             "commit": {"sha": "a" * 39 + "1", "commit": {"committer": {"date": "2026-10-01T00:00:00Z"}}}}
         _, out, _, _ = run(responses=responses)
-        self.assertIn("git push origin --delete 'refs/heads/odd;name'", out)
+        self.assertIn(f"git push '--force-with-lease=refs/heads/odd;name:{'a' * 39 + '1'}' "
+                      "origin --delete 'refs/heads/odd;name'", out)
+
+
+@unittest.skipUnless(shutil.which("git"), "git is not installed")
+class PrintedCommandsAgainstLocalRemoteTests(unittest.TestCase):
+    """Run the printed commands against a throwaway local bare repository."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        self.env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
+                    "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "test@example.invalid",
+                    "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "test@example.invalid"}
+        self.remote, self.work = root / "remote.git", root / "work"
+        self.git(root, "init", "-q", "--bare", str(self.remote))
+        self.git(root, "init", "-q", str(self.work))
+        self.git(self.work, "remote", "add", "origin", str(self.remote))
+        self.surveyed = self.commit("surveyed")
+        self.git(self.work, "push", "-q", "origin", "HEAD:refs/heads/done")
+
+    def git(self, cwd, *args):
+        return subprocess.run(["git", *args], cwd=cwd, env=self.env, capture_output=True, text=True,
+                              check=False, timeout=60)
+
+    def commit(self, message):
+        self.assertEqual(self.git(self.work, "commit", "-q", "--allow-empty", "-m", message).returncode, 0)
+        return self.git(self.work, "rev-parse", "HEAD").stdout.strip()
+
+    def run_line(self, row):
+        """Run the steps as '&&' would: stop at the first failure."""
+        for step in branches.commands(row):
+            result = self.git(self.work, *shlex.split(step)[1:])
+            if result.returncode:
+                return result
+        return result
+
+    def remote_branch(self):
+        return self.git(self.remote, "rev-parse", "--verify", "-q", "refs/heads/done").stdout.strip()
+
+    def test_branch_unchanged_since_survey_is_tagged_then_deleted(self):
+        result = self.run_line({"name": "done", "sha": self.surveyed, "kind": "merged"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.remote_branch(), "")
+        tagged = self.git(self.remote, "rev-parse", "refs/tags/archive/done^{commit}").stdout.strip()
+        self.assertEqual(tagged, self.surveyed)
+
+    def test_branch_moved_after_survey_is_not_deleted(self):
+        later = self.commit("pushed while the list was under review")
+        self.git(self.work, "push", "-q", "origin", "HEAD:refs/heads/done")
+        result = self.run_line({"name": "done", "sha": self.surveyed, "kind": "merged"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("stale info", result.stderr)
+        self.assertEqual(self.remote_branch(), later)
 
 
 if __name__ == "__main__":

@@ -42,6 +42,12 @@ only; their owners decide. The default branch, protected branches and any
 branch used by an open pull request are kept. The tool never writes; a
 maintainer runs the printed commands after review. `--apply` is refused.
 
+Each branch gets one command line joined with `&&`, so a failed tag or tag
+push stops the delete. The delete uses `--force-with-lease` on the SHA the
+survey saw. If someone pushed to the branch after the survey, git refuses the
+delete and the branch stays; re-run the survey before trying again. Commands
+use POSIX shell quoting (Git Bash, not Windows PowerShell 5.1).
+
 Tests use a fake `gh` runner and make no network calls:
 
 ```text

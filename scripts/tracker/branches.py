@@ -9,7 +9,10 @@ Reads the repository's branches with read-only `gh api` GETs and sorts them:
   request (as head or base) and recently active unmerged branches.
 
 Nothing is written. The printed git commands are for a maintainer to run after
-review; every delete is preceded by its archive tag, so nothing is lost.
+review. Each branch gets one command line joined with '&&': the archive tag is
+created and pushed first, and the delete carries a lease on the surveyed SHA.
+If the branch has moved since the survey, or the tag cannot be created or
+pushed, git refuses and the branch stays. Re-run the survey in that case.
 """
 
 import argparse
@@ -107,14 +110,25 @@ def archive_tag(name):
 
 
 def commands(row):
-    """Shell commands for one branch; the tag is always created and pushed first."""
+    """Shell commands for one branch; the tag is always created and pushed first.
+
+    The delete is leased on the surveyed SHA, so git rejects it if anyone has
+    pushed to the branch since the survey; those commits would be in no tag.
+    """
     tag = archive_tag(row["name"])
+    ref = "refs/heads/" + row["name"]
     message = f"Archive of branch {row['name']} at {row['sha'][:7]}"
     steps = [f"git tag -a {shlex.quote(tag)} {row['sha']} -m {shlex.quote(message)}",
              f"git push origin {shlex.quote('refs/tags/' + tag)}"]
     if row["kind"] == "merged":
-        steps.append(f"git push origin --delete {shlex.quote('refs/heads/' + row['name'])}")
+        lease = f"--force-with-lease={ref}:{row['sha']}"
+        steps.append(f"git push {shlex.quote(lease)} origin --delete {shlex.quote(ref)}")
     return steps
+
+
+def command_line(row):
+    """All steps for one branch on one line; a failed step stops the rest."""
+    return " && ".join(commands(row))
 
 
 def render(default, rows, inactive_days):
@@ -131,10 +145,12 @@ def render(default, rows, inactive_days):
                 if row["ahead"] is not None else ""
             lines.append(f"  {row['name']} {row['sha'][:7]}: {detail}{row['reason']}")
             if kind != "kept":
-                lines.extend("      " + step for step in commands(row))
+                lines.append("      " + command_line(row))
         lines.append("")
-    lines.append("Review this list with the branch owners. Branch deletion has no effect on the Project "
-                 "board. Restore a branch with: git push origin refs/tags/archive/<name>:refs/heads/<name>")
+    lines.append("Review this list with the branch owners. Run each branch's line whole: a failed step "
+                 "stops the rest. A delete is refused if the branch moved after this survey; re-run the "
+                 "survey then. Branch deletion has no effect on the Project board. Restore a branch with: "
+                 "git push origin refs/tags/archive/<name>:refs/heads/<name>")
     return "\n".join(lines)
 
 
@@ -149,7 +165,8 @@ def main(argv=None, runner=gh, now=None, out=None):
     args = parser.parse_args(argv)
     if args.apply:
         print("error: --apply refused: branches.py is dry-run only. After review, a maintainer runs "
-              "the printed commands; each delete follows its archive tag.", file=sys.stderr)
+              "the printed commands; each delete follows its archive tag and is leased on the "
+              "surveyed SHA.", file=sys.stderr)
         return 2
     if args.inactive_days < 1:
         parser.error("--inactive-days must be at least 1")
@@ -159,7 +176,8 @@ def main(argv=None, runner=gh, now=None, out=None):
         print(f"error: {error}", file=sys.stderr)
         return 2
     if args.json:
-        print(json.dumps({"default": default, "branches": [{**row, "commands": commands(row)}
+        print(json.dumps({"default": default, "branches": [{**row, "commands": commands(row),
+                                                           "command_line": command_line(row)}
                                                           if row["kind"] != "kept" else row for row in rows]},
                          indent=2), file=out)
     else:

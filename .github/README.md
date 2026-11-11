@@ -80,14 +80,16 @@ private free-plan repository, so nothing blocks a merge without review. The
 **Merge audit** workflow runs on every push to main. For each merged PR it
 lists the approvals from someone other than the PR author and the check runs
 on the PR head, and writes the result to the job summary with a warning per
-flagged merge. A direct push without a PR is flagged too. Any API error makes
+flagged merge. An approval counts only if it was given on the commit that was
+merged; an approval on an earlier commit is flagged, because the later
+changes were not reviewed. A direct push without a PR is flagged too. Any API error makes
 the row UNVERIFIED; it is never counted as reviewed. The job stays green: it
 makes merges visible, it does not enforce anything.
 
 The workflow token is read-only. To audit recent merges locally through `gh`:
 
 ```text
-python .github/scripts/merge_audit.py --via-gh --recent 10
+python .github/scripts/merge_audit.py --via-gh --recent 10   # 1 to 100
 python -m unittest tests.test_merge_audit -v
 ```
 

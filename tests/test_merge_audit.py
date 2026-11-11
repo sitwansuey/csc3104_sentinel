@@ -32,8 +32,8 @@ class FakeAPI:
         raise audit.AuditError(f"GitHub returned HTTP 404 for {path.split('?')[0]}")
 
 
-def review(login, state):
-    return {"user": {"login": login}, "state": state}
+def review(login, state, commit="head1"):
+    return {"user": {"login": login}, "state": state, "commit_id": commit}
 
 
 def repo_with(reviews, checks=None, author="alice", number=7, sha="m1"):
@@ -72,6 +72,22 @@ class MergeAuditTests(unittest.TestCase):
         for later in ("CHANGES_REQUESTED", "DISMISSED"):
             rows = audit.audit(repo_with([review("bob", "APPROVED"), review("bob", later)]), ["m1"])
             self.assertTrue(rows[0]["problems"], later)
+
+    def test_approval_on_an_earlier_commit_is_flagged_as_stale(self):
+        for commit in ("old1", None):
+            rows = audit.audit(repo_with([review("bob", "APPROVED", commit)]), ["m1"])
+            self.assertEqual(rows[0]["approvers"], [], commit)
+            self.assertEqual(rows[0]["problems"],
+                             ["approved only on an earlier commit (bob); later changes were not reviewed"])
+
+    def test_approval_on_the_merged_head_passes_beside_a_stale_one(self):
+        rows = audit.audit(repo_with([review("bob", "APPROVED", "old1"), review("carol", "APPROVED")]), ["m1"])
+        self.assertEqual(rows[0]["approvers"], ["carol"])
+        self.assertEqual(rows[0]["problems"], [])
+
+    def test_reapproval_on_the_merged_head_passes(self):
+        rows = audit.audit(repo_with([review("bob", "APPROVED", "old1"), review("bob", "APPROVED")]), ["m1"])
+        self.assertEqual(rows[0]["approvers"], ["bob"])
 
     def test_comment_only_review_is_not_an_approval(self):
         rows = audit.audit(repo_with([review("bob", "COMMENTED")]), ["m1"])
@@ -113,6 +129,39 @@ class MergeAuditTests(unittest.TestCase):
         api = repo_with([review("bob", "APPROVED")])
         api.responses[f"repos/{REPO}/commits/head1/check-runs"] = {"total_count": 150, "check_runs": []}
         self.assertIn("truncated", audit.audit(api, ["m1"])[0]["problems"][0])
+
+    def test_odd_response_shapes_are_unverified_not_a_crash(self):
+        api = repo_with([review("bob", "APPROVED")])
+        api.responses[f"repos/{REPO}/pulls/7"] = ["not", "a", "pull"]
+        self.assertIn("UNVERIFIED: Unexpected response for PR #7", audit.audit(api, ["m1"])[0]["problems"])
+        api = repo_with([review("bob", "APPROVED")])
+        api.responses[f"repos/{REPO}/commits/head1/check-runs"] = []
+        self.assertTrue(audit.audit(api, ["m1"])[0]["problems"][0].startswith("UNVERIFIED"))
+        api = repo_with([review("bob", "APPROVED")])
+        api.responses[f"repos/{REPO}/pulls/7"]["head"] = None
+        self.assertTrue(audit.audit(api, ["m1"])[0]["problems"][0].startswith("UNVERIFIED"))
+        for pulls in ({"message": "odd"}, ["text"], [{"merged_at": "2026-11-11T00:00:00Z", "base": {"ref": "main"}}]):
+            api = repo_with([review("bob", "APPROVED")])
+            api.responses[f"repos/{REPO}/commits/m1/pulls"] = pulls
+            self.assertTrue(audit.audit(api, ["m1"])[0]["problems"][0].startswith("UNVERIFIED"), pulls)
+
+    def test_pull_list_for_a_commit_is_paged(self):
+        api = repo_with([review("bob", "APPROVED")])
+        audit.audit(api, ["m1"])
+        self.assertIn(f"repos/{REPO}/commits/m1/pulls?per_page={audit.PAGE}&page=1", api.paths)
+
+    def test_recent_outside_one_page_is_refused_not_capped(self):
+        for value in ("0", str(audit.PAGE + 1)):
+            api = FakeAPI({})
+            with patch("sys.stderr", new_callable=io.StringIO), self.assertRaises(SystemExit) as caught:
+                audit.main(["--recent", value], api=api, environ={})
+            self.assertEqual(caught.exception.code, 2)
+            self.assertEqual(api.paths, [])
+
+    def test_recent_with_unexpected_commit_list_stops_cleanly(self):
+        api = FakeAPI({f"repos/{REPO}/commits": {"message": "odd"}})
+        with self.assertRaisesRegex(SystemExit, "nothing audited"):
+            audit.main(["--recent", "5"], api=api, environ={})
 
     def test_commits_of_one_pull_request_are_reported_once(self):
         api = repo_with([review("bob", "APPROVED")])
