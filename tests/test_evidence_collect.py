@@ -12,7 +12,7 @@ import unittest
 
 from scripts.evidence import collect
 from services.coordinator.core import LocalEventBus, SQLiteStore, handle
-from tests.support.evidence_fixtures import REVISION, context, write
+from tests.support.evidence_fixtures import REVISION, context, wedge_run, write
 
 ROOT = Path(__file__).resolve().parents[1]
 STARTED = "2026-11-11T10:00:00Z"
@@ -81,6 +81,39 @@ class AllowlistTests(unittest.TestCase):
         self.assertFalse(collect.allowed("a/b/execution.json", ["*/execution.json"]))
         self.assertTrue(collect.allowed("a/b/execution.json", ["**/execution.json"]))
         self.assertTrue(collect.allowed("execution.json", ["**/execution.json"]))
+
+
+class ProfileTests(unittest.TestCase):
+    def test_agent_bundle_keeps_the_model_runtime_record(self):
+        self.assertIn("model-runtime.json", collect.load_profiles()["agent"]["include"])
+        with tempfile.TemporaryDirectory() as temp:
+            run = Path(temp) / "boutique-live-20261111T202847Z-3e370f"
+            write(run / "summary.json", {"status": "PASS", "started_at": STARTED})
+            write(run / "model-runtime.json", {"keep_alive": "30m", "models": {"qwen3:14b": {
+                "quantization_level": "Q4_K_M", "placement": {"gpu_fraction": 1.0}}}})
+            manifest = collect.collect(run, "agent", "agent-runtime", evidence_root=Path(temp) / "evidence",
+                                       context=context())
+            self.assertEqual({item["path"] for item in manifest["files"]}, {"summary.json", "model-runtime.json"})
+
+    def test_executor_wedge_bundle_keeps_the_scenario_summary_and_states_its_revision(self):
+        self.assertIn("executor-wedge", collect.load_profiles())
+        with tempfile.TemporaryDirectory() as temp:
+            run = wedge_run(temp, "executor-wedge-rv-race-20261111T202123Z")
+            evidence = Path(temp) / "evidence"
+            basis = "Operator record: the run used the checkout's HEAD; the scenario summary has no provenance block"
+            manifest = collect.collect(run, "executor-wedge", "executor-wedge-rv-race-20261111t202123z",
+                                       evidence_root=evidence, context=context(), inferred_revision=REVISION,
+                                       inferred_basis=basis)
+            self.assertEqual({item["path"] for item in manifest["files"]}, {"rv-race.json", "manifests.json"})
+            self.assertEqual(manifest["captured_at"], "2026-11-11T20:21:23Z")
+            self.assertEqual(manifest["provenance"], {"kind": "inferred", "source_revision": REVISION,
+                                                      "basis": basis})
+            self.assertTrue((evidence / "2026-11-11/executor-wedge-rv-race-20261111t202123z/rv-race.json").exists())
+
+    def test_wedge_scenario_summaries_give_the_capture_time(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = wedge_run(temp, "wedge", scenario="delete-recreate", started="2026-11-11T20:21:25Z")
+            self.assertEqual(collect.captured_at(run), "2026-11-11T20:21:25Z")
 
 
 class ManifestTests(unittest.TestCase):

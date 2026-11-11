@@ -227,6 +227,18 @@ class LedgerTests(unittest.TestCase):
         self.assertTrue(all(row["run_folder_read"] for row in rows.values()))
         self.assertFalse(keys(self.ledger()["rows"]) & FORBIDDEN_KEYS)
 
+    def test_several_runs_roots_are_searched_in_order(self):
+        empty = Path(self.temp.name) / "no-runs"
+        empty.mkdir()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(latency_report.main(["--root", str(self.root), "--runs-root", str(empty),
+                                                  "--runs-root", str(self.runs), "--out", str(self.out)]), 0)
+        self.assertTrue(all(row["run_folder_read"] for row in self.ledger()["rows"]))
+        rows = latency_report.build_ledger(self.root, [empty])["rows"]
+        self.assertFalse(any(row["run_folder_read"] for row in rows))
+        self.assertEqual(latency_report.runs_roots(None), [])
+        self.assertEqual(latency_report.runs_roots(str(empty)), [empty])
+
     def test_existing_ledger_is_not_overwritten(self):
         self.assertEqual(self.write(), 0)
         before = (self.out / "timings.json").read_bytes()

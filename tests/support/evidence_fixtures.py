@@ -50,6 +50,41 @@ def agent_run(root, name, *, status="PASS", started="2026-11-11T10:00:00Z", erro
     return run
 
 
+def preflight_run(root, name, *, injected=False, started="2026-11-11T10:10:00Z"):
+    """An agent run stopped by the model preflight; injected=True marks a fault already in place."""
+    run = Path(root) / name
+    error = "Ollama preflight failed for qwen3:missing at 127.0.0.1:11434: model is not installed"
+    write(run / "summary.json", {"status": "FAILED", "started_at": started, "checks": [], "error": error,
+                                 "error_type": "RuntimeError", "model": "qwen3:missing",
+                                 "agent_failure": {"error": "RuntimeError: " + error, "fault_injected": injected,
+                                                   "seconds": 0.1, "stage": "preflight"}})
+    return run
+
+
+def wedge_run(root, name, *, scenario="rv-race", fixed=True, started="2026-11-11T20:21:23Z"):
+    """An Executor wedge harness folder: fixed=True resolves SUPERSEDED, False stays NEEDS_RECONCILIATION."""
+    run = Path(root) / name
+    basis = {"rv-race": "ADVANCED_WITHOUT_EVIDENCE", "delete-recreate": "TARGET_REPLACED"}[scenario]
+    status = "SUPERSEDED" if fixed else "NEEDS_RECONCILIATION"
+    results = [{"label": "execute", "status": status if scenario == "rv-race" else None, "passes": 1},
+               {"label": "reconcile", "status": status, "basis": basis if fixed else None, "passes": 5}]
+    checks = [{"name": "first action resolves as SUPERSEDED/" + basis, "passed": fixed,
+               "observed": [status, basis if fixed else None]},
+              {"name": "ledger releases the workload", "passed": fixed},
+              {"name": "a new proposal for the workload is admitted", "passed": fixed}]
+    if fixed:
+        results.append({"label": "second execute", "status": "APPLIED", "basis": "EVIDENCE_MATCH", "passes": 1})
+        checks.append({"name": "the new proposal is APPLIED", "passed": True})
+    write(run / (scenario + ".json"), {"scenario": scenario, "status": "PASS" if fixed else "FAIL",
+                                       "started_at": started, "context": "kind-sentinel-wedge",
+                                       "reconcile_pass_statuses": [status] * 5, "results": results,
+                                       "checks": checks})
+    write(run / "manifests.json", {"apiVersion": "v1", "kind": "List", "items": []})
+    write(run / "executor.sqlite", b"SQLite format 3\x00")
+    write(run / "locks/target.lock", "")
+    return run
+
+
 def connected_run(root, name, *, started="2026-11-11T09:00:00Z", passed=True):
     run = Path(root) / name
     checks = [check("healthy baseline captured"), check("approved real rollback"),

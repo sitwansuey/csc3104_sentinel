@@ -10,8 +10,10 @@ Read each number with its limits:
 - Runs are on one Windows/amd64 host with Docker Desktop and kind. Each table
   counts runs, not independent trials; repeated runs share the host and model.
 - Failed, interrupted and incomplete runs are counted in every denominator.
-- `inferred` provenance means the run predates provenance stamping and its
-  source revision is a best guess. Only `recorded` bundles prove a commit.
+- `inferred` provenance means the run files carry no provenance block (most
+  predate provenance stamping), so the source revision is a best guess or an
+  operator statement; each bundle's MANIFEST `basis` says which. Only
+  `recorded` bundles prove a commit.
 - The recovery scenario is one fault type (an invalid shipping PORT) where the
   correct action is always ROLLBACK, and lab approval is pre-authorised.
 
@@ -124,6 +126,23 @@ not live incidents. See [the suite README](../data/experimentation/guard/README.
 | guard-eval-v1-20261111-a1d7d41 | PRELIMINARY_NOT_FROZEN | full_available | measured | 0/27 | 18/27 | 9/27 | 6/6 | 0/6 | 0 |
 | guard-eval-v1-20261111-a1d7d41 | PRELIMINARY_NOT_FROZEN | no_validation | definitional | 27/27 | 0/27 | 0/27 | 6/6 | 0/6 | 0 |
 <!-- END GENERATED:guard-eval -->
+
+## Executor wedge
+
+`scripts/validation/test_executor_wedge_live.py` drives one Executor action
+into an in-doubt write in a disposable namespace on the local kind cluster,
+then runs five reconcile passes and, if the workload is released, a second
+proposal. `rv-race` moves the resourceVersion before the patch; `delete-recreate`
+replaces the Deployment after the write is journaled. A FAILED row can be the
+expected "before" result: it records the harness run against an Executor that
+predates the reconcile fix. The scenario summaries carry no provenance block,
+so the revision is `inferred` and each bundle's MANIFEST `basis` says how it
+is known. Guard is not under test, and the same-UID case where the
+resourceVersion does not move is not covered.
+
+<!-- BEGIN GENERATED:executor-wedge -->
+_No bundles yet._
+<!-- END GENERATED:executor-wedge -->
 
 ## Timings
 

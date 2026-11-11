@@ -249,11 +249,71 @@ class SummarizeTests(unittest.TestCase):
             run(self.root)
 
 
+class ExecutorWedgeTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        runs, evidence = self.root / "source", self.root / "evidence"
+        for name, scenario, fixed, revision in (("before", "rv-race", False, "d" * 40),
+                                                ("rv", "rv-race", True, "a" * 40),
+                                                ("recreate", "delete-recreate", True, "a" * 40)):
+            collect.collect(fx.wedge_run(runs, name, scenario=scenario, fixed=fixed), "executor-wedge",
+                            "wedge-" + name, evidence_root=evidence, context=fx.context(),
+                            inferred_revision=revision, inferred_basis="fixture")
+        self.bundles = {b.bundle_id: b for b in summarize.load_bundles(self.root)}
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_outcome_maps_the_scenario_status(self):
+        self.assertEqual(summarize.outcome(self.bundles["wedge-rv"]), "PASS")
+        self.assertEqual(summarize.outcome(self.bundles["wedge-before"]), "FAILED")
+
+    def test_missing_scenario_summary_is_incomplete(self):
+        bundle = self.bundles["wedge-rv"]
+        bundle.manifest["files"] = [item for item in bundle.manifest["files"] if item["path"] != "rv-race.json"]
+        self.assertEqual(summarize.outcome(bundle), "INCOMPLETE")
+
+    def test_rows_show_the_reconcile_result_and_the_second_proposal(self):
+        rows = {row[0]: row for row in summarize.wedge_rows(list(self.bundles.values()))}
+        self.assertEqual(rows["wedge-before"][1:], ["rv-race", "ddddddd", "inferred", "FAILED", "NEEDS_RECONCILIATION",
+                                                    "5/5 NEEDS_RECONCILIATION", "not admitted"])
+        self.assertEqual(rows["wedge-recreate"][5:], ["SUPERSEDED/TARGET_REPLACED", "5/5 SUPERSEDED", "APPLIED"])
+
+    def test_resolution_claim_follows_the_cited_order(self):
+        cited = [self.bundles["wedge-before"], self.bundles["wedge-rv"]]
+        self.assertEqual(summarize.wedge_resolutions(cited),
+                         "rv-race at ddddddd FAILED: NEEDS_RECONCILIATION on 5/5 reconcile passes, second proposal "
+                         "not admitted; rv-race at aaaaaaa PASS: SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE on 5/5 "
+                         "reconcile passes, second proposal APPLIED")
+
+    def test_runs_table_counts_the_failed_before_run(self):
+        self.assertIn("| executor-wedge | 3 | 2 | 1 | 0 | 0 | 0 recorded, 3 inferred |",
+                      summarize.runs_table(list(self.bundles.values())))
+
+
+class PreflightTests(unittest.TestCase):
+    def test_only_a_preflight_stop_before_injection_counts(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, runs = Path(temp), Path(temp) / "source"
+            inferred = {"inferred_revision": fx.REVISION, "inferred_basis": "fixture"}
+            for name, injected in (("p1", False), ("p2", True)):
+                collect.collect(fx.preflight_run(runs, name, injected=injected), "agent", "pre-" + name,
+                                evidence_root=root / "evidence", context=fx.context(), **inferred)
+            collect.collect(fx.agent_run(runs, "ok"), "agent", "pre-ok", evidence_root=root / "evidence",
+                            context=fx.context(), **inferred)
+            bundles = {b.bundle_id: b for b in summarize.load_bundles(root)}
+            self.assertEqual(summarize.preflight_stops([bundles["pre-p1"]]), "1/1")
+            self.assertEqual(summarize.preflight_stops(list(bundles.values())), "1/3")
+            self.assertEqual(summarize.fail_closed([bundles["pre-p1"]]), "1/1")
+
+
 class FailureClassTests(unittest.TestCase):
     def test_known_failures_get_short_labels(self):
         cases = {"<urlopen error [WinError 10061] ... actively refused>": "model server unreachable",
                  "HTTP 404 Not Found: model 'x' not found": "model not installed",
                  "Ollama Planner failed for x:latest: HTTP Error 404: Not Found": "model not installed",
+                 "Ollama preflight failed for x:y at 127.0.0.1:11434: model is not installed": "model not installed",
                  "Agent did not propose a supported rollback: ESCALATE": "agent escalated",
                  "Role 6 could not verify shipping recovery: NOT_RECOVERED": "not recovered"}
         for error, label in cases.items():

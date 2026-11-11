@@ -30,11 +30,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from experiments.analysis import timeline  # noqa: E402
-from scripts.evidence import limitations  # noqa: E402
+from scripts.evidence import collect, limitations  # noqa: E402
 
 TARGETS = {
-    "docs/results.md": ("runs", "recovery-checks", "agent-runs", "guard-rejection", "guard-eval", "timings",
-                        "latency", "model-calls", "chaos", "security-lab", "observer", "claims"),
+    "docs/results.md": ("runs", "recovery-checks", "agent-runs", "guard-rejection", "guard-eval", "executor-wedge",
+                        "timings", "latency", "model-calls", "chaos", "security-lab", "observer", "claims"),
     "evidence/README.md": ("index",),
     "docs/limitations.md": ("limitations",),
     "README.md": ("limitations-summary",),
@@ -158,6 +158,8 @@ def outcome(bundle):
         if not results:
             return "INCOMPLETE"
         return "PASS" if results.get("expectations_met") is True else "FAILED"
+    if bundle.run_class == "executor-wedge":
+        return {"PASS": "PASS", "FAIL": "FAILED"}.get(wedge_summary(bundle).get("status"), "INCOMPLETE")
     summary = bundle.json("summary.json") or bundle.json("data/evidence/summary.json") or {}
     status = summary.get("status")
     return status if status in OUTCOMES else "INCOMPLETE"
@@ -165,6 +167,15 @@ def outcome(bundle):
 
 def summary_of(bundle):
     return bundle.json("summary.json") or bundle.json("data/evidence/summary.json") or {}
+
+
+def wedge_summary(bundle):
+    """The scenario summary of an executor-wedge bundle (rv-race.json or delete-recreate.json), or {}."""
+    for name in collect.WEDGE_SUMMARIES:
+        value = bundle.json(name)
+        if isinstance(value, dict):
+            return value
+    return {}
 
 
 def ratio(passed, total):
@@ -182,7 +193,8 @@ def failure_class(summary):
         failure.get("error") if isinstance(failure, dict) else failure, summary.get("error"),
         summary.get("integration_error")) if part)
     for needle, label in (("refused", "model server unreachable"), ("urlopen error", "model server unreachable"),
-                          ("not found", "model not installed"), ("escalate", "agent escalated"),
+                          ("not found", "model not installed"), ("not installed", "model not installed"),
+                          ("escalate", "agent escalated"),
                           ("not_recovered", "not recovered"), ("awaiting_approval", "stopped awaiting approval")):
         if needle in text.lower():
             return label
@@ -538,12 +550,63 @@ def fail_closed(bundles):
     return ratio(stopped, len(bundles))
 
 
+def preflight_stops(bundles):
+    """Cited runs that failed at the model preflight, before any fault was injected, with no Guard or Executor record."""
+    stopped = 0
+    for bundle in bundles:
+        failure = summary_of(bundle).get("agent_failure")
+        stopped += (outcome(bundle) == "FAILED" and isinstance(failure, dict) and failure.get("stage") == "preflight"
+                    and failure.get("fault_injected") is False
+                    and not any(_has_file(bundle, name) for name in DOWNSTREAM_RECORDS))
+    return ratio(stopped, len(bundles))
+
+
+def wedge_row(bundle):
+    """Scenario, revision, outcome, reconcile result, reconcile passes and second proposal for one wedge bundle."""
+    summary = wedge_summary(bundle)
+    results = {item.get("label"): item for item in summary.get("results") or [] if isinstance(item, dict)}
+    reconcile = results.get("reconcile") or {}
+    status = reconcile.get("status") or "none"
+    resolved = status + ("/" + reconcile["basis"] if reconcile.get("basis") else "")
+    passes = list(summary.get("reconcile_pass_statuses") or [])
+    second = results.get("second execute")
+    if second is not None:
+        admitted = second.get("status") or "none"
+    elif any(check.get("name") == "a new proposal for the workload is admitted" and check.get("passed") is False
+             for check in summary.get("checks") or []):
+        admitted = "not admitted"
+    else:
+        admitted = "not run"
+    return [bundle.bundle_id, summary.get("scenario") or "unknown", short(bundle.entry.get("source_revision")),
+            bundle.entry.get("provenance"), outcome(bundle), resolved,
+            f"{passes.count(status)}/{len(passes)} {status}" if passes else "none", admitted]
+
+
+def wedge_rows(bundles):
+    members = sorted((b for b in bundles if b.run_class == "executor-wedge"),
+                     key=lambda b: (b.entry.get("captured_at") or "", b.bundle_id))
+    return [wedge_row(bundle) for bundle in members]
+
+
+def wedge_resolutions(bundles):
+    """Per cited wedge run, in claim order: how the first action resolved and whether a second proposal ran."""
+    parts = []
+    for bundle in bundles:
+        _, scenario, revision, _, result, resolved, passes, admitted = wedge_row(bundle)
+        count = passes.split(" ")[0]
+        parts.append(f"{scenario} at {revision} {result}: {resolved} on {count} reconcile passes, "
+                     f"second proposal {admitted}")
+    return "; ".join(parts) or "no wedge runs"
+
+
 DERIVATIONS = {
     "pass_ratio": pass_ratio,
     "zero_write_rejections": zero_write_rejections,
     "chaos_injection": chaos_injection,
     "guard_unsafe_acceptance": guard_unsafe_acceptance,
     "fail_closed": fail_closed,
+    "preflight_stops": preflight_stops,
+    "wedge_resolutions": wedge_resolutions,
 }
 
 
@@ -676,6 +739,8 @@ def render_blocks(root):
                                    str(guard["writes_unknown"])]] if guard["runs"] else []),
         "guard-eval": table(["Bundle", "Status", "Configuration", "Basis", "Unsafe ALLOW", "Unsafe REJECT",
                              "Unsafe ESCALATE", "Safe ALLOW", "False REJECT", "Errors"], guard_evaluation(bundles)),
+        "executor-wedge": table(["Bundle", "Scenario", "Revision", "Provenance", "Outcome", "Reconcile result",
+                                 "Reconcile passes", "Second proposal"], wedge_rows(bundles)),
         "timings": table(["Class", "Interval", "n", "Median s", "Min s", "Max s", "Source"], timings(bundles)),
         "latency": latency,
         "model-calls": model_calls,

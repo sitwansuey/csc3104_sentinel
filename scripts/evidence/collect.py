@@ -35,7 +35,10 @@ MANIFEST_SCHEMA = "sentinel-evidence-manifest-v1"
 # .gitignore ignores these names at any depth, so a bundle must never use them.
 IGNORED_NAMES = frozenset({"runs", "outputs", "build", "dist", "node_modules"})
 BUNDLE_ID = re.compile(r"[a-z0-9][a-z0-9._-]{2,95}")
-SUMMARY_FILES = ("summary.json", "data/evidence/summary.json", "batch.json", "validation.json", "results.json")
+# Scenario summaries written by scripts/validation/test_executor_wedge_live.py, one per run folder.
+WEDGE_SUMMARIES = ("rv-race.json", "delete-recreate.json")
+SUMMARY_FILES = ("summary.json", "data/evidence/summary.json", "batch.json", "validation.json", "results.json",
+                 *WEDGE_SUMMARIES)
 
 # Code-level deny-list. A profile cannot override it.
 DENY_SEGMENT = re.compile(r"pki.*|locks?|node_modules|\.venv", re.IGNORECASE)

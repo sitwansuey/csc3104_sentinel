@@ -59,14 +59,25 @@ def load_index(root):
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"bundles": []}
 
 
+def runs_roots(runs_root):
+    """None, one folder or several folders of run folders, as a list searched in order."""
+    if runs_root is None:
+        return []
+    return [Path(runs_root)] if isinstance(runs_root, (str, os.PathLike)) else [Path(path) for path in runs_root]
+
+
 def bundle_row(root, entry, runs_root=None):
-    """Ledger row for one indexed bundle, with its run folder as a read-only supplement."""
+    """Ledger row for one indexed bundle, with its run folder as a read-only supplement.
+
+    runs_root may name several folders; the first one holding the bundle's run folder is used.
+    """
     directory = Path(root) / "evidence" / entry["path"]
     manifest = json.loads((directory / "MANIFEST.json").read_text(encoding="utf-8"))
     name = manifest.get("source_run_dir_name") or entry["bundle_id"]
     directories = [(directory, timeline.BUNDLE)]
-    if runs_root is not None and (Path(runs_root) / name).is_dir():
-        directories.append((Path(runs_root) / name, timeline.RUN_FOLDER))
+    folder = next((base / name for base in runs_roots(runs_root) if (base / name).is_dir()), None)
+    if folder is not None:
+        directories.append((folder, timeline.RUN_FOLDER))
     row = timeline.run_timeline(directories, run=name, bundle_id=entry["bundle_id"],
                                 planning_mode=CLASSES[entry["class"]])
     row["run_folder_read"] = len(directories) > 1
@@ -112,7 +123,8 @@ def write_ledger(ledger, out):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--runs-root", type=Path, help="Folder of original run folders, read only")
+    parser.add_argument("--runs-root", type=Path, action="append",
+                        help="Folder of original run folders, read only; repeat to search several in order")
     parser.add_argument("--out", type=Path, help="Write <out>/timings.json; an existing ledger is refused")
     parser.add_argument("--root", type=Path, default=ROOT, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
