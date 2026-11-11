@@ -23,11 +23,16 @@ server certificate and key; include
 the port-forward smoke check. Keep the CA certificate available to clients.
 Configure the default StorageClass or adjust the PVC for your cluster.
 
+The examples use the connected Boutique lab cluster, which
+`scripts/test-boutique-live.ps1 -Setup -Connected` creates (without
+`-Cleanup`, so it stays). Do not use `sentinel-lab` for these steps: it may be
+a pre-existing cluster that other work depends on.
+
 From the repository root in PowerShell:
 
 ```powershell
-$context = 'kind-sentinel-lab' # Choose the intended disposable cluster explicitly.
-$kindCluster = 'sentinel-lab'
+$context = 'kind-sentinel-boutique-connected' # A disposable lab cluster, chosen explicitly.
+$kindCluster = 'sentinel-boutique-connected'
 $cert = 'C:/path/to/coordinator.crt'
 $key = 'C:/path/to/coordinator.key'
 $ca = 'C:/path/to/ca.crt'
@@ -66,11 +71,11 @@ The named Deployment must already exist; no wildcard/default approval is created
 Use your explicitly selected Sentinel cluster label, namespace and workload:
 
 ```powershell
-$workloadNamespace = 'sentinel-demo'
-$deployment = 'demo-api'
+$workloadNamespace = 'sentinel-boutique-connected'
+$deployment = 'shippingservice'
 $workload = kubectl --context $context -n $workloadNamespace get deployment $deployment -o json | ConvertFrom-Json
 if (-not $workload.metadata.uid) { throw 'Cannot resolve the exact workload UID.' }
-$approvalTarget = @{cluster_id='sentinel-lab'; namespace=$workloadNamespace; kind='Deployment'; name=$deployment; uid=$workload.metadata.uid}
+$approvalTarget = @{cluster_id='sentinel-boutique-connected'; namespace=$workloadNamespace; kind='Deployment'; name=$deployment; uid=$workload.metadata.uid}
 $approvalPermissions = @{
   'operator-1' = @(@{target=$approvalTarget; operations=@('create','read','revoke','history')})
   'guard-1' = @(@{target=$approvalTarget; operations=@('read')})

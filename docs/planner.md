@@ -174,13 +174,26 @@ journal for its internal RCA/model phases.
 ## Acceptance and limits
 
 RCA/proposal validation, abstention, wrong-baseline rejection and a complete
-cross-role handoff have injected-model regressions. Real-model runs with
-`qwen3:14b` (Ollama 0.40, fully on a 16 GB GPU) on 11 November named
-shippingservice and the invalid port correctly in 7 of 7 runs, using 4-5 model
-calls per incident. Measured model time and per-stage timings, including the
-cold-load tail, are in [Per-stage latency](results.md#per-stage-latency). With the Verifier convergence
-grace (#89), 5 of 5 of those recoveries were verified RECOVERED. Owner
-acceptance of the real-model path is tracked in #56.
+cross-role handoff have injected-model regressions. Live runs with `qwen3:14b`
+on one Windows host are committed as evidence:
+
+<!-- BEGIN GENERATED:claim-c-agent-warm -->
+> **C-AGENT-WARM:** qwen3:14b agent mode reached RECOVERED in 3/3 consecutive runs after the target-name fix.
+> Scope: Three runs only, chosen as the latest consecutive set; earlier agent runs include failures (see C-AGENT-ALL). One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.
+<!-- END GENERATED:claim-c-agent-warm -->
+
+<!-- BEGIN GENERATED:claim-c-agent-all -->
+> **C-AGENT-ALL:** Across every recorded agent-mode attempt, 11/20 reached RECOVERED.
+> Scope: Includes deliberate negative tests (unreachable model server, missing model) and runs on older revisions. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.
+<!-- END GENERATED:claim-c-agent-all -->
+
+Model calls and model time per run are in the agent and timings tables of
+[results](results.md#agent-mode), and per-stage timings, including the cold-load
+tail, are in [Per-stage latency](results.md#per-stage-latency). The 11 November evaluation traced the longest
+run to a model cold load that waited for the client's 300 s timeout. Every run
+is the same fault, where ROLLBACK is always right, so these numbers say nothing
+about choosing between actions. Owner acceptance of the real-model path is
+tracked in #56.
 
 A model that is unreachable or not installed at the start stops the run before
 fault injection (see above). If the model fails later or the agent abstains,
@@ -189,7 +202,13 @@ no proposal reaches Guard and no repair is attempted. The dashboard shows an
 errors, and the endpoint host), `summary.json` records `agent_failure`, and the
 harness removes the injected fault as an administrator emergency restore,
 which is not counted as Sentinel recovery. The incident stays OPEN: terminal
-escalation for planner failure belongs to the durable Planner work (#14).
+escalation for planner failure belongs to the durable Planner work (#14 and
+`L-AGENT-JOURNAL` in [limitations](limitations.md)).
+
+<!-- BEGIN GENERATED:claim-c-agent-fail-closed -->
+> **C-AGENT-FAIL-CLOSED:** Agent runs given an unreachable model server or a missing model stopped before any proposal reached Guard or the Executor in 6/6 runs.
+> Scope: Deliberate negative tests. 'Stopped' is read from each bundle: the run failed with that error and wrote no proposal, Guard decision or execution record. The harness then removed the injected fault as an administrator emergency restore, which is not Sentinel recovery, and the incident stayed OPEN. One fault type (invalid shipping PORT). One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.
+<!-- END GENERATED:claim-c-agent-fail-closed -->
 
 The agent experiment is a local one-incident path. Its inference is not a
 separately deployed durable Planner worker with complete retry/escalation

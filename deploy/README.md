@@ -6,8 +6,9 @@ The Coordinator worker API has its own [ordered deployment and validation
 guide](sentinel/COORDINATOR.md), image, TLS Service and persistent volume. This
 is the Coordinator portion of #62. The [remote worker entrypoint](../docs/remote-workers.md)
 binds component algorithms and owned journals, and `kubectl apply -k deploy/sentinel`
-selects the HTTPS Observer composition. Complete worker rollout and whole-platform
-Kubernetes acceptance remain pending.
+selects the HTTPS Observer composition. No worker rollout or whole-platform
+Kubernetes acceptance has been run: the networked layer has only run on one
+host (`L-SINGLE-HOST-DISTRIBUTION` in [limitations](../docs/limitations.md)).
 
 | Directory | Contents |
 | --- | --- |

@@ -7,6 +7,7 @@ Read these in order:
 3. [Architecture](architecture.md): role handoffs and safety/ownership boundaries.
 4. [Testing](testing.md): offline regressions, live acceptance and specialised checks.
 5. [Results](results.md): tables generated from the committed evidence bundles.
+6. [Limitations](limitations.md): known limitations and open defects, each with checked citations.
 
 Use [Planner mode](planner.md), [authenticated approvals](approvals.md), [Chaos Mesh](chaos.md), [security](security.md) or
 [packaging](packaging.md) only when using that optional mode. Benchmarks are
@@ -23,3 +24,6 @@ and [Verifier](../services/verifier/README.md).
 are developer references. Runs write to ignored output directories. Sanitised
 bundles of them are committed under [evidence/](../evidence/README.md), which is
 append-only: withdrawals are recorded with a reason, never silently deleted.
+Quote a number in the docs by its claim id from
+[evidence/claims.json](../evidence/claims.json), with its scope caveat, rather
+than typing it by hand.

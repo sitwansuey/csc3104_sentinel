@@ -56,6 +56,21 @@
       "value": "11/20"
     },
     {
+      "id": "C-AGENT-FAIL-CLOSED",
+      "text": "Agent runs given an unreachable model server or a missing model stopped before any proposal reached Guard or the Executor in {value} runs",
+      "derive": "fail_closed",
+      "bundles": [
+        "boutique-live-20261110t192436z-42206e",
+        "boutique-live-20261110t192628z-f6ccfc",
+        "boutique-live-20261111t144125z-81e38f",
+        "boutique-live-20261111t144310z-65663a",
+        "boutique-live-20261111t160349z-4edbe0",
+        "boutique-live-20261111t160522z-20298d"
+      ],
+      "scope_caveat": "Deliberate negative tests. 'Stopped' is read from each bundle: the run failed with that error and wrote no proposal, Guard decision or execution record. The harness then removed the injected fault as an administrator emergency restore, which is not Sentinel recovery, and the incident stayed OPEN. One fault type (invalid shipping PORT). One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.",
+      "value": "6/6"
+    },
+    {
       "id": "C-GUARD-REJECTION",
       "text": "Guard rejection of an approved but unnecessary rollback: {value}",
       "derive": "zero_write_rejections",
