@@ -4,5 +4,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY services/__init__.py services/grpc_inspection.py services/
 COPY runtime/__init__.py runtime/security_inspector.py runtime/security_store.py runtime/
+COPY shared/__init__.py shared/log.py shared/
 USER 10001:10001
 ENTRYPOINT ["python", "-m", "runtime.security_inspector"]

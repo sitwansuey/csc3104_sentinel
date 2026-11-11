@@ -4,7 +4,7 @@ WORKDIR /app
 COPY services/__init__.py /app/services/
 COPY services/observer/ /app/services/observer/
 COPY services/coordinator/ /app/services/coordinator/
-COPY shared/__init__.py shared/canonical.py shared/contracts.py /app/shared/
+COPY shared/__init__.py shared/canonical.py shared/contracts.py shared/log.py /app/shared/
 COPY runtime/__init__.py runtime/observer_pipeline.py runtime/observer_fleet.py runtime/otlp_receiver.py /app/runtime/
 COPY runtime/remote_worker.py runtime/worker_http.py runtime/worker_transport.py runtime/service_identity.py /app/runtime/
 COPY data/sentinel/samples/policy.json /app/data/sentinel/samples/policy.json
