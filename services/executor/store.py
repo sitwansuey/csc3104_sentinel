@@ -112,6 +112,11 @@ class SQLiteExecutionLedger:
                 action_id TEXT NOT NULL REFERENCES executor_actions(action_id),
                 result TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS executor_fences (
+                action_id TEXT NOT NULL REFERENCES executor_actions(action_id),
+                nonce TEXT NOT NULL, started_at TEXT NOT NULL, committed_version TEXT,
+                PRIMARY KEY (action_id, nonce)
+            );
         """)
         self._migrate()
 
@@ -242,6 +247,30 @@ class SQLiteExecutionLedger:
                 "write_started_at=COALESCE(write_started_at,?) WHERE action_id=?",
                 (attempts, _stamp(now + timedelta(seconds=delay)), _stamp(now), action_id),
             )
+
+    def record_fence(self, action_id, nonce, started_at):
+        """Journal a fence nonce BEFORE the fence is sent, like start_write.
+
+        Only an action still in doubt can be fenced. A crash after this commit
+        leaves the nonce journaled, so a fence that did land is still recognised.
+        """
+        with self._transaction():
+            row = self.db.execute("SELECT phase FROM executor_actions WHERE action_id=?", (action_id,)).fetchone()
+            if row is None or row[0] not in ("WRITE_STARTED", "UNCERTAIN"):
+                raise RuntimeError("Only an action still in doubt can be fenced")
+            self.db.execute("INSERT INTO executor_fences(action_id,nonce,started_at) VALUES(?,?,?)",
+                            (action_id, nonce, _stamp(started_at)))
+
+    def confirm_fence(self, action_id, nonce, version):
+        """Record that a fence's own success response showed it committed at version."""
+        self.db.execute("UPDATE executor_fences SET committed_version=? WHERE action_id=? AND nonce=?",
+                        (version, action_id, nonce))
+
+    def fences(self, action_id):
+        """Journaled fences of the action, in the order they were journaled."""
+        return [dict(row) for row in self.db.execute(
+            "SELECT nonce,started_at,committed_version FROM executor_fences WHERE action_id=? ORDER BY rowid",
+            (action_id,))]
 
     def reconcile_due(self, action_id, now):
         """True unless an earlier reconcile pass scheduled the next one later than now."""

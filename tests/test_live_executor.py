@@ -307,6 +307,43 @@ class LiveExecutorTests(unittest.TestCase):
         self.assertEqual(status, 4, stderr)
         self.assertEqual(self.cluster.write_attempts, [])
 
+    def test_cli_fence_after_resolves_an_in_doubt_write_with_a_metadata_fence(self):
+        status, stdout, stderr = self.call_cli(self.arguments(reconciliation=True))
+        self.assertEqual(status, 4, stderr)
+        self.assertEqual(self.cluster.fence_attempts, [])  # Fencing is off unless configured.
+        status, stdout, stderr = self.call_cli(self.arguments(reconciliation=True) + ["--fence-after", "0"])
+        self.assertEqual(status, 3, stderr)
+        result = json.loads(stdout)
+        self.assertEqual(result["status"], "CONFLICT")
+        self.assertTrue(result["details"].startswith("[basis=FENCED]"))
+        self.assertEqual((len(self.cluster.fences), self.cluster.write_attempts), (1, []))
+
+    def test_cli_refuses_an_invalid_fence_delay_before_any_api_call(self):
+        for value in ("-1", "inf", "nan", "soon"):
+            with self.subTest(value=value):
+                status, stdout, stderr = self.call_cli(self.arguments(reconciliation=True) + ["--fence-after", value])
+                self.assertEqual((status, stdout), (1, ""))
+                self.assertEqual(json.loads(stderr)["error"]["code"], "ARGUMENT_ERROR")
+        self.factory.assert_not_called()
+
+    def test_build_adapters_passes_the_trusted_fence_delay(self):
+        self.assertIsNone(self.build().fence_after_seconds)
+        self.assertEqual(self.build(fence_after_seconds=45.0, ledger=self.directory / "fence.db").fence_after_seconds,
+                         45.0)
+
+    def test_worker_service_takes_the_fence_delay_only_from_its_trusted_config(self):
+        from contextlib import ExitStack
+        from runtime import worker_service
+        config = {"role": "executor", "context": "restricted-lab", "cluster_id": "sentinel-lab", "kubeconfig": "k",
+                  "policy": "p", "baseline": "b", "allowed_targets": "t", "remote_dependencies": False,
+                  "approvals": {"url": "https://127.0.0.1:1", "identity": "executor-1", "token_env": "TEST_TOKEN"}}
+        for configured in ({}, {"fence_after_seconds": 45}):
+            with self.subTest(configured=configured), \
+                    patch.dict(os.environ, {"TEST_TOKEN": "t" * 40}), patch("runtime.approval_http.ApprovalClient"), \
+                    patch("runtime.live_executor.build_adapters") as build, ExitStack() as stack:
+                worker_service.adapter(dict(config, **configured), self.directory, stack)
+                self.assertEqual(build.call_args.kwargs["fence_after_seconds"], configured.get("fence_after_seconds"))
+
     def test_cli_exit_code_for_superseded_write(self):
         self.cluster.external_write()
         status, stdout, stderr = self.call_cli(self.arguments(reconciliation=True))

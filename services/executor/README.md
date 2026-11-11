@@ -137,7 +137,8 @@ questions: did this action's write commit, and can it still commit?
 | R3 | This action's evidence, version moved, template matches | APPLIED | EVIDENCE_MATCH |
 | R3 | This action's evidence, version moved, template changed | SUPERSEDED | COMMITTED_THEN_OVERWRITTEN |
 | R3 | This action's evidence, version still V0 (impossible) | NEEDS_RECONCILIATION | INCONSISTENT |
-| R4 | Fence annotation from this action (reserved, not produced yet) | CONFLICT | FENCED |
+| R4 | This action's fence marker with a nonce this host journaled, or a fence this host saw commit; version moved | CONFLICT | FENCED |
+| R4 | The same, version still V0 (impossible) | NEEDS_RECONCILIATION | INCONSISTENT |
 | R5 | Version moved, no evidence for this action | SUPERSEDED | ADVANCED_WITHOUT_EVIDENCE |
 | R6 | Same UID, version still V0 | NEEDS_RECONCILIATION | UNCHANGED_IN_DOUBT |
 
@@ -192,10 +193,77 @@ commit late or never, with other writers, delete/recreate and crashes at every
 journal point. Safety (at most one commit, APPLIED only after a commit, no
 CONFLICT/SUPERSEDED or final result while a write can still commit) holds for
 both this table and the earlier binary rule. The earlier rule fails liveness: a
-host stays NEEDS_RECONCILIATION after the target has moved. One case is still
-undecidable without fencing: every request was lost and nothing else wrote, so
+host stays NEEDS_RECONCILIATION after the target has moved. Without fencing one
+case is still undecidable: every request was lost and nothing else wrote, so
 the version is still V0. That row stays in doubt and escalates as described
-below. See [testing](../../docs/testing.md#executor-model-check).
+below. With fencing on, the model checker ends no run in doubt, and it also
+checks that a fence never commits together with a write and that a host never
+forgets its own fence. See [testing](../../docs/testing.md#executor-model-check).
+
+### Fenced abort for a write still in doubt
+
+When the live object still has the proposal's UID and version V0, waiting
+proves nothing: a request that timed out may still be queued in the API server,
+and a client timeout does not cancel an etcd transaction already proposed. With
+`fence_after_seconds` set in `ExecutionAdapters` (off by default), a reconcile
+pass settles this the way a database settles an in-doubt transaction. It sends
+a harmless competing write conditioned on the same precondition:
+
+```json
+[{"op": "test", "path": "/metadata/uid", "value": "<uid>"},
+ {"op": "test", "path": "/metadata/resourceVersion", "value": "<V0>"},
+ {"op": "add", "path": "/metadata/annotations/sentinel.io~1fence",
+  "value": "{\"action_id\":\"<action>\",\"nonce\":\"<32 hex>\"}"}]
+```
+
+The API server commits at most one request whose test saw V0. If the fence
+commits, its own test proves our write had not committed before it, and the
+moved version means our write can never commit after it: the result is
+CONFLICT with basis FENCED, and the workload is released. If the fence is
+refused because the version moved, or its outcome is unknown, the next read
+decides with the table: APPLIED if our evidence is there, otherwise SUPERSEDED.
+
+- The nonce is committed to the ledger (`executor_fences`) before the call,
+  like `start_write`. A fence that lands after a crash or a lost response is
+  still recognised as this host's own. A fence whose success response shows
+  the marker is also recorded as committed, so R4 still holds if another owner
+  later strips the annotation.
+- The fence changes no spec field, so `metadata.generation` stays the same and
+  no rollout starts. `KubectlDeploymentAPI.fence` refuses any operation outside
+  `/metadata/`, and it needs only the get and patch verbs the Executor Role
+  already grants (`deploy/sentinel/executor-rbac.yaml`). The Deployment
+  controller may copy the annotation to the current ReplicaSet; that copy is
+  never used as proof.
+- The first fence goes only after the write has been in doubt for
+  `fence_after_seconds` (30 s recommended, longer than the 15 s kubectl
+  timeout), so slow but successful writes are not aborted. Later fences, each
+  with a new nonce, wait at least `max(fence_after_seconds, 30)` seconds after
+  the previous one. All of them test V0, so at most one can ever commit. The
+  attempt's own first check after a timeout never fences.
+- A fence that keeps failing, for example because RBAC or admission refuses
+  it, adds no result rows, but the Executor keeps sending one fence per retry
+  interval (about every 30 s, with no upper bound) and journals each nonce as
+  a row in `executor_fences`. The escalation below still applies, and the
+  fences continue after it until the action is settled or an operator clears
+  the ledger row.
+- The marker is one annotation family for later Coordinator-commanded fences:
+  `{action_id, nonce}` with an optional integer `epoch`.
+- Turn it on with `fence_after_seconds` in the Executor worker configuration,
+  or `--fence-after SECONDS` with `runtime/live_executor.py` (0 fences at once,
+  for an operator who has decided to abort).
+
+A host that never wrote the action can fence it too. A stateless reconcile
+journals the action as in doubt with `write_started_at` set to the time it
+adopted it, so with fencing on that host fences once the settle delay has
+passed from then. The fence is still safe, because it tests the same UID and
+V0 as any host's write, but it means `reconcile` can write metadata on a host
+that never sent the restore. Whether reconcile may write metadata at all still
+awaits the project owner's decision (#58).
+
+A fence that a peer host sent is not in this host's journal, so this host
+reports SUPERSEDED (can no longer commit) rather than CONFLICT. The fence has not
+yet been run against a cluster; the wedge harness's `admission-deny` scenario is
+the planned live check.
 
 ### Repeated uncertainty, backoff and escalation
 
@@ -223,7 +291,8 @@ delivered and shown like any other result, and is not repeated while the state
 stays the same.
 
 Older ledgers gain the `write_started_at`, `reconcile_attempts` and
-`next_reconcile_at` columns when opened; existing rows are kept.
+`next_reconcile_at` columns and the `executor_fences` table when opened;
+existing rows are kept.
 
 Each new reconciliation result is retained in the ledger history. If the clock
 has not advanced beyond the previous result, its `recorded_at` advances by one
@@ -234,7 +303,8 @@ result preserves its original timestamp and payload exactly.
 Only explicitly retryable `ReadUnavailable` failures receive bounded read
 retries. A confirmed conditional-write conflict is reported without retrying the
 write. A timeout or other unknown write outcome triggers reconciliation. It
-never starts another mutation to find out whether the first succeeded.
+never starts another spec mutation to find out whether the first succeeded; the
+only write reconciliation may send is the metadata-only fence above.
 
 ## Coordinator and Verifier integration
 

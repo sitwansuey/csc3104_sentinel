@@ -29,7 +29,7 @@ the fix and regenerate.
 | [L-AGENT-APPROVAL](#l-agent-approval) | defect | open | Live runs use pre-authorised lab approval, not an authenticated operator | P2.02, P2.03 | #10 |
 | [L-RAW-LOGS-PROMPT](#l-raw-logs-prompt) | defect | open | Raw container log text reaches the model | P2.04 | #51, #56 |
 | [L-OBSERVER-ZERO-REPLICAS](#l-observer-zero-replicas) | defect | open | A Deployment scaled to zero replicas is treated as healthy | P5.07 | none |
-| [L-EXEC-WEDGE](#l-exec-wedge) | defect | mitigated | A write rejected with its resource version unchanged still waits in NEEDS_RECONCILIATION | P2.06, P5.08 | #61 |
+| [L-EXEC-WEDGE](#l-exec-wedge) | defect | mitigated | A write rejected with its resource version unchanged waits in NEEDS_RECONCILIATION unless fencing is on | P2.06, P5.08 | #61 |
 | [L-EXEC-REDELIVERY](#l-exec-redelivery) | defect | mitigated | A replacement Executor without the ledger row reported CONFLICT for a write that was applied | P3.01, P4.01 | #18, #58 |
 | [L-NO-LOGGING](#l-no-logging) | defect | mitigated | Structured logs cover only the networked entrypoints, and no live run has collected them | P1.07, P3.02 | #62 |
 | [L-SINGLE-COORDINATOR](#l-single-coordinator) | limitation | open | The Coordinator is one process with one SQLite file | P3.06, P4.02, P5.01 | #62, #63 |
@@ -98,11 +98,11 @@ the fix and regenerate.
 
 ### L-EXEC-WEDGE
 
-**A write rejected with its resource version unchanged still waits in NEEDS_RECONCILIATION.** Defect, mitigated; recorded 2026-11-11. Planned: P2.06, P5.08. Issues: #61.
+**A write rejected with its resource version unchanged waits in NEEDS_RECONCILIATION unless fencing is on.** Defect, mitigated; recorded 2026-11-11. Planned: P2.06, P5.08. Issues: #61.
 
-- Impact: Fixed in code for the cases where the write can no longer commit; verified live, one run each, for the moved-resourceVersion and replaced-target cases (a plain delete was not run live). Reconciliation is a pure decision table: a deleted or recreated target, or a resourceVersion that moved without this action's evidence, ends SUPERSEDED, which the Coordinator records as FAILED so a new proposal can follow. The live wedge harness (C-EXECUTOR-WEDGE: one run per scenario on one Windows host with kind, 2026-11-11) showed main's Executor (d5b2ed9) staying NEEDS_RECONCILIATION over 5 reconcile passes with the workload still excluded, while 4afc879 resolved the moved-resourceVersion case (rv-race) as SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE and the replaced-target case (delete-recreate) as SUPERSEDED/TARGET_REPLACED, released the workload and applied a second proposal. Still open, and not covered by the harness: kubectl error text is not classified (the DEFINITE_REJECTION and FENCED rows are reserved), so a rejection that leaves the same UID at the same resourceVersion, such as an admission denial, cannot be told apart from a request still in flight. That action stays NEEDS_RECONCILIATION, in doubt until P2.06, and the workload stays excluded from repair; after 600 s the Executor adds one 'Operator action required' result.
-- Workaround: For the unchanged-version case, an operator inspects the Deployment and clears the Executor ledger row by hand. The deleted, recreated and moved-version cases need no workaround.
-- Evidence: `services/executor/kubernetes_adapter.py:201`; `services/executor/reconciliation.py:18-19`; `services/executor/reconciliation.py:163`; `services/executor/core.py:37`; `tests/test_executor_reconciliation_table.py:255`; `tests/test_executor_reconciliation_table.py:287`; `scripts/validation/test_executor_wedge_live.py`; claim `C-EXECUTOR-WEDGE`.
+- Impact: Fixed in code; verified live, one run each, for the moved-resourceVersion and replaced-target cases (a plain delete was not run live), with live verification pending for the fence. Reconciliation is a pure decision table: a deleted or recreated target, or a resourceVersion that moved without this action's evidence, ends SUPERSEDED, which the Coordinator records as FAILED so a new proposal can follow. The live wedge harness (C-EXECUTOR-WEDGE: one run per scenario on one Windows host with kind, 2026-11-11) showed main's Executor (d5b2ed9) staying NEEDS_RECONCILIATION over 5 reconcile passes with the workload still excluded, while 4afc879 resolved the moved-resourceVersion case (rv-race) as SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE and the replaced-target case (delete-recreate) as SUPERSEDED/TARGET_REPLACED, released the workload and applied a second proposal. kubectl error text is still not classified (the DEFINITE_REJECTION rows are reserved), so a rejection that leaves the same UID at the same resourceVersion, such as an admission denial, still looks like a request in flight. When fencing is configured (fence_after_seconds; off by default), a reconcile pass after the settle delay sends a metadata-only patch with the same UID and resourceVersion tests and this action's fence marker, journaled before the call. If it commits, the write never committed and never can, so the result is CONFLICT with basis FENCED and the workload is released; tests and the model checker cover it, and the model checker ends no run in doubt with fencing on. With fencing off, that action stays NEEDS_RECONCILIATION and after 600 s gets one 'Operator action required' result. Live verification pending for the fence: the admission-deny scenario that exercises it has not been run against a cluster and no bundle for it is committed; the 2026-11-11 runs predate the fence.
+- Workaround: Turn fencing on: fence_after_seconds in the Executor worker configuration, or --fence-after with runtime/live_executor.py --reconcile. With fencing off, an operator inspects the Deployment and clears the Executor ledger row by hand for the unchanged-version case. The deleted, recreated and moved-version cases need no workaround.
+- Evidence: `services/executor/kubernetes_adapter.py:243`; `services/executor/reconciliation.py:213`; `services/executor/core.py:44`; `services/executor/core.py:272-273`; `services/executor/kubernetes_adapter.py:214`; `tests/test_executor_reconciliation_table.py:325`; `tests/test_executor_reconciliation_table.py:357`; `tests/test_executor.py:651`; `tests/test_executor_reconcile_model.py:378`; `scripts/validation/test_executor_wedge_live.py`; claim `C-EXECUTOR-WEDGE`.
 
 ### L-EXEC-REDELIVERY
 
@@ -110,7 +110,7 @@ the fix and regenerate.
 
 - Impact: Fixed in code; live verification is left to P3.01 and P4.01. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host given a reconcile command with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it never starts that write. An execute command on a fresh host can still write, and the resourceVersion test in the patch lets at most one write for the action commit. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. No run has used more than one Executor host; the 2026-11-11 live runs each used one.
 - Workaround: Run one Executor with one ledger directory, as every documented run does, until a multi-host run verifies this.
-- Evidence: `services/executor/core.py:343`; `services/executor/core.py:287`; `tests/test_executor_reconciliation_table.py:350`; `tests/test_executor_reconciliation_table.py:405`; `services/executor/store.py:3`.
+- Evidence: `services/executor/core.py:421`; `services/executor/core.py:365`; `tests/test_executor_reconciliation_table.py:420`; `tests/test_executor_reconciliation_table.py:475`; `services/executor/store.py:3`.
 
 ### L-NO-LOGGING
 
@@ -118,7 +118,7 @@ the fix and regenerate.
 
 - Impact: Fixed in code for the networked processes: shared/log.py writes allowlisted JSON lines; the Coordinator server, worker HTTP, approval HTTP and worker service entrypoints configure it; every POST request gets one http.access line, or an auth.denied line for a 401 or 403, while GET /healthz, GET /readyz and GET requests for unknown paths (404) get none; lifecycle transitions are journalled; and every broad except handler re-raises or logs the error class, which CI enforces. Not covered: the live harnesses (the Executor wedge harness included), agent mode and the in-process pipelines that every recorded run used never configure logging, so their log events are dropped. Exception messages are never logged, only class names, by design. There is no cross-process tracing. No live run has collected logs yet.
 - Workaround: For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json.
-- Evidence: `shared/log.py:235`; `runtime/worker_http.py:259`; `services/executor/core.py:221-222`; `docs/observability.md`; `tests/test_except_audit.py:39`.
+- Evidence: `shared/log.py:235`; `runtime/worker_http.py:259`; `services/executor/core.py:236-237`; `docs/observability.md`; `tests/test_except_audit.py:39`.
 
 ### L-SINGLE-COORDINATOR
 
@@ -140,9 +140,9 @@ the fix and regenerate.
 
 **No fencing of abandoned or revoked writes across hosts.** Limitation, open; recorded 2026-11-12. Planned: P2.06, P3.04, P3.05. Issues: #18, #58, #61.
 
-- Impact: Revocation is check-then-act: a kubectl patch can land up to 15 s after the last authority check, and the resourceVersion test does not stop a stale write if nobody else wrote in between. RBAC limits verbs and resources, not Deployment fields.
+- Impact: Revocation is check-then-act: a kubectl patch can land up to 15 s after the last authority check, and the resourceVersion test does not stop a stale write if nobody else wrote in between. An Executor can now fence its own write that is still in doubt (P2.06, when configured), but nothing sends a fence when a lease expires or an approval is revoked, so such a write can still land. RBAC limits verbs and resources, not Deployment fields.
 - Workaround: Single-host runs only; the restricted adapter supplies the exact conditional JSON Patch.
-- Evidence: `deploy/sentinel/executor-rbac.yaml:3`; `services/executor/kubernetes_adapter.py:28`.
+- Evidence: `deploy/sentinel/executor-rbac.yaml:3`; `services/executor/kubernetes_adapter.py:30`.
 
 ### L-SINGLE-HOST-DISTRIBUTION
 
@@ -158,7 +158,7 @@ the fix and regenerate.
 
 - Impact: Every live recovery is an invalid shipping PORT where ROLLBACK is always right, so no result shows a choice between actions. RESTART and SCALE are in the contract, but Guard and the Executor refuse them.
 - Workaround: Quote results only for this fault and action.
-- Evidence: `services/guard/core.py:161-162`; `services/executor/core.py:336`; claim `C-CONNECTED-HARNESS`.
+- Evidence: `services/guard/core.py:161-162`; `services/executor/core.py:414`; claim `C-CONNECTED-HARNESS`.
 
 ### L-NO-DIAGNOSIS-ACCURACY
 

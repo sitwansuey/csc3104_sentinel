@@ -5,7 +5,7 @@ execute() and reconcile() of two hosts; see executor_model.INVARIANTS. Nothing
 here contacts a cluster. SENTINEL_MODEL_SEEDS widens the seed range locally.
 """
 
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, suppress
 import io
 import json
 from pathlib import Path
@@ -13,14 +13,15 @@ import subprocess
 import sys
 import unittest
 from unittest import mock
+from uuid import uuid4
 
 from services.executor import core
 from services.executor.kubernetes_adapter import KubectlDeploymentAPI, WriteOutcomeUnknown
-from services.executor.reconciliation import Basis, Decision, classify
+from services.executor.reconciliation import FENCE_ANNOTATION, Basis, Decision, classify, fence_marker
 from tests.support import executor_model as model
 from tests.support.sim_apiserver import (
-    ConditionalWriteConflict, PatchFailed, SimAPIServer, SimDeploymentAPI, SimKubectl, SimWriteRejected,
-    apply_json_patch,
+    ConditionalWriteConflict, PatchFailed, SimAPIServer, SimDeploymentAPI, SimKubectl, SimTimeout,
+    SimWriteRejected, apply_json_patch, fence_patch, is_fence, restore_patch,
 )
 
 
@@ -130,6 +131,37 @@ class SimAPIServerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.server.deliver(request)
 
+    def test_a_fence_and_a_write_tested_at_the_same_version_cannot_both_commit(self):
+        target = {"uid": self.server.uid}
+        template = json.loads(json.dumps(self.server.deployment["spec"]["template"]))
+        template.setdefault("metadata", {})["labels"] = {"restored": "1"}
+        write = self.server.submit("A", "act", restore_patch(target, self.v0, template, {"attempt": "1"},
+                                                             self.server.deployment["metadata"].get("annotations")))
+        fence = self.server.submit("A", "act", fence_patch(target, self.v0, fence_marker("act", "a" * 32),
+                                                           self.server.deployment["metadata"].get("annotations")),
+                                   kind="fence")
+        self.assertEqual((self.server.in_flight("act"), self.server.in_flight("act", kind=None)), ([write], [write, fence]))
+        generation = self.server.deployment["metadata"].get("generation")
+        self.assertTrue(self.server.deliver(fence))
+        self.assertFalse(self.server.deliver(write))  # The fence moved the version past V0.
+        self.assertEqual((self.server.committed("act"), self.server.committed("act", kind="fence")), ([], [fence]))
+        self.assertEqual(self.server.deployment["metadata"].get("generation"), generation)  # Metadata only.
+        self.assertIn(FENCE_ANNOTATION, self.server.deployment["metadata"]["annotations"])
+
+    def test_admission_can_deny_a_template_change_but_allow_a_fence(self):
+        self.server.admission = lambda old, new: old["spec"]["template"] == new["spec"]["template"]
+        template = json.loads(json.dumps(self.server.deployment["spec"]["template"]))
+        template.setdefault("metadata", {})["labels"] = {"restored": "1"}
+        operations = restore_patch({"uid": self.server.uid}, self.v0, template, {"attempt": "1"}, None)
+        self.assertFalse(self.server.allowed(operations))
+        with self.assertRaises(PatchFailed):
+            self.server.patch(operations)
+        self.assertEqual(self.server.resource_version, self.v0)  # A denial commits nothing.
+        fence = fence_patch({"uid": self.server.uid}, self.v0, fence_marker("act", "a" * 32), None)
+        self.assertTrue(self.server.allowed(fence))
+        self.assertTrue(self.server.patch(fence))
+        self.assertNotEqual(self.server.resource_version, self.v0)
+
     def test_delete_and_recreate_defeat_old_requests(self):
         request = self.server.submit("A", "act", self.guarded(self.v0))
         self.server.delete()
@@ -214,6 +246,43 @@ class AdapterFidelityTests(unittest.TestCase):
                         self.restore(build(server))
                     self.assertEqual(server.requests, [])
 
+    def test_same_fence_operations_and_result_with_and_without_annotations(self):
+        marker = fence_marker(self.proposal["action_id"], "c" * 32)
+        for annotations in (None, {"example.org/existing": "1"}):
+            with self.subTest(annotations=annotations):
+                servers = []
+                for build in (lambda s: self.production(s)[0], self.simulated):
+                    server = SimAPIServer.from_snapshot(self.snapshot)
+                    if annotations is not None:
+                        server.deployment["metadata"]["annotations"] = dict(annotations)
+                    build(server).fence(target=self.target, version=self.proposal["based_on_resource_version"],
+                                        marker=marker)
+                    servers.append(server)
+                production, simulated = servers
+                self.assertEqual(production.requests[0].operations, simulated.requests[0].operations)
+                self.assertEqual([r.kind for r in production.requests + simulated.requests], ["fence", "fence"])
+                self.assertTrue(is_fence(production.requests[0].operations))
+                self.assertEqual(production.deployment, simulated.deployment)
+                self.assertEqual(production.committed(), [])  # A fence is not a write of the action.
+
+    def test_fence_fates_mirror_a_lost_response_a_request_in_flight_and_a_dropped_request(self):
+        version = self.proposal["based_on_resource_version"]
+        marker = fence_marker(self.proposal["action_id"], "d" * 32)
+        for fate, state in (("lost", "committed"), ("queued", "in_flight"), ("dropped", "dropped")):
+            with self.subTest(fate=fate):
+                server = SimAPIServer.from_snapshot(self.snapshot)
+                simulated = self.simulated(server)
+                simulated.fence_fate = fate
+                with self.assertRaises(SimTimeout):
+                    simulated.fence(target=self.target, version=version, marker=marker)
+                self.assertEqual(server.requests[0].state, state)
+                self.assertEqual(simulated.fence_fate, "ok")
+        server = SimAPIServer.from_snapshot(self.snapshot)
+        server.external_write(lambda d: d["metadata"].setdefault("annotations", {}).update(bump="1"))
+        with self.assertRaises(ConditionalWriteConflict):  # The pre-read sees the moved version.
+            self.simulated(server).fence(target=self.target, version=version, marker=marker)
+        self.assertEqual(server.requests, [])
+
     def test_peer_race_lands_a_peer_write_before_our_pre_send_read(self):
         server = SimAPIServer.from_snapshot(self.snapshot)
         peer = server.submit("B", self.proposal["action_id"], [{"op": "test", "path": "/metadata/uid",
@@ -290,19 +359,85 @@ class ModelCheckerTests(unittest.TestCase):
             self.fail("\n\n".join(model.explain(report.first[code], code) for code in failing))
 
     def test_invariants_and_liveness_hold_for_the_ci_seeds(self):
-        report = model.check(model.seeds_from_environment())
-        self.assertHolds(report, model.SAFETY + model.LIVENESS + model.ADOPTION)
+        report = model.check(model.seeds_from_environment())  # Fencing on, as the default.
+        self.assertHolds(report, model.SAFETY + model.LIVENESS + model.ADOPTION + model.FENCING)
         self.assertGreaterEqual(report.seeds, 1)
         if report.seeds >= model.DEFAULT_SEEDS:
             # The schedules reach every outcome the table can produce today.
             for status in ("APPLIED/EVIDENCE_MATCH", "APPLIED/EVIDENCE_MATCH (peer write)", "CONFLICT", "FAILED",
                            "SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE", "SUPERSEDED/COMMITTED_THEN_OVERWRITTEN",
-                           "SUPERSEDED/TARGET_DELETED", "SUPERSEDED/TARGET_REPLACED",
+                           "SUPERSEDED/TARGET_DELETED", "SUPERSEDED/TARGET_REPLACED", "CONFLICT/FENCED",
                            "NEEDS_RECONCILIATION/UNCHANGED_IN_DOUBT", "NEEDS_RECONCILIATION/READ_UNAVAILABLE",
                            "process crash"):
                 self.assertGreater(report.observed[status], 10, status)
             self.assertGreater(report.categories["provable"], 0)
-            self.assertGreater(report.categories["unprovable"], 0)
+            # Fences turn almost every lost-write run into a proof. What is left ends with no host in doubt
+            # (for example a FAILED before any write); L1 would fail otherwise.
+            self.assertLess(report.categories["unprovable"], 5)
+
+    def test_fencing_resolves_the_runs_that_were_unprovable_without_it(self):
+        seeds = range(400)
+        without = {seed: model.check_seed(seed, fence_after=None) for seed in seeds}
+        unprovable = [seed for seed, outcome in without.items() if outcome.category == "unprovable"]
+        self.assertGreater(len(unprovable), 5)
+        # Without fencing most of these runs end with a host still in doubt, so the workload stays excluded.
+        wedged = {seed: [host for host, statuses in without[seed].statuses.items()
+                         if statuses[-1] == "NEEDS_RECONCILIATION/UNCHANGED_IN_DOUBT"] for seed in unprovable}
+        wedged = {seed: hosts for seed, hosts in wedged.items() if hosts}
+        self.assertGreater(len(wedged), 5)
+        for seed in unprovable:
+            with self.subTest(seed=seed):
+                fenced = model.check_seed(seed)
+                self.assertEqual(without[seed].schedule, fenced.schedule)  # Fencing does not change the schedule.
+                self.assertEqual(fenced.codes, set())
+                if seed in wedged:
+                    self.assertEqual(fenced.category, "provable")
+                    final = {host: statuses[-1] for host, statuses in fenced.statuses.items()}
+                    self.assertIn("CONFLICT/FENCED", final.values())
+                    for host in wedged[seed]:
+                        self.assertFalse(final[host].startswith("NEEDS_RECONCILIATION"), final)
+
+    def test_known_bad_fence_without_journaling_the_nonce_first_is_caught(self):
+        def fence_then_journal(proposal, adapters):
+            """Bad: sends the fence, then journals its nonce once the call returns."""
+            action_id, nonce = proposal["action_id"], uuid4().hex
+            with suppress(ConditionalWriteConflict, SimTimeout, SimWriteRejected):  # Outcome ignored on purpose.
+                adapters.cluster.fence(target=proposal["target"], version=proposal["based_on_resource_version"],
+                                       marker=fence_marker(action_id, nonce))
+            adapters.ledger.record_fence(action_id, nonce, adapters.clock())
+            row = adapters.ledger.get(action_id)
+            return core._classify(row, proposal, core._observation(proposal, adapters), adapters)
+
+        with mock.patch.object(core, "_fence", fence_then_journal):
+            report = model.check(range(400))
+            self.assertGreater(report.failures["F2"], 0)
+            self.assertFalse(report.fencing_holds)
+            self.assertHolds(report, model.SAFETY)  # Forgetting a fence is safe, but loses the proof.
+            self.assertIn("before journaling its nonce", model.explain(report.first["F2"], "F2"))
+            # A crash between the fence landing and the late journal entry: the restarted host can only
+            # say SUPERSEDED although its own fence is on the object.
+            crashed = model.check_seed(985)
+        self.assertIn("ledger.record_fence.before", " ".join(crashed.trace))
+        self.assertTrue(any("own committed fence" in message for _, _, message in crashed.violations))
+        self.assertEqual(model.check_seed(985).codes, set())
+
+    def test_known_bad_fence_assumed_to_have_committed_is_caught(self):
+        fence = core._fence
+
+        def assume_committed(proposal, adapters):
+            """Bad: treats a fence whose outcome is unknown as committed."""
+            decision = fence(proposal, adapters)
+            if decision.basis is Basis.UNCHANGED_IN_DOUBT:
+                return Decision("CONFLICT", Basis.FENCED, decision.version)
+            return decision
+
+        with mock.patch.object(core, "_fence", assume_committed):
+            report = model.check(range(400))
+            explanation = model.explain(report.first["F1"], "F1")
+        self.assertGreater(report.failures["F1"], 0)
+        self.assertGreater(report.failures["I3"], 0)  # Our write could still land after the false CONFLICT.
+        self.assertFalse(report.safety_holds)
+        self.assertIn("none of its fences committed", explanation)
 
     def test_schedules_are_deterministic(self):
         self.assertEqual(model.generate(17), model.generate(17))
@@ -344,11 +479,11 @@ class ModelCheckerTests(unittest.TestCase):
 
     def test_main_binary_rule_stays_safe_but_wedges(self):
         with mock.patch.object(core, "classify", _legacy_classify):
-            report = model.check(range(300))
+            report = model.check(range(300), fence_after=None)  # main had no fencing
             self.assertHolds(report, model.SAFETY)
             self.assertGreater(report.failures["I4"], 0)
             self.assertGreater(report.failures["L1"], 0)
-            self.assertIn("TargetBusy", model.explain(report.first["L1"], "L1"))
+            self.assertIn("TargetBusy", model.explain(report.first["L1"], "L1", fence_after=None))
             # Only this host's evidence counts, so a peer's applied write reads as a conflict.
             self.assertGreater(report.failures["P1"], 0)
 
@@ -361,6 +496,7 @@ class ModelCheckerTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 2, completed.stderr)
         summary = json.loads(completed.stdout)
         self.assertEqual(summary["executor"], "pre-table")
+        self.assertFalse(summary["fencing"])  # The pre-fix Executor has no fence to turn on.
         self.assertTrue(summary["safety_holds"])
         self.assertGreater(summary["failing_seeds"]["L1"], 0)
         self.assertGreater(summary["failing_seeds"]["I4"], 0)

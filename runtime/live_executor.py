@@ -7,9 +7,11 @@ administrator's credentials. APPLIED is execution evidence, not verified health.
 
 build_adapters returns the same injected interface used by the local team worker.
 Its ledger and lock directory must be shared by every worker on one host. There
-are no distributed leases or fencing. Reconciliation needs only retained scope,
+are no distributed leases. Reconciliation needs only retained scope,
 credentials and proposal (the local journal is optional); it never reauthorizes
-or starts a mutation. Exit codes: 0 APPLIED/NOOP, 2 FAILED, 3 CONFLICT,
+or starts a spec mutation. With --fence-after SECONDS it may send one
+metadata-only fence for a write still in doubt after that long (0 fences at
+once). Exit codes: 0 APPLIED/NOOP, 2 FAILED, 3 CONFLICT,
 4 NEEDS_RECONCILIATION, 5 SUPERSEDED, 1 no result.
 """
 
@@ -126,14 +128,17 @@ def _protect_outputs(ledger, locks, inputs, allowed_targets):
 
 def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, locks,
                    policy=None, baseline=None, dependencies=None, approval=None,
-                   server_dry_run=False, reconcile_only=False, runner=None, approval_reader=None):
+                   server_dry_run=False, reconcile_only=False, runner=None, approval_reader=None,
+                   fence_after_seconds=None):
     """Build the standard team ExecutionAdapters using an explicit live client.
 
     allowed_targets is a trusted list of complete target identities or its JSON
     path, independent of the proposal. New execution requires all four trusted
     input paths (or an injected authoritative approval_reader) and a strict live
     policy before any API read. reconcile_only
-    defers those files entirely because the core reconciliation path is read-only.
+    defers those files entirely because the core reconciliation path never
+    writes the spec. fence_after_seconds comes from trusted configuration only;
+    None (the default) disables fencing.
     The caller owns and must close adapters.ledger.
     """
     from services.executor.kubernetes_adapter import KubectlDeploymentAPI
@@ -162,7 +167,14 @@ def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, 
     coordination = LocalTargetCoordinator(locks)
     store = SQLiteExecutionLedger(ledger)
     return ExecutionAdapters(ledger=store, coordination=coordination, cluster=cluster,
-                             authorizer=authorizer, clock=_utc_now)
+                             authorizer=authorizer, clock=_utc_now, fence_after_seconds=fence_after_seconds)
+
+
+def _fence_after(value):
+    seconds = float(value)
+    if not 0 <= seconds < float("inf"):
+        raise ValueError("Fence delay must be a non-negative finite number")
+    return seconds
 
 
 class _Parser(argparse.ArgumentParser):
@@ -179,7 +191,9 @@ def _parser():
     parser.add_argument("--context", required=True, help="Explicit restricted kubectl context")
     parser.add_argument("--cluster-id", required=True, help="Trusted Sentinel cluster identity")
     parser.add_argument("--server-dry-run", action="store_true", help="Obtain optional server admission evidence before execution")
-    parser.add_argument("--reconcile", action="store_true", help="Read-only inspection of a possibly committed write")
+    parser.add_argument("--reconcile", action="store_true", help="Inspect a possibly committed write; no spec write")
+    parser.add_argument("--fence-after", type=_fence_after, metavar="SECONDS",
+                        help="Fence a write still in doubt (same UID and version) after this long; 0 fences now")
     return parser
 
 
@@ -201,7 +215,7 @@ def main(argv=None):
             allowed_targets=args.allowed_targets, ledger=args.ledger, locks=args.locks,
             policy=args.policy, baseline=args.baseline, dependencies=args.dependencies,
             approval=args.approval, server_dry_run=args.server_dry_run,
-            reconcile_only=args.reconcile,
+            reconcile_only=args.reconcile, fence_after_seconds=args.fence_after,
         )
         result = (reconcile if args.reconcile else execute)(proposal, adapters)
     except Exception as exc:  # noqa: BLE001 - top-level boundary: print one error code and exit 1

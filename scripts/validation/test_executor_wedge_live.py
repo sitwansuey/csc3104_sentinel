@@ -14,12 +14,24 @@ Scenarios (--scenario):
                    the Deployment (new UID). Reconcile must end SUPERSEDED with
                    basis TARGET_REPLACED and no patch, and a new proposal for
                    the new UID must be admitted and APPLIED.
+  admission-deny   A temporary ValidatingAdmissionPolicy denies any change to
+                   the Deployment's Pod template but allows metadata changes.
+                   The Executor's patch is rejected with the UID and
+                   resourceVersion unchanged, so the action stays
+                   NEEDS_RECONCILIATION (UNCHANGED_IN_DOUBT). After the 30 s
+                   settle delay a reconcile pass sends the metadata-only fence,
+                   which commits: CONFLICT with basis FENCED, the fence marker
+                   on the Deployment and metadata.generation unchanged (no
+                   rollout). The policy is then removed and a new proposal must
+                   be admitted and APPLIED.
 
 Safety rules: --context is required and must be in ALLOWED_CONTEXTS. Any
 context or cluster naming sentinel-lab is refused. The harness creates its own
 namespace with a zero-replica Deployment, makes every Executor read and patch
 with a short-lived ServiceAccount token scoped to that one Deployment, and
-deletes the namespace on exit, also after a failure. Guard is not under test:
+deletes the namespace on exit, also after a failure. The admission-deny policy
+and its binding are cluster-scoped, match only that namespace and Deployment
+name, and are deleted on exit too. Guard is not under test:
 the harness authorizes its own proposals. The summary it writes has no token,
 kubeconfig, server address or local path. It is never run by the unit tests.
 """
@@ -30,6 +42,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import time
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,6 +51,7 @@ if str(ROOT) not in sys.path:
 
 from services.executor.core import ACTION_ANNOTATION, ExecutionAdapters, GuardCheck, execute, reconcile
 from services.executor.kubernetes_adapter import KubectlDeploymentAPI
+from services.executor.reconciliation import FENCE_ANNOTATION
 from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedger, TargetBusy, fingerprint
 from services.guard.preview import _private_file
 from shared import log
@@ -45,16 +59,20 @@ from shared import log
 
 ALLOWED_CONTEXTS = frozenset({"kind-sentinel-boutique-connected", "kind-sentinel-wedge"})
 PROTECTED = "sentinel-lab"
-SCENARIOS = ("rv-race", "delete-recreate")
+SCENARIOS = ("rv-race", "delete-recreate", "admission-deny")
 RESTRICTED_CONTEXT = "sentinel-wedge-executor"
 LOG = log.get_logger("validation")
 SERVICE_ACCOUNT = "sentinel-wedge-executor"
 NAME = "wedge-target"
 RECONCILE_PASSES = 5
+FENCE_AFTER_SECONDS = 30
+POLICY_WAIT_ATTEMPTS = 30
+MANAGED_BY = "sentinel-wedge-harness"
 _SECRET_KEYS = frozenset({"token", "kubeconfig", "server", "certificate-authority-data", "client-key-data",
                           "client-certificate-data", "password"})
 EXPECTED = {"rv-race": ("SUPERSEDED", "ADVANCED_WITHOUT_EVIDENCE"),
-            "delete-recreate": ("SUPERSEDED", "TARGET_REPLACED")}
+            "delete-recreate": ("SUPERSEDED", "TARGET_REPLACED"),
+            "admission-deny": ("CONFLICT", "FENCED")}
 
 
 class Refused(ValueError):
@@ -126,6 +144,33 @@ def manifests(namespace):
     return deployment, rbac
 
 
+def admission_policy(name, namespace):
+    """A temporary policy that denies Pod template changes to the one target, and allows metadata changes.
+
+    The Executor's write changes the template, so it is rejected with the UID and
+    resourceVersion unchanged. The fence changes only an annotation, so it passes.
+    """
+    labels = {"app.kubernetes.io/managed-by": MANAGED_BY}
+    policy = {
+        "apiVersion": "admissionregistration.k8s.io/v1", "kind": "ValidatingAdmissionPolicy",
+        "metadata": {"name": name, "labels": labels},
+        "spec": {"failurePolicy": "Fail",
+                 "matchConstraints": {"resourceRules": [{"apiGroups": ["apps"], "apiVersions": ["v1"],
+                                                         "operations": ["UPDATE"], "resources": ["deployments"]}]},
+                 "matchConditions": [{"name": "wedge-target-only", "expression": f"object.metadata.name == '{NAME}'"}],
+                 "validations": [{"expression": "object.spec.template == oldObject.spec.template",
+                                  "message": "Wedge harness: Pod template changes are denied"}]},
+    }
+    binding = {
+        "apiVersion": "admissionregistration.k8s.io/v1", "kind": "ValidatingAdmissionPolicyBinding",
+        "metadata": {"name": name, "labels": labels},
+        "spec": {"policyName": name, "validationActions": ["Deny"],
+                 "matchResources": {"namespaceSelector": {
+                     "matchLabels": {"kubernetes.io/metadata.name": namespace}}}},
+    }
+    return [policy, binding]
+
+
 class HarnessAuthorizer:
     """Guard is not under test here: allow exactly the harness's own proposals."""
 
@@ -146,18 +191,22 @@ class HarnessAuthorizer:
 
 
 class WedgeHarness:
-    def __init__(self, context, scenario, run_dir, *, runner=subprocess.run, kubectl="kubectl"):
+    def __init__(self, context, scenario, run_dir, *, runner=subprocess.run, kubectl="kubectl",
+                 clock=None, sleep=time.sleep):
         self.context = check_context(context)
         if scenario not in SCENARIOS:
             raise Refused("Unknown scenario")
         self.scenario, self.runner, self.kubectl_path = scenario, runner, kubectl
+        self.clock, self.sleep = clock or (lambda: datetime.now(UTC)), sleep
         self.directory = Path(run_dir).resolve()
         self.directory.mkdir(parents=True, exist_ok=False)
         self.namespace = "sentinel-wedge-" + uuid4().hex[:8]
+        self.policy_name = self.namespace + "-deny-template"
         self.cluster_id = context
         self.credentials = self.directory / ".executor-kubeconfig.json"
         self.secrets = []
         self.namespace_created = False
+        self.policy_created = False
         self.patch_processes = 0
         self.summary = {"scenario": scenario, "context": context, "namespace": self.namespace,
                         "started_at": utc(), "status": "RUNNING", "checks": [], "results": [],
@@ -192,14 +241,21 @@ class WedgeHarness:
         deployment = self.deployment()
         metadata = deployment["metadata"]
         evidence = (metadata.get("annotations") or {}).get(ACTION_ANNOTATION)
+        fence = (metadata.get("annotations") or {}).get(FENCE_ANNOTATION)
         record = {"label": label, "resource_version": metadata["resourceVersion"],
                   "generation": metadata.get("generation"), "uid_is_original": metadata["uid"] == self.original_uid,
                   "evidence_action_id": json.loads(evidence)["action_id"] if evidence else None,
+                  "fence_action_id": json.loads(fence)["action_id"] if fence else None,
                   "field_managers": sorted({entry.get("manager", "") for entry in metadata.get("managedFields", [])}),
                   "template_is_baseline": (fingerprint(deployment["spec"]["template"])
                                            == self.baseline["template_sha256"])}
         self.summary.setdefault("ground_truth", []).append(record)
         return deployment
+
+    def truth(self, label):
+        """Record ground truth and return the summary row rather than the object."""
+        self.ground_truth(label)
+        return self.summary["ground_truth"][-1]
 
     # Setup -----------------------------------------------------------------
 
@@ -268,11 +324,13 @@ class WedgeHarness:
                 "evidence_refs": ["wedge-harness"]}
 
     def adapters(self, target, runner):
+        """Fencing is on in every scenario, with the settle delay recommended for live runs."""
         api = KubectlDeploymentAPI(context=RESTRICTED_CONTEXT, cluster_id=self.cluster_id,
                                    kubeconfig=self.credentials, allowed_targets=[target], runner=runner,
-                                   kubectl=self.kubectl_path)
+                                   kubectl=self.kubectl_path, clock=self.clock)
         return ExecutionAdapters(ledger=self.ledger, coordination=self.locks, cluster=api,
-                                 authorizer=HarnessAuthorizer(self.baseline))
+                                 authorizer=HarnessAuthorizer(self.baseline), clock=self.clock,
+                                 fence_after_seconds=FENCE_AFTER_SECONDS)
 
     def record(self, label, result, adapters, patches_before):
         """One summary row, counted only from the adapters and kubectl patches of this step.
@@ -285,8 +343,8 @@ class WedgeHarness:
         basis = details[len("[basis="):details.index("]")] if details.startswith("[basis=") else None
         self.summary["results"].append({
             "label": label, "status": result["status"], "basis": basis, "passes": len(adapters),
-            "write_attempts": sum(item.cluster.stats["write_attempts"] for item in adapters),
-            "successful_writes": sum(item.cluster.stats["successful_writes"] for item in adapters),
+            **{key: sum(item.cluster.stats[key] for item in adapters)
+               for key in ("write_attempts", "successful_writes", "fence_attempts", "successful_fences")},
             "patch_processes": self.patch_processes - patches_before})
         return result["status"], basis
 
@@ -306,6 +364,8 @@ class WedgeHarness:
                                  "--overwrite")
                 return self.counted(command, **kwargs)
             return race
+        if self.scenario == "admission-deny":
+            return self.counted  # The API server itself rejects the write.
 
         def stop(command, **kwargs):
             if "patch" in command:
@@ -313,12 +373,61 @@ class WedgeHarness:
             return self.counted(command, **kwargs)
         return stop
 
+    def template_change_denied(self):
+        """A server-side dry run of a Pod template change; it commits nothing."""
+        edit = json.dumps({"spec": {"template": {"metadata": {"annotations": {"sentinel.io/wedge-probe": "1"}}}}})
+        return bool(self.kubectl("patch", "deployment", NAME, "--type=merge", "--patch", edit, "--dry-run=server",
+                                 allow_failure=True).returncode)
+
+    def await_policy(self, denied, label):
+        """Admission policies take effect asynchronously: probe until the expected answer, bounded."""
+        for attempt in range(POLICY_WAIT_ATTEMPTS):
+            if self.template_change_denied() == denied:
+                self.summary[label] = attempt + 1
+                return True
+            self.sleep(1)
+        return False
+
+    def install_policy(self):
+        """Apply the deny policy, then wait until a template change is denied."""
+        self.policy_created = True  # Set first: an apply that fails on the client may still have succeeded.
+        self.apply(admission_policy(self.policy_name, self.namespace), "admission-policy")
+        if not self.await_policy(True, "policy_enforced_after_probes"):
+            raise RuntimeError("The admission policy was not enforced in time")
+
+    def remove_policy(self, *, wait=False):
+        """Delete the binding, then the policy; both are cluster-scoped and outlive the namespace."""
+        results = [self.kubectl("delete", kind, self.policy_name, "--ignore-not-found", namespaced=False,
+                                allow_failure=True).returncode
+                   for kind in ("validatingadmissionpolicybinding", "validatingadmissionpolicy")]
+        removed = not any(results)
+        self.summary["policy_deleted"] = removed
+        return removed and (not wait or self.await_policy(False, "policy_lifted_after_probes"))
+
+    def await_settle(self, first):
+        """admission-deny: the write is in doubt until the settle delay passes; then the fence may go."""
+        early = self.adapters(first["target"], self.counted)
+        status, basis = self.record("reconcile before the settle delay", reconcile(first, early), [early],
+                                    self.patch_processes)
+        self.check("the denied write stays in doubt before the settle delay",
+                   (status, basis) == ("NEEDS_RECONCILIATION", "UNCHANGED_IN_DOUBT") and
+                   early.cluster.stats["fence_attempts"] == 0, observed=[status, basis])
+        truth = self.truth("after the denied write")
+        self.check("the denied write left the resource version unchanged",
+                   truth["resource_version"] == first["based_on_resource_version"])
+        self.sleep(FENCE_AFTER_SECONDS + 1)
+
     def run_scenario(self):
+        if self.scenario == "admission-deny":
+            self.install_policy()
         first = self.proposal("first")
+        before = self.truth("before first action") if self.scenario == "admission-deny" else None
         adapters = self.adapters(first["target"], self.scenario_runner())
-        started = datetime.now(UTC)
+        started = self.clock()
         try:
             self.record("execute", execute(first, adapters), [adapters], 0)
+            if self.scenario == "admission-deny":
+                self.await_settle(first)
         except StopBeforeSend:
             # The adapter counts the attempt before it starts kubectl, so write_attempts is 1 here
             # while patch_processes stays 0: the patch never left this process.
@@ -333,7 +442,7 @@ class WedgeHarness:
         reconciled = [reconcile(first, pass_adapters) for pass_adapters in passes]
         self.summary["reconcile_pass_statuses"] = [item["status"] for item in reconciled]
         status, basis = self.record("reconcile", reconciled[-1], passes, patches_before)
-        self.summary["time_to_resolution_seconds"] = round((datetime.now(UTC) - started).total_seconds(), 3)
+        self.summary["time_to_resolution_seconds"] = round((self.clock() - started).total_seconds(), 3)
         expected = EXPECTED[self.scenario]
         self.check("first action resolves as " + "/".join(expected), (status, basis) == expected,
                    observed=[status, basis])
@@ -341,7 +450,14 @@ class WedgeHarness:
         self.summary["patch_processes_for_first_action"] = self.patch_processes
         if self.scenario == "delete-recreate":
             self.check("no patch reached kubectl for the first action", self.patch_processes == 0)
-        self.ground_truth("after first action")
+        after = self.truth("after first action")
+        if self.scenario == "admission-deny":
+            self.check("exactly one fence was sent", self.summary["results"][-1]["fence_attempts"] == 1)
+            self.check("the fence marker names the first action", after["fence_action_id"] == first["action_id"])
+            self.check("generation is unchanged, so the fence started no rollout",
+                       after["generation"] == before["generation"])
+            self.check("the Pod template is unchanged", after["template_is_baseline"] == before["template_is_baseline"])
+            self.check("the admission policy is removed", self.remove_policy(wait=True))
         second = self.proposal("second")
         try:
             self.ledger.prepare(second)
@@ -361,6 +477,8 @@ class WedgeHarness:
     def cleanup(self):
         self.credentials.unlink(missing_ok=True)
         self.summary["private_credentials_removed"] = not self.credentials.exists()
+        if self.policy_created:
+            self.remove_policy()
         if self.namespace_created:
             result = self.kubectl("delete", "namespace", self.namespace, "--wait=false", "--ignore-not-found",
                                   namespaced=False, allow_failure=True)
@@ -408,7 +526,7 @@ def parse_args(argv):
     return parser.parse_args(argv)
 
 
-def main(argv=None, *, runner=subprocess.run):
+def main(argv=None, *, runner=subprocess.run, clock=None, sleep=time.sleep):
     args = parse_args(argv)
     try:
         check_context(args.context)
@@ -417,7 +535,7 @@ def main(argv=None, *, runner=subprocess.run):
         return 2
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     directory = args.run_dir or ROOT / "data/sentinel/runs" / f"executor-wedge-{stamp}-{args.scenario}"
-    harness = WedgeHarness(args.context, args.scenario, directory, runner=runner)
+    harness = WedgeHarness(args.context, args.scenario, directory, runner=runner, clock=clock, sleep=sleep)
     try:
         summary = harness.run()
     except Refused as exc:

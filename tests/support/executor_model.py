@@ -10,10 +10,17 @@ host keeps its ledger across a crash, like a file on disk; everything else in
 the process is lost. At the end every request still in flight is delivered or
 lost, then each host runs restart reconcile passes with nothing else changing.
 
+With fencing on (the default, fence_after=30 s), a reconcile pass fences a
+write still in doubt. Fences can be answered, lose their response, stay in
+flight or never arrive, and the process can crash around every fence step.
+Their fates come from a second generator seeded from the schedule's seed, so
+the schedules are the same with fencing on and off. In the final passes the
+API server answers every fence (its response may still be lost).
+
 The checker compares what each host records with ground truth from the
-simulator. Invariants (I) and the peer-adoption check (P1) are checked on
-every recorded result or step; the liveness property (L1) after the final
-passes. See INVARIANTS.
+simulator. Invariants (I), the fence checks (F) and the peer-adoption check
+(P1) are checked on every recorded result or step; the liveness property (L1)
+after the final passes. See INVARIANTS.
 
 Assumptions, as in the Executor guide: other writers never write this action's
 evidence annotation; a resourceVersion never repeats; requests are tested
@@ -23,7 +30,7 @@ modelled: Guard validation always allows, and no new action is executed.
 
 import argparse
 from collections import Counter
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
 from datetime import datetime, timedelta, UTC
 import json
 import os
@@ -33,7 +40,7 @@ import sys
 
 from services.executor import core
 from services.executor import store
-from tests.support.sim_apiserver import PatchFailed, SimAPIServer, SimDeploymentAPI
+from tests.support.sim_apiserver import FENCE_ANNOTATION, PatchFailed, SimAPIServer, SimDeploymentAPI
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -55,27 +62,40 @@ INVARIANTS = {
            "or, unless it is a FAILED from a host that sent no write, while any write of it can."),
     "L1": ("After every request is delivered or lost and nothing else changes, if the target is provably "
            "beyond commit, every journaled host is done within the reconcile passes and a new proposal "
-           "for the same workload is admitted."),
+           "for the same workload is admitted. With fencing on, a host still in doubt at the end fails L1 "
+           "even if the target is not beyond commit."),
+    "F1": ("At most one request tested at V0 commits, so a fence never commits together with a write or another "
+           "fence of the action; and CONFLICT/FENCED is recorded only by a host whose own fence committed."),
+    "F2": ("Write-ahead fencing: a host sends a fence only after journaling its nonce, so while its committed "
+           "fence is still on the object it records CONFLICT/FENCED, never SUPERSEDED."),
     "P1": ("Peer adoption: a host never records CONFLICT while a peer's committed write of the action "
            "is still on the object (same UID, template and evidence); it reports APPLIED instead."),
     "X": "The Executor raised an unexpected exception.",
 }
-SAFETY = ("I1", "I2", "I3", "I5", "X")
+SAFETY = ("I1", "I2", "I3", "I5", "F1", "X")
 LIVENESS = ("I4", "L1")
 # Not in the design's I1-I5: a peer-unaware Executor stays safe but reports CONFLICT for an applied action.
 ADOPTION = ("P1",)
+# A host that forgets its own fence stays safe (SUPERSEDED) but can no longer prove the write did not commit.
+FENCING = ("F2",)
+FENCE_AFTER = 30.0
 
+_FENCE_CRASHES = ("ledger.record_fence.before", "ledger.record_fence.after", "fence.send.before",
+                  "fence.send.after", "fence.commit.after", "ledger.confirm_fence.after")
 EXECUTE_CRASHES = ("ledger.prepare.before", "ledger.prepare.after", "read", "ledger.record_validation.after",
                    "ledger.start_write.before", "ledger.start_write.after", "send.before", "send.after",
-                   "commit.after", "ledger.finish.before", "ledger.finish.after")
+                   "commit.after", "ledger.finish.before", "ledger.finish.after") + _FENCE_CRASHES
 RECONCILE_CRASHES = ("ledger.adopt.before", "ledger.adopt.after", "read", "ledger.finish.before",
-                     "ledger.finish.after", "ledger.schedule_reconcile.before", "ledger.schedule_reconcile.after")
+                     "ledger.finish.after", "ledger.schedule_reconcile.before",
+                     "ledger.schedule_reconcile.after") + _FENCE_CRASHES
 _WEIGHTED_STEPS = ((("execute", "A"), 4), (("execute", "B"), 2), (("reconcile", "A"), 3), (("reconcile", "B"), 1),
                    (("deliver", None), 3), (("drop", None), 1), (("external", None), 2), (("outage", None), 1),
                    (("clock", None), 1))
 _EXTERNAL = (("bump", 3), ("erase-evidence", 2), ("template", 2), ("restore-template", 1), ("delete", 1),
              ("recreate", 1))
 _FATES = (("ok", 25), ("lost", 20), ("queued", 40), ("race", 15), ("peer-race", 10))
+_FENCE_FATES = (("ok", 40), ("lost", 20), ("queued", 25), ("dropped", 15))
+_FINAL_FENCE_FATES = (("ok", 1), ("lost", 1))
 _KNOWN_REFUSALS = ("No journaled write exists to reconcile",)  # Pre-table executors refuse a peer reconcile.
 
 
@@ -205,7 +225,8 @@ class _AllowAuthorizer:
 class _Journal:
     """Ledger proxy: crash points around every journal write, and result checks."""
 
-    _WRITES = frozenset({"prepare", "record_validation", "start_write", "adopt", "schedule_reconcile", "finish"})
+    _WRITES = frozenset({"prepare", "record_validation", "start_write", "adopt", "schedule_reconcile", "finish",
+                         "record_fence", "confirm_fence"})
 
     def __init__(self, ledger, run, host):
         self._ledger, self._run, self._host = ledger, run, host
@@ -230,13 +251,26 @@ class _Host:
         self.name = name
         self.ledger = store.SQLiteExecutionLedger(":memory:")
         self.cluster = SimDeploymentAPI(run.server, name, action_id=run.action_id, clock=run.clock, point=run.point)
+        options = {"fence_after_seconds": run.fence_after} if run.fencing else {}
         self.adapters = core.ExecutionAdapters(ledger=_Journal(self.ledger, run, name), coordination=_NoLock(),
                                                cluster=self.cluster, authorizer=_AllowAuthorizer(run),
-                                               clock=run.clock)
+                                               clock=run.clock, **options)
 
     def phase(self, action_id):
         row = self.ledger.get(action_id)
         return row["phase"] if row is not None else None
+
+    def fence_nonces(self, action_id):
+        """Nonces this host journaled; none for an Executor that cannot fence."""
+        fences = getattr(self.ledger, "fences", None)
+        return {fence["nonce"] for fence in fences(action_id)} if fences is not None else set()
+
+
+def _fence_nonce(request):
+    """The nonce in a fence request's marker annotation."""
+    value = request.operations[-1]["value"]
+    annotation = value.get(FENCE_ANNOTATION) if isinstance(value, dict) else value
+    return json.loads(annotation)["nonce"]
 
 
 def _default_execute(proposal, adapters):
@@ -247,13 +281,24 @@ def _default_reconcile(proposal, adapters):
     return core.reconcile(proposal, adapters)
 
 
+def can_fence():
+    """True if the Executor under test has the fencing option."""
+    return any(item.name == "fence_after_seconds" for item in fields(core.ExecutionAdapters))
+
+
 class Run:
-    def __init__(self, schedule, *, execute=None, reconcile=None, passes=PASSES, fixtures=None):
+    def __init__(self, schedule, *, execute=None, reconcile=None, passes=PASSES, fixtures=None,
+                 fence_after=FENCE_AFTER):
         fixtures = fixtures or load_fixtures()
         self.schedule = schedule
         self.execute = execute or _default_execute
         self.reconcile = reconcile or _default_reconcile
         self.passes = passes
+        self.fence_after = fence_after
+        self.fencing = fence_after is not None and can_fence()
+        # A separate generator, so fence fates never change the schedule itself.
+        self.fence_rng = random.Random(f"fence-{schedule.seed}")
+        self.final = False
         self.proposal = fixtures["proposal"]
         self.baseline = fixtures["baseline"]
         self.action_id = self.proposal["action_id"]
@@ -282,7 +327,7 @@ class Run:
 
     def settled(self):
         """DONE rows only replay their result, so once all hosts are done nothing can change."""
-        return (not self.server.in_flight(self.action_id)
+        return (not self.server.in_flight(self.action_id, kind=None)
                 and all(host.phase(self.action_id) == "DONE" for host in self.hosts.values()))
 
     def violate(self, code, message):
@@ -291,8 +336,14 @@ class Run:
 
     def point(self, name):
         if name == "send.before" and self.call is not None:
-            if any(r.host == self.call["host"] and r.action_id == self.action_id for r in self.server.requests):
+            if any(r.host == self.call["host"] and r.action_id == self.action_id and r.kind == "write"
+                   for r in self.server.requests):
                 self.violate("I1", f"host {self.call['host']} sends a second write for the action")
+        if name == "fence.send.after" and self.call is not None:
+            host = self.call["host"]
+            sent = [r for r in self.server.requests if r.host == host and r.kind == "fence"][-1]
+            if _fence_nonce(sent) not in self.hosts[host].fence_nonces(self.action_id):
+                self.violate("F2", f"host {host} sent fence #{sent.number} before journaling its nonce")
         if self.call is not None and self.call["crash"] == name and not self.call["crashed"]:
             self.call["crashed"] = True
             raise SimulatedCrash(name)
@@ -316,8 +367,21 @@ class Run:
                 self.violate("I5", f"host {host} records {status} while its own request can still commit")
             elif live and not (status == "FAILED" and not sent):
                 self.violate("I5", f"host {host} records {status} while request #{live[0].number} can still commit")
+        basis = _basis(result)
+        if basis == "/FENCED" and not self.server.committed(self.action_id, host, kind="fence"):
+            self.violate("F1", f"host {host} records {status}/FENCED but none of its fences committed")
+        if status == "SUPERSEDED" and basis == "/ADVANCED_WITHOUT_EVIDENCE" and self.own_fence_visible(host):
+            self.violate("F2", f"host {host} records SUPERSEDED although its own committed fence is on the object")
         peer = " (peer write)" if "adopted peer write" in str(result.get("details")) else ""
-        self.outcome.statuses.setdefault(host, []).append(status + _basis(result) + peer)
+        self.outcome.statuses.setdefault(host, []).append(status + basis + peer)
+
+    def own_fence_visible(self, host):
+        """True if the object still carries the marker of a fence from host that committed."""
+        if not self.server.present or self.server.uid != self.uid0:
+            return False
+        annotation = (self.server.deployment["metadata"].get("annotations") or {}).get(FENCE_ANNOTATION)
+        nonce = json.loads(annotation)["nonce"] if annotation else None
+        return any(_fence_nonce(r) == nonce for r in self.server.committed(self.action_id, host, kind="fence"))
 
     def committed_write_visible(self):
         """True if the live object still is exactly what a committed write of the action left:
@@ -337,6 +401,10 @@ class Run:
         if len(self.server.committed(self.action_id)) > 1 and not any(
                 code == "I1" and "commit" in message for code, _, message in self.outcome.violations):
             self.violate("I1", "more than one write of the action committed")
+        fences = self.server.committed(self.action_id, kind="fence")
+        if fences and (self.server.committed(self.action_id) or len(fences) > 1) and not any(
+                code == "F1" and "together" in message for code, _, message in self.outcome.violations):
+            self.violate("F1", "a fence committed together with another fence or a write of the action")
 
     # Steps ----------------------------------------------------------------
 
@@ -347,6 +415,7 @@ class Run:
         host.cluster.last_read_ok = False
         if fate is not None:
             host.cluster.fate = fate
+        host.cluster.fence_fate = _pick(self.fence_rng, _FINAL_FENCE_FATES if self.final else _FENCE_FATES)
         function = self.execute if kind == "execute" else self.reconcile
         text = label
         try:
@@ -365,6 +434,7 @@ class Run:
                 self.violate("X", f"{kind}@{host_name} raised {type(exc).__name__}: {exc}")
         finally:
             host.cluster.fate = "ok"
+            host.cluster.fence_fate = "ok"
             host.cluster.outage = False
             self.call = None
         self.outcome.trace.insert(position, text)
@@ -375,7 +445,7 @@ class Run:
                                "although the target is beyond commit")
 
     def _request(self, which):
-        requests = self.server.in_flight(self.action_id)
+        requests = self.server.in_flight(self.action_id, kind=None)
         if not requests:
             return None
         return requests[0] if which == "oldest" else requests[-1]
@@ -441,15 +511,17 @@ class Run:
 
     def finish(self):
         self.step = "end"
-        for index, request in enumerate(self.server.in_flight(self.action_id)):
+        for index, request in enumerate(self.server.in_flight(self.action_id, kind=None)):
+            label = "fence " if request.kind == "fence" else ""
             if self.schedule.drain[index % len(self.schedule.drain)]:
                 committed = self.server.deliver(request)
-                self.outcome.trace.append(f"drain #{request.number} from {request.host} -> "
+                self.outcome.trace.append(f"drain {label}#{request.number} from {request.host} -> "
                                           + ("committed" if committed else "rejected"))
             else:
                 self.server.drop(request)
-                self.outcome.trace.append(f"drain #{request.number} from {request.host} -> lost")
+                self.outcome.trace.append(f"drain {label}#{request.number} from {request.host} -> lost")
         self.check_commits()
+        self.final = True
         for number in range(self.passes):
             self.now += timedelta(seconds=61)
             for name, host in self.hosts.items():
@@ -460,9 +532,16 @@ class Run:
         if not journaled:
             self.outcome.category = "never-journaled"
             return
+        self.check_commits()
         if not self.beyond_commit():
             # Every request was lost and nothing else wrote: no read can tell lost from late.
             self.outcome.category = "unprovable"
+            if self.fencing:
+                # A fence turns this case into a proof, so nothing may stay in doubt.
+                for name in journaled:
+                    if self.hosts[name].phase(self.action_id) in OPEN:
+                        self.violate("L1", f"host {name} is still in doubt after {self.passes} reconcile "
+                                           "passes although fencing is on")
             return
         self.outcome.category = "provable"
         for name in journaled:
@@ -568,10 +647,14 @@ class Report:
     def adoption_holds(self):
         return not any(self.failures[code] for code in ADOPTION)
 
+    @property
+    def fencing_holds(self):
+        return not any(self.failures[code] for code in FENCING)
+
     def summary(self):
         return {"seeds": self.seeds, "steps_per_seed": STEPS, "reconcile_passes": PASSES,
                 "safety_holds": self.safety_holds, "liveness_holds": self.liveness_holds,
-                "adoption_holds": self.adoption_holds,
+                "adoption_holds": self.adoption_holds, "fencing_holds": self.fencing_holds,
                 "failing_seeds": {code: self.failures[code] for code in INVARIANTS
                                   if code != "X" or self.failures[code]},
                 "first_failing_seed": {code: outcome.schedule.seed for code, outcome in sorted(self.first.items())},
@@ -611,18 +694,21 @@ def main(argv=None):
                         help="number of seeds (default 2000 or SENTINEL_MODEL_SEEDS)")
     parser.add_argument("--start", type=int, default=0, help="first seed")
     parser.add_argument("--explain", action="store_true", help="print a minimal trace for each failing invariant")
+    parser.add_argument("--no-fence", action="store_true", help="run the Executor with fencing disabled")
     args = parser.parse_args(argv)
     seeds = range(args.start, args.start + args.seeds) if args.seeds is not None else seeds_from_environment()
-    report = check(seeds)
+    options = {"fence_after": None if args.no_fence else FENCE_AFTER}
+    report = check(seeds, **options)
     summary = report.summary()
     summary["executor"] = "decision-table" if hasattr(core, "classify") else "pre-table"
+    summary["fencing"] = options["fence_after"] is not None and can_fence()
     print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
     if args.explain:
         for code, outcome in sorted(report.first.items()):
-            print("\n" + explain(outcome, code), file=sys.stderr)
+            print("\n" + explain(outcome, code, **options), file=sys.stderr)
     if not report.safety_holds:
         return 1
-    return 0 if report.liveness_holds and report.adoption_holds else 2
+    return 0 if report.liveness_holds and report.adoption_holds and report.fencing_holds else 2
 
 
 if __name__ == "__main__":

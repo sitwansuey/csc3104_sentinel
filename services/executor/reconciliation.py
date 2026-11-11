@@ -15,8 +15,14 @@ So once the object is gone, has another UID, or has a version other than V0,
 the request can never commit, even if it is still in flight. Only "same UID,
 version still V0" stays in doubt. Versions are compared for equality only.
 
-The module has no I/O. FENCED and DEFINITE_REJECTION are reserved for later
-fencing and rejection-classification stages; production code supplies neither.
+A fence resolves that last case. It is a metadata-only patch with the same
+UID and resourceVersion == V0 tests that adds this action's fence marker. The
+API server linearizes the two requests, so at most one commits. A fence marker
+on the object, with a nonce this host journaled before sending it, proves that
+our write had not committed when the fence did, and it can never commit after.
+
+The module has no I/O. DEFINITE_REJECTION is reserved for a later
+rejection-classification stage; production code does not supply it.
 """
 
 from dataclasses import dataclass
@@ -29,7 +35,11 @@ from shared.canonical import canonical_json, sha256_hex as fingerprint
 
 
 ACTION_ANNOTATION = "sentinel.io/execution"
+# One annotation family for fences. The marker carries action_id, a nonce and an
+# optional ownership epoch, which later Coordinator-commanded fences may set.
+FENCE_ANNOTATION = "sentinel.io/fence"
 _EVIDENCE_FIELDS = frozenset({"action_id", "proposal_sha256", "target_uid", "template_sha256", "attempt_id"})
+_FENCE_FIELDS = frozenset({"action_id", "nonce"})
 _NONCE = re.compile(r"[a-f0-9]{32}\Z")
 _IDENTITY_FIELDS = ("cluster_id", "kind", "namespace", "name")
 
@@ -42,7 +52,7 @@ class Basis(str, Enum):
     TARGET_DELETED = "TARGET_DELETED"
     TARGET_REPLACED = "TARGET_REPLACED"
     ADVANCED_WITHOUT_EVIDENCE = "ADVANCED_WITHOUT_EVIDENCE"
-    FENCED = "FENCED"  # Reserved: nothing produces fence nonces yet.
+    FENCED = "FENCED"
     DEFINITE_REJECTION = "DEFINITE_REJECTION"  # Reserved: no rejection classifier yet.
     UNCHANGED_IN_DOUBT = "UNCHANGED_IN_DOUBT"
     READ_UNAVAILABLE = "READ_UNAVAILABLE"
@@ -89,13 +99,47 @@ def observe(snapshot: Any, target: Mapping[str, Any]) -> Optional[Observation]:
             return None
         annotations = metadata.get("annotations")
         evidence = annotations.get(ACTION_ANNOTATION) if isinstance(annotations, dict) else None
+        fence = annotations.get(FENCE_ANNOTATION) if isinstance(annotations, dict) else None
         template = deployment.get("spec", {}).get("template")
         digest = fingerprint(template) if isinstance(template, dict) else None
     except (AttributeError, KeyError, TypeError, ValueError, RecursionError):
         return None
     return Observation(present=True, uid=uid, resource_version=version,
                        evidence_annotation=evidence if isinstance(evidence, str) else None,
+                       fence_annotation=fence if isinstance(fence, str) else None,
                        template_sha256=digest)
+
+
+def fence_marker(action_id: str, nonce: str, epoch: Optional[int] = None) -> dict[str, Any]:
+    """The marker a fence writes under FENCE_ANNOTATION, as canonical JSON."""
+    marker: dict[str, Any] = {"action_id": action_id, "nonce": nonce}
+    if epoch is not None:
+        marker["epoch"] = epoch
+    return marker
+
+
+def valid_fence_marker(marker: Any) -> bool:
+    """True for {action_id, nonce} or {action_id, nonce, epoch} with a well-formed nonce."""
+    if not isinstance(marker, dict) or not _FENCE_FIELDS <= set(marker) <= _FENCE_FIELDS | {"epoch"}:
+        return False
+    action_id, nonce, epoch = marker["action_id"], marker["nonce"], marker.get("epoch", 0)
+    return (isinstance(action_id, str) and bool(action_id.strip()) and len(action_id) <= 1024
+            and isinstance(nonce, str) and _NONCE.fullmatch(nonce) is not None
+            and type(epoch) is int and epoch >= 0)
+
+
+def fence_nonce(annotation: Optional[str], action_id: str) -> Optional[str]:
+    """Return the nonce if the annotation is a canonical fence marker for this action."""
+    if not isinstance(annotation, str) or len(annotation) > 2048:
+        return None
+    try:
+        marker = json.loads(annotation)
+        if not valid_fence_marker(marker) or canonical_json(marker) != annotation:
+            return None
+    except (TypeError, ValueError, RecursionError):
+        return None
+    nonce = marker["nonce"]
+    return nonce if marker["action_id"] == action_id and isinstance(nonce, str) else None
 
 
 def action_attempt(annotation: Optional[str], proposal: Mapping[str, Any]) -> Optional[str]:
@@ -125,11 +169,14 @@ def action_attempt(annotation: Optional[str], proposal: Mapping[str, Any]) -> Op
 
 def classify(row: Optional[Mapping[str, Any]], proposal: Mapping[str, Any],
              observation: Optional[Observation], rejection: Any = None, *,
-             fence_nonces: frozenset[str] = frozenset()) -> Decision:
+             fence_nonces: frozenset[str] = frozenset(), fence_confirmed: bool = False) -> Decision:
     """Evaluate rows R0-R6 in order; the first match wins.
 
     row is the local ledger entry or None. V0 is its expected_version, or the
     proposal's based_on_resource_version for a stateless or adopted row.
+    fence_nonces are the fence nonces this host journaled before sending them;
+    fence_confirmed is True once a fence's own success response showed it
+    committed, so R4 still holds if another writer later strips the marker.
     """
     if observation is None:  # R0
         return Decision("NEEDS_RECONCILIATION", Basis.READ_UNAVAILABLE, None)
@@ -152,7 +199,10 @@ def classify(row: Optional[Mapping[str, Any]], proposal: Mapping[str, Any],
         if observation.template_sha256 == proposal["parameters"]["template_sha256"]:
             return Decision("APPLIED", Basis.EVIDENCE_MATCH, version, writer=writer)
         return Decision("SUPERSEDED", Basis.COMMITTED_THEN_OVERWRITTEN, version, writer=writer)
-    if observation.fence_annotation is not None and observation.fence_annotation in fence_nonces:  # R4
+    if fence_confirmed or fence_nonce(observation.fence_annotation, proposal["action_id"]) in fence_nonces:  # R4
+        if version == base:
+            # A committed fence always advances the version, like our own write.
+            return Decision("NEEDS_RECONCILIATION", Basis.INCONSISTENT, version)
         return Decision("CONFLICT", Basis.FENCED, version)
     if version != base:  # R5
         if rejection is not None:
