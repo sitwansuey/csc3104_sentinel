@@ -7,7 +7,12 @@ the full suite also exercises the optional native RCAEval adapter:
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt -r agent/datasets/requirements.txt
 .\.venv\Scripts\python.exe scripts/check_contracts.py
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
+.\.venv\Scripts\python.exe scripts/evidence/summarize.py --check
+.\.venv\Scripts\python.exe scripts/check_doc_links.py
 ```
+
+The last two fail when a generated results table is stale or hand-edited, a
+claim lacks evidence, or a Markdown link or anchor is dead.
 
 On Linux/macOS substitute `.venv/bin/python`. pip installs code dependencies,
 not the benchmark dataset or an Ollama model. Optional benchmark tests report

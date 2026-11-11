@@ -32,5 +32,7 @@ jobs:
       - run: python scripts/check_contracts.py
       - run: python experiments/validation/demo_offline_flow.py
       - run: python -m unittest discover -s tests -p "test_*.py" -v
+      - run: python scripts/evidence/summarize.py --check
+      - run: python scripts/check_doc_links.py
       - run: bash -n scripts/run-sentinel.sh
         if: runner.os == 'Linux'

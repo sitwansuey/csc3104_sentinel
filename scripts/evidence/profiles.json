@@ -1,0 +1,69 @@
+{
+  "schema": "sentinel-evidence-profiles-v1",
+  "note": "Allowlisted globs per run class. '*' stays inside one folder and '**' crosses folders. The code deny-list in collect.py always wins.",
+  "classes": {
+    "connected-harness": {
+      "description": "Connected Boutique walkthrough: two recoveries, crash reconciliation and an unnecessary rollback refused",
+      "include": ["summary.json", "rbac-checks.json", "dashboard-validation.json", "images.json", "policy.json",
+                  "primary-incident.json", "primary-storefront-impact.json", "crash-incident.json",
+                  "*/initial-guard.json", "*/execution.json", "*/outcome.json", "*/proposal.json",
+                  "*/reconciliation.json", "*/result.json"]
+    },
+    "agent": {
+      "description": "Connected Boutique with the live RCA agent and Ollama Recovery Planner",
+      "include": ["summary.json", "rbac-checks.json", "dashboard-validation.json", "images.json", "policy.json",
+                  "primary-incident.json", "primary-storefront-impact.json",
+                  "*/initial-guard.json", "*/execution.json", "*/outcome.json", "*/proposal.json",
+                  "*/model-proposal.json", "*/model-calls.json"]
+    },
+    "guard-rejection": {
+      "description": "Healthy service, unnecessary rollback proposed; Guard must refuse with zero Executor writes",
+      "include": ["summary.json", "rbac-checks.json", "dashboard-validation.json", "images.json", "policy.json",
+                  "*/guard-decision.json", "*/approved-guard-decision.json", "*/proof.json",
+                  "*/execution.json", "*/proposal.json"]
+    },
+    "shipping-lab": {
+      "description": "Single-service Boutique lab with operator-authored proposals",
+      "include": ["summary.json", "rbac-checks.json", "dashboard-validation.json", "images.json", "policy.json",
+                  "primary-incident.json", "crash-incident.json",
+                  "*/initial-guard.json", "*/execution.json", "*/outcome.json", "*/proposal.json",
+                  "*/reconciliation.json", "*/result.json"]
+    },
+    "provider-recovery": {
+      "description": "Connected Boutique driven by a configured provider script",
+      "include": ["summary.json", "rbac-checks.json", "dashboard-validation.json", "images.json", "policy.json",
+                  "primary-incident.json", "*/initial-guard.json", "*/execution.json", "*/outcome.json",
+                  "*/proposal.json"]
+    },
+    "ui-session": {
+      "description": "Browser-controlled session; records whether a scenario was ever triggered",
+      "include": ["summary.json", "lab-session.json", "rbac-checks.json", "images.json"]
+    },
+    "packaged": {
+      "description": "Packaged runner image driving the Boutique walkthrough",
+      "include": ["package-session.json", "host-cleanup.json", "bootstrap/environment.json",
+                  "data/evidence/summary.json", "data/evidence/dashboard-validation.json",
+                  "data/evidence/rbac-checks.json", "data/evidence/images.json",
+                  "data/evidence/*/initial-guard.json", "data/evidence/*/execution.json",
+                  "data/evidence/*/outcome.json", "data/evidence/*/proposal.json",
+                  "data/evidence/*/reconciliation.json", "data/evidence/*/result.json"]
+    },
+    "chaos-batch": {
+      "description": "Chaos Mesh fault batch: injection, cleanup and recovery windows; no Sentinel action",
+      "include": ["batch.json", "*/manifest.json", "*/outcome.json", "*/fault.json", "*/ground-truth.json",
+                  "*/timeline.jsonl"]
+    },
+    "security-lab": {
+      "description": "Protected Boutique security lab: mTLS gateway, bypass and outage probes",
+      "include": ["validation.json", "scan-inventory.json", "session.json"]
+    },
+    "observer-acceptance": {
+      "description": "Live Observer acceptance on Boutique: detection and duplicate suppression",
+      "include": ["summary.json", "images.json", "policy.json", "polls.json"]
+    },
+    "guard-eval": {
+      "description": "Offline Guard fixture evaluation (scripts/evaluate_guard.py)",
+      "include": ["results.json", "README.md"]
+    }
+  }
+}

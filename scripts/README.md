@@ -14,3 +14,7 @@ live under `experiments/validation/`.
 `demo-start.ps1`, `demo-stop.ps1` and `packaged-demo-common.ps1` retain the existing
 single-service container bootstrap. Dataset/evaluation entrypoints remain explicit
 and optional; none runs during ordinary application setup.
+
+`evidence/collect.py` copies one run into a sanitised bundle under `evidence/`;
+`evidence/summarize.py` regenerates [docs/results.md](../docs/results.md) from the
+bundles. `check_doc_links.py` fails on dead relative Markdown links and anchors.

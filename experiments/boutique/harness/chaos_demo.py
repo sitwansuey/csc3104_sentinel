@@ -6,7 +6,6 @@ import hashlib
 import json
 from pathlib import Path
 import signal
-import subprocess
 import sys
 import time
 from uuid import uuid4
@@ -16,6 +15,7 @@ from experiments.boutique.harness.chaos import (
     Cluster, deployments_ready, injected, scenario, setup, validate_scope,
 )
 from experiments.boutique.harness.collection import Collector, Writer, metric_rows, namespace_summary, save, utc
+from shared import provenance
 
 OWNER = "sentinel.dev/run-id"
 LOCK = "sentinel-chaos-demo-lock"
@@ -138,11 +138,7 @@ def preflight(cluster, config):
 
 
 def source_revision():
-    try:
-        result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=False)
-        return result.stdout.strip() if result.returncode == 0 else "unknown"
-    except OSError:
-        return "unknown"
+    return provenance.source_revision(ROOT)
 
 
 def checksum_files(directory):
@@ -357,7 +353,9 @@ def main(argv=None):
     order = config["faults"]
     batch = {"schema_version": 1, "batch_id": batch_id, "started_at": utc(), "configuration": config,
              "context": args.context, "namespace": args.namespace, "order": order, "runs": [],
-             "status": "planned" if args.dry_run else "running"}
+             "status": "planned" if args.dry_run else "running",
+             "provenance": provenance.collect(ROOT, tools=() if args.dry_run else ("kubectl", "kind", "helm"),
+                                              captured_by="chaos-demo")}
     save(batch_dir / "batch.json", batch)
     if args.dry_run:
         for fault in config["faults"]:

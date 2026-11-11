@@ -33,6 +33,7 @@ from services.guard.preview import _private_file
 from services.executor.kubernetes_adapter import KubectlDeploymentAPI, WriteOutcomeUnknown
 from services.observer.kubernetes_adapter import deployment_to_observation
 from services.observer.core import Observer
+from shared import provenance
 
 
 CONTEXT = "kind-sentinel-lab"
@@ -105,7 +106,8 @@ class Experiment:
         self.credentials = self.directory / ".executor-kubeconfig.json"
         self.summary = {"mode": "LIVE Kubernetes; restricted executor credentials",
                         "started_at": utc(), "checks": [], "status": "RUNNING",
-                        "scope": "single-node kind, local coordination; no Planner/Verifier implementation"}
+                        "scope": "single-node kind, local coordination; no Planner/Verifier implementation",
+                        "provenance": provenance.collect(ROOT), "timeline": []}
         self.baseline = None
         self.target = None
         self.store = SQLiteStore(self.directory / "coordinator.sqlite")
@@ -124,6 +126,10 @@ class Experiment:
 
     def deployment(self):
         return json.loads(self.kubectl("get", "deployment", self.name, "-o", "json").stdout)
+
+    def phase(self, name, scenario=None):
+        """Record a lifecycle step so evidence timings are measured, not typed."""
+        self.summary.setdefault("timeline", []).append({"phase": name, "at": utc(), "scenario": scenario})
 
     def check(self, name, **details):
         self.summary["checks"].append({"name": name, "passed": True, "at": utc(), **details})
@@ -251,6 +257,7 @@ class Experiment:
 
     def fault(self, label):
         self.inject_fault()
+        self.phase("fault_injected", label)
         deadline = time.monotonic() + 130
         while time.monotonic() < deadline:
             pods = json.loads(self.kubectl("get", "pods", "-l", "app=" + self.name, "-o", "json").stdout)
@@ -268,6 +275,7 @@ class Experiment:
             incident = observer.observe(observation)
             if incident:
                 save(self.directory / (label + "-incident.json"), incident)
+                self.phase("incident_observed", label)
                 handle(incident, self.store, self.bus)
                 return incident
             time.sleep(5)
@@ -301,6 +309,7 @@ class Experiment:
                   "policy_version": self.policy["policy_version"], "operator_id": "authorized-live-lab-operator",
                   "decision": "APPROVED", "approved_at": utc(), "expires_at": utc(now() + timedelta(seconds=180))}
         save(folder / "proposal.json", proposal)
+        self.phase("proposal_saved", label)
         save(folder / "dependencies.json", dependencies)
         save(folder / "approval.json", record if approval else None)
         if coordinator:
@@ -318,6 +327,7 @@ class Experiment:
             save(folder / "approval.json", record)
             decision = process_guard_requests(self.store, self.bus, **readers)[0]
             save(folder / "initial-guard.json", decision)
+            self.phase("guard_decision", label)
             require(decision["verdict"] == "ALLOW", "Initial Guard did not allow the approved lab proposal")
         return folder, proposal
 
@@ -407,6 +417,7 @@ class Experiment:
             require(adapters.cluster.stats["write_attempts"] == 1, "Duplicate or changed ID repeated a mutation")
             require(self.store.incident(incident["incident_id"])["state"] == "VERIFYING", "APPLIED must only route to VERIFYING")
             save(folder / "execution.json", result)
+            self.phase("execution_recorded", folder.name)
             save(folder / "transport-stats.json", adapters.cluster.stats)
             self.check("approved real rollback, duplicate replay and changed-ID rejection", status="APPLIED", writes=1,
                        coordinator_state="VERIFYING")
@@ -520,6 +531,7 @@ def main():
         return crash_worker(args.crash_worker)
     directory = args.run_dir or ROOT / "data/sentinel/runs" / ("executor-live-" + now().strftime("%Y%m%dT%H%M%SZ-") + uuid4().hex[:6])
     experiment = Experiment(directory)
+    experiment.summary["provenance"]["tools"] = provenance.tool_versions(("kubectl", "kind", "docker"))
     print("Live executor evidence: " + str(experiment.directory), flush=True)
     try:
         experiment.run()
