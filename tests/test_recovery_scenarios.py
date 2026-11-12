@@ -253,6 +253,15 @@ class ChaosCatalogTests(unittest.TestCase):
         self.assertEqual(scenarios.scenario("N2")["expected"]["guard_on_rollback"], "ROLLBACK_ALREADY_AT_BASELINE")
         self.assertEqual(scenarios.scenario("T1")["class"], "no_incident_expected")
 
+    def test_a_chaos_scenario_widened_to_another_scope_is_still_refused_there(self):
+        # The scope check itself, not only catalog validation, keeps Chaos Mesh faults on the connected lab.
+        catalog = scenarios.load()
+        item = dict(deepcopy(scenarios.scenario("N2")), scopes=["connected", "lab"])
+        self.assertEqual(scenarios.require_scope(item, **CONNECTED, catalog=catalog)["context"],
+                         "kind-sentinel-boutique-connected")
+        with self.assertRaisesRegex(CatalogError, "Chaos Mesh faults are limited to kind-sentinel-boutique-connected"):
+            scenarios.require_scope(item, **LAB, catalog=catalog)
+
     def test_chaos_injection_shape_and_scope_are_checked(self):
         self.refused("chaos must be one of", lambda c: scenario_in(c, "N2")["injection"].update(chaos="dns"))
         self.refused("chaos must be one of", lambda c: scenario_in(c, "N2")["injection"].update(chaos="http"))
