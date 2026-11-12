@@ -103,8 +103,8 @@ and `services/planner/change.py`:
 |---|---|---|
 | Vocabulary | `services/planner/taxonomy.py` (`vocabulary`, `vocabulary_context`), `services/rca/core.py` (`diagnose`) | The Reporter must pick the root cause component from the reviewed topology's services (`deploy/boutique/dependencies.json`, today only `shippingservice`) plus the target, and the reason from six fixed reasons: faulty configuration rollout, container startup failure, resource exhaustion, network fault, dependency failure and insufficient evidence. Names must be Kubernetes object names. The list is added to the context by code, never taken from telemetry, and the incident JSON before it is one line, so a quoted signal cannot add an entry. The schema enum and `validate_report` both enforce the lists. An answer outside them gets one correction; if the correction is still outside, the agent abstains (`ABSTAINED`). |
 | Evidence citation | `agent/agent.py` (`cite`, `unsupported_citation`) | Each reported failure must list 1 to 10 `evidence_ids`, chosen from the ids of the tool results the agent collected. An unknown id is invalid (one correction, then abstention). If a cited result's findings, events, examples, latency or components do not name the diagnosed component, the agent abstains without another model round. The cited ids are saved in the journal and passed to the Recovery Planner. |
-| Change evidence | `services/planner/change.py` (`template_change`, `change_evidence`) | Compares the live Pod template with the healthy baseline. Containers match by name, env entries by name and ports by containerPort, so reordering a list is not a change. Each change has a path, a kind (added, removed or modified) and a field class. Values are shown only for image, env, resources, ports and probe fields. An env value whose name looks secret (TOKEN, KEY, PASSWORD, SECRET and similar) or that uses `valueFrom` shows as `redacted`, and a value that matches the instruction-like rules shows as `withheld`. At most 20 changes are listed. It also reports the image and digest of each container, the Deployment's revision, generations and Progressing condition, and `change_age_bound_seconds`: the time from the baseline's healthy observation to the incident. A live template that differs from that baseline changed after it was observed healthy, so this bounds the change's age. The full templates never reach a prompt. |
-| Eligibility rule | `services/planner/taxonomy.py` (`rollback_eligibility`), `services/planner/agent_provider.py` (`AgentPlanner.__call__`) | ROLLBACK is eligible only when every diagnosed reason is faulty configuration rollout or container startup failure, the component is exactly the target, a signal reason shows a rollout, startup, crash or back-off symptom (unavailability alone does not), the live template differs from the baseline, and the change age bound is at most `max_change_age_seconds` (default 3600). The result, with its facts and codes, is saved in the journal with `decided_by: rule`. |
+| Change evidence | `services/planner/change.py` (`template_change`, `change_evidence`) | Compares the live Pod template with the healthy baseline. Containers match by name, env entries by name and ports by containerPort, so reordering a list is not a change. Each change has a path, a kind (added, removed or modified) and a field class. Values are shown only for the image, env, resources, ports and probe fields of a container; annotation, label and other Pod template changes show their path but never a value, whatever the key is called. An env value whose name looks secret (TOKEN, KEY, PASSWORD, SECRET, CREDENTIAL, CERT, AUTH and similar) or that uses `valueFrom` shows as `redacted`, and so does the user name and password part of a URL in an env value. A value or path that matches the instruction-like rules shows as `withheld`. At most 20 changes are listed. It also reports the image and digest of each container, the Deployment's revision, generations and Progressing condition, and `change_age_bound_seconds`: the time from the baseline's healthy observation to the incident. A live template that differs from that baseline changed after it was observed healthy, so this bounds the change's age. The full templates never reach a prompt. |
+| Eligibility rule | `services/planner/taxonomy.py` (`rollback_eligibility`), `services/planner/agent_provider.py` (`AgentPlanner.__call__`) | ROLLBACK is eligible only when every diagnosed failure has the reason faulty configuration rollout or container startup failure and names exactly the target as its component, a signal reason (never its detail, which quotes workload output) shows a rollout, startup, crash or back-off symptom (unavailability alone does not), the live template differs from the baseline, and the change age bound is at most `max_change_age_seconds` (default 3600). The result, with its facts and codes, is saved in the journal with `decided_by: rule`. |
 
 The agent config's `decision_policy` (set through `-AgentConfig`) chooses how
 the rule and the model combine. The names map to the evaluation policies of
@@ -114,7 +114,7 @@ roadmap item P4.04:
 |---|---|---|
 | `gated` (default) | P4 | The Recovery Planner also sees the change evidence. An ineligible case ends in the fixed escalation for its first code, without a Recovery Planner call. A model ROLLBACK for an ineligible case is overridden. The model may answer ESCALATE for an eligible case. |
 | `rule` | P1 | The rule decides alone: an eligible case gets a ROLLBACK to the trusted baseline with a fixed rationale, an ineligible one the fixed escalation. There is no Recovery Planner call. |
-| `model` | P3 | The model decides without change evidence, as before. Eligibility is still computed and saved but not enforced, so model-only behaviour stays measurable. The Guard still refuses a rollback that would change nothing. |
+| `model` | P3 | The model decides without change evidence. Eligibility is still computed and saved but not enforced, so model-only behaviour stays measurable. The vocabulary, evidence citation and other diagnosis checks still apply, so this is not the behaviour before these checks existed. The Guard still refuses a rollback that would change nothing. |
 
 With `gated`, `consult_model_when_ineligible: true` asks the model even for an
 ineligible case, so its choice is recorded for evaluation; a ROLLBACK is then
@@ -135,8 +135,11 @@ the target, so a diagnosis that names another service abstains at the citation
 check rather than reaching `names_target`. The age bound comes from the baseline
 time, so with an old baseline a genuine recent change is still refused
 (`CHANGE_NOT_RECENT`); the Deployment's own rollout facts are recorded but the
-rule does not use them. The remote Planner worker and provider mode do not use
-this context.
+rule does not use them. The Observer gives a container log line the reason
+`StartupError` when the line contains the word startup, so a log line can still
+supply the startup symptom through that reason. The remote Planner worker and
+provider mode do not use this context. The live harness checks the decision
+settings and the reviewed topology before any fault is injected.
 
 ## Telemetry volume and planning feedback
 
@@ -331,6 +334,7 @@ cannot outlive its lease. Each failure is saved by code:
 | `NO_ACTION_PROPOSED` | no | The Recovery Planner proposed no repair for an observed incident. |
 | `SUSPECTED_INJECTION` | no | The injection gate found instruction-like text in the telemetry or the diagnosis (see [Untrusted inputs](#untrusted-inputs)); decided by a code rule, without a Recovery Planner call. |
 | `TARGET_CHANGED` | no | The target was recreated, or its Pod template changed during the attempt. |
+| `DECISION_CONTEXT_INVALID` | no | Code could not compute the change evidence or the diagnosis vocabulary, for example because the baseline has no healthy observation time; a retry would fail the same way. No model is called. |
 | `INELIGIBLE_REASON`, `COMPONENT_NOT_TARGET`, `SYMPTOM_NOT_ROLLOUT`, `TEMPLATE_ALREADY_BASELINE`, `CHANGE_NOT_RECENT` | no | The eligibility rule refused a rollback (see [Code-owned decision context](#code-owned-decision-context)); decided by a code rule. The first failed check gives the code. |
 
 A retried code still failing after the third attempt ends in the saved

@@ -188,6 +188,11 @@ class LiveAgentTests(unittest.TestCase):
         status = json.loads((folder / "planning-status.json").read_text())
         self.assertEqual((status["attempts"], status["delivered"], status["proposal"]), (1, 1, proposal))
         self.assertEqual(status["attempt_usage"][0]["usage"]["planning_attempt"], 1)
+        # planning-status.json and summary.json both record who decided, under which policy.
+        decision = status["attempt_usage"][0]["usage"]["decision"]
+        self.assertEqual((decision["policy"], decision["decided_by"], decision["eligible"]), ("gated", "model", True))
+        self.assertEqual(harness.summary["planning_decision"], decision)
+        self.assertEqual(harness.summary["decision_policy"], "gated")
         self.assertEqual(json.loads((folder / "proposal.json").read_text()), proposal)
         harness.phase.assert_called_with("proposal_saved", "approved-rollback")
 
@@ -663,6 +668,18 @@ class ModelPreflightTests(unittest.TestCase):
                 self.root.mkdir()
                 self.assert_stopped_before_injection("preflight", "decision_policy|max_change_age_seconds|"
                                                      "consult_model_when_ineligible", **config)
+                self.assertEqual(self.server.paths(), [])
+
+    def test_invalid_topology_stops_before_inject_fault_without_a_model_call(self):
+        base = self.root
+        for number, text in enumerate(('{"nodes": ["Shipping Service"]}', '{"nodes": []}', "[]")):
+            with self.subTest(topology=text):
+                self.root = base / ("topology-" + str(number))
+                self.root.mkdir()
+                topology = self.root / "dependencies.json"
+                topology.write_text(text, encoding="utf-8")
+                with patch("experiments.boutique.harness.agent_live.TOPOLOGY", topology):
+                    self.assert_stopped_before_injection("preflight", "Component vocabulary|topology must list")
                 self.assertEqual(self.server.paths(), [])
 
     def test_ready_model_records_runtime_before_cluster_preparation(self):

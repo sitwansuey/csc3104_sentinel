@@ -11,7 +11,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from agent.agent import cite, extract_candidates, mentions
+from agent.agent import cite, extract_candidates, mentions, unsupported_citation
 from experiments.validation.demo_offline_flow import OfflineFlow, fixture
 from runtime.planner_pipeline import process_planner_requests
 from services.coordinator.core import handle
@@ -241,6 +241,48 @@ class DecisionContextTests(unittest.TestCase):
         self.current = self.planner()
         self.assert_ruled("SYMPTOM_NOT_ROLLOUT")
 
+    def test_symptom_words_in_an_untrusted_signal_detail_do_not_make_a_rollback_symptom(self):
+        # The detail quotes a workload log line; only the Observer's own reason counts.
+        incident = deepcopy(self.incident)
+        incident["signals"] = [s for s in incident["signals"] if s["reason"] == "UnavailableReplicas"]
+        incident["signals"].append({"evidence_id": "E-0123456789AB", "source": "container_log", "reason": "ContainerLog",
+                                    "detail": "demo-api: CrashLoopBackOff rollout startup backoff crash",
+                                    "at": incident["observed_at"]})
+        self.incident = incident
+        self.current = self.planner()
+        _, attempt = self.assert_ruled("SYMPTOM_NOT_ROLLOUT")
+        self.assertEqual(attempt["context"]["diagnosis"]["eligibility"]["facts"]["rollout_symptoms"], [])
+
+    def test_one_ineligible_reason_among_several_failures_escalates(self):
+        self.script.overrides["Reporter"] = lambda attempt: {"failures": [
+            {"root cause component": "demo-api", "root cause reason": STARTUP},
+            {"root cause component": "demo-api", "root cause reason": "resource exhaustion"}],
+            "explanation": "x", "limitations": "x"}
+        self.current = self.planner()
+        _, attempt = self.assert_ruled("INELIGIBLE_REASON")
+        self.assertEqual(attempt["context"]["diagnosis"]["eligibility"]["codes"], ["INELIGIBLE_REASON"])
+
+    def test_one_other_component_among_several_failures_is_never_rollback_eligible(self):
+        self.export = self.export_with_shipping
+        self.script.overrides["Reporter"] = lambda attempt: {"failures": [
+            {"root cause component": "demo-api", "root cause reason": STARTUP},
+            {"root cause component": "shippingservice", "root cause reason": STARTUP}],
+            "explanation": "x", "limitations": "x"}
+        self.current = self.planner()
+        saved, attempt = self.plan(self.current)
+        # The rule records COMPONENT_NOT_TARGET; the earlier names_target check ends the attempt first.
+        eligibility = attempt["context"]["diagnosis"]["eligibility"]
+        self.assertEqual((eligibility["decided_by"], eligibility["eligible"], eligibility["codes"]),
+                         ("rule", False, ["COMPONENT_NOT_TARGET"]))
+        self.assertEqual((saved["error_code"], saved["proposal"]["action"]), ("DIAGNOSIS_OFF_TARGET", "ESCALATE"))
+        self.assertEqual(self.script.asked, ["Analyzer", "Reporter"])
+        self.assertEqual(self.f.store.pending_routes("guard.request"), [])
+
+    def export_with_shipping(self, destination, incident):
+        DecisionContextTests.export(self, destination, incident)
+        with (destination / "logs.csv").open("a", encoding="utf-8") as stream:
+            stream.write("2026-10-10T12:00:30Z,shippingservice,Error invalid startup configuration\n")
+
     def test_model_rollback_on_an_ineligible_case_is_overridden_by_the_rule(self):
         self.deployment["spec"]["template"] = deepcopy(self.f.baseline["pod_template"])
         self.current = self.planner(consult_model_when_ineligible=True)
@@ -289,6 +331,17 @@ class DecisionContextTests(unittest.TestCase):
             with self.subTest(config=config), self.assertRaises(ValueError):
                 self.planner(**config)
 
+    def test_change_evidence_that_cannot_be_computed_ends_at_once_without_a_model_call(self):
+        planner = self.planner()
+        planner.baseline = {key: value for key, value in self.f.baseline.items() if key != "healthy_observed_at"}
+        saved, _ = self.plan(planner)
+        self.assertEqual((saved["error_code"], saved["attempts"], saved["delivered"]),
+                         ("DECISION_CONTEXT_INVALID", 1, 1))
+        self.assertEqual(saved["proposal"], escalation(self.incident, "DECISION_CONTEXT_INVALID"))
+        self.assertEqual(self.f.state(), "NEEDS_REVIEW")
+        self.assertEqual(self.script.asked, [])
+        self.assertEqual(planner.failures[-1]["code"], "DECISION_CONTEXT_INVALID")
+
     def test_every_ineligibility_code_has_a_fixed_rationale(self):
         for code in taxonomy.INELIGIBLE_CODES:
             with self.subTest(code=code):
@@ -308,6 +361,45 @@ class DecisionContextTests(unittest.TestCase):
                          ["CHANGE_NOT_RECENT"])
         self.assertEqual(rule(change={"changed": True, "change_age_bound_seconds": -1})["codes"],
                          ["CHANGE_NOT_RECENT"])
+
+    def test_eligibility_rule_needs_every_failure_to_qualify(self):
+        change = {"changed": True, "change_age_bound_seconds": 60}
+        startup = {"root cause component": "demo-api", "root cause reason": STARTUP}
+        rule = lambda *failures: taxonomy.rollback_eligibility(  # noqa: E731
+            self.incident, {str(n): f for n, f in enumerate(failures, 1)}, change, max_change_age_seconds=3600)
+        self.assertEqual(rule(startup, {**startup, "root cause reason": "faulty configuration rollout"})["codes"], [])
+        for order in ((0, 1), (1, 0)):
+            mixed = (startup, {**startup, "root cause reason": "resource exhaustion"})
+            with self.subTest(reasons=order):
+                result = rule(*(mixed[i] for i in order))
+                self.assertEqual((result["codes"], result["eligible"], result["decided_by"]),
+                                 (["INELIGIBLE_REASON"], False, "rule"))
+                self.assertFalse(result["facts"]["reasons_eligible"])
+            mixed = (startup, {**startup, "root cause component": "shippingservice"})
+            with self.subTest(components=order):
+                result = rule(*(mixed[i] for i in order))
+                self.assertEqual((result["codes"], result["eligible"]), (["COMPONENT_NOT_TARGET"], False))
+                self.assertFalse(result["facts"]["component_is_target"])
+
+    def test_symptoms_come_from_signal_reasons_never_from_details(self):
+        change = {"changed": True, "change_age_bound_seconds": 60}
+        prediction = {"1": {"root cause component": "demo-api", "root cause reason": STARTUP}}
+        incident = deepcopy(self.incident)
+        incident["signals"] = [{**s, "reason": "UnavailableReplicas",
+                                "detail": "CrashLoopBackOff rollout startup backoff crash"}
+                               for s in incident["signals"]]
+        result = taxonomy.rollback_eligibility(incident, prediction, change, max_change_age_seconds=3600)
+        self.assertEqual((result["codes"], result["facts"]["rollout_symptoms"]), (["SYMPTOM_NOT_ROLLOUT"], []))
+
+    def test_every_cited_result_must_name_the_component(self):
+        prediction = {"1": {"root cause component": "demo-api", "root cause reason": STARTUP}}
+        evidence = {"a": {"components": {"demo-api": 1}}, "b": {"components": {"frontend": 2}},
+                    "c": {"findings": [{"component": "demo-api"}]}}
+        self.assertIsNone(unsupported_citation(prediction, {"1": ["a", "c"]}, evidence))
+        for ids in (["a", "b"], ["b", "a"], ["b"]):
+            with self.subTest(ids=ids):
+                self.assertIn("does not name the diagnosed component",
+                              unsupported_citation(prediction, {"1": ids}, evidence))
 
 
 if __name__ == "__main__":

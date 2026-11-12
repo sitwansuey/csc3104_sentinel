@@ -12,7 +12,7 @@ from services.rca.core import DEFAULT_CONFIG
 from services.guard.common import json_sha256
 from services.planner.agent_provider import AgentPlanner, names_target, planning_budget
 from services.planner.store import PlannerStore
-from services.planner.taxonomy import policy as decision_policy
+from services.planner.taxonomy import components, policy as decision_policy
 from experiments.boutique.harness.durable_case import run_durable_case
 from experiments.recovery.live import require, save
 
@@ -24,6 +24,16 @@ PLANNING_FOLDER = "approved-rollback"
 MESSAGE_LIMIT = 2000
 # The reviewed Boutique topology: its nodes are the diagnosis's component vocabulary.
 TOPOLOGY = Path(__file__).resolve().parents[3] / "deploy/boutique/dependencies.json"
+
+
+def load_topology():
+    """The reviewed topology; ValueError unless its nodes are a valid component vocabulary."""
+    topology = json.loads(TOPOLOGY.read_text(encoding="utf-8"))
+    nodes = topology.get("nodes") if isinstance(topology, dict) else None
+    if not isinstance(nodes, list) or not nodes:
+        raise ValueError("The reviewed topology must list its nodes: " + TOPOLOGY.name)
+    components(nodes[0], topology)
+    return topology
 
 
 def csv_cell(text):
@@ -172,9 +182,10 @@ class AgentPlanningMixin:
         started = time.monotonic()
         try:
             config = self.load_agent_config()
-            # The Planner would refuse a bad budget or decision policy only after the fault is injected.
+            # The Planner would refuse a bad budget, decision policy or topology only after the fault is injected.
             planning_budget(config)
             decision_policy(config)
+            load_topology()
             llm = Ollama(config)
             llm.preflight()
             stage = "warm_up"
@@ -229,7 +240,7 @@ class AgentPlanningMixin:
                                telemetry=lambda destination, current: export_telemetry(
                                    self.directory, self.target, destination, incident=current),
                                deployment_reader=lambda target: self.deployment(), progress=progress,
-                               topology=json.loads(TOPOLOGY.read_text(encoding="utf-8")))
+                               topology=load_topology())
         self.event(3, "status", "Agent is diagnosing live Observer telemetry", target=self.target)
         started = time.monotonic()
         try:

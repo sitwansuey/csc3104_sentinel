@@ -34,6 +34,9 @@ TERMINAL_RATIONALES = {
                                  "Operator review is required. No repair is authorized.",
     "CHANGE_NOT_RECENT": "The template change cannot be shown to be recent. Decided by a code rule, not the "
                          "model. Operator review is required. No repair is authorized.",
+    "DECISION_CONTEXT_INVALID": "Sentinel could not compute the change evidence or the diagnosis vocabulary "
+                                "from the baseline, target and topology. Operator review is required. "
+                                "No repair is authorized.",
 }
 # What the journal keeps of an injection finding: rule ids and counts, never the text.
 INJECTION_FIELDS = ("decided_by", "rules", "suspicious_lines", "sources")

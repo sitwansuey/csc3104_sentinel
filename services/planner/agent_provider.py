@@ -308,7 +308,8 @@ class AgentPlanner:
             self.change = change_evidence(self.baseline, before[3], incident)
             vocabulary = taxonomy.vocabulary(incident["target"]["name"], self.topology)
         except (ValueError, KeyError, TypeError, AttributeError) as error:
-            raise self._failed(PlanningError("TARGET_UNREADABLE"), error) from error
+            # Built from the trusted baseline, the read Deployment and the topology: a retry cannot fix it.
+            raise self._failed(PlanningError("DECISION_CONTEXT_INVALID", terminal=True), error) from error
         try:
             self.telemetry(workspace / "telemetry", deepcopy(incident))
         except Exception as error:  # noqa: BLE001 - a failed export is a retryable, classified attempt failure

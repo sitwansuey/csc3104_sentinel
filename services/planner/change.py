@@ -4,12 +4,14 @@ The Recovery Planner cannot see full templates, so without this it cannot tell
 whether a rollback would change anything. template_change() compares the
 baseline Pod template with the live one. Containers are matched by name, env
 entries by name and ports by containerPort and protocol, so reordering a list
-is not a change. Values are shown only for image, env, resources, ports and
-probe fields. An env value whose name looks secret (TOKEN, KEY, PASSWORD,
-SECRET and similar) or that comes from valueFrom is shown as "redacted". Every
-shown value is cleaned and bounded, and a value that matches the
-instruction-like rules (agent/untrusted.py) is withheld, so configuration text
-cannot instruct the model. At most 20 changes are listed.
+is not a change. Values are shown only for the image, env, resources, ports and
+probe fields of a container; annotation, label and other keys never show a
+value, whatever their name. An env value whose name looks secret (TOKEN, KEY,
+PASSWORD, SECRET and similar) or that comes from valueFrom is shown as
+"redacted", and so is the user name and password part of a URL in an env
+value. Every shown value is cleaned and bounded, and a value or path that
+matches the instruction-like rules (agent/untrusted.py) is withheld, so
+configuration text cannot instruct the model. At most 20 changes are listed.
 
 change_evidence() adds the image digests per container, the Deployment's
 rollout facts (revision and generations) and a bound on how old the change can
@@ -30,7 +32,11 @@ REDACTED = "redacted"
 WITHHELD = "withheld"
 _CONTAINER_LISTS = frozenset({"containers", "initContainers", "ephemeralContainers"})
 _DIGEST = re.compile(r"@(sha256:[0-9a-f]{64})\Z")
-_ENV = re.compile(r"\.env\[([^\]]*)\]")
+# A container in a change path: spec.<list>[<name>]. Kubernetes container names are DNS labels.
+_CONTAINER = re.compile(r"spec\.(?:containers|initContainers|ephemeralContainers)\[[a-z0-9-]*\]")
+_PROBE = re.compile(r"\.(?:liveness|readiness|startup)Probe(?:\.|\Z)")
+# The user name and password part of a URL, such as a connection string in an env value.
+_USERINFO = re.compile(r"(?<=://)[^/@\s]*@")
 
 
 def _identity(name, item):
@@ -54,21 +60,35 @@ def _keyed(name, value):
     return dict(zip(keys, value, strict=True))
 
 
+def _in_container(path):
+    """The part of path below one container ("" for the container itself), or None outside containers."""
+    match = _CONTAINER.match(path)
+    return path[match.end():] if match else None
+
+
 def field_class(path):
-    if re.search(r"\.image$", path):
-        return "image"
-    if ".env[" in path:
-        return "env"
-    if ".resources" in path:
-        return "resources"
-    if re.search(r"(?:liveness|readiness|startup)Probe", path):
-        return "probe"
-    if ".ports" in path:
-        return "ports"
-    if re.search(r"\.(?:command|args)$", path):
-        return "command"
-    if path.startswith("metadata"):
+    """The field class of a change path. Only fields of a container can get a class whose values are shown.
+
+    Annotation, label and other Pod template keys are workload-authored text, so
+    a key that merely contains "image" or "resources" stays metadata or other.
+    """
+    if path == "metadata" or path.startswith("metadata."):
         return "metadata"
+    field = _in_container(path)
+    if field is None:
+        return "other"
+    if field == ".image":
+        return "image"
+    if field.startswith(".env["):
+        return "env"
+    if field == ".resources" or field.startswith(".resources."):
+        return "resources"
+    if _PROBE.match(field):
+        return "probe"
+    if field == ".ports" or field.startswith((".ports.", ".ports[")):
+        return "ports"
+    if field in (".command", ".args"):
+        return "command"
     return "other"
 
 
@@ -82,20 +102,25 @@ def _value(path, kind, value):
     if kind not in SHOWN or value is None:
         return None
     if kind == "env":
-        name = _ENV.search(path).group(1)
+        # The env name and anything after it: an env name may itself contain "]" or ".".
+        name = _in_container(path)[len(".env["):]
         if SECRET_NAME.search(name) or ".valueFrom" in path or (isinstance(value, dict) and "valueFrom" in value):
             return REDACTED
         if isinstance(value, dict):
             value = value.get("value")
             if value is None:
                 return None
+        if isinstance(value, str):
+            # A connection string under an ordinary name still keeps its password out of the prompt.
+            value = _USERINFO.sub(REDACTED + "@", value)
     # An image reference with its digest is longer than a label.
     return _shown(value, IMAGE_LIMIT if kind == "image" else LABEL_LIMIT)
 
 
 def _change(path, change, old=None, new=None):
     kind = field_class(path)
-    item = {"path": clean(path, 200), "kind": change, "field_class": kind}
+    # A path is built from workload-authored keys and names, so it is screened like a value.
+    item = {"path": WITHHELD if suspicious(path) else clean(path, 200), "kind": change, "field_class": kind}
     for key, value in (("old", old), ("new", new)):
         shown = _value(path, kind, value)
         if shown is not None:
