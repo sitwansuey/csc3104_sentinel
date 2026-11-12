@@ -547,7 +547,15 @@ the Coordinator, and it is written on the object so that an admission policy
 can refuse a lower one. That policy is `deploy/sentinel/executor-admission.yaml`
 (P3.05): for the Executor identity it denies a fence-epoch annotation lower
 than the stored one, compared with the stored object inside the same update. It
-is written and checked structurally, not yet run against an API server.
+is written and checked structurally, not yet run against an API server. The
+epoch belongs to one Coordinator store, starting at 1, while the annotation
+stays on the Deployment, and the Coordinator never reads it back. So with the
+policy installed, a new, reset or restored store cannot seal a Deployment
+sealed earlier at a higher epoch: each seal patch is denied, the seal ends
+UNSEALED and the workload goes to review. An administrator removes the
+annotation (or recreates the Deployment) before a new store is used. Seeding
+a store's epoch from the annotation, or dropping the epoch rule, is an open
+owner decision (`L-EXECUTOR-FIELD-LIMITS`).
 
 Limits:
 
@@ -696,7 +704,7 @@ mode on one Windows host; neither has run in kind mode.
 | P3.01 | Done in file mode (above). Left: a kind-mode run against the connected lab and committed evidence bundles |
 | P3.03 | Done in the code above. Left: S7 in kind mode, and a real clock offset per Pod (Chaos Mesh TimeChaos, P4.01) instead of the gated test offset. With operator approval required, an Executor whose clock is 5 min off cannot reach RECOVERED: its own Guard re-check refuses the Coordinator-stamped approval. So P4.01 should expect what S7 and S7b show (FAILED with no write without a bound; with a bound, that Executor stops claiming and an in-bound peer recovers the action), unless the owners change the re-check |
 | P3.04 | Done in the code above and in file mode on one host (ownership epochs, the seal, the ledger settle). Left: S8 in kind mode against a real API server, and the audit-log proof that the paused PATCH was refused (P4.01); the Executor owner's sign-off on the mechanism (#58) |
-| P3.05 | Written and checked structurally: an admission policy limiting which fields the Executor identity may change, with a monotonic fence epoch (`deploy/sentinel/executor-admission.yaml`). Left: the live run in a disposable namespace (`scripts/validation/test_executor_admission_live.py`) |
+| P3.05 | Written and checked structurally: an admission policy limiting which fields the Executor identity may change, with a monotonic fence epoch (`deploy/sentinel/executor-admission.yaml`). Left: the live run in a disposable namespace (`scripts/validation/test_executor_admission_live.py`), which also shows a seal from a fresh store being denied by a higher stored epoch; the owners' choice between seeding a store's epoch from the annotation and fencing by resourceVersion only; and their sign-off on the choices listed in `L-EXECUTOR-FIELD-LIMITS` (no epoch required on a template change, the identity matched in any namespace, a malformed stored epoch failing closed, evidence changeable without a template change, no resourceNames on the binding) |
 | P3.06 | Done in the code above and measured in file mode on one host. Left: the same measurements in a cluster (P4.02) |
 | P4.01, P4.02 | Multi-node kind run with partitions and restarts; measured RTO and RPO added here |
 | P5.01 | A replicated Coordinator on a replicated database |

@@ -13,10 +13,21 @@
 #     annotation is removed, and only sentinel.io/execution, sentinel.io/fence
 #     and sentinel.io/fence-epoch may be added or changed;
 #   - a fence or seal is metadata-only: it may not change the Pod template;
-#   - sentinel.io/fence-epoch is a decimal integer that never decreases.
+#   - sentinel.io/fence-epoch is a decimal integer below 10^18 that never
+#     decreases.
 # It does not limit what the Pod template contains: a ROLLBACK writes a whole
 # reviewed template, which the policy cannot see. It reads no parameters, so it
-# compares the stored object with the new one inside the same update.
+# compares the stored object with the new one inside the same update. The spec
+# rule names the 8 DeploymentSpec fields that exist today; a field Kubernetes
+# adds later is not held until it is added here.
+#
+# The fence epoch belongs to one Coordinator store (target_ownership starts at
+# 1), but the annotation stays on the Deployment. With this policy installed, a
+# new, reset or restored store cannot seal a Deployment whose
+# sentinel.io/fence-epoch is higher than its own epoch: each seal is denied and
+# ends UNSEALED, so the workload goes to review. Before pointing a new store at
+# such a Deployment, an administrator removes the annotation:
+#   kubectl annotate deployment <name> sentinel.io/fence-epoch-
 #
 # Status: written and checked structurally (tests/test_deploy_manifests.py);
 # not yet verified against an API server. The live check is

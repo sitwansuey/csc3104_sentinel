@@ -408,7 +408,11 @@ separate. See `deploy/sentinel/executor-rbac.yaml` and `runtime/live_executor.py
 fence annotations, and no lower `sentinel.io/fence-epoch`. Every patch this
 adapter sends stays inside it (`tests/test_deploy_manifests.py`). It has not
 been verified against an API server; `scripts/validation/test_executor_admission_live.py`
-is the live check.
+is the live check. A denied write comes back from kubectl as an error, which
+this adapter reports as `WriteOutcomeUnknown`. Because the epoch belongs to
+one Coordinator store, a seal from a new or restored store is denied on a
+Deployment that carries a higher `sentinel.io/fence-epoch`, and ends UNSEALED
+(`L-EXECUTOR-FIELD-LIMITS`).
 
 Use `python -m runtime.live_executor --help` to inspect file inputs, policy,
 baseline, approval, ledger, locks and reconciliation mode. Inputs must come from
