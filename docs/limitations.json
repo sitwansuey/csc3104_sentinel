@@ -477,11 +477,13 @@
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-11",
-      "impact": "The other Boutique services accept plaintext from any Pod and have no NetworkPolicy. The protected lab has never been combined with guarded recovery.",
-      "workaround": "Quote security results for the shipping path only.",
+      "impact": "Only the shipping path has mTLS and inspection. Default-deny NetworkPolicies for all 11 services, generated from the reviewed dependency graph, and a matrix that passes only when every forbidden connection is refused, are written and tested offline only. They have not run on the Calico lab, so no live result yet shows the other ten services refusing plaintext from other Pods. The rules match the Pod label app; they are not authentication. Normal connected recovery installs no NetworkPolicy, and the protected lab has never been combined with guarded recovery.",
+      "workaround": "Quote security results for the shipping path only until a fresh lab run commits a network-matrix.json that shows PASS.",
       "cites": [
         {"claim": "C-SECURITY-LAB"},
-        {"at": "docs/security.md", "text": "Only the shipping path is protected"}
+        {"at": "docs/security.md", "text": "Only the shipping path is protected"},
+        {"at": "scripts/security/network_policy.py", "text": "def security_lab_policies(graph, *, probes=None):"},
+        {"at": "tests/test_security_connected.py", "text": "def test_a_forbidden_edge_that_connects_is_unknown_never_pass(self):"}
       ],
       "planned": ["P4.06", "P5.04", "P5.05"],
       "issues": [69, 71]

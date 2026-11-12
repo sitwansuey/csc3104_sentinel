@@ -25,10 +25,128 @@ the default ports are taken; use `serve` to reopen the dashboard later, or give
 must be on PATH for certificate generation; if it fails to open an
 `openssl.cfg`, a stale `OPENSSL_CONF` environment variable is the usual cause.
 The script owns a dedicated Calico/kind lab with mTLS and inspected shipping
-traffic. Only the shipping path is protected: the other Boutique services keep
-their upstream plaintext connections and have no NetworkPolicy. The smaller `scripts/security/security_lab.py`
+traffic. Only the shipping path is protected by mTLS and inspection: the other
+Boutique services keep their upstream plaintext connections. From P4.06 the lab
+also applies graph-derived default-deny NetworkPolicies to all 11 services (see
+below); that part has been tested offline only. The smaller `scripts/security/security_lab.py`
 supports `start`, `test` and `stop` too. Normal connected recovery does not
 install either overlay. Read each module's setup/ownership checks before use.
+
+## Graph-derived NetworkPolicies
+
+`scripts/security/network_policy.py` turns the reviewed caller-to-callee graph
+into Kubernetes NetworkPolicies. The graph is
+`deploy/boutique/connected-graph.json`: 11 services, their Service and Pod
+ports, and 15 edges read from the pinned `deploy/boutique/upstream.yaml`. A
+test reads that YAML directly and fails if the two disagree. The generated set
+for the security lab is committed as
+`deploy/boutique/security-network-policies.json`. Check it, or regenerate it
+after a reviewed graph change, with:
+
+```powershell
+python scripts/security/network_policy.py --check
+python scripts/security/network_policy.py --write
+```
+
+The set contains:
+
+- `default-deny-ingress`: every Pod in the namespace accepts nothing unless
+  another policy allows it. No rule anywhere allows any Pod (`from: {}`) or
+  an IP range.
+- `default-deny-egress`: each of the 11 services and the gateway may send
+  only DNS to kube-dns (UDP and TCP 53), apart from the edges below.
+- `ingress-<service>`: exactly the service's callers, on its Pod port. Each
+  graph edge appears once here and once in the caller's `egress-<service>`.
+  redis-cart accepts only cartservice on 6379.
+- frontend accepts only in-cluster storefront traffic Pods labelled
+  `app=sentinel-traffic`. The lab reaches the storefront through
+  `kubectl port-forward`, which enters the Pod through the container runtime
+  rather than the Pod network, so NetworkPolicy does not apply to it.
+- Sentinel's probe Pods now carry `app=sentinel-probe` and
+  `sentinel.io/probe-target=<target>`, and each may reach only its own
+  target's port. In the lab only the cartservice probe is allowed: shipping
+  keeps its existing `protect-*` policies, so it still accepts only the mTLS
+  gateway, and a Sentinel probe of shipping is refused there.
+
+In the lab, frontend and checkoutservice reach shipping only through
+`security-gateway:8443`, and only the gateway reaches shippingservice, on
+8444. The graph policies never add an ingress rule for shippingservice or the
+gateway, so they cannot reopen the plaintext bypass.
+
+`start` refuses to continue, before pulling any image, when the graph derived
+from the manifest differs from the reviewed graph or the regenerated policies
+differ from the committed file. It applies the policies with the rest of the
+manifest and copies them to `network-policies.json` in the run folder.
+
+These are L4 rules keyed on the Pod label `app`. They are not
+authentication: anyone allowed to create a Pod in the namespace can give it a
+workload's label and be treated as that workload. Normal connected recovery
+installs none of them.
+
+### Enforcement matrix
+
+`test` (and `start`) runs the matrix right after the first storefront journey.
+One short-lived tester Pod runs for each identity: an intruder with no
+reviewed role, storefront traffic, each of the 11 services, the gateway, the
+existing `security-test` probe identity and the cartservice Sentinel probe.
+Each tries a TCP connection, with a 3 s timeout, to every Service in the
+namespace: 16 identities by 13 Services. The tester image is the busybox
+release that the upstream manifest pins by digest. Testers run as non-root
+without a token, and their readiness check never passes, so a tester carrying a
+workload's label never receives that workload's traffic.
+
+Each cell's expected result comes from evaluating the applied policies. Each
+tester first connects to kube-dns on TCP 53, which no policy blocks; if that
+control fails, the tester's results are not counted. The verdict in
+`network-matrix.json`, also copied into `validation.json`, is:
+
+- PASS: every allowed connection worked, every forbidden one was refused, and
+  the storefront journey passed;
+- FAIL: an allowed connection was refused, or the journey failed (the
+  policies are too tight);
+- UNKNOWN, never PASS: a forbidden connection worked, a cell could not be
+  tested, or the journey result is missing.
+
+`validation.json` passes only when the matrix is PASS. `forbidden.timed_out`
+counts refusals that waited out the timeout, which is how a dropped
+connection looks.
+
+### What a live run needs
+
+The live run needs a network plugin that enforces NetworkPolicy. The security
+lab's kind configuration (`deploy/kind/kind-security.yaml`) turns off kind's
+default CNI, and `boutique_security.py` installs Calico 3.33.0 from a
+checksum-pinned manifest. The connected recovery cluster keeps kind's default
+CNI, kindnet. Older kindnet releases ignore NetworkPolicy, and whether the
+installed kind enforces it has not been checked here, so the policies are
+not applied there. On a cluster that does not enforce them, every forbidden
+connection succeeds and the matrix reports UNKNOWN.
+
+The live run has not been done. To do it, use a fresh run folder (the path
+below is an example):
+
+```powershell
+# Preflight: Docker answers, the folder is new, the reviewed policies are current.
+docker info --format "{{.ServerVersion}}"
+Test-Path data/experimentation/runs/protected-boutique-netpol   # must print False
+python scripts/security/network_policy.py --check
+kind get clusters   # sentinel-boutique-security is created if missing; the script touches no other cluster
+python scripts/security/boutique_security.py start --directory data/experimentation/runs/protected-boutique-netpol --exit-after-test
+```
+
+Expected: the command prints PASS. In the run folder, `network-matrix.json`
+has `verdict.status` PASS, `forbidden.closed` and `forbidden.timed_out` equal
+to `forbidden.cells`, and `validation.json` has `passed: true`, including the
+existing shipping bypass and outage probes. Then commit the evidence:
+
+```powershell
+python scripts/evidence/collect.py --run data/experimentation/runs/protected-boutique-netpol --class security-lab --bundle-id protected-boutique-netpol
+python scripts/security/boutique_security.py stop --directory data/experimentation/runs/protected-boutique-netpol
+```
+
+The `security-lab` profile collects `network-policies.json` and
+`network-matrix.json` with the earlier files. A run is evidence for this one
+Windows host with one kind node, not for a multi-node cluster.
 
 Image scan/candidate workflows remain explicit. A candidate needs reviewed
 metadata and adjacent passing scan evidence; a scan does not grant repair
@@ -50,7 +168,8 @@ project's pinned Trivy. The PR reports 0 High and 0 Medium findings in both,
 with unrated Go findings left that need a newer toolchain. That scan output is
 not a committed evidence bundle, and no release image is tagged.
 
-Two gaps remain. Only the shipping path is protected. Workload images are
+Two gaps remain. Only the shipping path is protected by mTLS and inspection,
+and the NetworkPolicies for the other services have not run live. Workload images are
 scanned and raise dashboard alerts, but nothing gates on them: the 11 November
 evaluation found High or Critical findings in 11 of 13 images. See
 `L-SECURITY-SHIPPING-ONLY` and `L-UNGATED-CVES` in [limitations](limitations.md).

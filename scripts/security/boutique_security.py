@@ -23,7 +23,9 @@ sys.path.insert(0, str(ROOT))
 from runtime.security_store import import_inspections
 from experiments.boutique.harness.connected import APPLICATIONS, UPSTREAM, UPSTREAM_SHA256, connected_manifest, decoded_resources, image_digest
 from experiments.boutique.harness.dashboard import BoutiqueDashboard
-from scripts.security.boutique_security_manifest import NAMESPACE, overlay
+from scripts.security.boutique_security_manifest import GATEWAY, NAMESPACE, overlay
+from scripts.security.network_policy import (MATRIX_IMAGE, graph_from_manifest, matrix_destinations, matrix_sources,
+                                             probe_targets, reviewed_security_policies, run_matrix)
 from experiments.boutique.traffic.storefront import StorefrontProbe
 from scripts.security.security_lab import CLIENT, ENVOY, INSPECTOR, certificates
 from runtime.boutique_observability import emit_observation, service_inventory
@@ -119,6 +121,10 @@ def prepare(directory, candidate):
     resources = decoded_resources(kube("create", "--dry-run=client", "--validate=false", "-f", UPSTREAM, "-o", "json").stdout)
     originals = {container["image"] for item in resources if item.get("kind") == "Deployment" and item["metadata"]["name"] in APPLICATIONS
                  for container in item["spec"]["template"]["spec"]["containers"]}
+    # Refuse before any pull when the wiring is not the reviewed graph or the
+    # generated policies differ from deploy/boutique/security-network-policies.json.
+    policies = reviewed_security_policies(graph_from_manifest(connected_manifest(
+        resources, {image: image for image in originals}, NAMESPACE)))
     images = {}
     for original in sorted(originals):
         print("Preparing full application image: " + original, flush=True)
@@ -126,7 +132,7 @@ def prepare(directory, candidate):
         digest = image_digest(original, json.loads(command(["docker", "image", "inspect", original]).stdout))
         command(["docker", "exec", node, "crictl", "pull", digest], timeout=600)
         images[original] = digest
-    for image in (ENVOY, CLIENT):
+    for image in (ENVOY, CLIENT, MATRIX_IMAGE):
         command(["docker", "pull", image])
         command(["docker", "exec", node, "crictl", "pull", image])
     command(["docker", "build", "-f", ROOT / "deploy/docker/security-inspector.Dockerfile", "-t", INSPECTOR, ROOT])
@@ -146,6 +152,8 @@ def prepare(directory, candidate):
                 item["spec"]["template"]["spec"]["containers"][0]["image"] = replacement
         save(directory / "candidate-validation.json", {**evidence, "lab_manifest": replacement, "deployed_only_to": CLUSTER})
     manifest = overlay(base, envoy_image=ENVOY, inspector_image=inspector)
+    manifest["items"].extend(policies)
+    save(directory / "network-policies.json", {"apiVersion": "v1", "kind": "List", "items": policies})
     public = directory / "manifest.json"
     save(public, manifest)
     kube("apply", "-f", public)
@@ -167,6 +175,7 @@ def prepare(directory, candidate):
     deployed = [container["image"] for item in manifest["items"] if item["kind"] == "Deployment"
                 for container in item["spec"]["template"]["spec"]["containers"]]
     inventory = [{"image": image} for image in sorted(set(deployed)) if image.startswith(("docker.io/", "us-central1-", "envoyproxy/"))]
+    inventory.append({"image": MATRIX_IMAGE})
     inventory.append({"local_image": inspector_id})
     if candidate:
         inventory.append({"local_image": evidence["image_id"]})
@@ -239,6 +248,16 @@ def inventory():
     return service_inventory(data["items"], APPLICATIONS)
 
 
+def network_matrix(directory, journey_passed):
+    """Every tester identity against every Service, judged against the applied NetworkPolicies."""
+    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+    policies = [item for item in manifest["items"] if item["kind"] == "NetworkPolicy"]
+    sources = matrix_sources(APPLICATIONS | {GATEWAY[0]}, probe_targets(), extra=("security-test",))
+    return run_matrix(lambda *args: command(["kubectl", "--context=" + CONTEXT, *args], required=False, timeout=60),
+                      directory, namespace=NAMESPACE, items=policies, sources=sources,
+                      destinations=matrix_destinations(manifest), journey_passed=journey_passed)
+
+
 def validate(directory, storefront):
     summary = {"provenance": provenance.collect(ROOT, tools=("kubectl", "kind", "docker"), captured_by="security-lab")}
     def journey_window(key):
@@ -256,6 +275,8 @@ def validate(directory, storefront):
         raise RuntimeError("Connected shopping/checkout failed")
     emit_observation(directory / "telemetry.sqlite3", cluster_id=CLUSTER, namespace=NAMESPACE,
                      stage="baseline", journey=summary["shopping_and_checkout"])
+    summary["network_matrix"] = network_matrix(directory, summary["shopping_and_checkout"]["passed"])["verdict"]
+    save(directory / "validation.json", summary)
     summary["valid_mtls_quote"] = probe(directory)
     summary["invalid_quantity"] = probe(directory, quantity=101)
     summary["missing_client_certificate"] = probe(directory, certificate=False)
@@ -288,7 +309,8 @@ def validate(directory, storefront):
     expected = summary["valid_mtls_quote"]["succeeded"] and all(not summary[key]["succeeded"] for key in (
         "invalid_quantity", "missing_client_certificate", "wrong_client_identity", "direct_service_bypass", "direct_pod_ip_bypass",
         "direct_egress_bypass", "proxy_outage", "outage_direct_bypass"))
-    summary["passed"] = bool(expected and summary["shopping_after_proxy_restore"]["passed"] is True and status == 200)
+    summary["passed"] = bool(expected and summary["shopping_after_proxy_restore"]["passed"] is True and status == 200
+                             and summary["network_matrix"]["status"] == "PASS")
     save(directory / "validation.json", summary)
     collect_inspections(directory)
     if not summary["passed"]:
@@ -349,7 +371,8 @@ def main():
             time.sleep(.3)
         if args.action != "serve":
             validate(directory, storefront)
-            print("PASS: full Boutique shipping traffic inspected; direct bypass and proxy outage blocked", flush=True)
+            print("PASS: full Boutique shipping traffic inspected; direct bypass and proxy outage blocked; "
+                  "NetworkPolicy matrix passed", flush=True)
         else:
             print("Serving recorded validation and current read-only observations; no faults injected.", flush=True)
         if args.exit_after_test:

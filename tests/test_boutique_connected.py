@@ -376,9 +376,11 @@ class CartTargetTests(unittest.TestCase):
         shipping = self.lab()
         shipping.client_image = cart.client_image
         request = {"items": [{"productId": "demo-item", "quantity": 1}]}
-        # The probe Pod the shipping harness always created.
+        # The probe Pod the shipping harness always created, plus the probe labels
+        # a graph-derived NetworkPolicy admits (P4.06).
         self.assertEqual(shipping.probe_pod("shipping-probe-1", "hipstershop.ShippingService/GetQuote", request), {
-            "apiVersion": "v1", "kind": "Pod", "metadata": {"name": "shipping-probe-1", "namespace": shipping.namespace},
+            "apiVersion": "v1", "kind": "Pod", "metadata": {"name": "shipping-probe-1", "namespace": shipping.namespace,
+                "labels": {"app": "sentinel-probe", "sentinel.io/probe-target": "shippingservice"}},
             "spec": {"restartPolicy": "Never", "activeDeadlineSeconds": 45, "automountServiceAccountToken": False,
                      "securityContext": {"runAsNonRoot": True, "runAsUser": 1000,
                                          "seccompProfile": {"type": "RuntimeDefault"}},

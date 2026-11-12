@@ -41,6 +41,24 @@ class BoutiqueLabTests(unittest.TestCase):
         self.assertEqual(spec["serviceAccountName"], "shippingservice")
         self.assertEqual(spec["containers"][0]["readinessProbe"]["grpc"]["port"], 50051)
 
+    def test_probe_pods_carry_probe_labels_and_resource_bounds(self):
+        for target in ("shippingservice", "cartservice"):
+            with tempfile.TemporaryDirectory() as directory, self.subTest(target=target):
+                experiment = BoutiqueExperiment(Path(directory) / "run")
+                try:
+                    experiment.client_image = "grpcurl@sha256:" + "c" * 64
+                    experiment.select_target(target)
+                    pod = experiment.probe_pod(target + "-probe-x", "pkg.Service/Method", {})
+                finally:
+                    experiment.store.close()
+                self.assertEqual(pod["metadata"]["labels"], {"app": "sentinel-probe", "sentinel.io/probe-target": target})
+                self.assertNotEqual(pod["metadata"]["labels"]["app"], target)  # never an endpoint of the target
+                container = pod["spec"]["containers"][0]
+                self.assertEqual(container["resources"], {"requests": {"cpu": "10m", "memory": "16Mi"},
+                                                          "limits": {"cpu": "100m", "memory": "64Mi"}})
+                self.assertEqual(pod["spec"]["activeDeadlineSeconds"], 45)
+                self.assertFalse(pod["spec"]["automountServiceAccountToken"])
+
     def test_ready_pod_alone_cannot_satisfy_application_measurement(self):
         for response in ({}, {"costUsd": {"currencyCode": "EUR", "units": "2"}},
                          {"costUsd": {"currencyCode": "USD"}},

@@ -57,7 +57,8 @@
     },
     "security-lab": {
       "description": "Protected Boutique security lab: mTLS gateway, bypass and outage probes",
-      "include": ["validation.json", "scan-inventory.json", "session.json"]
+      "include": ["validation.json", "scan-inventory.json", "session.json", "network-policies.json",
+                  "network-matrix.json"]
     },
     "observer-acceptance": {
       "description": "Live Observer acceptance on Boutique: detection and duplicate suppression",
