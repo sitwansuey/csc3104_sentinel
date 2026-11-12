@@ -216,6 +216,17 @@ class DeterministicPlannerTests(unittest.TestCase):
 
 
 class HealthTests(unittest.TestCase):
+    def test_contact_never_clears_a_failing_preflight_clock_or_store_gate(self):
+        # Lease renewals call contacted() mid-pass; only the end of a pass may update the gates.
+        health = WorkerHealth(ready_seconds=30, clock=lambda: 5.0)
+        health.configured()
+        health.clock_checked(False)
+        health.store_checked(False)
+        health.prerequisites(False)
+        health.contacted()
+        self.assertEqual(health.ready(), (503, {"ready": False, "contact_age_seconds": 0.0, "clock_skew": True,
+                                                "store_changed": True, "prerequisites_failed": True}))
+
     def test_liveness_and_readiness_follow_the_loop_and_coordinator_contact(self):
         now = [100.0]
         health = WorkerHealth(ready_seconds=30, clock=lambda: now[0])

@@ -522,10 +522,29 @@ class RemoteWorkerTests(unittest.TestCase):
         client = WorkerClient(self.url, "planner", self.services["planner"][1], timeout=2, answered=answered)
         self.assertIsNone(client.post("claim", {})["delivery"])
         self.assertEqual(answered.call_count, 1)
-        with self.assertRaises(ProtocolError):  # Refused (403): answered, but not a successful exchange.
+        with self.assertRaises(ProtocolError) as refused:  # Refused: answered, but not a successful exchange.
             client.post("renew", {"delivery_id": "d", "lease_token": "x" * 40})
+        self.assertNotEqual(refused.exception.status, 200)
         with self.assertRaises(OSError):  # Unreachable: nothing answered.
             WorkerClient("http://127.0.0.1:9", "planner", "p" * 40, timeout=2, answered=answered).post("claim", {})
+        self.assertEqual(answered.call_count, 1)
+
+    def test_a_reply_that_is_not_a_200_json_object_is_not_contact(self):
+        answered = Mock()
+        client = WorkerClient("http://127.0.0.1:9", "planner", "p" * 40, timeout=2, answered=answered)
+
+        def reply(status, raw):
+            response = Mock(spec=["status", "read"], status=status)  # No headers: a minimal stand-in.
+            response.read.return_value = raw
+            return Mock(**{"getresponse.return_value": response})
+        for status, raw in ((200, b"not json"), (200, b"[1]"), (200, b"\xff"), (500, b"Internal error"),
+                            (503, b'{"error": "Coordinator unavailable"}')):
+            with self.subTest(status=status, raw=raw), self.assertRaises(ProtocolError), \
+                    patch("runtime.worker_http.HTTPConnection", return_value=reply(status, raw)):
+                client.post("claim", {})
+        self.assertEqual(answered.call_count, 0)
+        with patch("runtime.worker_http.HTTPConnection", return_value=reply(200, b"{}")):
+            client.post("claim", {})
         self.assertEqual(answered.call_count, 1)
 
     def test_expired_saved_result_is_rebound_without_recalling_the_provider(self):

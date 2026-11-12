@@ -67,7 +67,9 @@ VOLUME ["/data"]
 # exec probe with the same command (docs/remote-workers.md). /readyz counts every successful Coordinator
 # exchange as contact, lease renewals during a long model call included, so a Planner mid-inference stays
 # healthy while it renews (default --ready-seconds 60, renewals at least every 5 s); it turns unhealthy once
-# no exchange has succeeded for the readiness window, or a preflight, clock or store check fails.
+# no exchange has succeeded for the readiness window, or a preflight, clock or store check fails. A worker
+# whose own component fails on every pass (a model call that crashes, a cluster it cannot reach) still
+# exchanges claims and retries, so it stays healthy here: watch its retry and back-off log lines for that.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=3)"]
 STOPSIGNAL SIGTERM
