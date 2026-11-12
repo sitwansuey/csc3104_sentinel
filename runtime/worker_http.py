@@ -62,6 +62,7 @@ REASONS = {
     "Evidence does not match the active proposal": "evidence_not_current",
     "Result answers a superseded request": "superseded_request",
     "Worker clock skew exceeds the bound": "clock_skew",
+    "Stale ownership epoch": "stale_epoch",
 }
 DEFAULT_REASONS = {401: "invalid_credentials", 403: "forbidden", 409: "conflict"}
 OUTCOMES = {400: "invalid", 401: "denied", 403: "denied", 404: "not_found", 408: "timeout",

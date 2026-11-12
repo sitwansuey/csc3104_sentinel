@@ -23,8 +23,9 @@ the Coordinator records it, but on one host the only skew it can find is the
 gated test offset. The file mode backs Kubernetes with tests/support/file_cluster.py; the
 kind mode targets only the connected kind lab (KIND_CONTEXTS) and refuses every
 other context. Both modes count a template write by its effect on the pod
-template, never by metadata.generation, so a metadata-only Executor fence is
-not a write in either (observed_writes, kind_writes).
+template, never by metadata.generation, so a metadata-only Executor fence, or
+a Coordinator seal (a fence that also writes sentinel.io/fence-epoch), is not
+a write in either (observed_writes, kind_writes).
 """
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
@@ -76,14 +77,17 @@ def observation(deployment):
     template_sha256 fingerprints the whole spec.template, restart annotation
     included, the way the Executor and the file cluster do
     (services/executor/store.py::fingerprint); evidence and fence are the raw
-    sentinel.io/execution and sentinel.io/fence annotations. other_annotations
-    and other_spec fingerprint the rest of the annotations and of the spec,
-    and generation is metadata.generation (None when absent): together they
+    sentinel.io/execution and sentinel.io/fence annotations, and fence_epoch
+    the raw sentinel.io/fence-epoch a seal writes with its fence marker in
+    the same patch (P3.04), so a seal is one fence, not also a change of the
+    other annotations. other_annotations and other_spec fingerprint the rest
+    of the annotations and of the spec, and generation is
+    metadata.generation (None when absent): together they
     let observed_writes tell when more changes were committed between two
     reads than the reads show.
     """
     from services.executor.core import ACTION_ANNOTATION
-    from services.executor.reconciliation import FENCE_ANNOTATION
+    from services.executor.reconciliation import FENCE_ANNOTATION, FENCE_EPOCH_ANNOTATION
     from services.executor.store import fingerprint
     from shared.canonical import sha256_hex
     metadata = deployment.get("metadata") or {}
@@ -93,6 +97,7 @@ def observation(deployment):
     generation = metadata.get("generation")
     return {"template_sha256": fingerprint(template) if isinstance(template, dict) else None,
             "evidence": annotations.pop(ACTION_ANNOTATION, None), "fence": annotations.pop(FENCE_ANNOTATION, None),
+            "fence_epoch": annotations.pop(FENCE_EPOCH_ANNOTATION, None),
             "other_annotations": sha256_hex(annotations), "other_spec": sha256_hex(spec),
             "generation": generation if type(generation) is int else None,
             "resource_version": metadata.get("resourceVersion"), "observed_at": time.time()}
@@ -117,7 +122,8 @@ def observed_writes(previous, current):
     annotation appeared whose template_sha256 is the template now in place (a
     Sentinel write that put back the same template, so the fingerprint alone
     cannot show it). Anything else changes metadata only and is not a write:
-    an Executor fence, a label, another annotation, or the Deployment
+    an Executor fence, a Coordinator seal (the fence marker with its
+    sentinel.io/fence-epoch), a label, another annotation, or the Deployment
     controller's own bookkeeping, even though the API server raises
     metadata.generation for some of them. A counted write is labelled by the
     annotation it brought, as in file mode: new evidence names its action, or
@@ -131,13 +137,13 @@ def observed_writes(previous, current):
     apps/v1 Deployment strategy raises metadata.generation once for every
     commit that changes the spec or the annotations, and each such commit
     changes at least one of four parts: the template or its evidence, the
-    fence marker, the other annotations, or the rest of the spec. When
-    generation rose by more than the number of parts that differ, some commit
-    is not accounted for and could be a hidden template write (two writes, or
-    a write and its revert). That window adds an "unobserved" row with
-    action_id "unknown", on which I1 fails, so a kind-mode I1 pass is not
-    bought by polling too slowly. Harmless commits can raise it too (two
-    fences between reads), which fails safe. One commit that changes several
+    fence marker (with a seal's epoch), the other annotations, or the rest
+    of the spec. When generation rose by more than the number of parts that
+    differ, some commit is not accounted for and could be a hidden template
+    write (two writes, or a write and its revert). That window adds an
+    "unobserved" row with action_id "unknown", on which I1 fails, so a
+    kind-mode I1 pass is not bought by polling too slowly. Harmless commits
+    can raise it too (two fences or seals between reads), which fails safe. One commit that changes several
     parts lets one more commit go unflagged, and without a generation in
     both reads no window is flagged.
     """
@@ -145,10 +151,11 @@ def observed_writes(previous, current):
     template_changed = current["template_sha256"] != previous["template_sha256"]
     evidence = current["evidence"] if current["evidence"] != previous["evidence"] else None
     fence = current["fence"] if current["fence"] != previous["fence"] else None
+    fenced = fence is not None or current.get("fence_epoch") != previous.get("fence_epoch")
     matches = evidence is not None and _evidence_template(evidence) == current["template_sha256"]
     commits = (current["generation"] - previous["generation"]
                if None not in (current["generation"], previous["generation"]) else None)
-    parts = sum((template_changed or evidence is not None, fence is not None,
+    parts = sum((template_changed or evidence is not None, fenced,
                  current["other_annotations"] != previous["other_annotations"],
                  current["other_spec"] != previous["other_spec"]))
 

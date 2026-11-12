@@ -16,6 +16,8 @@ import sqlite3
 from shared.canonical import canonical_json as _json, sha256_hex as _digest
 
 from shared import log, tracing
+# The Executor's own workload key, so the Coordinator's ownership row and the Executor's lock agree.
+from services.executor.store import target_key
 
 LOG = log.get_logger("coordinator")
 
@@ -132,6 +134,22 @@ MIGRATIONS = (
         """UPDATE messages SET kind=json_extract(payload,'$.kind'),
             action_id=json_extract(payload,'$.action_id') WHERE json_valid(payload)""",
         "CREATE INDEX IF NOT EXISTS messages_kind_action ON messages(kind, action_id)",
+    )),
+    (6, (
+        # Target ownership for Executor work (P3.04). target_key is
+        # services/executor/store.py::target_key (cluster, namespace, kind and
+        # name; no UID, so a recreated Deployment keeps its row); uid is kept
+        # beside it. epoch grows by one on every claim of an executor.* command
+        # for the target and never goes back. holder, delivery_id and event_id
+        # name the latest claim. seal_required blocks every other Executor
+        # command and new planning for the target until an executor.seal for
+        # seal_action_id reports SEALED; sealed_epoch is the epoch of that seal.
+        """CREATE TABLE IF NOT EXISTS target_ownership (
+            target_key TEXT PRIMARY KEY, uid TEXT, epoch INTEGER NOT NULL DEFAULT 0,
+            holder TEXT, delivery_id TEXT, event_id INTEGER,
+            seal_required INTEGER NOT NULL DEFAULT 0, seal_action_id TEXT,
+            sealed_epoch INTEGER NOT NULL DEFAULT 0
+        )""",
     )),
 )
 SCHEMA_VERSION = MIGRATIONS[-1][0]
@@ -291,11 +309,17 @@ class SQLiteStore:
 
         Arrival order is durable (SQLite rowid). Include the physical workload
         name even across UID changes; Guard still checks the exact bound UID.
+        A seal still required for the workload blocks every incident on it,
+        this one included, until the seal reports (P3.04).
         """
         current = self.db.execute("SELECT rowid,* FROM incidents WHERE incident_id=?", (incident_id,)).fetchone()
         if current is None:
             raise CoordinatorError("Incident must be recorded first")
         target = json.loads(current["target"])
+        owner = self.target_ownership(target)
+        if owner is not None and owner["seal_required"]:
+            sealed = self.action(owner["seal_action_id"])
+            return sealed["incident_id"] if sealed else incident_id
         active = {"VALIDATING", "AWAITING_APPROVAL", "READY", "VERIFYING", "NEEDS_RECONCILIATION"}
         for row in self.db.execute("SELECT rowid,* FROM incidents ORDER BY rowid"):
             if row["incident_id"] == incident_id:
@@ -306,6 +330,49 @@ class SQLiteStore:
             if row["state"] in active or (row["state"] == "OPEN" and row["rowid"] < current["rowid"]):
                 return row["incident_id"]
         return None
+
+    def target_ownership(self, target):
+        """The ownership row of a workload (migration 6), or None before its first Executor claim."""
+        row = self.db.execute("SELECT * FROM target_ownership WHERE target_key=?", (target_key(target),)).fetchone()
+        return dict(row) if row else None
+
+    def claim_target(self, target, holder, delivery_id, event_id):
+        """Record a new claim of an Executor command for the workload; return its new epoch.
+
+        Every claim is a new lease, so the epoch grows by one each time, also
+        when the same identity claims again: an earlier incarnation of that
+        holder may still be inside its API call.
+        """
+        key = target_key(target)
+        self.db.execute("""INSERT INTO target_ownership(target_key,uid,epoch,holder,delivery_id,event_id)
+            VALUES(?,?,1,?,?,?) ON CONFLICT(target_key) DO UPDATE SET uid=excluded.uid, epoch=epoch+1,
+            holder=excluded.holder, delivery_id=excluded.delivery_id, event_id=excluded.event_id""",
+            (key, target["uid"], holder, delivery_id, event_id))
+        return self.db.execute("SELECT epoch FROM target_ownership WHERE target_key=?", (key,)).fetchone()[0]
+
+    def require_seal(self, action):
+        """Block the action's workload until an executor.seal for it reports; enqueue that seal once.
+
+        Return True when a seal was enqueued now. Call in the transaction that
+        abandons an Executor command some holder may still be executing.
+        """
+        target, action_id = action["proposal"]["target"], action["action_id"]
+        owner = self.target_ownership(target)
+        if (owner is not None and owner["seal_required"] and owner["seal_action_id"] == action_id
+                and self.pending_routes("executor.seal", action_id=action_id)):
+            return False
+        self.db.execute("""INSERT INTO target_ownership(target_key,uid,seal_required,seal_action_id)
+            VALUES(?,?,1,?) ON CONFLICT(target_key) DO UPDATE SET seal_required=1,
+            seal_action_id=excluded.seal_action_id""", (target_key(target), target["uid"], action_id))
+        self.enqueue("executor.seal", {"proposal": action["proposal"]}, action_id)
+        ids = {"incident_id": action["incident_id"], "action_id": action_id}
+        self.after_commit(lambda: log.emit(LOG, "coordinator.seal.required", level=log.WARNING, **ids))
+        return True
+
+    def finish_seal(self, target, epoch, *, release):
+        """Record a seal's answer at epoch; release unblocks the workload, otherwise it stays blocked."""
+        self.db.execute("UPDATE target_ownership SET sealed_epoch=?, seal_required=? WHERE target_key=?",
+                        (epoch, 0 if release else 1, target_key(target)))
 
     def approval(self, action_id):
         row = self.approval_row(action_id)

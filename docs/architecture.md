@@ -61,10 +61,14 @@ a conditional, metadata-only fence write: the API server lets only one of the
 two commit, so a committed fence proves the write never did (CONFLICT/FENCED). Duplicate
 payloads replay saved results; changed payloads under an existing ID are rejected. A refreshed Planner resource version gets a new ID.
 
-OS workload locks and SQLite serialization coordinate one host. They do not
-provide distributed leases or fencing. The optional [HTTP delivery layer](../runtime/README.md)
-has role-scoped claims/leases and replay handling; those leases do not establish
-cross-host Kubernetes mutation ownership. Production deployment remains separate.
+OS workload locks and SQLite serialization coordinate one host. The optional
+[HTTP delivery layer](../runtime/README.md) has role-scoped claims/leases and
+replay handling. A lease alone does not stop a stale Kubernetes write, so the
+Coordinator also gives each workload one Executor owner at a time, with an
+epoch per claim, and when it withdraws a command an Executor may still be
+executing it has another Executor seal the target: a metadata-only patch
+with the same resourceVersion test, after which the abandoned patch can
+never commit (P3.04, tested offline only). Production deployment remains separate.
 The [distributed model](distributed-model.md) states the failure model, why the
 Coordinator is a single consistent (CP) leader, how worker results are ordered
 by Coordinator sequence numbers rather than clocks, and where a measured clock
@@ -83,7 +87,12 @@ Revocation and a separate API write still require a future fencing design for
 strong cross-host guarantees.
 
 Actual repair uses a ServiceAccount restricted to the configured Deployment's
-get/patch operations. The trusted lab harness separately holds setup/injection
+get/patch operations. RBAC cannot limit fields, so a ValidatingAdmissionPolicy
+for that ServiceAccount (`deploy/sentinel/executor-admission.yaml`) allows only
+Pod template changes that carry new action evidence, only the sentinel.io
+execution and fence annotations, and no lower fence epoch. It is written and
+checked structurally, but has not been verified against an API server, and no
+launcher installs it. The trusted lab harness separately holds setup/injection
 privileges. The UI gate is not approval, and demo approval is not authenticated
 operator access. Hard constraints remain mandatory after any approval.
 The separate [approval authority](approvals.md) provides authenticated target

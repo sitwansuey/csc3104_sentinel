@@ -2,6 +2,8 @@
 
 Every worker must use the same ledger and lock directory on a local filesystem.
 These locks do not implement distributed leases or fencing across hosts.
+Across hosts the Coordinator gives each workload one Executor owner at a
+time and fences abandoned writes with a seal (services/executor/core.py seal()).
 The ledger is never the cross-host source of truth: reconciliation recognises a
 write by the evidence on the Deployment itself, so any host can reconcile.
 """

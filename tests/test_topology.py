@@ -15,7 +15,7 @@ from experiments.distributed.topology import (
     APPROVERS, OBSERVER, WORKERS, Topology, check_kind_context, env_name,
 )
 from services.executor.core import ACTION_ANNOTATION, encode_evidence
-from services.executor.reconciliation import FENCE_ANNOTATION, fence_marker
+from services.executor.reconciliation import FENCE_ANNOTATION, FENCE_EPOCH_ANNOTATION, fence_marker
 from services.executor.store import fingerprint
 from shared.actions import restart_template
 
@@ -99,6 +99,15 @@ class FakeLabDeployment:
         """The Executor's fence: the fence annotation only, never the spec."""
         marker = json.dumps(fence_marker(action_id, nonce))
         self._commit(lambda deployment: deployment["metadata"]["annotations"].__setitem__(FENCE_ANNOTATION, marker))
+
+    def seal(self, action_id, epoch, nonce="e" * 32):
+        """A Coordinator seal (P3.04): the fence marker with its epoch and the epoch annotation, in one patch."""
+        marker = json.dumps(fence_marker(action_id, nonce, epoch))
+
+        def change(deployment):
+            deployment["metadata"]["annotations"][FENCE_ANNOTATION] = marker
+            deployment["metadata"]["annotations"][FENCE_EPOCH_ANNOTATION] = str(epoch)
+        self._commit(change)
 
     def annotate(self, key, value):
         self._commit(lambda deployment: deployment["metadata"]["annotations"].__setitem__(key, value))
@@ -271,6 +280,28 @@ class KindWriteCountTests(unittest.TestCase):
         self.lab.fence("ACT-1")
         self.assertEqual(self.lab.deployment["metadata"]["generation"], 5)
         self.assertEqual(self.writes(), [])
+
+    def test_a_seal_raises_generation_but_counts_no_write_and_no_unaccounted_commit(self):
+        self.lab.seal("ACT-1", 3)
+        self.assertEqual(self.lab.deployment["metadata"]["generation"], 5)
+        self.assertEqual(self.writes(), [])
+        self.lab.seal("ACT-1", 4, nonce="f" * 32)
+        self.assertEqual(self.writes(), [])
+
+    def test_a_seal_and_a_hidden_commit_between_two_reads_fail_safe(self):
+        """A seal is one part (its marker and epoch), so one more commit in the same window is flagged."""
+        self.lab.seal("ACT-1", 3)
+        self.lab.annotate(FENCE_EPOCH_ANNOTATION, "4")
+        rows = self.writes()
+        self.assertEqual([row["marker"] for row in rows], ["unobserved"])
+        self.assertFalse(self.i1(rows))
+
+    def test_a_rollback_then_a_seal_between_two_reads_count_one_write(self):
+        self.lab.rollback("ACT-1", TEMPLATE_B)
+        self.lab.seal("ACT-2", 2)
+        rows = self.writes()
+        self.assertEqual([(row["marker"], row["action_id"]) for row in rows], [("write", "ACT-1")])
+        self.assertTrue(self.i1(rows))
 
     def test_a_rollback_counts_one_write_with_its_action_evidence(self):
         self.lab.rollback("ACT-1", TEMPLATE_B)
@@ -451,7 +482,7 @@ class KindWriteCountTests(unittest.TestCase):
         self.assertEqual([row["action_id"] for row in self.topology.kind_rows], ["ACT-1", "ACT-2"])
 
     def test_kind_and_file_mode_count_the_same_writes(self):
-        """The production adapter's rollback, fence and a rogue patch, counted by both modes."""
+        """The production adapter's rollback, fence, seal and a rogue patch, counted by both modes."""
         from copy import deepcopy
         import subprocess
         from experiments.distributed import fixtures
@@ -494,6 +525,8 @@ class KindWriteCountTests(unittest.TestCase):
                  lambda: api.fence(target=deepcopy(target), version=version(),
                                    marker=fence_marker("ACT-2", "d" * 32)),
                  lambda: rogue([{"op": "add", "path": "/metadata/labels/tier", "value": "backend"}]),
+                 lambda: api.fence(target=deepcopy(target), version=version(),
+                                   marker=fence_marker("ACT-2", "e" * 32, 7)),  # A Coordinator seal.
                  lambda: restore("ACT-3", "b"),
                  lambda: restore("ACT-4", "c", restart_template(template, "RST-" + "4" * 16)),
                  lambda: rogue([{"op": "replace", "path": "/spec/template/spec/containers/0/image",
@@ -506,7 +539,9 @@ class KindWriteCountTests(unittest.TestCase):
         self.assertEqual(kind, file)
         self.assertEqual(kind, [("write", "ACT-1"), ("write", "ACT-3"), ("write", "ACT-4"), ("none", "unannotated")])
         self.assertEqual([row["kind"] for row in cluster.requests()],
-                         ["write", "fence", "other", "write", "write", "write"])
+                         ["write", "fence", "other", "fence", "write", "write", "write"])
+        self.assertEqual(cluster.snapshot(target)["deployment"]["metadata"]["annotations"][FENCE_EPOCH_ANNOTATION],
+                         "7")
 
 
 if __name__ == "__main__":

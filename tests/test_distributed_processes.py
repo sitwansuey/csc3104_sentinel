@@ -5,8 +5,8 @@ own processes (experiments/distributed/topology.py), injects one fault and
 checks invariants I1-I6 and X1-X4 from the durable records and logs. These
 are processes on one host, not separate machines.
 
-The plan's CI subset (S1b, S1c, S2, S4, S5) and S7 run by default, in about a
-minute and a half. Set SENTINEL_DISTRIBUTED_ALL=1 to run every scenario,
+The plan's CI subset (S1b, S1c, S2, S4, S5), S7 and S8 run by default, in
+about a minute and a half. Set SENTINEL_DISTRIBUTED_ALL=1 to run every scenario,
 including S7b.
 Known defects on this code base are asserted exactly (expected_failures), so a
 fix makes the test fail until the expectation is updated with the fix.
@@ -35,7 +35,9 @@ class ScenarioMixin:
 
 
 class DistributedProcessTests(ScenarioMixin, unittest.TestCase):
-    def test_s1b_executor_killed_after_the_write_intent_leaves_its_ledger_in_doubt(self):
+    def test_s1b_executor_killed_after_the_write_intent_settles_its_ledger_after_the_peer_finished(self):
+        # Before P3.04 the restarted host kept the action WRITE_STARTED (I6 failed). It now settles the row
+        # from the peer's evidence on the Deployment before it claims anything.
         summary = self.run_scenario("S1b")
         self.assertEqual(summary["notes"]["exit_code"], 73)
         self.assertEqual(summary["states"], ["RECOVERED"])
@@ -43,6 +45,13 @@ class DistributedProcessTests(ScenarioMixin, unittest.TestCase):
     def test_s1c_executor_killed_after_the_patch_is_adopted_by_the_peer_with_one_write(self):
         summary = self.run_scenario("S1c")
         self.assertEqual((summary["states"], summary["committed_writes"]), (["RECOVERED"], 1))
+
+    def test_s8_a_revocation_while_the_holder_is_paused_before_its_patch_is_sealed_with_no_write(self):
+        # P3.04 hazard: the paused Executor already passed its last checks; the other Executor's seal stops it.
+        summary = self.run_scenario("S8")
+        self.assertEqual((summary["states"], summary["committed_writes"]), (["FAILED"], 0))
+        self.assertEqual(summary["notes"]["paused_result"], "CONFLICT")
+        self.assertGreater(summary["notes"]["sealed_epoch"], 1)
 
     def test_s2_a_stalled_lease_holder_never_writes_after_the_peer_took_over(self):
         summary = self.run_scenario("S2")

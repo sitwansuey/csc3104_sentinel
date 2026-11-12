@@ -66,9 +66,10 @@ class MigrationTests(unittest.TestCase):
             self.assertTrue(handle(retry, store, LocalEventBus()))
             self.assertEqual([(t["from_state"], t["to_state"]) for t in store.transitions()],
                              [("REJECTED", "VALIDATING")])
+            self.assert_target_ownership_works(store)
         version, after = self.version()
         self.assertEqual(version, SCHEMA_VERSION)
-        self.assertLessEqual(before | {"transitions"}, after)
+        self.assertLessEqual(before | {"transitions", "target_ownership"}, after)
         self.assertEqual(len(read_records(self.path)["transitions"]), 1)
 
     def test_new_database_gets_every_migration(self):
@@ -76,7 +77,7 @@ class MigrationTests(unittest.TestCase):
             pass
         version, names = self.version()
         self.assertEqual(version, SCHEMA_VERSION)
-        self.assertLessEqual({"incidents", "actions", "messages", "outbox", "transitions"}, names)
+        self.assertLessEqual({"incidents", "actions", "messages", "outbox", "transitions", "target_ownership"}, names)
 
     def test_reopening_is_idempotent_and_concurrent_stores_share_one_version(self):
         self.old_database()
@@ -88,8 +89,9 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(self.version()[0], SCHEMA_VERSION)
 
     def test_a_database_left_at_any_earlier_version_reaches_the_newest(self):
-        # Trace context (3), Coordinator sequence and worker clocks (4), then the
-        # store generation, commit counter and messages(kind, action_id) index (5).
+        # Trace context (3), Coordinator sequence and worker clocks (4), the
+        # store generation, commit counter and messages(kind, action_id) index (5),
+        # then Executor target ownership and the seal (6, P3.04).
         # Version 0 is the unversioned schema in FIXTURE, upgraded above.
         for stopped in range(1, SCHEMA_VERSION):
             with self.subTest(version=stopped):
@@ -111,11 +113,22 @@ class MigrationTests(unittest.TestCase):
                     self.assertTrue(handle(sample("incident.json"), store, LocalEventBus()))
                     self.assertGreater(store.position()[1], counter)
                     self.assertEqual(store.db.execute("SELECT kind FROM messages").fetchone()[0], "incident")
+                    self.assert_target_ownership_works(store)
+
+    def assert_target_ownership_works(self, store):
+        target = sample("proposal.json")["target"]
+        self.assertIsNone(store.target_ownership(target))
+        self.assertEqual(store.claim_target(target, "executor-a", "d" * 32, 1), 1)
+        self.assertEqual(store.claim_target(target, "executor-a", "e" * 32, 2), 2)
+        owner = store.target_ownership(target)
+        self.assertEqual((owner["epoch"], owner["holder"], owner["seal_required"], owner["sealed_epoch"]),
+                         (2, "executor-a", 0, 0))
 
     def test_migrations_are_numbered_in_order(self):
         numbers = [number for number, _ in MIGRATIONS]
         self.assertEqual(numbers, list(range(1, len(numbers) + 1)))
         self.assertEqual(SCHEMA_VERSION, numbers[-1])
+        self.assertGreaterEqual(SCHEMA_VERSION, 6)  # 6 is target ownership (P3.04), after P3.06's 5.
 
     def test_newer_schema_is_refused_and_the_file_is_released(self):
         with SQLiteStore(self.path):

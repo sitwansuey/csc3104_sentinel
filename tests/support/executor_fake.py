@@ -4,7 +4,7 @@ from copy import deepcopy
 from threading import RLock
 
 from services.executor.core import ACTION_ANNOTATION, ConditionalWriteConflict, TargetAbsent, encode_evidence
-from services.executor.reconciliation import FENCE_ANNOTATION
+from services.executor.reconciliation import FENCE_ANNOTATION, FENCE_EPOCH_ANNOTATION
 from services.executor.store import canonical_json
 
 
@@ -98,6 +98,8 @@ class FakeDeploymentAPI:
             candidate = deepcopy(self.snapshot)
             updated = candidate["deployment"]["metadata"]
             updated.setdefault("annotations", {})[FENCE_ANNOTATION] = canonical_json(marker)
+            if "epoch" in marker:  # A Coordinator seal, as in the kubectl adapter.
+                updated["annotations"][FENCE_EPOCH_ANNOTATION] = str(marker["epoch"])
             updated["resourceVersion"] = self._advance(version)
             self.snapshot = candidate
             result = self._snapshot()

@@ -67,9 +67,9 @@ What is single-host today:
 The Coordinator is the authorisation state machine. It decides which proposal
 is active for a workload, when an action is READY, and which command a worker
 may claim. Every change runs inside `BEGIN IMMEDIATE`, so SQLite admits one
-writer at a time (`services/coordinator/store.py:434-448::SQLiteStore.transaction::@contextmanager`).
+writer at a time (`services/coordinator/store.py:501-515::SQLiteStore.transaction::@contextmanager`).
 Each claim, renew and result also replays the outbox revocation rules inside
-the same transaction (`runtime/worker_transport.py:82-111::Delivery.transaction::@contextmanager`).
+the same transaction (`runtime/worker_transport.py:86-115::Delivery.transaction::@contextmanager`).
 
 If two writable Coordinators existed during a partition, each could admit a
 different proposal for the same workload, or move the same action to READY on
@@ -247,11 +247,11 @@ sequence number of its newest accepted message.
 In this **sequence mode** a result is accepted only when it answers the newest
 request of its kind for the action, and that request was issued after the
 previous result of the same kind was accepted
-(`services/coordinator/core.py:118::_apply::_answers_current_request(message, store, answers)`).
+(`services/coordinator/core.py:160::_apply::_answers_current_request(message, store, answers)`).
 Its own timestamp is never compared with another process's. A result that
 answers an older request is refused even if it is stamped later, and the
 transport answers it with HTTP 409
-(`runtime/worker_transport.py:255::Delivery.finish::Result answers a superseded request`),
+(`runtime/worker_transport.py:318::Delivery.finish::Result answers a superseded request`),
 so the worker releases the delivery instead of resending it. Most such
 results never get that far: `services/coordinator/core.py::dispatch_pending`
 already retires a superseded request, and `finish` then answers 409.
@@ -263,13 +263,13 @@ so their tests are unchanged.
 
 | Check | Before P3.03 | Sequence mode (worker transport) | What still depends on time |
 | --- | --- | --- | --- |
-| Execution after the Guard ALLOW | Executor clock vs Guard clock (`recorded_at >= checked_at`) | The answered executor request was issued after the current Guard result was accepted (`services/coordinator/core.py:193::_apply::_issued_after(store, answers, "guard_result"`) | Nothing |
+| Execution after the Guard ALLOW | Executor clock vs Guard clock (`recorded_at >= checked_at`) | The answered executor request was issued after the current Guard result was accepted (`services/coordinator/core.py:235::_apply::_issued_after(store, answers, "guard_result"`) | Nothing |
 | Execution newer than the stored one | Executor vs Executor | The answered request is the newest executor request or reconcile command, issued after the stored execution was accepted (row above `_answers_current_request`) | Nothing |
-| Guard result newer than the stored one | Guard vs Guard (`services/coordinator/core.py:143::_apply::if previous and not sequenced:`) | The answered guard request is the newest one | Nothing |
-| Guard ALLOW not older than the latest finding | Guard vs Verifier | The answered guard request was issued after the latest finding was accepted (`services/coordinator/core.py:150::_apply::_issued_after(store, answers, "dependency_result"`); the binding of the Guard report to that finding is unchanged | Nothing |
-| Finding newer than the stored one | Verifier vs Verifier | A finding answering a dependency request: that request is the newest. A finding pushed through `ingest`: timestamps are compared only when the same identity produced both (one clock); across identities the later acceptance wins (`services/coordinator/core.py:126::_apply::previous["producer"] == producer`) | One producer's clock must not step back |
-| Health window after the write | Verifier vs Executor (`window_start >= recorded_at`) | The answered verifier request was issued after the current execution was accepted (`services/coordinator/core.py:217::_apply::_issued_after(store, answers, "execution_result"`) | See the Verifier below |
-| Approval not before the Guard decision | Coordinator vs Guard | Not compared for a sequenced decision: AWAITING_APPROVAL already proves the decision was accepted first (`services/coordinator/core.py:311::approve::meta["answers"] is None`) | Nothing |
+| Guard result newer than the stored one | Guard vs Guard (`services/coordinator/core.py:185::_apply::if previous and not sequenced:`) | The answered guard request is the newest one | Nothing |
+| Guard ALLOW not older than the latest finding | Guard vs Verifier | The answered guard request was issued after the latest finding was accepted (`services/coordinator/core.py:192::_apply::_issued_after(store, answers, "dependency_result"`); the binding of the Guard report to that finding is unchanged | Nothing |
+| Finding newer than the stored one | Verifier vs Verifier | A finding answering a dependency request: that request is the newest. A finding pushed through `ingest`: timestamps are compared only when the same identity produced both (one clock); across identities the later acceptance wins (`services/coordinator/core.py:168::_apply::previous["producer"] == producer`) | One producer's clock must not step back |
+| Health window after the write | Verifier vs Executor (`window_start >= recorded_at`) | The answered verifier request was issued after the current execution was accepted (`services/coordinator/core.py:259::_apply::_issued_after(store, answers, "execution_result"`) | See the Verifier below |
+| Approval not before the Guard decision | Coordinator vs Guard | Not compared for a sequenced decision: AWAITING_APPROVAL already proves the decision was accepted first (`services/coordinator/core.py:353::approve::meta["answers"] is None`) | Nothing |
 | Approval not from the future | Coordinator vs Guard or Executor | `approved_at > checked_at + ε` (`services/guard/core.py:159::_approval_reasons::approved_at > checked_at + skew`) | Skew up to ε is tolerated |
 | Approval expiry | Coordinator or operator vs Guard or Executor | Expired once `checked_at + ε >= expires_at` (`services/guard/core.py:161::_approval_reasons::checked_at + skew >= expires_at`), and a decision's `valid_until` ends ε before the expiry (`services/guard/decisions.py:289::_valid_until::-skew`) | An approval can end up to 2ε early, never late |
 | Finding not from the future | Verifier vs Guard or Executor | `checked_at > now + ε` is UNKNOWN (`services/guard/core.py:249::_evaluate_core::dependency_at > checked_at + skew`) | Skew up to ε is tolerated |
@@ -294,7 +294,7 @@ the skew between two processes:
 
 - The Executor's local Guard re-check runs with its own clock against an
   approval stamped by the Coordinator and a finding stamped by the Verifier
-  (`services/executor/core.py:426::execute::authorizer.validate`, which reads
+  (`services/executor/core.py:537::execute::authorizer.validate`, which reads
   the host clock in `runtime/live_executor.py::LiveGuardAuthorizer.validate`). With more than ε of
   skew it refuses, and the Executor reports FAILED with no write. The
   Coordinator now accepts that FAILED result in order, so the action ends
@@ -311,7 +311,7 @@ the skew between two processes:
   with the Executor in the loopback test and at offset 0 in S7.
 - An Executor host decides whether its own uncertain reconcile result is
   newer than a peer's by comparing their `recorded_at`
-  (`services/executor/core.py:391::unchanged_uncertainty::return mine <= theirs`). A wrong
+  (`services/executor/core.py:502::unchanged_uncertainty::return mine <= theirs`). A wrong
   answer only makes it retry the command or report one more uncertain
   result, which the Coordinator orders by sequence.
 
@@ -356,7 +356,7 @@ The bound is enforced, and fails closed, only where it is configured:
   `runtime/worker_service.py::poll`).
 - A Coordinator started with `--max-clock-skew-seconds` refuses a claim, with
   HTTP 409, from a worker whose latest reported estimate is missing or
-  outside the bound (`runtime/worker_transport.py:132::Delivery.claim::Worker clock skew exceeds the bound`).
+  outside the bound (`runtime/worker_transport.py:188::Delivery.claim::Worker clock skew exceeds the bound`).
 
 Without the setting, workers and the Coordinator measure and record the
 offset but do not refuse. What is guaranteed after a clock step: the worker
@@ -379,7 +379,7 @@ share one clock, so the only offset it has measured is the simulated one.
 **Leases use one clock.** Lease expiry and retry back-off are computed only
 from the Coordinator's clock (`runtime/worker_transport.py::Delivery.claim`).
 A claim and a renewal also answer `expires_in`, the lease length as a
-duration (`runtime/worker_transport.py:201::Delivery.renew::"expires_in": self.lease`), and the worker
+duration (`runtime/worker_transport.py:259::Delivery.renew::"expires_in": self.lease`), and the worker
 schedules renewal from it (`runtime/remote_worker.py::lease_duration`), so no
 lease decision compares the Coordinator's clock with a worker's. Only a
 Coordinator from before this change, which sends no `expires_in`, makes the
@@ -415,7 +415,7 @@ hour off.
 | A worker result and its acknowledgment commit together; a resend is a replay | Result digest stored on the receipt | `runtime/worker_transport.py::Delivery.finish` |
 | A worker never redoes finished work after a lost response | Result saved before it is sent | `runtime/remote_worker.py::RemoteWorker.once` |
 | Only the current lease holder can renew or report | Owner, role and lease token must match; renewal cannot revive finished or expired work | `runtime/worker_transport.py::Delivery.renew` |
-| The Kubernetes write happens at most once per action on one ledger | Write intent is journalled before the call; an unclear outcome is reconciled by reading, never by writing again, through a pure decision table | `services/executor/core.py:441-454::execute::start_write`, `services/executor/reconciliation.py::classify` |
+| The Kubernetes write happens at most once per action on one ledger | Write intent is journalled before the call; an unclear outcome is reconciled by reading, never by writing again, through a pure decision table | `services/executor/core.py:552-565::execute::start_write`, `services/executor/reconciliation.py::classify` |
 
 Tests: `tests/test_coordinator.py::CoordinatorTests.test_changed_payload_under_stable_id_is_rejected`,
 `tests/test_worker_transport.py::TransportTests.test_lost_result_response_recovers_exact_receipt_after_restart`,
@@ -432,18 +432,22 @@ Delivery to workers is at least once, and receivers deduplicate by action id.
 - A lease is a work-distribution hint held at the Coordinator. It is not a
   fence at Kubernetes: a worker whose lease has expired can still be inside its
   kubectl call, which may take up to 15 s
-  (`services/executor/kubernetes_adapter.py:31::PROCESS_TIMEOUT_SECONDS::= 15`).
-- The only check enforced by storage is the UID and resourceVersion test in
-  the patch (`services/executor/kubernetes_adapter.py:177-179::KubectlDeploymentAPI.conditional_restore::/metadata/uid`).
-  It stops a write based on a stale read. It does not stop a writer whose read
-  is still current but whose lease expired or whose approval was revoked.
+  (`services/executor/kubernetes_adapter.py:33::PROCESS_TIMEOUT_SECONDS::= 15`).
+- The UID and resourceVersion test in every patch is checked by the API
+  server inside the update it guards
+  (`services/executor/kubernetes_adapter.py:179-181::KubectlDeploymentAPI.conditional_restore::/metadata/uid`).
+  On its own it stops a write based on a stale read, but not a writer whose
+  read is still current and whose lease expired or whose approval was revoked
+  after its last check. The seal below closes that gap.
 - The per-target lock is an OS file lock on one host
-  (`services/executor/store.py::LocalTargetCoordinator.hold`). Two Executor
-  hosts each have their own lock and ledger. If the first host's lease expires,
-  the second can claim the same request; the resourceVersion test lets only one
-  write land. The loser finds this action's evidence annotation on the
-  Deployment and reports APPLIED without writing
-  (`services/executor/core.py:420::execute::Another host may already have committed`).
+  (`services/executor/store.py::LocalTargetCoordinator.hold`); it still
+  separates the processes of one host. Across hosts the Coordinator now gives
+  each workload one owner at a time (below). If the first host's lease
+  expires, the second can claim the same request under the next epoch; the
+  resourceVersion test lets only one write land, and the loser finds this
+  action's evidence annotation on the Deployment and reports APPLIED without
+  writing
+  (`services/executor/core.py:531::execute::Another host may already have committed`).
   The multi-process scenarios S1c and S2 run two Executor processes with
   separate ledgers and locks on one host and show this adoption; no run has
   used two Executors on separate machines.
@@ -452,7 +456,7 @@ Delivery to workers is at least once, and receivers deduplicate by action id.
   the patch can never commit, so the result is SUPERSEDED and the Coordinator
   records the action FAILED. While the UID and resourceVersion are unchanged
   the request could still commit, so the action stays NEEDS_RECONCILIATION
-  (`services/executor/reconciliation.py:230::classify::Basis.UNCHANGED_IN_DOUBT`),
+  (`services/executor/reconciliation.py:233::classify::Basis.UNCHANGED_IN_DOUBT`),
   even when the API server in fact rejected it. The argument assumes
   resourceVersions never return to an earlier value, so an etcd restore must
   use `--bump-revision`.
@@ -460,7 +464,7 @@ Delivery to workers is at least once, and receivers deduplicate by action id.
   the settle delay, a reconcile pass journals a fresh nonce and then sends a
   patch with the same UID and resourceVersion tests that only adds this
   action's fence annotation (sentinel.io/fence)
-  (`services/executor/kubernetes_adapter.py:210-212::KubectlDeploymentAPI.fence::/metadata/uid`).
+  (`services/executor/kubernetes_adapter.py:214-216::KubectlDeploymentAPI.fence::/metadata/uid`).
   etcd commits at most one request conditioned on V0. If the fence commits,
   its own test proves our write had not committed before it, and the moved
   version means it never can: CONFLICT with basis FENCED, and the workload is
@@ -470,14 +474,188 @@ Delivery to workers is at least once, and receivers deduplicate by action id.
   still increases `metadata.generation` for the annotation change. With
   fencing off, the action stays in doubt and after 600 s (the default) the
   Executor adds one result saying operator action is required. The fence uses
-  the same get and patch RBAC as the write. It is the Executor's own abort,
-  not yet a fence sent for an expired lease or a revoked approval (P3.04).
+  the same get and patch RBAC as the write. It is the Executor's own abort;
+  the seal below is the same patch sent on the Coordinator's command.
   Live on one host, one admission-deny run each at 4139385 and 5409092, the
   fence committed and the action ended CONFLICT with basis FENCED, the workload
   was released and a second proposal was APPLIED (`C-EXECUTOR-WEDGE-FENCE`). The
   4139385 run failed one harness check that expected `metadata.generation` to
   stay unchanged; 17d4532 fixed the check to compare the spec, and the 5409092
-  run passed every check.
+  run passed every check. The seal has not been run against a cluster.
+
+### Target ownership epochs and the seal (P3.04)
+
+**Ownership.** Migration 6 adds a `target_ownership` row per workload, keyed
+like the Executor's lock (cluster, namespace, kind and name; the UID is kept
+beside it). Each claim of an `executor.request`, `executor.reconcile` or
+`executor.seal` command raises the workload's epoch by one, also when the
+same identity claims again, and the delivery carries it as `fence_epoch`
+(`services/coordinator/store.py::SQLiteStore.claim_target`). The epoch is a
+row in the Coordinator's database, so it survives a Coordinator restart and
+never goes back. While one Executor holds a live lease on a command for a
+workload, no other Executor command for that workload can be claimed
+(`runtime/worker_transport.py::Delivery._target_free`), and a result from a
+claim that is no longer the workload's latest gets HTTP 409
+(`runtime/worker_transport.py::Delivery._owner_epoch`). Each workload has its
+own row, so the connected lab's two recovery targets, shippingservice and
+cartservice (P3.09), keep separate epochs and seals: a seal due on one blocks
+neither commands nor planning for the other
+(`tests/test_fencing.py::OwnershipTests.test_the_two_boutique_targets_keep_separate_epochs_and_seals`).
+
+**When a seal is required.** The Coordinator queues an `executor.seal`
+command for the action, and blocks the workload, when it withdraws an
+`executor.request` that an Executor claimed and has not answered: a revoked
+approval, new dependency evidence or a new Guard decision, whether or not
+the holder's lease had already expired
+(`runtime/worker_transport.py::Delivery._seal_abandoned`). It does the same
+when a later holder of a command reports FAILED, which means that holder
+wrote nothing while the version may be unchanged, and an earlier holder may
+still be writing. A command withdrawn before anyone claimed it has no
+receipt and needs no seal, so the ordinary revocation path is unchanged.
+CONFLICT and SUPERSEDED need no seal: the reporting Executor saw the version
+move, so no patch conditioned on the old version can commit. While the seal
+is due, only the seal can be claimed for that workload, and new planning for
+it waits (`services/coordinator/store.py::SQLiteStore.planning_blocker`).
+
+**The seal.** Any Executor that claims it runs `seal()`
+(`services/executor/core.py::seal`). It reads the Deployment. If this
+action's evidence annotation is on it, the abandoned write landed: APPLIED.
+If the target is gone, has another UID, or has a version other than the
+proposal's `based_on_resource_version` (V0) without that evidence, no write
+of the action can commit: SEALED, and nothing is sent. Otherwise it sends
+`fence()` at V0 with a marker holding a fresh nonce and the epoch, plus the
+annotation sentinel.io/fence-epoch: a metadata-only patch with the same UID
+and resourceVersion tests. Then it reads again. A refused fence or an unknown
+outcome is decided by that read. After 5 passes it gives up with UNSEALED. A
+read failure leaves the command pending and the workload blocked. The
+Executor answers with a new message kind, `fence_result`
+(`shared/contracts.py::FIELDS`), validated like every other message, with
+unknown or missing fields refused.
+
+**What the Coordinator does with it**
+(`services/coordinator/core.py::_apply_fence_result`). A result whose epoch is
+not the workload's current one is refused (HTTP 409). SEALED releases the
+workload; an action that had not finished becomes FAILED, since the version
+it was planned on is gone and it can never run. APPLIED is saved as an
+Executor delivery review and the incident moves to NEEDS_REVIEW, so a write
+after revocation is surfaced, never hidden or repeated. UNSEALED is reviewed
+the same way, and the workload stays blocked until an operator queues
+another seal (`services/coordinator/core.py::reseal`) and it reports SEALED.
+
+**Why the resourceVersion is a fencing token.** Let W be an abandoned patch
+of the action, which tests `resourceVersion == V0`, and S the seal's fence,
+which tests the same V0. The API server applies each update to one object as
+a compare-and-swap on that object's stored version, and etcd applies the
+updates to one key one after another. A committed change always gets a new
+resourceVersion that is never given out again.
+
+- If S commits first, the object's version is no longer V0 and never will be
+  again, so W's test fails whenever W arrives, after any pause, delay or
+  partition of its sender. The store enforces the token; the sender does not
+  have to check anything.
+- If W commits first, S's test fails, and the next read finds W's evidence
+  annotation: APPLIED, which goes to review.
+- If the version had already moved past V0 when the seal read it, W can never
+  commit either, and the seal sends nothing.
+
+So once a seal reports SEALED, no write of the abandoned action can commit,
+and a write that did commit is reported. No clock or cache takes part. This
+is the fencing token of Kleppmann's argument, with the check done by the
+store. The epoch is not needed for this argument: it orders seal results at
+the Coordinator, and it is written on the object so that an admission policy
+can refuse a lower one. That policy is `deploy/sentinel/executor-admission.yaml`
+(P3.05): for the Executor identity it denies a fence-epoch annotation lower
+than the stored one, compared with the stored object inside the same update. It
+is written and checked structurally, not yet run against an API server. The
+epoch belongs to one Coordinator store, starting at 1, while the annotation
+stays on the Deployment, and the Coordinator never reads it back. So with the
+policy installed, a new, reset or restored store cannot seal a Deployment
+sealed earlier at a higher epoch: each seal patch is denied, the seal ends
+UNSEALED and the workload goes to review. An administrator removes the
+annotation (or recreates the Deployment) before a new store is used. Seeding
+a store's epoch from the annotation, or dropping the epoch rule, is an open
+owner decision (`L-EXECUTOR-FIELD-LIMITS`).
+
+Limits:
+
+- It fences Pod-template writes only, the ones made through the conditional
+  patch. RBAC limits verbs and resources, not fields. The P3.05 admission
+  policy limits the Executor identity to Pod template changes with new
+  evidence and to the sentinel.io execution and fence annotations, but it has
+  not been verified against an API server and no launcher installs it.
+- It assumes one linearizable store behind the API server for the
+  Deployment: one etcd cluster, updates to one key applied in one order, and
+  resourceVersions that never repeat. An etcd restore without
+  `--bump-revision` breaks the last property.
+- If a third writer changed the Deployment after the abandoned write landed
+  and removed that write's evidence annotation, the seal would see the
+  version moved without evidence and report SEALED, not APPLIED. The planning
+  block stops Sentinel itself from being that writer.
+- While no Executor can reach the API server the seal cannot finish and the
+  workload stays blocked: the consistent choice, paid for with that
+  workload's availability.
+- A seal moves the version, so a revoked proposal has to be planned again.
+  The cost is paid only when an Executor had claimed the command.
+- A claim made before migration 6 has no ownership row, so its result is
+  refused with HTTP 409 once and the command is claimed again. Until that
+  old lease ends, exclusivity does not see it either: a second Executor
+  could claim a command for the same workload. The resourceVersion test
+  still lets at most one of their writes commit.
+- A seal is not checked by Guard and needs no approval: `ExecutorAdapter.process`
+  calls `seal()` directly (`runtime/remote_adapters.py::ExecutorAdapter.process`).
+  It only ever sends `fence()`, which changes metadata under the UID and
+  resourceVersion tests, never the Pod template, and is refused for a
+  workload outside the Executor's allowlist.
+- `seal()` takes the host's local workload lock. If the paused writer runs on
+  the same host with the same lock directory, the seal gets TargetBusy and
+  stays pending until the writer lets go; by then its write has landed, so
+  the seal reports APPLIED and the action goes to review. That is safe, but
+  no fence is placed. An Executor on another host fences as described above.
+- A write that landed legitimately, but whose claimed command was withdrawn
+  (for example by new dependency evidence) before its result reached the
+  Coordinator, also goes to NEEDS_REVIEW rather than VERIFYING.
+- Executor writes do not yet carry the epoch in their evidence annotation;
+  only seals write sentinel.io/fence-epoch.
+
+Tests: `tests/test_fencing.py::PausedWriterHazardTests.test_the_seal_stops_the_paused_write_with_zero_template_writes`
+pauses Executor A at the real fault point `executor.before_patch` after its
+last lease and approval checks, revokes through the approval API, lets
+Executor B claim and perform the seal, and then A's patch raises
+ConditionalWriteConflict with zero template writes. In that test the
+ConditionalWriteConflict comes from the adapter's own read inside
+`conditional_restore`, which runs after the fault point and sees the version
+the seal moved; it is not proof that the server enforced the fence. The same
+script without the seal shows one write after the revocation
+(`tests/test_fencing.py::PausedWriterHazardTests.test_without_a_seal_the_same_paused_write_lands_after_the_revocation`).
+`tests/test_fencing.py::PausedWriterHazardTests.test_a_revocation_after_the_paused_holders_lease_expired_still_seals`
+lets A's lease run out while A is paused and only then revokes: the seal is
+still queued, B performs it, and A writes nothing.
+`tests/test_fencing.py::SealOutcomeTests.test_a_seal_landing_between_the_pre_read_and_the_patch_is_enforced_by_the_server`
+shows the storage-enforced refusal: the seal lands after A's own read, the
+file cluster refuses A's patch by its resourceVersion test, A cannot tell the
+refusal from a lost response (WriteOutcomeUnknown), and its reconcile read
+then reports SUPERSEDED.
+Scenario S8 runs the hazard with separate processes on one host. All of this
+uses the file-backed test cluster; no seal has been sent to a real API server.
+
+### Crashed Executors settle their own ledger (P3.04)
+
+A host killed during a write keeps the action WRITE_STARTED. If its peer then
+finishes the action, no command for it reaches that host again. Before each
+claim, a remote Executor now settles its due in-doubt rows from live state
+(`services/executor/core.py::settle`, called from
+`runtime/remote_worker.py::RemoteWorker._sweep`). The sweep runs in a pass
+only after the pass has re-sent any saved result and passed the store-change
+and clock checks above, so a worker that may not claim does not read the
+cluster either. A seal is an ordinary Executor command in this order: its
+saved `fence_result` is re-sent first, and a new seal is claimed only past
+the same checks. With the decision table, a
+row is closed when the action's evidence is on the target or the target has
+moved past V0. Nothing is sent. A row still at V0 without evidence stays in
+doubt, backs off, and waits for its own command or a seal. The row is closed
+from the cluster's evidence alone, because that is what decides whether a
+write can still commit; and since every way the Coordinator abandons a
+claimed command now seals it, the cluster always ends up deciding the row.
 
 ## Multi-process fault runs on one host
 
@@ -525,14 +703,15 @@ Results on this code base (file mode, one Windows host):
 | Scenario | Outcome |
 | --- | --- |
 | S0, S1a, S1d, S3, S4, S5, S6 | Reached RECOVERED with one write; every invariant held |
-| S1b, S1c: an Executor crashes after its write intent or after its patch, and its peer finishes the action | RECOVERED with one write. The peer adopted a committed write by its evidence annotation, so the redelivery defect (CONFLICT for an applied write) did not reproduce. **New defect:** no command reaches the crashed host once it restarts, so its ledger keeps the action WRITE_STARTED (I6 fails), and it refuses any later action on that workload (`services/executor/store.py::SQLiteExecutionLedger.prepare`) until someone reconciles it |
+| S1b, S1c: an Executor crashes after its write intent or after its patch, and its peer finishes the action | RECOVERED with one write. The peer adopted a committed write by its evidence annotation, so the redelivery defect (CONFLICT for an applied write) did not reproduce. Before P3.04 no command reached the crashed host once it restarted, so its ledger kept the action WRITE_STARTED (I6 failed) and it would refuse any later action on that workload (`services/executor/store.py::SQLiteExecutionLedger.prepare`). Since P3.04 the restarted host settles the row from the evidence on the Deployment before it claims anything: every invariant held in 3 of 3 runs of each |
 | S1e: the crashed Executor is the only one that comes back | It fenced its own in-doubt write; FAILED with no write |
 | S2: the lease holder stalls before its patch (SIGSTOP on Linux; a blocked fault point and a blackholed link on Windows, which has no suspend without psutil) | The peer wrote; the stale host's patch was refused and it adopted the peer's write, so on this base a peer's write did not wedge the losing host |
 | S7: both Executors 300 s behind, no skew bound, operator approval required | Before P3.03, the clock-skew wedge: the write landed, the result was refused with HTTP 400 for the whole run, and the incident stayed READY (I3 and I5 failed). Now the Executor's own Guard re-check sees the Coordinator-stamped approval 300 s in its future and refuses, its FAILED result is accepted in order, and the action ends FAILED with no write and no HTTP 400 in 3 of 3 runs, every invariant held; each Executor measured θ = 300.005 to 300.012 s (uncertainty at most 0.013 s), the other workers at most 0.015 s. It does not recover: no Executor is within the bound |
+| S8: the approval is revoked while the lease holder is stopped at `executor.before_patch`, after its last checks | The Coordinator withdrew the claimed command and queued a seal; the other Executor fenced the target at the planned resourceVersion; the paused patch was refused when it resumed (CONFLICT). FAILED with no template write, every invariant held, in 3 of 3 runs |
 | S7b: executor-a 5 s behind, bound 2 s for every worker and the Coordinator | executor-a measured θ = 5.006 to 5.016 s, reported `clock_skew`, answered `/readyz` with 503 and never claimed; executor-b did the work. RECOVERED with one write in 3 of 3 runs, every invariant held |
 
-S1b and S1c are asserted as known failures, so the tests fail when a fix
-lands until the expectation is updated; the orphaned ledger is left for P3.04.
+S1b and S1c were asserted as known failures until P3.04 settled the orphaned
+ledger; they now assert that every invariant holds.
 S7 was asserted the same way until P3.03 fixed the wedge, and now asserts
 FAILED with no write and the measured offsets. An earlier version of this
 change reported S7 as RECOVERED; that held only because the test offset did
@@ -548,8 +727,8 @@ mode on one Windows host; neither has run in kind mode.
 | P3.02 | A trace of one incident from a live multi-process run; trace context across outbox rows, deliveries and worker requests, and the offline viewer, are in the code and tested offline ([traces](observability.md#traces)) |
 | P3.01 | Done in file mode (above). Left: a kind-mode run against the connected lab and committed evidence bundles. Kind mode counts a template write by its effect, as file mode does: a change of the whole pod template's fingerprint between successive reads of the Deployment (a RESTART token change included), or a new evidence annotation for the template in place. It does not count `metadata.generation`, which an Executor fence also raises (`C-EXECUTOR-WEDGE-FENCE`), so a fence counts no write. Its reads are polled; when generation rose by more than the changes two reads show, a write may be hidden and I1 fails on an `unobserved` row instead of passing |
 | P3.03 | Done in the code above. Left: S7 in kind mode, and a real clock offset per Pod (Chaos Mesh TimeChaos, P4.01) instead of the gated test offset. With operator approval required, an Executor whose clock is 5 min off cannot reach RECOVERED: its own Guard re-check refuses the Coordinator-stamped approval. So P4.01 should expect what S7 and S7b show (FAILED with no write without a bound; with a bound, that Executor stops claiming and an in-bound peer recovers the action), unless the owners change the re-check |
-| P3.04 | Per-target ownership epochs and a seal command that fences abandoned Executor writes |
-| P3.05 | An admission policy limiting which fields the Executor identity may change |
+| P3.04 | Done in the code above and in file mode on one host (ownership epochs, the seal, the ledger settle). Left: S8 in kind mode against a real API server, and the audit-log proof that the paused PATCH was refused (P4.01); the Executor owner's sign-off on the mechanism (#58) |
+| P3.05 | Written and checked structurally: an admission policy limiting which fields the Executor identity may change, with a monotonic fence epoch (`deploy/sentinel/executor-admission.yaml`). Left: the live run in a disposable namespace (`scripts/validation/test_executor_admission_live.py`), which also shows a seal from a fresh store being denied by a higher stored epoch; the owners' choice between seeding a store's epoch from the annotation and fencing by resourceVersion only; and their sign-off on the choices listed in `L-EXECUTOR-FIELD-LIMITS` (no epoch required on a template change, the identity matched in any namespace, a malformed stored epoch failing closed, evidence changeable without a template change, no resourceNames on the binding) |
 | P3.06 | Done in the code above and measured in file mode on one host. Left: the same measurements in a cluster (P4.02) |
 | P4.01, P4.02 | Multi-node kind run with partitions and restarts; measured RTO and RPO added here |
 | P5.01 | A replicated Coordinator on a replicated database |

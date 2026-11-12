@@ -6,13 +6,16 @@ import math
 from pathlib import Path
 import time
 
-from services.executor.core import execute, reconcile, unchanged_uncertainty
+from services.executor.core import execute, reconcile, seal, settle, unchanged_uncertainty
 from services.guard.common import json_sha256
 from services.guard.core import assert_decision_usable, evaluate_with_report
 from services.planner.core import mock_provider, retrieve_runbooks
 from services.planner.worker import prepare
 from runtime.worker_health import PreflightFailed
+from shared import log
 from shared.contracts import validate_message
+
+LOG = log.get_logger("remote_adapters")
 
 
 def utc_now():
@@ -145,8 +148,12 @@ class ExecutorAdapter:
         self.adapters = adapters
 
     def process(self, delivery, lease):
-        if delivery["topic"] not in {"executor.request", "executor.reconcile"}:
+        if delivery["topic"] not in {"executor.request", "executor.reconcile", "executor.seal"}:
             raise ValueError("Executor received an incompatible request")
+        if delivery["topic"] == "executor.seal":
+            # The epoch comes from the Coordinator's claim; the lease is checked before every fence.
+            return seal(delivery["payload"]["proposal"], delivery["fence_epoch"], self.adapters,
+                        check=lease.ensure_current), None
         adapters = replace(self.adapters, authorizer=_RemoteAuthority(self.adapters.authorizer, lease))
         operation = reconcile if delivery["topic"] == "executor.reconcile" else execute
         result = operation(delivery["payload"]["proposal"], adapters)
@@ -158,7 +165,22 @@ class ExecutorAdapter:
         return result, None
 
     def acknowledge(self, result):
-        self.adapters.ledger.acknowledge_result(result)
+        if result["kind"] == "execution_result":  # A seal keeps nothing in the ledger.
+            self.adapters.ledger.acknowledge_result(result)
+
+    def sweep(self):
+        """Settle this host's in-doubt ledger rows that are due, read-only; return how many closed.
+
+        RemoteWorker.once runs it before each claim, so a restarted host whose
+        command a peer finished closes its row from live state (settle()).
+        """
+        closed = 0
+        for proposal in self.adapters.ledger.pending_proposals(due_at=self.adapters.clock()):
+            try:
+                closed += settle(proposal, self.adapters) is not None
+            except Exception as error:  # noqa: BLE001 - one unsettled row must not stop the others or the claim
+                log.failure(LOG, "executor.ledger.settle_failed", error, action_id=proposal.get("action_id"))
+        return closed
 
 
 class VerifierAdapter:

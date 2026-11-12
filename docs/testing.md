@@ -127,9 +127,21 @@ uses a fake Deployment API; RESTART has not run against a cluster.
 `tests/test_distributed_processes.py` runs fault scenarios with the Coordinator
 and every worker as separate processes on one host, against a file-backed test
 cluster, and checks invariants from their records and logs. The default subset
-takes about 75 s; set `SENTINEL_DISTRIBUTED_ALL=1` for every scenario. These are
+takes about 90 s; set `SENTINEL_DISTRIBUTED_ALL=1` for every scenario. These are
 processes on one host, not separate machines; see the
 [harness guide](../experiments/distributed/README.md).
+
+`tests/test_fencing.py` covers target-ownership epochs and the seal (P3.04).
+It stops one Executor at the `executor.before_patch` fault point after its
+last checks, revokes the approval, lets a second Executor seal the target and
+shows the first one's patch refused with zero template writes, against the
+production kubectl adapter and the file-backed test cluster. Without the seal
+the same script shows one write after the revocation. It also covers a seal
+that finds the write already landed (NEEDS_REVIEW), bounded seal attempts,
+one live Executor claim per workload, epochs across a Coordinator restart,
+the planning block, a revocation with no claim (no seal), the `fence_result`
+contract and a crashed Executor settling its own ledger. No seal has been sent
+to a real API server.
 
 The Planner handoff checks inject unavailable/invalid providers, restart during
 backoff, exhaust attempts after a worker death, fence a replaced lease and replay
@@ -458,8 +470,9 @@ normal presentation run:
 | Observer deployed runtime | `scripts/validation/validate_observer_runtime.py` | Existing `sentinel-lab` (see below) |
 | Verifier connected telemetry/read-only permissions | `scripts/validation/test_verifier_connected_live.py --setup` | Existing `sentinel-lab` (see below) |
 | Executor wedge (rv-race, delete-recreate) | `scripts/validation/test_executor_wedge_live.py --context <ctx> --scenario <name>` | Existing `kind-sentinel-boutique-connected` or `kind-sentinel-wedge`; own namespace, deleted on exit; never `sentinel-lab` |
+| Executor admission policy (P3.05; not yet run) | `scripts/validation/test_executor_admission_live.py --context kind-sentinel-boutique-connected` | Existing `kind-sentinel-boutique-connected` only; own namespace, policy and binding, deleted on exit; never `sentinel-lab` |
 
-The last two checks never create a cluster. They expect the `sentinel-lab` kind
+The Observer runtime and Verifier checks never create a cluster. They expect the `sentinel-lab` kind
 cluster with the `sentinel-demo` namespace, so run them before, not after,
 the Executor check with `-Cleanup`, or create the lab with
 `scripts\test-executor-live.ps1 -Setup` (without `-Cleanup`). The Observer

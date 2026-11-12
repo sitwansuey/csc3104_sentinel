@@ -217,8 +217,12 @@ class RemoteWorker:
     whose re-send is accepted ends there); refuse new work while a store
     change is recorded (the journal and the previous reply, no request);
     refuse it while the clock is outside the skew bound (at most a /clock
-    exchange); then run before_claim. The cheap checks come first, so a
-    worker that would refuse the claim anyway never runs its preflight.
+    exchange); then run before_claim; then let the component sweep its own
+    in-doubt state (the Executor's ledger rows) and claim. The cheap checks
+    come first, so a worker that would refuse the claim anyway never runs
+    its preflight or its sweep. A seal delivery (executor.seal) goes through
+    the same pass as any other Executor command: its saved fence_result is
+    re-sent first and a new seal is claimed only past the same gates.
     """
 
     def __init__(self, client, journal, adapter, *, renewal_interval=5, max_clock_skew=None,
@@ -328,6 +332,23 @@ class RemoteWorker:
             self.client.post("retry", {name: delivery[name] for name in ("delivery_id", "lease_token")})
         return self._skew_status(estimator)
 
+    def _sweep(self):
+        """Let the component settle its own in-doubt state before claiming (the Executor's ledger rows).
+
+        No command for a row may ever come back to this host once a peer
+        finished it, so this runs on every pass that may claim, on the first
+        such pass after a restart included; the component backs off rows it
+        cannot decide. A pass whose re-sent saved result is accepted, or that
+        refuses new work for a store change or clock skew, ends before the sweep.
+        """
+        sweep = getattr(self.adapter, "sweep", None)
+        if sweep is None:
+            return
+        try:
+            sweep()
+        except Exception as error:  # noqa: BLE001 - a failed sweep must not stop claiming; the next pass retries
+            log.failure(LOG, "worker.sweep.failed", error)
+
     def _send(self, row):
         delivery = row["delivery"]
         self.current = delivery_ids(delivery)
@@ -375,6 +396,7 @@ class RemoteWorker:
         deferred = self.before_claim is not None and self.journal.held()
         if self.before_claim is not None and not deferred:
             self.before_claim()
+        self._sweep()
         delivery = self.client.post("claim", {})["delivery"]
         changed = self._store_changed_since_claim(delivery)
         if changed is not None:

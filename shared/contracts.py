@@ -95,7 +95,14 @@ FIELDS = {
     "dependency_result": {"incident_id", "action_id", "status", "affected_services", "blockers", "unknowns", "checked_at"},
     "execution_result": {"incident_id", "action_id", "status", "resource_version", "recorded_at", "details"},
     "outcome": {"incident_id", "action_id", "status", "window_start", "window_end", "checks"},
+    # An Executor's answer to an executor.seal command (services/executor/core.py::seal). epoch is the
+    # Coordinator's target-ownership epoch of the seal delivery; resource_version is the version the
+    # seal observed or left, or null when the target is gone.
+    "fence_result": {"incident_id", "action_id", "epoch", "outcome", "resource_version", "recorded_at"},
 }
+# SEALED: no write of the action can commit any more, and none had. APPLIED: a write of the action
+# landed before the seal. UNSEALED: the seal could not finish within its bounded attempts.
+FENCE_OUTCOMES = frozenset({"SEALED", "APPLIED", "UNSEALED"})
 
 
 def validate_message(message):
@@ -182,3 +189,10 @@ def validate_message(message):
             _string(check["detail"], "check.detail")
             if type(check["passed"]) is not bool:
                 raise ContractError("check.passed: expected a boolean")
+
+    elif kind == "fence_result":
+        _integer(message["epoch"], "epoch", 1)
+        _enum(message["outcome"], FENCE_OUTCOMES, "outcome")
+        if message["resource_version"] is not None:
+            _string(message["resource_version"], "resource_version")
+        _timestamp(message["recorded_at"], "recorded_at")

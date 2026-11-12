@@ -370,6 +370,117 @@ def reconcile(proposal: dict, adapters: ExecutionAdapters) -> dict:
         return _reconcile(proposal, adapters)
 
 
+def settle(proposal: dict, adapters: ExecutionAdapters) -> dict | None:
+    """Close this host's in-doubt ledger row when live state alone decides it; never write.
+
+    A host that crashed during a write keeps the action WRITE_STARTED. If a
+    peer then finishes the action, no command for it reaches this host again
+    (P3.01 S1b, S1c), so a restarted worker runs this over its in-doubt rows.
+    The same decision table as reconcile() is used, but nothing is sent: no
+    patch and no fence. A row whose target still has the same UID and version
+    V0 with no evidence of the action stays in doubt and backs off; its own
+    command, or a Coordinator seal (seal()), moves it on. Return the result
+    saved for a closed row, else None.
+    """
+    proposal = deepcopy(proposal)
+    validate_message(proposal)
+    if proposal["kind"] != "proposal":
+        raise ContractError("Settling requires a proposal")
+    _check_adapters(adapters)
+    with adapters.coordination.hold(proposal["target"]):
+        row = adapters.ledger.get(proposal["action_id"])
+        if row is None or row["phase"] not in {"WRITE_STARTED", "UNCERTAIN"}:
+            return None
+        if row["fingerprint"] != fingerprint(proposal) or row["proposal"] != proposal:
+            raise ActionConflict("Settled proposal differs from the persisted action")
+        decision = _classify(row, proposal, _observation(proposal, adapters), adapters)
+        if decision.status == "NEEDS_RECONCILIATION":
+            adapters.ledger.schedule_reconcile(proposal["action_id"], _now(adapters))
+            return None
+        log.emit(LOG, "executor.ledger.settled", action_id=proposal["action_id"], status=decision.status,
+                 basis=decision.basis.value)
+        return _record(proposal, adapters, row, decision, schedule=False)
+
+
+# Fence attempts of one seal before it gives up with UNSEALED, which the Coordinator sends to review.
+SEAL_ATTEMPTS = 5
+_LANDED = frozenset({Basis.EVIDENCE_MATCH, Basis.COMMITTED_THEN_OVERWRITTEN})
+_CANNOT_COMMIT = frozenset({Basis.TARGET_DELETED, Basis.TARGET_REPLACED, Basis.ADVANCED_WITHOUT_EVIDENCE,
+                            Basis.FENCED})
+
+
+def _fence_result(proposal, epoch, outcome, version, adapters):
+    result = {"schema_version": "1.0", "kind": "fence_result", "incident_id": proposal["incident_id"],
+              "action_id": proposal["action_id"], "target": deepcopy(proposal["target"]), "epoch": epoch,
+              "outcome": outcome, "resource_version": version,
+              "recorded_at": _now(adapters).isoformat().replace("+00:00", "Z")}
+    validate_message(result)
+    return result
+
+
+def seal(proposal: dict, epoch: int, adapters: ExecutionAdapters, *, check=None) -> dict:
+    """Make sure no write of an abandoned action can commit any more; return a fence_result.
+
+    The Coordinator commands this when it withdraws an executor.request that
+    some Executor may still be executing (P3.04). Every write of the action is
+    a JSON Patch that tests UID and resourceVersion == V0, the proposal's
+    based_on_resource_version. Each pass reads the target:
+
+    - this action's evidence is on it: the write landed; APPLIED (for review);
+    - the target is gone, replaced or past V0 without that evidence: no such
+      patch can ever commit; SEALED, with nothing sent;
+    - same UID at V0: send a metadata-only fence with the same tests and a
+      marker holding a fresh nonce and the epoch (fence()). If it commits,
+      the version has left V0 for good: SEALED. If it is refused or its
+      outcome is unknown, the next pass reads again.
+
+    After SEAL_ATTEMPTS passes it gives up: UNSEALED. A read failure raises,
+    so the command is retried and the workload stays blocked. check, when
+    given, runs before each fence (the remote worker passes its lease check).
+    This host's ledger is neither read nor changed.
+    """
+    proposal = deepcopy(proposal)
+    validate_message(proposal)
+    if proposal["kind"] != "proposal":
+        raise ContractError("A seal requires a proposal")
+    if type(epoch) is not int or epoch < 1:
+        raise ValueError("A seal needs the positive ownership epoch of its command")
+    _check_adapters(adapters)
+    action_id, target, base = proposal["action_id"], proposal["target"], proposal["based_on_resource_version"]
+    nonces = set()
+    version = None
+    with adapters.coordination.hold(target):
+        for _attempt in range(SEAL_ATTEMPTS):
+            try:
+                observation = observe(_read(proposal, adapters), target)
+            except TargetAbsent:
+                observation = ABSENT
+            decision = classify(None, proposal, observation, fence_nonces=frozenset(nonces))
+            version = decision.version
+            if decision.basis in _LANDED:
+                log.emit(LOG, "executor.seal.write_found", level=log.WARNING, action_id=action_id, fence_epoch=epoch)
+                return _fence_result(proposal, epoch, "APPLIED", version, adapters)
+            if decision.basis in _CANNOT_COMMIT:
+                log.emit(LOG, "executor.seal.sealed", action_id=action_id, fence_epoch=epoch,
+                         basis=decision.basis.value)
+                return _fence_result(proposal, epoch, "SEALED", version, adapters)
+            if decision.basis is not Basis.UNCHANGED_IN_DOUBT:
+                continue  # READ_UNAVAILABLE (an unusable snapshot) or INCONSISTENT: read again.
+            nonce = uuid4().hex
+            nonces.add(nonce)  # Before sending, so a fence whose reply is lost is still recognised.
+            if check is not None:
+                check()
+            try:
+                adapters.cluster.fence(target=deepcopy(target), version=base,
+                                       marker=fence_marker(action_id, nonce, epoch))
+            except ConditionalWriteConflict:
+                log.emit(LOG, "executor.seal.refused", action_id=action_id, fence_epoch=epoch)
+            except Exception as error:  # noqa: BLE001 - an unknown fence outcome may have committed; the next read decides
+                log.failure(LOG, "executor.seal.indeterminate", error, action_id=action_id, fence_epoch=epoch)
+    log.emit(LOG, "executor.seal.exhausted", level=log.WARNING, action_id=action_id, fence_epoch=epoch)
+    return _fence_result(proposal, epoch, "UNSEALED", version, adapters)
+
+
 def unchanged_uncertainty(result: dict, known) -> bool:
     """True when a reconcile result tells Coordinator nothing newer than ``known``.
 
