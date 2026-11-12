@@ -23,6 +23,14 @@ tolerated. The grace defers NOT_RECOVERED; it does not replace sustained health,
 and at the fixed deadline every reading counts again. Each outcome's
 `convergence` check states what was excluded or counted.
 
+A ROLLBACK and a RESTART are verified the same way. With
+`require_template_match`, the expected template is the proposal's
+`template_sha256`: for a RESTART that is the reviewed template plus its restart
+token, so readings must show that exact template, not the old one. The live
+reader counts a replica as ready only when it is also updated and available
+under the latest observed generation, so the readiness check passes only once
+the new Pods are ready. No other template change is expected.
+
 The connected experiment requires actual shipping gRPC quotes, supporting
 readiness, expected template identity and successful cart/checkout confirmation
 through its configured health window. A successful Kubernetes patch or a single

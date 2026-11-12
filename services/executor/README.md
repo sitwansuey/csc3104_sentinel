@@ -41,11 +41,31 @@ guide. Offline test results do not replace live Kubernetes evidence.
 
 ## Execution and validation
 
-The Executor validates the proposal contract and allows only `ROLLBACK` for a
-Deployment. The proposal identifies a stored baseline and its Pod-template
-SHA-256. The baseline resolver supplies the complete saved template; the
-Executor checks identity and hash rather than asking Kubernetes to undo whichever
-revision happens to be latest.
+The Executor validates the proposal contract and allows only `ROLLBACK` and
+`RESTART` for a Deployment. Each proposal identifies a stored baseline and the
+SHA-256 of the exact Pod template it writes. The baseline resolver supplies the
+complete saved template; the handler in `actions.py` checks identity and hash
+rather than asking Kubernetes to undo whichever revision happens to be latest.
+
+- ROLLBACK writes the saved baseline template itself.
+- RESTART writes the saved baseline template plus the annotation
+  `sentinel.io/restart-token`, so Kubernetes starts new Pods. The handler
+  refuses it, with no write, unless the live configuration (the template without
+  that annotation) equals the baseline, the token is the one bound to this
+  incident and baseline, the live template does not already carry it, and the
+  result hashes to the proposal's `template_sha256`. It is not
+  `kubectl rollout restart`: it is the same conditional JSON Patch as ROLLBACK,
+  with the same UID and resourceVersion tests and the same evidence annotation,
+  so the same reconciliation table decides whether it committed. Its evidence
+  also names the action (`"action": "RESTART"`); a ROLLBACK keeps its original
+  five-field evidence. The Executor's Kubernetes permissions stay get and patch
+  on the one Deployment.
+
+Before validating a RESTART, the Executor adds the target's restart history from
+its ledger (`restart_history`) to the state the Guard sees. The ledger keeps
+every RESTART write it started, so the Guard's restart budget survives an
+Executor restart. The history is per ledger: Executors on other hosts with their
+own ledgers do not share it.
 
 Under target coordination, the Executor reads current state and trusted policy,
 baseline, dependency and approval records. It calls the real Guard and checks the

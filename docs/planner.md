@@ -176,6 +176,22 @@ without a journal retain the synchronous exception-and-retry interface. The
 offline demonstration (`experiments/validation/demo_offline_flow.py`) plans
 through the journal.
 
+### RESTART proposals
+
+`process_planner_requests(..., template_reader=...)` gives the Planner a trusted
+read of the target's current Pod template. The provider context then says
+whether its configuration (the template without the restart token) equals a
+suitable baseline (`template_unchanged`). Only then may a provider choose
+RESTART, and it must leave the parameters empty: the Planner binds the baseline
+ID, a token derived from the incident and baseline IDs, and the SHA-256 of the
+resulting template. A provider that fills in RESTART parameters, or a RESTART
+without an unchanged configuration, is refused like any invalid proposal.
+Without a template reader the Planner never proposes RESTART. The offline mock
+provider chooses RESTART when the configuration is unchanged and the incident
+has Pod-level failure signals, and ROLLBACK otherwise. The agent-mode Recovery
+Planner cannot choose RESTART yet: its answer schema offers ROLLBACK, ESCALATE
+and NO_ACTION only. The Coordinator accepts at most one RESTART per incident.
+
 ### Agent mode through the journal
 
 `-Agent` mode plans through the same journal. Both modes run one incident with

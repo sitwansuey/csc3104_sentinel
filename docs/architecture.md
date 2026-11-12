@@ -28,9 +28,17 @@ flowchart TD
 
 Each role owns its decisions. The Planner chooses an advisory action, the Guard
 authorizes exact inputs, the Executor records what happened, and the Verifier
-decides health. The current supported mutation is ROLLBACK to a specific saved
-healthy Pod template, not repeated undo of the latest revision. Workload-specific
-limits belong in policy/topology/baseline configuration.
+decides health. Actions are typed: each has a closed parameter schema in
+`shared/contracts.py`, its own Guard checks and an Executor handler. Two are
+implemented. ROLLBACK writes a specific saved healthy Pod template, not a
+repeated undo of the latest revision. RESTART writes that same reviewed template
+plus a planner-bound restart token, so Kubernetes replaces every Pod without any
+configuration change; the Guard allows it only when the live configuration
+already equals the reviewed baseline, Pods are failing and the target's restart
+budget has room. Both use the same conditional write and reconciliation. RESTART
+has been tested offline only, against a fake Deployment API. SCALE is in the
+contract but refused. Workload-specific limits belong in policy/topology/baseline
+configuration.
 
 ## Persistence and concurrency
 
