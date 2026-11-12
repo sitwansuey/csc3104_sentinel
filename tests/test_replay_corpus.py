@@ -83,21 +83,28 @@ class BuilderAllowlistTests(unittest.TestCase):
         out = self.root / "corpus"
         builder.build([bundle(GOLDEN)], out)
         case = next((out / "cases").iterdir())
+        # Each plant names the check that must report it, so every check is shown to work on its own.
         plants = {
-            case / "inputs/.executor-kubeconfig.json": b"{}",
-            case / "inputs/observations/state.sqlite3": b"SQLite format 3\x00",
-            out / "credentials.json": b"{}",
+            case / "inputs/.executor-kubeconfig.json": (b"{}", "forbidden name"),
+            case / "inputs/observations/state.sqlite3": (b"SQLite format 3\x00", "forbidden name"),
+            out / "credentials.json": (b"{}", "forbidden name"),
+            # An allowlisted path inside a case folder whose name marks a credential.
+            out / "cases/copied-token-store/case.json": (b"{}", "forbidden name"),
+            # An innocent name that is simply not on the allowlist.
+            case / "inputs/logs.csv": (b"timestamp,message\n", "not an allowlisted corpus file"),
             # Innocent names with private content are found by the content scan.
-            case / "inputs/observations/0002-observation.json": b"SQLite format 3\x00\x00",
+            case / "inputs/observations/0002-observation.json": (b"SQLite format 3\x00\x00", "SQLite database bytes"),
         }
-        for path, data in plants.items():
+        for path, (data, reason) in plants.items():
             with self.subTest(path=path.name):
+                path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(data)
                 problems = corpus.scan(out)
-                self.assertTrue(any(path.name in problem or "SQLite" in problem for problem in problems), problems)
+                self.assertTrue(any(reason in problem for problem in problems), problems)
                 with self.assertRaises(corpus.CorpusError):
                     corpus.verify(out)
                 path.unlink()
+        shutil.rmtree(out / "cases/copied-token-store")
         self.assertEqual(corpus.scan(out), [])
         policy = case / "inputs/policy.json"
         policy.write_bytes(policy.read_bytes().replace(b'"policy_id"', b'"client-key-data": "QUJD", "policy_id"'))
