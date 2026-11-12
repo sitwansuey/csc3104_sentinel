@@ -46,12 +46,87 @@ its level and, for exceptions, the class name.
 | `coordinator.message.recorded` / `.duplicate` | Coordinator | An accepted message, or an exact retry (`DEBUG`). |
 | `coordinator.outbox.enqueued` | Coordinator store | A new outbox command, with `event_id` and `topic`. |
 | `worker.status` | remote worker service | One polling pass, with `delivery_id`, `event_id`, `topic`, `action_id`, and `error_type` on a retry. The stdout status line is unchanged. |
+| `span.start` / `span.end` | any process with an open span | One timed step of a trace; see [Traces](#traces). `span.start` is `DEBUG`. |
 
 `bind()` attaches IDs to every line in a block. Start threads with
 `context_thread()` to keep them; the lease renewal thread does. To follow one
 action across processes, collect each process's stderr and filter, for example
 `jq 'select(.action_id=="ACT-...")'`. Claims carry `event_id`, so worker lines
 also join Coordinator lines by outbox id.
+
+## Traces
+
+One incident is one trace, in the [W3C trace context](https://www.w3.org/TR/trace-context/)
+format (`traceparent: 00-<32 hex trace id>-<16 hex span id>-<flags>`).
+[`shared/tracing.py`](../shared/tracing.py) holds the current span in a
+contextvar. While a span is open, every log line carries its `trace_id` and
+`span_id`, and threads started with `context_thread()` keep it.
+
+How the context moves:
+
+| Step | Span | Where the parent comes from |
+| --- | --- | --- |
+| A remote Observer sends a new incident | `observer.ingest` (the root) | none |
+| A worker HTTP request from an authenticated caller | `coordinator.<operation>`, such as `coordinator.result` | the request's `traceparent` header |
+| The Coordinator applies a new message | `coordinator.record` | the open span; else the incident's stored context; else a new trace (an incident recorded locally) |
+| A command is written to the outbox | none | the open span, else the incident's stored context, saved in `outbox.trace_context` |
+| A worker claims the command | none | the row's context, handed out as `traceparent` in the delivery |
+| The worker runs it | `worker.process` | the delivery's `traceparent` |
+| The worker sends its result | `worker.result` | `worker.process`; after a restart, the saved delivery's `traceparent`, so the replay keeps its original parent |
+
+`WorkerClient` sends the open span as a `traceparent` header on every request,
+lease renewals included. The incident row keeps the context of the span that
+recorded it (`incidents.trace_context`), so a message or command written
+without an open span still joins the incident's trace: an approval, a
+dependency finding sent without a header, or a command written by the
+in-process pipelines. Exact message retries open no span. A claim without a
+header opens no span either, so idle polling creates no traces.
+
+`span.end` adds `span_name`, `parent_span_id`, `duration_ms`, `status` (`ok`
+or `error`) and, on failure, `error_type`. Fields go through the same allowlist
+as every other line, and span names are fixed identifiers in the code, so a
+span never carries a token, a body or a request path. Idle claims and lease
+renewals are `DEBUG`. `coordinator.record` lines are written only after their
+transaction commits, so a rolled-back step leaves no span. The
+`coordinator.state.transition` and `coordinator.outbox.enqueued` lines name
+their trace too.
+
+A `traceparent` comes from another process, so it is untrusted. Parsing is
+strict: version `00` only, lower-case hex, no all-zero ids, flags `00` or `01`,
+exactly 55 characters, and exactly one header. Anything else is ignored and a
+new trace starts. The Coordinator reads the header only after authentication,
+so a header on a refused request never reaches a log line. Trace data labels
+log lines and nothing else. It is never used to authenticate, authorise, pick
+work or decide a transition. An authenticated worker can still send a wrong
+context and so mislabel its own lines.
+
+### Reading a trace
+
+`scripts/trace_view.py` rebuilds each trace from `span.end` lines and prints a
+waterfall: offset and duration in milliseconds, a bar, and the span tree, with
+each logged state transition under the span that made it. `--db` adds the
+Coordinator's transitions journal for each traced incident; the database is
+opened read only. No collector or extra package is needed.
+
+```powershell
+python scripts/trace_view.py coordinator.log planner.log guard.log --db data/coordinator.db
+```
+
+Offsets use each line's wall-clock `ts`, rounded to the millisecond. Processes
+on one host share a clock; processes on different hosts line up only as well
+as their clocks agree (see [clock assumptions](distributed-model.md)). A span
+whose parent is in no file given is shown as a root and marked.
+
+### OpenTelemetry export
+
+There is none. No OpenTelemetry package is in the hash-locked requirements,
+and the core uses the standard library only. To add export, put
+`opentelemetry-sdk` and `opentelemetry-exporter-otlp-proto-http` in a separate
+optional input file, lock it with hashes like the other locks, and import them
+lazily inside `shared/tracing.py` only when an endpoint variable such as
+`SENTINEL_OTLP_ENDPOINT` is set, so that every image and test still runs
+without them. The trace and span ids are already in the W3C format such a
+backend expects.
 
 ## Transitions journal
 
@@ -72,6 +147,8 @@ reads `PRAGMA user_version` and applies the missing steps in order in one
 failure rolls back the whole run and keeps the old version. A database newer
 than the code is refused.
 Databases from before versioning report version 0 and are upgraded in place.
+Version 3 adds the nullable `trace_context` columns to `outbox` and
+`incidents`; rows written before it have none.
 Add a new numbered step for each schema change; never edit a released one.
 
 ## Broad exception handlers
