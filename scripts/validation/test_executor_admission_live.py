@@ -7,27 +7,43 @@ Deployment named demo-api is the target. Every check then runs with a
 short-lived token for the sentinel-executor ServiceAccount, through a
 kubeconfig that holds only that token:
 
-  denied by the policy   replicas by JSON patch, a label change, a changed or
-                         added foreign annotation, a removed sentinel
-                         annotation, a Pod template change without new
-                         evidence, a seal that also changes the template, a
-                         lower sentinel.io/fence-epoch and a malformed one
+  denied by the policy   replicas by JSON patch, another spec field (paused),
+                         a label change, a changed or added foreign
+                         annotation, a removed sentinel annotation, a Pod
+                         template change without new evidence, a seal that
+                         also changes the template (with new evidence, so
+                         only the seal rule can deny it), a lower
+                         sentinel.io/fence-epoch, a malformed one with and
+                         without a stored epoch, and a production-adapter
+                         seal at epoch 1 after the stored epoch reached 6, as
+                         a new or restored Coordinator store would send
   denied by RBAC         kubectl scale (the scale subresource), get secrets,
-                         delete and create of a Deployment, and pods/exec
-                         (kubectl auth can-i for create and get)
+                         delete and create of a Deployment; for pods/exec,
+                         kubectl auth can-i answers no (no exec is attempted)
   allowed                the real ROLLBACK and RESTART patches and a seal at
                          a higher and then an equal epoch, all sent by the
                          production adapter (KubectlDeploymentAPI), and the
                          Executor's own fence without an epoch
+  read only              the server's DeploymentSpec has exactly the fields
+                         the policy's spec rule names
 
-Every denial must leave the resourceVersion unchanged. The summary records each
-command's exit code and the server's message.
+A policy denial must name the rule expected to deny it (its message), not only
+the policy. Before each check the harness waits until the Deployment
+controller has caught up (observedGeneration equals generation and two reads
+agree), and a denial must leave the spec, labels and annotations unchanged
+(the controller's deployment.kubernetes.io/revision annotation is ignored).
+The summary records each command's exit code and the server's message.
 
 Safety rules: --context is required and must be kind-sentinel-boutique-connected.
 Any context or cluster naming sentinel-lab is refused. The namespace, policy and
-binding are created by this run and deleted on exit, also after a failure. The
-summary has no token, kubeconfig, server address or local path. It is never run
-by the unit tests, and it has not yet been run against a cluster.
+binding are created by this run, labelled app.kubernetes.io/managed-by=
+sentinel-admission-harness, and deleted on exit, also after a failure. If the
+process is killed before it cleans up, remove what is left with:
+
+  kubectl --context kind-sentinel-boutique-connected delete validatingadmissionpolicybinding,validatingadmissionpolicy,namespace -l app.kubernetes.io/managed-by=sentinel-admission-harness
+
+The summary has no token, kubeconfig, server address or local path. It is never
+run by the unit tests, and it has not yet been run against a cluster.
 """
 
 import argparse
@@ -44,7 +60,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.validation.test_executor_wedge_live import sanitise, utc  # noqa: E402
-from services.executor.core import ConditionalWriteConflict  # noqa: E402
+from services.executor.core import ACTION_ANNOTATION, ConditionalWriteConflict  # noqa: E402
 from services.executor.kubernetes_adapter import KubectlDeploymentAPI, LiveAdapterError, WriteOutcomeUnknown  # noqa: E402
 from services.executor.reconciliation import FENCE_ANNOTATION, FENCE_EPOCH_ANNOTATION, fence_marker  # noqa: E402
 from services.executor.store import fingerprint  # noqa: E402
@@ -66,8 +82,26 @@ FOREIGN_ANNOTATION = "example.com/owner"
 MANAGED_BY = "sentinel-admission-harness"
 MINIMUM_MINOR = 30  # admissionregistration.k8s.io/v1 ValidatingAdmissionPolicy
 POLICY_WAIT_ATTEMPTS = 30
+SETTLE_ATTEMPTS = 60
 LOG = log.get_logger("validation")
 POLICY_DENIED, RBAC_DENIED, ALLOWED, OTHER = "DENIED_BY_POLICY", "DENIED_BY_RBAC", "ALLOWED", "OTHER_ERROR"
+# Every apps/v1 DeploymentSpec field that exists today; the policy's spec rule names each one.
+DEPLOYMENT_SPEC_FIELDS = ("replicas", "selector", "template", "strategy", "minReadySeconds",
+                          "revisionHistoryLimit", "progressDeadlineSeconds", "paused")
+DEPLOYMENT_SPEC_SCHEMA = "io.k8s.api.apps.v1.DeploymentSpec"
+# Written by the Deployment controller after a template change; not part of what a denial must leave alone.
+CONTROLLER_ANNOTATIONS = frozenset({"deployment.kubernetes.io/revision"})
+# Part of each validation's message in executor-admission.yaml, so a denial shows which rule refused it.
+REPLICAS_RULE = "may not change spec.replicas"
+SPEC_RULE = "may change no spec field other than spec.template"
+LABELS_RULE = "may not change metadata.labels"
+ANNOTATIONS_RULE = "may remove no annotation"
+EPOCH_FORMAT_RULE = "sentinel.io/fence-epoch must be a decimal integer"
+EPOCH_ORDER_RULE = "sentinel.io/fence-epoch may not decrease"
+EVIDENCE_RULE = "must write new sentinel.io/execution evidence"
+SEAL_RULE = "A fence or seal by the Sentinel Executor may not change the Pod template"
+RULE_MESSAGES = (REPLICAS_RULE, SPEC_RULE, LABELS_RULE, ANNOTATIONS_RULE, EPOCH_FORMAT_RULE, EPOCH_ORDER_RULE,
+                 EVIDENCE_RULE, SEAL_RULE)
 
 
 class Refused(ValueError):
@@ -92,8 +126,14 @@ def _replace_exactly(text, old, new, count):
 
 
 def render_policy(text, namespace, name):
-    """The shipped policy and binding, renamed to name and bound to namespace only; nothing else changes."""
+    """The shipped policy and binding, renamed to name, labelled as this harness's and bound to namespace only.
+
+    The label lets an operator find both cluster-scoped objects if the run is
+    killed before it cleans up. Nothing else changes.
+    """
     text = _replace_exactly(text, "name: " + POLICY, "name: " + name, 2)
+    text = _replace_exactly(text, "metadata:\n  name: " + name,
+                            f"metadata:\n  name: {name}\n  labels:\n    app.kubernetes.io/managed-by: {MANAGED_BY}", 2)
     text = _replace_exactly(text, "policyName: " + POLICY, "policyName: " + name, 1)
     return _replace_exactly(text, f'values: ["{SHIPPED_NAMESPACE}"]', f'values: ["{namespace}"]', 1)
 
@@ -123,26 +163,44 @@ def _pointer(key):
     return "/metadata/annotations/" + key.replace("~", "~0").replace("/", "~1")
 
 
+FIRST_EPOCH_CHECK = ("malformed sentinel.io/fence-epoch with no stored epoch",
+                     [{"op": "add", "path": _pointer(FENCE_EPOCH_ANNOTATION), "value": "06"}], EPOCH_FORMAT_RULE)
+
+
 def denial_patches(baseline_template):
-    """Each request the policy must deny, as (check name, JSON Patch). Sent after the first seal."""
+    """Each request the policy must deny, as (check name, JSON Patch, the message of the one rule that denies it).
+
+    Sent after the first seal, so a fence and an epoch of 5 are stored. Each
+    patch breaks only the rule it names, except the malformed epoch, which also
+    breaks the order rule; the format rule comes first in the policy, and
+    FIRST_EPOCH_CHECK shows it alone before any epoch is stored.
+    """
     probe_template = json.loads(json.dumps(baseline_template))
     probe_template.setdefault("metadata", {}).setdefault("annotations", {})["sentinel.io/admission-probe"] = "1"
     fence = json.dumps({"action_id": "ACT-ADMISSION-PROBE", "nonce": "f" * 32, "epoch": 9}, separators=(",", ":"))
+    evidence = json.dumps({"action_id": "ACT-ADMISSION-PROBE", "attempt_id": "e" * 32}, separators=(",", ":"))
     return [
-        ("replicas changed by JSON patch", [{"op": "replace", "path": "/spec/replicas", "value": 1}]),
-        ("label added", [{"op": "add", "path": "/metadata/labels/sentinel-probe", "value": "1"}]),
-        ("foreign annotation changed", [{"op": "replace", "path": _pointer(FOREIGN_ANNOTATION), "value": "attacker"}]),
-        ("foreign annotation added", [{"op": "add", "path": _pointer("example.com/added"), "value": "1"}]),
-        ("sentinel fence annotation removed", [{"op": "remove", "path": _pointer(FENCE_ANNOTATION)}]),
+        ("replicas changed by JSON patch", [{"op": "replace", "path": "/spec/replicas", "value": 1}], REPLICAS_RULE),
+        ("another spec field (paused) changed", [{"op": "add", "path": "/spec/paused", "value": True}], SPEC_RULE),
+        ("label added", [{"op": "add", "path": "/metadata/labels/sentinel-probe", "value": "1"}], LABELS_RULE),
+        ("foreign annotation changed", [{"op": "replace", "path": _pointer(FOREIGN_ANNOTATION), "value": "attacker"}],
+         ANNOTATIONS_RULE),
+        ("foreign annotation added", [{"op": "add", "path": _pointer("example.com/added"), "value": "1"}],
+         ANNOTATIONS_RULE),
+        ("sentinel fence annotation removed", [{"op": "remove", "path": _pointer(FENCE_ANNOTATION)}],
+         ANNOTATIONS_RULE),
         ("Pod template changed without new evidence",
-         [{"op": "replace", "path": "/spec/template", "value": probe_template}]),
+         [{"op": "replace", "path": "/spec/template", "value": probe_template}], EVIDENCE_RULE),
+        # New evidence too, so the evidence rule passes and only the seal rule can deny it.
         ("seal that also changes the Pod template",
          [{"op": "replace", "path": "/spec/template", "value": probe_template},
+          {"op": "add", "path": _pointer(ACTION_ANNOTATION), "value": evidence},
           {"op": "replace", "path": _pointer(FENCE_ANNOTATION), "value": fence},
-          {"op": "replace", "path": _pointer(FENCE_EPOCH_ANNOTATION), "value": "9"}]),
-        ("lower sentinel.io/fence-epoch", [{"op": "replace", "path": _pointer(FENCE_EPOCH_ANNOTATION), "value": "4"}]),
+          {"op": "replace", "path": _pointer(FENCE_EPOCH_ANNOTATION), "value": "9"}], SEAL_RULE),
+        ("lower sentinel.io/fence-epoch", [{"op": "replace", "path": _pointer(FENCE_EPOCH_ANNOTATION), "value": "4"}],
+         EPOCH_ORDER_RULE),
         ("malformed sentinel.io/fence-epoch",
-         [{"op": "replace", "path": _pointer(FENCE_EPOCH_ANNOTATION), "value": "06"}]),
+         [{"op": "replace", "path": _pointer(FENCE_EPOCH_ANNOTATION), "value": "06"}], EPOCH_FORMAT_RULE),
     ]
 
 
@@ -152,9 +210,24 @@ RBAC_CHECKS = (
     ("delete the Deployment", ("delete", "deployment", NAME, "--dry-run=server")),
     ("create a Deployment", ("create", "deployment", "sentinel-admission-probe",
                              "--image=registry.k8s.io/pause:3.9", "--dry-run=server")),
-    ("pods/exec create (auth can-i)", ("auth", "can-i", "create", "pods", "--subresource=exec")),
-    ("pods/exec get (auth can-i)", ("auth", "can-i", "get", "pods", "--subresource=exec")),
+    ("pods/exec create: auth can-i answers no", ("auth", "can-i", "create", "pods", "--subresource=exec")),
+    ("pods/exec get: auth can-i answers no", ("auth", "can-i", "get", "pods", "--subresource=exec")),
 )
+
+
+def observable(deployment):
+    """What a denied request must leave as it was: spec, labels, owner fields and every non-controller annotation."""
+    metadata = deployment["metadata"]
+    annotations = {key: value for key, value in (metadata.get("annotations") or {}).items()
+                   if key not in CONTROLLER_ANNOTATIONS}
+    return {"spec": deployment.get("spec"), "labels": metadata.get("labels"), "annotations": annotations,
+            "finalizers": metadata.get("finalizers"), "ownerReferences": metadata.get("ownerReferences")}
+
+
+def settled(deployment):
+    """True once the Deployment controller has observed the latest spec."""
+    generation = deployment["metadata"].get("generation")
+    return type(generation) is int and deployment.get("status", {}).get("observedGeneration") == generation
 
 
 def classify(result, policy_name):
@@ -295,32 +368,51 @@ class AdmissionHarness:
 
     # Checks --------------------------------------------------------------
 
-    def record(self, name, expected, result, before, after, **details):
+    def record(self, name, expected, result, before, after, *, rule=None, required=True, **details):
+        """One check: the expected outcome, for a policy denial the expected rule's message, and no change.
+
+        before and after are Deployment objects; a denial passes only if
+        observable() is the same for both.
+        """
         outcome = classify(result, self.policy_name)
-        unchanged = before == after
-        passed = outcome == expected and (expected == ALLOWED or unchanged)
+        unchanged = observable(before) == observable(after)
+        message = _text(result.stderr).strip()
+        rule_named = rule is None or rule in message
+        passed = bool(outcome == expected and (expected == ALLOWED or unchanged) and rule_named and required)
         self.summary["checks"].append({
             "name": name, "expected": expected, "outcome": outcome, "exit_code": result.returncode,
             "stdout": _text(result.stdout).strip()[:400] if outcome != ALLOWED else "",
-            "message": _text(result.stderr).strip()[:600], "resource_version_unchanged": unchanged,
-            "passed": passed, **details})
+            "message": message[:600], "expected_rule": rule, "rule_named": rule_named,
+            "object_unchanged": unchanged, "passed": passed, **details})
         print(("PASS: " if passed else "FAIL: ") + name, flush=True)
         return passed
 
-    def version(self):
-        return self.deployment()["metadata"]["resourceVersion"]
+    def settled_deployment(self):
+        """The target once its controller has caught up and two reads agree, so no check races a status write."""
+        previous = None
+        for _attempt in range(SETTLE_ATTEMPTS):
+            current = self.deployment()
+            if settled(current):
+                if previous is not None and \
+                        previous["metadata"]["resourceVersion"] == current["metadata"]["resourceVersion"]:
+                    return current
+                previous = current
+            else:
+                previous = None
+            self.sleep(0.5)
+        raise RuntimeError("The target Deployment did not settle")
 
-    def denied_patch(self, name, operations):
-        before = self.version()
+    def denied_patch(self, name, operations, rule):
+        before = self.settled_deployment()
         path = self.write("check.json", json.dumps(operations))
         result = self.kubectl("patch", "deployment", NAME, "--type=json", "--patch-file", str(path),
                               executor=True, allow_failure=True)
-        self.record(name, POLICY_DENIED, result, before, self.version())
+        self.record(name, POLICY_DENIED, result, before, self.deployment(), rule=rule)
 
     def denied_by_rbac(self, name, arguments):
-        before = self.version()
+        before = self.settled_deployment()
         result = self.kubectl(*arguments, executor=True, allow_failure=True)
-        self.record(name, RBAC_DENIED, result, before, self.version())
+        self.record(name, RBAC_DENIED, result, before, self.deployment())
 
     def recording_runner(self, command, **kwargs):
         self.last_result = self.runner(command, **kwargs)
@@ -331,19 +423,46 @@ class AdmissionHarness:
                                     kubeconfig=self.credentials, allowed_targets=[self.target],
                                     runner=self.recording_runner, kubectl=self.kubectl_path)
 
-    def allowed(self, name, send):
-        """Run one production-adapter write; it must commit."""
-        before = self.version()
+    def adapter_write(self, send):
+        """Send one production-adapter write at the settled version; return (before, kubectl result, error name)."""
+        before = self.settled_deployment()
         self.last_result = None
         try:
-            send(self.adapter(), before)
+            send(self.adapter(), before["metadata"]["resourceVersion"])
             error = None
         except (WriteOutcomeUnknown, ConditionalWriteConflict, LiveAdapterError) as exc:
             error = type(exc).__name__
         result = self.last_result or subprocess.CompletedProcess([], 1, b"", b"no command was sent")
         if error is not None and result.returncode == 0:
             result = subprocess.CompletedProcess(result.args, 1, result.stdout, b"response did not confirm the write")
-        return self.record(name, ALLOWED, result, before, self.version(), adapter_error=error)
+        return before, result, error
+
+    def allowed(self, name, send):
+        """Run one production-adapter write; it must commit."""
+        before, result, error = self.adapter_write(send)
+        return self.record(name, ALLOWED, result, before, self.deployment(), adapter_error=error)
+
+    def denied_write(self, name, send, rule):
+        """Run one production-adapter write the policy must deny.
+
+        The adapter cannot tell a denial from a lost reply, so it must report
+        WriteOutcomeUnknown; the Executor then reconciles from a read.
+        """
+        before, result, error = self.adapter_write(send)
+        return self.record(name, POLICY_DENIED, result, before, self.deployment(), rule=rule,
+                           required=error == WriteOutcomeUnknown.__name__, adapter_error=error)
+
+    def spec_fields(self):
+        """Read-only: the server's DeploymentSpec must have exactly the fields the policy's spec rule names."""
+        result = self.kubectl("get", "--raw", "/openapi/v3/apis/apps/v1", namespaced=False, allow_failure=True)
+        try:
+            schemas = json.loads(_text(result.stdout))["components"]["schemas"]
+            fields = sorted(schemas[DEPLOYMENT_SPEC_SCHEMA]["properties"])
+        except (KeyError, TypeError, ValueError):
+            fields = None
+        self.summary["checks"].append({
+            "name": "server DeploymentSpec has only the fields the policy names", "exit_code": result.returncode,
+            "server_fields": fields, "passed": fields is not None and set(fields) == set(DEPLOYMENT_SPEC_FIELDS)})
 
     def evidence(self, template, action=None):
         evidence = {"action_id": "ACT-ADMISSION-" + uuid4().hex[:12], "proposal_sha256": uuid4().hex * 2,
@@ -369,18 +488,23 @@ class AdmissionHarness:
         return seal
 
     def run_checks(self):
+        self.spec_fields()
         # An operator edit to the Pod template, made with administrator credentials, for the rollback to undo.
         edit = json.dumps({"spec": {"template": {"metadata": {"annotations": {"sentinel.io/admission-fault": "1"}}}}})
         self.kubectl("patch", "deployment", NAME, "--type=merge", "--patch", edit)
         self.allowed("real ROLLBACK patch (production adapter)", self.rollback)
         self.allowed("real RESTART patch (production adapter)", self.restart)
+        self.denied_patch(*FIRST_EPOCH_CHECK)
         self.allowed("seal at epoch 5 (production adapter, metadata only)", self.sealer(5))
-        for name, operations in denial_patches(self.baseline):
-            self.denied_patch(name, operations)
+        for name, operations, rule in denial_patches(self.baseline):
+            self.denied_patch(name, operations, rule)
         for name, arguments in RBAC_CHECKS:
             self.denied_by_rbac(name, arguments)
         self.allowed("seal at a higher epoch, 6", self.sealer(6))
         self.allowed("seal at an equal epoch, 6", self.sealer(6))
+        # A new, reset or restored Coordinator store starts its epochs at 1; the stored 6 stays on the object.
+        self.denied_write("seal at epoch 1 from a fresh Coordinator store (production adapter)", self.sealer(1),
+                          EPOCH_ORDER_RULE)
         self.allowed("Executor fence without an epoch", self.sealer(None))
         final = self.deployment()
         annotations = final["metadata"].get("annotations", {})

@@ -10,6 +10,7 @@ which has not been run yet.
 """
 
 from contextlib import redirect_stderr, redirect_stdout
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -32,10 +33,45 @@ from tests.test_k8s_executor_adapter import NOW, Runner
 ROOT = Path(__file__).resolve().parents[1]
 ADMISSION = ROOT / "deploy/sentinel/executor-admission.yaml"
 RBAC = ROOT / "deploy/sentinel/executor-rbac.yaml"
-# Every apps/v1 DeploymentSpec field. If Kubernetes adds one, add it here and to the policy deliberately.
-DEPLOYMENT_SPEC_FIELDS = ("replicas", "selector", "template", "strategy", "minReadySeconds",
-                          "revisionHistoryLimit", "progressDeadlineSeconds", "paused")
+# Every apps/v1 DeploymentSpec field that exists today. The live harness checks the server's list against it.
+DEPLOYMENT_SPEC_FIELDS = harness.DEPLOYMENT_SPEC_FIELDS
 EPOCH_PATTERN = "'^(0|[1-9][0-9]{0,17})$'"
+# SHA-256 of each CEL expression as shipped. The structural tests below cannot see a semantic weakening such as
+# ">= int(variables.oldEpoch) - 1" or "true || ...", so any edit to a rule must also change this table on purpose,
+# after the live harness has been run against the new text.
+PINNED_CONDITIONS = {
+    "sentinel-executor-identity": "d788e1dbc55aacdce1cd8b5585899260b871b6148b2ac295c2fde24532a4d34d"}
+PINNED_VARIABLES = {
+    "oldAnnotations": "2203bf3eec99125a154c99d96503ed1aac813d73b122702153db1c9c5f217e2c",
+    "newAnnotations": "8f9dbb977bc9a2730f089ce1c70eb80ec8621ec7f8d62908095779c6777c8fa2",
+    "writable": "a89f08bbf022ad6fe3e5fb845a0be1a8fa6fa596a9d4498ca448345ebd6af810",
+    "oldEpoch": "af88a727987088ccf385f5ef0a92dad06e7aebc077d4c78b53859492cb6baa7a",
+    "newEpoch": "3d02a087e5f46e181aa15f04b4d650c782ce334d055b15e0ab75843ffdb257f1",
+    "oldFence": "8188d014d748873f4c0b353520aff7f479f5616b3e3420eb62225d1a6beb58c6",
+    "newFence": "1f4c8cabe8836b9c08d95c343aa580d95ad29a9c73146ab9c5e554ed82b0874b",
+    "templateChanged": "754b7e8252e2e59b9cf528d221e6f85c3a3f558156d2ae878f4206a238af6ee2"}
+PINNED_VALIDATIONS = {
+    "The Sentinel Executor may not change spec.replicas":
+        "8cacfd79faeab567e5497ae3ec0c2145e9aec23340213a55a2cc0c2057df2b95",
+    "The Sentinel Executor may change no spec field other than spec.template":
+        "fa76c39f0763c89d4f944576913247a83a6a6a894a57e02175031712a58d4359",
+    "The Sentinel Executor may not change metadata.labels":
+        "990771f33819df0386827ca9ba0893cfb79ca6b0290273991bb9800ff4a9ecee",
+    "The Sentinel Executor may not change metadata.finalizers or metadata.ownerReferences":
+        "ed31c1b9d8159c751e39db1ace479ff0f9c5cfa987821a000559dadcd3f92078",
+    "The Sentinel Executor may remove no annotation and may change only sentinel.io/execution, sentinel.io/fence "
+    "and sentinel.io/fence-epoch": "1524e914896000c66786831f3334101f383125f0a7f2326f4a4aed62701a4a0a",
+    "sentinel.io/fence-epoch must be a decimal integer":
+        "58631c5cc46d508d782cd664dbaec57b283cd90606e393fe79880d2a4fa56483",
+    "sentinel.io/fence-epoch may not decrease": "ea2984e2e877db57a3e2bb6f5636b1e86c4ca39a0626c15ff5b048c6518c2f34",
+    "A Pod template change by the Sentinel Executor must write new sentinel.io/execution evidence":
+        "609cc1f3575bd0062f0facbce66441274397271c0ed5e064f6e51c2c858d5ba6",
+    "A fence or seal by the Sentinel Executor may not change the Pod template":
+        "4545d477cee60700f5be3d32168899e21f1812cd51ffd70963a6e2d481f60e35"}
+
+
+def sha256(text):
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def documents(path):
@@ -73,6 +109,37 @@ class ExecutorAdmissionPolicyTests(unittest.TestCase):
         matches = [rule for rule in self.rules if all(text in rule for text in texts)]
         self.assertTrue(matches, f"No validation mentions all of {texts}")
         return matches[0]
+
+    def rule_with_message(self, message):
+        [rule] = [rule["expression"] for rule in self.spec["validations"] if message in rule["message"]]
+        return rule
+
+    def test_every_cel_expression_is_pinned_to_its_reviewed_text(self):
+        def pinned(found, expected, kind):
+            self.assertEqual(set(found), set(expected), f"{kind} were added, removed or renamed")
+            for key, expression in found.items():
+                self.assertEqual(sha256(expression), expected[key],
+                                 f"The {kind[:-1]} {key!r} changed; review it, run the live harness, then re-pin:\n"
+                                 + expression)
+        pinned({item["name"]: item["expression"] for item in self.spec["matchConditions"]}, PINNED_CONDITIONS,
+               "conditions")
+        pinned(self.variables, PINNED_VARIABLES, "variables")
+        pinned({rule["message"]: rule["expression"] for rule in self.spec["validations"]}, PINNED_VALIDATIONS,
+               "validations")
+
+    def test_the_pin_catches_a_semantic_weakening_the_substring_checks_miss(self):
+        weakened = {
+            "may not decrease": ("int(variables.newEpoch) >= int(variables.oldEpoch)",
+                                 "int(variables.newEpoch) >= int(variables.oldEpoch) - 1"),
+            "may not change the Pod template": ("!variables.templateChanged ||", "true || !variables.templateChanged ||"),
+            "must be a decimal integer": ("variables.newEpoch.matches(" + EPOCH_PATTERN + ")",
+                                          "variables.newEpoch.matches('^[0-9]+$')")}
+        for message, (old, new) in weakened.items():
+            with self.subTest(message=message):
+                expression = self.rule_with_message(message)
+                self.assertIn(old, expression)
+                self.assertNotEqual(sha256(expression.replace(old, new, 1)),
+                                    next(value for key, value in PINNED_VALIDATIONS.items() if message in key))
 
     def test_policy_and_binding_parse_and_reference_each_other(self):
         self.assertEqual(set(documents(ADMISSION)), {"ValidatingAdmissionPolicy", "ValidatingAdmissionPolicyBinding"})
@@ -130,6 +197,23 @@ class ExecutorAdmissionPolicyTests(unittest.TestCase):
                              "variables.newEpoch == variables.oldEpoch")
         self.assertEqual(len(self.rules), 9)
 
+    def test_each_epoch_rule_holds_the_strict_pattern_itself(self):
+        # The order rule also holds the pattern, so finding it anywhere would let a loose format rule pass:
+        # with no stored epoch the order rule is skipped, and only the format rule refuses a first "06".
+        strict = "variables.newEpoch.matches(" + EPOCH_PATTERN + ")"
+        self.assertIn(strict, self.rule_with_message("must be a decimal integer"))
+        order = self.rule_with_message("may not decrease")
+        self.assertIn(strict, order)
+        self.assertIn("variables.oldEpoch.matches(" + EPOCH_PATTERN + ")", order)
+        self.assertEqual(sum(rule.count(".matches(") for rule in self.rules), 3)
+        self.assertEqual(sum(rule.count(EPOCH_PATTERN) for rule in self.rules), 3)
+
+    def test_the_harness_rule_messages_each_name_exactly_one_validation(self):
+        messages = [rule["message"] for rule in self.spec["validations"]]
+        for expected in harness.RULE_MESSAGES:
+            with self.subTest(rule=expected):
+                self.assertEqual(sum(expected in message for message in messages), 1)
+
     def test_writable_annotations_are_exactly_the_ones_the_adapter_writes(self):
         writable = set(re.findall(r"'([^']+)'", self.variables["writable"]))
         self.assertEqual(writable, {ACTION_ANNOTATION, FENCE_ANNOTATION, FENCE_EPOCH_ANNOTATION})
@@ -145,6 +229,8 @@ class ExecutorAdmissionPolicyTests(unittest.TestCase):
             self.assertIsNotNone(pattern.fullmatch(str(epoch)), epoch)
         for text in ("", "-1", "06", "1.0", " 1", "1e3", "abc", str(10**18)):
             self.assertIsNone(pattern.fullmatch(text), text)
+        # The adapter accepts any non-negative epoch, so the manifest states the policy's narrower bound.
+        self.assertIn("a decimal integer below 10^18", ADMISSION.read_text(encoding="utf-8"))
 
     def test_variables_are_defined_before_use(self):
         defined = []
@@ -248,22 +334,77 @@ def quiet_main(argv, runner, **options):
         return harness.main(argv, runner=runner, **options)
 
 
-class FakeKubectl:
-    """Scripted kubectl answers; the policy itself is never modelled."""
+def canonical(operations):
+    return json.dumps(operations, sort_keys=True)
 
-    def __init__(self, *, minor="37", cluster="kind-sentinel-boutique-connected", enforce=False):
-        self.minor, self.cluster, self.enforce = minor, cluster, enforce
+
+def apply_json_patch(document, operations):
+    """The few JSON Patch operations the harness and the adapter send, for the fake's stored object."""
+    document = json.loads(json.dumps(document))
+    for operation in operations:
+        parts = [part.replace("~1", "/").replace("~0", "~") for part in operation["path"].split("/")[1:]]
+        parent = document
+        for part in parts[:-1]:
+            parent = parent[part]
+        if operation["op"] == "test":
+            if parent.get(parts[-1]) != operation["value"]:
+                raise ValueError("test failed")
+        elif operation["op"] in ("add", "replace"):
+            parent[parts[-1]] = operation["value"]
+        else:
+            del parent[parts[-1]]
+    return document
+
+
+class FakeKubectl:
+    """Scripted kubectl answers; the policy itself is never modelled.
+
+    enforce makes the harness's dry-run probe come back denied by the run's own
+    policy. deny maps a JSON Patch from the Executor identity to the policy
+    message the test scripts for it, or None to let it through; rbac makes the
+    RBAC checks come back forbidden. Anything let through is applied to the
+    stored Deployment.
+    """
+
+    def __init__(self, *, minor="37", cluster="kind-sentinel-boutique-connected", enforce=False,
+                 deny=lambda operations: None, rbac=False, spec_fields=harness.DEPLOYMENT_SPEC_FIELDS):
+        self.minor, self.cluster, self.enforce, self.deny, self.rbac = minor, cluster, enforce, deny, rbac
+        self.spec_fields = spec_fields
         self.calls = []
         deployment = harness.deployment_manifest("ns")
-        deployment["metadata"].update(uid="uid-1", resourceVersion="100")
+        deployment["metadata"].update(uid="uid-1", resourceVersion="100", generation=1)
+        deployment["status"] = {"observedGeneration": 1}
         self.deployment = deployment
 
     def reply(self, command, code=0, stdout="", stderr=""):
         return subprocess.CompletedProcess(command, code, stdout.encode(), stderr.encode())
 
+    def policy_denial(self, command, message):
+        namespace = next(item.split("=", 1)[1] for item in command if item.startswith("--namespace="))
+        policy = namespace + "-executor-writes"
+        return self.reply(command, 1, stderr=f"The deployments \"demo-api\" is invalid: : ValidatingAdmissionPolicy "
+                                             f"'{policy}' with binding '{policy}' denied request: {message}")
+
+    def patch(self, command):
+        path = command[command.index("--patch-file") + 1]
+        operations = json.loads(Path(path).read_text(encoding="utf-8"))
+        if "--dry-run=server" in command:
+            return self.policy_denial(command, harness.LABELS_RULE) if self.enforce else self.reply(command)
+        message = self.deny(operations)
+        if message is not None:
+            return self.policy_denial(command, message)
+        try:
+            updated = apply_json_patch(self.deployment, operations)
+        except (KeyError, ValueError):
+            return self.reply(command, 1, stderr="The request is invalid")
+        updated["metadata"]["resourceVersion"] = str(int(self.deployment["metadata"]["resourceVersion"]) + 1)
+        self.deployment = updated
+        return self.reply(command, stdout=json.dumps(updated) if "--output=json" in command else "patched")
+
     def __call__(self, command, **kwargs):
         self.calls.append(command)
         words = [item for item in command[1:] if not item.startswith("--")]
+        executor = any(item.startswith("--kubeconfig=") for item in command)
         if words[:2] == ["config", "view"]:
             context = next(item.split("=", 1)[1] for item in command if item.startswith("--context="))
             return self.reply(command, stdout=json.dumps({
@@ -272,19 +413,42 @@ class FakeKubectl:
                                                                 "certificate-authority-data": "Q0E="}}]}))
         if words[:1] == ["version"]:
             return self.reply(command, stdout=json.dumps({"serverVersion": {"major": "1", "minor": self.minor}}))
+        if words[:2] == ["create", "namespace"]:
+            self.deployment["metadata"]["namespace"] = words[2]
+        if words[:2] == ["get", "/openapi/v3/apis/apps/v1"]:
+            return self.reply(command, stdout=json.dumps({"components": {"schemas": {
+                harness.DEPLOYMENT_SPEC_SCHEMA: {"properties": {field: {} for field in self.spec_fields}}}}}))
         if words[:2] == ["get", "deployment"]:
             return self.reply(command, stdout=json.dumps(self.deployment))
         if words[:2] == ["create", "token"]:
             return self.reply(command, stdout="fake-token-" + "z" * 40 + "\n")
-        if words[:1] == ["patch"] and "--dry-run=server" in command:
-            if self.enforce:
-                return self.reply(command, 1, stderr="deployments.apps \"demo-api\" is forbidden: "
-                                  "ValidatingAdmissionPolicy 'x' with binding 'x' denied request")
-            return self.reply(command)
+        if executor and words[:1] == ["patch"]:
+            return self.patch(command)
+        if executor and self.rbac:
+            if words[:2] == ["auth", "can-i"]:
+                return self.reply(command, 1, stdout="no\n")
+            return self.reply(command, 1, stderr='Error from server (Forbidden): User "system:serviceaccount:'
+                                                 'n:sentinel-executor" cannot do that')
         return self.reply(command)
 
     def verbs(self):
         return [[item for item in command[1:] if not item.startswith("--")][:2] for command in self.calls]
+
+
+def scripted_denials(rules=None):
+    """A deny function answering each planned denial with its expected rule (or with rules[name])."""
+    baseline = harness.deployment_manifest("ns")["spec"]["template"]
+    planned = {canonical(operations): (rules or {}).get(name, rule)
+               for name, operations, rule in [harness.FIRST_EPOCH_CHECK, *harness.denial_patches(baseline)]}
+
+    def deny(operations):
+        if canonical(operations) in planned:
+            return planned[canonical(operations)]
+        if any(operation["path"].endswith("fence-epoch") and operation.get("value") == "1"
+               for operation in operations):
+            return (rules or {}).get("fresh store", harness.EPOCH_ORDER_RULE)
+        return None
+    return deny
 
 
 class AdmissionHarnessTests(unittest.TestCase):
@@ -343,6 +507,10 @@ class AdmissionHarnessTests(unittest.TestCase):
                                                   "sentinel-admission-1a2b3c4d-executor-writes"))
         self.assertEqual(rendered[0]["spec"], shipped[0]["spec"])
         self.assertEqual(rendered[0]["metadata"]["name"], "sentinel-admission-1a2b3c4d-executor-writes")
+        for document in rendered:
+            # Labelled so an operator can find both cluster-scoped objects after a killed run.
+            self.assertEqual(document["metadata"]["labels"], {"app.kubernetes.io/managed-by": harness.MANAGED_BY})
+            self.assertNotIn("labels", shipped[rendered.index(document)]["metadata"])
         self.assertEqual(rendered[1]["spec"]["policyName"], rendered[0]["metadata"]["name"])
         self.assertEqual(rendered[1]["spec"]["matchResources"]["namespaceSelector"]["matchExpressions"][0]["values"],
                          ["sentinel-admission-1a2b3c4d"])
@@ -362,16 +530,146 @@ class AdmissionHarnessTests(unittest.TestCase):
                 harness.render_policy(changed, "ns", "name")
 
     def test_the_planned_checks_cover_every_required_live_check(self):
-        denied = {name for name, _ in harness.denial_patches({"spec": {"containers": [{"name": "app"}]}})}
-        for required in ("replicas changed by JSON patch", "label added", "foreign annotation changed",
-                         "lower sentinel.io/fence-epoch"):
-            self.assertIn(required, denied)
+        planned = {name: (operations, rule) for name, operations, rule
+                   in harness.denial_patches({"spec": {"containers": [{"name": "app"}]}})}
+        for required, rule in (("replicas changed by JSON patch", harness.REPLICAS_RULE),
+                               ("another spec field (paused) changed", harness.SPEC_RULE),
+                               ("label added", harness.LABELS_RULE),
+                               ("foreign annotation changed", harness.ANNOTATIONS_RULE),
+                               ("Pod template changed without new evidence", harness.EVIDENCE_RULE),
+                               ("seal that also changes the Pod template", harness.SEAL_RULE),
+                               ("lower sentinel.io/fence-epoch", harness.EPOCH_ORDER_RULE),
+                               ("malformed sentinel.io/fence-epoch", harness.EPOCH_FORMAT_RULE)):
+            self.assertEqual(planned[required][1], rule, required)
+        # Every rule the harness names is expected by at least one check, so each has a live witness.
+        expected = {rule for _, rule in planned.values()} | {harness.FIRST_EPOCH_CHECK[2]}
+        self.assertEqual(expected, set(harness.RULE_MESSAGES))
         rbac = dict(harness.RBAC_CHECKS)
         self.assertEqual(rbac["kubectl scale (scale subresource)"][0], "scale")
         self.assertEqual(rbac["get secrets"], ("get", "secrets"))
-        self.assertIn("--subresource=exec", rbac["pods/exec create (auth can-i)"])
+        self.assertIn("--subresource=exec", rbac["pods/exec create: auth can-i answers no"])
         self.assertTrue(all("--dry-run=server" in arguments for name, arguments in harness.RBAC_CHECKS
                             if arguments[0] in ("delete", "create")))
+
+    def test_the_seal_and_format_checks_can_only_be_denied_by_their_own_rule(self):
+        planned = {name: operations for name, operations, _ in harness.denial_patches({"spec": {}})}
+        seal = {operation["path"]: operation for operation in planned["seal that also changes the Pod template"]}
+        # New evidence, so the evidence rule passes; a higher epoch, so the order rule passes.
+        self.assertEqual(seal["/metadata/annotations/sentinel.io~1execution"]["op"], "add")
+        self.assertIn("/spec/template", seal)
+        self.assertEqual(seal["/metadata/annotations/sentinel.io~1fence-epoch"]["value"], "9")
+        # Sent before any seal, so no epoch is stored and the order rule is skipped.
+        name, operations, rule = harness.FIRST_EPOCH_CHECK
+        self.assertEqual(operations, [{"op": "add", "path": "/metadata/annotations/sentinel.io~1fence-epoch",
+                                       "value": "06"}])
+        self.assertEqual(rule, harness.EPOCH_FORMAT_RULE)
+
+
+class AdmissionVerdictTests(unittest.TestCase):
+    """The verdict path that would produce the evidence, against scripted servers."""
+
+    def run_harness(self, runner):
+        with tempfile.TemporaryDirectory() as directory:
+            code = quiet_main(["--context", "kind-sentinel-boutique-connected", "--run-dir", directory + "/run"],
+                              runner, sleep=lambda seconds: None)
+            summary = json.loads((Path(directory) / "run/admission.json").read_text(encoding="utf-8"))
+        return code, summary, {check["name"]: check for check in summary["checks"]}
+
+    def test_a_server_that_allows_every_request_fails_every_denial_check(self):
+        code, summary, checks = self.run_harness(FakeKubectl(enforce=True))
+        self.assertEqual((code, summary["status"]), (1, "FAIL"))
+        denials = [check for check in checks.values() if check.get("expected") in (harness.POLICY_DENIED,
+                                                                                  harness.RBAC_DENIED)]
+        self.assertEqual(len(denials), len(harness.denial_patches({})) + 1 + 1 + len(harness.RBAC_CHECKS))
+        for check in denials:
+            with self.subTest(check=check["name"]):
+                self.assertFalse(check["passed"])
+        self.assertEqual(checks["replicas changed by JSON patch"]["outcome"], harness.ALLOWED)
+        self.assertFalse(checks["replicas changed by JSON patch"]["object_unchanged"])
+        self.assertTrue(checks["real ROLLBACK patch (production adapter)"]["passed"])
+        self.assertFalse(checks["final state"]["passed"])
+
+    def test_a_server_that_denies_each_request_by_its_rule_passes(self):
+        code, summary, checks = self.run_harness(FakeKubectl(enforce=True, deny=scripted_denials(), rbac=True))
+        self.assertEqual((code, summary["status"]), (0, "PASS"), [name for name, check in checks.items()
+                                                                  if not check["passed"]])
+        fresh = checks["seal at epoch 1 from a fresh Coordinator store (production adapter)"]
+        self.assertEqual((fresh["outcome"], fresh["adapter_error"]), (harness.POLICY_DENIED, "WriteOutcomeUnknown"))
+        self.assertIn(harness.EPOCH_ORDER_RULE, fresh["message"])
+        self.assertEqual(summary["final_state"]["fence_epoch"], "6")
+        self.assertEqual(checks["pods/exec create: auth can-i answers no"]["outcome"], harness.RBAC_DENIED)
+
+    def test_a_denial_by_another_rule_fails_the_check(self):
+        runner = FakeKubectl(enforce=True, rbac=True, deny=scripted_denials({
+            "seal that also changes the Pod template": harness.EVIDENCE_RULE,
+            "malformed sentinel.io/fence-epoch with no stored epoch": harness.EPOCH_ORDER_RULE}))
+        code, summary, checks = self.run_harness(runner)
+        self.assertEqual((code, summary["status"]), (1, "FAIL"))
+        failed = {name for name, check in checks.items() if not check["passed"]}
+        self.assertEqual(failed, {"seal that also changes the Pod template",
+                                  "malformed sentinel.io/fence-epoch with no stored epoch"})
+        self.assertFalse(checks["seal that also changes the Pod template"]["rule_named"])
+
+    def test_a_fresh_store_seal_that_commits_fails_the_check(self):
+        deny = scripted_denials({"fresh store": None})
+        code, summary, checks = self.run_harness(FakeKubectl(enforce=True, rbac=True, deny=deny))
+        self.assertEqual(code, 1)
+        fresh = checks["seal at epoch 1 from a fresh Coordinator store (production adapter)"]
+        self.assertEqual((fresh["outcome"], fresh["passed"]), (harness.ALLOWED, False))
+
+    def test_a_server_deploymentspec_field_the_policy_does_not_name_fails(self):
+        runner = FakeKubectl(enforce=True, deny=scripted_denials(), rbac=True,
+                             spec_fields=harness.DEPLOYMENT_SPEC_FIELDS + ("futureField",))
+        code, summary, checks = self.run_harness(runner)
+        self.assertEqual(code, 1)
+        check = checks["server DeploymentSpec has only the fields the policy names"]
+        self.assertFalse(check["passed"])
+        self.assertIn("futureField", check["server_fields"])
+
+    def test_a_deployment_that_never_settles_ends_the_run_before_any_check_is_sent(self):
+        runner = FakeKubectl(enforce=True, deny=scripted_denials(), rbac=True)
+        runner.deployment["status"]["observedGeneration"] = 0
+        code, summary, _ = self.run_harness(runner)
+        self.assertEqual((code, summary["status"], summary["error_type"]), (1, "FAILED", "RuntimeError"))
+        self.assertFalse([command for command in runner.calls if any(item.startswith("--kubeconfig=")
+                                                                      for item in command)
+                          and "patch" in command and "--dry-run=server" not in command])
+        self.assertTrue(summary["policy_deleted"] and summary["namespace_deleted"])
+
+    def test_a_denial_passes_only_with_its_rule_no_change_and_every_extra_requirement(self):
+        with tempfile.TemporaryDirectory() as directory:
+            checker = harness.AdmissionHarness("kind-sentinel-boutique-connected", Path(directory) / "run",
+                                               runner=FakeKubectl())
+        deployment = FakeKubectl().deployment
+        changed = json.loads(json.dumps(deployment))
+        changed["spec"]["replicas"] = 1
+        denial = subprocess.CompletedProcess([], 1, b"", (f"ValidatingAdmissionPolicy '{checker.policy_name}' "
+                                                          f"denied request: {harness.EPOCH_ORDER_RULE}").encode())
+        with redirect_stdout(io.StringIO()):
+            self.assertTrue(checker.record("a", harness.POLICY_DENIED, denial, deployment, deployment,
+                                           rule=harness.EPOCH_ORDER_RULE))
+            self.assertFalse(checker.record("b", harness.POLICY_DENIED, denial, deployment, deployment,
+                                            rule=harness.EPOCH_ORDER_RULE, required=False))
+            self.assertFalse(checker.record("c", harness.POLICY_DENIED, denial, deployment, changed,
+                                            rule=harness.EPOCH_ORDER_RULE))
+            self.assertFalse(checker.record("d", harness.POLICY_DENIED, denial, deployment, deployment,
+                                            rule=harness.SEAL_RULE))
+        self.assertEqual([check["passed"] for check in checker.summary["checks"]], [True, False, False, False])
+
+    def test_settled_needs_the_observed_generation_and_observable_ignores_the_controller_revision(self):
+        deployment = {"metadata": {"generation": 2, "annotations": {"a": "1"}}, "spec": {}, "status": {}}
+        self.assertFalse(harness.settled(deployment))
+        deployment["status"]["observedGeneration"] = 1
+        self.assertFalse(harness.settled(deployment))
+        deployment["status"]["observedGeneration"] = 2
+        self.assertTrue(harness.settled(deployment))
+        self.assertFalse(harness.settled({"metadata": {}, "status": {}}))
+        revised = json.loads(json.dumps(deployment))
+        revised["metadata"]["annotations"]["deployment.kubernetes.io/revision"] = "3"
+        revised["metadata"]["resourceVersion"] = "999"
+        self.assertEqual(harness.observable(revised), harness.observable(deployment))
+        revised["metadata"]["annotations"]["a"] = "2"
+        self.assertNotEqual(harness.observable(revised), harness.observable(deployment))
 
     def test_classify_tells_policy_rbac_and_other_failures_apart(self):
         def result(code, stdout="", stderr=""):
