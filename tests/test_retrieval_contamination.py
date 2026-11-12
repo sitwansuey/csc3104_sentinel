@@ -47,6 +47,11 @@ class ContaminationTests(unittest.TestCase):
                     self.assertIn(("runbooks/failed-rollout.md", term),
                                   corpus.contamination({"runbooks/failed-rollout.md": text}, self.terms))
 
+    def test_a_label_in_another_case_is_found(self):
+        found = corpus.contamination({"x": "see r1 and Port-Invalid and the CORRECT ACTION"},
+                                     ["R1", "port-invalid", "correct action"])
+        self.assertEqual(sorted(term for _, term in found), ["R1", "correct action", "port-invalid"])
+
     def test_word_boundaries_avoid_false_matches(self):
         found = corpus.contamination({"x": "R10 and AN1 and xR1 and port-invalid-2"}, ["R1", "N1", "port-invalid"])
         self.assertEqual(found, [])

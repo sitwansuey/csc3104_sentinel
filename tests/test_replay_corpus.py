@@ -33,7 +33,9 @@ class BuilderAllowlistTests(unittest.TestCase):
         self.root = Path(temporary.name)
 
     def run_folder(self):
-        """A copy of a real run with the private files a run folder holds next to the evidence."""
+        """A copy of a real run with the private files a run folder holds next to the evidence.
+
+        The token, key and password below are synthetic test fixtures, not secrets."""
         run = self.root / "runs" / GOLDEN
         shutil.copytree(bundle(GOLDEN), run)
         (run / ".executor-kubeconfig.json").write_text(json.dumps({
@@ -109,6 +111,51 @@ class BuilderAllowlistTests(unittest.TestCase):
         policy = case / "inputs/policy.json"
         policy.write_bytes(policy.read_bytes().replace(b'"policy_id"', b'"client-key-data": "QUJD", "policy_id"'))
         self.assertTrue(any("kubeconfig key data" in problem for problem in corpus.scan(out)))
+
+    def test_the_content_scan_refuses_each_secret_shape_in_an_allowlisted_file(self):
+        """Each plant sits in an innocent, allowlisted file and matches one content pattern only, so
+        removing that pattern alone makes its subtest fail. The values are synthetic fixtures, not secrets."""
+        out = self.root / "corpus"
+        builder.build([bundle(GOLDEN)], out)
+        case = next((out / "cases").iterdir())
+        plants = (
+            ("inputs/observations/0002-observation.json", b"SQLite format 3\x00\x00", "SQLite database bytes"),
+            ("inputs/observations/0002-observation.json",
+             b'{"note": "-----BEGIN RSA PRIVATE KEY-----\\nAAAA\\n-----END RSA PRIVATE KEY-----"}',
+             "a PEM key or certificate"),
+            ("inputs/policy.json", b'{"note": "-----BEGIN CERTIFICATE-----\\nAAAA\\n-----END CERTIFICATE-----"}',
+             "a PEM key or certificate"),
+            ("inputs/baseline.json",
+             b'{"note": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJyZXBsYXkifQ.c2lnbmF0dXJlLWZpeHR1cmU"}', "a JWT"),
+            ("inputs/live-state.json", b'{"password": "x"}', "a credential value"),
+            ("inputs/dependency-finding.json", b'{"api_key" : "fixture"}', "a credential value"),
+            ("inputs/incident.json", b'{"users": [{"client-key-data": "QUJD"}]}', "kubeconfig key data"),
+        )
+        for name, data, reason in plants:
+            path = case / name
+            original = path.read_bytes() if path.is_file() else None
+            with self.subTest(name=name, reason=reason):
+                path.write_bytes(data)
+                self.assertEqual(corpus.scan(out), [f"{path.relative_to(out).as_posix()}: contains {reason}"])
+                with self.assertRaisesRegex(corpus.CorpusError, "Unsafe corpus: .*contains " + reason):
+                    corpus.verify(out)
+            if original is None:
+                path.unlink()
+            else:
+                path.write_bytes(original)
+        self.assertEqual(corpus.scan(out), [])
+
+    def test_a_placeholder_credential_field_is_not_a_credential_value(self):
+        out = self.root / "corpus"
+        builder.build([bundle(GOLDEN)], out)
+        policy = next((out / "cases").iterdir()) / "inputs/policy.json"
+        original = policy.read_bytes()
+        # An empty value or a <placeholder> is how a document names a field without holding a secret.
+        for text in (b'"password": "", "policy_id"', b'"token": "<set at deploy time>", "policy_id"'):
+            with self.subTest(text=text):
+                policy.write_bytes(original.replace(b'"policy_id"', text, 1))
+                self.assertEqual(corpus.scan(out), [])
+        policy.write_bytes(original)
 
     def test_verify_refuses_a_file_that_does_not_match_the_manifest(self):
         out = self.root / "corpus"
