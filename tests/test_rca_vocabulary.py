@@ -51,6 +51,24 @@ def report(component="demo-api", reason=STARTUP, **extra):
                             "explanation": "x", "limitations": "x"}
 
 
+def _enum_of(schema, key):
+    """The enum under the first property named key, anywhere in a JSON schema."""
+    if isinstance(schema, dict):
+        if key in schema.get("properties", {}):
+            node = schema["properties"][key]
+            return (node.get("items") or node).get("enum", [])
+        values = schema.values()
+    elif isinstance(schema, list):
+        values = schema
+    else:
+        return []
+    for value in values:
+        found = _enum_of(value, key)
+        if found:
+            return found
+    return []
+
+
 class DecisionContextTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -178,6 +196,40 @@ class DecisionContextTests(unittest.TestCase):
         summary = json.loads((self.root / "agent/attempt-1/agent/execution-summary.json").read_text())
         self.assertIn("does not name the diagnosed component", summary["citation_refusal"])
         self.assertTrue((self.root / "agent/attempt-1/agent/rejected-report.json").is_file())
+
+    def export_with_flat_metrics(self, destination, incident):
+        DecisionContextTests.export(self, destination, incident)
+        rows = "".join(f"2026-10-10T12:00:{second:02d}Z,demo-api,cpu,0.5\n" for second in range(0, 60, 5))
+        (destination / "metrics.csv").write_text("timestamp,cmdb_id,kpi_name,value\n" + rows, encoding="utf-8")
+
+    def test_an_empty_metrics_scan_cited_beside_supporting_logs_does_not_abstain(self):
+        # The live R2 and N1 shape: the metrics scan has rows but no findings, the logs
+        # name the target, and the Reporter cites every collected result.
+        self.export = self.export_with_flat_metrics
+
+        def cite_everything(attempt):
+            schema = self.script.seen[-1][2]
+            ids = sorted(_enum_of(schema, "evidence_ids"))
+            return {"failures": [{"root cause component": "demo-api", "root cause reason": STARTUP,
+                                  "evidence_ids": ids}], "explanation": "x", "limitations": "x"}
+
+        self.script.overrides["Reporter"] = cite_everything
+        self.current = self.planner()
+        saved, attempt = self.plan(self.current)
+        self.assertIsNone(saved["error_code"])
+        self.assertEqual(saved["proposal"]["action"], "ROLLBACK")
+        cited = attempt["context"]["diagnosis"]["citations"]["1"]
+        results = {}
+        for branch in (self.root / "agent/attempt-1/agent").glob("branch-*/result.json"):
+            for output in json.loads(branch.read_text(encoding="utf-8"))["outputs"]:
+                results[output["evidence_id"]] = output
+        self.assertGreaterEqual(len(cited), 2)
+        tools = {results[i]["tool"] for i in cited}
+        self.assertEqual(tools, {"logs", "metrics"})
+        [metrics] = [results[i]["result"] for i in cited if results[i]["tool"] == "metrics"]
+        self.assertEqual(metrics["findings"], [])
+        summary = json.loads((self.root / "agent/attempt-1/agent/execution-summary.json").read_text())
+        self.assertIsNone(summary["citation_refusal"])
 
     def export_with_frontend(self, destination, incident):
         DecisionContextTests.export(self, destination, incident)
@@ -400,6 +452,27 @@ class DecisionContextTests(unittest.TestCase):
             with self.subTest(ids=ids):
                 self.assertIn("does not name the diagnosed component",
                               unsupported_citation(prediction, {"1": ids}, evidence))
+
+    def test_a_result_naming_no_component_is_neutral_but_cannot_support_alone(self):
+        # Seen live (R2, N1): an image that never starts leaves the metrics scan with no
+        # findings. Citing it beside a result that names the component must not abstain.
+        prediction = {"1": {"root cause component": "demo-api", "root cause reason": STARTUP}}
+        empty_scan = {"file": "metrics.csv", "rows_scanned": 21, "findings": [], "total_findings": 0}
+        evidence = {"a": {"components": {"demo-api": 1}}, "empty": empty_scan, "none": {},
+                    "other": {"examples": [{"component": "frontend"}]}}
+        for ids in (["a", "empty"], ["empty", "a"], ["a", "none", "empty"]):
+            with self.subTest(ids=ids):
+                self.assertIsNone(unsupported_citation(prediction, {"1": ids}, evidence))
+        for ids in (["empty"], ["none"], ["empty", "none"]):
+            with self.subTest(ids=ids):
+                self.assertEqual(unsupported_citation(prediction, {"1": ids}, evidence),
+                                 "No result cited for failure 1 names the diagnosed component.")
+        for ids in (["a", "empty", "other"], ["empty", "other"]):
+            with self.subTest(ids=ids):
+                self.assertIn("does not name the diagnosed component",
+                              unsupported_citation(prediction, {"1": ids}, evidence))
+        mixed = {"examples": [{"component": "frontend"}, {"component": "DEMO-API"}]}
+        self.assertIsNone(unsupported_citation(prediction, {"1": ["m"]}, {"m": mixed}))
 
 
 if __name__ == "__main__":

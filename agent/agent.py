@@ -106,20 +106,37 @@ def cite(final, evidence):
     return {**final, "failures": stripped}, cited
 
 
-def mentions(result, component):
-    """True when a tool result's findings, events, examples, latency or components name the component."""
+def named(result):
+    """The component names a tool result's findings, events, examples, latency or components mention, casefolded."""
     names = set((result.get("components") or {}) if isinstance(result.get("components"), dict) else ())
     for key in ("findings", "events", "examples", "latency"):
         names.update(item.get("component") for item in result.get(key) or () if isinstance(item, dict))
-    return component.casefold() in {name.casefold() for name in names if isinstance(name, str)}
+    return {name.casefold() for name in names if isinstance(name, str)}
+
+
+def mentions(result, component):
+    """True when a tool result's findings, events, examples, latency or components name the component."""
+    return component.casefold() in named(result)
 
 
 def unsupported_citation(prediction, cited, evidence):
-    """Why the cited results do not support the diagnosis, or None when every one names its component."""
+    """Why the cited results do not support the diagnosis, or None when they do.
+
+    A cited result that names no component at all (for example a metrics scan
+    with no findings, because the container never started) is neutral: it
+    neither supports nor contradicts the diagnosis. A cited result that names
+    only other components contradicts it, and at least one cited result must
+    name the diagnosed component.
+    """
     for number, failure in prediction.items():
         component = failure.get(FIELDS[1])
-        if component is not None and not all(mentions(evidence[i], component) for i in cited[number]):
+        if component is None:
+            continue
+        results = [evidence[i] for i in cited[number]]
+        if any(named(result) and not mentions(result, component) for result in results):
             return f"A result cited for failure {number} does not name the diagnosed component."
+        if not any(mentions(result, component) for result in results):
+            return f"No result cited for failure {number} names the diagnosed component."
     return None
 
 
@@ -277,9 +294,10 @@ class Agent:
         """Investigate and report; return the validated prediction ({} for an abstention).
 
         cite_evidence (the live planning path): each reported failure must also
-        cite the evidence ids of collected tool results that name its component.
-        A report still invalid after its one correction, or one whose cited
-        results do not name the component, becomes an abstention.
+        cite the evidence ids of collected tool results, at least one of which
+        names its component (see unsupported_citation). A report still invalid
+        after its one correction, or one whose citations do not support the
+        component, becomes an abstention.
         """
         allow_abstention = self.config.get("allow_abstention", False)
         inventory = self.telemetry.inventory()
@@ -387,7 +405,8 @@ class Agent:
         if cite_evidence:
             report_instructions += (
                 " Each failure MUST list evidence_ids: the IDs of the collected tool results that show this "
-                "component and reason. Every cited result must name the component.")
+                "component and reason. At least one cited result must name the component; do not cite results that name "
+                "only other components.")
 
         def check(answer):
             stripped, cited = cite(answer, results) if cite_evidence else (answer, {})
