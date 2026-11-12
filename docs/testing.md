@@ -116,6 +116,13 @@ python -m unittest tests.test_planner_pipeline tests.test_recovery_runner -v
 python -m unittest tests.test_remote_workers tests.test_worker_transport tests.test_approval_access -v
 ```
 
+`tests/test_distributed_processes.py` runs fault scenarios with the Coordinator
+and every worker as separate processes on one host, against a file-backed test
+cluster, and checks invariants from their records and logs. The default subset
+takes about 75 s; set `SENTINEL_DISTRIBUTED_ALL=1` for every scenario. These are
+processes on one host, not separate machines; see the
+[harness guide](../experiments/distributed/README.md).
+
 The Planner handoff checks inject unavailable/invalid providers, restart during
 backoff, exhaust attempts after a worker death, fence a replaced lease and replay
 a saved proposal after failed Coordinator delivery. They verify no repair on

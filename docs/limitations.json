@@ -31,14 +31,15 @@
       "kind": "defect",
       "status": "mitigated",
       "since": "2026-11-12",
-      "impact": "Fixed in code; live verification is left to P3.01 and P4.01. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host given a reconcile command with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it never starts that write. An execute command on a fresh host can still write, and the resourceVersion test in the patch lets at most one write for the action commit. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. No run has used more than one Executor host; the 2026-11-11 live runs each used one.",
+      "impact": "Fixed in code; live verification is left to P3.01 and P4.01. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host given a reconcile command with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it never starts that write. An execute command on a fresh host can still write, and the resourceVersion test in the patch lets at most one write for the action commit. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. The P3.01 multi-process harness runs two Executor processes with separate ledgers and locks on one host: in S1c a peer adopted a write committed by a crashed Executor and in S2 a stalled Executor adopted its peer's write, each with one template write. That is still one machine and a file-backed test cluster; no live run has used two Executors.",
       "workaround": "Run one Executor with one ledger directory, as every documented run does, until a multi-host run verifies this.",
       "cites": [
         {"at": "services/executor/core.py:421", "text": "# Another host may already have committed this same action."},
         {"at": "services/executor/core.py:365", "text": "# Journal the action as in doubt here, so this host can never start it."},
         {"at": "tests/test_executor_reconciliation_table.py:420", "text": "def test_peer_adoption_gives_applied_with_zero_writes_on_host_b"},
         {"at": "tests/test_executor_reconciliation_table.py:475", "text": "def test_reconcile_on_a_host_with_no_row_returns_a_result"},
-        {"at": "services/executor/store.py:3", "text": "Every worker must use the same ledger and lock directory"}
+        {"at": "services/executor/store.py:3", "text": "Every worker must use the same ledger and lock directory"},
+        {"at": "tests/test_distributed_processes.py:42", "text": "def test_s1c_executor_killed_after_the_patch_is_adopted_by_the_peer_with_one_write"}
       ],
       "planned": ["P3.01", "P4.01"],
       "issues": [18, 58]
@@ -49,12 +50,13 @@
       "kind": "defect",
       "status": "open",
       "since": "2026-11-12",
-      "impact": "The Coordinator refuses a result whose timestamp is not later than the evidence it follows. If the Executor's clock is behind the Guard's, an applied execution result is refused with HTTP 400, and the remote worker retries it forever because it gives up only on 404 or 409. Lease renewal also mixes the Coordinator's and the worker's clocks.",
+      "impact": "The Coordinator refuses a result whose timestamp is not later than the evidence it follows. If the Executor's clock is behind the Guard's, an applied execution result is refused with HTTP 400, and the remote worker retries it forever because it gives up only on 404 or 409. Lease renewal also mixes the Coordinator's and the worker's clocks. Reproduced across separate processes on one host by scenario S7 of the P3.01 harness, with both Executors on a gated test clock 300 s behind: the template write landed, its result was refused with HTTP 400 until the 18 s deadline, and the incident stayed READY. The CI test asserts this wedge, so it fails once P3.03 fixes it.",
       "workaround": "Run every component on one host, so they share one clock. All committed runs did.",
       "cites": [
         {"at": "services/coordinator/core.py:149-150", "text": "Execution predates Guard validation"},
         {"at": "services/coordinator/core.py:169-170", "text": "Health window predates execution"},
-        {"at": "runtime/worker_http.py:157", "text": "except (ValueError, KeyError, TypeError) as exc:"},
+        {"at": "runtime/worker_http.py:163", "text": "except (ValueError, KeyError, TypeError) as exc:"},
+        {"at": "tests/test_distributed_processes.py:61", "text": "def test_s7_executor_clock_behind_wedges_the_action_before_p3_03"},
         {"at": "runtime/remote_worker.py:132", "text": "if error.status not in {404, 409}:"},
         {"at": "runtime/remote_worker.py:73", "text": "time.time()) / 3"}
       ],
@@ -134,7 +136,7 @@
       "workaround": "For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json.",
       "cites": [
         {"at": "shared/log.py:235", "text": "def entrypoint(component: str)"},
-        {"at": "runtime/worker_http.py:259", "text": "@log.entrypoint(\"worker_http\")"},
+        {"at": "runtime/worker_http.py:268", "text": "@log.entrypoint(\"worker_http\")"},
         {"at": "services/executor/core.py:236-237", "text": "any read failure leaves the outcome unknown"},
         {"at": "docs/observability.md", "text": "only when their entrypoint configures logging"},
         {"at": "tests/test_except_audit.py:39", "text": "def test_repository_has_no_unjustified_broad_handler"}
@@ -208,14 +210,30 @@
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-11",
-      "impact": "The HTTPS delivery layer is tested in-process over 127.0.0.1. It has never run as separate processes, containers or nodes under network faults. Containers or kind nodes on one Docker host would still not be separate machines.",
+      "impact": "Since P3.01 the Coordinator and every worker run as separate processes on one host, with their own state, credentials and TCP connections, under injected network, process and timing faults (CI, file-backed test cluster). That is still one machine: one kernel clock, one disk and loopback networking. The delivery layer has not run in containers, on separate nodes or against the kind lab (the harness's kind mode has not been run), and containers or kind nodes on one Docker host would still not be separate machines.",
       "workaround": "None; read the distributed design as untested beyond one host.",
       "cites": [
         {"at": "tests/test_worker_transport.py:163", "text": "('127.0.0.1', 0)"},
+        {"at": "experiments/distributed/topology.py", "text": "class Topology:"},
         {"at": "deploy/sentinel/COORDINATOR.md", "text": "not recorded Kubernetes acceptance"}
       ],
       "planned": ["P3.01", "P4.01"],
       "issues": [62, 63]
+    },
+    {
+      "id": "L-ORPHANED-EXECUTOR-LEDGER",
+      "title": "A crashed Executor whose peer finished the action keeps it in doubt and refuses that workload",
+      "kind": "defect",
+      "status": "open",
+      "since": "2026-11-12",
+      "impact": "Found by the P3.01 multi-process harness (S1b and S1c, separate processes on one host). An Executor killed after journalling its write intent, or after its patch, leaves the action WRITE_STARTED in its own ledger. When the other Executor takes the command and finishes the action, no command for it ever reaches the crashed host again, and the remote worker runs no restart scan of its ledger, so after a restart the row stays in doubt. That host then refuses every later action on the same workload with TargetBusy until someone reconciles the row. No extra write happens: each run kept one template write. When the crashed host is the only one to come back (S1e), it reconciles and fences its own write as designed.",
+      "workaround": "After an Executor crash, reconcile its in-doubt rows with runtime/live_executor.py --reconcile on that host, or run one Executor per workload.",
+      "cites": [
+        {"at": "services/executor/store.py:175", "text": "Workload has an unresolved execution; reconcile it first"},
+        {"at": "tests/test_distributed_processes.py:37", "text": "def test_s1b_executor_killed_after_the_write_intent_leaves_its_ledger_in_doubt"}
+      ],
+      "planned": ["P3.04"],
+      "issues": [18, 58]
     },
     {
       "id": "L-ONE-FAULT-ONE-ACTION",

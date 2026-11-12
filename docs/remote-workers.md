@@ -134,6 +134,28 @@ combined with `--coordinator-url`. The optional Kustomize composition
 `kubectl apply -k deploy/sentinel` binds Observer to HTTPS without mounting the
 Coordinator PVC; the original standalone Observer lab manifest is preserved.
 
+## Probes, the deterministic planner and lab runs
+
+`--health-port PORT` serves `/healthz` and `/readyz` on 127.0.0.1 only.
+`/healthz` answers 200 while the polling loop runs. `/readyz` answers 200 once
+the configuration was accepted and the Coordinator answered a polling pass
+within `--ready-seconds` (60 by default). The bodies hold booleans and ages in
+seconds, nothing else.
+
+A Planner configuration may set `"provider": "deterministic"` with an optional
+`"attempt_lease_seconds"`. It plans with the offline mock provider instead of a
+model, and every attempt it serves is saved in the Planner journal with usage
+`synthetic_planner: true`. Use it for CI and fault runs, never as evidence of
+planning quality. Ollama stays the default; any other provider name is refused.
+
+`"cluster": "file:PATH"` points a Guard, Executor or Verifier at the shared
+test cluster in `tests/support/file_cluster.py`. A worker accepts it only in a
+lab fault run, when `SENTINEL_FAULT_POINTS` names an existing directory and
+`SENTINEL_FAULT_CLUSTER` is one of the lab clusters in `runtime/fault_points.py`;
+the same two variables enable the named fault points and the test clock
+offset. In any other run they are inert. The multi-process harness that sets
+them is described in [experiments/distributed](../experiments/distributed/README.md).
+
 ## Reproduce and package
 
 ```powershell
