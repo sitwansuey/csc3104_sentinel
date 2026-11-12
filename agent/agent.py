@@ -294,9 +294,10 @@ class Agent:
         """Investigate and report; return the validated prediction ({} for an abstention).
 
         cite_evidence (the live planning path): each reported failure must also
-        cite the evidence ids of collected tool results that name its component.
-        A report still invalid after its one correction, or one whose cited
-        results do not name the component, becomes an abstention.
+        cite the evidence ids of collected tool results, at least one of which
+        names its component (see unsupported_citation). A report still invalid
+        after its one correction, or one whose citations do not support the
+        component, becomes an abstention.
         """
         allow_abstention = self.config.get("allow_abstention", False)
         inventory = self.telemetry.inventory()
@@ -404,7 +405,8 @@ class Agent:
         if cite_evidence:
             report_instructions += (
                 " Each failure MUST list evidence_ids: the IDs of the collected tool results that show this "
-                "component and reason. Every cited result must name the component.")
+                "component and reason. At least one cited result must name the component; do not cite results that name "
+                "only other components.")
 
         def check(answer):
             stripped, cited = cite(answer, results) if cite_evidence else (answer, {})
