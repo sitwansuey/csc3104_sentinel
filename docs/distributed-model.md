@@ -34,10 +34,12 @@ What is single-host today:
   disk, one kernel clock and one failure domain. Containers and kind nodes on
   one host are not separate machines.
 - The HTTP delivery layer (`runtime/worker_http.py`, `runtime/worker_service.py`)
-  has run only inside unit tests on loopback, in one process
-  (`tests/test_remote_workers.py::RemoteWorkerTests.test_all_six_components_recover_over_http_with_managed_approval_and_owned_stores`).
-  No harness uses it, and the Coordinator manifest has not been applied to a
-  cluster ([Coordinator guide](../deploy/sentinel/COORDINATOR.md)).
+  runs in unit tests on loopback in one process
+  (`tests/test_remote_workers.py::RemoteWorkerTests.test_all_six_components_recover_over_http_with_managed_approval_and_owned_stores`)
+  and, since P3.01, as separate processes on one host under injected faults
+  (see [Multi-process fault runs](#multi-process-fault-runs-on-one-host)).
+  The Coordinator manifest has not been applied to a cluster
+  ([Coordinator guide](../deploy/sentinel/COORDINATOR.md)).
 
 ## Failure model
 
@@ -104,7 +106,7 @@ losing that node needs a manual restore from a backup, and nothing detects a
 restore that silently drops acknowledged results.
 
 **Recovery time (RTO)** has not been measured. After repeated errors a worker
-backs off for up to 60 s (`runtime/worker_service.py:148::main::min(60`), which adds
+backs off for up to 60 s (`runtime/worker_service.py:222::main::min(60`), which adds
 to recovery time after a Coordinator restart.
 
 ## Time and ordering: the clock dependence today
@@ -151,7 +153,7 @@ run. They become real when workers run on separate machines.
 
 **The wedge in remote workers.** A rejected lifecycle check raises
 `CoordinatorError`, which is a `ValueError`. The worker API answers it with
-HTTP 400 (`runtime/worker_http.py:157-159::handler::except (ValueError, KeyError, TypeError)`). The worker releases a saved
+HTTP 400 (`runtime/worker_http.py:163-165::handler::except (ValueError, KeyError, TypeError)`). The worker releases a saved
 result only on 404 or 409 and re-raises anything else
 (`runtime/remote_worker.py:131-136::RemoteWorker.once::except ProtocolError`), and a saved result can
 never change (`runtime/remote_worker.py::WorkerJournal.save`). So the worker
@@ -163,15 +165,14 @@ VALIDATING), and later incidents for the same workload wait behind it
 (`services/coordinator/store.py::SQLiteStore.planning_blocker`). For an
 APPLIED Executor result the Kubernetes write has already happened; for a
 FAILED one from the local re-check, nothing was written but the action is
-stuck all the same. No committed test covers
-this, because every role in `tests/test_remote_workers.py` shares one clock.
-On a networked run the Coordinator's access log shows the loop as repeated
-`result` requests from one identity with `http_status` 400
-(`runtime/worker_http.py::access_log`).
-While this document was written, a local loopback run against this branch
-showed an Executor result stamped 5 s before the Guard ALLOW rejected with
-HTTP 400 three times while the incident stayed READY; that run is not
-committed evidence.
+stuck all the same. Every role in `tests/test_remote_workers.py` shares one
+clock, so those tests cannot show it. Scenario S7 of the multi-process harness
+does: both Executor processes run with a gated test clock 300 s behind, the
+write lands, and its result is refused with HTTP 400 until the run ends while
+the incident stays READY
+(`tests/test_distributed_processes.py::DistributedProcessTests.test_s7_executor_clock_behind_wedges_the_action_before_p3_03`).
+The Coordinator's access log shows the loop as repeated `result` requests from
+one identity with `http_status` 400 (`runtime/worker_http.py::access_log`).
 
 **Leases use one clock.** Lease expiry and retry back-off are computed only
 from the Coordinator's clock (`runtime/worker_transport.py::Delivery.claim`),
@@ -225,7 +226,9 @@ Delivery to workers is at least once, and receivers deduplicate by action id.
   write land. The loser finds this action's evidence annotation on the
   Deployment and reports APPLIED without writing
   (`services/executor/core.py:421::execute::Another host may already have committed`).
-  This is tested in one process only; no run has used two Executor hosts.
+  The multi-process scenarios S1c and S2 run two Executor processes with
+  separate ledgers and locks on one host and show this adoption; no run has
+  used two Executors on separate machines.
 - Reconciliation decides from one read. Once the target is deleted, has
   another UID or has a resourceVersion other than the one the patch tests,
   the patch can never commit, so the result is SUPERSEDED and the Coordinator
@@ -252,13 +255,65 @@ Delivery to workers is at least once, and receivers deduplicate by action id.
   not yet a fence sent for an expired lease or a revoked approval (P3.04).
   It has not been run against a cluster.
 
+## Multi-process fault runs on one host
+
+The harness in `experiments/distributed/` (P3.01, [guide](../experiments/distributed/README.md))
+starts the Coordinator and planner-1, guard-1, executor-a, executor-b,
+verifier-1 and an Observer feed as separate operating-system processes
+(`experiments/distributed/topology.py::Topology.start`). Each process has its
+own state directory and its own generated credentials, passed only in its
+environment, and reaches the Coordinator over HTTPS through its own TCP fault
+proxy (`experiments/distributed/faultproxy.py::FaultProxy`). Kubernetes is a
+SQLite file shared by the processes
+(`tests/support/file_cluster.py::FileCluster`), driven through the production
+kubectl adapter. Named fault points stop or crash a process at an exact step
+(`runtime/fault_points.py::checkpoint`); they do nothing unless a lab run sets
+both of their environment variables, and a worker started with those
+variables refuses to start unless its configured cluster is the gated lab
+cluster (`runtime/fault_points.py::bind`). Invariants are computed afterwards
+from the Coordinator's records, the cluster's own write record, every ledger
+and transport journal, and the logs (`experiments/distributed/invariants.py::check`).
+The cluster's record counts a patch as a template write by what it changes,
+not by Sentinel's annotation, so an unannotated write is counted and fails I1
+(`tests/support/file_cluster.py::patch_action`).
+The CI test matrix (ubuntu-latest and windows-latest) runs the default subset
+plus S7 (`tests/test_distributed_processes.py::DistributedProcessTests`). Only
+Windows runs have been observed so far, so the Linux path of S2 (SIGSTOP) and
+the throwaway CA made with Linux openssl are not yet verified.
+
+What this shows: the delivery protocol, leases, saved-result replay, peer
+adoption and the outbox survive process kills, a stalled lease holder, a
+partitioned worker, a lost response and Coordinator restarts when the roles do
+not share memory, a process or a lock directory. Every scenario stayed at one
+committed template write per action.
+
+What it does not show: these processes share one host, so one kernel clock,
+one disk and loopback networking. They are not separate machines or
+containers. S7 shifts a process's clock with a gated test offset; it does not
+measure skew between hosts (P3.03). The file cluster is not an API server; the
+kind mode, which counts writes from the Deployment itself, has not been run.
+
+Results on this code base (file mode, one Windows host):
+
+| Scenario | Outcome |
+| --- | --- |
+| S0, S1a, S1d, S3, S4, S5, S6 | Reached RECOVERED with one write; every invariant held |
+| S1b, S1c: an Executor crashes after its write intent or after its patch, and its peer finishes the action | RECOVERED with one write. The peer adopted a committed write by its evidence annotation, so the redelivery defect (CONFLICT for an applied write) did not reproduce. **New defect:** no command reaches the crashed host once it restarts, so its ledger keeps the action WRITE_STARTED (I6 fails), and it refuses any later action on that workload (`services/executor/store.py::SQLiteExecutionLedger.prepare`) until someone reconciles it |
+| S1e: the crashed Executor is the only one that comes back | It fenced its own in-doubt write; FAILED with no write |
+| S2: the lease holder stalls before its patch (SIGSTOP on Linux; a blocked fault point and a blackholed link on Windows, which has no suspend without psutil) | The peer wrote; the stale host's patch was refused and it adopted the peer's write, so on this base a peer's write did not wedge the losing host |
+| S7: both Executors 300 s behind | The clock-skew wedge above: the write landed, the result was refused with HTTP 400 for the whole run, and the incident stayed READY (I3 and I5 fail) |
+
+S1b, S1c and S7 are asserted as known failures, so the tests fail when a fix
+lands until the expectation is updated. The orphaned ledger and the skew
+wedge are left for P3.04 and P3.03.
+
 ## Planned changes
 
 | Item | Change |
 | --- | --- |
 | P2.06 | Live run of the fenced abort (wedge harness `admission-deny`); the code and offline tests are in place |
 | P3.02 | Trace context across outbox rows, deliveries and worker requests |
-| P3.01 | Run the roles as separate processes on one host with fault injection |
+| P3.01 | Done in file mode (above). Left: a kind-mode run against the connected lab and committed evidence bundles |
 | P3.03 | Order lifecycle events by Coordinator sequence instead of producer clocks, measure a skew bound, and make lease expiry relative |
 | P3.04 | Per-target ownership epochs and a seal command that fences abandoned Executor writes |
 | P3.05 | An admission policy limiting which fields the Executor identity may change |

@@ -1,0 +1,243 @@
+"""Fault scenarios S0-S7 for the multi-process topology (A1 design).
+
+Each scenario starts a Topology, injects one kind of fault at a precise point,
+lets the system finish, and returns notes. run_scenarios.py then checks the
+invariants. Every fault point is armed through runtime/fault_points.py, so the
+same code is inert in any run that is not a lab fault run.
+
+expected_failures names the invariants a scenario is known to break on this
+code base; those are the "before" evidence for later items. S7 exposes the
+clock-skew wedge described in docs/distributed-model.md (P3.03). S1b and S1c
+leave the crashed Executor's ledger in doubt after its peer finished the
+action (P3.04). S0, S1d and S1e are additions to the A1 list: a no-fault
+baseline, a Verifier crash, and an Executor crash where only that host returns.
+"""
+from dataclasses import dataclass, field
+import os
+import time
+
+from experiments.distributed.topology import TERMINAL
+
+
+@dataclass(frozen=True)
+class Scenario:
+    name: str
+    title: str
+    run: object
+    deadline_seconds: float = 60
+    options: dict = field(default_factory=dict)
+    expected_failures: frozenset = frozenset()
+    known_defect: str = ""
+
+
+def _wait(condition, timeout, what):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        time.sleep(0.05)
+    raise TimeoutError(what)
+
+
+def _writes(topology):
+    if topology.mode == "kind":
+        return topology.kind_writes()
+    from tests.support.file_cluster import FileCluster
+    with FileCluster(topology.run_dir / "cluster.db") as cluster:
+        return cluster.committed_writes()
+
+
+def _crash_and_restart(topology, point, *, qualifier=None, down_until_terminal=False):
+    """Crash the process that reaches point, then restart it on its own state directory.
+
+    With down_until_terminal the crashed host stays down until the incident
+    ends, so the peer Executor (not a race between the two) takes the command.
+    """
+    stem = topology.arm(point, "exit", qualifier=qualifier)
+    topology.start_observer()
+    topology.wait_reached(stem)
+    name = topology.reached_by(stem)
+    _wait(lambda: not topology.processes[name].running, 15, name + " did not exit at the fault point")
+    exit_code = topology.processes[name].popen.returncode
+    if down_until_terminal:
+        topology.wait_terminal(45)
+    topology.restart(name)
+    return {"fault_point": point, "crashed": name, "exit_code": exit_code,
+            "restarted": "after the incident ended" if down_until_terminal else "at once"}
+
+
+def s0(topology):
+    """No fault: the whole flow across separate processes, two Executors polling."""
+    topology.start_observer()
+    return {}
+
+
+def s1a(topology):
+    """Kill the Planner mid-inference, then restart it on the same state directory."""
+    return _crash_and_restart(topology, "planner.mid_inference")
+
+
+def s1b(topology):
+    """Kill an Executor after it journalled the write intent, before the patch; the peer takes over."""
+    return _crash_and_restart(topology, "executor.after_start_write", down_until_terminal=True)
+
+
+def s1c(topology):
+    """Kill an Executor after the patch committed, before it saved the result; the peer takes over."""
+    return _crash_and_restart(topology, "executor.after_patch_before_save", down_until_terminal=True)
+
+
+def s1e(topology):
+    """Kill an Executor after its write intent, stop its peer, and restart it at once.
+
+    Only the crashed host can take the command again. Its ledger says the write
+    may be in flight, so it reconciles and, after the settle delay, fences:
+    the action ends FAILED with no template write (P2.06 across processes).
+    """
+    stem = topology.arm("executor.after_start_write", "exit")
+    topology.start_observer()
+    topology.wait_reached(stem)
+    name = topology.reached_by(stem)
+    peer = "executor-b" if name == "executor-a" else "executor-a"
+    topology.kill(peer)
+    _wait(lambda: not topology.processes[name].running, 15, name + " did not exit at the fault point")
+    topology.restart(name)
+    return {"fault_point": "executor.after_start_write", "crashed": name, "stopped_peer": peer}
+
+
+def s1d(topology):
+    """Kill the Verifier in the middle of collecting health samples."""
+    return _crash_and_restart(topology, "verifier.mid_collection")
+
+
+def s2(topology):
+    """Stall the lease-holding Executor past its lease; the other one takes over; the stale one must not write.
+
+    POSIX: SIGSTOP (all threads stop, like a long GC pause). Windows has no
+    suspend without psutil, so the stall is the blocked fault point plus a
+    blackholed link, which also stops lease renewal.
+    """
+    stem = topology.arm("executor.before_patch", "block")
+    topology.start_observer()
+    topology.wait_reached(stem)
+    stale = topology.reached_by(stem)
+    method = "suspend" if os.name != "nt" else "block+blackhole"
+    if method == "suspend":
+        topology.suspend(stale)
+    else:
+        topology.links[stale].set_mode("blackhole")
+    if topology.mode == "kind":  # Kind counts writes without the writer's name: wait for any write.
+        _wait(lambda: topology.kind_writes(), 60, "the other Executor did not write")
+    else:
+        _wait(lambda: any(row["host"] != stale for row in _writes(topology)), 60, "the other Executor did not write")
+    if method == "suspend":
+        topology.resume(stale)
+    else:
+        topology.links[stale].set_mode("pass")
+    topology.release(stem)
+    return {"stalled": stale, "stall": method}
+
+
+def s3(topology):
+    """Blackhole the lease holder's link to the Coordinator after its write intent."""
+    stem = topology.arm("executor.after_start_write", "block")
+    topology.start_observer()
+    topology.wait_reached(stem)
+    cut = topology.reached_by(stem)
+    topology.links[cut].set_mode("blackhole")
+    topology.release(stem)
+    try:
+        topology.wait_state({"VERIFYING", *TERMINAL}, 45)
+    finally:
+        topology.links[cut].set_mode("pass")
+    return {"partitioned": cut}
+
+
+def s4(topology):
+    """Drop the response to the Executor's result POST; the saved body is replayed."""
+    stem = topology.arm("executor.after_patch_before_save", "block")
+    topology.start_observer()
+    topology.wait_reached(stem)
+    holder = topology.reached_by(stem)
+    topology.links[holder].set_mode("drop-response")
+    topology.release(stem)
+    try:
+        topology.wait_state({"VERIFYING", *TERMINAL}, 45)
+    finally:
+        topology.links[holder].set_mode("pass")
+    _wait(lambda: any(record.get("replay") is True for record in topology.processes[holder].stdout_records()),
+          30, "the Executor did not replay its saved result")
+    return {"dropped_for": holder, "replay_receipt": True}
+
+
+def s5(topology):
+    """Kill the Coordinator after it committed a result, before the reply; restart it; restart it again later."""
+    stem = topology.arm("coordinator.after_commit_before_reply", "exit", qualifier="execution_result")
+    topology.start_observer()
+    topology.wait_reached(stem)
+    _wait(lambda: not topology.processes["coordinator"].running, 15, "the Coordinator did not exit")
+    exit_code = topology.processes["coordinator"].popen.returncode
+    topology.restart_coordinator()
+    topology.wait_state({"VERIFYING", *TERMINAL}, 45)
+    topology.restart_coordinator()  # A second restart while workers keep claiming.
+    return {"fault_point": "coordinator.after_commit_before_reply", "exit_code": exit_code, "restarts": 2}
+
+
+def s6(topology):
+    """Blackhole every worker link while an approval is pending: no progress and no write, then recovery."""
+    topology.start_observer()
+    topology.wait_state({"AWAITING_APPROVAL"}, 45)
+    (row,) = [item for item in topology.incidents() if item["state"] == "AWAITING_APPROVAL"]
+    for link in topology.links.values():
+        link.set_mode("blackhole")
+    topology.approve(row["active_action_id"])  # The operator reaches the Coordinator directly.
+    time.sleep(3 * topology.lease_seconds)
+    during = {"writes": len(_writes(topology)), "states": topology.states()}
+    for link in topology.links.values():
+        link.set_mode("pass")
+    if during["writes"]:
+        raise AssertionError("A write happened while every worker was partitioned")
+    return {"partition_seconds": 3 * topology.lease_seconds, "during_partition": during}
+
+
+def s7(topology):
+    """Both Executors' clocks 300 s behind the others (gated test clock offset).
+
+    Returns once the action is READY and its result has been refused with HTTP
+    400 more than twice, so a slow host still shows the loop, not just slowness.
+    """
+    from experiments.distributed.invariants import MAX_REFUSALS, log_lines
+    topology.start_observer()
+    topology.wait_state({"READY"}, 45)
+
+    def refusals():
+        return sum(1 for line in log_lines(topology.processes["coordinator"].stderr_path)
+                   if line.get("operation") == "result" and line.get("http_status") == 400)
+    _wait(lambda: refusals() > MAX_REFUSALS, 45, "the Executor result was not refused repeatedly")
+    return {"clock_offsets": dict(topology.clock_offsets), "refusals_seen": refusals()}
+
+
+ORPHANED_LEDGER = ("Orphaned in-doubt ledger row: the other Executor finishes the action, so no command "
+                   "reaches the restarted host, whose ledger keeps the action WRITE_STARTED and refuses later "
+                   "actions on that workload (TargetBusy) until reconciled by hand (P3.04)")
+SCENARIOS = {scenario.name: scenario for scenario in (
+    Scenario("S0", "No fault (baseline)", s0),
+    Scenario("S1a", "Kill the Planner mid-inference", s1a),
+    Scenario("S1b", "Kill an Executor after the write intent, before the patch", s1b,
+             expected_failures=frozenset({"I6"}), known_defect=ORPHANED_LEDGER),
+    Scenario("S1c", "Kill an Executor after the patch, before the result is saved", s1c,
+             expected_failures=frozenset({"I6"}), known_defect=ORPHANED_LEDGER),
+    Scenario("S1d", "Kill the Verifier mid-collection", s1d),
+    Scenario("S1e", "Kill an Executor after the write intent; only it comes back", s1e),
+    Scenario("S2", "Stall the lease-holding Executor past its lease", s2),
+    Scenario("S3", "Partition the lease-holding Executor from the Coordinator", s3),
+    Scenario("S4", "Drop the response to the Executor's result", s4),
+    Scenario("S5", "Restart the Coordinator between commit and reply, and again later", s5),
+    Scenario("S6", "Partition every worker from the Coordinator", s6, options={"auto_approve": False}),
+    Scenario("S7", "Executor clocks 300 s behind (clock skew)", s7, deadline_seconds=18,
+             options={"clock_offsets": {"executor-a": -300, "executor-b": -300}},
+             expected_failures=frozenset({"I3", "I5"}),
+             known_defect="Clock-skew wedge: the Coordinator refuses the Executor's result (HTTP 400) and the "
+                          "worker resends it for ever (docs/distributed-model.md, P3.03)"),
+)}
+DEFAULT = ("S1b", "S1c", "S2", "S4", "S5")  # The plan's CI subset; S7 adds the skew "before" evidence.

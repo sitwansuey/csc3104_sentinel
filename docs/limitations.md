@@ -27,6 +27,7 @@ the fix and regenerate.
 | [L-CLOCK-ORDERING](#l-clock-ordering) | defect | open | Lifecycle ordering compares wall-clock timestamps written by different components | P3.03 | #18, #63 |
 | [L-RAW-LOGS-PROMPT](#l-raw-logs-prompt) | defect | open | Raw container log text reaches the model | P2.04 | #51, #56 |
 | [L-OBSERVER-ZERO-REPLICAS](#l-observer-zero-replicas) | defect | open | A Deployment scaled to zero replicas is treated as healthy | P5.07 | none |
+| [L-ORPHANED-EXECUTOR-LEDGER](#l-orphaned-executor-ledger) | defect | open | A crashed Executor whose peer finished the action keeps it in doubt and refuses that workload | P3.04 | #18, #58 |
 | [L-EXEC-WEDGE](#l-exec-wedge) | defect | mitigated | A write rejected with its resource version unchanged waits in NEEDS_RECONCILIATION unless fencing is on | P2.06, P5.08 | #61 |
 | [L-EXEC-REDELIVERY](#l-exec-redelivery) | defect | mitigated | A replacement Executor without the ledger row reported CONFLICT for a write that was applied | P3.01, P4.01 | #18, #58 |
 | [L-AGENT-JOURNAL](#l-agent-journal) | defect | mitigated | Agent mode bypasses the durable Planner journal | P2.01 | #14, #54 |
@@ -60,9 +61,9 @@ the fix and regenerate.
 
 **Lifecycle ordering compares wall-clock timestamps written by different components.** Defect, open; recorded 2026-11-12. Planned: P3.03. Issues: #18, #63.
 
-- Impact: The Coordinator refuses a result whose timestamp is not later than the evidence it follows. If the Executor's clock is behind the Guard's, an applied execution result is refused with HTTP 400, and the remote worker retries it forever because it gives up only on 404 or 409. Lease renewal also mixes the Coordinator's and the worker's clocks.
+- Impact: The Coordinator refuses a result whose timestamp is not later than the evidence it follows. If the Executor's clock is behind the Guard's, an applied execution result is refused with HTTP 400, and the remote worker retries it forever because it gives up only on 404 or 409. Lease renewal also mixes the Coordinator's and the worker's clocks. Reproduced across separate processes on one host by scenario S7 of the P3.01 harness, with both Executors on a gated test clock 300 s behind: the template write landed, its result was refused with HTTP 400 until the 18 s deadline, and the incident stayed READY. The CI test asserts this wedge, so it fails once P3.03 fixes it.
 - Workaround: Run every component on one host, so they share one clock. All committed runs did.
-- Evidence: `services/coordinator/core.py:149-150`; `services/coordinator/core.py:169-170`; `runtime/worker_http.py:157`; `runtime/remote_worker.py:132`; `runtime/remote_worker.py:73`.
+- Evidence: `services/coordinator/core.py:149-150`; `services/coordinator/core.py:169-170`; `runtime/worker_http.py:163`; `tests/test_distributed_processes.py:61`; `runtime/remote_worker.py:132`; `runtime/remote_worker.py:73`.
 
 ### L-RAW-LOGS-PROMPT
 
@@ -80,6 +81,14 @@ the fix and regenerate.
 - Workaround: None. Only the invalid-PORT fault is in scope today.
 - Evidence: `services/observer/core.py:409-410`.
 
+### L-ORPHANED-EXECUTOR-LEDGER
+
+**A crashed Executor whose peer finished the action keeps it in doubt and refuses that workload.** Defect, open; recorded 2026-11-12. Planned: P3.04. Issues: #18, #58.
+
+- Impact: Found by the P3.01 multi-process harness (S1b and S1c, separate processes on one host). An Executor killed after journalling its write intent, or after its patch, leaves the action WRITE_STARTED in its own ledger. When the other Executor takes the command and finishes the action, no command for it ever reaches the crashed host again, and the remote worker runs no restart scan of its ledger, so after a restart the row stays in doubt. From the code, not from a scenario, that host would then refuse every later action on the same workload with TargetBusy until someone reconciles the row (services/executor/store.py prepare(), cited below); no scenario runs a second action to show it. No extra write happens: each run kept one template write. When the crashed host is the only one to come back (S1e), it reconciles and fences its own write as designed.
+- Workaround: After an Executor crash, reconcile its in-doubt rows with runtime/live_executor.py --reconcile on that host, or run one Executor per workload.
+- Evidence: `services/executor/store.py:175`; `tests/test_distributed_processes.py:37`.
+
 ### L-EXEC-WEDGE
 
 **A write rejected with its resource version unchanged waits in NEEDS_RECONCILIATION unless fencing is on.** Defect, mitigated; recorded 2026-11-11. Planned: P2.06, P5.08. Issues: #61.
@@ -92,9 +101,9 @@ the fix and regenerate.
 
 **A replacement Executor without the ledger row reported CONFLICT for a write that was applied.** Defect, mitigated; recorded 2026-11-12. Planned: P3.01, P4.01. Issues: #18, #58.
 
-- Impact: Fixed in code; live verification is left to P3.01 and P4.01. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host given a reconcile command with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it never starts that write. An execute command on a fresh host can still write, and the resourceVersion test in the patch lets at most one write for the action commit. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. No run has used more than one Executor host; the 2026-11-11 live runs each used one.
+- Impact: Fixed in code; live verification is left to P3.01 and P4.01. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host given a reconcile command with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it never starts that write. An execute command on a fresh host can still write, and the resourceVersion test in the patch lets at most one write for the action commit. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. The P3.01 multi-process harness runs two Executor processes with separate ledgers and locks on one host: in S1c a peer adopted a write committed by a crashed Executor and in S2 a stalled Executor adopted its peer's write, each with one template write. That is still one machine and a file-backed test cluster; no live run has used two Executors.
 - Workaround: Run one Executor with one ledger directory, as every documented run does, until a multi-host run verifies this.
-- Evidence: `services/executor/core.py:421`; `services/executor/core.py:365`; `tests/test_executor_reconciliation_table.py:420`; `tests/test_executor_reconciliation_table.py:475`; `services/executor/store.py:3`.
+- Evidence: `services/executor/core.py:421`; `services/executor/core.py:365`; `tests/test_executor_reconciliation_table.py:420`; `tests/test_executor_reconciliation_table.py:475`; `services/executor/store.py:3`; `tests/test_distributed_processes.py:42`.
 
 ### L-AGENT-JOURNAL
 
@@ -118,7 +127,7 @@ the fix and regenerate.
 
 - Impact: Fixed in code for the networked processes: shared/log.py writes allowlisted JSON lines; the Coordinator server, worker HTTP, approval HTTP and worker service entrypoints configure it; every POST request gets one http.access line, or an auth.denied line for a 401 or 403, while GET /healthz, GET /readyz and GET requests for unknown paths (404) get none; lifecycle transitions are journalled; and every broad except handler re-raises or logs the error class, which CI enforces. Not covered: the live harnesses (the Executor wedge harness included), agent mode and the in-process pipelines that every recorded run used never configure logging, so their log events are dropped. Exception messages are never logged, only class names, by design. There is no cross-process tracing. No live run has collected logs yet.
 - Workaround: For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json.
-- Evidence: `shared/log.py:235`; `runtime/worker_http.py:259`; `services/executor/core.py:236-237`; `docs/observability.md`; `tests/test_except_audit.py:39`.
+- Evidence: `shared/log.py:235`; `runtime/worker_http.py:268`; `services/executor/core.py:236-237`; `docs/observability.md`; `tests/test_except_audit.py:39`.
 
 ### L-SINGLE-COORDINATOR
 
@@ -148,9 +157,9 @@ the fix and regenerate.
 
 **The networked worker layer has only run on one host.** Limitation, open; recorded 2026-11-11. Planned: P3.01, P4.01. Issues: #62, #63.
 
-- Impact: The HTTPS delivery layer is tested in-process over 127.0.0.1. It has never run as separate processes, containers or nodes under network faults. Containers or kind nodes on one Docker host would still not be separate machines.
+- Impact: Since P3.01 the Coordinator and every worker run as separate processes on one host, with their own state, credentials and TCP connections, under injected network, process and timing faults (CI, file-backed test cluster). That is still one machine: one kernel clock, one disk and loopback networking. The delivery layer has not run in containers, on separate nodes or against the kind lab (the harness's kind mode has not been run), and containers or kind nodes on one Docker host would still not be separate machines.
 - Workaround: None; read the distributed design as untested beyond one host.
-- Evidence: `tests/test_worker_transport.py:163`; `deploy/sentinel/COORDINATOR.md`.
+- Evidence: `tests/test_worker_transport.py:163`; `experiments/distributed/topology.py`; `deploy/sentinel/COORDINATOR.md`.
 
 ### L-ONE-FAULT-ONE-ACTION
 
