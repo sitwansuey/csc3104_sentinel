@@ -27,7 +27,8 @@ from unittest.mock import patch
 from experiments.distributed import fixtures
 from runtime import fault_points
 from runtime.remote_adapters import ExecutorAdapter
-from runtime.remote_worker import RemoteWorker
+from runtime.remote_worker import RemoteWorker, WorkerJournal
+from runtime.worker_http import StoreWatch
 from runtime.service_identity import ProtocolError
 from runtime.worker_transport import Delivery
 from services.coordinator.approvals import ApprovalAccess
@@ -598,6 +599,113 @@ class OwnershipTests(FencingLab):
         with SQLiteStore(path) as store:  # Reopening applies nothing again and keeps the epoch.
             self.assertEqual(store.target_ownership(self.target)["epoch"], 1)
             self.assertEqual(store.target_ownership(self.target)["target_key"], target_key(self.target))
+
+
+class TransportClient:
+    """WorkerClient's operations, answered by the lab's Delivery in process, for one Executor identity."""
+
+    def __init__(self, lab, identity):
+        self.lab, self.identity, self.calls, self.failing_results = lab, identity, [], 0
+
+    def post(self, operation, body):
+        self.calls.append(operation)
+        delivery, ids = self.lab.delivery, (body.get("delivery_id"), body.get("lease_token"))
+        if operation == "claim":
+            return delivery.claim(self.identity, "executor")
+        if operation == "clock":
+            return {}
+        if operation == "renew":
+            return delivery.renew(self.identity, "executor", *ids)
+        if operation == "retry":
+            return delivery.finish(self.identity, "executor", *ids, None, retry=True)
+        if operation == "result":
+            if self.failing_results:
+                self.failing_results -= 1
+                raise ConnectionError("reply lost")
+            return delivery.finish(self.identity, "executor", *ids, body["result"])
+        raise AssertionError(operation)
+
+
+class SweepRecorder:
+    """The Executor adapter, with each sweep recorded in the client's call list."""
+
+    def __init__(self, adapter, calls):
+        self.adapter, self.calls = adapter, calls
+
+    def sweep(self):
+        self.calls.append("sweep")
+        return self.adapter.sweep()
+
+    def process(self, delivery, lease):
+        return self.adapter.process(delivery, lease)
+
+    def acknowledge(self, result):
+        return self.adapter.acknowledge(result)
+
+
+class SealDeliveryGateTests(FencingLab):
+    """A seal is an ordinary Executor command in RemoteWorker's pass order (P3.06 claim gating).
+
+    A saved fence_result is re-sent first, and a new seal is claimed, like any
+    other command, only when no store change is recorded and the clock is in
+    bound; a pass refused by either never sweeps the ledger or claims.
+    """
+
+    def worker(self, host, *, store_change=None, clock=None, **options):
+        client = TransportClient(self, host)
+        if clock is not None:
+            client.clock = clock
+        journal = WorkerJournal(self.directory / (host + "-transport.db"))
+        self.stack.callback(journal.close)
+        if store_change is not None:
+            client.store = StoreWatch()
+            journal.record_store_change(store_change)
+        adapter = SweepRecorder(ExecutorAdapter(self.adapters(host)), client.calls)
+        return RemoteWorker(client, journal, adapter, **options), client
+
+    def queue_seal(self):
+        self.ready()
+        self.assertEqual(self.claim("executor-a")["topic"], "executor.request")
+        self.revoke()  # Withdraws the claimed request; the next transport transaction queues the seal.
+
+    def test_a_saved_fence_result_is_resent_before_any_sweep_or_claim(self):
+        self.queue_seal()
+        worker, client = self.worker("executor-b")
+        client.failing_results = 1
+        with self.assertRaises(ConnectionError):
+            worker.once()  # Sealed and saved; the reply to the result is lost.
+        self.assertEqual(client.calls[:2], ["sweep", "claim"])
+        self.assertEqual((client.calls[-1], len(self.fences()), self.owner()["seal_required"]), ("result", 1, 1))
+        client.calls.clear()
+        self.assertEqual(worker.once(), {"status": "accepted", "replay": False})
+        self.assertEqual(client.calls, ["result"])  # The saved fence_result first; the pass ends there.
+        self.assertEqual((self.owner()["seal_required"], self.state()), (0, "FAILED"))
+        self.assertEqual(len(self.fences()), 1)
+        self.assertEqual(self.template_writes(), [])
+
+    def test_a_recorded_store_change_claims_no_seal_and_sweeps_nothing(self):
+        self.queue_seal()
+        change = {"reason": "rolled_back", "generation": "g", "commit": 1,
+                  "previous_generation": "g", "previous_commit": 9}
+        worker, client = self.worker("executor-b", store_change=change)
+        self.assertEqual(worker.once(), {"status": "store_changed", "reason": "rolled_back"})
+        self.assertEqual(client.calls, [])  # A journal read only: no sweep, no claim.
+        self.assertEqual(self.claim("executor-c")["topic"], "executor.seal")  # Still due, for a gated-in peer.
+
+    def test_a_clock_outside_the_bound_claims_no_seal_and_sweeps_nothing(self):
+        self.queue_seal()
+
+        class Skewed:
+            def within(self, bound):
+                return False
+
+            def estimate(self):
+                return 300.0, 0.01
+
+        worker, client = self.worker("executor-b", clock=Skewed(), max_clock_skew=2)
+        self.assertEqual(worker.once()["status"], "clock_skew")
+        self.assertEqual(set(client.calls), {"clock"})  # Measured again; no sweep, no claim.
+        self.assertEqual(self.claim("executor-c")["topic"], "executor.seal")
 
 
 class ContractTests(unittest.TestCase):
