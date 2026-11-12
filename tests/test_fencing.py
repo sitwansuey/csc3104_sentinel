@@ -256,6 +256,25 @@ class PausedWriterHazardTests(FencingLab):
         self.assertEqual((self.owner()["seal_required"], self.owner()["sealed_epoch"]), (0, 2))
         self.assertTrue(revoked["revoked_at"])
 
+    def test_a_revocation_after_the_paused_holders_lease_expired_still_seals(self):
+        # A is still paused at its patch, but its lease ran out before the operator revoked.
+        self.now += 31
+        self.revoke()
+        delivery, sealed = self.seal_now()
+        self.assertEqual((sealed["outcome"], sealed["epoch"], delivery["fence_epoch"]), ("SEALED", 2, 2))
+        (fence,) = self.fences()
+        self.assertEqual(fence["host"], "executor-b")
+        result = self.release_writer()
+        self.assertEqual(result["status"], "CONFLICT")
+        self.assertEqual(self.template_writes(), [])
+        self.assertEqual(self.cluster.snapshot(self.target)["deployment"]["spec"],
+                         self.inputs["snapshot"]["deployment"]["spec"])
+        with self.assertRaises(ProtocolError) as refused:
+            self.finish("executor-a", self.first, result)
+        self.assertEqual(refused.exception.status, 409)
+        self.assertEqual(self.state(), "FAILED")
+        self.assertEqual((self.owner()["seal_required"], self.owner()["sealed_epoch"]), (0, 2))
+
     def test_the_paused_patch_itself_raises_conditional_write_conflict_after_the_seal(self):
         seen = []
         original = KubectlDeploymentAPI.conditional_restore
