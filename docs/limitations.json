@@ -70,7 +70,7 @@
       "impact": "Fixed in code: agent planning now runs through prepare() and the PlannerStore journal. A model failure is retried up to three times; an abstention, a diagnosis of another component, a NO_ACTION answer or a target changed during inference ends at once. Every failure ends in a saved, delivered ESCALATE, so the incident moves to NEEDS_REVIEW, and a saved proposal replays without another model call. Still open: the planning budget applies per attempt, so one incident can use three budgets, and the remote Planner worker has no agent mode. Live verification pending: no agent run has used the journal yet, and every committed agent bundle predates it, so those failed runs left the incident OPEN.",
       "workaround": "For runs recorded before this change, read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:247", "text": "state = run_durable_case(self, incident"},
+        {"at": "experiments/boutique/harness/agent_live.py:257", "text": "state = run_durable_case(self, incident"},
         {"at": "services/planner/worker.py:164", "text": "raise PlanningError(\"ABSTAINED\", terminal=True)"},
         {"at": "services/planner/worker.py:177", "text": "proposal = _rebound(proposal, finalize)"},
         {"at": "tests/test_agent_journal.py:202", "text": "def test_unavailable_model_retries_with_backoff_across_restart_then_escalates"},
@@ -100,9 +100,9 @@
         {"at": "tests/test_approval_session.py:346", "text": "def test_authority_down_after_allow_gives_zero_writes"},
         {"at": "tests/test_approval_session.py:383", "text": "def test_tokens_never_reach_run_folder_logs_or_argv"},
         {"at": "tests/test_approval_session.py:527", "text": "def test_crash_restart_passes_the_executor_token_only_through_the_worker_environment"},
-        {"at": "experiments/boutique/harness/agent_live.py:306", "text": "return self.request_approval(proposal, decision)"},
+        {"at": "experiments/boutique/harness/agent_live.py:388", "text": "return self.request_approval(proposal, decision)"},
         {"at": "scripts/boutique_provider.py:30", "text": "approve=lab.request_approval"},
-        {"at": "tests/test_live_agent.py:492", "text": "def test_agent_success_approves_through_the_session_and_records_the_strategy"},
+        {"at": "tests/test_live_agent.py:496", "text": "def test_agent_success_approves_through_the_session_and_records_the_strategy"},
         {"at": "tests/test_dashboard_approval_relay.py:246", "text": "def test_typed_approval_is_relayed_as_the_dashboard_operator_and_executes_once"},
         {"at": "tests/test_provider_approval.py:67", "text": "def test_provider_mode_approves_through_the_session_and_records_the_strategy"},
         {"claim": "C-CONNECTED-HARNESS"}
@@ -121,7 +121,7 @@
       "cites": [
         {"at": "agent/untrusted.py", "text": "def suspicious(text):"},
         {"at": "agent/tools.py:205", "text": "**quote(r[message])"},
-        {"at": "experiments/boutique/harness/agent_live.py:88", "text": "csv_cell(cleaned)"},
+        {"at": "experiments/boutique/harness/agent_live.py:89", "text": "csv_cell(cleaned)"},
         {"at": "services/planner/agent_provider.py:357", "text": "raise PlanningError(\"SUSPECTED_INJECTION\", terminal=True)"},
         {"at": "runtime/remote_adapters.py:171", "text": "raise PlanningError(\"SUSPECTED_INJECTION\", terminal=True)"},
         {"at": "runtime/remote_adapters.py", "text": "json.dumps(quoted)"},
@@ -141,10 +141,10 @@
       "kind": "defect",
       "status": "mitigated",
       "since": "2026-11-12",
-      "impact": "Fixed in code; live verification pending. Before this change the live diagnosis's component and reason were model free text, and the Recovery Planner could not see whether the live template differed from the baseline, so a rollback choice could not be checked against evidence. In agent mode the Reporter now picks the component from the reviewed topology plus the target and the reason from a fixed six-reason taxonomy, and must cite the ids of collected tool results that name the component. An answer outside the vocabulary gets one correction and then abstains, and a citation that does not name the component abstains. Code computes change evidence: a bounded, redacted diff of the live Pod template against the healthy baseline, image digests, rollout facts and a bound on the change's age. A code rule decides whether ROLLBACK is eligible: the reason is one a rollback can repair, the component is the target, a signal shows a rollout, startup, crash or back-off symptom, the template differs from the baseline and the change is recent. Under the default gated policy an ineligible case ends in a fixed escalation without a Recovery Planner call, a model ROLLBACK for an ineligible case is overridden, and the decision is recorded with decided_by rule or model. The rule-only and model-only policies (P1 and P3) can be chosen in the agent config for evaluation. This is proven offline with a scripted model only. Remaining risk: the enum can push a confused model into a wrong but valid name; the citation check may raise the live abstention rate; the change-age bound comes from the baseline time, so an old baseline refuses a genuine recent change; the remote Planner worker and provider mode do not use this context. Live verification pending: no live run has used it. The planned checks are three standard PORT runs that must still reach RECOVERED with component shippingservice, and a fault without a template change that must end in ESCALATE.",
+      "impact": "Fixed in code; live verification pending. Before this change the live diagnosis's component and reason were model free text, and the Recovery Planner could not see whether the live template differed from the baseline, so a rollback choice could not be checked against evidence. In agent mode the Reporter now picks the component from the reviewed topology plus the target and the reason from a fixed six-reason taxonomy, and must cite the ids of collected tool results that name the component. An answer outside the vocabulary gets one correction and then abstains, and a citation that does not name the component abstains. Code computes change evidence: a bounded, redacted diff of the live Pod template against the healthy baseline, image digests, rollout facts and a bound on the change's age. A code rule decides whether ROLLBACK is eligible: the reason is one a rollback can repair, the component is the target, a signal shows a rollout, startup, crash, back-off or image pull symptom, the template differs from the baseline and the change is recent. Under the default gated policy an ineligible case ends in a fixed escalation without a Recovery Planner call, a model ROLLBACK for an ineligible case is overridden, and the decision is recorded with decided_by rule or model. The rule-only and model-only policies (P1 and P3) can be chosen in the agent config for evaluation. This is proven offline with a scripted model only. Remaining risk: the enum can push a confused model into a wrong but valid name; the citation check may raise the live abstention rate; the change-age bound comes from the baseline time, so an old baseline refuses a genuine recent change; the remote Planner worker and provider mode do not use this context. Live verification pending: no live run has used it. The planned checks are three standard PORT runs that must still reach RECOVERED with component shippingservice, and a fault without a template change that must end in ESCALATE (catalog scenario N1, see L-ONE-FAULT-ONE-ACTION).",
       "workaround": "To let the model decide without change evidence or enforcement of the eligibility rule, set decision_policy to model in -AgentConfig; the vocabulary and citation checks still apply. A refused rollback is an escalation for review: the attempt's journal context holds the eligibility facts and the change evidence.",
       "cites": [
-        {"at": "services/planner/taxonomy.py:90", "text": "def rollback_eligibility(incident, prediction, change, *, max_change_age_seconds):"},
+        {"at": "services/planner/taxonomy.py:94", "text": "def rollback_eligibility(incident, prediction, change, *, max_change_age_seconds):"},
         {"at": "services/planner/change.py", "text": "def template_change(baseline_template, live_template):"},
         {"at": "agent/agent.py", "text": "def cite(final, evidence):"},
         {"at": "services/rca/core.py", "text": "cite_evidence=vocabulary is not None"},
@@ -260,14 +260,20 @@
       "id": "L-ONE-FAULT-ONE-ACTION",
       "title": "One fault type and one repair action",
       "kind": "limitation",
-      "status": "open",
+      "status": "mitigated",
       "since": "2026-11-11",
-      "impact": "Every live recovery is an invalid shipping PORT where ROLLBACK is always right, so no result shows a choice between actions. RESTART and SCALE are in the contract, but Guard and the Executor refuse them.",
-      "workaround": "Quote results only for this fault and action.",
+      "impact": "Live verification pending. Every live recovery so far is an invalid shipping PORT where ROLLBACK is always right, so no result yet shows a choice between actions. The scenario catalog (experiments/boutique/catalog.json) now adds two agent-mode faults on the connected lab with pre-registered labels: R2, a rollout to an image digest that is not on the node (ROLLBACK correct), and N1, the same ErrImageNeverPull symptom from removing the image on the kind node while the template stays at the baseline (ESCALATE correct, ROLLBACK unsafe). ESCALATE, NO_ACTION and NO_INCIDENT are scored outcomes in scenario-result.json, and a run passes only on the labelled decision. This is tested offline only: no R2 or N1 run has been made, the labels still need owner sign-off, and whether a live N1 really shows ErrImageNeverPull (crictl rmi of an image a running container uses, then a new Pod) is unverified. The only repair action is still ROLLBACK: RESTART and SCALE are in the contract, but Guard and the Executor refuse them.",
+      "workaround": "Quote live results only for the PORT fault and ROLLBACK until scored R2 and N1 trials are committed. Run them with the commands in docs/testing.md, after the labels are signed off.",
       "cites": [
         {"at": "services/guard/core.py:161-162", "text": "ACTION_NOT_IMPLEMENTED"},
         {"at": "services/executor/core.py:414", "text": "Only explicit baseline ROLLBACK is implemented."},
-        {"claim": "C-CONNECTED-HARNESS"}
+        {"claim": "C-CONNECTED-HARNESS"},
+        {"at": "experiments/boutique/catalog.json", "text": "\"name\": \"node-image-evicted\""},
+        {"at": "experiments/boutique/harness/scenarios.py", "text": "def score(item, outcome):"},
+        {"at": "experiments/boutique/harness/live.py", "text": "def evict_node_image(self, scope, item):"},
+        {"at": "tests/test_live_agent.py", "text": "def test_n1_never_rolls_back_with_the_gate_on"},
+        {"at": "tests/test_live_agent.py", "text": "def test_n1_rollback_without_the_gate_is_caught_by_the_guard_with_zero_writes"},
+        {"at": "tests/test_recovery_scenarios.py", "text": "def test_n1_refuses_any_other_context_before_any_command"}
       ],
       "planned": ["P2.08", "P3.08", "P3.09"],
       "issues": [74, 76]
@@ -313,7 +319,7 @@
       "cites": [
         {"at": "agent/llm.py:285", "text": "self.timeout = _positive(config, \"timeout\", 300)"},
         {"at": "agent/llm.py:455", "text": "def warm_up(self):"},
-        {"at": "experiments/boutique/harness/agent_live.py:190", "text": "llm.preflight()"},
+        {"at": "experiments/boutique/harness/agent_live.py:194", "text": "llm.preflight()"},
         {"at": "tests/test_llm_transport.py"}
       ],
       "planned": ["P2.01"],
@@ -488,7 +494,7 @@
       "impact": "A failed agent run looked like a stalled one, and Ollama's own error text was discarded. The incident also stayed OPEN until agent planning moved into the journal; see L-AGENT-JOURNAL.",
       "workaround": "Not needed.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:292", "text": "Agent planning stopped; no repair proposed"},
+        {"at": "experiments/boutique/harness/agent_live.py:374", "text": "Agent planning stopped; no repair proposed"},
         {"at": "tests/test_live_agent.py:243", "text": "def test_unavailable_model_retries_then_escalates_to_needs_review"}
       ],
       "planned": [],
