@@ -23,9 +23,12 @@ gated test offset; every worker measures its offset from the Coordinator
 `clock_offsets_measured`, but on one host that measures the simulated offset,
 not skew between machines. The file mode backs Kubernetes with a SQLite file, not
 an API server. The Planner is the deterministic provider, so every summary
-says `synthetic_planner: true`. The kind mode ran only in one operator session
-with scratch versions of its tools ([below](#kind-mode)); no committed
-evidence rests on it.
+says `synthetic_planner: true`. The kind mode ran in two operator sessions on
+12 Nov 2026, the first with scratch versions of its tools and the second with
+the committed ones, against one kind node on the same host; all 25 of those
+runs are committed evidence bundles ([below](#kind-mode),
+`C-DISTRIBUTED-KIND-ALL`). One kind node on one host is still not separate
+machines.
 
 ## Run it
 

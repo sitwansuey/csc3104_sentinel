@@ -486,7 +486,7 @@ class RemoteWorkerTests(unittest.TestCase):
         self.health.configured()
 
     def test_lease_renewals_keep_a_pass_longer_than_the_readiness_window_ready(self):
-        # Live, a working agent Planner went Docker-unhealthy twice in one 128 s pass: only
+        # Live, a working agent Planner failed two Docker health checks in one 128 s pass: only
         # the end of a pass counted as contact. Each successful renewal now counts.
         self.probe()
         client = WorkerClient(self.url, "planner", self.services["planner"][1], timeout=2,

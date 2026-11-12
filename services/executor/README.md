@@ -284,9 +284,10 @@ that never sent the restore. Whether reconcile may write metadata at all still
 awaits the project owner's decision (#58).
 
 A fence that a peer host sent is not in this host's journal, so this host
-reports SUPERSEDED (can no longer commit) rather than CONFLICT. The fence has not
-yet been run against a cluster; the wedge harness's `admission-deny` scenario is
-the planned live check.
+reports SUPERSEDED (can no longer commit) rather than CONFLICT. The fence has run
+live on one host in the wedge harness's `admission-deny` scenario, once each at
+4139385 and 5409092, ending CONFLICT with basis FENCED (claim
+`C-EXECUTOR-WEDGE-FENCE`).
 
 ### The seal: a fence on the Coordinator's command (P3.04)
 
