@@ -39,6 +39,15 @@ VERIFYING until an independent outcome. Executor uses its existing conditional
 write/reconciliation ledger and obtains fresh approval plus live delivery
 authority under its target lock, including the post-journal final check.
 
+The Coordinator orders each result by the request it answers, not by the
+worker's timestamps, so a worker whose clock is off by minutes no longer wedges
+an action. A result that answers a superseded request gets HTTP 409, and the
+worker releases it. Each reply carries the Coordinator's clock; each worker
+estimates its offset from it on every exchange (Cristian's algorithm) and
+reports the estimate, which the Coordinator stores per identity. Lease renewal
+uses the lease length the Coordinator returns (`expires_in`), not a comparison
+of the two clocks. See [Time and ordering](distributed-model.md#time-and-ordering).
+
 Use one process per worker state directory and persist that directory on its own
 volume. SIGTERM stops new polling, and the in-flight bounded component step can
 finish. Give the process enough termination time for its configured model/read
@@ -115,6 +124,18 @@ with the same UID and resourceVersion after that long is then settled by a
 metadata-only fence ([Executor guide](../services/executor/README.md#fenced-abort-for-a-write-still-in-doubt)).
 Leave it out to keep fencing off, the default.
 
+Any worker may set `"max_clock_skew_seconds": 2` (up to 3600). It then claims
+new work only while its measured offset from the Coordinator's clock plus the
+measurement's uncertainty (half the round trip) is at most that bound; outside
+it the worker prints the status `clock_skew`, its `/readyz` answers 503 and it
+measures again on every pass. Saved results are still sent. Start the
+Coordinator with `--max-clock-skew-seconds 2` to refuse claims, with HTTP 409,
+from any worker whose reported estimate is missing or outside the bound. Set
+the Guard policy's `max_clock_skew_seconds` (0 to 60, default 0) to the same
+bound: the Guard then tolerates findings and approvals stamped up to that many
+seconds in its future and counts it against their age and expiry. Leave all
+three out to measure without enforcing, as before.
+
 Verifier uses `role: verifier`, its connection fields/state directory, `policy`,
 and `evidence` pointing to a live inventory with the format of
 [`verifier-live-inventory.json`](../data/sentinel/samples/verifier-live-inventory.json).
@@ -142,8 +163,10 @@ pass within `--live-seconds` (900 by default), so a loop stuck inside one pass
 turns unhealthy; set it above the longest pass you expect, such as a Planner's
 model call. `/readyz` answers 200 once
 the configuration was accepted and the Coordinator answered a polling pass
-within `--ready-seconds` (60 by default). The bodies hold booleans and ages in
-seconds, nothing else.
+within `--ready-seconds` (60 by default), and, when a skew bound is set, the
+latest pass found the clock within it (otherwise the body adds
+`"clock_skew": true`). The bodies hold booleans and ages in seconds, nothing
+else.
 
 A Planner configuration may set `"provider": "deterministic"` with an optional
 `"attempt_lease_seconds"`, but only in a lab fault run (below). It plans with
@@ -159,7 +182,7 @@ test cluster in `tests/support/file_cluster.py`. A worker accepts it only in a
 lab fault run, when `SENTINEL_FAULT_POINTS` names an existing directory and
 `SENTINEL_FAULT_CLUSTER` is one of the lab clusters in `runtime/fault_points.py`;
 the same two variables enable the named fault points and the test clock
-offset. A worker binds them to its own configuration: with any of these
+offset, which also shifts the clock the worker measures its offset with. A worker binds them to its own configuration: with any of these
 variables (or `SENTINEL_TEST_CLOCK_OFFSET`) set, it starts only when its
 configured `cluster_id` is the gated lab cluster and any configured `context`
 is that cluster's lab context, and refuses to start otherwise. The original

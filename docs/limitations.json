@@ -39,28 +39,30 @@
         {"at": "tests/test_executor_reconciliation_table.py:420", "text": "def test_peer_adoption_gives_applied_with_zero_writes_on_host_b"},
         {"at": "tests/test_executor_reconciliation_table.py:475", "text": "def test_reconcile_on_a_host_with_no_row_returns_a_result"},
         {"at": "services/executor/store.py:3", "text": "Every worker must use the same ledger and lock directory"},
-        {"at": "tests/test_distributed_processes.py:42", "text": "def test_s1c_executor_killed_after_the_patch_is_adopted_by_the_peer_with_one_write"}
+        {"at": "tests/test_distributed_processes.py:43", "text": "def test_s1c_executor_killed_after_the_patch_is_adopted_by_the_peer_with_one_write"}
       ],
       "planned": ["P3.01", "P4.01"],
       "issues": [18, 58]
     },
     {
       "id": "L-CLOCK-ORDERING",
-      "title": "Lifecycle ordering compares wall-clock timestamps written by different components",
+      "title": "Lifecycle ordering compared wall-clock timestamps written by different components",
       "kind": "defect",
-      "status": "open",
+      "status": "mitigated",
       "since": "2026-11-12",
-      "impact": "The Coordinator refuses a result whose timestamp is not later than the evidence it follows. If the Executor's clock is behind the Guard's, an applied execution result is refused with HTTP 400, and the remote worker retries it forever because it gives up only on 404 or 409. Lease renewal also mixes the Coordinator's and the worker's clocks. Reproduced across separate processes on one host by scenario S7 of the P3.01 harness, with both Executors on a gated test clock 300 s behind: the template write landed, its result was refused with HTTP 400 until the 18 s deadline, and the incident stayed READY. The CI test asserts this wedge, so it fails once P3.03 fixes it.",
-      "workaround": "Run every component on one host, so they share one clock. All committed runs did.",
+      "impact": "Fixed in code on a local branch (P3.03), not yet merged or run across machines. Worker results are now ordered by the Coordinator request they answer, not by the producers' clocks, so the wedge is gone: an answer to a superseded request gets HTTP 409 and is released, never resent for ever. Scenario S7 (both Executors on a gated test clock 300 s behind, separate processes on one Windows host, file mode) showed the wedge before the change (result refused with HTTP 400, incident READY) and RECOVERED with one write and every invariant holding in 3 of 3 runs after it, with each Executor measuring an offset of 300.005 to 300.012 s. Lease renewal now uses the lease length the Coordinator returns. Clocks still matter for freshness and expiry: the Guard tolerates a configured bound (max_clock_skew_seconds, off by default) and counts it against age and expiry; the Executor's local re-check and the Verifier's start check still compare their clock with timestamps from other processes, so skew beyond the bound ends an action FAILED or delays verification instead of wedging it. Workers measure their offset from the Coordinator (Cristian's algorithm) and, with a bound set, stop claiming and turn unready outside it (S7b, 3 of 3 runs); the offset is self-reported, so this guards against honest misconfiguration, not a dishonest worker. Skew has only been simulated on one host, never measured between machines or in kind.",
+      "workaround": "Keep host clocks synchronised (NTP), and set max_clock_skew_seconds for the workers and the Guard policy and --max-clock-skew-seconds for the Coordinator, so a host past the bound stops claiming work.",
       "cites": [
-        {"at": "services/coordinator/core.py:154-155", "text": "Execution predates Guard validation"},
-        {"at": "services/coordinator/core.py:174-175", "text": "Health window predates execution"},
-        {"at": "runtime/worker_http.py:180", "text": "except (ValueError, KeyError, TypeError) as exc:"},
-        {"at": "tests/test_distributed_processes.py:61", "text": "def test_s7_executor_clock_behind_wedges_the_action_before_p3_03"},
-        {"at": "runtime/remote_worker.py:139", "text": "if error.status not in {404, 409}:"},
-        {"at": "runtime/remote_worker.py:73", "text": "time.time()) / 3"}
+        {"at": "services/coordinator/core.py:118", "text": "_answers_current_request(message, store, answers)"},
+        {"at": "services/coordinator/core.py:193", "text": "_issued_after(store, answers, \"guard_result\""},
+        {"at": "runtime/worker_transport.py:253", "text": "Result answers a superseded request"},
+        {"at": "runtime/remote_worker.py:89", "text": "lease_duration(delivery, clock) / 3"},
+        {"at": "services/guard/core.py:159", "text": "if approved_at > checked_at + skew:"},
+        {"at": "services/verifier/store.py:78", "text": "Monitoring cannot start before execution"},
+        {"at": "tests/test_distributed_processes.py:62", "text": "def test_s7_executor_clocks_300_s_behind_recover_by_coordinator_sequence"},
+        {"at": "tests/test_clock_skew.py:590", "text": "def test_per_role_clocks_300_s_apart_reach_recovered"}
       ],
-      "planned": ["P3.03"],
+      "planned": ["P3.03", "P4.01"],
       "issues": [18, 63]
     },
     {
@@ -136,7 +138,7 @@
       "workaround": "For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json and print the traces with scripts/trace_view.py.",
       "cites": [
         {"at": "shared/log.py:236", "text": "def entrypoint(component: str)"},
-        {"at": "runtime/worker_http.py:294", "text": "@log.entrypoint(\"worker_http\")"},
+        {"at": "runtime/worker_http.py:373", "text": "@log.entrypoint(\"worker_http\")"},
         {"at": "shared/tracing.py:123", "text": "def start_span("},
         {"at": "services/executor/core.py:240-241", "text": "any read failure leaves the outcome unknown"},
         {"at": "docs/observability.md", "text": "only when their entrypoint configures logging"},
@@ -169,8 +171,8 @@
       "workaround": "Restart the Coordinator on the same volume; saved requests replay from SQLite.",
       "cites": [
         {"at": "deploy/sentinel/coordinator.yaml:62-64", "text": "type: Recreate"},
-        {"at": "services/coordinator/store.py:139", "text": "sqlite3.connect"},
-        {"at": "runtime/worker_transport.py:104", "text": "delay = min(60"}
+        {"at": "services/coordinator/store.py:168", "text": "sqlite3.connect"},
+        {"at": "runtime/worker_transport.py:150", "text": "delay = min(60"}
       ],
       "planned": ["P3.06", "P4.02", "P5.01"],
       "issues": [62, 63]
@@ -231,7 +233,7 @@
       "workaround": "After an Executor crash, reconcile its in-doubt rows with runtime/live_executor.py --reconcile on that host, or run one Executor per workload.",
       "cites": [
         {"at": "services/executor/store.py:176", "text": "Workload has an unresolved execution; reconcile it first"},
-        {"at": "tests/test_distributed_processes.py:37", "text": "def test_s1b_executor_killed_after_the_write_intent_leaves_its_ledger_in_doubt"}
+        {"at": "tests/test_distributed_processes.py:38", "text": "def test_s1b_executor_killed_after_the_write_intent_leaves_its_ledger_in_doubt"}
       ],
       "planned": ["P3.04"],
       "issues": [18, 58]
@@ -245,7 +247,7 @@
       "impact": "Every live recovery is an invalid shipping PORT where ROLLBACK is always right, so no live result shows a choice between actions. RESTART is now implemented through the Planner, Guard, Executor and Verifier, but it has only run offline against a fake Deployment API; it has never run against a cluster. SCALE is in the contract and is still refused.",
       "workaround": "Quote live results only for this fault and action. Describe RESTART as tested offline only.",
       "cites": [
-        {"at": "services/guard/core.py:165-166", "text": "ACTION_NOT_IMPLEMENTED"},
+        {"at": "services/guard/core.py:176-177", "text": "ACTION_NOT_IMPLEMENTED"},
         {"at": "services/executor/core.py:413", "text": "Only explicit baseline ROLLBACK and RESTART are implemented."},
         {"at": "tests/test_restart_action.py", "text": "FakeDeploymentAPI"},
         {"claim": "C-CONNECTED-HARNESS"}

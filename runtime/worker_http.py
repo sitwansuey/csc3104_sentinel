@@ -1,6 +1,8 @@
 """Run with python -m runtime.worker_http --help. Secrets are never logged."""
 import argparse
+from collections import deque
 from contextlib import ExitStack
+from datetime import datetime, UTC
 import ipaddress
 import json
 import math
@@ -16,13 +18,20 @@ from urllib.parse import urlsplit
 
 from runtime import fault_points
 from runtime.service_identity import authenticate, load_identities
-from runtime.worker_transport import Delivery, INGRESS, ProtocolError, TOPICS, delivery_ids
+from runtime.worker_transport import (
+    Delivery, INGRESS, ProtocolError, TOPICS, delivery_ids, parse_clock_estimate, within_skew_bound,
+)
 from services.coordinator.core import SQLiteStore
 from shared import log, tracing
 
 MAX_BODY = 1024 * 1024
 LOG = log.get_logger("worker_http")
-OPERATIONS = {"/v1/" + name: name for name in ("claim", "ingest", "renew", "dependencies", "result", "retry")}
+OPERATIONS = {"/v1/" + name: name for name in ("claim", "ingest", "renew", "dependencies", "result", "retry", "clock")}
+# Cristian's algorithm: every reply carries the Coordinator's clock; every
+# request carries the worker's latest estimate of its offset from it.
+SERVER_TIME_HEADER = "X-Sentinel-Server-Time"
+CLOCK_ESTIMATE_HEADER = "X-Sentinel-Clock-Estimate"
+CLOCK_SAMPLES = 8
 SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
 # Denial and conflict reason classes. Messages are fixed strings from the
 # delivery protocol; anything unlisted falls back to a per-status class.
@@ -41,6 +50,8 @@ REASONS = {
     "Guard result needs its report bound to current evidence": "report_not_bound",
     "Guard report conflicts with stored evidence": "report_conflict",
     "Evidence does not match the active proposal": "evidence_not_current",
+    "Result answers a superseded request": "superseded_request",
+    "Worker clock skew exceeds the bound": "clock_skew",
 }
 DEFAULT_REASONS = {401: "invalid_credentials", 403: "forbidden", 409: "conflict"}
 OUTCOMES = {400: "invalid", 401: "denied", 403: "denied", 404: "not_found", 408: "timeout",
@@ -94,8 +105,18 @@ def _result_kind(body):
     return result.get("kind") if isinstance(result, dict) and isinstance(result.get("kind"), str) else None
 
 
+def clock_estimate(headers):
+    """The worker's (offset, uncertainty) report from exactly one well-formed header, else None."""
+    values = headers.get_all(CLOCK_ESTIMATE_HEADER) or []
+    return parse_clock_estimate(values[0]) if len(values) == 1 else None
+
+
 def handler(database, services, lease_seconds=30, retention_seconds=86400,
-            request_timeout=15, stopping=None, clock=None, dependency_requests=False):
+            request_timeout=15, stopping=None, clock=None, dependency_requests=False, max_clock_skew=None):
+    def server_time():
+        """The Coordinator's clock: the store clock when one is injected, else the system clock."""
+        return (clock() if clock is not None else datetime.now(UTC)).timestamp()
+
     class WorkerHandler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
             pass  # Application status belongs in structured logs, without request bodies.
@@ -130,6 +151,7 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
                         raise ProtocolError(503, "Coordinator is stopping; retry the saved request")
                     name, role = authenticate(self.headers, services)
                     ids["identity"] = name
+                    estimate = clock_estimate(self.headers)  # Read only after authentication.
                     # Only an authenticated caller's traceparent is read, so a
                     # forged header in a refused request never reaches a log line.
                     parent = inbound_trace(self.headers)
@@ -153,13 +175,16 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
                     ids.update(_message_ids(body.get("message") or body.get("result") or body.get("proposal")))
                     with SQLiteStore(database, clock=clock) as store:
                         delivery = Delivery(store, lease_seconds=lease_seconds, retention_seconds=retention_seconds,
-                                            dependency_requests=dependency_requests)
+                                            dependency_requests=dependency_requests, max_clock_skew=max_clock_skew)
                         if self.path == "/v1/claim":
-                            answer = delivery.claim(name, role)
+                            answer = delivery.claim(name, role, clock_estimate=estimate)
                             ids.update(delivery_ids(answer["delivery"]))
                             outcome = "claimed" if answer["delivery"] else "idle"
+                        elif self.path == "/v1/clock":
+                            answer = delivery.report_clock(name, estimate)
+                            outcome = "idle"
                         elif self.path == "/v1/ingest":
-                            answer = delivery.ingest(role, body["message"])
+                            answer = delivery.ingest(role, body["message"], identity=name)
                             outcome = "replay" if answer.get("replay") else "accepted"
                         elif self.path == "/v1/renew":
                             answer = delivery.renew(name, role, body["delivery_id"], body["lease_token"])
@@ -169,7 +194,7 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
                         elif self.path in ("/v1/result", "/v1/retry"):
                             answer = delivery.finish(name, role, body["delivery_id"], body["lease_token"],
                                                      body.get("result"), retry=self.path == "/v1/retry",
-                                                     report=body.get("report"))
+                                                     report=body.get("report"), clock_estimate=estimate)
                             outcome = ("retry" if self.path == "/v1/retry"
                                        else "replay" if answer.get("replay") else "accepted")
                         else:
@@ -205,6 +230,8 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
+                # Read as late as possible, so the worker's RTT brackets it.
+                self.send_header(SERVER_TIME_HEADER, f"{server_time():.6f}")
                 self.end_headers()
                 self.wfile.write(data)
             except (ConnectionError, socket.timeout):
@@ -214,9 +241,54 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
     return WorkerHandler
 
 
+class ClockEstimator:
+    """Offset of the Coordinator's clock from this worker's, by Cristian's algorithm.
+
+    Each exchange gives one sample: offset = server_time - (t_send + rtt / 2),
+    where t_send is this worker's wall clock when it sent the request and rtt is
+    measured on the monotonic clock, so a wall-clock step cannot distort it.
+    The true offset lies within rtt / 2 of the sample, assuming the reply was
+    stamped somewhere in the round trip. The estimate is the sample with the
+    smallest round trip among the last CLOCK_SAMPLES.
+    """
+    def __init__(self, *, clock=time.time, monotonic=time.monotonic, samples=CLOCK_SAMPLES):
+        self.clock, self.monotonic = clock, monotonic
+        self.samples = deque(maxlen=samples)
+        self._lock = threading.Lock()  # The lease renewal thread shares the client.
+
+    def start(self):
+        return self.clock(), self.monotonic()
+
+    def observe(self, started, server_time):
+        wall, mono = started
+        rtt = max(0.0, self.monotonic() - mono)
+        try:
+            server = float(server_time)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(server):
+            return None
+        sample = (server - (wall + rtt / 2), rtt / 2)
+        with self._lock:
+            self.samples.append(sample)
+        return sample
+
+    def estimate(self):
+        """(offset, uncertainty) in seconds, or None before the first exchange."""
+        with self._lock:
+            return min(self.samples, key=lambda sample: sample[1]) if self.samples else None
+
+    def within(self, bound):
+        return within_skew_bound(self.estimate(), bound)
+
+
 class WorkerClient:
-    """One bounded POST. Callers retain the immutable result for explicit retry."""
-    def __init__(self, url, identity, token, *, timeout=15, tls_context=None):
+    """One bounded POST. Callers retain the immutable result for explicit retry.
+
+    clock is this worker's wall clock (seconds), used only to estimate its
+    offset from the Coordinator's clock (ClockEstimator).
+    """
+    def __init__(self, url, identity, token, *, timeout=15, tls_context=None, clock=time.time):
         self.url = urlsplit(url)
         if (not self.url.hostname or self.url.username is not None or self.url.password is not None
                 or self.url.path not in {"", "/"} or self.url.query or self.url.fragment):
@@ -229,9 +301,10 @@ class WorkerClient:
             raise ValueError("Timeout must be positive and finite")
         self.identity, self.token, self.timeout = identity, token, timeout
         self.tls_context = tls_context
+        self.clock = ClockEstimator(clock=clock)
 
     def post(self, operation, body):
-        if operation not in {"claim", "ingest", "result", "retry", "renew", "dependencies"}:
+        if operation not in {"claim", "ingest", "result", "retry", "renew", "dependencies", "clock"}:
             raise ValueError("Unknown operation")
         encoded = json.dumps(body, allow_nan=False).encode()
         if not isinstance(body, dict) or not 0 < len(encoded) <= MAX_BODY:
@@ -246,8 +319,14 @@ class WorkerClient:
             traceparent = tracing.current_traceparent()
             if traceparent is not None:
                 headers["traceparent"] = traceparent
+            estimate = self.clock.estimate()
+            if estimate is not None:
+                headers[CLOCK_ESTIMATE_HEADER] = f"{estimate[0]:.6f};{estimate[1]:.6f}"
+            started = self.clock.start()
             connection.request("POST", "/v1/" + operation, encoded, headers)
             response = connection.getresponse()
+            header = getattr(response, "getheader", None)  # Absent on minimal stand-in responses.
+            self.clock.observe(started, header(SERVER_TIME_HEADER) if header else None)
             raw = response.read(MAX_BODY + 1)
             if len(raw) > MAX_BODY:
                 raise ProtocolError(502, "Coordinator response exceeds 1 MiB")
@@ -303,12 +382,16 @@ def main(argv=None):
     parser.add_argument("--lease-seconds", type=int, default=30)
     parser.add_argument("--retention-seconds", type=int, default=86400)
     parser.add_argument("--request-timeout", type=float, default=15)
+    parser.add_argument("--max-clock-skew-seconds", type=float,
+                        help="Refuse claims from a worker whose reported clock offset plus uncertainty exceeds this")
     args = parser.parse_args(argv)
     if bool(args.cert) != bool(args.key) or (not args.cert and not ipaddress.ip_address(args.bind).is_loopback):
         parser.error("Non-loopback serving requires --cert and --key")
     if (args.lease_seconds < 1 or args.retention_seconds < 1
             or not math.isfinite(args.request_timeout) or args.request_timeout <= 0):
         parser.error("Lease, retention and request timeout must be positive and finite")
+    if args.max_clock_skew_seconds is not None and not 0 < args.max_clock_skew_seconds <= 3600:
+        parser.error("The clock skew bound must be positive and at most one hour")
     entries = identities(args.identities)
     with SQLiteStore(args.db) as store:
         Delivery(store, lease_seconds=args.lease_seconds, retention_seconds=args.retention_seconds)
@@ -323,7 +406,7 @@ def main(argv=None):
     try:
         with WorkerHTTPServer((args.bind, args.port),
                 handler(args.db, entries, args.lease_seconds, args.retention_seconds,
-                        args.request_timeout, stopping), tls_context=tls,
+                        args.request_timeout, stopping, max_clock_skew=args.max_clock_skew_seconds), tls_context=tls,
                 request_timeout=args.request_timeout) as server:
             print(f"Coordinator worker API listening on {args.bind}:{args.port}", flush=True)
             log.emit(LOG, "worker_http.listening", port=server.server_port)

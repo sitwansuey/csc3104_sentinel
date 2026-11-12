@@ -136,12 +136,12 @@ Sentinel is a single-host prototype. This list is generated from
 and the code or evidence it cites, and CI fails when a citation stops resolving.
 
 <!-- BEGIN GENERATED:limitations-summary -->
-- [L-CLOCK-ORDERING](docs/limitations.md#l-clock-ordering): Lifecycle ordering compares wall-clock timestamps written by different components (defect, open; planned P3.03)
 - [L-RAW-LOGS-PROMPT](docs/limitations.md#l-raw-logs-prompt): Raw container log text reaches the model (defect, open; planned P2.04)
 - [L-OBSERVER-ZERO-REPLICAS](docs/limitations.md#l-observer-zero-replicas): A Deployment scaled to zero replicas is treated as healthy (defect, open; planned P5.07)
 - [L-ORPHANED-EXECUTOR-LEDGER](docs/limitations.md#l-orphaned-executor-ledger): A crashed Executor whose peer finished the action keeps it in doubt and refuses that workload (defect, open; planned P3.04)
 - [L-EXEC-WEDGE](docs/limitations.md#l-exec-wedge): A write rejected with its resource version unchanged waits in NEEDS_RECONCILIATION unless fencing is on (defect, mitigated; planned P2.06, P5.08)
 - [L-EXEC-REDELIVERY](docs/limitations.md#l-exec-redelivery): A replacement Executor without the ledger row reported CONFLICT for a write that was applied (defect, mitigated; planned P3.01, P4.01)
+- [L-CLOCK-ORDERING](docs/limitations.md#l-clock-ordering): Lifecycle ordering compared wall-clock timestamps written by different components (defect, mitigated; planned P3.03, P4.01)
 - [L-AGENT-JOURNAL](docs/limitations.md#l-agent-journal): Agent mode bypasses the durable Planner journal (defect, mitigated; planned P2.01)
 - [L-AGENT-APPROVAL](docs/limitations.md#l-agent-approval): No live run yet shows a person approving through the authenticated API (defect, mitigated; planned P2.02, P2.03)
 - [L-NO-LOGGING](docs/limitations.md#l-no-logging): Structured logs cover only the networked entrypoints, and no live run has collected them (defect, mitigated; planned P1.07, P3.02)

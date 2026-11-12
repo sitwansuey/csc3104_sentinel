@@ -1,4 +1,4 @@
-"""Fault scenarios S0-S7 for the multi-process topology (A1 design).
+"""Fault scenarios S0-S7b for the multi-process topology (A1 design).
 
 Each scenario starts a Topology, injects one kind of fault at a precise point,
 lets the system finish, and returns notes. run_scenarios.py then checks the
@@ -6,10 +6,11 @@ invariants. Every fault point is armed through runtime/fault_points.py, so the
 same code is inert in any run that is not a lab fault run.
 
 expected_failures names the invariants a scenario is known to break on this
-code base; those are the "before" evidence for later items. S7 exposes the
-clock-skew wedge described in docs/distributed-model.md (P3.03). S1b and S1c
+code base; those are the "before" evidence for later items. S1b and S1c
 leave the crashed Executor's ledger in doubt after its peer finished the
-action (P3.04). S0, S1d and S1e are additions to the A1 list: a no-fault
+action (P3.04). S7 showed the clock-skew wedge until P3.03 ordered results by
+Coordinator sequence; it now recovers. S7b checks the skew bound fails
+closed. S0, S1d and S1e are additions to the A1 list: a no-fault
 baseline, a Verifier crash, and an Executor crash where only that host returns.
 """
 from dataclasses import dataclass, field
@@ -200,21 +201,45 @@ def s6(topology):
     return {"partition_seconds": 3 * topology.lease_seconds, "during_partition": during}
 
 
+def _result_refusals(topology):
+    from experiments.distributed.invariants import log_lines
+    return sum(1 for line in log_lines(topology.processes["coordinator"].stderr_path)
+               if line.get("operation") == "result" and line.get("http_status") == 400)
+
+
 def s7(topology):
-    """Both Executors' clocks 300 s behind the others (gated test clock offset).
+    """Both Executors' clocks 300 s behind the others (gated test clock offset), no skew bound.
 
-    Returns once the action is READY and its result has been refused with HTTP
-    400 more than twice, so a slow host still shows the loop, not just slowness.
+    Before P3.03 the Coordinator refused the Executor's result (stamped before
+    the Guard ALLOW) with HTTP 400 for ever. Now results are ordered by the
+    request they answer, so the action finishes; each worker's measured offset
+    is in the summary.
     """
-    from experiments.distributed.invariants import MAX_REFUSALS, log_lines
     topology.start_observer()
-    topology.wait_state({"READY"}, 45)
+    terminal = topology.wait_terminal(45)
+    return {"clock_offsets": dict(topology.clock_offsets), "terminal": terminal,
+            "refusals_seen": _result_refusals(topology)}
 
-    def refusals():
-        return sum(1 for line in log_lines(topology.processes["coordinator"].stderr_path)
-                   if line.get("operation") == "result" and line.get("http_status") == 400)
-    _wait(lambda: refusals() > MAX_REFUSALS, 45, "the Executor result was not refused repeatedly")
-    return {"clock_offsets": dict(topology.clock_offsets), "refusals_seen": refusals()}
+
+def s7b(topology):
+    """executor-a's clock 5 s behind with a 2 s skew bound: it fails closed and executor-b does the work.
+
+    executor-a measures its offset, reports it, stays unready and never claims;
+    the Coordinator would refuse its claims too.
+    """
+    from experiments.distributed.invariants import log_lines
+    skewed = "executor-a"
+    _wait(lambda: topology.worker_probe(skewed)[0] == 503, 15, skewed + " did not turn unready")
+    status, body = topology.worker_probe(skewed)
+    topology.start_observer()
+    topology.wait_terminal(45)
+    claims = sum(1 for line in log_lines(topology.processes["coordinator"].stderr_path)
+                 if line.get("identity") == skewed and line.get("operation") == "claim"
+                 and line.get("outcome") == "claimed")
+    if claims:
+        raise AssertionError(f"{skewed} claimed work outside the skew bound")
+    return {"skewed": skewed, "readyz": {"status": status, **body}, "claims_by_skewed": claims,
+            "statuses": sorted({record.get("status") for record in topology.processes[skewed].stdout_records()})}
 
 
 ORPHANED_LEDGER = ("Orphaned in-doubt ledger row: the other Executor finishes the action, so no command "
@@ -234,10 +259,9 @@ SCENARIOS = {scenario.name: scenario for scenario in (
     Scenario("S4", "Drop the response to the Executor's result", s4),
     Scenario("S5", "Restart the Coordinator between commit and reply, and again later", s5),
     Scenario("S6", "Partition every worker from the Coordinator", s6, options={"auto_approve": False}),
-    Scenario("S7", "Executor clocks 300 s behind (clock skew)", s7, deadline_seconds=18,
-             options={"clock_offsets": {"executor-a": -300, "executor-b": -300}},
-             expected_failures=frozenset({"I3", "I5"}),
-             known_defect="Clock-skew wedge: the Coordinator refuses the Executor's result (HTTP 400) and the "
-                          "worker resends it for ever (docs/distributed-model.md, P3.03)"),
+    Scenario("S7", "Executor clocks 300 s behind (clock skew)", s7, deadline_seconds=45,
+             options={"clock_offsets": {"executor-a": -300, "executor-b": -300}}),
+    Scenario("S7b", "One Executor's clock 5 s behind with a 2 s skew bound", s7b, deadline_seconds=45,
+             options={"clock_offsets": {"executor-a": -5}, "max_clock_skew": 2}),
 )}
-DEFAULT = ("S1b", "S1c", "S2", "S4", "S5")  # The plan's CI subset; S7 adds the skew "before" evidence.
+DEFAULT = ("S1b", "S1c", "S2", "S4", "S5")  # The plan's CI subset; S7 checks ordering under skew.
