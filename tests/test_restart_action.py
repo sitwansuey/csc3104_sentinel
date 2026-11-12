@@ -241,6 +241,12 @@ class RestartGuardTests(unittest.TestCase):
             live["deployment"].update(change)
             with self.subTest(change=change):
                 self.assert_verdict("ESCALATE", "RESTART_JUSTIFICATION_UNKNOWN", live_state=live)
+        # Either count short of desired is Pod-failure evidence, even when the other is complete.
+        for ready, available in ((1, 0), (0, 1)):
+            live = deepcopy(self.inputs["live_state"])
+            live["deployment"]["status"].update(readyReplicas=ready, availableReplicas=available)
+            with self.subTest(ready=ready, available=available):
+                self.assert_verdict("ALLOW", "VALIDATION_PASSED", live_state=live)
         live = deepcopy(self.inputs["live_state"])
         live["deployment"]["metadata"]["generation"] = 2
         self.assert_verdict("ESCALATE", "RESTART_JUSTIFICATION_UNKNOWN", live_state=live)
