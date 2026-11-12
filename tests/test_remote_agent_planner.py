@@ -607,7 +607,8 @@ class ReadinessTests(unittest.TestCase):
         health.contacted()
         self.assertEqual(health.ready()[0], 200)
         health.prerequisites(False)
-        self.assertEqual(health.ready(), (503, {"ready": False, "contact_age_seconds": 0.0}))
+        self.assertEqual(health.ready(), (503, {"ready": False, "contact_age_seconds": 0.0,
+                                                "prerequisites_failed": True}))
         health.prerequisites(True)
         self.assertEqual(health.ready()[0], 200)
 

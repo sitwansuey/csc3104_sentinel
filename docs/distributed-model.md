@@ -67,9 +67,9 @@ What is single-host today:
 The Coordinator is the authorisation state machine. It decides which proposal
 is active for a workload, when an action is READY, and which command a worker
 may claim. Every change runs inside `BEGIN IMMEDIATE`, so SQLite admits one
-writer at a time (`services/coordinator/store.py:397-409::SQLiteStore.transaction::@contextmanager`).
+writer at a time (`services/coordinator/store.py:434-448::SQLiteStore.transaction::@contextmanager`).
 Each claim, renew and result also replays the outbox revocation rules inside
-the same transaction (`runtime/worker_transport.py:82-109::Delivery.transaction::@contextmanager`).
+the same transaction (`runtime/worker_transport.py:82-111::Delivery.transaction::@contextmanager`).
 
 If two writable Coordinators existed during a partition, each could admit a
 different proposal for the same workload, or move the same action to READY on
@@ -102,12 +102,133 @@ the Coordinator is down or partitioned away:
 `synchronous=FULL` in the SQLite build checked here (3.45.3). A committed
 transaction should survive a process crash or Pod restart on the same volume.
 This has not been measured. kind's local-path volume is tied to one node, so
-losing that node needs a manual restore from a backup, and nothing detects a
-restore that silently drops acknowledged results.
+losing that node needs a manual restore from a backup. A backup older than
+the last commit drops results the Coordinator had already acknowledged; since
+P3.06 a worker that saw a later commit detects such a restore at its next
+exchange and stops claiming, unless other workers' requests have already made
+up the lost commits (below).
 
-**Recovery time (RTO)** has not been measured. After repeated errors a worker
-backs off for up to 60 s (`runtime/worker_service.py:383::main::min(60`), which adds
-to recovery time after a Coordinator restart.
+**Recovery time (RTO): bounded worker back-off.** After failed passes in a
+row a worker waits a random time between 0 and its poll interval × 2^failures,
+at most 15 s (`runtime/worker_service.py:69::backoff_seconds::return random() * min(`).
+So once a restarted Coordinator is ready, every worker reaches it within the
+attempt it may have had in flight, at most 15 s of waiting and one more
+request, and the workers do not retry in step. Before P3.06 the wait
+followed a fixed doubling schedule up to 60 s with no jitter.
+
+**Restore detection.** Migration 5 gives the database a random generation,
+made once per database file, and a commit counter that grows by one in every
+transaction run through `SQLiteStore.transaction` or `Delivery.transaction`
+that changes a row (`services/coordinator/store.py::SQLiteStore.count_commit`;
+the in-process `core.handle` path marks outbox rows delivered after its
+transaction, and those updates are not counted). Every reply to a worker
+that got as far as opening the store carries the generation and two
+counters: the one after the request's own commit
+(`X-Sentinel-Store-Generation`, `X-Sentinel-Store-Commit`) and the one read
+before the request changed anything (`X-Sentinel-Store-Commit-Before`).
+Replies refused earlier (bad credentials, a stopping Coordinator) carry none.
+A worker that sees another generation (the database was replaced), or a
+counter before the request lower than one it saw before it sent the request
+(the file was restored from an earlier copy), stops claiming, answers
+`/readyz` with 503 and logs the change once (`runtime/worker_http.py::StoreWatch`,
+`runtime/remote_worker.py::RemoteWorker.store_status`). It keeps sending the
+results it has saved and drops none, and it stays stopped across restarts
+until an operator runs `scripts/coordinator_restore_check.py`, which lists the
+acknowledged results the restored database lacks, and clears the worker with
+`worker_service --accept-store` ([procedure](remote-workers.md)). Only replies
+to requests sent after an earlier reply arrived are compared, so a lease
+renewal and a claim in flight together cannot raise a false alarm. Because
+the counter before the request is compared, the request's own commit (every
+claim commits, since it records the worker's clock) cannot hide a lost
+commit, so a backup that lacks only the newest acknowledged result is
+detected (`tests/test_store_generation.py::LoopbackRestoreTests.test_a_backup_missing_only_the_last_acknowledged_result_is_detected`).
+What remains: a worker notices only at its next exchange, and only if it saw
+a higher counter before. If a restore lost k commits and other workers'
+requests commit k or more times before this worker's next exchange (each
+idle claim counts), that worker does not notice. That is why the check takes
+the counter noted before the restore (`--previous-commit`). A worker talking
+to a Coordinator that sends no store headers (one older than P3.06, or one
+that could not read its position) detects nothing. A restarted worker
+remembers the position of its latest acknowledged result, not of every
+reply. The Observer does not watch the store.
+
+**Index.** Migration 5 also stores each message's kind and action id in
+indexed columns (`messages(kind, action_id)`), so finding the newest message
+of a kind for an action (`services/coordinator/store.py::SQLiteStore.accepted_meta`,
+used by every result and dependency lookup) no longer reads every message.
+Each claim, renewal and result still replays the whole pending outbox inside
+its transaction (`services/coordinator/core.py::dispatch_pending`), so claim
+cost grows with the backlog.
+
+### Recovery time and restore, measured on one host
+
+Measured with `experiments/distributed/claims.py` in the file mode of the
+multi-process harness: the Coordinator and five workers as separate processes
+on one Windows host, over HTTPS on loopback, so one kernel clock, one disk and
+no real network. Other test runs shared the host at the same time, so the
+timings are indicative only. No cluster was involved; P4.02 repeats this in
+kind.
+
+Time from the restarted Coordinator answering `/readyz` to the first claim,
+scenario S5 with timed restarts (`claims.py restart`, workers polling every
+2 s, the production default; two restarts per run). "Slowest" is the last of
+the five workers to claim; "first" the first.
+
+| Coordinator down for | Restarts | Before P3.06, slowest worker (median, max) | After, slowest worker | Before, first worker (max) | After, first worker (max) |
+| --- | --- | --- | --- | --- | --- |
+| 0 s (immediate restart) | 10 | 3.7 s, 5.6 s | 2.9 s, 6.6 s | 1.3 s | 1.3 s |
+| 30 s | 10 | 5.6 s, 5.7 s | 10.4 s, 12.5 s | 5.3 s | 1.8 s |
+| 75 s | 6 | 56.7 s, 56.8 s | 8.1 s, 10.0 s | 54.7 s | 1.9 s |
+
+Before the change every worker followed the same fixed schedule (waits of
+4, 8, 16, 32 and then 60 s, each after a refused connection that takes about
+2 s on Windows), so the delay depended on where the restart fell in it: 5.6 s
+after a 30 s outage, 56.7 s after a 75 s one. After it no worker waited more
+than 15 s, and the first worker was back within 1.9 s, but after a 30 s
+outage the slowest worker came back later than the old schedule happened to
+bring it: the jitter trades a lucky alignment for a bound. Every run reached
+RECOVERED (the restart reports record the final state, not the number of
+template writes). The restarted Coordinator answered `/readyz` about
+0.5 s after its process started.
+
+**Restore drill** (`claims.py restore`, workers polling every 0.2 s): the Coordinator's database was copied
+with the SQLite backup API when the action was READY, the action finished
+(RECOVERED), and the Coordinator was then killed, the copy put back and the
+Coordinator started again, so the incident was READY once more and the
+Executor's result and the Verifier's outcome, both acknowledged, were gone.
+In all 13 drills every worker turned unready with `store_changed` within
+0.31 s of the restarted Coordinator being ready, and the restore check listed
+exactly those two results: the Executor's as `replay` (its request was
+pending again) and the Verifier's as `review`. The drills ran before workers
+compared the counter read before each request; that comparison flags every
+reply the earlier one flagged, so it can only make a worker notice sooner.
+Each drill then cleared the workers with `--accept-store`:
+
+- Clearing the Executor that held the replay first, and the rest once its
+  result was back (5 drills): the Executor resent its saved result, which
+  issued the same Verifier request again, so the Verifier also resent its
+  saved outcome. RECOVERED within 0.42 s, no new write, 5 of 5.
+- Clearing every worker at once (8 drills): RECOVERED in 4. In the other 4
+  the action stayed VERIFYING for the 90 s the drill waited, with one write;
+  in each of them both Executors reported an accepted result and the
+  Verifier's passes failed, and in none of the 9 that recovered did both.
+  Our reading, from the code rather than from logs: the other Executor
+  claimed the replayed request first and reported a result of its own (an
+  adopted write, with its own timestamp), and the Verifier's job store
+  refuses a second execution for the same action
+  (`services/verifier/store.py:84::VerificationStore.start::Action ID reused with changed execution or policy`).
+  Hence the order in the procedure; the check prints it.
+
+The reports are in `experiments/distributed/measurements/p3-06/`.
+
+**Claims per second** (`claims.py rate`, six client threads as verifier-1,
+executor-a and executor-b claiming a seeded backlog of synthetic commands
+that are never finished): about 40 to 55 claims per second with 50 or 200
+commands queued and 21 to 23 with 1,000, with the median claim taking 60 to
+140 ms, before and after this change alike (one earlier run before it, on a
+busier host, gave 12 to 14). It falls with the backlog because every claim
+replays the whole pending outbox in one `BEGIN IMMEDIATE` transaction. This
+is the claim path alone, not end-to-end recovery.
 
 ## Time and ordering
 
@@ -130,7 +251,7 @@ previous result of the same kind was accepted
 Its own timestamp is never compared with another process's. A result that
 answers an older request is refused even if it is stamped later, and the
 transport answers it with HTTP 409
-(`runtime/worker_transport.py:253::Delivery.finish::Result answers a superseded request`),
+(`runtime/worker_transport.py:255::Delivery.finish::Result answers a superseded request`),
 so the worker releases the delivery instead of resending it. Most such
 results never get that far: `services/coordinator/core.py::dispatch_pending`
 already retires a superseded request, and `finish` then answers 409.
@@ -225,13 +346,16 @@ The bound is enforced, and fails closed, only where it is configured:
   (`runtime/remote_worker.py::RemoteWorker._skewed_since_claim`). Saved
   results are still sent, because their order does not depend on clocks.
   A claim prerequisite (the agent Planner's model preflight) runs only after
-  this check passes, so an out-of-bound worker never runs it; its `/readyz`
-  is 503 while either the clock or the prerequisite fails
+  this check passes, so an out-of-bound worker never runs it. A recorded
+  store change (restore detection, above) is checked before both, from the
+  worker's journal alone. Its `/readyz` is 503 while any of the three fails,
+  and the body names each failing one with a true `store_changed`,
+  `clock_skew` or `prerequisites_failed`
   (`runtime/remote_worker.py::RemoteWorker.once`,
-  `runtime/worker_service.py::main`).
+  `runtime/worker_service.py::poll`).
 - A Coordinator started with `--max-clock-skew-seconds` refuses a claim, with
   HTTP 409, from a worker whose latest reported estimate is missing or
-  outside the bound (`runtime/worker_transport.py:130::Delivery.claim::Worker clock skew exceeds the bound`).
+  outside the bound (`runtime/worker_transport.py:132::Delivery.claim::Worker clock skew exceeds the bound`).
 
 Without the setting, workers and the Coordinator measure and record the
 offset but do not refuse. What is guaranteed after a clock step: the worker
@@ -254,7 +378,7 @@ share one clock, so the only offset it has measured is the simulated one.
 **Leases use one clock.** Lease expiry and retry back-off are computed only
 from the Coordinator's clock (`runtime/worker_transport.py::Delivery.claim`).
 A claim and a renewal also answer `expires_in`, the lease length as a
-duration (`runtime/worker_transport.py:199::Delivery.renew::"expires_in": self.lease`), and the worker
+duration (`runtime/worker_transport.py:201::Delivery.renew::"expires_in": self.lease`), and the worker
 schedules renewal from it (`runtime/remote_worker.py::lease_duration`), so no
 lease decision compares the Coordinator's clock with a worker's. Only a
 Coordinator from before this change, which sends no `expires_in`, makes the
@@ -425,7 +549,7 @@ mode on one Windows host; neither has run in kind mode.
 | P3.03 | Done in the code above. Left: S7 in kind mode, and a real clock offset per Pod (Chaos Mesh TimeChaos, P4.01) instead of the gated test offset. With operator approval required, an Executor whose clock is 5 min off cannot reach RECOVERED: its own Guard re-check refuses the Coordinator-stamped approval. So P4.01 should expect what S7 and S7b show (FAILED with no write without a bound; with a bound, that Executor stops claiming and an in-bound peer recovers the action), unless the owners change the re-check |
 | P3.04 | Per-target ownership epochs and a seal command that fences abandoned Executor writes |
 | P3.05 | An admission policy limiting which fields the Executor identity may change |
-| P3.06 | 15 s jittered back-off, store generation and commit counter to detect a restored backup, and a restore check |
+| P3.06 | Done in the code above and measured in file mode on one host. Left: the same measurements in a cluster (P4.02) |
 | P4.01, P4.02 | Multi-node kind run with partitions and restarts; measured RTO and RPO added here |
 | P5.01 | A replicated Coordinator on a replicated database |
 

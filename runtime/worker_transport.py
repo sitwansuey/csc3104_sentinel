@@ -83,6 +83,7 @@ class Delivery:
     def transaction(self):
         db = self.store.db
         db.execute("BEGIN IMMEDIATE")
+        changes = db.total_changes
         self.store.discard_after_commit()
         try:
             now = self.clock()
@@ -101,6 +102,7 @@ class Delivery:
                 WHERE finished IS NULL AND event_id IN (SELECT id FROM outbox WHERE delivered=1)""", (now,))
             db.execute("DELETE FROM transport_receipts WHERE finished < ?", (now - self.retention,))
             yield db, now
+            self.store.count_commit(changes)  # Restore detection: see SQLiteStore.position.
             db.execute("COMMIT")
         except BaseException:
             db.execute("ROLLBACK")

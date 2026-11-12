@@ -87,6 +87,31 @@ class MigrationTests(unittest.TestCase):
             self.assertEqual(len(store.transitions()), 1)
         self.assertEqual(self.version()[0], SCHEMA_VERSION)
 
+    def test_a_database_left_at_any_earlier_version_reaches_the_newest(self):
+        # Trace context (3), Coordinator sequence and worker clocks (4), then the
+        # store generation, commit counter and messages(kind, action_id) index (5).
+        # Version 0 is the unversioned schema in FIXTURE, upgraded above.
+        for stopped in range(1, SCHEMA_VERSION):
+            with self.subTest(version=stopped):
+                self.path.unlink(missing_ok=True)
+                db = sqlite3.connect(self.path, isolation_level=None)
+                try:
+                    migrate(db, MIGRATIONS[:stopped])
+                finally:
+                    db.close()
+                self.assertEqual(self.version()[0], stopped)
+                with SQLiteStore(self.path) as store:
+                    self.assertEqual(schema_version(store.db), SCHEMA_VERSION)
+                    columns = {row[1] for row in store.db.execute("PRAGMA table_info(messages)")}
+                    self.assertLessEqual({"seq", "answers", "high_water", "producer", "kind", "action_id"}, columns)
+                    self.assertIn("trace_context", {row[1] for row in store.db.execute("PRAGMA table_info(outbox)")})
+                    self.assertLessEqual({"transitions", "worker_clocks", "store_meta"}, tables(store.db))
+                    generation, counter = store.position()
+                    self.assertRegex(generation, r"^[0-9a-f]{32}$")
+                    self.assertTrue(handle(sample("incident.json"), store, LocalEventBus()))
+                    self.assertGreater(store.position()[1], counter)
+                    self.assertEqual(store.db.execute("SELECT kind FROM messages").fetchone()[0], "incident")
+
     def test_migrations_are_numbered_in_order(self):
         numbers = [number for number, _ in MIGRATIONS]
         self.assertEqual(numbers, list(range(1, len(numbers) + 1)))

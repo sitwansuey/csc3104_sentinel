@@ -43,7 +43,8 @@ If a result response is lost, resend the exact saved result with the same lease.
 `WorkerClient.post` sends one request, bounds both bodies to 1 MiB, validates an
 origin URL and uses the configured socket timeout. It does not retry
 automatically. On a timeout or 503, the component keeps its saved body and uses
-bounded exponential backoff before retransmitting it. On 409, reconcile the
+exponential backoff, capped at 15 s with full jitter
+(`runtime/worker_service.py::backoff_seconds`), before retransmitting it. On 409, reconcile the
 delivery lease and business state; on 401/403, fix the service configuration.
 Never regenerate a timestamp or result payload just to retry a lost response.
 

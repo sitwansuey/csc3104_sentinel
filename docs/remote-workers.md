@@ -139,6 +139,57 @@ bound: the Guard then tolerates findings and approvals stamped up to that many
 seconds in its future and counts it against their age and expiry. Leave all
 three out to measure without enforcing, as before.
 
+After a pass that reached the Coordinator the worker waits `--poll-seconds`
+(2 by default). After failed passes in a row it waits a random time between
+0 and `--poll-seconds` × 2^failures, at most 15 s ("full jitter"), so a
+restarted Coordinator gets each worker back after at most 15 s of waiting,
+and they do not all retry at the same moment
+(`runtime/worker_service.py::backoff_seconds`). Before P3.06 the wait grew to
+60 s with no jitter.
+
+**A restored Coordinator database.** Every Coordinator reply to a request
+that got past authentication names its database (a random generation made
+once per database file) and its commit counter, a number that grows with
+every transaction that changes something: both the counter after the
+request's own commit and the counter read before the request changed
+anything. Each worker remembers what it has seen, and in `transport.db` the
+position at its latest acknowledged result. If a reply names another
+generation (the database was replaced), or its counter from before the
+request is lower than one seen before the request was sent (it was restored
+from an earlier copy), the worker logs `worker.store_generation_changed`
+or `worker.store_rollback_detected`, prints the status `store_changed`,
+answers `/readyz` with 503 and stops claiming new work, also after a restart.
+It keeps sending results it has saved and drops none. To resume:
+
+1. Run `python scripts/coordinator_restore_check.py --db coordinator.db --journal STATE/transport.db`
+   with every worker's `transport.db` (and `--previous-commit N` if you noted
+   the counter before the restore). It lists results that were acknowledged
+   but are missing from the restored database: `replay` ones are resent by
+   their worker once it claims the same request again; `review` ones need a
+   person. Exit code 1 means acknowledged work may be lost.
+2. On each stopped worker run `python -m runtime.worker_service --config path/to/worker.json --accept-store`.
+   The running worker adopts the restored database on its next pass. Clear
+   the workers that hold `replay` items first, and the others once the check
+   shows those results back: otherwise another worker of the same role may
+   claim the request first and report a result of its own. In restore drills
+   on one host that left the action VERIFYING in 4 of 8 runs, because the
+   Verifier refuses a second execution for an action; clearing in order
+   recovered 5 of 5. Then run the check again: a replayed result can issue a
+   request whose saved answer was listed under `review`.
+
+A worker's own request cannot hide a restore, so a backup that lacks only the
+newest acknowledged result is detected. But if a restore lost k commits and
+other workers' requests commit k or more times before this worker's next
+exchange (every idle claim commits, so six workers polling every 2 s make
+about three commits a second), that worker does not notice. A worker whose
+Coordinator sends no store headers (one older than P3.06) detects nothing.
+So before a restore, note the counter of the database you are about to
+replace (`SELECT commit_counter FROM store_meta`), and run the check with
+`--previous-commit` after every restore. The backup's own counter does not
+help: the restored database has the same one. If the node or volume was lost
+and the old counter cannot be read, the positions remembered in the workers'
+`transport.db` files are the only reference; pass all of them to the check.
+
 Verifier uses `role: verifier`, its connection fields/state directory, `policy`,
 and `evidence` pointing to a live inventory with the format of
 [`verifier-live-inventory.json`](../data/sentinel/samples/verifier-live-inventory.json).
@@ -250,11 +301,16 @@ a proposal saved in the Planner journal whose worker stopped before recording
 it for transport is replayed, without a model call, only by the first claim
 after a preflight passes. A model that fails after a passed
 preflight is an attempt failure (`MODEL_UNAVAILABLE`), retried and then
-escalated as above. With `max_clock_skew_seconds` set, the skew check runs
-before the preflight: a worker whose clock is out of bound prints `clock_skew`
-and runs no preflight, but still re-sends saved results. A pass whose preflight
-fails had its clock in bound, so `/readyz` then answers 503 without
-`"clock_skew": true`. Without a bound the worker still measures its clock once
+escalated as above. Each pass re-sends saved results first and then checks,
+cheapest first, whether it may claim: a recorded Coordinator store change
+(*A restored Coordinator database*, under [Configuration](#configuration))
+refuses with `store_changed` from the journal alone; then, with `max_clock_skew_seconds` set, the skew check refuses
+with `clock_skew`; only then does the preflight run. A worker refused by
+either earlier check runs no preflight. A pass whose preflight fails found the
+store unchanged and the clock in bound, so `/readyz` then answers 503 with
+`"prerequisites_failed": true` and without `"store_changed"` or
+`"clock_skew"`; a worker that fails more than one check names each one.
+Without a bound the worker still measures its clock once
 before its first claim, so that exchange precedes the first preflight. One
 pass can last the whole planning budget, so keep
 `--live-seconds` above `planning_budget_seconds` plus 60 (the 900 s default
@@ -295,11 +351,12 @@ pass within `--live-seconds` (900 by default), so a loop stuck inside one pass
 turns unhealthy; set it above the longest pass you expect, such as a Planner's
 model call. `/readyz` answers 200 once
 the configuration was accepted, the worker's preflight passed (only the agent
-Planner has one, see [Agent mode](#agent-mode)), and the Coordinator answered a
-polling pass within `--ready-seconds` (60 by default), and, when a skew bound
-is set, the latest pass found the clock within it (otherwise the body adds
-`"clock_skew": true`). The bodies hold booleans and ages in seconds, nothing
-else.
+Planner has one, see [Agent mode](#agent-mode)), the Coordinator answered a
+polling pass within `--ready-seconds` (60 by default), when a skew bound is
+set the latest pass found the clock within it, and no store change is waiting
+for an operator. A 503 body names each of the last three that fails with a
+true boolean: `"prerequisites_failed"`, `"clock_skew"` and `"store_changed"`.
+The bodies hold booleans and ages in seconds, nothing else.
 
 A Planner configuration may set `"provider": "deterministic"` with an optional
 `"attempt_lease_seconds"`, but only in a lab fault run (below). It plans with

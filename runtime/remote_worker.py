@@ -6,6 +6,7 @@ import sqlite3
 import threading
 import time
 
+from runtime.worker_http import StoreWatch
 from runtime.worker_transport import ProtocolError, delivery_ids, digest
 from shared import log, tracing
 from shared.canonical import canonical_json as encoded
@@ -15,15 +16,35 @@ LOG = log.get_logger("remote_worker")
 
 
 class WorkerJournal:
-    """Transport state only. Component journals remain authoritative for effects."""
+    """Transport state only. Component journals remain authoritative for effects.
+
+    It also remembers the Coordinator database position (generation and
+    commit counter) at the latest accepted result, the position at which
+    each result was accepted, and a detected store change until an operator
+    accepts it (scripts/coordinator_restore_check.py reads all three).
+    """
     def __init__(self, path):
         self.db = sqlite3.connect(str(path), isolation_level=None, timeout=10)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA synchronous=FULL")
-        self.db.execute("""CREATE TABLE IF NOT EXISTS worker_deliveries (
-            request_key TEXT PRIMARY KEY, topic TEXT NOT NULL, payload TEXT NOT NULL,
-            delivery TEXT, result TEXT, report TEXT, accepted INTEGER NOT NULL DEFAULT 0
-        )""")
+        self.db.execute("BEGIN IMMEDIATE")  # A running worker and --accept-store may open it together.
+        try:
+            self.db.execute("""CREATE TABLE IF NOT EXISTS worker_deliveries (
+                request_key TEXT PRIMARY KEY, topic TEXT NOT NULL, payload TEXT NOT NULL,
+                delivery TEXT, result TEXT, report TEXT, accepted INTEGER NOT NULL DEFAULT 0
+            )""")
+            columns = {row[1] for row in self.db.execute("PRAGMA table_info(worker_deliveries)")}
+            for name, kind in (("accepted_generation", "TEXT"), ("accepted_commit", "INTEGER")):
+                if name not in columns:  # Journals written before P3.06.
+                    self.db.execute(f"ALTER TABLE worker_deliveries ADD COLUMN {name} {kind}")
+            self.db.execute("""CREATE TABLE IF NOT EXISTS coordinator_store (
+                id INTEGER PRIMARY KEY CHECK (id = 1), generation TEXT, commit_counter INTEGER, change TEXT
+            )""")
+            self.db.execute("COMMIT")
+        except BaseException:
+            self.db.execute("ROLLBACK")
+            self.db.close()
+            raise
 
     def close(self):
         self.db.close()
@@ -64,8 +85,55 @@ class WorkerJournal:
     def release(self, key):
         self.db.execute("UPDATE worker_deliveries SET delivery=NULL WHERE request_key=?", (key,))
 
-    def accepted(self, key):
-        self.db.execute("UPDATE worker_deliveries SET accepted=1 WHERE request_key=?", (key,))
+    def accepted(self, key, position=None, *, remember=False):
+        """Mark a result acknowledged, with the Coordinator position of the acknowledging reply.
+
+        With remember, also keep that position as the furthest seen
+        (remember_store), in the same transaction, so a crash cannot leave
+        the result acknowledged and the remembered position behind it.
+        """
+        generation, commit = position or (None, None)
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            self.db.execute("UPDATE worker_deliveries SET accepted=1,accepted_generation=?,accepted_commit=? "
+                            "WHERE request_key=?", (generation, commit, key))
+            if remember and position is not None:
+                self.remember_store(generation, commit)
+            self.db.execute("COMMIT")
+        except BaseException:
+            self.db.execute("ROLLBACK")
+            raise
+
+    def store_position(self):
+        """(generation, commit counter, change): what this worker remembers of the Coordinator's database."""
+        row = self.db.execute("SELECT generation, commit_counter, change FROM coordinator_store WHERE id=1").fetchone()
+        if row is None:
+            return None, None, None
+        return row[0], row[1], json.loads(row[2]) if row[2] else None
+
+    def remember_store(self, generation, commit):
+        """Keep the furthest position seen for this generation; a new generation replaces it."""
+        self.db.execute("""INSERT INTO coordinator_store(id,generation,commit_counter) VALUES(1,?,?)
+            ON CONFLICT(id) DO UPDATE SET commit_counter=CASE WHEN generation IS excluded.generation
+                THEN max(coalesce(commit_counter, 0), excluded.commit_counter) ELSE excluded.commit_counter END,
+            generation=excluded.generation""", (generation, commit))
+
+    def record_store_change(self, change):
+        """Keep the first detected change; the worker claims nothing new while it is set."""
+        self.db.execute("""INSERT INTO coordinator_store(id,change) VALUES(1,?)
+            ON CONFLICT(id) DO UPDATE SET change=coalesce(change, excluded.change)""", (encoded(change),))
+
+    def accept_store(self):
+        """Clear a recorded change and the remembered position (an operator's decision); return the change."""
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            change = self.store_position()[2]
+            self.db.execute("UPDATE coordinator_store SET generation=NULL, commit_counter=NULL, change=NULL")
+            self.db.execute("COMMIT")
+        except BaseException:
+            self.db.execute("ROLLBACK")
+            raise
+        return change
 
 
 def lease_duration(answer, clock=time.time):
@@ -138,8 +206,18 @@ class RemoteWorker:
     The claim's own reply is measured too: a clock that stepped out of bound
     since the previous exchange hands the claimed delivery back unprocessed.
     A step while a claimed request is being processed is seen only at the
-    next exchange (a lease renewal or the result). The skew check runs before
-    before_claim, so an out-of-bound worker never runs its preflight.
+    next exchange (a lease renewal or the result).
+
+    The worker also stops claiming once a Coordinator reply shows its
+    database was replaced or rolled back (store_status), and stays stopped,
+    across restarts, until an operator runs worker_service --accept-store.
+    Saved results are still sent and never dropped.
+
+    Each pass therefore runs, in order: re-send saved results; refuse new
+    work while a store change is recorded (a journal read, no request);
+    refuse it while the clock is outside the skew bound (at most a /clock
+    exchange); then run before_claim. The cheap checks come first, so a
+    worker that would refuse the claim anyway never runs its preflight.
     """
 
     def __init__(self, client, journal, adapter, *, renewal_interval=5, max_clock_skew=None,
@@ -152,6 +230,61 @@ class RemoteWorker:
         self.before_claim = before_claim
         # IDs of the delivery handled by the latest once(), for status log lines.
         self.current = {}
+        # The recorded store change in force, or None while claiming is allowed.
+        self.store_change = None
+        watch = self._watch()
+        if watch is not None:
+            generation, commit, change = journal.store_position()
+            watch.seed(generation, commit, change)
+            self.store_change = change
+
+    def _watch(self):
+        watch = getattr(self.client, "store", None)
+        return watch if isinstance(watch, StoreWatch) else None  # Stand-in clients have none.
+
+    def store_status(self):
+        """None while claiming is allowed, else a store_changed status (fail closed).
+
+        A change seen in a reply is recorded in the journal and logged once.
+        When an operator clears it (worker_service --accept-store, after
+        scripts/coordinator_restore_check.py), the next reply's database is
+        adopted and claiming resumes.
+        """
+        watch = self._watch()
+        if watch is None:
+            return None
+        marker = self.journal.store_position()[2]
+        change = watch.change
+        if change is not None and marker is None:
+            if self.store_change is not None:
+                watch.reset()
+                self.store_change = None
+                log.emit(LOG, "worker.store_change_accepted", reason=change["reason"])
+                return None
+            self.journal.record_store_change(change)
+            marker = change
+            log.emit(LOG, "worker.store_generation_changed" if change["reason"] == "generation_changed"
+                     else "worker.store_rollback_detected", level=log.ERROR, reason=change["reason"],
+                     store_generation=change["generation"], commit_counter=change["commit"],
+                     previous_generation=change["previous_generation"], previous_commit=change["previous_commit"])
+        elif marker is not None and change is None:
+            watch.seed(watch.generation, watch.highest, marker)  # Recorded by another process on this journal.
+        self.store_change = marker
+        return None if marker is None else {"status": "store_changed", "reason": marker["reason"]}
+
+    def store_ready(self):
+        """For /readyz: False while a store change stops this worker from claiming."""
+        return self.store_change is None
+
+    def _store_changed_since_claim(self, delivery):
+        """None, or a store_changed status after handing back a delivery whose reply revealed the change."""
+        watch = self._watch()
+        if watch is None or watch.change is None:
+            return None
+        status = self.store_status()
+        if status is not None and delivery is not None:
+            self.client.post("retry", {name: delivery[name] for name in ("delivery_id", "lease_token")})
+        return status
 
     def clock_status(self):
         """None when claiming is allowed, else a clock_skew status (fail closed)."""
@@ -215,7 +348,10 @@ class RemoteWorker:
         # transport marker. Neither operation may manufacture another result.
         if hasattr(self.adapter, "acknowledge"):
             self.adapter.acknowledge(deepcopy(row["result"]))
-        self.journal.accepted(row["request_key"])
+        watch = self._watch()
+        position = watch.last_seen() if watch is not None else None  # This thread's result reply.
+        # A restarted worker compares later replies with the remembered position.
+        self.journal.accepted(row["request_key"], position, remember=watch is not None and watch.change is None)
         return {"status": "accepted", "replay": response.get("replay", False)}
 
     def once(self):
@@ -229,6 +365,9 @@ class RemoteWorker:
                 # Retain the immutable result for a replacement delivery, but
                 # never keep retrying a lease that can no longer commit it.
                 self.journal.release(row["request_key"])
+        changed = self.store_status()  # After the saved results: those are always sent.
+        if changed is not None:
+            return changed
         skewed = self.clock_status()
         if skewed is not None:
             return skewed
@@ -236,6 +375,9 @@ class RemoteWorker:
         if self.before_claim is not None and not deferred:
             self.before_claim()
         delivery = self.client.post("claim", {})["delivery"]
+        changed = self._store_changed_since_claim(delivery)
+        if changed is not None:
+            return changed
         skewed = self._skewed_since_claim(delivery)
         if skewed is not None:
             return skewed
