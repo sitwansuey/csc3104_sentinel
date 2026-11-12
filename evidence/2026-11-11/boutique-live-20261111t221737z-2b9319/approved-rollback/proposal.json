@@ -1,0 +1,31 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-48b75f7600a5265c45564f33",
+  "based_on_resource_version": "72422",
+  "evidence_refs": [
+    "E-686D78B57968",
+    "E-ED3444FEA931",
+    "E-70C1D027EF88",
+    "E-4CBEB3818E50",
+    "E-FF31720F8B67",
+    "E-9AB93F25D25B",
+    "E-DC0FA0A1BA71",
+    "E-03C89066433A",
+    "E-0C994C097BB2"
+  ],
+  "incident_id": "INC-F04A4E782A8D",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-4cf72188b7f2",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence indicates a 'CrashLoopBackOff' state for the 'shippingservice' deployment, as confirmed by the container logs (E-0C994C097BB2), which show a fatal error related to an 'unknown port' during startup. This suggests that the current configuration is faulty and has caused the container to repeatedly crash and restart. The observed evidence supports the conclusion that the deployment is in a harmful state, and the available healthy baseline (BASE-LIVE-4cf72188b7f2) represents a previously functional configuration. Rolling back to this baseline is appropriate to restore the system to a known working state.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

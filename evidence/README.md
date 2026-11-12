@@ -19,7 +19,10 @@ are generated from it, so every quoted number points back to a bundle here.
   It holds timing numbers, roles, statuses, model tags and token counts only.
   `summarize.py --check` recomputes every value marked `bundle`; values marked
   `run_folder` came from local run folders and cannot be rechecked. Add a new
-  dated folder when bundles are added; never edit an old ledger.
+  dated folder when bundles are added; never edit an old ledger. `summarize.py`
+  reads only the folder whose name sorts last, so a second ledger on the same
+  date takes a suffix that sorts after the first (`2026-11-12b` after
+  `2026-11-12`).
 
 Files here are stored byte for byte (`-text` in `.gitattributes`), so the
 MANIFEST hashes also hold on Windows checkouts.
@@ -53,6 +56,11 @@ MANIFEST hashes also hold on Windows checkouts.
   MANIFEST; a bundle over 3 MB is refused.
 - **Failures stay in.** Failed, interrupted and incomplete runs are collected
   and count in every denominator.
+- **Exclusions are recorded.** A run that is not collected is listed in
+  `exclusions.json` with its class, revision, time and the reason, such as an
+  infrastructure failure before any experiment step. `summarize.py --check`
+  fails when an exclusion has no reason or names a collected bundle. The
+  exclusions are rendered below.
 - **Human review.** Skim a new bundle before committing it.
 
 ## Provenance
@@ -88,12 +96,12 @@ is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.
 <!-- BEGIN GENERATED:index -->
 | Class | Bundles | Recorded | Inferred | Superseded | Withdrawn |
 | --- | --- | --- | --- | --- | --- |
-| agent | 24 | 4 | 20 | 0 | 0 |
+| agent | 39 | 19 | 20 | 0 | 0 |
 | chaos-batch | 17 | 0 | 17 | 0 | 0 |
-| connected-harness | 5 | 1 | 4 | 0 | 0 |
-| executor-wedge | 3 | 0 | 3 | 0 | 0 |
+| connected-harness | 7 | 3 | 4 | 0 | 0 |
+| executor-wedge | 7 | 0 | 7 | 0 | 0 |
 | guard-eval | 1 | 1 | 0 | 0 | 0 |
-| guard-rejection | 3 | 1 | 2 | 0 | 0 |
+| guard-rejection | 4 | 2 | 2 | 0 | 0 |
 | observer-acceptance | 3 | 0 | 3 | 0 | 0 |
 | packaged | 9 | 0 | 9 | 0 | 0 |
 | provider-recovery | 1 | 0 | 1 | 0 | 0 |
@@ -101,3 +109,14 @@ is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.
 | shipping-lab | 2 | 0 | 2 | 0 | 0 |
 | ui-session | 7 | 0 | 7 | 0 | 0 |
 <!-- END GENERATED:index -->
+
+## Excluded runs
+
+<!-- BEGIN GENERATED:exclusions -->
+| Run | Class | Revision | Attempted at | Reason not collected |
+| --- | --- | --- | --- | --- |
+| executor-wedge-admission-deny-p2b-20261112T050456Z | executor-wedge | 5409092 | 2026-11-12T05:04:56Z | Infrastructure failure, not a Sentinel result: the Docker Desktop engine was down and the wedge harness stopped with a RuntimeError (its only log line); no run folder was kept. Rerun at the same revision as executor-wedge-admission-deny-p2b-20261112t050853z. |
+| boutique-live-20261112T050457Z-1072d5 | agent | 5409092 | 2026-11-12T05:04:58Z | Infrastructure failure, not a Sentinel result: the Docker Desktop engine was down, so 'kind get nodes' failed before any experiment step (no checks ran and no fault was injected; only the preflight model warm-up ran, recorded in the run folder's model-runtime.json, and there was no RCA or planning model call). Its warm-up was a cold load of qwen3:14b (16.2 s), so the set rerun at this revision started with the model already loaded. The run folder keeps its FAILED summary. Docker was restarted and the set was rerun at the same revision (boutique-live-20261112t050930z-ba0f81, -051156z-009b69 and -051406z-ef3fbb). |
+| boutique-live-20261112T050516Z-f67f76 | agent | 5409092 | 2026-11-12T05:05:17Z | Infrastructure failure, not a Sentinel result: the Docker Desktop engine was down, so 'kind get nodes' failed before any experiment step (no checks ran and no fault was injected; only the preflight model warm-up ran, recorded in the run folder's model-runtime.json, and there was no RCA or planning model call). The run folder keeps its FAILED summary. Docker was restarted and the set was rerun at the same revision (boutique-live-20261112t050930z-ba0f81, -051156z-009b69 and -051406z-ef3fbb). |
+| boutique-live-20261112T050518Z-faa61d | agent | 5409092 | 2026-11-12T05:05:19Z | Infrastructure failure, not a Sentinel result: the Docker Desktop engine was down, so 'kind get nodes' failed before any experiment step (no checks ran and no fault was injected; only the preflight model warm-up ran, recorded in the run folder's model-runtime.json, and there was no RCA or planning model call). The run folder keeps its FAILED summary. Docker was restarted and the set was rerun at the same revision (boutique-live-20261112t050930z-ba0f81, -051156z-009b69 and -051406z-ef3fbb). |
+<!-- END GENERATED:exclusions -->

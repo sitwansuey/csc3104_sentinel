@@ -1,0 +1,78 @@
+{
+  "state": "failure",
+  "outputs": [
+    {
+      "evidence_id": "branch-002",
+      "tool": "metrics",
+      "result": {
+        "file": "metrics.csv",
+        "rows_scanned": 21,
+        "rows_in_window": 21,
+        "rows_retained": 21,
+        "truncated": false,
+        "invalid_timestamps": 0,
+        "findings": [],
+        "total_findings": 0
+      }
+    },
+    {
+      "evidence_id": "branch-003",
+      "tool": "logs",
+      "result": {
+        "file": "logs.csv",
+        "rows_scanned": 12,
+        "rows_in_window": 11,
+        "rows_retained": 11,
+        "truncated": false,
+        "invalid_timestamps": 0,
+        "error_count": 6,
+        "components": {
+          "shippingservice": 6
+        },
+        "examples": [
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 05:10:45.689824848+00:00",
+            "message": "{\"message\":\"failed to listen: listen tcp: lookup tcp/invalid-port: unknown port\",\"severity\":\"fatal\",\"timestamp\":\"2026-11-12T05:10:45.689679477Z\"}"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 05:10:46.914769866+00:00",
+            "message": "{\"message\":\"failed to listen: listen tcp: lookup tcp/invalid-port: unknown port\",\"severity\":\"fatal\",\"timestamp\":\"2026-11-12T05:10:46.914615304Z\"}"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 05:10:47+00:00",
+            "message": "Readiness probe failed: timeout: failed to connect service \"<private-ip>:50051\" within 1s: context deadline exceeded"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 05:10:48+00:00",
+            "message": "Back-off restarting failed container server in pod shippingservice-85576d7678-9z99s_sentinel-boutique-connected(aafb2766-dadc-4374-b6da-84517882d022)"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 05:10:48+00:00",
+            "message": "Readiness probe failed: timeout: failed to connect service \"<private-ip>:50051\" within 1s: context deadline exceeded"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 05:10:50+00:00",
+            "message": "Back-off restarting failed container server in pod shippingservice-85576d7678-9z99s_sentinel-boutique-connected(aafb2766-dadc-4374-b6da-84517882d022)"
+          }
+        ],
+        "untimed_errors": 0,
+        "events": [
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 05:10:00",
+            "error_count": 6,
+            "baseline_errors_per_minute": 0.016666666666666666,
+            "left_censored": true
+          }
+        ],
+        "burst_baseline_available": true
+      }
+    }
+  ]
+}

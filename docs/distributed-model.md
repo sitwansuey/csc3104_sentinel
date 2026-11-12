@@ -341,12 +341,18 @@ Delivery to workers is at least once, and receivers deduplicate by action id.
   version means it never can: CONFLICT with basis FENCED, and the workload is
   released (`services/executor/core.py::_fence`). If the fence is refused or
   its outcome is unknown, the next read decides as above. The fence changes no
-  spec field, so `metadata.generation` and the Pods are untouched. With
+  spec field, so no rollout starts and the Pods are untouched, but a Deployment
+  still increases `metadata.generation` for the annotation change. With
   fencing off, the action stays in doubt and after 600 s (the default) the
   Executor adds one result saying operator action is required. The fence uses
   the same get and patch RBAC as the write. It is the Executor's own abort,
   not yet a fence sent for an expired lease or a revoked approval (P3.04).
-  It has not been run against a cluster.
+  Live on one host, one admission-deny run each at 4139385 and 5409092, the
+  fence committed and the action ended CONFLICT with basis FENCED, the workload
+  was released and a second proposal was APPLIED (`C-EXECUTOR-WEDGE-FENCE`). The
+  4139385 run failed one harness check that expected `metadata.generation` to
+  stay unchanged; 17d4532 fixed the check to compare the spec, and the 5409092
+  run passed every check.
 
 ## Multi-process fault runs on one host
 
@@ -413,7 +419,7 @@ mode on one Windows host; neither has run in kind mode.
 
 | Item | Change |
 | --- | --- |
-| P2.06 | Live run of the fenced abort (wedge harness `admission-deny`); the code and offline tests are in place |
+| P2.06 | Done: the fenced abort ran live in the wedge harness `admission-deny` at 4139385 and 5409092 (`C-EXECUTOR-WEDGE-FENCE`); fencing stays off by default |
 | P3.02 | A trace of one incident from a live multi-process run; trace context across outbox rows, deliveries and worker requests, and the offline viewer, are in the code and tested offline ([traces](observability.md#traces)) |
 | P3.01 | Done in file mode (above). Left: a kind-mode run against the connected lab and committed evidence bundles |
 | P3.03 | Done in the code above. Left: S7 in kind mode, and a real clock offset per Pod (Chaos Mesh TimeChaos, P4.01) instead of the gated test offset. With operator approval required, an Executor whose clock is 5 min off cannot reach RECOVERED: its own Guard re-check refuses the Coordinator-stamped approval. So P4.01 should expect what S7 and S7b show (FAILED with no write without a bound; with a bound, that Executor stops claiming and an in-bound peer recovers the action), unless the owners change the re-check |

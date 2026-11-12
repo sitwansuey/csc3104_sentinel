@@ -18,7 +18,8 @@ Stages (seconds):
                 with planning-progress.jsonl only).
   model         sum of model call wall times (part of planning).
   guard         planning end -> Guard ALLOW verdict. Includes the dependency
-                check and the lab's pre-authorised approval.
+                check and the lab approval (pre-authorised, or automated auto-lab
+                from 4139385).
   decision      incident observed -> Guard ALLOW verdict (planning + Guard). In
                 harness mode it also covers the scripted negative cases.
   execution     Guard verdict -> Executor result recorded.

@@ -164,9 +164,13 @@ approval (`services/executor/core.py::execute`), so it cannot write while the
 harness holds the lock. It is still not an authenticated lookup. `tests/test_approval_session.py` runs the real
 child process with the real Coordinator, Guard and Executor and a fake
 Kubernetes API; `tests/test_live_agent.py::AgentApprovalSessionTests` does the
-same for agent mode through the durable journal. Live verification is pending: no live run has used this path
-yet, and the committed live evidence predates it, so it shows pre-authorised
-lab approval.
+same for agent mode through the durable journal. Live runs from 4139385 used
+this path in `auto-lab` mode only: approvals recorded under the `automated-lab`
+identity with `human: false` (claims C-CONNECTED-HARNESS-AUTOLAB,
+C-AGENT-AUTOLAB-5409092) and one `reject` negative test that stopped with no
+approval and no Executor record for the refused action (C-APPROVAL-REJECT).
+No live run has used interactive or ui approval, so no evidence yet shows a
+person approving; live evidence before 4139385 used pre-authorised lab approval.
 
 ## Dashboard approval panel
 

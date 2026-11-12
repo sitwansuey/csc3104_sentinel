@@ -12,6 +12,7 @@ import unittest
 
 from scripts.evidence import collect
 from services.coordinator.core import LocalEventBus, SQLiteStore, handle
+from tests.support import evidence_fixtures as fx
 from tests.support.evidence_fixtures import REVISION, context, wedge_run, write
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -109,6 +110,26 @@ class ProfileTests(unittest.TestCase):
             self.assertEqual(manifest["provenance"], {"kind": "inferred", "source_revision": REVISION,
                                                       "basis": basis})
             self.assertTrue((evidence / "2026-11-11/executor-wedge-rv-race-20261111t202123z/rv-race.json").exists())
+
+    def test_admission_deny_bundle_keeps_the_scenario_summary_and_the_policy(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = wedge_run(temp, "executor-wedge-admission-deny-20261112T050853Z", scenario="admission-deny",
+                            started="2026-11-12T05:08:54Z")
+            manifest = collect.collect(run, "executor-wedge", "wedge-admission", evidence_root=Path(temp) / "evidence",
+                                       context=context(), inferred_revision=REVISION, inferred_basis="fixture")
+            self.assertEqual({item["path"] for item in manifest["files"]},
+                             {"admission-deny.json", "admission-policy.json", "manifests.json"})
+            self.assertEqual(manifest["captured_at"], "2026-11-12T05:08:54Z")
+
+    def test_agent_bundle_keeps_planning_records_but_not_raw_telemetry(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = fx.scenario_run(temp, "boutique-live-20261112T080534Z-160519")
+            manifest = collect.collect(run, "agent", "agent-scenario", evidence_root=Path(temp) / "evidence",
+                                       context=context())
+            self.assertEqual({item["path"] for item in manifest["files"]}, {
+                "summary.json", "scenario-result.json", "approved-rollback/execution.json",
+                "approved-rollback/planning-status.json", "approved-rollback/attempt-1/agent/report.json",
+                "approved-rollback/attempt-1/agent/branch-003/result.json"})
 
     def test_wedge_scenario_summaries_give_the_capture_time(self):
         with tempfile.TemporaryDirectory() as temp:

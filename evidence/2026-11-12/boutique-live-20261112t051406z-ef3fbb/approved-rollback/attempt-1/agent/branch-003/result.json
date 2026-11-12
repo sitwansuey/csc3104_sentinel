@@ -1,0 +1,56 @@
+{
+  "state": "success",
+  "outputs": [
+    {
+      "evidence_id": "branch-003",
+      "tool": "logs",
+      "result": {
+        "file": "logs.csv",
+        "rows_scanned": 10,
+        "rows_in_window": 10,
+        "rows_retained": 10,
+        "truncated": false,
+        "invalid_timestamps": 0,
+        "error_count": 6,
+        "components": {
+          "shippingservice": 6
+        },
+        "examples": [
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 05:15:19+00:00",
+            "message": "Readiness probe failed: timeout: failed to connect service \"<private-ip>:50051\" within 1s: context deadline exceeded"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 05:15:19.602325014+00:00",
+            "message": "{\"message\":\"failed to listen: listen tcp: lookup tcp/invalid-port: unknown port\",\"severity\":\"fatal\",\"timestamp\":\"2026-11-12T05:15:19.602212732Z\"}"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 05:15:20+00:00",
+            "message": "Back-off restarting failed container server in pod shippingservice-85576d7678-f9p64_sentinel-boutique-connected(2b09c94a-1e8f-4d56-a763-451001a9c911)"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 05:15:20+00:00",
+            "message": "Readiness probe failed: timeout: failed to connect service \"<private-ip>:50051\" within 1s: context deadline exceeded"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 05:15:21+00:00",
+            "message": "Back-off restarting failed container server in pod shippingservice-85576d7678-f9p64_sentinel-boutique-connected(2b09c94a-1e8f-4d56-a763-451001a9c911)"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 05:15:23+00:00",
+            "message": "Back-off restarting failed container server in pod shippingservice-85576d7678-f9p64_sentinel-boutique-connected(2b09c94a-1e8f-4d56-a763-451001a9c911)"
+          }
+        ],
+        "untimed_errors": 0,
+        "events": [],
+        "burst_baseline_available": false
+      }
+    }
+  ]
+}

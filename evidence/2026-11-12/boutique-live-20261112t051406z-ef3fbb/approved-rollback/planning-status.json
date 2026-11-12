@@ -1,0 +1,51 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": {
+        "budget_seconds": 600,
+        "model_calls": 3,
+        "model_calls_completed": 3,
+        "model_seconds": 23.655,
+        "planning_attempt": 1,
+        "seconds": 23.882
+      }
+    }
+  ],
+  "attempts": 1,
+  "delivered": 1,
+  "error_code": null,
+  "incident_id": "INC-DDD01AABDD22",
+  "next_attempt": 0.0,
+  "proposal": {
+    "action": "ROLLBACK",
+    "action_id": "ACT-eecc14d0ac5f4b5251de2726",
+    "based_on_resource_version": "80761",
+    "evidence_refs": [
+      "E-FAB1D327A417",
+      "E-256683291721",
+      "E-678D1F29BB15",
+      "E-7330087EE77F",
+      "E-BE7F4FDBC877",
+      "E-399783DDDD49",
+      "E-4F40384D7B00",
+      "E-FEE5838CCDE7",
+      "E-A93E9DB3CEAA"
+    ],
+    "incident_id": "INC-DDD01AABDD22",
+    "kind": "proposal",
+    "parameters": {
+      "baseline_id": "BASE-LIVE-5fd21b2995cb",
+      "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+    },
+    "rationale": "The incident evidence indicates that the 'shippingservice' container is failing to start due to an attempt to listen on an invalid port, as shown in the log entry with evidence ID 'E-A93E9DB3CEAA'. This failure is causing the container to crash repeatedly, resulting in a 'CrashLoopBackOff' state. The readiness probe also failed because the service could not be reached on port 50051, as indicated by evidence ID 'E-BE7F4FDBC877'. These failures suggest that a recent configuration change may have introduced an invalid port setting. The observed baseline, identified by 'BASE-LIVE-5fd21b2995cb', represents a previously healthy state of the deployment. Since the evidence supports the conclusion that a harmful configuration rollout is the root cause, rolling back to the known healthy baseline is the appropriate recovery action.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    }
+  }
+}

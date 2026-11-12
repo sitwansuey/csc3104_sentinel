@@ -1,0 +1,48 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": {
+        "budget_seconds": 600,
+        "model_calls": 2,
+        "model_calls_completed": 2,
+        "model_seconds": 17.796,
+        "planning_attempt": 1,
+        "seconds": 18.012
+      }
+    }
+  ],
+  "attempts": 1,
+  "delivered": 1,
+  "error_code": "DIAGNOSIS_OFF_TARGET",
+  "incident_id": "INC-DD9A2AFC5E95",
+  "next_attempt": 0.0,
+  "proposal": {
+    "action": "ESCALATE",
+    "action_id": "ACT-2b41ccd79ea333c2ff84afca",
+    "based_on_resource_version": "72137",
+    "evidence_refs": [
+      "E-4E404345EE29",
+      "E-882AD4FBB444",
+      "E-F5307ED6AD38",
+      "E-E4D9E2B9B24F",
+      "E-27C240970116",
+      "E-95475E96E744",
+      "E-E6526D0CD3FC",
+      "E-3B9B83B1ECBA",
+      "E-B217A21DD3B2"
+    ],
+    "incident_id": "INC-DD9A2AFC5E95",
+    "kind": "proposal",
+    "parameters": {},
+    "rationale": "Agent diagnosis does not identify the allowed recovery target. Operator review is required. No repair is authorized.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    }
+  }
+}

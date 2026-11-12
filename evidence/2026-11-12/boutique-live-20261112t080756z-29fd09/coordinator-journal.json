@@ -1,0 +1,91 @@
+{
+  "incidents": [
+    {
+      "sequence": 1,
+      "incident_id": "INC-A600F431B0E4",
+      "target": {
+        "cluster_id": "sentinel-boutique-connected",
+        "kind": "Deployment",
+        "name": "shippingservice",
+        "namespace": "sentinel-boutique-connected",
+        "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+      },
+      "state": "NEEDS_REVIEW",
+      "active_action_id": "ACT-1dc2d260460880d44b9f3b48"
+    }
+  ],
+  "actions": [
+    {
+      "sequence": 1,
+      "action_id": "ACT-1dc2d260460880d44b9f3b48",
+      "incident_id": "INC-A600F431B0E4",
+      "proposal": {
+        "action": "ESCALATE",
+        "action_id": "ACT-1dc2d260460880d44b9f3b48",
+        "based_on_resource_version": "96657",
+        "evidence_refs": [
+          "E-F3356ACD50FE",
+          "E-F23B99C04D99",
+          "E-8A4FEF1CA199",
+          "E-EC730E9BD976",
+          "E-5EB67B5DF1DF",
+          "E-0E6B393CC1C0",
+          "E-4BEA9B369F77"
+        ],
+        "incident_id": "INC-A600F431B0E4",
+        "kind": "proposal",
+        "parameters": {},
+        "rationale": "The live Pod template already matches the healthy baseline, so a rollback would change nothing. Decided by a code rule, not the model. Operator review is required. No repair is authorized.",
+        "schema_version": "1.0",
+        "target": {
+          "cluster_id": "sentinel-boutique-connected",
+          "kind": "Deployment",
+          "name": "shippingservice",
+          "namespace": "sentinel-boutique-connected",
+          "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+        }
+      },
+      "state": "NEEDS_REVIEW",
+      "guard_result": null,
+      "execution_result": null
+    }
+  ],
+  "approvals": [],
+  "outbox": [
+    {
+      "id": 2,
+      "topic": "incident.review",
+      "action_id": "ACT-1dc2d260460880d44b9f3b48",
+      "delivered": 0
+    },
+    {
+      "id": 1,
+      "topic": "planner.request",
+      "action_id": null,
+      "delivered": 1
+    }
+  ],
+  "reports": [],
+  "transitions": [
+    {
+      "seq": 2,
+      "incident_id": "INC-A600F431B0E4",
+      "action_id": "ACT-1dc2d260460880d44b9f3b48",
+      "from_state": "OPEN",
+      "to_state": "NEEDS_REVIEW",
+      "cause": "[\"proposal\",\"ACT-1dc2d260460880d44b9f3b48\",\"\"]",
+      "outbox_high_water": 1,
+      "recorded_at": "2026-11-12T08:10:22.572565Z"
+    },
+    {
+      "seq": 1,
+      "incident_id": "INC-A600F431B0E4",
+      "action_id": null,
+      "from_state": null,
+      "to_state": "OPEN",
+      "cause": "[\"incident\",\"INC-A600F431B0E4\",\"\"]",
+      "outbox_high_water": null,
+      "recorded_at": "2026-11-12T08:09:15.782358Z"
+    }
+  ]
+}

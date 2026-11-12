@@ -1,0 +1,64 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": {
+        "budget_seconds": 600,
+        "decision": {
+          "codes": [],
+          "decided_by": "model",
+          "eligible": true,
+          "enforced": true,
+          "model_action": "ROLLBACK",
+          "overridden": false,
+          "policy": "gated"
+        },
+        "model_calls": 5,
+        "model_calls_completed": 5,
+        "model_seconds": 52.966,
+        "planning_attempt": 1,
+        "seconds": 53.434
+      }
+    }
+  ],
+  "attempts": 1,
+  "delivered": 1,
+  "error_code": null,
+  "incident_id": "INC-E472FC156C28",
+  "next_attempt": 0.0,
+  "proposal": {
+    "action": "ROLLBACK",
+    "action_id": "ACT-4530477450c04d07d43a4258",
+    "based_on_resource_version": "93675",
+    "evidence_refs": [
+      "E-DF70EAF6AC82",
+      "E-0683B1EAB551",
+      "E-E099E69D0B1E",
+      "E-48306F4E323C",
+      "E-204B22229AF8",
+      "E-4568BFFDD8B8",
+      "E-6F64B059EDC1",
+      "E-6AA3723D66EF",
+      "E-41FBCF907811",
+      "E-716327D001FC",
+      "E-B47FE2203FCF",
+      "E-0837FE042635",
+      "E-5C42A8869258"
+    ],
+    "incident_id": "INC-E472FC156C28",
+    "kind": "proposal",
+    "parameters": {
+      "baseline_id": "BASE-LIVE-17a793774c2b",
+      "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+    },
+    "rationale": "The incident evidence indicates a container startup failure in the 'shippingservice' deployment, as evidenced by the 'CrashLoopBackOff' status and repeated container restarts. The readiness probe is failing due to a timeout, suggesting that the container is not starting correctly or is unable to bind to the expected port. The change evidence reveals that the 'PORT' environment variable was modified from '50051' to 'invalid-port', which is likely the root cause of the failure. Since this change is directly linked to the observed failure and the rollback_would_change_template is true, restoring the previously healthy baseline configuration is appropriate to resolve the issue.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    }
+  }
+}

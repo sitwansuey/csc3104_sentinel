@@ -1,0 +1,18 @@
+{
+  "failures": [
+    {
+      "root cause component": "shippingservice",
+      "root cause reason": "faulty configuration rollout",
+      "evidence_ids": [
+        "branch-003",
+        "branch-002",
+        "branch-003",
+        "branch-002",
+        "branch-003",
+        "branch-002"
+      ]
+    }
+  ],
+  "explanation": "The incident is caused by a container image not being available with a pull policy of 'Never', leading to the pod being in a 'Pending' state and the deployment having no available replicas. This is corroborated by multiple evidence signals pointing to the same issue. The evidence IDs E-5EB67B5DF1DF, E-0E6B393CC1C0, and E-4BEA9B369F77 indicate that the container image is not present with the pull policy of 'Never', which is a configuration issue. The evidence IDs E-F3356ACD50FE, E-F23B99C04D99, and E-EC730E9BD976 confirm that the deployment has no available replicas and the pod is in a 'Pending' state. The root cause is identified as a 'faulty configuration rollout' due to the incorrect pull policy configuration for the container image. The timestamps used are from the incident signals provided in the system context, which are in UTC+8 format as required. The analysis is based on the evidence provided and does not include any assumptions or speculation beyond the given data.",
+  "limitations": "The analysis is based on the evidence provided and does not include any assumptions or speculation beyond the given data. The timestamps used are from the incident signals provided in the system context, which are in UTC+8 format as required."
+}

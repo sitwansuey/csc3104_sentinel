@@ -1,0 +1,5 @@
+{
+  "failures": [],
+  "explanation": "Abstained: A result cited for failure 1 does not name the diagnosed component.",
+  "limitations": "A diagnosis must use the code-owned vocabulary and cite collected evidence that names its component."
+}

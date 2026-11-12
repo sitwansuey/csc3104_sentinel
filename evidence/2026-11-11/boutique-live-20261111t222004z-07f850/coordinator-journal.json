@@ -1,0 +1,97 @@
+{
+  "incidents": [
+    {
+      "sequence": 1,
+      "incident_id": "INC-65A5DEA139C3",
+      "target": {
+        "cluster_id": "sentinel-boutique-connected",
+        "kind": "Deployment",
+        "name": "shippingservice",
+        "namespace": "sentinel-boutique-connected",
+        "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+      },
+      "state": "NEEDS_REVIEW",
+      "active_action_id": "ACT-08ed5fefe6e250f4427d44b6"
+    }
+  ],
+  "actions": [
+    {
+      "sequence": 1,
+      "action_id": "ACT-08ed5fefe6e250f4427d44b6",
+      "incident_id": "INC-65A5DEA139C3",
+      "proposal": {
+        "action": "ESCALATE",
+        "action_id": "ACT-08ed5fefe6e250f4427d44b6",
+        "based_on_resource_version": "72839",
+        "evidence_refs": [
+          "E-A212194260F6",
+          "E-8256F28029B5",
+          "E-7DB5B4CF39AC",
+          "E-4722AB0618DB",
+          "E-5C0801AAD6B3",
+          "E-DA23BA937DBE",
+          "E-22980E8C9A82",
+          "E-BB3C37164FFA",
+          "E-A58FD5E5DDF8",
+          "E-A8016ED1502A",
+          "E-1F54A91A550B",
+          "E-03C4B4D51B52",
+          "E-8EDEB70F4CC5"
+        ],
+        "incident_id": "INC-65A5DEA139C3",
+        "kind": "proposal",
+        "parameters": {},
+        "rationale": "Planner exhausted its bounded attempts; operator review is required. No repair is authorized.",
+        "schema_version": "1.0",
+        "target": {
+          "cluster_id": "sentinel-boutique-connected",
+          "kind": "Deployment",
+          "name": "shippingservice",
+          "namespace": "sentinel-boutique-connected",
+          "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+        }
+      },
+      "state": "NEEDS_REVIEW",
+      "guard_result": null,
+      "execution_result": null
+    }
+  ],
+  "approvals": [],
+  "outbox": [
+    {
+      "id": 2,
+      "topic": "incident.review",
+      "action_id": "ACT-08ed5fefe6e250f4427d44b6",
+      "delivered": 0
+    },
+    {
+      "id": 1,
+      "topic": "planner.request",
+      "action_id": null,
+      "delivered": 1
+    }
+  ],
+  "reports": [],
+  "transitions": [
+    {
+      "seq": 2,
+      "incident_id": "INC-65A5DEA139C3",
+      "action_id": "ACT-08ed5fefe6e250f4427d44b6",
+      "from_state": "OPEN",
+      "to_state": "NEEDS_REVIEW",
+      "cause": "[\"proposal\",\"ACT-08ed5fefe6e250f4427d44b6\",\"\"]",
+      "outbox_high_water": 1,
+      "recorded_at": "2026-11-11T22:21:40.995818Z"
+    },
+    {
+      "seq": 1,
+      "incident_id": "INC-65A5DEA139C3",
+      "action_id": null,
+      "from_state": null,
+      "to_state": "OPEN",
+      "cause": "[\"incident\",\"INC-65A5DEA139C3\",\"\"]",
+      "outbox_high_water": null,
+      "recorded_at": "2026-11-11T22:21:24.894283Z"
+    }
+  ]
+}

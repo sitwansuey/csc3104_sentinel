@@ -1,0 +1,33 @@
+{
+  "schema": "sentinel-evidence-exclusions-v1",
+  "excluded": [
+    {
+      "run": "executor-wedge-admission-deny-p2b-20261112T050456Z",
+      "class": "executor-wedge",
+      "source_revision": "54090922d41d2b0aa480c72f6f0b94d20196cdad",
+      "attempted_at": "2026-11-12T05:04:56Z",
+      "reason": "Infrastructure failure, not a Sentinel result: the Docker Desktop engine was down and the wedge harness stopped with a RuntimeError (its only log line); no run folder was kept. Rerun at the same revision as executor-wedge-admission-deny-p2b-20261112t050853z."
+    },
+    {
+      "run": "boutique-live-20261112T050457Z-1072d5",
+      "class": "agent",
+      "source_revision": "54090922d41d2b0aa480c72f6f0b94d20196cdad",
+      "attempted_at": "2026-11-12T05:04:58Z",
+      "reason": "Infrastructure failure, not a Sentinel result: the Docker Desktop engine was down, so 'kind get nodes' failed before any experiment step (no checks ran and no fault was injected; only the preflight model warm-up ran, recorded in the run folder's model-runtime.json, and there was no RCA or planning model call). Its warm-up was a cold load of qwen3:14b (16.2 s), so the set rerun at this revision started with the model already loaded. The run folder keeps its FAILED summary. Docker was restarted and the set was rerun at the same revision (boutique-live-20261112t050930z-ba0f81, -051156z-009b69 and -051406z-ef3fbb)."
+    },
+    {
+      "run": "boutique-live-20261112T050516Z-f67f76",
+      "class": "agent",
+      "source_revision": "54090922d41d2b0aa480c72f6f0b94d20196cdad",
+      "attempted_at": "2026-11-12T05:05:17Z",
+      "reason": "Infrastructure failure, not a Sentinel result: the Docker Desktop engine was down, so 'kind get nodes' failed before any experiment step (no checks ran and no fault was injected; only the preflight model warm-up ran, recorded in the run folder's model-runtime.json, and there was no RCA or planning model call). The run folder keeps its FAILED summary. Docker was restarted and the set was rerun at the same revision (boutique-live-20261112t050930z-ba0f81, -051156z-009b69 and -051406z-ef3fbb)."
+    },
+    {
+      "run": "boutique-live-20261112T050518Z-faa61d",
+      "class": "agent",
+      "source_revision": "54090922d41d2b0aa480c72f6f0b94d20196cdad",
+      "attempted_at": "2026-11-12T05:05:19Z",
+      "reason": "Infrastructure failure, not a Sentinel result: the Docker Desktop engine was down, so 'kind get nodes' failed before any experiment step (no checks ran and no fault was injected; only the preflight model warm-up ran, recorded in the run folder's model-runtime.json, and there was no RCA or planning model call). The run folder keeps its FAILED summary. Docker was restarted and the set was rerun at the same revision (boutique-live-20261112t050930z-ba0f81, -051156z-009b69 and -051406z-ef3fbb)."
+    }
+  ]
+}
