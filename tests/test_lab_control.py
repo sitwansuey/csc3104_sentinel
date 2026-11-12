@@ -117,6 +117,43 @@ class LabControlTests(LabFixture):
         self.assertFalse(self.control.snapshot()["can_inject"])
 
 
+class CatalogScopeTests(unittest.TestCase):
+    """SCOPES and the step order come from experiments/boutique/catalog.json, not from constants."""
+
+    CONNECTED = dict(cluster_id="sentinel-boutique-connected", context="kind-sentinel-boutique-connected",
+                     namespace="sentinel-boutique-connected")
+
+    def test_scopes_are_every_catalog_target_in_each_of_its_scopes(self):
+        from experiments.boutique.harness import scenarios
+        from runtime import lab_control
+        catalog = scenarios.load()
+        expected = {(catalog["scopes"][scope]["cluster_id"], catalog["scopes"][scope]["context"],
+                     catalog["scopes"][scope]["namespace"], name)
+                    for name, target in catalog["targets"].items() for scope in target["scopes"]}
+        self.assertEqual(set(lab_control.SCOPES), expected)
+        self.assertEqual([step[0] for step in lab_control.SCENARIOS], [step["id"] for step in catalog["lab_sequence"]])
+
+    def test_a_second_catalog_target_is_allowed_only_in_its_own_scope(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cart = control(directory, deployment="cartservice", **self.CONNECTED)
+            try:
+                self.assertEqual(cart.snapshot()["target"]["name"], "cartservice")
+            finally:
+                cart.finish("STOPPED")
+            # cartservice has no isolated lab manifest, so the single-service lab may not name it.
+            for values in (dict(deployment="cartservice"), dict(deployment="paymentservice", **self.CONNECTED)):
+                with self.subTest(values=values), self.assertRaises(ValueError):
+                    control(directory, **values)
+
+    def test_scopes_follow_a_changed_catalog(self):
+        from experiments.boutique.harness import scenarios
+        catalog = scenarios.load()
+        catalog["targets"].pop("cartservice")
+        catalog["scenarios"] = [item for item in catalog["scenarios"] if item["target"] != "cartservice"]
+        names = {scope[3] for scope in scenarios.lab_scopes(scenarios.validate(catalog))}
+        self.assertEqual(names, {"shippingservice"})
+
+
 class LabControlHTTPTests(LabFixture):
     def setUp(self):
         super().setUp()

@@ -15,8 +15,15 @@ def timestamp():
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def service_inventory(deployments, names):
-    """Missing objects/read failures stay unknown, including during setup."""
+def service_inventory(deployments, names, recovery_targets=None):
+    """Missing objects/read failures stay unknown, including during setup.
+
+    recovery_targets marks the run's restricted recovery target; when None, the
+    scenario catalog's default target (experiments/boutique/catalog.json).
+    """
+    if recovery_targets is None:
+        from experiments.boutique.harness.targets import default_target
+        recovery_targets = {default_target()}
     indexed = {item["metadata"]["name"]: item for item in deployments or []}
     result = []
     for name in sorted(names):
@@ -34,7 +41,7 @@ def service_inventory(deployments, names):
                  and values["available"] >= values["desired"]
                  and values["observed_generation"] >= values["generation"]) if known else None
         result.append({"name": name, **values, "ready_state": ready,
-                       "recovery_target": name == "shippingservice"})
+                       "recovery_target": name in recovery_targets})
     return result
 
 

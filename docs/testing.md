@@ -365,6 +365,58 @@ their source revision. Their values and caveats are in
 > Scope: One deliberate negative test (model qwen3:does-not-exist on the local Ollama server); the run stopped after 0.1 s and its summary records fault_injected false. It shows the fail-closed stop for a missing model only, not for a model that fails mid-run. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 4afc879 on integration/phase1, clean tree, 2026-11-11 UTC.
 <!-- END GENERATED:claim-c-agent-preflight-recorded -->
 
+### Second recovery target: cartservice (C1, C2)
+
+The catalog's second target is cartservice, on `kind-sentinel-boutique-connected`
+only ([recovery targets](../experiments/boutique/README.md#recovery-targets)).
+Its primary fault, C1, sets `REDIS_ADDR=redis-cart:6390`, a port nothing
+listens on, so cart reads and writes fail while the process stays up. The
+design's fallback, C2, rolls cart out to an image digest that is not on the
+node, which gives ErrImageNeverPull under `imagePullPolicy: Never`. Both are
+pre-registered with ROLLBACK correct and ESCALATE acceptable, and both labels
+are pending sign-off like R1, R2 and N1. `--target shippingservice` (the
+default) keeps the earlier behaviour.
+
+Offline tests cover the catalog schema and C1
+(`tests/test_recovery_scenarios.py`), the cart spec overrides, readiness that
+leaves out only the selected target, the Role that lists exactly the enabled
+targets, the cart probe and the catalog's storefront impact
+(`tests/test_boutique_connected.py::CartTargetTests`), the scopes the lab
+controls take from the catalog (`tests/test_lab_control.py::CatalogScopeTests`),
+and the Executor's per-target baselines and the Guard's per-target ceilings
+(`tests/test_live_executor.py`). No cartservice run has been made on a
+cluster. The live checks, in order:
+
+1. **Spike (about 30 minutes) to choose the fault.** On a healthy connected
+   lab, set the bad address by hand and watch the cart Pod for ten minutes:
+   `kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected set env deployment/cartservice --containers=server REDIS_ADDR=redis-cart:6390`,
+   then `get pods -w` and `get events`. Record whether the new Pod is NotReady,
+   restarts (CrashLoopBackOff) or stays Ready, and what the storefront home,
+   cart and checkout return. Undo it with `kubectl rollout undo`. If the Pod
+   stays Ready, or the storefront impact differs from the catalog's
+   `fault_storefront_impact`, use C2: set cart's `primary_scenario` to C2 in
+   the catalog (a pre-registration commit) or pass `-Scenario C2`. In agent
+   mode the eligibility rule needs a rollout, startup, crash, back-off or
+   image pull signal; a Pod that is only NotReady escalates as
+   `SYMPTOM_NOT_ROLLOUT`, so record the signals the spike shows.
+2. **Cart end to end.** Run the operator sequence:
+
+   ```powershell
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Connected -Target cartservice -Dashboard -ExitAfterTest
+   ```
+
+   Expect a baseline with the cart probe passing three times plus storefront
+   checkout; after injection an Observer incident, the predicted storefront
+   impact and a failing cart probe; the three negative cases with 0 writes;
+   the resourceVersion race refused; an approved ROLLBACK with
+   `write_attempts == 1`, duplicate and changed-ID handling; crash-after-write
+   reconciliation with 0 writes; Verifier RECOVERED with sustained cart and
+   checkout; and the final unnecessary rollback REJECTED with 0 writes. The
+   permission check must show get and patch allowed on both targets and
+   `patch deployment/paymentservice` denied.
+3. **Shipping regression.** Rerun the default connected and single-service
+   labs unchanged (no `-Target`) and compare the checks with earlier runs.
+
 ## Specialised role checks
 
 These opt-in scripts create/use dedicated labs and retain evidence. Read `--help`

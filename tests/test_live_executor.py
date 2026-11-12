@@ -397,6 +397,121 @@ class LiveExecutorTests(unittest.TestCase):
         self.assertEqual(self.paths["proposal"].read_bytes(), original)
         self.factory.assert_not_called()
 
+    # Per-target baselines (P3.09): DIR/<target name>.json, refused for another target.
+
+    def baselines(self, **files):
+        folder = self.directory / "baselines"
+        folder.mkdir(exist_ok=True)
+        for name, baseline in files.items():
+            (folder / (name + ".json")).write_text(json.dumps(baseline), encoding="utf-8")
+        return folder
+
+    def test_baselines_directory_supplies_the_proposal_targets_baseline(self):
+        folder = self.baselines(**{"demo-api": self.baseline})
+        adapters = self.build(baseline=None, baselines=folder)
+        self.assertEqual(execute(self.proposal, adapters)["status"], "APPLIED")
+        self.assertEqual(len(self.cluster.writes), 1)
+
+    def test_baselines_directory_refuses_a_baseline_for_another_target(self):
+        other = deepcopy(self.baseline)
+        other["target"] = dict(other["target"], name="cartservice", uid="cart-uid")
+        folder = self.baselines(**{"demo-api": other})
+        authorizer = self.authorizer(baseline=None, baselines=folder)
+        with self.assertRaisesRegex(Exception, "another target"):
+            authorizer.validate(self.proposal, self.snapshot, now=NOW)
+        adapters = self.build(baseline=None, baselines=folder)
+        result = execute(self.proposal, adapters)
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(self.cluster.write_attempts, [])
+
+    def test_baselines_directory_without_the_targets_file_writes_nothing(self):
+        folder = self.baselines(cartservice=self.baseline)
+        result = execute(self.proposal, self.build(baseline=None, baselines=folder))
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(self.cluster.write_attempts, [])
+
+    def test_baselines_directory_cannot_name_a_path_outside_it(self):
+        folder = self.baselines(**{"demo-api": self.baseline})
+        authorizer = self.authorizer(baseline=None, baselines=folder)
+        for name in ("../demo-api", "Demo-API", ""):
+            proposal = dict(self.proposal, target=dict(self.proposal["target"], name=name))
+            with self.subTest(name=name), self.assertRaisesRegex(Exception, "no valid baseline name"):
+                authorizer.validate(proposal, self.snapshot, now=NOW)
+
+    def test_one_baseline_or_a_baselines_directory_but_not_both(self):
+        folder = self.baselines(**{"demo-api": self.baseline})
+        with self.assertRaisesRegex(Exception, "either one baseline or a baselines directory"):
+            self.build(baselines=folder)
+        with self.assertRaises(ValueError):
+            self.build(baseline=None)
+        for ledger, locks in ((folder / "executor.db", self.directory / "locks"),
+                              (self.directory / "executor.db", folder / "locks"), (self.directory / "executor.db", folder)):
+            with self.subTest(ledger=ledger.name, locks=locks.name), self.assertRaises(ValueError):
+                self.build(baseline=None, baselines=folder, ledger=ledger, locks=locks)
+        self.factory.assert_not_called()
+
+    def test_cli_accepts_a_baselines_directory(self):
+        folder = self.baselines(**{"demo-api": self.baseline})
+        arguments = self.arguments()
+        index = arguments.index("--baseline")
+        arguments[index:index + 2] = ["--baselines", str(folder)]
+        status, stdout, stderr = self.call_cli(arguments)
+        self.assertEqual(status, 0, stderr)
+        self.assertEqual(json.loads(stdout)["status"], "APPLIED")
+
+    def test_a_two_target_allowlist_still_refuses_a_third(self):
+        cart = dict(self.proposal["target"], name="cartservice", uid="cart-uid")
+        shipping = dict(self.proposal["target"], name="shippingservice", uid="shipping-uid")
+        self.paths["allowed_targets"].write_text(json.dumps([cart, shipping]), encoding="utf-8")
+        self.factory.side_effect = RealDeploymentAPI
+        calls = []
+
+        def forbidden_runner(*args, **kwargs):
+            calls.append(args)
+            raise AssertionError("A target outside the allowlist must never reach kubectl")
+
+        adapters = self.build(runner=forbidden_runner)
+        self.assertEqual(execute(self.proposal, adapters)["status"], "FAILED")
+        self.assertEqual(calls, [])
+
+    # Per-target Guard ceilings come from the catalog (experiments/boutique/catalog.json).
+
+    def ceiling_decision(self, target, cpu):
+        from experiments.boutique.harness.targets import profile
+        from experiments.recovery.live import policy_ceilings
+        self.policy.update(policy_ceilings(profile(target).ceilings))
+        resources = self.baseline["pod_template"]["spec"]["containers"][0]["resources"]
+        resources["requests"]["cpu"] = cpu
+        resources["limits"]["cpu"] = "500m"  # Within every target's limit ceiling; only the request differs.
+        self.bind_template()
+        self.save_inputs()
+        return self.authorizer().validate(self.proposal, self.snapshot, now=NOW).decision
+
+    def test_cart_ceilings_allow_the_cart_baseline_request(self):
+        # cartservice requests 200m CPU upstream; the shipping ceiling (100m) refuses it.
+        self.assertEqual(self.ceiling_decision("cartservice", "200m")["verdict"], "ALLOW")
+        shipping = self.ceiling_decision("shippingservice", "200m")
+        self.assertEqual(shipping["verdict"], "REJECT")
+        self.assertIn("RESOURCE_REQUEST_EXCEEDS_POLICY", shipping["reason_codes"])
+
+    def test_cart_ceilings_still_reject_an_over_ceiling_template(self):
+        decision = self.ceiling_decision("cartservice", "400m")
+        self.assertEqual(decision["verdict"], "REJECT")
+        self.assertEqual(decision["reason_codes"],
+                         ["RESOURCE_REQUEST_EXCEEDS_POLICY", "WORKLOAD_POD_REQUEST_EXCEEDS_POLICY"])
+
+    def test_shipping_ceilings_are_the_values_the_live_policy_always_used(self):
+        from experiments.boutique.harness.targets import profile
+        from experiments.recovery.live import LAB_CEILINGS, policy_ceilings
+        expected = {"resource_constraints": {"require_requests_and_limits": True,
+                        "max_container_requests": {"cpu": "100m", "memory": "64Mi"},
+                        "max_container_limits": {"cpu": "500m", "memory": "128Mi"}},
+                    "workload_constraints": {"max_pod_requests": {"cpu": "250m", "memory": "128Mi"},
+                        "max_rollout_requests": {"cpu": "1", "memory": "512Mi"},
+                        "max_replicas": 2, "max_surge_replicas": 1}}
+        self.assertEqual(policy_ceilings(profile("shippingservice").ceilings), expected)
+        self.assertEqual(policy_ceilings(LAB_CEILINGS), expected)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,8 @@
-"""Opt-in shippingservice experiment; real recovery and Role 6 verification.
+"""Opt-in Boutique recovery experiment; real recovery and Role 6 verification.
 
 Uses a dedicated kind cluster. --agent enables real RCA and model planning.
+--target picks a catalog recovery target (experiments/boutique/catalog.json):
+shippingservice (default) or cartservice, which needs --connected.
 """
 
 import argparse
@@ -17,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from experiments.recovery.live import Experiment, crash_worker, now, require, save, utc
-from experiments.boutique.harness import scenarios
+from experiments.boutique.harness import scenarios, targets
 from runtime.approval_session import MODES, operator_identity, require_attended
 from runtime.observer_pipeline import LocalCoordinatorSink, ObserverStore
 from runtime.verifier_pipeline import process_verifier_requests
@@ -34,8 +36,13 @@ LOG = log.get_logger("experiment")
 READ_ERRORS = (RuntimeError, ValueError, OSError, subprocess.SubprocessError)
 
 
-SHIPPING_IMAGE = "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice:v0.10.7"
+# The isolated single-service lab deploys only shipping's reviewed manifest (shipping_manifest below).
+SHIPPING_IMAGE = targets.profile("shippingservice").image
 CLIENT_IMAGE = "fullstorydev/grpcurl:v1.9.3"
+# ConfigMap holding a target's vendored proto for probes against servers without reflection.
+PROBE_PROTO_CONFIGMAP = "sentinel-probe-proto"
+# A real catalog product id; the cart service stores any id without checking the catalog.
+PROBE_PRODUCT = "OLJCESPC7Z"
 
 
 def prepared_environment(path):
@@ -115,17 +122,31 @@ def validate_quote(response):
     return cost
 
 
+def validate_cart(response):
+    """The cart round trip stored and returned exactly the probe's one item for its own user."""
+    cart = response.get("cart", {})
+    require(isinstance(response.get("user_id"), str) and response["user_id"].startswith("sentinel-probe-")
+            and cart.get("userId") == response["user_id"], "Cart request returned another user's cart")
+    require(cart.get("items") == [{"productId": PROBE_PRODUCT, "quantity": 1}],
+            "Cart round trip did not return exactly the added item")
+    require(response.get("emptied") is True, "Cart probe did not empty its cart")
+    return cart
+
+
+# Code-owned application checks; the catalog names one per target. Value: (sample key, validator).
+PROBES = {"shipping_quote": ("quote", validate_quote), "cart_round_trip": ("cart", validate_cart)}
+
+
 class BoutiqueExperiment(Experiment):
     cluster_id = "sentinel-boutique-lab"
     context = "kind-sentinel-boutique-lab"
     namespace = "sentinel-boutique"
-    name = "shippingservice"
+    # The catalog's default recovery target; select_target() picks another before prepare().
+    name = targets.default_target()
     restricted_context = "sentinel-executor-boutique"
     entrypoint = ROOT / "scripts/test_boutique_live.py"
     health_source = "sentinel-boutique-lab-grpc"
     health_description = "gRPC quote and replica health"
-    allowed_registries = ["us-central1-docker.pkg.dev"]
-    service_account = "shippingservice"
     dashboard = None
     lab_control = None
     approval_relay = None  # Dashboard approval relay; set only for --approval ui.
@@ -133,16 +154,78 @@ class BoutiqueExperiment(Experiment):
     prepared = None
     publish_dependency_results = True
     health_outcome_description = " after executor rollback; Role 6 published RECOVERED"
-    # The catalog scenario this run injects (experiments/boutique/catalog.json). R1 is the original PORT fault.
-    scenario_id = "R1"
+    # The catalog scenario this run injects (experiments/boutique/catalog.json). None means the
+    # target's primary scenario: R1, the original PORT fault, for shippingservice.
+    scenario_id = None
     # The image this run removed from the kind node (scenario N1), until it is pulled back.
     evicted_image = None
 
     @property
+    def profile(self):
+        """The catalog TargetProfile of this run's target."""
+        if getattr(self, "_profile", None) is None or self._profile.name != self.name:
+            self._profile = targets.profile(self.name)
+        return self._profile
+
+    @property
+    def service_account(self):
+        return self.profile.service_account
+
+    @property
+    def allowed_registries(self):
+        return [self.profile.registry]
+
+    @property
+    def ceilings(self):
+        return self.profile.ceilings
+
+    def select_target(self, name):
+        """Choose the catalog recovery target before anything is prepared."""
+        require(self.target is None and self.baseline is None, "The recovery target cannot change after preparation")
+        self.name = targets.profile(name).name
+        self.scenario_id = None
+        self.summary["recovery_target"] = self.name
+
+    @property
     def scenario(self):
-        if getattr(self, "_scenario", None) is None or self._scenario["id"] != self.scenario_id:
-            self._scenario = scenarios.scenario(self.scenario_id)
+        scenario_id = self.scenario_id or self.profile.primary_scenario
+        if getattr(self, "_scenario", None) is None or self._scenario["id"] != scenario_id:
+            self._scenario = scenarios.scenario(scenario_id)
         return self._scenario
+
+    def scope(self):
+        """This run's catalog scope name; CatalogError when the cluster is not a catalog lab."""
+        return targets.scope_name(self.cluster_id, self.context, self.namespace)
+
+    def executor_names(self):
+        """Every target enabled in this scope; the Role and allowlist name exactly these."""
+        names = targets.enabled_targets(self.scope())
+        require(self.name in names, "The recovery target is not offered in this lab scope")
+        return list(names)
+
+    def denied_permissions(self):
+        # A real Boutique Deployment that is never a recovery target.
+        return [*super().denied_permissions(), ("patch", "deployment/paymentservice")]
+
+    def execution_scope(self):
+        """The independent Executor allowlist: the measured identity of every target enabled in this scope."""
+        identities = []
+        for name in self.executor_names():
+            if name == self.name:
+                identities.append(self.target)
+                continue
+            metadata = json.loads(self.kubectl("get", "deployment", name, "-o", "json").stdout)["metadata"]
+            identities.append({"cluster_id": self.cluster_id, "namespace": self.namespace,
+                               "kind": "Deployment", "name": name, "uid": metadata["uid"]})
+        return identities
+
+    def baseline_inputs(self):
+        # Keyed by target name: the Executor refuses a baseline measured for another target.
+        return {"baseline": None, "baselines": self.directory / "baselines"}
+
+    def write_executor_rbac(self):
+        self.rbac_path = self.directory / "executor-rbac.yaml"
+        self.rbac_path.write_text(targets.executor_rbac(self.namespace, self.executor_names()), encoding="utf-8")
 
     def after_recovery_scenarios(self):
         """Finish the default walkthrough by refusing a redundant third repair."""
@@ -201,7 +284,7 @@ class BoutiqueExperiment(Experiment):
         state = {"cluster_id": self.cluster_id, "captured_at": utc(), "deployment": self.deployment()}
         result = inspect_dependencies(proposal, graph, state, now=now())
         save(self.directory / "dependency-graph.json", graph)
-        self.event(6, "status", "Role 6 assessed the isolated shipping dependency graph: " + result["status"],
+        self.event(6, "status", f"Role 6 assessed the isolated {self.profile.label} dependency graph: " + result["status"],
                    target=proposal["target"], incident_id=proposal["incident_id"], action_id=proposal["action_id"])
         return result
 
@@ -239,11 +322,12 @@ class BoutiqueExperiment(Experiment):
                 continue
             sample = {"service": self.name, "protocol": "grpc", "dependencies": {},
                       "grpc_status": None, "application_check_passed": None}
+            key, validator = PROBES[self.profile.probe["check"]]
             try:
-                response = self.quote_response()
-                sample.update(grpc_status=0, quote=response)
+                response = self.probe_response()
+                sample.update(grpc_status=0, **{key: response})
                 try:
-                    validate_quote(response)
+                    validator(response)
                 except (AttributeError, TypeError, ValueError, RuntimeError):
                     sample["application_check_passed"] = False
                 else:
@@ -270,7 +354,7 @@ class BoutiqueExperiment(Experiment):
                                       and before["spec"]["template"] == after["spec"]["template"]
                                       and status.get("observedGeneration", 0) >= metadata["generation"]),
             )
-            self.event(6, "status", "Role 6 collected shipping verification sample " + str(index + 1),
+            self.event(6, "status", f"Role 6 collected {self.profile.label} verification sample " + str(index + 1),
                        target=execution["target"], incident_id=execution["incident_id"], action_id=execution["action_id"])
             try:
                 self.observe("role6-" + execution["action_id"] + "-" + str(index))
@@ -313,7 +397,8 @@ class BoutiqueExperiment(Experiment):
         if disclosed:
             self.event(6, "status", "Role 6 disclosed convergence: " + disclosed, target=proposal["target"],
                        incident_id=proposal["incident_id"], action_id=proposal["action_id"])
-        require(outcome["status"] == "RECOVERED", "Role 6 could not verify shipping recovery: " + outcome["status"]
+        require(outcome["status"] == "RECOVERED", f"Role 6 could not verify {self.profile.label} recovery: "
+                + outcome["status"]
                 + (" (failed: " + failed + ")" if failed else ""))
         require(self.store.incident(proposal["incident_id"])["state"] == "RECOVERED",
                 "Coordinator did not close the verified incident")
@@ -350,7 +435,8 @@ class BoutiqueExperiment(Experiment):
         else:
             nodes = command(["kind", "get", "nodes", "--name", self.cluster_id]).split()
             require(nodes == [self.cluster_id + "-control-plane"], "Requires the dedicated single-node Boutique lab")
-        self.summary.update(workload="Online Boutique shippingservice v0.10.7",
+        require(self.profile.isolated_lab, self.name + " has no isolated lab manifest; use --connected")
+        self.summary.update(workload=f"Online Boutique {self.name} {self.profile.release}",
                             planning="operator-authored proposal; no model call",
                             dependencies="Role 6 evaluates reviewed isolated-service graph against live identity; no automatic discovery",
                             verification="Role 6 consumes real gRPC, readiness and template evidence and publishes outcomes",
@@ -365,10 +451,8 @@ class BoutiqueExperiment(Experiment):
         self.observer_collector = KubernetesEvidenceCollector(
             KubectlReader(self.context), namespace=self.namespace, name=self.name,
             cluster_id=self.cluster_id, collect_logs=True)
-        # Reuse the same narrow Role semantics, adapting only this lab's scope.
-        text = (ROOT / "deploy/sentinel/executor-rbac.yaml").read_text(encoding="utf-8")
-        self.rbac_path = self.directory / "executor-rbac.yaml"
-        self.rbac_path.write_text(text.replace("sentinel-demo", self.namespace).replace("demo-api", self.name), encoding="utf-8")
+        # Reuse the same narrow Role semantics, adapting only this lab's scope and enabled targets.
+        self.write_executor_rbac()
         return image
 
     def observe(self, label):
@@ -394,22 +478,67 @@ class BoutiqueExperiment(Experiment):
                        incident_id=incident["incident_id"])
         return incident
 
+    def probe_pod(self, name, method, request):
+        """The unprivileged grpcurl Pod for one call; a vendored proto replaces server reflection."""
+        proto = self.profile.probe["proto_file"]
+        schema = ["-import-path", "/proto", "-proto", Path(proto).name] if proto else []
+        container = {"name": "probe", "image": self.client_image, "imagePullPolicy": "Never",
+                     "args": ["-plaintext", "-max-time", "5", *schema, "-d", json.dumps(request),
+                              self.profile.address, method],
+                     "resources": {"requests": {"cpu": "10m", "memory": "16Mi"},
+                                   "limits": {"cpu": "100m", "memory": "64Mi"}},
+                     "securityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
+                                         "capabilities": {"drop": ["ALL"]}}}
+        spec = {"restartPolicy": "Never", "activeDeadlineSeconds": 45,
+                "automountServiceAccountToken": False,
+                "securityContext": {"runAsNonRoot": True, "runAsUser": 1000,
+                                    "seccompProfile": {"type": "RuntimeDefault"}},
+                "containers": [container]}
+        if proto:
+            container["volumeMounts"] = [{"name": "proto", "mountPath": "/proto", "readOnly": True}]
+            spec["volumes"] = [{"name": "proto", "configMap": {"name": PROBE_PROTO_CONFIGMAP}}]
+        return {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": name, "namespace": self.namespace},
+                "spec": spec}
+
+    def install_probe_schema(self):
+        """Publish the target's vendored proto for its probe Pods (administrator context); no-op with reflection."""
+        proto = self.profile.probe["proto_file"]
+        if not proto:
+            return
+        configmap = {"apiVersion": "v1", "kind": "ConfigMap",
+                     "metadata": {"name": PROBE_PROTO_CONFIGMAP, "namespace": self.namespace},
+                     "data": {Path(proto).name: (ROOT / proto).read_text(encoding="utf-8")}}
+        path = self.directory / "probe-proto.json"
+        save(path, configmap)
+        self.kubectl("apply", "-f", str(path))
+
+    def probe_response(self):
+        """The target's catalog application check, called through cluster DNS by an unprivileged client."""
+        check = self.profile.probe["check"]
+        return self.quote_response() if check == "shipping_quote" else self.cart_response()
+
+    def probe(self):
+        response = self.probe_response()
+        PROBES[self.profile.probe["check"]][1](response)
+        return response
+
+    def cart_response(self):
+        """AddItem, GetCart and EmptyCart for a fresh probe user, so the call reaches Redis."""
+        user = "sentinel-probe-" + uuid4().hex[:12]
+        service = "hipstershop.CartService/"
+        self.grpc_call(service + "AddItem", {"userId": user, "item": {"productId": PROBE_PRODUCT, "quantity": 1}})
+        cart = self.grpc_call(service + "GetCart", {"userId": user})
+        self.grpc_call(service + "EmptyCart", {"userId": user})
+        return {"user_id": user, "cart": cart, "emptied": True}
+
     def quote_response(self):
         """Independent unprivileged client calls the service through cluster DNS."""
-        name = "shipping-probe-" + uuid4().hex[:10]
-        request = {"items": [{"productId": "demo-item", "quantity": 1}]}
-        pod = {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": name, "namespace": self.namespace},
-               "spec": {"restartPolicy": "Never", "activeDeadlineSeconds": 45,
-                        "automountServiceAccountToken": False,
-                        "securityContext": {"runAsNonRoot": True, "runAsUser": 1000,
-                                            "seccompProfile": {"type": "RuntimeDefault"}},
-                        "containers": [{"name": "probe", "image": self.client_image, "imagePullPolicy": "Never",
-                            "args": ["-plaintext", "-max-time", "5", "-d", json.dumps(request),
-                                     "shippingservice:50051", "hipstershop.ShippingService/GetQuote"],
-                            "resources": {"requests": {"cpu": "10m", "memory": "16Mi"},
-                                          "limits": {"cpu": "100m", "memory": "64Mi"}},
-                            "securityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
-                                                "capabilities": {"drop": ["ALL"]}}}]}}
+        return self.grpc_call("hipstershop.ShippingService/GetQuote",
+                              {"items": [{"productId": "demo-item", "quantity": 1}]})
+
+    def grpc_call(self, method, request):
+        name = self.profile.label + "-probe-" + uuid4().hex[:10]
+        pod = self.probe_pod(name, method, request)
         path = self.directory / (name + ".json")
         save(path, pod)
         try:
@@ -420,11 +549,12 @@ class BoutiqueExperiment(Experiment):
                 phase = status.get("status", {}).get("phase")
                 if phase in {"Succeeded", "Failed"}:
                     logs = self.kubectl("logs", name, allow_failure=True)
-                    require(phase == "Succeeded" and logs.returncode == 0, "Shipping RPC failed: " + logs.stdout[-500:])
+                    require(phase == "Succeeded" and logs.returncode == 0,
+                            self.profile.label.capitalize() + " RPC failed: " + logs.stdout[-500:])
                     response = json.loads(logs.stdout)
                     return response
                 time.sleep(1)
-            raise RuntimeError("Shipping RPC probe timed out")
+            raise RuntimeError(self.profile.label.capitalize() + " RPC probe timed out")
         finally:
             self.kubectl("delete", "pod", name, "--ignore-not-found", "--wait=false", allow_failure=True)
 
@@ -440,12 +570,12 @@ class BoutiqueExperiment(Experiment):
             require(deployment["spec"]["template"] == expected_template, "Template changed during health measurement")
             status = deployment.get("status", {})
             require(status.get("readyReplicas") == 1 and status.get("availableReplicas") == 1,
-                    "Shipping service is not ready/available")
-            response = self.quote()
+                    self.profile.label.capitalize() + " service is not ready/available")
+            response = self.probe()
             after = self.deployment()
             require(after["metadata"]["uid"] == deployment["metadata"]["uid"]
                     and after["spec"]["template"] == expected_template, "Target changed during RPC")
-            samples.append({"at": utc(), "ready_replicas": 1, "quote": response,
+            samples.append({"at": utc(), "ready_replicas": 1, PROBES[self.profile.probe["check"]][0]: response,
                             "resource_version": after["metadata"]["resourceVersion"]})
             self.observe("healthy-" + str(index))
             if index < 2:
@@ -581,9 +711,13 @@ def main():
                              "recovered for R1 and R2). 'escalated' passes only when planning ends "
                              "in a saved ESCALATE and NEEDS_REVIEW; the administrator then removes the fault")
     catalog_ids = scenarios.scenario_ids()
-    parser.add_argument("--scenario", choices=catalog_ids, default="R1",
-                        help="Catalog scenario to inject (experiments/boutique/catalog.json). R1 (default) is the "
-                             "invalid PORT; R2 and N1 need --agent --connected and are scored against their "
+    parser.add_argument("--target", choices=targets.target_names(), default=targets.default_target(),
+                        help="Catalog recovery target (default %(default)s). cartservice needs --connected")
+    parser.add_argument("--scenario", choices=catalog_ids,
+                        help="Catalog scenario to inject (experiments/boutique/catalog.json). The default is the "
+                             "target's primary scenario: R1, the invalid PORT, for shippingservice and C1 for "
+                             "cartservice. A target's fallback scenario (C2) also runs the operator sequence; "
+                             "any other scenario (R2, N1) needs --agent --connected and is scored against its "
                              "pre-registered expected outcome")
     parser.add_argument("--prepared-environment", type=Path, help="Trusted host-prepared packaged cluster/images; no Docker access in runtime")
     parser.add_argument("--dashboard", action="store_true", help="Serve the real UI and collect live cluster telemetry")
@@ -612,15 +746,25 @@ def main():
         parser.error("--agent-config requires --agent")
     if args.expect == "escalated" and not args.agent:
         parser.error("--expect escalated requires --agent")
+    profile = targets.profile(args.target)
+    args.scenario = args.scenario or profile.primary_scenario
     scenario = scenarios.scenario(args.scenario)
-    if args.scenario != "R1":
-        # The new scenarios are scored agent decisions on the connected lab, outside the fixed UI sequence.
+    if scenario["target"] != args.target:
+        parser.error(f"--scenario {args.scenario} targets {scenario['target']}, not --target {args.target}")
+    mode_scope = "connected" if args.connected else "package" if args.prepared_environment else "lab"
+    if mode_scope not in profile.scopes:
+        parser.error(f"--target {args.target} is offered only in the " + ", ".join(profile.scopes)
+                     + " scope; add --connected")
+    if args.scenario not in profile.operator_scenarios:
+        # The other scenarios are scored agent decisions on the connected lab, outside the fixed UI sequence.
         if not (args.agent and args.connected):
             parser.error("--scenario " + args.scenario + " requires --agent --connected")
-        if args.ui_controls:
-            parser.error("--ui-controls runs the fixed three-step lab sequence; use the default scenario R1")
+    if args.ui_controls and (args.scenario != profile.primary_scenario or args.target != targets.default_target()):
+        # The dashboard's fixed lab buttons name the default target's primary fault (an invalid PORT).
+        parser.error("--ui-controls runs the fixed three-step lab sequence; use the default target and scenario R1")
     expect = args.expect or scenarios.expect(scenario)
-    if args.agent and args.expect and args.expect != scenarios.expect(scenario) and args.scenario != "R1":
+    if (args.agent and args.expect and args.expect != scenarios.expect(scenario)
+            and args.scenario != profile.primary_scenario):
         parser.error(f"--expect {args.expect} contradicts scenario {args.scenario}'s pre-registered outcome "
                      f"({scenario['expected']['terminal_state']})")
     if args.agent and args.guard_rejection:
@@ -666,10 +810,11 @@ def main():
         from experiments.boutique.harness.agent_live import AgentPlanningMixin
         experiment_type = type("AgentBoutiqueExperiment", (AgentPlanningMixin, experiment_type), {})
     experiment = experiment_type(directory, **({"storefront_port": args.storefront_port} if args.connected else {}))
+    experiment.select_target(args.target)
     if args.agent:
         experiment.agent_config = args.agent_config
         experiment.expect = expect
-        # An explicit --expect that differs from the label is a planning-failure check (R1 only):
+        # An explicit --expect that differs from the label is a planning-failure check (primary scenario only):
         # the score is still recorded, but it does not decide whether the run passes.
         experiment.scenario_gates_pass = args.expect in (None, scenarios.expect(scenario))
     experiment.scenario_id = args.scenario
@@ -715,7 +860,8 @@ def main():
         if args.dashboard:
             from experiments.boutique.harness.dashboard import BoutiqueDashboard
             dashboard = BoutiqueDashboard(experiment.directory, context=experiment.context,
-                cluster_id=experiment.cluster_id, namespace=experiment.namespace, port=args.dashboard_port,
+                cluster_id=experiment.cluster_id, namespace=experiment.namespace, target=experiment.name,
+                port=args.dashboard_port,
                 bind=args.dashboard_bind, lab_control=experiment.lab_control,
                 approval_relay=experiment.approval_relay,
                 application_collector=getattr(experiment, "application_inventory", None))

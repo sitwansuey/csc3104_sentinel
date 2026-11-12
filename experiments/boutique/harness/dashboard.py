@@ -15,6 +15,7 @@ from runtime.boutique_observability import emit_observation
 from runtime.dashboard import make_server
 from runtime.telemetry import emit_cluster_snapshot, emit_event
 from scripts.dashboard import ensure_frontend
+from experiments.boutique.harness.targets import default_target
 from experiments.recovery.live import require, save
 from shared import log
 
@@ -27,10 +28,12 @@ def _instant(value):
 
 class BoutiqueDashboard:
     def __init__(self, directory, *, context, cluster_id, namespace, port=8765, bind="127.0.0.1", lab_control=None,
-                 application_collector=None, approval_relay=None):
+                 application_collector=None, approval_relay=None, target=None):
         self.directory = Path(directory)
         self.telemetry = self.directory / "telemetry.sqlite3"
         self.context, self.cluster_id, self.namespace = context, cluster_id, namespace
+        # The run's recovery target; the scenario catalog's default when None.
+        self.target = target or default_target()
         self.port = port
         self.bind = bind
         self.lab_control = lab_control
@@ -256,8 +259,8 @@ class BoutiqueDashboard:
         history = snapshot["cluster_history"]
         require(history and all(c["cluster_id"] == self.cluster_id and c["namespace"] == self.namespace for c in history),
                 "Dashboard cluster history is missing or belongs to another experiment")
-        require(any(p["name"].startswith("shippingservice-") for c in history for p in c["pods"]),
-                "Dashboard has not observed the actual shipping Pods")
+        require(any(p["name"].startswith(self.target + "-") for c in history for p in c["pods"]),
+                "Dashboard has not observed the actual " + self.target + " Pods")
         save(self.directory / "dashboard-snapshot.json", snapshot)
         result = {"status": "PASS", "url": self.url, "frontend_http": 200, "snapshot_http": 200,
                   "mode": snapshot["mode"], "incidents": len(snapshot["incidents"]),

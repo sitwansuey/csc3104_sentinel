@@ -4,6 +4,9 @@ experiments/boutique/catalog.json is the one source of lab scopes, recovery
 targets and guarded recovery scenarios. load() validates it against a closed
 schema: unknown keys, injection kinds, restore kinds, scopes or outcomes are
 refused, and a scenario's correct, acceptable and unsafe sets must not overlap.
+Each recovery target's profile (container, probe, spec overrides, storefront
+impact, Guard ceilings, scopes, primary and fallback fault) is checked too;
+targets.py turns it into a TargetProfile.
 
 The argv builders return exact argument lists (never a shell string). The
 guards refuse a scenario outside its catalog scopes, any name that contains
@@ -54,9 +57,25 @@ DIGEST = re.compile(r"sha256:[a-f0-9]{64}")
 _NAME = re.compile(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?")
 _ENV = re.compile(r"[A-Z_][A-Z0-9_]{0,63}")
 _ID = re.compile(r"[A-Z][0-9]{1,2}")
-_TOP = {"schema_version", "description", "pre_registration", "scopes", "targets", "lab_sequence", "scenarios"}
+_TOP = {"schema_version", "description", "pre_registration", "default_target", "scopes", "targets", "lab_sequence",
+        "scenarios"}
 _SCOPE = {"cluster_id", "context", "namespace", "node"}
-_TARGET = {"kind", "container", "service_account", "image_repository", "scopes"}
+_TARGET = {"kind", "label", "container", "service_account", "image_repository", "release", "port", "scopes",
+           "primary_scenario", "fallback_scenario", "isolated_lab", "spec_overrides", "probe",
+           "fault_storefront_impact", "ceilings"}
+# The scope whose namespace runs the full connected application; every target can be deployed there.
+CONNECTED_SCOPE = "connected"
+# Targets with a reviewed single-service manifest (experiments/boutique/harness/live.py shipping_manifest).
+# Only these may be offered in the single-service lab and package scopes.
+ISOLATED_LAB_TARGETS = frozenset({"shippingservice"})
+# Code-owned application probes; the catalog only names one. Each needs a proto file or server reflection.
+PROBE_CHECKS = {"shipping_quote": False, "cart_round_trip": True}
+PROTO_DIRECTORY = "experiments/workloads/boutique/"
+IMPACT_PARTS = ("home", "add_to_cart", "cart", "checkout")
+_CEILINGS = {"container_requests", "container_limits", "pod_requests", "rollout_requests", "max_replicas",
+             "max_surge_replicas"}
+_CPU = re.compile(r"[1-9][0-9]{0,4}m|[1-9][0-9]?")
+_MEMORY = re.compile(r"[1-9][0-9]{0,4}(?:Mi|Gi)")
 _SEQUENCE = {"id", "title", "description", "expected"}
 _SCENARIO = {"id", "name", "class", "title", "target", "scopes", "injection", "restore", "template_changed",
              "symptom", "expected"}
@@ -174,6 +193,85 @@ def _validate_scenario(item, catalog, seen):
              where + ": a rollback_incorrect scenario must label ROLLBACK unsafe")
 
 
+def _quantities(value, where):
+    _keys(value, {"cpu", "memory"}, where=where)
+    _require(isinstance(value["cpu"], str) and _CPU.fullmatch(value["cpu"]), where + ".cpu must be a CPU quantity")
+    _require(isinstance(value["memory"], str) and _MEMORY.fullmatch(value["memory"]),
+             where + ".memory must be a Mi or Gi quantity")
+
+
+def _validate_target(name, target, catalog):
+    where = "target " + name
+    _keys(target, _TARGET, where=where)
+    _require(_NAME.fullmatch(name) and target["kind"] == "Deployment", where + " must be a named Deployment")
+    for key in ("label", "container", "service_account"):
+        _require(isinstance(target[key], str) and _NAME.fullmatch(target[key]), f"{where}.{key} must be a name")
+    _require(isinstance(target["image_repository"], str)
+             and re.fullmatch(r"[a-z0-9.-]+(?:/[a-z0-9._-]+)+", target["image_repository"]),
+             where + ".image_repository must be a registry repository")
+    _require(isinstance(target["release"], str) and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", target["release"]),
+             where + ".release must be a version tag such as v0.10.7")
+    _require(type(target["port"]) is int and 1 <= target["port"] <= 65535, where + ".port must be a port number")
+    _require(isinstance(target["scopes"], list) and target["scopes"]
+             and len(set(target["scopes"])) == len(target["scopes"])
+             and set(target["scopes"]) <= set(catalog["scopes"]), where + ".scopes must name catalog scopes")
+    _require(type(target["isolated_lab"]) is bool, where + ".isolated_lab must be true or false")
+    _require(not target["isolated_lab"] or name in ISOLATED_LAB_TARGETS,
+             where + " has no reviewed single-service manifest")
+    # The single-service lab and package clusters deploy only an isolated manifest.
+    _require(target["isolated_lab"] or set(target["scopes"]) <= {CONNECTED_SCOPE},
+             where + " without an isolated lab manifest may only use the " + CONNECTED_SCOPE + " scope")
+    overrides = target["spec_overrides"]
+    _keys(overrides, set(), {"strategy", "minReadySeconds"}, where + ".spec_overrides")
+    _require(overrides.get("strategy", {"type": "Recreate"}) == {"type": "Recreate"},
+             where + ".spec_overrides.strategy may only be Recreate")
+    _require(type(overrides.get("minReadySeconds", 0)) is int and 0 <= overrides.get("minReadySeconds", 0) <= 60,
+             where + ".spec_overrides.minReadySeconds must be 0 to 60")
+    probe = target["probe"]
+    _keys(probe, {"kind", "check", "proto_file"}, where=where + ".probe")
+    _require(probe["kind"] == "grpc" and probe["check"] in PROBE_CHECKS,
+             where + ".probe must be a gRPC check from " + ", ".join(PROBE_CHECKS))
+    if PROBE_CHECKS[probe["check"]]:
+        _require(isinstance(probe["proto_file"], str) and probe["proto_file"].startswith(PROTO_DIRECTORY)
+                 and re.fullmatch(r"[a-z0-9_-]+\.proto", probe["proto_file"][len(PROTO_DIRECTORY):])
+                 and (ROOT / probe["proto_file"]).is_file(),
+                 where + ".probe.proto_file must be a vendored proto under " + PROTO_DIRECTORY)
+    else:
+        _require(probe["proto_file"] is None, where + ".probe uses server reflection; proto_file must be null")
+    impact = target["fault_storefront_impact"]
+    _keys(impact, set(IMPACT_PARTS), where=where + ".fault_storefront_impact")
+    _require(all(value in ("ok", "fail") for value in impact.values()) and impact["checkout"] == "fail",
+             where + ".fault_storefront_impact must mark each step ok or fail, and checkout fail")
+    ceilings = target["ceilings"]
+    _keys(ceilings, _CEILINGS, where=where + ".ceilings")
+    for key in ("container_requests", "container_limits", "pod_requests", "rollout_requests"):
+        _quantities(ceilings[key], f"{where}.ceilings.{key}")
+    _require(type(ceilings["max_replicas"]) is int and 1 <= ceilings["max_replicas"] <= 10
+             and type(ceilings["max_surge_replicas"]) is int and 0 <= ceilings["max_surge_replicas"] <= 5,
+             where + ".ceilings replica bounds must be small integers")
+
+
+def _validate_target_scenarios(name, target, catalog):
+    """The primary scenario runs the operator sequence wherever the target is offered; the fallback replaces it."""
+    where = "target " + name
+    by_id = {item["id"]: item for item in catalog["scenarios"]}
+    primary = by_id.get(target["primary_scenario"])
+    _require(primary is not None and primary["target"] == name, where + ".primary_scenario must be one of its scenarios")
+    _require(primary["class"] == "rollback_correct" and primary["template_changed"]
+             and set(primary["scopes"]) == set(target["scopes"]),
+             where + ".primary_scenario must be a template-changing rollback_correct fault in every target scope")
+    fallback = target["fallback_scenario"]
+    if fallback is None:
+        return
+    item = by_id.get(fallback)
+    _require(item is not None and item["target"] == name and fallback != target["primary_scenario"],
+             where + ".fallback_scenario must be another of its scenarios")
+    _require(item["class"] == "rollback_correct" and item["template_changed"]
+             and item["injection"]["kind"] != primary["injection"]["kind"]
+             and set(item["scopes"]) == set(target["scopes"]),
+             where + ".fallback_scenario must be a rollback_correct fault of another kind in every target scope")
+
+
 def validate(catalog):
     """The catalog itself when it is valid; CatalogError naming the first problem otherwise."""
     _keys(catalog, _TOP)
@@ -198,17 +296,10 @@ def validate(catalog):
         _validate_scope(name, scope)
     _require(isinstance(catalog["targets"], dict) and catalog["targets"], "targets must not be empty")
     for name, target in catalog["targets"].items():
-        where = "target " + name
-        _keys(target, _TARGET, where=where)
-        _require(_NAME.fullmatch(name) and target["kind"] == "Deployment", where + " must be a named Deployment")
-        _require(isinstance(target["container"], str) and _NAME.fullmatch(target["container"])
-                 and isinstance(target["service_account"], str) and _NAME.fullmatch(target["service_account"]),
-                 where + " needs container and service_account names")
-        _require(isinstance(target["image_repository"], str)
-                 and re.fullmatch(r"[a-z0-9.-]+(?:/[a-z0-9._-]+)+", target["image_repository"]),
-                 where + ".image_repository must be a registry repository")
-        _require(isinstance(target["scopes"], list) and target["scopes"]
-                 and set(target["scopes"]) <= set(catalog["scopes"]), where + ".scopes must name catalog scopes")
+        _validate_target(name, target, catalog)
+    _require(catalog["default_target"] in catalog["targets"]
+             and set(catalog["targets"][catalog["default_target"]]["scopes"]) == set(catalog["scopes"]),
+             "default_target must be a catalog target offered in every scope")
     sequence = catalog["lab_sequence"]
     _require(isinstance(sequence, list) and sequence, "lab_sequence must not be empty")
     for step in sequence:
@@ -222,6 +313,8 @@ def validate(catalog):
     seen = {"id": set(), "name": set()}
     for item in catalog["scenarios"]:
         _validate_scenario(item, catalog, seen)
+    for name, target in catalog["targets"].items():
+        _validate_target_scenarios(name, target, catalog)
     return catalog
 
 

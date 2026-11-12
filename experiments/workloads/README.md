@@ -9,6 +9,9 @@ These are retained for meaningful tests, not unused implementation stubs:
   and trace-correlation checks; its SDK requirements belong to its Docker build.
 - `security/`: inspection gateways, certificates and candidate-image fixtures
   for the separate protected workload lab.
+- `boutique/`: the vendored cart API schema (`cart.proto`) that the
+  cartservice recovery probe passes to grpcurl, since cartservice offers no
+  server reflection.
 
 The primary evaluation app is upstream Boutique under `deploy/boutique/`.
 See [testing](../../docs/testing.md) and [security](../../docs/security.md).

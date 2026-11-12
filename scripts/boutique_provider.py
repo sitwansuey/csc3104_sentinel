@@ -1,4 +1,4 @@
-"""Opt-in real-provider wiring for the isolated Boutique shipping experiment."""
+"""Opt-in real-provider wiring for the Boutique recovery experiment and its selected catalog target."""
 import json
 import subprocess
 import sys
@@ -29,7 +29,9 @@ def run_provider_case(lab, incident):
     # authenticated approval API; summary.json records the strategy under operator_approval.
     state = run_durable_case(lab, incident, folder=folder, approve=lab.request_approval, planning={
         "baseline_reader": lambda i: [lab.baseline], "retriever": retrieve_runbooks, "provider": provider})
-    lab.summary.update(scope="Observed shipping incident through configured Planner provider and durable workers",
+    # A Boutique lab names its catalog target's label (shipping, cart); another lab names its workload.
+    label = lab.profile.label if hasattr(lab, "profile") else lab.name
+    lab.summary.update(scope=f"Observed {label} incident through configured Planner provider and durable workers",
                        incident_id=incident["incident_id"], provider_state=state)
     if state != "RECOVERED":
         raise RuntimeError(f"Provider recovery stopped at {state}")
