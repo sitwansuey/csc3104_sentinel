@@ -9,8 +9,10 @@ expected_failures names the invariants a scenario is known to break on this
 code base; those are the "before" evidence for later items. S1b and S1c
 leave the crashed Executor's ledger in doubt after its peer finished the
 action (P3.04). S7 showed the clock-skew wedge until P3.03 ordered results by
-Coordinator sequence; it now recovers. S7b checks the skew bound fails
-closed. S0, S1d and S1e are additions to the A1 list: a no-fault
+Coordinator sequence; it now ends FAILED with no write instead of wedging,
+because a host 300 s behind refuses the approval by its own clock. S7b
+checks the skew bound fails closed while the in-bound peer recovers the
+action. S0, S1d and S1e are additions to the A1 list: a no-fault
 baseline, a Verifier crash, and an Executor crash where only that host returns.
 """
 from dataclasses import dataclass, field
@@ -210,10 +212,15 @@ def _result_refusals(topology):
 def s7(topology):
     """Both Executors' clocks 300 s behind the others (gated test clock offset), no skew bound.
 
-    Before P3.03 the Coordinator refused the Executor's result (stamped before
-    the Guard ALLOW) with HTTP 400 for ever. Now results are ordered by the
-    request they answer, so the action finishes; each worker's measured offset
-    is in the summary.
+    The offset moves the Executor's whole clock: its snapshot, its ledger
+    stamps and its local Guard re-check. Before P3.03 the Coordinator refused
+    the Executor's result (stamped before the Guard ALLOW) with HTTP 400 for
+    ever and the incident stayed READY. Now results are ordered by the request
+    they answer, so the result is accepted. The re-check judges the
+    Coordinator-stamped operator approval by the Executor's own clock, sees it
+    300 s in the future and refuses: the action ends FAILED with no write. It
+    does not recover, since both Executors are out. Each worker's measured
+    offset is in the summary.
     """
     topology.start_observer()
     terminal = topology.wait_terminal(45)

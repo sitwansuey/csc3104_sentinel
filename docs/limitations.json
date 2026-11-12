@@ -50,7 +50,7 @@
       "kind": "defect",
       "status": "mitigated",
       "since": "2026-11-12",
-      "impact": "Fixed in code on a local branch (P3.03), not yet merged or run across machines. Worker results are now ordered by the Coordinator request they answer, not by the producers' clocks, so the wedge is gone: an answer to a superseded request gets HTTP 409 and is released, never resent for ever. Scenario S7 (both Executors on a gated test clock 300 s behind, separate processes on one Windows host, file mode) showed the wedge before the change (result refused with HTTP 400, incident READY) and RECOVERED with one write and every invariant holding in 3 of 3 runs after it, with each Executor measuring an offset of 300.005 to 300.012 s. Lease renewal now uses the lease length the Coordinator returns. Clocks still matter for freshness and expiry: the Guard tolerates a configured bound (max_clock_skew_seconds, off by default) and counts it against age and expiry; the Executor's local re-check and the Verifier's start check still compare their clock with timestamps from other processes, so skew beyond the bound ends an action FAILED or delays verification instead of wedging it. Workers measure their offset from the Coordinator (Cristian's algorithm) and, with a bound set, stop claiming and turn unready outside it (S7b, 3 of 3 runs); the offset is self-reported, so this guards against honest misconfiguration, not a dishonest worker. Skew has only been simulated on one host, never measured between machines or in kind.",
+      "impact": "Fixed in code (P3.03); not run across machines or in kind. Worker results are now ordered by the Coordinator request they answer, not by the producers' clocks, so the wedge is gone: an answer to a superseded request gets HTTP 409 and is released, never resent for ever. Scenario S7 (both Executors on a gated test clock 300 s behind, separate processes on one Windows host, file mode, operator approval required) showed the wedge before the change (result refused with HTTP 400, incident READY). After it the result is accepted, but the Executor's own Guard re-check, which reads the same shifted clock, sees the Coordinator-stamped approval 300 s in its future and refuses: the action ends FAILED with no write and every invariant holding in 3 of 3 runs, with each Executor measuring an offset of 300.005 to 300.012 s. An Executor host whose whole clock is off by more than the bound therefore cannot complete an approved action; an in-bound peer can (S7b, 3 of 3 runs). Lease renewal now uses the lease length the Coordinator returns. Clocks still matter for freshness and expiry: the Guard tolerates a configured bound (max_clock_skew_seconds, off by default) and counts it against age and expiry; the Executor's local re-check and the Verifier's start check still compare their clock with timestamps from other processes, so skew beyond the bound ends an action FAILED or, by reading the code (no test), delays verification instead of wedging it. Workers measure their offset from the Coordinator (Cristian's algorithm) and, with a bound set, stop claiming and turn unready outside it. After a clock step this holds from the first exchange after the step: a request already claimed runs with the stepped clock until its next exchange, and a step smaller than the measurement uncertainty can go unseen. The offset is self-reported, so this guards against honest misconfiguration, not a dishonest worker. Messages accepted before store migration 4 have no high-water mark, so for an action in flight at the upgrade only the newest-request rule orders its results. Skew has only been simulated on one host, never measured between machines or in kind.",
       "workaround": "Keep host clocks synchronised (NTP), and set max_clock_skew_seconds for the workers and the Guard policy and --max-clock-skew-seconds for the Coordinator, so a host past the bound stops claiming work.",
       "cites": [
         {"at": "services/coordinator/core.py:118", "text": "_answers_current_request(message, store, answers)"},
@@ -58,9 +58,11 @@
         {"at": "runtime/worker_transport.py:253", "text": "Result answers a superseded request"},
         {"at": "runtime/remote_worker.py:89", "text": "lease_duration(delivery, clock) / 3"},
         {"at": "services/guard/core.py:159", "text": "if approved_at > checked_at + skew:"},
+        {"at": "runtime/worker_http.py:288", "text": "self.samples.clear()"},
+        {"at": "runtime/live_executor.py:107", "text": "now=self.clock()"},
         {"at": "services/verifier/store.py:78", "text": "Monitoring cannot start before execution"},
-        {"at": "tests/test_distributed_processes.py:62", "text": "def test_s7_executor_clocks_300_s_behind_recover_by_coordinator_sequence"},
-        {"at": "tests/test_clock_skew.py:590", "text": "def test_per_role_clocks_300_s_apart_reach_recovered"}
+        {"at": "tests/test_distributed_processes.py:62", "text": "def test_s7_executor_clocks_300_s_behind_end_failed_without_a_write_or_a_wedge"},
+        {"at": "tests/test_clock_skew.py:675", "text": "def test_per_role_clocks_300_s_apart_reach_recovered"}
       ],
       "planned": ["P3.03", "P4.01"],
       "issues": [18, 63]
@@ -138,7 +140,7 @@
       "workaround": "For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json and print the traces with scripts/trace_view.py.",
       "cites": [
         {"at": "shared/log.py:236", "text": "def entrypoint(component: str)"},
-        {"at": "runtime/worker_http.py:373", "text": "@log.entrypoint(\"worker_http\")"},
+        {"at": "runtime/worker_http.py:391", "text": "@log.entrypoint(\"worker_http\")"},
         {"at": "shared/tracing.py:123", "text": "def start_span("},
         {"at": "services/executor/core.py:240-241", "text": "any read failure leaves the outcome unknown"},
         {"at": "docs/observability.md", "text": "only when their entrypoint configures logging"},

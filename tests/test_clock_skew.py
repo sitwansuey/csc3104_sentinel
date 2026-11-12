@@ -243,16 +243,55 @@ class ClockEstimatorTests(unittest.TestCase):
         self.assertAlmostEqual(uncertainty, 0.1)
         started = estimator.start()
         mono[0] += 2.0
-        estimator.observe(started, "170.0")  # A slower exchange is kept but not preferred.
+        estimator.observe(started, "161.1")  # A slower, consistent exchange is kept but not preferred.
         self.assertAlmostEqual(estimator.estimate()[0], 60.0)
         self.assertAlmostEqual(estimator.estimate()[1], 0.1)
         self.assertIsNone(estimator.observe(estimator.start(), None))
         self.assertIsNone(estimator.observe(estimator.start(), "nan"))
-        for index in range(8):  # Only the last 8 samples count.
+        for _ in range(8):  # Only the last 8 samples count.
             started = estimator.start()
             mono[0] += 1.0
-            estimator.observe(started, str(105.0 + index))
+            estimator.observe(started, "160.5")
         self.assertAlmostEqual(estimator.estimate()[1], 0.5)
+
+    def test_a_clock_step_replaces_the_estimate_on_the_first_exchange_after_it(self):
+        wall, mono = [1000.0], [10.0]
+        estimator = ClockEstimator(clock=lambda: wall[0], monotonic=lambda: mono[0])
+
+        def exchange(rtt):
+            started = estimator.start()
+            mono[0] += rtt
+            wall[0] += rtt
+            estimator.observe(started, str(mono[0] + 990.0 - rtt / 2))  # The Coordinator: monotonic + 990.
+
+        exchange(0.001)
+        self.assertTrue(estimator.within(2))
+        wall[0] += 10  # The worker's wall clock steps 10 s ahead (an NTP step, a VM resume).
+        exchange(0.002)  # A looser sample that contradicts the tight in-sync one.
+        offset, uncertainty = estimator.estimate()
+        self.assertAlmostEqual(offset, -10.0, places=6)
+        self.assertAlmostEqual(uncertainty, 0.001, places=6)
+        self.assertFalse(estimator.within(2))
+        wall[0] -= 10  # Stepped back: the next exchange recovers at once.
+        exchange(0.002)
+        self.assertAlmostEqual(estimator.estimate()[0], 0.0, places=6)
+        self.assertTrue(estimator.within(2))
+
+    def test_the_newest_exchange_must_be_in_bound_as_well_as_the_tightest(self):
+        wall, mono = [1000.0], [10.0]
+        estimator = ClockEstimator(clock=lambda: wall[0], monotonic=lambda: mono[0])
+        for rtt in (0.002, 6.0):  # Consistent samples; the newest took 6 s (uncertainty 3 s).
+            started = estimator.start()
+            mono[0] += rtt
+            wall[0] += rtt
+            estimator.observe(started, str(wall[0] - rtt / 2))
+        self.assertAlmostEqual(estimator.estimate()[1], 0.001)
+        self.assertFalse(estimator.within(2))
+        started = estimator.start()
+        mono[0] += 0.002
+        wall[0] += 0.002
+        estimator.observe(started, str(wall[0] - 0.001))
+        self.assertTrue(estimator.within(2))
 
     def test_malformed_estimates_are_ignored(self):
         self.assertEqual(parse_clock_estimate("1.5;0.25"), (1.5, 0.25))
@@ -343,6 +382,41 @@ class SkewBoundTests(unittest.TestCase):
         statuses = [worker.once()["status"] for _ in range(9)]
         self.assertIn("accepted", statuses)  # Each refused pass measures again.
 
+    def test_a_clock_step_after_an_in_sync_exchange_fails_closed_on_the_next_claim(self):
+        offset = [0.0]
+        client = WorkerClient(self.url, "planner", self.services["planner"][1], timeout=5,
+                              clock=lambda: time.time() + offset[0])
+        worker, adapter = self.worker(client)
+        client.post("clock", {})
+        self.assertTrue(worker.clock_ready())
+        offset[0] = 10.0  # The worker's clock steps 10 s ahead after an in-sync exchange.
+        status = worker.once()
+        self.assertEqual(status["status"], "clock_skew")
+        self.assertAlmostEqual(status["offset"], -10, delta=0.5)
+        self.assertEqual(adapter.process.call_count, 0)  # The claimed request was handed back unprocessed.
+        self.assertFalse(worker.clock_ready())
+        with SQLiteStore(self.database) as store:
+            receipt = store.db.execute("SELECT owner, expires, available FROM transport_receipts").fetchone()
+            self.assertEqual(receipt["owner"], "planner")
+            self.assertLessEqual(receipt["expires"], time.time())  # Released, not left leased.
+            self.assertAlmostEqual(store.worker_clocks()["planner"]["offset"], -10, delta=0.5)
+            with self.assertRaises(ProtocolError) as refused:  # A Coordinator with a bound refuses it too.
+                Delivery(store, max_clock_skew=2).claim("planner", "planner", clock_estimate=client.clock.estimate())
+        self.assertEqual(refused.exception.status, 409)
+
+    def test_readiness_follows_the_latest_measurement_not_the_pass_status(self):
+        offset = [5.0]
+        client = WorkerClient(self.url, "planner", self.services["planner"][1], timeout=5,
+                              clock=lambda: time.time() + offset[0])
+        worker, _adapter = self.worker(client)
+        self.assertFalse(worker.clock_ready())  # Nothing measured yet.
+        client.post("clock", {})
+        self.assertFalse(worker.clock_ready())
+        offset[0] = 0.0
+        client.post("clock", {})
+        self.assertTrue(worker.clock_ready())
+        self.assertTrue(RemoteWorker(client, worker.journal, Mock()).clock_ready())  # No bound: always ready.
+
     def test_readiness_is_false_while_the_clock_is_out_of_bound(self):
         health = WorkerHealth(ready_seconds=30, clock=lambda: 100.0)
         health.configured()
@@ -385,6 +459,13 @@ class SkewBoundTests(unittest.TestCase):
                 with self.assertRaises(ProtocolError):
                     ahead.post("claim", {})
                 self.assertIsNotNone(ahead.post("claim", {})["delivery"])
+                # A RemoteWorker with no bound of its own measures once before its first claim.
+                in_sync = WorkerClient(f"http://127.0.0.1:{server.server_port}", "planner",
+                                       self.services["planner"][1], timeout=5)
+                worker, _adapter = self.worker(in_sync)
+                worker.max_clock_skew = None
+                self.assertIn(worker.once()["status"], {"idle", "accepted"})
+                self.assertIsNotNone(in_sync.clock.estimate())
             finally:
                 stopping.set()
                 thread.join()
@@ -519,6 +600,10 @@ class LoopbackSkewFlowTests(unittest.TestCase):
     refused the Executor's applied result (stamped before the Guard ALLOW)
     with HTTP 400 and the worker resent it for ever, so the incident stayed
     READY. Each worker's measured offset is recorded by the Coordinator.
+    The flow needs no operator approval and keeps the Verifier level with the
+    Executor, because the Executor re-checks the Guard inputs by its own
+    clock: a Coordinator-stamped approval 300 s in its future is refused, as
+    scenario S7 shows (FAILED, no write).
     """
     OFFSETS = {"planner": 0, "observer": 0, "guard": 300, "executor": -300, "verifier": -300}
 

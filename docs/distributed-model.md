@@ -106,7 +106,7 @@ losing that node needs a manual restore from a backup, and nothing detects a
 restore that silently drops acknowledged results.
 
 **Recovery time (RTO)** has not been measured. After repeated errors a worker
-backs off for up to 60 s (`runtime/worker_service.py:238::main::min(60`), which adds
+backs off for up to 60 s (`runtime/worker_service.py:237::main::min(60`), which adds
 to recovery time after a Coordinator restart.
 
 ## Time and ordering
@@ -154,6 +154,14 @@ so their tests are unchanged.
 | Finding not from the future | Verifier vs Guard or Executor | `checked_at > now + ε` is UNKNOWN (`services/guard/core.py:249::_evaluate_core::dependency_at > checked_at + skew`) | Skew up to ε is tolerated |
 | Finding not too old | Verifier vs Guard or Executor | Age counts ε as well (`services/guard/core.py:252::_evaluate_core::checked_at + skew - dependency_at`), and so does `valid_until` (`services/guard/decisions.py:271::_valid_until::policy[key] - margin`) | Evidence can look up to 2ε older, never younger |
 
+The issued-after checks in the rows for the Guard ALLOW, the execution and the
+health window are implied by the newest-request check
+(`_answers_current_request`): every accepted finding enqueues a new Guard
+request, every accepted ALLOW a new executor request and every APPLIED or
+NOOP result a new verifier request. So it is the newest-request check that
+enforces those orders; the explicit checks are kept as defence in depth and
+no test makes them fail on their own.
+
 ε is the Guard policy field `max_clock_skew_seconds` (0 to 60 s; 0, the
 default, keeps the strict comparison; `services/guard/core.py::clock_skew`).
 The live-profile policy of the multi-process harness sets 2 s
@@ -165,15 +173,21 @@ the skew between two processes:
 
 - The Executor's local Guard re-check runs with its own clock against an
   approval stamped by the Coordinator and a finding stamped by the Verifier
-  (`services/executor/core.py:426::execute::authorizer.validate`). With more
-  than ε of skew it refuses, and the Executor reports FAILED with no write.
-  The Coordinator now accepts that FAILED result in order, so the action ends
-  FAILED instead of wedging.
+  (`services/executor/core.py:426::execute::authorizer.validate`, which reads
+  the host clock in `runtime/live_executor.py::LiveGuardAuthorizer.validate`). With more than ε of
+  skew it refuses, and the Executor reports FAILED with no write. The
+  Coordinator now accepts that FAILED result in order, so the action ends
+  FAILED instead of wedging. This is what S7 shows: with both Executors
+  300 s behind and operator approval required, the action ends FAILED with no
+  write. An Executor host whose whole clock is off by more than ε therefore
+  cannot complete an approved action; only a peer within the bound can (S7b).
 - The Verifier starts a job only once its clock has passed the Executor's
   `recorded_at`, and counts only readings stamped after it
   (`services/verifier/store.py:78::VerificationStore.start::Monitoring cannot start before execution`).
-  A Verifier clock behind the Executor's delays verification by up to the
-  skew, with retries and back-off in between; it does not wedge.
+  By reading the code, a Verifier clock behind the Executor's should delay
+  verification by up to the skew, with retries and back-off in between,
+  rather than wedge. No test or scenario covers it: the Verifier is level
+  with the Executor in the loopback test and at offset 0 in S7.
 - An Executor host decides whether its own uncertain reconcile result is
   newer than a peer's by comparing their `recorded_at`
   (`services/executor/core.py:391::unchanged_uncertainty::return mine <= theirs`). A wrong
@@ -187,27 +201,47 @@ server time − (send time + RTT/2), where the round-trip time is measured on
 the monotonic clock, so the true offset lies within RTT/2 of θ if the reply was
 stamped during the round trip. It keeps the tightest of its last eight samples
 (`runtime/worker_http.py::ClockEstimator`) and reports it on every request
-(`X-Sentinel-Clock-Estimate`). The Coordinator stores each worker's latest
+(`X-Sentinel-Clock-Estimate`). While the worker's clock runs steadily every
+sample's interval θ ± RTT/2 holds the true offset, so any two overlap. A new
+sample whose interval misses the estimate's means the clock has stepped (an
+NTP step, a VM resume): the older samples are dropped and the new sample is
+the estimate from that exchange on. A worker without a bound of its own
+measures once before its first claim, so a Coordinator with a bound does not
+refuse that claim for lack of an estimate. The Coordinator stores each worker's latest
 estimate and the largest |θ| it has reported
 (`services/coordinator/store.py::SQLiteStore.record_worker_clock`).
 
 The bound is enforced, and fails closed, only where it is configured:
 
 - A worker with `max_clock_skew_seconds` in its configuration claims new work
-  only while |θ| + RTT/2 ≤ ε. Otherwise it reports the status `clock_skew`,
-  measures again on its next pass, and its `/readyz` answers 503
+  only while |θ| + RTT/2 ≤ ε, both for the tightest sample and for the
+  newest one. Otherwise it reports the status `clock_skew`, measures again on
+  its next pass, and its `/readyz` answers 503
   (`runtime/remote_worker.py::RemoteWorker.clock_status`,
-  `runtime/worker_health.py::WorkerHealth.ready`). Saved results are still
-  sent, because their order does not depend on clocks.
+  `runtime/remote_worker.py::RemoteWorker.clock_ready`,
+  `runtime/worker_health.py::WorkerHealth.ready`). The claim's own reply is
+  measured as well: if the clock stepped out of bound since the previous
+  exchange, the worker hands the claimed request back unprocessed
+  (`runtime/remote_worker.py::RemoteWorker._skewed_since_claim`). Saved
+  results are still sent, because their order does not depend on clocks.
 - A Coordinator started with `--max-clock-skew-seconds` refuses a claim, with
   HTTP 409, from a worker whose latest reported estimate is missing or
   outside the bound (`runtime/worker_transport.py:130::Delivery.claim::Worker clock skew exceeds the bound`).
 
 Without the setting, workers and the Coordinator measure and record the
-offset but do not refuse. Limits of the measurement: the estimate is only as
-good as the round trip, so a slow network widens the uncertainty and fails
-closed; clock drift between two exchanges is not modelled, which is small
-while workers poll every few seconds; and the estimate is reported by the
+offset but do not refuse. What is guaranteed after a clock step: the worker
+sees a step larger than the two uncertainties on the first exchange after it,
+and from then on the worker refuses and the Coordinator refuses its claims.
+The step is not seen before that exchange. A step while the worker is
+processing a request it already claimed shows only at its next exchange, a
+lease renewal (every few seconds) or the result, so that one request can
+run with the stepped clock; for an Executor its local Guard re-check then
+judges the approval by the stepped clock. A step smaller than the two
+uncertainties together can go unnoticed, which leaves the estimate off by at
+most its own uncertainty plus twice the newest sample's. Other limits: the
+estimate is only as good as the round trip, so a slow network widens the
+uncertainty and fails closed; slow drift between two exchanges is not
+modelled, which is small while workers poll every few seconds; and the estimate is reported by the
 worker itself, so it is a safety check for honest workers, not a control
 against a dishonest one (see the threat model). On one host the processes
 share one clock, so the only offset it has measured is the simulated one.
@@ -229,9 +263,14 @@ Tests: `tests/test_clock_skew.py::LoopbackSkewFlowTests.test_per_role_clocks_300
 runs all six components over loopback HTTP with the Guard 300 s ahead and the
 Executor and Verifier 300 s behind; with the sequence checks reverted, the
 Executor's applied result is refused with HTTP 400, as before P3.03.
+The flow requires no operator approval and keeps the Verifier level with the
+Executor, because the Executor's own re-check would refuse a
+Coordinator-stamped approval 300 s in its future (S7).
 `tests/test_clock_skew.py::SequenceOrderingTests` covers superseded requests
 answered with later timestamps, `tests/test_clock_skew.py::SkewBoundTests` the
-2 s bound (1 s accepted; 5 s, a 6 s round trip and a missing estimate refused),
+2 s bound (1 s accepted; 5 s, a 6 s round trip and a missing estimate refused;
+a 10 s step after an in-sync exchange refused on the next claim),
+`tests/test_clock_skew.py::ClockEstimatorTests` step detection,
 `tests/test_clock_skew.py::GuardSkewToleranceTests` the Guard tolerance, and
 `tests/test_clock_skew.py::LeaseRenewalTests` renewal with the worker clock an
 hour off.
@@ -340,7 +379,9 @@ What it does not show: these processes share one host, so one kernel clock,
 one disk and loopback networking. They are not separate machines or
 containers. S7 and S7b shift a process's clock with a gated test offset, and
 each worker measures that offset against the Coordinator over loopback; no run
-has measured skew between machines. The file cluster is not an API server; the
+has measured skew between machines. The offset moves the worker's whole
+clock (its HTTP client, and for the Executor its snapshot, ledger stamps and
+local Guard re-check), as a skewed host would. The file cluster is not an API server; the
 kind mode, which counts writes from the Deployment itself, has not been run.
 
 Results on this code base (file mode, one Windows host):
@@ -351,13 +392,16 @@ Results on this code base (file mode, one Windows host):
 | S1b, S1c: an Executor crashes after its write intent or after its patch, and its peer finishes the action | RECOVERED with one write. The peer adopted a committed write by its evidence annotation, so the redelivery defect (CONFLICT for an applied write) did not reproduce. **New defect:** no command reaches the crashed host once it restarts, so its ledger keeps the action WRITE_STARTED (I6 fails), and it refuses any later action on that workload (`services/executor/store.py::SQLiteExecutionLedger.prepare`) until someone reconciles it |
 | S1e: the crashed Executor is the only one that comes back | It fenced its own in-doubt write; FAILED with no write |
 | S2: the lease holder stalls before its patch (SIGSTOP on Linux; a blocked fault point and a blackholed link on Windows, which has no suspend without psutil) | The peer wrote; the stale host's patch was refused and it adopted the peer's write, so on this base a peer's write did not wedge the losing host |
-| S7: both Executors 300 s behind, no skew bound | Before P3.03, the clock-skew wedge: the write landed, the result was refused with HTTP 400 for the whole run, and the incident stayed READY (I3 and I5 failed). Now RECOVERED with one write and no HTTP 400 in 3 of 3 runs, every invariant held; each Executor measured θ = 300.005 to 300.012 s (uncertainty at most 0.013 s), the other workers at most 0.014 s |
-| S7b: executor-a 5 s behind, bound 2 s for every worker and the Coordinator | executor-a measured θ = 5.005 to 5.013 s, reported `clock_skew`, answered `/readyz` with 503 and never claimed; executor-b did the work. RECOVERED with one write in 3 of 3 runs, every invariant held |
+| S7: both Executors 300 s behind, no skew bound, operator approval required | Before P3.03, the clock-skew wedge: the write landed, the result was refused with HTTP 400 for the whole run, and the incident stayed READY (I3 and I5 failed). Now the Executor's own Guard re-check sees the Coordinator-stamped approval 300 s in its future and refuses, its FAILED result is accepted in order, and the action ends FAILED with no write and no HTTP 400 in 3 of 3 runs, every invariant held; each Executor measured θ = 300.005 to 300.012 s (uncertainty at most 0.013 s), the other workers at most 0.015 s. It does not recover: no Executor is within the bound |
+| S7b: executor-a 5 s behind, bound 2 s for every worker and the Coordinator | executor-a measured θ = 5.006 to 5.016 s, reported `clock_skew`, answered `/readyz` with 503 and never claimed; executor-b did the work. RECOVERED with one write in 3 of 3 runs, every invariant held |
 
 S1b and S1c are asserted as known failures, so the tests fail when a fix
 lands until the expectation is updated; the orphaned ledger is left for P3.04.
 S7 was asserted the same way until P3.03 fixed the wedge, and now asserts
-RECOVERED with the measured offsets. The S7 and S7b results come from file
+FAILED with no write and the measured offsets. An earlier version of this
+change reported S7 as RECOVERED; that held only because the test offset did
+not reach the Executor's local Guard re-check, which read the unshifted
+clock. The S7 and S7b results come from file
 mode on one Windows host; neither has run in kind mode.
 
 ## Planned changes
@@ -367,7 +411,7 @@ mode on one Windows host; neither has run in kind mode.
 | P2.06 | Live run of the fenced abort (wedge harness `admission-deny`); the code and offline tests are in place |
 | P3.02 | A trace of one incident from a live multi-process run; trace context across outbox rows, deliveries and worker requests, and the offline viewer, are in the code and tested offline ([traces](observability.md#traces)) |
 | P3.01 | Done in file mode (above). Left: a kind-mode run against the connected lab and committed evidence bundles |
-| P3.03 | Done in the code above. Left: S7 in kind mode, and a real clock offset per Pod (Chaos Mesh TimeChaos, P4.01) instead of the gated test offset |
+| P3.03 | Done in the code above. Left: S7 in kind mode, and a real clock offset per Pod (Chaos Mesh TimeChaos, P4.01) instead of the gated test offset. With operator approval required, an Executor whose clock is 5 min off cannot reach RECOVERED: its own Guard re-check refuses the Coordinator-stamped approval. So P4.01 should expect what S7 and S7b show (FAILED with no write without a bound; with a bound, that Executor stops claiming and an in-bound peer recovers the action), unless the owners change the re-check |
 | P3.04 | Per-target ownership epochs and a seal command that fences abandoned Executor writes |
 | P3.05 | An admission policy limiting which fields the Executor identity may change |
 | P3.06 | 15 s jittered back-off, store generation and commit counter to detect a restored backup, and a restore check |
@@ -382,4 +426,4 @@ Lifecycle order no longer depends on clocks, but freshness and expiry still
 do. Run every role on hosts with synchronised clocks (NTP), and set
 `max_clock_skew_seconds` for the workers and the Guard policy, and
 `--max-clock-skew-seconds` for the Coordinator, so a host whose clock drifts
-past the bound stops claiming work.
+or steps past the bound stops claiming work from its next exchange on.

@@ -59,15 +59,15 @@ class DistributedProcessTests(ScenarioMixin, unittest.TestCase):
         self.assertEqual(summary["notes"]["exit_code"], 73)
         self.assertEqual(summary["states"], ["RECOVERED"])
 
-    def test_s7_executor_clocks_300_s_behind_recover_by_coordinator_sequence(self):
+    def test_s7_executor_clocks_300_s_behind_end_failed_without_a_write_or_a_wedge(self):
         summary = self.run_scenario("S7")
-        # Before P3.03 the write landed, its result was refused with HTTP 400 for ever and the incident stayed READY.
-        self.assertEqual((summary["states"], summary["committed_writes"]), (["RECOVERED"], 1))
+        # Before P3.03 the result was refused with HTTP 400 for ever and the incident stayed READY. Now it is
+        # accepted; the Executors' own Guard re-check refuses the approval 300 s in their future, so no write.
+        self.assertEqual((summary["states"], summary["committed_writes"]), (["FAILED"], 0))
         self.assertEqual(summary["notes"]["refusals_seen"], 0)
         measured = summary["clock_offsets_measured"]
         for name in ("executor-a", "executor-b"):  # theta = Coordinator - worker: 300 s for a clock 300 s behind.
-            if name in measured:
-                self.assertAlmostEqual(measured[name]["theta_seconds"], 300, delta=1)
+            self.assertAlmostEqual(measured[name]["theta_seconds"], 300, delta=1)  # Both measure before claiming.
         self.assertLess(abs(measured["guard-1"]["theta_seconds"]), 1)
 
 

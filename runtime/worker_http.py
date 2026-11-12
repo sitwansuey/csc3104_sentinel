@@ -250,6 +250,18 @@ class ClockEstimator:
     The true offset lies within rtt / 2 of the sample, assuming the reply was
     stamped somewhere in the round trip. The estimate is the sample with the
     smallest round trip among the last CLOCK_SAMPLES.
+
+    While the wall clock runs steadily, every sample's interval
+    [offset - uncertainty, offset + uncertainty] holds the true offset, so
+    any two intervals overlap. A new sample whose interval misses the current
+    estimate's interval shows the wall clock has stepped (an NTP step, a VM
+    resume, a manual change): the older samples are dropped and the new one
+    becomes the estimate at once, so a step is seen on the first exchange
+    after it. A step smaller than the two uncertainties together can go
+    unnoticed; the estimate is then still within its own uncertainty plus
+    twice the new sample's of the true offset. within() also requires the
+    newest sample to be inside the bound, since that sample alone brackets
+    the offset as it is now.
     """
     def __init__(self, *, clock=time.time, monotonic=time.monotonic, samples=CLOCK_SAMPLES):
         self.clock, self.monotonic = clock, monotonic
@@ -270,6 +282,10 @@ class ClockEstimator:
             return None
         sample = (server - (wall + rtt / 2), rtt / 2)
         with self._lock:
+            if self.samples:
+                offset, uncertainty = min(self.samples, key=lambda kept: kept[1])
+                if abs(sample[0] - offset) > sample[1] + uncertainty:
+                    self.samples.clear()  # The intervals cannot both hold the true offset: a clock step.
             self.samples.append(sample)
         return sample
 
@@ -279,7 +295,9 @@ class ClockEstimator:
             return min(self.samples, key=lambda sample: sample[1]) if self.samples else None
 
     def within(self, bound):
-        return within_skew_bound(self.estimate(), bound)
+        with self._lock:
+            newest = self.samples[-1] if self.samples else None
+        return within_skew_bound(self.estimate(), bound) and within_skew_bound(newest, bound)
 
 
 class WorkerClient:

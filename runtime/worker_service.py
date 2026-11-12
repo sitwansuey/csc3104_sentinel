@@ -144,17 +144,16 @@ def adapter(config, directory, stack):
         runner = {"runner": cluster.kubectl(config["identity"])} if cluster is not None else {}
         live = build_adapters(**options, allowed_targets=config["allowed_targets"],
                               ledger=directory / "executor.db", locks=directory / "locks",
-                              fence_after_seconds=config.get("fence_after_seconds"), **runner)
+                              fence_after_seconds=config.get("fence_after_seconds"), clock=clock, **runner)
         stack.callback(live.ledger.close)
-        if lab:  # Bound lab fault runs only: named stop points and the test clock offset.
-            live = replace(live, clock=fault_points.offset_clock(live.clock),
-                           ledger=fault_points.CheckpointLedger(live.ledger),
+        if lab:  # Bound lab fault runs only: named stop points. clock above carries the test offset.
+            live = replace(live, ledger=fault_points.CheckpointLedger(live.ledger),
                            cluster=fault_points.CheckpointCluster(live.cluster))
         if config.get("remote_dependencies", True):
             connection = client(config)
             live.authorizer.dependency_reader = lambda p: connection.post("dependencies", {"proposal": p})["dependencies"]
         return ExecutorAdapter(live)
-    authorizer = LiveGuardAuthorizer(**options, approval=None)
+    authorizer = LiveGuardAuthorizer(**options, approval=None, clock=clock)
     if config.get("remote_dependencies", True):
         connection = client(config)
         authorizer.dependency_reader = lambda p: connection.post("dependencies", {"proposal": p})["dependencies"]
@@ -225,7 +224,7 @@ def main(argv=None):
                 try:
                     status = worker.once()
                     health.contacted()  # once() returned, so the Coordinator answered this pass.
-                    health.clock_checked(status["status"] != "clock_skew")  # Out of bound: not ready, no claims.
+                    health.clock_checked(worker.clock_ready())  # Out of bound: not ready, no claims.
                     failures = 0
                 except Exception as caught:  # noqa: BLE001 - a failed pass is retried with backoff; report() logs it
                     error = caught
