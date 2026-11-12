@@ -1,0 +1,559 @@
+{
+  "schema": "sentinel-restore-drill-v1",
+  "label": "after",
+  "started_at": "2026-11-12T10:46:59Z",
+  "mode": "file",
+  "single_host": true,
+  "separate_processes": true,
+  "loopback": "127.0.0.1",
+  "measured": "restore drill: backup at READY, restored after the action ended",
+  "git_revision": "bab85636d6cc5523af466716dba49e6dac88bffb",
+  "python": "3.13.2",
+  "os": "Windows",
+  "backoff": {
+    "cap_seconds": 15,
+    "jitter": "full",
+    "formula": "uniform(0, min(15, poll_seconds * 2 ** min(failures, 5)))"
+  },
+  "limits": "Separate OS processes on one host: one kernel clock, one disk, loopback networking. Not separate machines, and not a Coordinator Pod restart in a cluster.",
+  "staged": false,
+  "runs": [
+    {
+      "poll_seconds": 0.2,
+      "first_end": {
+        "terminal": true,
+        "states": [
+          "RECOVERED"
+        ]
+      },
+      "after_restore": {
+        "states": [
+          "READY"
+        ]
+      },
+      "store_changed_seconds": {
+        "planner-1": 0.106,
+        "guard-1": 0.015,
+        "executor-a": 0.305,
+        "executor-b": 0.229,
+        "verifier-1": 0.23
+      },
+      "restore_check": {
+        "may_lose_acknowledged_work": true,
+        "missing": 2,
+        "journals": [
+          {
+            "journal": "planner-1/transport.db",
+            "rolled_back": false,
+            "missing": []
+          },
+          {
+            "journal": "guard-1/transport.db",
+            "rolled_back": false,
+            "missing": []
+          },
+          {
+            "journal": "executor-a/transport.db",
+            "rolled_back": true,
+            "missing": [
+              {
+                "kind": "execution_result",
+                "topic": "executor.request",
+                "redrive": "replay"
+              }
+            ]
+          },
+          {
+            "journal": "executor-b/transport.db",
+            "rolled_back": false,
+            "missing": []
+          },
+          {
+            "journal": "verifier-1/transport.db",
+            "rolled_back": true,
+            "missing": [
+              {
+                "kind": "outcome",
+                "topic": "verifier.request",
+                "redrive": "review"
+              }
+            ]
+          }
+        ]
+      },
+      "accepted_first": [
+        "planner-1",
+        "guard-1",
+        "executor-a",
+        "executor-b",
+        "verifier-1"
+      ],
+      "second_end": {
+        "terminal": false,
+        "states": [
+          "VERIFYING"
+        ],
+        "seconds_after_accept": 90.133
+      },
+      "template_writes": 1,
+      "statuses": {
+        "planner-1": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "guard-1": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "executor-a": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "executor-b": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "verifier-1": [
+          "accepted",
+          "idle",
+          "retry",
+          "store_changed"
+        ]
+      },
+      "tls": true
+    },
+    {
+      "poll_seconds": 0.2,
+      "first_end": {
+        "terminal": true,
+        "states": [
+          "RECOVERED"
+        ]
+      },
+      "after_restore": {
+        "states": [
+          "READY"
+        ]
+      },
+      "store_changed_seconds": {
+        "planner-1": 0.109,
+        "guard-1": 0.201,
+        "executor-a": 0.217,
+        "executor-b": 0.031,
+        "verifier-1": 0.139
+      },
+      "restore_check": {
+        "may_lose_acknowledged_work": true,
+        "missing": 2,
+        "journals": [
+          {
+            "journal": "planner-1/transport.db",
+            "rolled_back": false,
+            "missing": []
+          },
+          {
+            "journal": "guard-1/transport.db",
+            "rolled_back": false,
+            "missing": []
+          },
+          {
+            "journal": "executor-a/transport.db",
+            "rolled_back": true,
+            "missing": [
+              {
+                "kind": "execution_result",
+                "topic": "executor.request",
+                "redrive": "replay"
+              }
+            ]
+          },
+          {
+            "journal": "executor-b/transport.db",
+            "rolled_back": false,
+            "missing": []
+          },
+          {
+            "journal": "verifier-1/transport.db",
+            "rolled_back": true,
+            "missing": [
+              {
+                "kind": "outcome",
+                "topic": "verifier.request",
+                "redrive": "review"
+              }
+            ]
+          }
+        ]
+      },
+      "accepted_first": [
+        "planner-1",
+        "guard-1",
+        "executor-a",
+        "executor-b",
+        "verifier-1"
+      ],
+      "second_end": {
+        "terminal": true,
+        "states": [
+          "RECOVERED"
+        ],
+        "seconds_after_accept": 0.416
+      },
+      "template_writes": 1,
+      "statuses": {
+        "planner-1": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "guard-1": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "executor-a": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "executor-b": [
+          "idle",
+          "store_changed"
+        ],
+        "verifier-1": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ]
+      },
+      "tls": true
+    },
+    {
+      "poll_seconds": 0.2,
+      "first_end": {
+        "terminal": true,
+        "states": [
+          "RECOVERED"
+        ]
+      },
+      "after_restore": {
+        "states": [
+          "READY"
+        ]
+      },
+      "store_changed_seconds": {
+        "planner-1": 0.168,
+        "guard-1": 0.002,
+        "executor-a": 0.106,
+        "executor-b": 0.107,
+        "verifier-1": 0.184
+      },
+      "restore_check": {
+        "may_lose_acknowledged_work": true,
+        "missing": 2,
+        "journals": [
+          {
+            "journal": "planner-1/transport.db",
+            "rolled_back": false,
+            "missing": []
+          },
+          {
+            "journal": "guard-1/transport.db",
+            "rolled_back": false,
+            "missing": []
+          },
+          {
+            "journal": "executor-a/transport.db",
+            "rolled_back": true,
+            "missing": [
+              {
+                "kind": "execution_result",
+                "topic": "executor.request",
+                "redrive": "replay"
+              }
+            ]
+          },
+          {
+            "journal": "executor-b/transport.db",
+            "rolled_back": false,
+            "missing": []
+          },
+          {
+            "journal": "verifier-1/transport.db",
+            "rolled_back": true,
+            "missing": [
+              {
+                "kind": "outcome",
+                "topic": "verifier.request",
+                "redrive": "review"
+              }
+            ]
+          }
+        ]
+      },
+      "accepted_first": [
+        "planner-1",
+        "guard-1",
+        "executor-a",
+        "executor-b",
+        "verifier-1"
+      ],
+      "second_end": {
+        "terminal": false,
+        "states": [
+          "VERIFYING"
+        ],
+        "seconds_after_accept": 90.133
+      },
+      "template_writes": 1,
+      "statuses": {
+        "planner-1": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "guard-1": [
+          "accepted",
+          "idle",
+          "retry",
+          "store_changed"
+        ],
+        "executor-a": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "executor-b": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "verifier-1": [
+          "accepted",
+          "idle",
+          "retry",
+          "store_changed"
+        ]
+      },
+      "tls": true
+    },
+    {
+      "poll_seconds": 0.2,
+      "first_end": {
+        "terminal": true,
+        "states": [
+          "RECOVERED"
+        ]
+      },
+      "after_restore": {
+        "states": [
+          "READY"
+        ]
+      },
+      "store_changed_seconds": {
+        "planner-1": 0.013,
+        "guard-1": 0.265,
+        "executor-a": 0.202,
+        "executor-b": 0.06,
+        "verifier-1": 0.123
+      },
+      "restore_check": {
+        "may_lose_acknowledged_work": true,
+        "missing": 2,
+        "journals": [
+          {
+            "journal": "planner-1/transport.db",
+            "rolled_back": false,
+            "missing": []
+          },
+          {
+            "journal": "guard-1/transport.db",
+            "rolled_back": false,
+            "missing": []
+          },
+          {
+            "journal": "executor-a/transport.db",
+            "rolled_back": true,
+            "missing": [
+              {
+                "kind": "execution_result",
+                "topic": "executor.request",
+                "redrive": "replay"
+              }
+            ]
+          },
+          {
+            "journal": "executor-b/transport.db",
+            "rolled_back": false,
+            "missing": []
+          },
+          {
+            "journal": "verifier-1/transport.db",
+            "rolled_back": true,
+            "missing": [
+              {
+                "kind": "outcome",
+                "topic": "verifier.request",
+                "redrive": "review"
+              }
+            ]
+          }
+        ]
+      },
+      "accepted_first": [
+        "planner-1",
+        "guard-1",
+        "executor-a",
+        "executor-b",
+        "verifier-1"
+      ],
+      "second_end": {
+        "terminal": true,
+        "states": [
+          "RECOVERED"
+        ],
+        "seconds_after_accept": 0.428
+      },
+      "template_writes": 1,
+      "statuses": {
+        "planner-1": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "guard-1": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "executor-a": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "executor-b": [
+          "idle",
+          "store_changed"
+        ],
+        "verifier-1": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ]
+      },
+      "tls": true
+    },
+    {
+      "poll_seconds": 0.2,
+      "first_end": {
+        "terminal": true,
+        "states": [
+          "RECOVERED"
+        ]
+      },
+      "after_restore": {
+        "states": [
+          "READY"
+        ]
+      },
+      "store_changed_seconds": {
+        "planner-1": 0.246,
+        "guard-1": 0.003,
+        "executor-a": 0.169,
+        "executor-b": 0.184,
+        "verifier-1": 0.016
+      },
+      "restore_check": {
+        "may_lose_acknowledged_work": true,
+        "missing": 2,
+        "journals": [
+          {
+            "journal": "planner-1/transport.db",
+            "rolled_back": false,
+            "missing": []
+          },
+          {
+            "journal": "guard-1/transport.db",
+            "rolled_back": false,
+            "missing": []
+          },
+          {
+            "journal": "executor-a/transport.db",
+            "rolled_back": false,
+            "missing": []
+          },
+          {
+            "journal": "executor-b/transport.db",
+            "rolled_back": true,
+            "missing": [
+              {
+                "kind": "execution_result",
+                "topic": "executor.request",
+                "redrive": "replay"
+              }
+            ]
+          },
+          {
+            "journal": "verifier-1/transport.db",
+            "rolled_back": true,
+            "missing": [
+              {
+                "kind": "outcome",
+                "topic": "verifier.request",
+                "redrive": "review"
+              }
+            ]
+          }
+        ]
+      },
+      "accepted_first": [
+        "planner-1",
+        "guard-1",
+        "executor-a",
+        "executor-b",
+        "verifier-1"
+      ],
+      "second_end": {
+        "terminal": false,
+        "states": [
+          "VERIFYING"
+        ],
+        "seconds_after_accept": 90.018
+      },
+      "template_writes": 1,
+      "statuses": {
+        "planner-1": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "guard-1": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "executor-a": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "executor-b": [
+          "accepted",
+          "idle",
+          "store_changed"
+        ],
+        "verifier-1": [
+          "accepted",
+          "idle",
+          "retry",
+          "store_changed"
+        ]
+      },
+      "tls": true
+    }
+  ]
+}

@@ -55,10 +55,10 @@
       "cites": [
         {"at": "services/coordinator/core.py:118", "text": "_answers_current_request(message, store, answers)"},
         {"at": "services/coordinator/core.py:193", "text": "_issued_after(store, answers, \"guard_result\""},
-        {"at": "runtime/worker_transport.py:253", "text": "Result answers a superseded request"},
-        {"at": "runtime/remote_worker.py:89", "text": "lease_duration(delivery, clock) / 3"},
+        {"at": "runtime/worker_transport.py:255", "text": "Result answers a superseded request"},
+        {"at": "runtime/remote_worker.py:144", "text": "lease_duration(delivery, clock) / 3"},
         {"at": "services/guard/core.py:159", "text": "if approved_at > checked_at + skew:"},
-        {"at": "runtime/worker_http.py:288", "text": "self.samples.clear()"},
+        {"at": "runtime/worker_http.py:310", "text": "self.samples.clear()"},
         {"at": "runtime/live_executor.py:107", "text": "now=self.clock()"},
         {"at": "services/verifier/store.py:78", "text": "Monitoring cannot start before execution"},
         {"at": "tests/test_distributed_processes.py:62", "text": "def test_s7_executor_clocks_300_s_behind_end_failed_without_a_write_or_a_wedge"},
@@ -178,8 +178,8 @@
       "impact": "Fixed in code for the networked processes: shared/log.py writes allowlisted JSON lines; the Coordinator server, worker HTTP, approval HTTP and worker service entrypoints configure it; every POST request gets one http.access line, or an auth.denied line for a 401 or 403, while GET /healthz, GET /readyz and GET requests for unknown paths (404) get none; lifecycle transitions are journalled; and every broad except handler re-raises or logs the error class, which CI enforces. Not covered: the live harnesses (the Executor wedge harness included), agent mode and the in-process pipelines that every recorded run used never configure logging, so their log events are dropped. Exception messages are never logged, only class names, by design. Since P3.02, W3C trace context follows an incident through outbox rows, claimed deliveries and worker HTTP requests, and spans are written as span.start and span.end log lines; approvals and the in-process pipelines add no spans of their own, there is no OpenTelemetry export, and no live run has produced a trace. No live run has collected logs yet.",
       "workaround": "For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json and print the traces with scripts/trace_view.py.",
       "cites": [
-        {"at": "shared/log.py:236", "text": "def entrypoint(component: str)"},
-        {"at": "runtime/worker_http.py:391", "text": "@log.entrypoint(\"worker_http\")"},
+        {"at": "shared/log.py:237", "text": "def entrypoint(component: str)"},
+        {"at": "runtime/worker_http.py:486", "text": "@log.entrypoint(\"worker_http\")"},
         {"at": "shared/tracing.py:123", "text": "def start_span("},
         {"at": "services/executor/core.py:240-241", "text": "any read failure leaves the outcome unknown"},
         {"at": "docs/observability.md", "text": "only when their entrypoint configures logging"},
@@ -208,14 +208,35 @@
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-11",
-      "impact": "No replica takes over if the Coordinator host or its volume is lost; work waits until it returns. Workers back off for up to 60 s, which lengthens recovery after a restart.",
+      "impact": "No replica takes over if the Coordinator host or its volume is lost; work waits until it returns. Since P3.06 a worker waits at most 15 s, with full jitter, between failed passes, instead of up to 60 s on a fixed schedule. Measured in file mode (separate processes on one Windows host, loopback, a shared and busy machine; not a cluster): after a 75 s outage the slowest of five workers claimed again 8.1 s (median of 6 restarts) after the restarted Coordinator was ready, against 56.7 s before; after a 30 s outage it was 10.4 s against 5.6 s, because the old fixed schedule happened to line up. Every claim still replays the whole pending outbox in one transaction, so claims per second fall as the backlog grows (about 40 to 55 with 50 to 200 commands queued, 21 to 23 with 1,000).",
       "workaround": "Restart the Coordinator on the same volume; saved requests replay from SQLite.",
       "cites": [
         {"at": "deploy/sentinel/coordinator.yaml:62-64", "text": "type: Recreate"},
-        {"at": "services/coordinator/store.py:168", "text": "sqlite3.connect"},
-        {"at": "runtime/worker_transport.py:150", "text": "delay = min(60"}
+        {"at": "services/coordinator/store.py:189", "text": "sqlite3.connect"},
+        {"at": "runtime/worker_service.py:26", "text": "BACKOFF_CAP_SECONDS = 15"},
+        {"at": "tests/test_worker_backoff.py:60", "text": "def test_a_worker_reaches_a_restarted_coordinator_within_the_cap"},
+        {"at": "experiments/distributed/measurements/p3-06/README.md"}
       ],
-      "planned": ["P3.06", "P4.02", "P5.01"],
+      "planned": ["P4.02", "P5.01"],
+      "issues": [62, 63]
+    },
+    {
+      "id": "L-RESTORE-DETECTION",
+      "title": "A Coordinator restored from a backup is detected, but lost acknowledged results are re-driven by hand",
+      "kind": "limitation",
+      "status": "mitigated",
+      "since": "2026-11-12",
+      "impact": "Restoring the Coordinator database from an earlier copy drops results it had already acknowledged, and workers do not resend acknowledged results by themselves. Since P3.06 the database has a random generation and a commit counter that grows with every changing transaction, every worker reply carries both, and a worker that sees another generation, or a counter lower than one it saw before sending, stops claiming new work, answers /readyz with 503 and logs it once, across restarts, while still sending its saved results. scripts/coordinator_restore_check.py lists the acknowledged results the restored database lacks, as replay (the worker resends its saved result when it claims the same request again) or review. Limits: a worker notices only at its next exchange, and only if it saw a higher counter before; if the restored Coordinator commits enough new transactions before a worker's next exchange to pass the counter that worker saw, that worker does not notice (the check with --previous-commit still does). A worker restarted after the restore compares with the position at its latest acknowledged result only. The Observer's incident outbox does not watch the store, and nothing re-drives a review item. In restore drills (separate processes on one Windows host, file mode; never on a cluster) every worker stopped within 0.31 s and the check listed exactly the two lost results. Clearing every worker at once left the action VERIFYING in 4 of 8 drills: by our reading another Executor claimed the replayed request first and reported its own result, which the Verifier's job store refuses as a second execution for the action. Clearing the workers holding replay items first recovered 5 of 5 with no new write.",
+      "workaround": "Note the commit counter before a restore (SELECT commit_counter FROM store_meta), run scripts/coordinator_restore_check.py with --previous-commit and every worker's transport.db after it, re-drive or review what it lists, then clear each worker with worker_service --accept-store, those holding replay items first.",
+      "cites": [
+        {"at": "services/coordinator/store.py:127", "text": "lower(hex(randomblob(16)))"},
+        {"at": "services/coordinator/store.py:377", "text": "UPDATE store_meta SET commit_counter=commit_counter+1"},
+        {"at": "runtime/worker_http.py:379", "text": "elif floor is not None and commit < floor:"},
+        {"at": "runtime/remote_worker.py:235", "text": "\"status\": \"store_changed\""},
+        {"at": "scripts/coordinator_restore_check.py"},
+        {"at": "tests/test_store_generation.py:260", "text": "def test_a_rolled_back_database_stops_claiming_keeps_saved_results_and_resumes_after_acceptance"}
+      ],
+      "planned": ["P4.02"],
       "issues": [62, 63]
     },
     {

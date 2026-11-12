@@ -34,7 +34,7 @@ MIN_REASON_WORDS = 3
 LOGGED_AFTER = {
     ("runtime/worker_http.py", "do_POST"): "access_log() after the try writes error_type",
     ("runtime/approval_http.py", "do_POST"): "access_log() after the try writes error_type",
-    ("runtime/worker_service.py", "main"): "report() after the try writes worker.status with error_type",
+    ("runtime/worker_service.py", "poll"): "report() after the try writes worker.status with error_type",
 }
 # Files that cannot import shared/log.py, with the reason.
 EXEMPT = {

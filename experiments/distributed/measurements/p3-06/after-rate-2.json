@@ -1,0 +1,78 @@
+{
+  "schema": "sentinel-claims-rate-v1",
+  "label": "after",
+  "started_at": "2026-11-12T10:53:16Z",
+  "mode": "file",
+  "single_host": true,
+  "separate_processes": true,
+  "loopback": "127.0.0.1",
+  "measured": "synthetic commands claimed over HTTP; never processed",
+  "git_revision": "bab85636d6cc5523af466716dba49e6dac88bffb",
+  "python": "3.13.2",
+  "os": "Windows",
+  "backoff": {
+    "cap_seconds": 15,
+    "jitter": "full",
+    "formula": "uniform(0, min(15, poll_seconds * 2 ** min(failures, 5)))"
+  },
+  "limits": "Separate OS processes on one host: one kernel clock, one disk, loopback networking. Not separate machines, and not a Coordinator Pod restart in a cluster.",
+  "runs": [
+    {
+      "backlog": 50,
+      "clients": 6,
+      "claims": 50,
+      "claims_by_identity": {
+        "verifier-1": 25,
+        "executor-a": 13,
+        "executor-b": 12
+      },
+      "seconds": 0.987,
+      "claims_per_second": 50.6,
+      "latency_ms": {
+        "median": 76.3,
+        "p95": 193.2,
+        "max": 233.8
+      },
+      "errors": [],
+      "tls": true
+    },
+    {
+      "backlog": 200,
+      "clients": 6,
+      "claims": 200,
+      "claims_by_identity": {
+        "verifier-1": 100,
+        "executor-a": 59,
+        "executor-b": 41
+      },
+      "seconds": 3.908,
+      "claims_per_second": 51.2,
+      "latency_ms": {
+        "median": 62.9,
+        "p95": 309.2,
+        "max": 822.2
+      },
+      "errors": [],
+      "tls": true
+    },
+    {
+      "backlog": 1000,
+      "clients": 6,
+      "claims": 1000,
+      "claims_by_identity": {
+        "executor-a": 249,
+        "verifier-1": 500,
+        "executor-b": 251
+      },
+      "seconds": 46.953,
+      "claims_per_second": 21.3,
+      "latency_ms": {
+        "median": 120.4,
+        "p95": 811.2,
+        "max": 2967.7
+      },
+      "errors": [],
+      "tls": true
+    }
+  ]
+}

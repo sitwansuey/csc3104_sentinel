@@ -45,7 +45,8 @@ its level and, for exceptions, the class name.
 | `coordinator.state.transition` | Coordinator store | A lifecycle change, logged only after its transaction commits. |
 | `coordinator.message.recorded` / `.duplicate` | Coordinator | An accepted message, or an exact retry (`DEBUG`). |
 | `coordinator.outbox.enqueued` | Coordinator store | A new outbox command, with `event_id` and `topic`. |
-| `worker.status` | remote worker service | One polling pass, with `delivery_id`, `event_id`, `topic`, `action_id`, and `error_type` on a retry. The stdout status line is unchanged. |
+| `worker.status` | remote worker service | One polling pass, with `delivery_id`, `event_id`, `topic`, `action_id`, and `error_type` on a retry. The stdout status line is unchanged. A `store_changed` pass is `WARNING` and carries its `reason`. |
+| `worker.store_generation_changed` / `worker.store_rollback_detected` | remote worker | `ERROR`, once: a Coordinator reply named another database (`store_generation`) or a lower `commit_counter` than one seen before (`previous_generation`, `previous_commit`). The worker stops claiming until `worker.store_change_cleared` (written by `--accept-store`) and `worker.store_change_accepted` (the running worker resumes). |
 | `span.start` / `span.end` | any process with an open span | One timed step of a trace; see [Traces](#traces). `span.start` is `DEBUG`. |
 
 `bind()` attaches IDs to every line in a block. Start threads with

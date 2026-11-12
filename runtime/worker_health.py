@@ -5,7 +5,9 @@ within the liveness window, so a loop stuck inside one pass (a hung inference
 or blocked I/O) turns unhealthy once the window passes.
 /readyz answers 200 only when the worker's configuration was accepted, the
 Coordinator answered a polling pass within the readiness window, and the
-worker's clock was within its configured skew bound at the latest pass. Both bodies
+worker's clock was within its configured skew bound at the latest pass, and no
+Coordinator store change (a replaced or rolled-back database) is waiting for an
+operator. Both bodies
 hold booleans and ages in seconds only, never configuration or credentials.
 """
 from contextlib import contextmanager
@@ -24,6 +26,7 @@ class WorkerHealth:
         self._beat = None
         self._contact = None
         self._clock_skew = False
+        self._store_changed = False
 
     def configured(self):
         self._configured = True
@@ -31,6 +34,10 @@ class WorkerHealth:
     def clock_checked(self, within_bound):
         """Record whether the worker's measured clock offset is within its skew bound."""
         self._clock_skew = not within_bound
+
+    def store_checked(self, unchanged):
+        """Record whether claiming is allowed, or a Coordinator store change is waiting for an operator."""
+        self._store_changed = not unchanged
 
     def heartbeat(self):
         self._beat = self.clock()
@@ -49,10 +56,13 @@ class WorkerHealth:
     def ready(self, stopping=None):
         age = self._age(self._contact)
         ready = (self._configured and age is not None and age <= self.ready_seconds
-                 and not self._clock_skew and not (stopping is not None and stopping.is_set()))
+                 and not self._clock_skew and not self._store_changed
+                 and not (stopping is not None and stopping.is_set()))
         body = {"ready": ready, "contact_age_seconds": age}
         if self._clock_skew:
             body["clock_skew"] = True  # Not ready: the clock is outside the skew bound.
+        if self._store_changed:
+            body["store_changed"] = True  # Not ready: the Coordinator database was replaced or rolled back.
         return (200 if ready else 503), body
 
 

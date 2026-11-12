@@ -34,7 +34,7 @@ the fix and regenerate.
 | [L-RAW-LOGS-PROMPT](#l-raw-logs-prompt) | defect | mitigated | Sentinel's planning prompts carry log text only cleaned and quoted, and the injection gate is a pattern list no live run has exercised | P2.04, P2.05, P4.04 | #51, #56 |
 | [L-FREE-TEXT-DECISION](#l-free-text-decision) | defect | mitigated | The live diagnosis was model free text and the rollback choice had no change evidence | P2.05, P4.04 | #15, #52, #53, #74, #87 |
 | [L-NO-LOGGING](#l-no-logging) | defect | mitigated | Structured logs cover only the networked entrypoints, and no live run has collected them | P1.07, P3.02 | #62 |
-| [L-SINGLE-COORDINATOR](#l-single-coordinator) | limitation | open | The Coordinator is one process with one SQLite file | P3.06, P4.02, P5.01 | #62, #63 |
+| [L-SINGLE-COORDINATOR](#l-single-coordinator) | limitation | open | The Coordinator is one process with one SQLite file | P4.02, P5.01 | #62, #63 |
 | [L-HOST-LOCAL-EXECUTOR](#l-host-local-executor) | limitation | open | The Executor ledger and target locks are host-local | P3.04 | #18, #58, #59 |
 | [L-NO-FENCING](#l-no-fencing) | limitation | open | No fencing of abandoned or revoked writes across hosts | P2.06, P3.04, P3.05 | #18, #58, #61 |
 | [L-SINGLE-HOST-DISTRIBUTION](#l-single-host-distribution) | limitation | open | The networked worker layer has only run on one host | P3.01, P4.01 | #62, #63 |
@@ -46,6 +46,7 @@ the fix and regenerate.
 | [L-CHAOS-NOT-WIRED](#l-chaos-not-wired) | limitation | open | Chaos Mesh faults are injection only, and HTTP and DNS faults do not run on this host | P4.03 | #76 |
 | [L-NO-RELEASE](#l-no-release) | limitation | open | No tagged, scanned release image | P2.09, P2.10 | #63, #73 |
 | [L-LAB-CERTS](#l-lab-certs) | limitation | open | Security lab certificates are two-day fixtures with no rotation | P5.06 | #70 |
+| [L-RESTORE-DETECTION](#l-restore-detection) | limitation | mitigated | A Coordinator restored from a backup is detected, but lost acknowledged results are re-driven by hand | P4.02 | #62, #63 |
 | [L-ONE-FAULT-ONE-ACTION](#l-one-fault-one-action) | limitation | mitigated | One fault type and one repair action | P2.08, P3.08, P3.09 | #74, #76 |
 | [L-MODEL-LATENCY](#l-model-latency) | limitation | mitigated | Model cold loads make agent planning slow and variable | P2.01 | #85, #87 |
 | [L-UNPINNED-BASE-IMAGES](#l-unpinned-base-images) | limitation | mitigated | Sentinel component images used unpinned base image tags | P1.09 | #73 |
@@ -97,7 +98,7 @@ the fix and regenerate.
 
 - Impact: Fixed in code (P3.03); not run across machines or in kind. Worker results are now ordered by the Coordinator request they answer, not by the producers' clocks, so the wedge is gone: an answer to a superseded request gets HTTP 409 and is released, never resent for ever. Scenario S7 (both Executors on a gated test clock 300 s behind, separate processes on one Windows host, file mode, operator approval required) showed the wedge before the change (result refused with HTTP 400, incident READY). After it the result is accepted, but the Executor's own Guard re-check, which reads the same shifted clock, sees the Coordinator-stamped approval 300 s in its future and refuses: the action ends FAILED with no write and every invariant holding in 3 of 3 runs, with each Executor measuring an offset of 300.005 to 300.012 s. An Executor host whose whole clock is off by more than the bound therefore cannot complete an approved action; an in-bound peer can (S7b, 3 of 3 runs). Lease renewal now uses the lease length the Coordinator returns. Clocks still matter for freshness and expiry: the Guard tolerates a configured bound (max_clock_skew_seconds, off by default) and counts it against age and expiry; the Executor's local re-check and the Verifier's start check still compare their clock with timestamps from other processes, so skew beyond the bound ends an action FAILED or, by reading the code (no test), delays verification instead of wedging it. Workers measure their offset from the Coordinator (Cristian's algorithm) and, with a bound set, stop claiming and turn unready outside it. After a clock step this holds from the first exchange after the step: a request already claimed runs with the stepped clock until its next exchange, and a step smaller than the measurement uncertainty can go unseen. The offset is self-reported, so this guards against honest misconfiguration, not a dishonest worker. Messages accepted before store migration 4 have no high-water mark, so for an action in flight at the upgrade only the newest-request rule orders its results. Skew has only been simulated on one host, never measured between machines or in kind.
 - Workaround: Keep host clocks synchronised (NTP), and set max_clock_skew_seconds for the workers and the Guard policy and --max-clock-skew-seconds for the Coordinator, so a host past the bound stops claiming work.
-- Evidence: `services/coordinator/core.py:118`; `services/coordinator/core.py:193`; `runtime/worker_transport.py:253`; `runtime/remote_worker.py:89`; `services/guard/core.py:159`; `runtime/worker_http.py:288`; `runtime/live_executor.py:107`; `services/verifier/store.py:78`; `tests/test_distributed_processes.py:62`; `tests/test_clock_skew.py:675`.
+- Evidence: `services/coordinator/core.py:118`; `services/coordinator/core.py:193`; `runtime/worker_transport.py:255`; `runtime/remote_worker.py:144`; `services/guard/core.py:159`; `runtime/worker_http.py:310`; `runtime/live_executor.py:107`; `services/verifier/store.py:78`; `tests/test_distributed_processes.py:62`; `tests/test_clock_skew.py:675`.
 
 ### L-AGENT-JOURNAL
 
@@ -137,15 +138,15 @@ the fix and regenerate.
 
 - Impact: Fixed in code for the networked processes: shared/log.py writes allowlisted JSON lines; the Coordinator server, worker HTTP, approval HTTP and worker service entrypoints configure it; every POST request gets one http.access line, or an auth.denied line for a 401 or 403, while GET /healthz, GET /readyz and GET requests for unknown paths (404) get none; lifecycle transitions are journalled; and every broad except handler re-raises or logs the error class, which CI enforces. Not covered: the live harnesses (the Executor wedge harness included), agent mode and the in-process pipelines that every recorded run used never configure logging, so their log events are dropped. Exception messages are never logged, only class names, by design. Since P3.02, W3C trace context follows an incident through outbox rows, claimed deliveries and worker HTTP requests, and spans are written as span.start and span.end log lines; approvals and the in-process pipelines add no spans of their own, there is no OpenTelemetry export, and no live run has produced a trace. No live run has collected logs yet.
 - Workaround: For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json and print the traces with scripts/trace_view.py.
-- Evidence: `shared/log.py:236`; `runtime/worker_http.py:391`; `shared/tracing.py:123`; `services/executor/core.py:240-241`; `docs/observability.md`; `tests/test_except_audit.py:39`.
+- Evidence: `shared/log.py:237`; `runtime/worker_http.py:486`; `shared/tracing.py:123`; `services/executor/core.py:240-241`; `docs/observability.md`; `tests/test_except_audit.py:39`.
 
 ### L-SINGLE-COORDINATOR
 
-**The Coordinator is one process with one SQLite file.** Limitation, open; recorded 2026-11-11. Planned: P3.06, P4.02, P5.01. Issues: #62, #63.
+**The Coordinator is one process with one SQLite file.** Limitation, open; recorded 2026-11-11. Planned: P4.02, P5.01. Issues: #62, #63.
 
-- Impact: No replica takes over if the Coordinator host or its volume is lost; work waits until it returns. Workers back off for up to 60 s, which lengthens recovery after a restart.
+- Impact: No replica takes over if the Coordinator host or its volume is lost; work waits until it returns. Since P3.06 a worker waits at most 15 s, with full jitter, between failed passes, instead of up to 60 s on a fixed schedule. Measured in file mode (separate processes on one Windows host, loopback, a shared and busy machine; not a cluster): after a 75 s outage the slowest of five workers claimed again 8.1 s (median of 6 restarts) after the restarted Coordinator was ready, against 56.7 s before; after a 30 s outage it was 10.4 s against 5.6 s, because the old fixed schedule happened to line up. Every claim still replays the whole pending outbox in one transaction, so claims per second fall as the backlog grows (about 40 to 55 with 50 to 200 commands queued, 21 to 23 with 1,000).
 - Workaround: Restart the Coordinator on the same volume; saved requests replay from SQLite.
-- Evidence: `deploy/sentinel/coordinator.yaml:62-64`; `services/coordinator/store.py:168`; `runtime/worker_transport.py:150`.
+- Evidence: `deploy/sentinel/coordinator.yaml:62-64`; `services/coordinator/store.py:189`; `runtime/worker_service.py:26`; `tests/test_worker_backoff.py:60`; `experiments/distributed/measurements/p3-06/README.md`.
 
 ### L-HOST-LOCAL-EXECUTOR
 
@@ -234,6 +235,14 @@ the fix and regenerate.
 - Impact: Certificates expire after two days and are not rotated, revoked or bound to a workload identity.
 - Workaround: Recreate the lab for each session.
 - Evidence: `scripts/security/security_lab.py:119`.
+
+### L-RESTORE-DETECTION
+
+**A Coordinator restored from a backup is detected, but lost acknowledged results are re-driven by hand.** Limitation, mitigated; recorded 2026-11-12. Planned: P4.02. Issues: #62, #63.
+
+- Impact: Restoring the Coordinator database from an earlier copy drops results it had already acknowledged, and workers do not resend acknowledged results by themselves. Since P3.06 the database has a random generation and a commit counter that grows with every changing transaction, every worker reply carries both, and a worker that sees another generation, or a counter lower than one it saw before sending, stops claiming new work, answers /readyz with 503 and logs it once, across restarts, while still sending its saved results. scripts/coordinator_restore_check.py lists the acknowledged results the restored database lacks, as replay (the worker resends its saved result when it claims the same request again) or review. Limits: a worker notices only at its next exchange, and only if it saw a higher counter before; if the restored Coordinator commits enough new transactions before a worker's next exchange to pass the counter that worker saw, that worker does not notice (the check with --previous-commit still does). A worker restarted after the restore compares with the position at its latest acknowledged result only. The Observer's incident outbox does not watch the store, and nothing re-drives a review item. In restore drills (separate processes on one Windows host, file mode; never on a cluster) every worker stopped within 0.31 s and the check listed exactly the two lost results. Clearing every worker at once left the action VERIFYING in 4 of 8 drills: by our reading another Executor claimed the replayed request first and reported its own result, which the Verifier's job store refuses as a second execution for the action. Clearing the workers holding replay items first recovered 5 of 5 with no new write.
+- Workaround: Note the commit counter before a restore (SELECT commit_counter FROM store_meta), run scripts/coordinator_restore_check.py with --previous-commit and every worker's transport.db after it, re-drive or review what it lists, then clear each worker with worker_service --accept-store, those holding replay items first.
+- Evidence: `services/coordinator/store.py:127`; `services/coordinator/store.py:377`; `runtime/worker_http.py:379`; `runtime/remote_worker.py:235`; `scripts/coordinator_restore_check.py`; `tests/test_store_generation.py:260`.
 
 ### L-ONE-FAULT-ONE-ACTION
 

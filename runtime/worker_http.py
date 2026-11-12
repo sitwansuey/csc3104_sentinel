@@ -9,6 +9,7 @@ import math
 import signal
 import socket
 import re
+import sqlite3
 import ssl
 import threading
 import time
@@ -32,6 +33,11 @@ OPERATIONS = {"/v1/" + name: name for name in ("claim", "ingest", "renew", "depe
 SERVER_TIME_HEADER = "X-Sentinel-Server-Time"
 CLOCK_ESTIMATE_HEADER = "X-Sentinel-Clock-Estimate"
 CLOCK_SAMPLES = 8
+# Restore detection: every reply that opened the store names the database
+# (its generation) and how far it has got (its commit counter).
+STORE_GENERATION_HEADER = "X-Sentinel-Store-Generation"
+STORE_COMMIT_HEADER = "X-Sentinel-Store-Commit"
+GENERATION = re.compile(r"[0-9a-f]{32}")
 SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
 # Denial and conflict reason classes. Messages are fixed strings from the
 # delivery protocol; anything unlisted falls back to a per-status class.
@@ -111,6 +117,15 @@ def clock_estimate(headers):
     return parse_clock_estimate(values[0]) if len(values) == 1 else None
 
 
+def store_position(store):
+    """The store's (generation, commit counter) for the reply headers, or None if it cannot be read."""
+    try:
+        return store.position()
+    except sqlite3.Error as error:
+        log.failure(LOG, "http.store_position.failed", error)
+        return None
+
+
 def handler(database, services, lease_seconds=30, retention_seconds=86400,
             request_timeout=15, stopping=None, clock=None, dependency_requests=False, max_clock_skew=None):
     def server_time():
@@ -145,6 +160,7 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
         def do_POST(self):
             started, operation = time.monotonic(), OPERATIONS.get(self.path, "unknown")
             ids, outcome, reason, error_type, span = {}, None, None, None, None
+            store, position = None, None
             with ExitStack() as scope:
                 try:
                     if stopping is not None and stopping.is_set():
@@ -173,32 +189,33 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
                     # IDs only: the lease token and the body itself are never logged.
                     ids["delivery_id"] = body.get("delivery_id")
                     ids.update(_message_ids(body.get("message") or body.get("result") or body.get("proposal")))
-                    with SQLiteStore(database, clock=clock) as store:
-                        delivery = Delivery(store, lease_seconds=lease_seconds, retention_seconds=retention_seconds,
-                                            dependency_requests=dependency_requests, max_clock_skew=max_clock_skew)
-                        if self.path == "/v1/claim":
-                            answer = delivery.claim(name, role, clock_estimate=estimate)
-                            ids.update(delivery_ids(answer["delivery"]))
-                            outcome = "claimed" if answer["delivery"] else "idle"
-                        elif self.path == "/v1/clock":
-                            answer = delivery.report_clock(name, estimate)
-                            outcome = "idle"
-                        elif self.path == "/v1/ingest":
-                            answer = delivery.ingest(role, body["message"], identity=name)
-                            outcome = "replay" if answer.get("replay") else "accepted"
-                        elif self.path == "/v1/renew":
-                            answer = delivery.renew(name, role, body["delivery_id"], body["lease_token"])
-                            outcome = "renewed"
-                        elif self.path == "/v1/dependencies":
-                            answer = delivery.dependencies(role, body["proposal"])
-                        elif self.path in ("/v1/result", "/v1/retry"):
-                            answer = delivery.finish(name, role, body["delivery_id"], body["lease_token"],
-                                                     body.get("result"), retry=self.path == "/v1/retry",
-                                                     report=body.get("report"), clock_estimate=estimate)
-                            outcome = ("retry" if self.path == "/v1/retry"
-                                       else "replay" if answer.get("replay") else "accepted")
-                        else:
-                            raise ProtocolError(404, "Unknown endpoint")
+                    # Closed when this scope ends, after its position is read for the reply.
+                    store = scope.enter_context(SQLiteStore(database, clock=clock))
+                    delivery = Delivery(store, lease_seconds=lease_seconds, retention_seconds=retention_seconds,
+                                        dependency_requests=dependency_requests, max_clock_skew=max_clock_skew)
+                    if self.path == "/v1/claim":
+                        answer = delivery.claim(name, role, clock_estimate=estimate)
+                        ids.update(delivery_ids(answer["delivery"]))
+                        outcome = "claimed" if answer["delivery"] else "idle"
+                    elif self.path == "/v1/clock":
+                        answer = delivery.report_clock(name, estimate)
+                        outcome = "idle"
+                    elif self.path == "/v1/ingest":
+                        answer = delivery.ingest(role, body["message"], identity=name)
+                        outcome = "replay" if answer.get("replay") else "accepted"
+                    elif self.path == "/v1/renew":
+                        answer = delivery.renew(name, role, body["delivery_id"], body["lease_token"])
+                        outcome = "renewed"
+                    elif self.path == "/v1/dependencies":
+                        answer = delivery.dependencies(role, body["proposal"])
+                    elif self.path in ("/v1/result", "/v1/retry"):
+                        answer = delivery.finish(name, role, body["delivery_id"], body["lease_token"],
+                                                 body.get("result"), retry=self.path == "/v1/retry",
+                                                 report=body.get("report"), clock_estimate=estimate)
+                        outcome = ("retry" if self.path == "/v1/retry"
+                                   else "replay" if answer.get("replay") else "accepted")
+                    else:
+                        raise ProtocolError(404, "Unknown endpoint")
                     status, response = 200, answer
                 except ProtocolError as exc:
                     status, reason, response = exc.status, reason_class(exc.status, str(exc)), {"error": str(exc)}
@@ -210,6 +227,8 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
                 except Exception as exc:  # noqa: BLE001 - an internal error answers 503; access_log records error_type
                     status, error_type = 503, type(exc).__name__
                     response = {"error": "Coordinator unavailable; retry the saved request"}
+                if store is not None:  # Read after this request's own commit, so it includes it.
+                    position = store_position(store)
                 if span is not None:
                     span.set(http_status=status, outcome=outcome, reason=reason)
                     if status >= 400:
@@ -222,14 +241,17 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
             if status == 200 and operation == "result":
                 # Inert outside lab fault runs (runtime/fault_points.py): committed, not yet answered.
                 fault_points.checkpoint("coordinator.after_commit_before_reply", qualifier=_result_kind(body))
-            self.reply(status, response)
+            self.reply(status, response, position)
 
-        def reply(self, status, value):
+        def reply(self, status, value, position=None):
             data = json.dumps(value, allow_nan=False).encode()
             try:
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
+                if position is not None and position[0] is not None:
+                    self.send_header(STORE_GENERATION_HEADER, position[0])
+                    self.send_header(STORE_COMMIT_HEADER, str(position[1]))
                 # Read as late as possible, so the worker's RTT brackets it.
                 self.send_header(SERVER_TIME_HEADER, f"{server_time():.6f}")
                 self.end_headers()
@@ -300,13 +322,82 @@ class ClockEstimator:
         return within_skew_bound(self.estimate(), bound) and within_skew_bound(newest, bound)
 
 
+def parse_store_position(generation, commit):
+    """(generation, commit counter) from the two reply headers, or None when absent or malformed."""
+    if not isinstance(generation, str) or not GENERATION.fullmatch(generation):
+        return None
+    if not isinstance(commit, str) or not commit.isascii() or not commit.isdigit() or len(commit) > 18:
+        return None
+    return generation, int(commit)
+
+
+class StoreWatch:
+    """Which Coordinator database this worker talks to, and the furthest it has seen it get.
+
+    The first reply's generation is adopted. A reply naming another
+    generation means the database was recreated or replaced. A reply with the
+    same generation and a commit counter lower than one already seen before
+    the request was sent means the database went back in time: it was
+    restored from an earlier copy. Either way change records the first such
+    reply, and stays set until reset(); the worker then stops claiming
+    (runtime/remote_worker.py::RemoteWorker.store_status).
+
+    Only replies received before a request was sent are compared with its
+    reply (floor()), since requests in flight together (a lease renewal
+    beside a claim) may be answered in either order.
+    """
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.generation = self.highest = self.change = self.last = None
+
+    def seed(self, generation, commit, change=None):
+        """Start from a remembered position, and a change already recorded, if any."""
+        with self._lock:
+            self.generation, self.highest, self.change = generation, commit, change
+
+    def reset(self):
+        """Forget everything; the next reply's database is adopted (after an operator accepted a restore)."""
+        self.seed(None, None, None)
+
+    def floor(self):
+        with self._lock:
+            return self.highest
+
+    def observe(self, floor, generation, commit):
+        """Record one reply's position; return the change it reveals, if it is the first."""
+        position = parse_store_position(generation, commit)
+        if position is None:
+            return None
+        generation, commit = position
+        with self._lock:
+            self.last = position
+            if self.generation is None:
+                self.generation, self.highest = generation, commit
+                return None
+            if generation != self.generation:
+                reason = "generation_changed"
+            elif floor is not None and commit < floor:
+                reason = "rolled_back"
+            else:
+                if self.change is None:
+                    self.highest = max(self.highest or 0, commit)
+                return None
+            if self.change is not None:
+                return None
+            self.change = {"reason": reason, "previous_generation": self.generation,
+                           "previous_commit": self.highest, "generation": generation, "commit": commit}
+            return self.change
+
+
 class WorkerClient:
     """One bounded POST. Callers retain the immutable result for explicit retry.
 
     clock is this worker's wall clock (seconds), used only to estimate its
-    offset from the Coordinator's clock (ClockEstimator).
+    offset from the Coordinator's clock (ClockEstimator). store watches the
+    Coordinator database's generation and commit counter (StoreWatch); pass
+    one StoreWatch to every client of one worker so they share it.
     """
-    def __init__(self, url, identity, token, *, timeout=15, tls_context=None, clock=time.time):
+    def __init__(self, url, identity, token, *, timeout=15, tls_context=None, clock=time.time, store=None):
         self.url = urlsplit(url)
         if (not self.url.hostname or self.url.username is not None or self.url.password is not None
                 or self.url.path not in {"", "/"} or self.url.query or self.url.fragment):
@@ -320,6 +411,7 @@ class WorkerClient:
         self.identity, self.token, self.timeout = identity, token, timeout
         self.tls_context = tls_context
         self.clock = ClockEstimator(clock=clock)
+        self.store = store if store is not None else StoreWatch()
 
     def post(self, operation, body):
         if operation not in {"claim", "ingest", "result", "retry", "renew", "dependencies", "clock"}:
@@ -340,11 +432,14 @@ class WorkerClient:
             estimate = self.clock.estimate()
             if estimate is not None:
                 headers[CLOCK_ESTIMATE_HEADER] = f"{estimate[0]:.6f};{estimate[1]:.6f}"
+            floor = self.store.floor()
             started = self.clock.start()
             connection.request("POST", "/v1/" + operation, encoded, headers)
             response = connection.getresponse()
             header = getattr(response, "getheader", None)  # Absent on minimal stand-in responses.
             self.clock.observe(started, header(SERVER_TIME_HEADER) if header else None)
+            if header:
+                self.store.observe(floor, header(STORE_GENERATION_HEADER), header(STORE_COMMIT_HEADER))
             raw = response.read(MAX_BODY + 1)
             if len(raw) > MAX_BODY:
                 raise ProtocolError(502, "Coordinator response exceeds 1 MiB")

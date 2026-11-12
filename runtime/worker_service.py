@@ -6,6 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
+import random
 import signal
 import ssl
 import threading
@@ -17,10 +18,12 @@ from runtime.remote_adapters import (
 )
 from runtime.remote_worker import RemoteWorker, WorkerJournal
 from runtime.worker_health import WorkerHealth, serve_health
-from runtime.worker_http import WorkerClient
+from runtime.worker_http import StoreWatch, WorkerClient
 from shared import log
 
 LOG = log.get_logger("worker_service")
+# The longest wait between polling passes after failures (P3.06; it was 60 s).
+BACKOFF_CAP_SECONDS = 15
 
 
 def read_json(path):
@@ -38,10 +41,24 @@ def reader(path):
     return lambda _message: read_json(path)
 
 
-def client(config, clock=time.time):
+def client(config, clock=time.time, store=None):
     context = ssl.create_default_context(cafile=config["ca"]) if config.get("ca") else None
     return WorkerClient(config["url"], config["identity"], credential(config["token_env"]),
-                        timeout=config.get("timeout", 15), tls_context=context, clock=clock)
+                        timeout=config.get("timeout", 15), tls_context=context, clock=clock, store=store)
+
+
+def backoff_seconds(poll_seconds, failures, random=random.random):
+    """Seconds to wait before the next polling pass.
+
+    After a pass that reached the Coordinator, poll_seconds. After failures
+    in a row, a wait drawn uniformly between 0 and
+    min(BACKOFF_CAP_SECONDS, poll_seconds * 2 ** min(failures, 5)) ("full
+    jitter"): workers that lost the Coordinator together do not all retry
+    at once, and none waits more than the cap once it is back.
+    """
+    if failures <= 0:
+        return poll_seconds
+    return random() * min(BACKOFF_CAP_SECONDS, poll_seconds * 2 ** min(failures, 5))
 
 
 def skew_bound(config):
@@ -98,7 +115,7 @@ def planner_provider(config, lab=False):
         json.dumps({"component": "planner", "event": "progress", **update}), flush=True)), 2 * timeout + 30
 
 
-def adapter(config, directory, stack):
+def adapter(config, directory, stack, store=None):
     role = config["role"]
     lab = fault_points.bind(config)  # Raises when lab variables are set for a worker aimed elsewhere.
     cluster = lab_cluster(config, stack, lab)
@@ -150,12 +167,12 @@ def adapter(config, directory, stack):
             live = replace(live, ledger=fault_points.CheckpointLedger(live.ledger),
                            cluster=fault_points.CheckpointCluster(live.cluster))
         if config.get("remote_dependencies", True):
-            connection = client(config)
+            connection = client(config, store=store)
             live.authorizer.dependency_reader = lambda p: connection.post("dependencies", {"proposal": p})["dependencies"]
         return ExecutorAdapter(live)
     authorizer = LiveGuardAuthorizer(**options, approval=None, clock=clock)
     if config.get("remote_dependencies", True):
-        connection = client(config)
+        connection = client(config, store=store)
         authorizer.dependency_reader = lambda p: connection.post("dependencies", {"proposal": p})["dependencies"]
     state_reader = ((lambda p: cluster.snapshot(p["target"])) if cluster is not None else
                     lambda p: read_deployment(p["target"], context=config["context"],
@@ -167,10 +184,53 @@ def adapter(config, directory, stack):
 
 def report(status, error=None):
     """Log one polling pass. Idle passes are DEBUG to keep 2 s polling quiet."""
-    level = log.WARNING if error is not None else log.DEBUG if status["status"] == "idle" else log.INFO
+    level = (log.WARNING if error is not None or status["status"] == "store_changed"
+             else log.DEBUG if status["status"] == "idle" else log.INFO)
     log.emit(LOG, "worker.status", level=level, status=status["status"], replay=status.get("replay"),
-             error_type=type(error).__name__ if error is not None else None,
+             error_type=type(error).__name__ if error is not None else None, reason=status.get("reason"),
              **{key: status.get(key) for key in ("delivery_id", "event_id", "topic", "action_id", "incident_id")})
+
+
+def poll(worker, health, stopping, poll_seconds, *, once=False, wait=None, random=random.random):
+    """Run polling passes until stopping is set; with once, one pass. Return the exit code.
+
+    wait(seconds) sleeps between passes (stopping.wait by default); random
+    draws the jitter. Tests pass both to follow the back-off without waiting.
+    """
+    wait = wait or stopping.wait
+    failures = 0
+    while not stopping.is_set():
+        error = None
+        health.heartbeat()
+        try:
+            status = worker.once()
+            health.contacted()  # once() returned, so the Coordinator answered this pass.
+            health.clock_checked(worker.clock_ready())  # Out of bound: not ready, no claims.
+            health.store_checked(worker.store_ready())  # Replaced or rolled-back database: not ready, no claims.
+            failures = 0
+        except Exception as caught:  # noqa: BLE001 - a failed pass is retried with backoff; report() logs it
+            error = caught
+            failures += 1
+            status = {"status": "retry", "error_code": type(error).__name__}
+        print(json.dumps(status), flush=True)
+        report({**worker.current, **status}, error)
+        if once:
+            return int(bool(failures))
+        wait(backoff_seconds(poll_seconds, failures, random))
+    return 0
+
+
+def accept_store(config):
+    """Clear a recorded Coordinator store change in this worker's journal; the running worker resumes."""
+    journal = WorkerJournal(Path(config["state_directory"]) / "transport.db")
+    try:
+        change = journal.accept_store()
+    finally:
+        journal.close()
+    log.emit(LOG, "worker.store_change_cleared", identity=config.get("identity"),
+             reason=change["reason"] if change else None)
+    print(json.dumps({"status": "store_accepted", "reason": change["reason"] if change else None}), flush=True)
+    return 0
 
 
 @log.entrypoint("worker_service")
@@ -184,6 +244,9 @@ def main(argv=None):
                         help="/readyz fails when the last Coordinator answer is older than this")
     parser.add_argument("--live-seconds", type=float, default=900,
                         help="/healthz fails when the loop started no pass for this long; set it above the longest pass")
+    parser.add_argument("--accept-store", action="store_true",
+                        help="After a restore check, clear this worker's recorded Coordinator store change and exit; "
+                             "the running worker then resumes claiming")
     args = parser.parse_args(argv)
     if not math.isfinite(args.poll_seconds) or not 0 < args.poll_seconds <= 60:
         parser.error("Poll interval must be positive and at most 60 seconds")
@@ -198,17 +261,20 @@ def main(argv=None):
     previous = {}
     try:
         config = read_json(args.config)
+        if args.accept_store:
+            return accept_store(config)
         bound = skew_bound(config)
         # In a bound lab run the test offset shifts this wall clock too, so the
         # measured offset (Cristian's algorithm) sees the skew it simulates.
         wall = fault_points.offset_seconds_clock(time.time) if fault_points.bind(config) else time.time
-        connection = client(config, wall)
+        watch = StoreWatch()  # Shared by every client of this worker.
+        connection = client(config, wall, watch)
         directory = Path(config["state_directory"])
         directory.mkdir(parents=True, exist_ok=True)
         with ExitStack() as stack:
             if args.health_port is not None:
                 stack.enter_context(serve_health(health, args.health_port, stopping))
-            component = adapter(config, directory, stack)
+            component = adapter(config, directory, stack, store=watch)
             journal = WorkerJournal(directory / "transport.db")
             stack.callback(journal.close)
             worker = RemoteWorker(connection, journal, component, max_clock_skew=bound)
@@ -216,25 +282,8 @@ def main(argv=None):
             if threading.current_thread() is threading.main_thread():
                 for sig in (signal.SIGINT, signal.SIGTERM):
                     previous[sig] = signal.signal(sig, lambda *_: stopping.set())
-            failures = 0
             stack.enter_context(log.bind(identity=config.get("identity"), role=config.get("role")))
-            while not stopping.is_set():
-                error = None
-                health.heartbeat()
-                try:
-                    status = worker.once()
-                    health.contacted()  # once() returned, so the Coordinator answered this pass.
-                    health.clock_checked(worker.clock_ready())  # Out of bound: not ready, no claims.
-                    failures = 0
-                except Exception as caught:  # noqa: BLE001 - a failed pass is retried with backoff; report() logs it
-                    error = caught
-                    failures += 1
-                    status = {"status": "retry", "error_code": type(error).__name__}
-                print(json.dumps(status), flush=True)
-                report({**worker.current, **status}, error)
-                if args.once:
-                    return int(bool(failures))
-                stopping.wait(min(60, args.poll_seconds * 2 ** min(failures, 5)))
+            return poll(worker, health, stopping, args.poll_seconds, once=args.once)
     except Exception as error:  # noqa: BLE001 - top-level boundary: log the error class and exit 1
         print(json.dumps({"status": "configuration_error", "error_code": type(error).__name__}), flush=True)
         log.emit(LOG, "worker.configuration_error", level=log.ERROR, error_type=type(error).__name__)

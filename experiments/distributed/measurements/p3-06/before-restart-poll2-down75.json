@@ -1,0 +1,148 @@
+{
+  "schema": "sentinel-claims-restart-v1",
+  "label": "before (bab8563)",
+  "started_at": "2026-11-12T10:07:48Z",
+  "mode": "file",
+  "single_host": true,
+  "separate_processes": true,
+  "loopback": "127.0.0.1",
+  "measured": "scenario S5: time from /readyz to each worker's first successful claim",
+  "git_revision": null,
+  "python": "3.13.2",
+  "os": "Windows",
+  "backoff": {
+    "cap_seconds": 60,
+    "jitter": null,
+    "formula": "min(60, poll_seconds * 2 ** min(failures, 5))"
+  },
+  "limits": "Separate OS processes on one host: one kernel clock, one disk, loopback networking. Not separate machines, and not a Coordinator Pod restart in a cluster.",
+  "poll_seconds": 2.0,
+  "down_seconds": 75.0,
+  "summary": [
+    {
+      "restart": 1,
+      "runs": 3,
+      "median_seconds": 56.635,
+      "max_seconds": 56.671
+    },
+    {
+      "restart": 2,
+      "runs": 3,
+      "median_seconds": 56.681,
+      "max_seconds": 56.818
+    }
+  ],
+  "runs": [
+    {
+      "poll_seconds": 2.0,
+      "restarts": [
+        {
+          "down_seconds": 75.0,
+          "ready_after_start_seconds": 0.521,
+          "first_claim_seconds": {
+            "planner-1": 56.375,
+            "guard-1": 56.671,
+            "executor-a": 54.722,
+            "executor-b": 56.298,
+            "verifier-1": 56.501
+          },
+          "all_workers_claimed_seconds": 56.671,
+          "first_delivery_seconds": 56.501
+        },
+        {
+          "down_seconds": 75.0,
+          "ready_after_start_seconds": 0.527,
+          "first_claim_seconds": {
+            "planner-1": 56.329,
+            "guard-1": 56.625,
+            "executor-a": 56.681,
+            "executor-b": 56.187,
+            "verifier-1": 50.482
+          },
+          "all_workers_claimed_seconds": 56.681,
+          "first_delivery_seconds": 50.482
+        }
+      ],
+      "states": [
+        "RECOVERED"
+      ],
+      "terminal": true,
+      "harness_error": null,
+      "tls": true
+    },
+    {
+      "poll_seconds": 2.0,
+      "restarts": [
+        {
+          "down_seconds": 75.0,
+          "ready_after_start_seconds": 0.522,
+          "first_claim_seconds": {
+            "planner-1": 56.471,
+            "guard-1": 52.571,
+            "executor-a": 56.375,
+            "executor-b": 54.642,
+            "verifier-1": 54.712
+          },
+          "all_workers_claimed_seconds": 56.471,
+          "first_delivery_seconds": 54.712
+        },
+        {
+          "down_seconds": 75.0,
+          "ready_after_start_seconds": 0.523,
+          "first_claim_seconds": {
+            "planner-1": 56.627,
+            "guard-1": 52.753,
+            "executor-a": 56.455,
+            "executor-b": 54.827,
+            "verifier-1": 49.447
+          },
+          "all_workers_claimed_seconds": 56.627,
+          "first_delivery_seconds": 49.447
+        }
+      ],
+      "states": [
+        "RECOVERED"
+      ],
+      "terminal": true,
+      "harness_error": null,
+      "tls": true
+    },
+    {
+      "poll_seconds": 2.0,
+      "restarts": [
+        {
+          "down_seconds": 75.0,
+          "ready_after_start_seconds": 0.51,
+          "first_claim_seconds": {
+            "planner-1": 56.559,
+            "guard-1": 56.635,
+            "executor-a": 56.341,
+            "executor-b": 54.667,
+            "verifier-1": 56.571
+          },
+          "all_workers_claimed_seconds": 56.635,
+          "first_delivery_seconds": 56.571
+        },
+        {
+          "down_seconds": 75.0,
+          "ready_after_start_seconds": 0.512,
+          "first_claim_seconds": {
+            "planner-1": 56.724,
+            "guard-1": 56.818,
+            "executor-a": 56.548,
+            "executor-b": 54.856,
+            "verifier-1": 50.768
+          },
+          "all_workers_claimed_seconds": 56.818,
+          "first_delivery_seconds": 50.768
+        }
+      ],
+      "states": [
+        "RECOVERED"
+      ],
+      "terminal": true,
+      "harness_error": null,
+      "tls": true
+    }
+  ]
+}

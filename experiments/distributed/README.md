@@ -57,6 +57,7 @@ in the unit tests too (the default subset takes about 75 s).
 | Inputs | `fixtures.py` | The committed samples, moved to the current time and renamed to the file cluster, with a strict live-profile policy and a short health window. |
 | Invariants | `invariants.py` | I1-I6 and X1-X4, below. |
 | Scenarios | `scenarios.py`, `run_scenarios.py` | S0-S7b, below. |
+| Measurements | `claims.py` | P3.06: `rate` (claims per second over a seeded backlog), `restart` (S5 with timed restarts: seconds from the restarted Coordinator's `/readyz` to each worker's first claim, from its access log) and `restore` (a restore drill). Results are in the [distributed model](../../docs/distributed-model.md#recovery-time-and-restore-measured-on-one-host). |
 
 Process faults: kill uses `Popen.kill()` (SIGKILL on POSIX, TerminateProcess on
 Windows). Suspend uses SIGSTOP and SIGCONT on POSIX. psutil is not in the lock

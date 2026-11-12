@@ -139,6 +139,45 @@ bound: the Guard then tolerates findings and approvals stamped up to that many
 seconds in its future and counts it against their age and expiry. Leave all
 three out to measure without enforcing, as before.
 
+After a pass that reached the Coordinator the worker waits `--poll-seconds`
+(2 by default). After failed passes in a row it waits a random time between
+0 and `--poll-seconds` × 2^failures, at most 15 s ("full jitter"), so a
+restarted Coordinator gets each worker back after at most 15 s of waiting,
+and they do not all retry at the same moment
+(`runtime/worker_service.py::backoff_seconds`). Before P3.06 the wait grew to
+60 s with no jitter.
+
+**A restored Coordinator database.** Every Coordinator reply names its
+database (a random generation made once per database file) and a commit
+counter that grows with every transaction that changes something. Each worker
+remembers what it has seen, and in `transport.db` the position at its latest
+acknowledged result. If a reply names another generation (the database was
+replaced) or a lower counter than one seen before the request was sent (it was
+restored from an earlier copy), the worker logs `worker.store_generation_changed`
+or `worker.store_rollback_detected`, prints the status `store_changed`,
+answers `/readyz` with 503 and stops claiming new work, also after a restart.
+It keeps sending results it has saved and drops none. To resume:
+
+1. Run `python scripts/coordinator_restore_check.py --db coordinator.db --journal STATE/transport.db`
+   with every worker's `transport.db` (and `--previous-commit N` if you noted
+   the counter before the restore). It lists results that were acknowledged
+   but are missing from the restored database: `replay` ones are resent by
+   their worker once it claims the same request again; `review` ones need a
+   person. Exit code 1 means acknowledged work may be lost.
+2. On each stopped worker run `python -m runtime.worker_service --config path/to/worker.json --accept-store`.
+   The running worker adopts the restored database on its next pass. Clear
+   the workers that hold `replay` items first, and the others once the check
+   shows those results back: otherwise another worker of the same role may
+   claim the request first and report a result of its own. In restore drills
+   on one host that left the action VERIFYING in 4 of 8 runs, because the
+   Verifier refuses a second execution for an action; clearing in order
+   recovered 5 of 5. Then run the check again: a replayed result can issue a
+   request whose saved answer was listed under `review`.
+
+A restore that adds commits again before any worker sees it (the counter
+passes the remembered value) is not detected by the workers; run the check
+with `--previous-commit` after every restore.
+
 Verifier uses `role: verifier`, its connection fields/state directory, `policy`,
 and `evidence` pointing to a live inventory with the format of
 [`verifier-live-inventory.json`](../data/sentinel/samples/verifier-live-inventory.json).
@@ -168,8 +207,9 @@ model call. `/readyz` answers 200 once
 the configuration was accepted and the Coordinator answered a polling pass
 within `--ready-seconds` (60 by default), and, when a skew bound is set, the
 latest pass found the clock within it (otherwise the body adds
-`"clock_skew": true`). The bodies hold booleans and ages in seconds, nothing
-else.
+`"clock_skew": true`), and no store change is waiting for an operator
+(otherwise `"store_changed": true`). The bodies hold booleans and ages in
+seconds, nothing else.
 
 A Planner configuration may set `"provider": "deterministic"` with an optional
 `"attempt_lease_seconds"`, but only in a lab fault run (below). It plans with

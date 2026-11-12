@@ -112,6 +112,27 @@ MIGRATIONS = (
             max_abs_offset REAL NOT NULL, reports INTEGER NOT NULL, reported_at REAL NOT NULL
         )""",
     )),
+    (5, (
+        # Restore detection (P3.06). generation is a random id made once per
+        # database file and kept for its life, so a database recreated or
+        # swapped for another file has a different one. commit_counter grows
+        # by one in every transaction that changes a row, so a copy of this
+        # file restored from an earlier backup has a lower counter. Every
+        # worker reply carries both (runtime/worker_http.py).
+        """CREATE TABLE IF NOT EXISTS store_meta (
+            id INTEGER PRIMARY KEY CHECK (id = 1), generation TEXT NOT NULL,
+            commit_counter INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+        )""",
+        """INSERT OR IGNORE INTO store_meta(id,generation,commit_counter,created_at)
+            VALUES(1, lower(hex(randomblob(16))), 0, strftime('%Y-%m-%dT%H:%M:%fZ','now'))""",
+        # The kind and action of each accepted message, indexed, so the newest
+        # message of a kind for an action is found without reading every row.
+        "ALTER TABLE messages ADD COLUMN kind TEXT",
+        "ALTER TABLE messages ADD COLUMN action_id TEXT",
+        """UPDATE messages SET kind=json_extract(payload,'$.kind'),
+            action_id=json_extract(payload,'$.action_id') WHERE json_valid(payload)""",
+        "CREATE INDEX IF NOT EXISTS messages_kind_action ON messages(kind, action_id)",
+    )),
 )
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
@@ -330,14 +351,30 @@ class SQLiteStore:
         return meta["message"] if meta else None
 
     def accepted_meta(self, kind, action_id):
-        """The newest accepted message of kind for action_id with its ordering data, or None."""
-        rows = self.db.execute("SELECT payload,seq,answers,high_water,producer FROM messages ORDER BY seq DESC")
-        for row in rows:
-            message = json.loads(row[0])
-            if message["kind"] == kind and message.get("action_id") == action_id:
-                return {"message": message, "seq": row[1], "answers": row[2],
-                        "high_water": row[3], "producer": row[4]}
-        return None
+        """The newest accepted message of kind for action_id with its ordering data, or None.
+
+        Uses the messages(kind, action_id) index from migration 5.
+        """
+        row = self.db.execute("""SELECT payload,seq,answers,high_water,producer FROM messages
+            WHERE kind=? AND action_id IS ? ORDER BY seq DESC LIMIT 1""", (kind, action_id)).fetchone()
+        if row is None:
+            return None
+        return {"message": json.loads(row[0]), "seq": row[1], "answers": row[2],
+                "high_water": row[3], "producer": row[4]}
+
+    def position(self):
+        """(generation, commit_counter) of this database: which file it is, and how far it has got."""
+        row = self.db.execute("SELECT generation, commit_counter FROM store_meta WHERE id=1").fetchone()
+        return (row[0], row[1]) if row else (None, None)
+
+    def count_commit(self, changes_before):
+        """Advance the commit counter if this transaction changed a row. Call just before COMMIT.
+
+        changes_before is the connection's total_changes when the transaction
+        began, so a transaction that only read leaves the counter alone.
+        """
+        if self.db.total_changes != changes_before:
+            self.db.execute("UPDATE store_meta SET commit_counter=commit_counter+1 WHERE id=1")
 
     def outbox_high_water(self):
         return self.db.execute("SELECT coalesce(max(id),0) FROM outbox").fetchone()[0]
@@ -398,9 +435,11 @@ class SQLiteStore:
     def transaction(self):
         """Reserve the local writer; commit results and acknowledgments together."""
         self.db.execute("BEGIN IMMEDIATE")
+        changes = self.db.total_changes
         self.discard_after_commit()
         try:
             yield
+            self.count_commit(changes)
             self.db.execute("COMMIT")
         except BaseException:
             self.db.execute("ROLLBACK")
@@ -457,8 +496,10 @@ class SQLiteStore:
     def add_message(self, event_key, payload, *, high_water, answers=None, producer=None, incident_id=None):
         """Store an accepted message with the next Coordinator sequence number; return it."""
         seq = self.db.execute("SELECT coalesce(max(seq),0)+1 FROM messages").fetchone()[0]
-        self.db.execute("""INSERT INTO messages(event_key,payload,seq,answers,high_water,producer)
-            VALUES(?,?,?,?,?,?)""", (event_key, payload, seq, answers, high_water, producer))
+        message = json.loads(payload)
+        self.db.execute("""INSERT INTO messages(event_key,payload,seq,answers,high_water,producer,kind,action_id)
+            VALUES(?,?,?,?,?,?,?,?)""", (event_key, payload, seq, answers, high_water, producer,
+                                         message.get("kind"), message.get("action_id")))
         if incident_id is not None:
             self.db.execute("UPDATE incidents SET high_water=? WHERE incident_id=?", (seq, incident_id))
         return seq

@@ -135,6 +135,18 @@ is 15 seconds and SQLite lock timeout is 10 seconds. A killed Pod can replay
 work from the PVC on restart. Lease expiry and explicit retry backoff remain
 transport mechanisms, separate from Executor write fencing.
 
+**Restoring the database from a backup.** The database has a store generation
+and a commit counter (migration 5 in `services/coordinator/store.py`), and
+every worker reply carries both. Note the counter before you restore if you
+can (`SELECT commit_counter FROM store_meta`). After the restore, workers that
+see a lower counter or another generation stop claiming and report
+`store_changed`. Run `scripts/coordinator_restore_check.py` with the restored
+database, every worker's `transport.db` and `--previous-commit`, then clear
+each worker with `python -m runtime.worker_service --config CONFIG --accept-store`,
+those holding `replay` items first ([remote workers](../../docs/remote-workers.md)).
+This drill has been run only offline, as separate processes on one host in
+the file mode of `experiments/distributed/`, not against this manifest.
+
 To rotate credentials, replace the Secret values, restart the Coordinator and
 the affected worker, and retain saved request bodies. Secret environment
 updates are read at process start. Do not copy credential values into logs.

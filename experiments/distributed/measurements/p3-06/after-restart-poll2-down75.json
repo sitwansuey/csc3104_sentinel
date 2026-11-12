@@ -1,0 +1,148 @@
+{
+  "schema": "sentinel-claims-restart-v1",
+  "label": "after",
+  "started_at": "2026-11-12T10:32:28Z",
+  "mode": "file",
+  "single_host": true,
+  "separate_processes": true,
+  "loopback": "127.0.0.1",
+  "measured": "scenario S5: time from /readyz to each worker's first successful claim",
+  "git_revision": "bab85636d6cc5523af466716dba49e6dac88bffb",
+  "python": "3.13.2",
+  "os": "Windows",
+  "backoff": {
+    "cap_seconds": 15,
+    "jitter": "full",
+    "formula": "uniform(0, min(15, poll_seconds * 2 ** min(failures, 5)))"
+  },
+  "limits": "Separate OS processes on one host: one kernel clock, one disk, loopback networking. Not separate machines, and not a Coordinator Pod restart in a cluster.",
+  "poll_seconds": 2.0,
+  "down_seconds": 75.0,
+  "summary": [
+    {
+      "restart": 1,
+      "runs": 3,
+      "median_seconds": 7.737,
+      "max_seconds": 9.976
+    },
+    {
+      "restart": 2,
+      "runs": 3,
+      "median_seconds": 8.445,
+      "max_seconds": 9.82
+    }
+  ],
+  "runs": [
+    {
+      "poll_seconds": 2.0,
+      "restarts": [
+        {
+          "down_seconds": 75.0,
+          "ready_after_start_seconds": 0.523,
+          "first_claim_seconds": {
+            "planner-1": 4.296,
+            "guard-1": 3.006,
+            "executor-a": 1.941,
+            "executor-b": 0.152,
+            "verifier-1": 0.924
+          },
+          "all_workers_claimed_seconds": 4.296,
+          "first_delivery_seconds": 0.924
+        },
+        {
+          "down_seconds": 75.0,
+          "ready_after_start_seconds": 0.539,
+          "first_claim_seconds": {
+            "planner-1": 0.041,
+            "guard-1": 2.618,
+            "executor-a": 1.727,
+            "executor-b": 8.565,
+            "verifier-1": 9.82
+          },
+          "all_workers_claimed_seconds": 9.82,
+          "first_delivery_seconds": null
+        }
+      ],
+      "states": [
+        "RECOVERED"
+      ],
+      "terminal": true,
+      "harness_error": null,
+      "tls": true
+    },
+    {
+      "poll_seconds": 2.0,
+      "restarts": [
+        {
+          "down_seconds": 75.0,
+          "ready_after_start_seconds": 0.51,
+          "first_claim_seconds": {
+            "planner-1": 9.976,
+            "guard-1": 1.901,
+            "executor-a": 1.917,
+            "executor-b": 1.979,
+            "verifier-1": 2.507
+          },
+          "all_workers_claimed_seconds": 9.976,
+          "first_delivery_seconds": 2.507
+        },
+        {
+          "down_seconds": 75.0,
+          "ready_after_start_seconds": 0.535,
+          "first_claim_seconds": {
+            "planner-1": 6.358,
+            "guard-1": 3.736,
+            "executor-a": 0.106,
+            "executor-b": 1.692,
+            "verifier-1": 7.452
+          },
+          "all_workers_claimed_seconds": 7.452,
+          "first_delivery_seconds": null
+        }
+      ],
+      "states": [
+        "RECOVERED"
+      ],
+      "terminal": true,
+      "harness_error": null,
+      "tls": true
+    },
+    {
+      "poll_seconds": 2.0,
+      "restarts": [
+        {
+          "down_seconds": 75.0,
+          "ready_after_start_seconds": 0.525,
+          "first_claim_seconds": {
+            "planner-1": 0.271,
+            "guard-1": 1.991,
+            "executor-a": 0.102,
+            "executor-b": 4.579,
+            "verifier-1": 7.737
+          },
+          "all_workers_claimed_seconds": 7.737,
+          "first_delivery_seconds": 7.737
+        },
+        {
+          "down_seconds": 75.0,
+          "ready_after_start_seconds": 0.522,
+          "first_claim_seconds": {
+            "planner-1": 1.068,
+            "guard-1": 8.445,
+            "executor-a": 6.408,
+            "executor-b": 0.32,
+            "verifier-1": 8.165
+          },
+          "all_workers_claimed_seconds": 8.445,
+          "first_delivery_seconds": 8.165
+        }
+      ],
+      "states": [
+        "RECOVERED"
+      ],
+      "terminal": true,
+      "harness_error": null,
+      "tls": true
+    }
+  ]
+}
