@@ -480,6 +480,22 @@ class OwnershipTests(FencingLab):
         self.assertEqual((self.owner(ship)["epoch"], self.owner(cart)["epoch"]), (2, 1))
         self.assertNotEqual(self.owner(ship)["target_key"], self.owner(cart)["target_key"])
 
+    def test_no_other_command_for_a_workload_is_claimed_while_its_seal_is_due(self):
+        self.ready()
+        self.claim("executor-a")
+        second = self.same_target_request("INC-SECOND", "ACT-SECOND")
+        self.revoke()  # The seal is queued after ACT-SECOND's request.
+        self.now += 31  # No lease is live any more: only the due seal holds ACT-SECOND back.
+        sealing = self.claim("executor-b")
+        self.assertEqual(sealing["topic"], "executor.seal")
+        self.assertEqual(self.owner()["seal_required"], 1)
+        self.now += 31  # The seal's lease expired unfinished: it is still due, and still first.
+        sealing = self.claim("executor-c")
+        self.assertEqual(sealing["topic"], "executor.seal")
+        self.finish("executor-c", sealing, fence_result(self.proposal, sealing["fence_epoch"]))
+        released = self.claim("executor-b")
+        self.assertEqual((released["event_id"], released["fence_epoch"]), (second, sealing["fence_epoch"] + 1))
+
     def same_target_request(self, incident_id, action_id):
         """A second READY action on the same workload, written directly (planning_blocker would forbid it)."""
         incident, proposal, guard = self.messages(incident_id, action_id)
@@ -734,6 +750,17 @@ class SealDeliveryGateTests(FencingLab):
             journal.discard_seal(key)
         self.assertEqual(journal.get(key)["result"]["kind"], "execution_result")
 
+    def test_the_executor_adapter_checks_its_lease_before_the_seal_fences(self):
+        self.queue_seal()
+        delivery = self.claim("executor-b")
+
+        class Lost:
+            def ensure_current(self):
+                raise ProtocolError(409, "Lease expired")
+
+        with self.assertRaises(ProtocolError):
+            ExecutorAdapter(self.adapters("executor-b")).process(delivery, Lost())
+        self.assertEqual(self.cluster.requests("fence"), [])  # The lease check came first: no fence was sent.
 
 
 class ContractTests(unittest.TestCase):
