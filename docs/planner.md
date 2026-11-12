@@ -89,9 +89,12 @@ found` (role marker) or `helm upgrade failed; action=rollback triggered`
 against real logs. If an attempt on flagged telemetry fails in the model three
 times before its check runs, the incident ends in the `ATTEMPTS_EXHAUSTED`
 escalation and no finding is recorded. Templating could hide a decisive detail, so
-the cleaned excerpt is kept beside the template. No live run has exercised the
-gate yet; the planned check is an adversarial fault whose configuration value
-carries instruction text, plus three normal runs that must still recover.
+the cleaned excerpt is kept beside the template. Live, the gate has
+run on ordinary telemetry only: the eight agent runs at 870aa7d and dab3b3f,
+failures included, recorded no injection finding and no flagged log line, so it
+raised no false positive on those logs (C-INJECTION-GATE-BENIGN). The
+adversarial check, a fault whose configuration value carries instruction text,
+has not run live, and neither has the remote Planner worker's gate.
 
 ## Code-owned decision context
 
@@ -125,8 +128,9 @@ records the decision: `policy`, `enforced`, `eligible`, `codes`,
 
 Limits. These checks are tested offline with a scripted model
 (`tests/test_rca_vocabulary.py`, `tests/test_planner_change_evidence.py`,
-`tests/test_live_agent.py`). Live on one host, one run per scenario per
-revision and unscored while the catalog labels await sign-off: at 870aa7d three
+`tests/test_live_agent.py`). Live on one host, unscored while the catalog
+labels await sign-off (three R1 runs at 870aa7d; one run per scenario at
+dab3b3f, and R2 and N1 once at each revision): at 870aa7d three
 standard PORT runs reached RECOVERED with the component `shippingservice`,
 decided by the model (C-AGENT-R1-870AA7D), while R2 and N1 abstained on a
 citation-check defect fixed in ded3dcc; at dab3b3f N1, a fault without a
@@ -364,8 +368,16 @@ after the lease expires the next pass starts a new one. These paths have
 offline tests with a scripted model (`tests/test_agent_journal.py`,
 `tests/test_live_agent.py`). Live runs from 4139385 use the journal: each
 failed agent run ended in a delivered ESCALATE and NEEDS_REVIEW with zero
-writes (C-AGENT-AUTOLAB-4139385, C-AGENT-FORCED-ESCALATION). A process that
-dies mid-attempt and a replayed delivery have not been exercised live.
+writes (C-AGENT-AUTOLAB-4139385, C-AGENT-FORCED-ESCALATION). The retry after
+a failed model call also ran live in two passing runs: in
+`boutique-live-20261111t221204z-602449` (C-AGENT-AUTOLAB-4139385) the
+Analyzer's call in attempt 1 failed after about 45 s and 2048 output tokens
+(`ValueError` in `model-calls.json`, journal code `INVALID_MODEL_OUTPUT`) and
+attempt 2 recovered, and in `boutique-live-20261112t080756z-29fd09` (N1 at
+dab3b3f, C-SCENARIO-LIVE-UNSCORED) the Reporter's call in attempt 1 failed the
+same way and attempt 2 reached the expected rule escalation. Each
+`planning-status.json` records 2 attempts. A process
+that dies mid-attempt and a replayed delivery have not been exercised live.
 
 ## Acceptance and limits
 
@@ -388,7 +400,7 @@ their source revision:
 
 <!-- BEGIN GENERATED:claim-c-agent-all -->
 > **C-AGENT-ALL:** Across every recorded agent-mode attempt, 24/39 reached RECOVERED.
-> Scope: Every committed agent bundle, failures included: deliberate negative tests (unreachable model server, missing model, a forced 1 s planning budget), runs on older revisions, and the 2026-11-12 catalog runs R2 and N1, which are unscored (labels pending). A run counts only when it passed expecting RECOVERED; the two runs that passed as an expected escalation (the forced budget run and N1 at dab3b3f) never recover and count as not recovered. Mostly one fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Lab approval pre-authorised before 4139385 and automated auto-lab (automated-lab identity, no person) from 4139385. One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 19 runs from 4afc879 onwards.
+> Scope: Every committed agent bundle, failures included: deliberate negative tests (unreachable model server, missing model, a forced 1 s planning budget), runs on older revisions, and the 2026-11-12 catalog runs R2 and N1, which are unscored (labels pending). A run counts only when it passed expecting RECOVERED; the two runs that passed as an expected escalation (the forced budget run and N1 at dab3b3f) never recover and count as not recovered. Mostly one fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Lab approval pre-authorised before 4139385; from 4139385 automated auto-lab (automated-lab identity, no person), except the forced-budget run and both N1 runs, which asked for no approval (mode not-requested). One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 19 runs from 4afc879 onwards.
 <!-- END GENERATED:claim-c-agent-all -->
 
 Model calls and model time per run are in the agent and timings tables of

@@ -333,8 +333,9 @@ with zero writes (scored `unsafe`, `unsafe_contained: true`). The scoring,
 injection guards and N1 handling are tested offline
 (`tests/test_recovery_scenarios.py`,
 `tests/test_live_agent.py::ScenarioScoringTests`). R1, R2 and N1 have run live
-with the default `gated` policy only, one run per scenario per revision, and
-are unscored while the labels await sign-off: claims `C-AGENT-R1-870AA7D` and
+with the default `gated` policy only (three R1 runs at 870aa7d; one run per
+scenario at dab3b3f, and R2 and N1 once at each revision), and are unscored
+while the labels await sign-off: claims `C-AGENT-R1-870AA7D` and
 `C-SCENARIO-LIVE-UNSCORED` and the scenario table in
 [results](results.md#catalog-scenario-runs-unscored), failures included.
 

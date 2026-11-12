@@ -245,18 +245,24 @@ Delivery to workers is at least once, and receivers deduplicate by action id.
   version means it never can: CONFLICT with basis FENCED, and the workload is
   released (`services/executor/core.py::_fence`). If the fence is refused or
   its outcome is unknown, the next read decides as above. The fence changes no
-  spec field, so `metadata.generation` and the Pods are untouched. With
+  spec field, so no rollout starts and the Pods are untouched, but a Deployment
+  still increases `metadata.generation` for the annotation change. With
   fencing off, the action stays in doubt and after 600 s (the default) the
   Executor adds one result saying operator action is required. The fence uses
   the same get and patch RBAC as the write. It is the Executor's own abort,
   not yet a fence sent for an expired lease or a revoked approval (P3.04).
-  It has not been run against a cluster.
+  Live on one host, one admission-deny run each at 4139385 and 5409092, the
+  fence committed and the action ended CONFLICT with basis FENCED, the workload
+  was released and a second proposal was APPLIED (`C-EXECUTOR-WEDGE-FENCE`). The
+  4139385 run failed one harness check that expected `metadata.generation` to
+  stay unchanged; 17d4532 fixed the check to compare the spec, and the 5409092
+  run passed every check.
 
 ## Planned changes
 
 | Item | Change |
 | --- | --- |
-| P2.06 | Live run of the fenced abort (wedge harness `admission-deny`); the code and offline tests are in place |
+| P2.06 | Done: the fenced abort ran live in the wedge harness `admission-deny` at 4139385 and 5409092 (`C-EXECUTOR-WEDGE-FENCE`); fencing stays off by default |
 | P3.02 | Trace context across outbox rows, deliveries and worker requests |
 | P3.01 | Run the roles as separate processes on one host with fault injection |
 | P3.03 | Order lifecycle events by Coordinator sequence instead of producer clocks, measure a skew bound, and make lease expiry relative |
