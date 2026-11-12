@@ -379,7 +379,7 @@
       "cites": [
         {"at": "runtime/worker_transport.py:280", "text": "delay = min(60, 2 ** min(row[\"attempts\"] - 1, 6))"},
         {"at": "experiments/distributed/kind_bundle.py:93", "text": "\"max_sample_gap_seconds\": 20"},
-        {"at": "experiments/distributed/invariants.py:40", "text": "MAX_ATTEMPTS = 6"},
+        {"at": "experiments/distributed/invariants.py:44", "text": "MAX_ATTEMPTS = 6"},
         {"claim": "C-DISTRIBUTED-KIND-BE6E636"},
         {"claim": "C-DISTRIBUTED-KIND-ALL"}
       ],
