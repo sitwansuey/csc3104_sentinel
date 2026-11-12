@@ -182,7 +182,7 @@
       "workaround": "Run every Executor on one host with one ledger and lock directory.",
       "cites": [
         {"at": "services/executor/store.py:1-4", "text": "These locks do not implement distributed leases or fencing across hosts."},
-        {"at": "services/executor/store.py:91", "text": "sqlite3.connect"}
+        {"at": "services/executor/store.py:92", "text": "sqlite3.connect"}
       ],
       "planned": ["P3.04"],
       "issues": [18, 58, 59]
@@ -240,10 +240,10 @@
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-12",
-      "impact": "The Guard counts a target's recent restarts from live_state.restart_history, which the Executor reads from its own SQLite ledger under the target lock, so the budget survives an Executor restart. Executors on other hosts keep separate ledgers, so each host would have its own budget. The HTTP Guard worker and the live harnesses do not supply the history yet, so a RESTART there escalates as RESTART_BUDGET_UNKNOWN; only the offline demonstration wires it.",
+      "impact": "The Guard counts a target's recent restarts from live_state.restart_history, which the Executor reads from its own SQLite ledger under the target lock, so the budget survives an Executor restart. It supplies only the newest 1000 restarts, which is enough to decide any allowed budget (at most 100 per window). Executors on other hosts keep separate ledgers, so each host would have its own budget. The HTTP Guard worker and the live harnesses do not supply the history yet, so a RESTART there escalates as RESTART_BUDGET_UNKNOWN; only the offline demonstration wires it.",
       "workaround": "Run one Executor per target, as every committed run does. Treat RESTART as tested offline only.",
       "cites": [
-        {"at": "services/executor/store.py:305", "text": "def restart_history(self, target):"},
+        {"at": "services/executor/store.py:306", "text": "def restart_history(self, target):"},
         {"at": "services/guard/restart.py:121", "text": "RESTART_BUDGET_UNKNOWN"},
         {"at": "experiments/validation/demo_offline_flow.py:102", "text": "self.ledger.restart_history"}
       ],

@@ -28,6 +28,10 @@ TEMPLATE_ACTIONS = IMPLEMENTED_ACTIONS
 RESTART_ANNOTATION = "sentinel.io/restart-token"
 RESTART_TOKEN_PREFIX = "RST-"
 RESTART_TOKEN_HEX = 16
+# The most restart-history entries the Executor supplies and the Guard accepts.
+# The ledger returns only the newest ones: a budget allows at most 100 restarts,
+# so if every one of them falls in the window the budget is already exhausted.
+RESTART_HISTORY_LIMIT = 1000
 
 
 def restart_token(incident_id: str, baseline_id: str) -> str:

@@ -20,14 +20,14 @@ from services.coordinator.core import CoordinatorError, LocalEventBus, SQLiteSto
 from services.executor.actions import candidate_template, evidence as action_evidence
 from services.executor.core import ACTION_ANNOTATION, ConditionalWriteConflict, ExecutionAdapters, execute, reconcile
 from services.executor.reconciliation import Basis, action_attempt, evidence_fields_valid
-from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedger, canonical_json
+from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedger, canonical_json, target_key
 from services.guard import restart as guard_restart
 from services.guard.core import GuardInputError, evaluate_with_report, proposal_fingerprint
 from services.guard.decisions import validate_policy
 from services.planner.core import mock_provider, propose, retrieve_runbooks
 from services.observer.core import detect
 from shared.actions import (
-    RESTART_ANNOTATION, config_fingerprint, current_restart_token, restart_parameters, restart_template,
+    RESTART_ANNOTATION, RESTART_HISTORY_LIMIT, config_fingerprint, current_restart_token, restart_parameters, restart_template,
     restart_token,
 )
 from shared.canonical import sha256_hex
@@ -492,6 +492,41 @@ class RestartExecutorTests(unittest.TestCase):
         self.assertEqual(len(self.cluster.write_attempts), 1)
         # A ROLLBACK is not counted against the restart budget.
         self.assertEqual(len(self.ledger.restart_history(self.proposal["target"])), 1)
+
+    def record_past_writes(self, count, *, action="RESTART", started=NOW - timedelta(days=2)):
+        """Ledger rows for earlier writes to this target, one second apart, oldest first."""
+        for index in range(count):
+            proposal = dict(self.proposal, action=action, action_id=f"ACT-PAST-{action}-{index:05d}")
+            at = started + timedelta(seconds=index)
+            self.ledger.db.execute(
+                "INSERT INTO executor_actions(action_id,fingerprint,proposal,target_key,phase,write_started_at) "
+                "VALUES(?,?,?,?,?,?)", (proposal["action_id"], "f" * 64, canonical_json(proposal),
+                                        target_key(proposal["target"]), "DONE",
+                                        at.strftime("%Y-%m-%dT%H:%M:%S.%fZ")))
+
+    def test_restart_history_is_the_newest_bounded_window_of_restarts(self):
+        self.record_past_writes(RESTART_HISTORY_LIMIT + 5)
+        self.record_past_writes(3, action="ROLLBACK", started=NOW - timedelta(hours=1))
+        history = self.ledger.restart_history(self.proposal["target"])
+        self.assertEqual(len(history), RESTART_HISTORY_LIMIT)
+        self.assertEqual(history[0]["action_id"], "ACT-PAST-RESTART-00005")
+        self.assertEqual(history[-1]["action_id"], f"ACT-PAST-RESTART-{RESTART_HISTORY_LIMIT + 4:05d}")
+        self.assertEqual(history, sorted(history, key=lambda item: item["started_at"]))
+        self.assertNotIn("ROLLBACK", json.dumps(history))
+
+    def test_a_long_restart_history_outside_the_window_does_not_block_restart(self):
+        # More lifetime restarts than the Guard accepts, all older than the one-hour window.
+        self.record_past_writes(RESTART_HISTORY_LIMIT + 1)
+        result = execute(deepcopy(self.proposal), self.adapters())
+        self.assertEqual(result["status"], "APPLIED", result["details"])
+        self.assertEqual(len(self.cluster.write_attempts), 1)
+
+    def test_a_long_restart_history_inside_the_window_still_exhausts_the_budget(self):
+        self.record_past_writes(RESTART_HISTORY_LIMIT + 1, started=NOW - timedelta(minutes=30))
+        result = execute(deepcopy(self.proposal), self.adapters())
+        self.assertEqual(result["status"], "FAILED")
+        self.assertIn("RESTART_BUDGET_EXHAUSTED", result["details"])
+        self.assertEqual(self.cluster.write_attempts, [])
 
     def test_lost_response_reconciles_to_applied_from_restart_evidence(self):
         class LostResponse(FakeDeploymentAPI):

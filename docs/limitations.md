@@ -135,7 +135,7 @@ the fix and regenerate.
 
 - Impact: Two Executors on different hosts would not exclude each other. Safety would then rest on the resourceVersion-conditional patch alone.
 - Workaround: Run every Executor on one host with one ledger and lock directory.
-- Evidence: `services/executor/store.py:1-4`; `services/executor/store.py:91`.
+- Evidence: `services/executor/store.py:1-4`; `services/executor/store.py:92`.
 
 ### L-NO-FENCING
 
@@ -165,9 +165,9 @@ the fix and regenerate.
 
 **The restart budget is kept per Executor ledger, and only local wiring gives it to the Guard.** Limitation, open; recorded 2026-11-12. Planned: P4.03. Issues: #74, #77.
 
-- Impact: The Guard counts a target's recent restarts from live_state.restart_history, which the Executor reads from its own SQLite ledger under the target lock, so the budget survives an Executor restart. Executors on other hosts keep separate ledgers, so each host would have its own budget. The HTTP Guard worker and the live harnesses do not supply the history yet, so a RESTART there escalates as RESTART_BUDGET_UNKNOWN; only the offline demonstration wires it.
+- Impact: The Guard counts a target's recent restarts from live_state.restart_history, which the Executor reads from its own SQLite ledger under the target lock, so the budget survives an Executor restart. It supplies only the newest 1000 restarts, which is enough to decide any allowed budget (at most 100 per window). Executors on other hosts keep separate ledgers, so each host would have its own budget. The HTTP Guard worker and the live harnesses do not supply the history yet, so a RESTART there escalates as RESTART_BUDGET_UNKNOWN; only the offline demonstration wires it.
 - Workaround: Run one Executor per target, as every committed run does. Treat RESTART as tested offline only.
-- Evidence: `services/executor/store.py:305`; `services/guard/restart.py:121`; `experiments/validation/demo_offline_flow.py:102`.
+- Evidence: `services/executor/store.py:306`; `services/guard/restart.py:121`; `experiments/validation/demo_offline_flow.py:102`.
 
 ### L-NO-DIAGNOSIS-ACCURACY
 

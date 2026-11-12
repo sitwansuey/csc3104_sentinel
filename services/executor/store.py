@@ -15,6 +15,7 @@ from pathlib import Path
 import sqlite3
 
 # canonical_json and fingerprint are public names; the adapter, harnesses and tests import them.
+from shared.actions import RESTART_HISTORY_LIMIT
 from shared.canonical import canonical_json, sha256_hex as fingerprint
 
 
@@ -303,20 +304,26 @@ class SQLiteExecutionLedger:
         return result
 
     def restart_history(self, target):
-        """Every RESTART write this ledger started for the workload, oldest first.
+        """The newest RESTART writes this ledger started for the workload, oldest first.
 
         The workload key ignores the UID, like the target lock, so recreating a
         Deployment does not reset its restart budget. A write counts once it has
         started, whatever its outcome: one still in doubt may have restarted Pods.
-        Adopted rows (another host's write reconciled here) count too.
+        Adopted rows (another host's write reconciled here) count too. At most
+        RESTART_HISTORY_LIMIT entries are returned, so a long-lived target is
+        not escalated forever for having a long history; older entries cannot
+        change the budget decision (see shared/actions.py).
         """
         history = []
         for row in self.db.execute(
                 "SELECT action_id,proposal,write_started_at FROM executor_actions "
-                "WHERE target_key=? AND write_started_at IS NOT NULL ORDER BY write_started_at,rowid",
+                "WHERE target_key=? AND write_started_at IS NOT NULL ORDER BY write_started_at DESC,rowid DESC",
                 (target_key(target),)):
             if json.loads(row["proposal"]).get("action") == "RESTART":
                 history.append({"action_id": row["action_id"], "started_at": row["write_started_at"]})
+                if len(history) == RESTART_HISTORY_LIMIT:
+                    break
+        history.reverse()
         return history
 
     def results(self, action_id):

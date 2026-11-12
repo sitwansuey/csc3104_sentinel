@@ -20,14 +20,14 @@ resources.py also run for RESTART, against the same baseline template.
 from datetime import timedelta
 
 from services.guard.common import GuardInputError, finding, json_sha256, mapping, string, utc_timestamp
-from shared.actions import config_fingerprint, current_restart_token, restart_template, restart_token
+from shared.actions import RESTART_HISTORY_LIMIT, config_fingerprint, current_restart_token, restart_template, restart_token
 
 
 _TARGET_FIELDS = {"cluster_id", "namespace", "kind", "name", "uid"}
 _FIELDS = {"targets", "max_restarts", "window_seconds"}
 MAX_RESTARTS = 100
 MAX_WINDOW_SECONDS = 7 * 24 * 60 * 60
-_HISTORY_LIMIT = 1000
+_HISTORY_LIMIT = RESTART_HISTORY_LIMIT
 
 
 def validate_policy(policy):
