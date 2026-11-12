@@ -227,7 +227,11 @@ After each run the operator puts the target's baseline template back when
 Sentinel did not, under uid and resourceVersion tests, and records it as an
 operator write.
 
-Things a first live run must confirm rather than assume: that kindnet
+Things a first live run must confirm rather than assume: that the node image
+digest in `kind-dist.yaml` is the one the kind v0.33.0 release notes list for
+`kindest/node:v1.37.0` (it was written down offline and has never been
+pulled; a wrong digest makes `kind create cluster` fail rather than run
+another image), that kindnet
 enforces the network policy (S9's TCP probes) while still letting the kubelet
 probe the Coordinator's `/readyz` over its Pod address, that Chaos Mesh's pod-failure
 pause image can be pulled into the cluster, that TimeChaos shifts the clock
