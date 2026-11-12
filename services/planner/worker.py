@@ -20,7 +20,11 @@ TERMINAL_RATIONALES = {
                       "Operator review is required. No repair is authorized.",
     "NO_ACTION_PROPOSED": "The Recovery Planner proposed no repair for an observed incident. "
                           "Operator review is required. No repair is authorized.",
+    "SUSPECTED_INJECTION": "Untrusted telemetry contained instruction-like text; operator review required. "
+                           "Decided by a code rule, not the model. No repair is authorized.",
 }
+# What the journal keeps of an injection finding: rule ids and counts, never the text.
+INJECTION_FIELDS = ("decided_by", "rules", "suspicious_lines", "sources")
 # Proposal fields that finalize() may change: the live version it binds to, and the
 # identity that version is part of. Everything else stays as propose() validated it.
 REBINDABLE = {"based_on_resource_version", "action_id"}
@@ -59,10 +63,14 @@ def diagnosis_summary(diagnosis):
     """What the journal keeps of a diagnosis: no workspace path, report text or raw evidence."""
     prediction = diagnosis.get("prediction") if isinstance(diagnosis, dict) else None
     tools = diagnosis.get("tools") if isinstance(diagnosis, dict) else None
-    return {"prediction": prediction if isinstance(prediction, dict) else None,
-            "abstained": not prediction,
-            "tools": [{key: item.get(key) for key in ("tool", "evidence_id", "success")}
-                      for item in tools if isinstance(item, dict)] if isinstance(tools, list) else []}
+    injection = diagnosis.get("injection") if isinstance(diagnosis, dict) else None
+    summary = {"prediction": prediction if isinstance(prediction, dict) else None,
+               "abstained": not prediction,
+               "tools": [{key: item.get(key) for key in ("tool", "evidence_id", "success")}
+                         for item in tools if isinstance(item, dict)] if isinstance(tools, list) else []}
+    if isinstance(injection, dict):
+        summary["injection"] = {key: deepcopy(injection.get(key)) for key in INJECTION_FIELDS}
+    return summary
 
 
 def _classify(error, agent):

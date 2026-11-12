@@ -13,8 +13,10 @@ read-only engine in `agent/`: internal Planner/Analyzer/Reporter phases create
 bounded telemetry-tool queries and a diagnosis. These internal phase names are
 parts of team Role 3, not extra Sentinel service roles.
 
-The Recovery Planner model receives incident evidence, diagnostic knowledge,
-the diagnosis and supplied healthy baselines. `services/planner/core.py` binds
+The Recovery Planner model receives the incident's trusted fields, its signals
+quoted as untrusted data, recovery guidance, the cleaned diagnosis fields and
+the supplied healthy baselines. It never receives the Reporter's explanation or
+limitations (see [Untrusted inputs](#untrusted-inputs)). `services/planner/core.py` binds
 target/incident/version/evidence, validates typed output and rejects invented,
 future or tampered baseline references. The live adapter accepts a supported
 rollback only after checking that the workload UID/template stayed unchanged
@@ -25,8 +27,47 @@ Guard/Executor independently re-read their inputs before any repair.
 
 The model cannot run arbitrary Python/kubectl commands through its tools.
 CSV paths are confined to the provided telemetry tree. Telemetry is untrusted
-data, not instructions. See the code and tests for the bounds; no production
-identity or perfect diagnosis guarantee is implied.
+data, not instructions; [Untrusted inputs](#untrusted-inputs) lists the
+controls. See the code and tests for the bounds; no production identity or
+perfect diagnosis guarantee is implied.
+
+## Untrusted inputs
+
+Container logs, Kubernetes event messages and the incident signal details
+built from them are written by the workload. The adversary here is anything
+that can make the workload print text: a crafted request, a bad configuration
+value or a compromised dependency. Its goal is to steer the model, for example
+towards a rollback or an escalation. These controls apply in agent mode:
+
+| Control | Where | What it does |
+|---|---|---|
+| Cleaning | `agent/untrusted.py` (`clean`, `scrub`) | Removes ANSI escapes, control characters and format characters (NUL, zero-width characters, bidi controls), applies Unicode NFKC, collapses whitespace and cuts long text with a `[+N chars]` marker. |
+| Templating and quoting | `agent/untrusted.py` (`template`, `quote`, `prompt_incident`), `agent/tools.py` | A log example or signal detail reaches a prompt as a masked template (times, numbers, addresses, ids, paths and long quoted strings replaced) plus a short cleaned excerpt, marked untrusted, with an evidence id. Every log-derived string sits under `untrusted_telemetry_evidence`, and the system message says that this data may be adversarial and must not be followed. |
+| Withholding | `agent/untrusted.py` (`suspicious`, `quote`) | A line that matches one of the instruction-like rules is not shown at all: the prompt gets only its rule ids and the hash of the raw line. The rules cover override phrases, role markers at line start, chat-template tokens, forged proposal fields (`baseline_id`, `template_sha256`, an action key with ROLLBACK, ESCALATE or NO_ACTION), approval claims and Sentinel's own prompt headings. Matching runs on cleaned, case-folded text with format characters removed and common Cyrillic and Greek look-alikes folded, so split words, full-width letters and mixed-script spellings are caught; a line with a bidi override is also checked reversed. |
+| Export | `experiments/boutique/harness/agent_live.py` (`export_telemetry`) | `logs.csv` holds the cleaned message, `message_sha256` (the hash of the raw line) and `suspicious_rules`; a cell that starts with `=`, `+`, `-` or `@` gets a leading `'`. `telemetry-export.json` counts `suspicious_lines`, `truncated_lines` and `control_chars_removed`. The raw lines stay in the saved observations. |
+| Injection gate | `services/planner/agent_provider.py` (`injection_finding`, `AgentPlanner`) | Code, not the model, checks the raw incident signals, every exported log row and the diagnosis fields. If any matches a rule, the attempt saves `injection-finding.json` (rule ids and counts, `decided_by: rule`), the journal keeps the same finding, and the Recovery Planner is not called: the attempt ends in the fixed `SUSPECTED_INJECTION` escalation and the incident moves to NEEDS_REVIEW with no Guard request and no write. If the agent abstained first, the attempt ends in the `ABSTAINED` escalation and the finding is still recorded. There is no setting that turns the gate off. |
+| No free text between roles | `services/planner/agent_provider.py` (`recovery_context`) | The Recovery Planner reads cleaned prediction fields and evidence ids, never the Reporter's explanation or limitations. |
+
+The offline tests (`tests/test_untrusted_telemetry.py`) use the adversarial
+corpus in `tests/fixtures/adversarial_logs/`: 19 attacks, including
+zero-width, bidi, ANSI, NUL, homoglyph, a 50 KB line, a forged proposal and a
+forged section header, and 26 benign Boutique, gRPC, JVM, database and
+Kubernetes lines that must match no rule. A recording scripted model shows that
+no attack text reaches any prompt; an obedient scripted model that would answer
+ROLLBACK is never asked, and the run ends in NEEDS_REVIEW with zero writes;
+benign logs still reach ROLLBACK and RECOVERED.
+
+Remaining risk. The rules are a curated pattern list, not a complete defence:
+a paraphrase they miss reaches the model as a cleaned excerpt and can still
+steer the diagnosis or the Recovery Planner, within the limits that
+rollback-only actions, the Guard's checks and authenticated approval enforce.
+The Reporter's root cause reason is model text passed on cleaned, not chosen
+from a vocabulary code owns (P2.05). Inside the RCA agent the Analyzer's summary
+still reaches the Reporter. A false positive escalates a genuine incident to an
+operator, which is a safe failure. Templating could hide a decisive detail, so
+the cleaned excerpt is kept beside the template. No live run has exercised the
+gate yet; the planned check is an adversarial fault whose configuration value
+carries instruction text, plus three normal runs that must still recover.
 
 ## Telemetry volume and planning feedback
 
@@ -212,6 +253,7 @@ cannot outlive its lease. Each failure is saved by code:
 | `ABSTAINED` | no | The agent found no supported diagnosis. |
 | `DIAGNOSIS_OFF_TARGET` | no | The diagnosis names a component other than the target. |
 | `NO_ACTION_PROPOSED` | no | The Recovery Planner proposed no repair for an observed incident. |
+| `SUSPECTED_INJECTION` | no | The injection gate found instruction-like text in the telemetry or the diagnosis (see [Untrusted inputs](#untrusted-inputs)); decided by a code rule, without a Recovery Planner call. |
 | `TARGET_CHANGED` | no | The target was recreated, or its Pod template changed during the attempt. |
 
 A retried code still failing after the third attempt ends in the saved
@@ -221,7 +263,8 @@ incident to NEEDS_REVIEW and nothing reaches Guard or the Executor. A model
 that answers `ESCALATE` itself is saved as its own answer, with no error code.
 
 The journal keeps codes, the diagnosis summary (prediction, abstained flag,
-tool names and evidence IDs) and per-attempt usage (model calls and seconds).
+tool names and evidence IDs, and any injection finding's rule ids and counts)
+and per-attempt usage (model calls and seconds).
 It never keeps exception text, the workspace path, raw log lines or the
 Reporter's explanation. `planning-status.json` copies the row and per-attempt
 usage. The last attempt's cause text, such as Ollama's own reason and host,

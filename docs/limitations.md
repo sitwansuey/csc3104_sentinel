@@ -25,12 +25,12 @@ the fix and regenerate.
 | Entry | Kind | Status | Title | Planned | Issues |
 | --- | --- | --- | --- | --- | --- |
 | [L-CLOCK-ORDERING](#l-clock-ordering) | defect | open | Lifecycle ordering compares wall-clock timestamps written by different components | P3.03 | #18, #63 |
-| [L-RAW-LOGS-PROMPT](#l-raw-logs-prompt) | defect | open | Raw container log text reaches the model | P2.04 | #51, #56 |
 | [L-OBSERVER-ZERO-REPLICAS](#l-observer-zero-replicas) | defect | open | A Deployment scaled to zero replicas is treated as healthy | P5.07 | none |
 | [L-EXEC-WEDGE](#l-exec-wedge) | defect | mitigated | A write rejected with its resource version unchanged waits in NEEDS_RECONCILIATION unless fencing is on | P2.06, P5.08 | #61 |
 | [L-EXEC-REDELIVERY](#l-exec-redelivery) | defect | mitigated | A replacement Executor without the ledger row reported CONFLICT for a write that was applied | P3.01, P4.01 | #18, #58 |
 | [L-AGENT-JOURNAL](#l-agent-journal) | defect | mitigated | Agent mode bypasses the durable Planner journal | P2.01 | #14, #54 |
 | [L-AGENT-APPROVAL](#l-agent-approval) | defect | mitigated | No live run yet shows a person approving through the authenticated API | P2.02, P2.03 | #10 |
+| [L-RAW-LOGS-PROMPT](#l-raw-logs-prompt) | defect | mitigated | Log text reaches the model only cleaned and quoted, and the injection gate is a pattern list no live run has exercised | P2.04, P2.05, P4.04 | #51, #56 |
 | [L-NO-LOGGING](#l-no-logging) | defect | mitigated | Structured logs cover only the networked entrypoints, and no live run has collected them | P1.07, P3.02 | #62 |
 | [L-SINGLE-COORDINATOR](#l-single-coordinator) | limitation | open | The Coordinator is one process with one SQLite file | P3.06, P4.02, P5.01 | #62, #63 |
 | [L-HOST-LOCAL-EXECUTOR](#l-host-local-executor) | limitation | open | The Executor ledger and target locks are host-local | P3.04 | #18, #58, #59 |
@@ -64,14 +64,6 @@ the fix and regenerate.
 - Workaround: Run every component on one host, so they share one clock. All committed runs did.
 - Evidence: `services/coordinator/core.py:149-150`; `services/coordinator/core.py:169-170`; `runtime/worker_http.py:157`; `runtime/remote_worker.py:132`; `runtime/remote_worker.py:73`.
 
-### L-RAW-LOGS-PROMPT
-
-**Raw container log text reaches the model.** Defect, open; recorded 2026-11-11. Planned: P2.04. Issues: #51, #56.
-
-- Impact: Container log lines are exported and quoted into model context. A crafted log line could steer the model towards a rollback to the measured baseline. Guard and the Executor still enforce the target, baseline and resourceVersion checks.
-- Workaround: None in code. The prompt tells the model that telemetry is untrusted, which is not a control.
-- Evidence: `experiments/boutique/harness/agent_live.py:75`; `agent/tools.py:193-194`.
-
 ### L-OBSERVER-ZERO-REPLICAS
 
 **A Deployment scaled to zero replicas is treated as healthy.** Defect, open; recorded 2026-11-12. Planned: P5.07. Issues: none.
@@ -102,15 +94,23 @@ the fix and regenerate.
 
 - Impact: Fixed in code: agent planning now runs through prepare() and the PlannerStore journal. A model failure is retried up to three times; an abstention, a diagnosis of another component, a NO_ACTION answer or a target changed during inference ends at once. Every failure ends in a saved, delivered ESCALATE, so the incident moves to NEEDS_REVIEW, and a saved proposal replays without another model call. Still open: the planning budget applies per attempt, so one incident can use three budgets, and the remote Planner worker has no agent mode. Live verification pending: no agent run has used the journal yet, and every committed agent bundle predates it, so those failed runs left the incident OPEN.
 - Workaround: For runs recorded before this change, read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.
-- Evidence: `experiments/boutique/harness/agent_live.py:209`; `services/planner/worker.py:133`; `services/planner/worker.py:146`; `tests/test_agent_journal.py:200`; `tests/test_agent_journal.py:274`; `docs/planner.md`; claim `C-AGENT-FAIL-CLOSED`.
+- Evidence: `experiments/boutique/harness/agent_live.py:229`; `services/planner/worker.py:141`; `services/planner/worker.py:154`; `tests/test_agent_journal.py:200`; `tests/test_agent_journal.py:274`; `docs/planner.md`; claim `C-AGENT-FAIL-CLOSED`.
 
 ### L-AGENT-APPROVAL
 
 **No live run yet shows a person approving through the authenticated API.** Defect, mitigated; recorded 2026-11-11. Planned: P2.02, P2.03. Issues: #10.
 
-- Impact: Fixed in code for the four live harness paths: the Executor experiment, Boutique walkthrough, provider mode and agent mode now create approvals through the authenticated approval API, served per run by a child process with generated tokens, and the Executor's final pre-write lookup reads them through ApprovalClient. Revocation, expiry or a stopped authority therefore fails closed with zero writes, and agent mode no longer records a pre-authorised approval. An interactive run needs a person to type the exact action ID; an unattended run must opt in to auto-lab approval, recorded under the automated-lab identity and never as a person. Agent and provider modes plan through the durable Planner journal and approve through the same session, and an agent run with --expect escalated asks for no approval and starts no authority. This is proven offline with the real child process and a fake Kubernetes API. Live verification pending: no live run has used this path, so no evidence yet shows a person approving, and every committed live bundle used pre-authorised lab approval. The file-backed negative cases still give the Executor a fixed approval record that never reaches the Coordinator; they prove refusals only. The Executor experiment's rival-process check reads a file copy of the managed record, not through ApprovalClient; the target lock refuses it before it reads the approval. The Verifier acceptance script (scripts/validation/test_verifier_connected_live.py) still calls the local approve() and reads the record straight from the store; it is outside this fix. Identities are bearer tokens over loopback HTTP, not a per-person login.
+- Impact: Fixed in code for the four live harness paths: the Executor experiment, Boutique walkthrough, provider mode and agent mode now create approvals through the authenticated approval API, served per run by a child process with generated tokens, and the Executor's final pre-write lookup reads them through ApprovalClient. Revocation, expiry or a stopped authority therefore fails closed with zero writes, and agent mode no longer records a pre-authorised approval. An interactive run needs a person to type the exact action ID; an unattended run must opt in to auto-lab approval, recorded under the automated-lab identity and never as a person. Agent and provider modes plan through the durable Planner journal and approve through the same session, and an agent run with --expect escalated asks for no approval and starts no authority. This is proven offline with the real child process and a fake Kubernetes API, for agent mode and, since P2.04, for provider mode (run_provider_case with a real provider subprocess). Live verification pending: no live run has used this path, so no evidence yet shows a person approving, and every committed live bundle used pre-authorised lab approval. The file-backed negative cases still give the Executor a fixed approval record that never reaches the Coordinator; they prove refusals only. The Executor experiment's rival-process check reads a file copy of the managed record, not through ApprovalClient; the target lock refuses it before it reads the approval. The Verifier acceptance script (scripts/validation/test_verifier_connected_live.py) still calls the local approve() and reads the record straight from the store; it is outside this fix. Identities are bearer tokens over loopback HTTP, not a per-person login.
 - Workaround: Treat committed live results as lab approval. For new evidence of a person deciding, run with -Approval interactive (the default) and check operator_approval in summary.json.
-- Evidence: `experiments/recovery/live.py:376`; `experiments/recovery/live.py:390`; `runtime/approval_session.py:92`; `runtime/approval_session.py:311`; `experiments/recovery/live.py:365`; `experiments/recovery/live.py:445`; `scripts/validation/verifier_connected_lab.py:198`; `tests/test_approval_session.py:346`; `tests/test_approval_session.py:383`; `tests/test_approval_session.py:527`; `experiments/boutique/harness/agent_live.py:262`; `scripts/boutique_provider.py:30`; `tests/test_live_agent.py:440`; claim `C-CONNECTED-HARNESS`.
+- Evidence: `experiments/recovery/live.py:376`; `experiments/recovery/live.py:390`; `runtime/approval_session.py:92`; `runtime/approval_session.py:311`; `experiments/recovery/live.py:365`; `experiments/recovery/live.py:445`; `scripts/validation/verifier_connected_lab.py:198`; `tests/test_approval_session.py:346`; `tests/test_approval_session.py:383`; `tests/test_approval_session.py:527`; `experiments/boutique/harness/agent_live.py:285`; `scripts/boutique_provider.py:30`; `tests/test_live_agent.py:440`; `tests/test_provider_approval.py:67`; claim `C-CONNECTED-HARNESS`.
+
+### L-RAW-LOGS-PROMPT
+
+**Log text reaches the model only cleaned and quoted, and the injection gate is a pattern list no live run has exercised.** Defect, mitigated; recorded 2026-11-11. Planned: P2.04, P2.05, P4.04. Issues: #51, #56.
+
+- Impact: Fixed in code; live verification pending. Container log lines, Kubernetes event messages and incident signal details are now cleaned (control and format characters removed, NFKC applied, length capped), templated and quoted under untrusted_telemetry_evidence before a model reads them, and logs.csv keeps a cleaned copy with the hash of the raw line. A line that matches the curated instruction-like rules (override phrases, role markers, chat-template tokens, forged proposal fields, approval claims, Sentinel's own prompt headings) is withheld from every prompt: the model sees only its rule ids and hash. A code-owned gate in AgentPlanner then records an injection finding (rule ids and counts, decided_by rule) and ends the attempt in the fixed SUSPECTED_INJECTION escalation without calling the Recovery Planner, so flagged telemetry leads to ESCALATE and NEEDS_REVIEW with zero writes. The Recovery Planner no longer receives the Reporter's explanation or limitations, only cleaned prediction fields, evidence ids and quoted signals. This is proven offline with a 19-line adversarial corpus, a 26-line benign set that matches no rule, a recording scripted model and an obedient one. Remaining risk: the rules are a pattern list, not a complete defence. A paraphrase they miss still reaches the model as a cleaned excerpt and can steer the diagnosis or the Recovery Planner within the Guard's limits. The Reporter's root cause reason is model text passed cleaned, not from a code-owned vocabulary (P2.05), and inside the RCA agent the Analyzer's summary still reaches the Reporter. A false positive escalates a genuine incident, which is a safe failure. Live verification pending: no live run has used this path, and neither the planned adversarial-fault run nor the three normal runs after it have been made.
+- Workaround: For a paraphrase the rules miss, the remaining controls are rollback-only actions to a measured baseline, the Guard and authenticated approval. A SUSPECTED_INJECTION escalation is a prompt for review: find the flagged lines by message_sha256 in the attempt's logs.csv and the saved observation.
+- Evidence: `agent/untrusted.py`; `agent/tools.py:205`; `experiments/boutique/harness/agent_live.py:74`; `services/planner/agent_provider.py:271`; `tests/test_untrusted_telemetry.py:443`; `tests/test_untrusted_telemetry.py:470`; `tests/test_untrusted_telemetry.py:484`.
 
 ### L-NO-LOGGING
 
@@ -222,7 +222,7 @@ the fix and regenerate.
 
 - Impact: Incident-to-repair time in agent mode had a long tail (docs/results.md). The two measured cold calls took up to 41 s with model loads up to 26 s, and one 356 s decision stage holds only 53 s of recorded model calls, so its cause is not established. The bounded transport is in code: each model call has an overall deadline, a response size cap, no redirects or proxies and a schema check; agent mode runs a preflight and a warm-up call before any fault is injected and records model-runtime.json; keep_alive is configurable. Measured live on 4afc879 (C-AGENT-RECORDED: three runs on one Windows host, 2026-11-11): with qwen3:14b Q4_K_M fully on the GPU and keep_alive 30m, all nine model calls were warm (load under 1 s), model time per run was 21.9 to 24.0 s and incident to Guard ALLOW took 23.3 to 25.6 s; the first run's warm-up loaded the model in 18.6 s before the fault was injected. The preflight stopped a missing model before fault injection (C-AGENT-PREFLIGHT-RECORDED). Not measured: a cold load during a run with the bounded transport, so the tail after an evicted or cold model is unknown. The per-call timeout still defaults to 300 s; P2.01 puts agent planning under a planning budget.
 - Workaround: Keep the model warm with keep_alive and check the warm-up load time in model-runtime.json after each run.
-- Evidence: `agent/llm.py:285`; `agent/llm.py:455`; `experiments/boutique/harness/agent_live.py:153`; `tests/test_llm_transport.py`.
+- Evidence: `agent/llm.py:285`; `agent/llm.py:455`; `experiments/boutique/harness/agent_live.py:173`; `tests/test_llm_transport.py`.
 
 ### L-UNPINNED-BASE-IMAGES
 
@@ -270,7 +270,7 @@ the fix and regenerate.
 
 - Impact: A failed agent run looked like a stalled one, and Ollama's own error text was discarded. The incident also stayed OPEN until agent planning moved into the journal; see L-AGENT-JOURNAL.
 - Workaround: Not needed.
-- Evidence: `experiments/boutique/harness/agent_live.py:248`; `tests/test_live_agent.py:238`.
+- Evidence: `experiments/boutique/harness/agent_live.py:271`; `tests/test_live_agent.py:238`.
 
 ### L-CHAOS-SCENARIOS
 

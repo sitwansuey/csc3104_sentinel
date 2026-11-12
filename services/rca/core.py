@@ -33,6 +33,7 @@ def diagnose(incident, telemetry, workspace, *, config=None, llm=None, progress=
     from agent.agent import Agent, FIELDS, save
     from agent.llm import Ollama
     from agent.tools import Telemetry
+    from agent.untrusted import prompt_incident
 
     settings = json.loads(DEFAULT_CONFIG.read_text(encoding="utf-8"))
     settings["allow_abstention"] = True
@@ -47,7 +48,7 @@ def diagnose(incident, telemetry, workspace, *, config=None, llm=None, progress=
     instruction = (
         "Diagnose the initiating root cause of this incident using the supplied telemetry. "
         "Identify the component and reason; distinguish symptoms and downstream effects. "
-        "Abstain if evidence is insufficient. Use the incident signals in system_context."
+        "Abstain if evidence is insufficient. Use the incident signals quoted in system_context."
     )
     initial_plan = None
     if settings.get("bootstrap_live_tools", True):
@@ -65,7 +66,9 @@ def diagnose(incident, telemetry, workspace, *, config=None, llm=None, progress=
                                         "end": end.isoformat()}})
         if leaves:
             initial_plan = {"plan": {"kind": "parallel", "goal": "Inspect live incident telemetry", "children": leaves}}
-    prediction = agent.run(instruction, context=json.dumps({"incident": incident}),
+    # Signal details quote workload log lines, so the model sees them only as
+    # quoted, untrusted data (agent/untrusted.py), never as raw text.
+    prediction = agent.run(instruction, context=json.dumps(prompt_incident(incident)),
                            required_fields=FIELDS[1:], initial_plan=initial_plan)
     return {"incident_id": incident["incident_id"], "prediction": prediction,
             "report": json.loads((Path(workspace) / "report.json").read_text(encoding="utf-8")),

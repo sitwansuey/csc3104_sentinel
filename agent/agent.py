@@ -7,6 +7,7 @@ from .tools import CATALOG
 from .workflows import retrieve
 from .evidence import compact_evidence, corroborated_onsets, timestamp_rejection
 from .progress import notify
+from .untrusted import UNTRUSTED_KEY
 
 
 def obj(properties, required=None):
@@ -195,6 +196,9 @@ class Agent:
                                        "evidence_id": branch})
                 try:
                     result = self.telemetry.run(node["tool"], args)
+                    # Each quoted log line gets its own evidence id inside this branch.
+                    for number, example in enumerate(result.get("examples", []), 1):
+                        example["evidence_id"] = f"{branch}.{number}"
                     outputs = [{"evidence_id": branch, "tool": node["tool"], "result": result}]
                     success = not result.get("truncated", False)
                     if node["tool"] == "metrics":
@@ -243,7 +247,7 @@ class Agent:
             self.round_ceiling = min(self.config.get("max_steps", 16), self.steps + 6)
             prompt = json.dumps({**base, "prior_analysis": bounded(self.summaries, 6000),
                                 "completed_calls": self.call_history,
-                                "evidence": bounded(compact_evidence(self.evidence), 10000),
+                                UNTRUSTED_KEY: bounded(compact_evidence(self.evidence), 10000),
                                 "remaining_tools": self.config.get("max_steps", 16)-self.steps})
             plan = initial_plan if round_id == 0 and initial_plan is not None else self.llm.ask("Planner", prompt + "\n" + CATALOG +
                 "\nProduce a bounded behavior tree. NEVER repeat a completed call; cached results provide no new evidence. Follow up on unexamined modalities, changed windows or columns. Distinguish sustained episodes from isolated spikes and boundary-censored runs. Do not select the earliest anomaly as root cause. Use sequence for dependencies, selector for fallback, parallel for independent analyses. A metrics/logs leaf with no findings fails its diagnostic condition; truncated results also fail. Use parallel when all modalities should be inspected even if one is empty. Plan only relevant dates. No more than 6 tool leaves per round.", PLAN)
@@ -254,7 +258,7 @@ class Agent:
             candidates = corroborated_onsets(self.evidence)
             analysis = self.llm.ask("Analyzer", json.dumps({"task": instruction,
                 "system_context": context,
-                "outputs": bounded(compact_evidence(self.evidence)), "corroborated_onsets": candidates,
+                UNTRUSTED_KEY: bounded(compact_evidence(self.evidence)), "corroborated_onsets": candidates,
                 "previous": bounded(self.summaries, 6000)}) + "\nAssess evidence sufficiency and contradictions. Earliest anomaly does not imply root cause. Require persistent onset and independently corroborating signals, with temporal order consistent with propagation. Corroborated onsets are hypotheses, not proven causes. Name evidence IDs. State exact NEW tool/column/window corrections when needed. Do not equate successful tools with a solved diagnosis.", ANALYSIS)
             confidence = analysis.get("confidence", 0)
             if not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
@@ -302,7 +306,7 @@ class Agent:
         report_context = json.dumps({"task": instruction, "system_context": context,
             "required_fields": required_fields, "number_of_failures": failure_count,
             "analysis": bounded(self.summaries, 6000), "corroborated_onsets": candidates,
-            "evidence": bounded(compact_evidence(self.evidence))})
+            UNTRUSTED_KEY: bounded(compact_evidence(self.evidence))})
         report_instructions = (
             "\nReport failures chronologically. Use exact component/reason vocabulary from the task or system context. "
             "Datetimes must be YYYY-MM-DD HH:MM:SS in UTC+8. Choose a causally plausible initiating event, "

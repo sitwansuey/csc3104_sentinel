@@ -1,8 +1,17 @@
-"""Read-only, bounded CSV telemetry tools. No generated code execution."""
+"""Read-only, bounded CSV telemetry tools. No generated code execution.
+
+Text read from telemetry is quoted through agent/untrusted.py before it leaves
+a tool: log examples carry a masked template and a short cleaned excerpt, or
+only rule ids when a line looks like instructions aimed at the model.
+"""
 from pathlib import Path
 import re
 from datetime import timezone, timedelta
 import pandas as pd
+
+from .untrusted import label, quote, suspicious
+
+PROFILE_SAMPLE_LIMIT = 80
 
 TZ = timezone(timedelta(hours=8))
 
@@ -92,7 +101,10 @@ class Telemetry:
             frame = frame.iloc[:min(self.max_rows, 1000)]
             info = {"file": path.relative_to(self.root).as_posix(), "rows_scanned": len(frame), "truncated": False,
                     "profile_sample_only": truncated}
-            info.update(columns=list(frame.columns), sample=frame.head(3).fillna("").to_dict("records"),
+            # Sample text values are telemetry too: quoted, never copied raw.
+            sample = [{column: quote(value, PROFILE_SAMPLE_LIMIT) if isinstance(value, str) else value
+                       for column, value in row.items()} for row in frame.head(3).fillna("").to_dict("records")]
+            info.update(columns=list(frame.columns), sample=sample,
                         distinct={c: int(frame[c].nunique()) for c in frame.columns})
             return info
         # Stream the full file; only incident-window rows are retained, under a hard cap.
@@ -174,7 +186,7 @@ class Telemetry:
                 scores = (window[value] - center).abs() / scale
                 abnormal = window.loc[scores >= 3]
                 if not abnormal.empty:
-                    findings.append({"component": str(keys[0]), "kpi": str(keys[1]),
+                    findings.append({"component": label(keys[0]), "kpi": label(keys[1]),
                         "baseline_source": baseline_source, "baseline_samples": int(moments["count"]),
                         "baseline_mean": center, "max_score": min(float(scores.max()), 1e12),
                         "anomaly_count": len(abnormal), "anomaly_fraction": len(abnormal)/len(window),
@@ -189,9 +201,13 @@ class Telemetry:
                 raise ValueError(f"Missing message column {message}")
             matches = selected[error_mask(selected[message])]
             info["error_count"] = len(matches)
-            info["components"] = {str(k): int(v) for k, v in matches[component].value_counts().head(30).items()}
-            info["examples"] = [{"component": str(r[component]), "time": str(r["_time"]),
-                                 "message": str(r[message])[:500]} for _, r in matches.head(15).iterrows()]
+            info["components"] = {label(k): int(v) for k, v in matches[component].value_counts().head(30).items()}
+            info["examples"] = [{"component": label(r[component]), "time": str(r["_time"]), **quote(r[message])}
+                                for _, r in matches.head(15).iterrows()]
+            # Instruction-like lines anywhere in the window, not only error lines.
+            texts = selected[message].astype(str)
+            flagged = {text for text in texts.unique() if suspicious(text)}
+            info["suspected_injection_lines"] = int(texts.isin(flagged).sum())
             # Minute-level error bursts retain onset timing instead of only early log samples.
             timed = matches
             if "timestamp_known" in timed:
@@ -208,7 +224,7 @@ class Telemetry:
                     threshold = max(3, mean + 3 * variance**.5)
                     prior_key = (key[0], key[1] - pd.Timedelta(minutes=1))
                     if count >= threshold and counts.get(prior_key, 0) < threshold:
-                        info["events"].append({"component": str(key[0]), "time": key[1].strftime("%Y-%m-%d %H:%M:%S"),
+                        info["events"].append({"component": label(key[0]), "time": key[1].strftime("%Y-%m-%d %H:%M:%S"),
                             "error_count": int(count), "baseline_errors_per_minute": mean,
                             "left_censored": start is not None and key[1] <= start.floor("min")})
             info["events"] = sorted(info["events"], key=lambda e: -e["error_count"])[:30]
@@ -218,7 +234,7 @@ class Telemetry:
                 raise ValueError(f"Missing duration column {duration}")
             selected = selected.copy()
             selected[duration] = pd.to_numeric(selected[duration], errors="coerce")
-            info["latency"] = [{"component": str(key), "spans": len(group),
+            info["latency"] = [{"component": label(key), "spans": len(group),
                                  "p95": float(group[duration].quantile(.95)),
                                  "max": float(group[duration].max())}
                                 for key, group in selected.groupby(component) if group[duration].notna().any()]
@@ -232,7 +248,7 @@ class Telemetry:
                 scale = max(float((minute-center).abs().median()) * 1.4826, abs(center)*.05, 1e-9)
                 flags = minute > center + 3 * scale
                 for time in minute.index[flags & ~flags.shift(fill_value=False)]:
-                    info["events"].append({"component": str(key), "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    info["events"].append({"component": label(key), "time": time.strftime("%Y-%m-%d %H:%M:%S"),
                         "p95": float(minute.loc[time]), "left_censored": time == minute.index[0]})
             info["events"] = sorted(info["events"], key=lambda e: -e["p95"])[:30]
             info["note"] = "Latency summaries alone do not establish parent-child causality."

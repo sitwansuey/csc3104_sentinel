@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 from agent.llm import Ollama
+from agent.untrusted import scrub, sha256, suspicious
 from services.rca.core import DEFAULT_CONFIG
 from services.guard.common import json_sha256
 from services.planner.agent_provider import AgentPlanner, names_target, planning_budget
@@ -17,6 +18,13 @@ __all__ = ["AgentPlanningMixin", "export_telemetry", "names_target"]
 LIVE_KEEP_ALIVE = "30m"
 # Evidence and dashboard checks read the agent case from this folder.
 PLANNING_FOLDER = "approved-rollback"
+# Longest cleaned log message kept in logs.csv; the raw line stays in the observation.
+MESSAGE_LIMIT = 2000
+
+
+def csv_cell(text):
+    """Keep a spreadsheet from reading a cleaned message as a formula."""
+    return "'" + text if text[:1] in ("=", "+", "-", "@") else text
 
 
 def _time(value):
@@ -37,6 +45,7 @@ def export_telemetry(directory, target, destination, *, incident=None, lookback_
     snapshots = []
     untimed = {}
     skipped = duplicates = raw_metrics = raw_logs = 0
+    counts = {"suspicious_lines": 0, "truncated_lines": 0, "control_chars_removed": 0}
     end = _time(incident["observed_at"]) if incident else None
     start = min([end, *(_time(s["at"]) for s in incident["signals"])]) - timedelta(
         seconds=lookback_seconds) if incident else None
@@ -53,7 +62,17 @@ def export_telemetry(directory, target, destination, *, incident=None, lookback_
         key = (identity, at, message, source)
         if key in logs:
             duplicates += 1
-        logs[key] = [at, target["name"], message, source, identity, time_known]
+            return
+        # The message is workload text: the CSV gets a cleaned, bounded copy,
+        # the hash of the raw line and the rule ids it matched. The raw line
+        # stays in the saved observation.
+        cleaned, removed, truncated = scrub(message, MESSAGE_LIMIT)
+        rules = suspicious(message)
+        counts["control_chars_removed"] += removed
+        counts["truncated_lines"] += truncated
+        counts["suspicious_lines"] += bool(rules)
+        logs[key] = [at, target["name"], csv_cell(cleaned), source, identity, time_known,
+                     sha256(message), ";".join(rules)]
 
     for path in sorted(directory.glob("*-observation.json")):
         observation = json.loads(path.read_text(encoding="utf-8"))
@@ -104,7 +123,8 @@ def export_telemetry(directory, target, destination, *, incident=None, lookback_
     require(snapshots and metrics, "Live Observer snapshots are required for agent diagnosis")
     for name, header, rows in [
             ("metrics.csv", ["timestamp", "cmdb_id", "kpi_name", "value"], sorted(metrics)),
-            ("logs.csv", ["timestamp", "cmdb_id", "message", "source", "source_id", "timestamp_known"], sorted(logs.values()))]:
+            ("logs.csv", ["timestamp", "cmdb_id", "message", "source", "source_id", "timestamp_known",
+                          "message_sha256", "suspicious_rules"], sorted(logs.values()))]:
         with (destination / name).open("w", encoding="utf-8", newline="") as stream:
             writer = csv.writer(stream)
             writer.writerow(header)
@@ -113,7 +133,7 @@ def export_telemetry(directory, target, destination, *, incident=None, lookback_
         "source": "live Observer snapshots", "snapshots": snapshots, "metrics": len(metrics),
         "log_lines": len(logs), "duplicate_metrics_removed": raw_metrics - len(metrics),
         "duplicate_logs_removed": duplicates, "input_log_lines": raw_logs,
-        "snapshots_outside_window": skipped,
+        "snapshots_outside_window": skipped, **counts,
         "window_start": start.isoformat() if start else None,
         "window_end": end.isoformat() if end else None, "traces_available": False})
 
@@ -211,6 +231,9 @@ class AgentPlanningMixin:
         finally:
             save(folder / "model-calls.json", planner.calls)
             self.summary["agent_model_calls"] = len(planner.calls)
+            if planner.finding:
+                # Rule ids and counts from the code-owned injection gate, never the flagged text.
+                self.summary["injection_finding"] = planner.finding
         with PlannerStore(folder / "planner.db") as journal:
             record = journal.get(incident["incident_id"])
         proposal = record["proposal"] if record else None
