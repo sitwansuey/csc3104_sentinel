@@ -1,5 +1,7 @@
 """Structure of deploy/docker/worker.Dockerfile: pinned bases, a non-root user, hash-checked
-Python packages, the worker entrypoint with a role and a readiness probe. Nothing is built here."""
+Python packages, the worker entrypoint with a role and a readiness probe, and every experiments
+module that a copied experiments module imports. Nothing is built here."""
+import ast
 from pathlib import Path
 import re
 import shlex
@@ -10,6 +12,42 @@ from scripts.release.policy import IMAGES
 ROOT = Path(__file__).resolve().parents[1]
 DOCKERFILE = ROOT / "deploy/docker/worker.Dockerfile"
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
+
+
+def copied_experiments(text):
+    """The experiments/*.py files the final stage copies from the build context (not --from stages)."""
+    files = set()
+    for name, arguments in instructions(text):
+        words = arguments.split()
+        if name != "COPY" or any(word.startswith("--from") for word in words):
+            continue
+        files.update(word for word in words[:-1] if word.startswith("experiments/") and word.endswith(".py"))
+    return files
+
+
+def missing_experiments_modules(text, root=ROOT):
+    """'<copied file> imports <module>' for each experiments module a copied one imports but the image lacks.
+
+    The image copies only the Observer-snapshot exporter's module chain, so a new
+    import in that chain must be copied too, or the image fails its import check.
+    """
+    copied, found = copied_experiments(text), []
+    for path in sorted(copied):
+        for node in ast.walk(ast.parse((root / path).read_text(encoding="utf-8"))):
+            modules = []
+            if isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                modules = [node.module] + [node.module + "." + alias.name for alias in node.names]
+            for module in modules:
+                if not module.split(".")[0] == "experiments":
+                    continue
+                source = module.replace(".", "/")
+                if (root / (source + ".py")).is_file() and source + ".py" not in copied:
+                    found.append(f"{path} imports {module}")
+                elif (root / source / "__init__.py").is_file() and source + "/__init__.py" not in copied:
+                    found.append(f"{path} imports {module}")
+    return found
 
 
 def instructions(text):
@@ -70,6 +108,21 @@ def problems(text):
 class WorkerDockerfileTests(unittest.TestCase):
     def test_the_worker_image_follows_every_rule(self):
         self.assertEqual(problems(DOCKERFILE.read_text(encoding="utf-8")), [])
+
+    def test_every_experiments_module_the_copied_chain_imports_is_copied(self):
+        text = DOCKERFILE.read_text(encoding="utf-8")
+        self.assertIn("experiments/boutique/harness/agent_live.py", copied_experiments(text))
+        self.assertEqual(missing_experiments_modules(text), [])
+
+    def test_a_missing_module_in_the_copied_chain_is_reported(self):
+        good = DOCKERFILE.read_text(encoding="utf-8")
+        broken = good.replace(" experiments/boutique/harness/scenarios.py", "")
+        self.assertNotEqual(broken, good)
+        missing = missing_experiments_modules(broken)
+        self.assertIn("experiments/boutique/harness/agent_live.py imports experiments.boutique.harness.scenarios",
+                      missing)
+        self.assertIn("experiments/boutique/harness/targets.py imports experiments.boutique.harness.scenarios",
+                      missing)
 
     def test_the_worker_image_is_built_and_scanned_by_the_release(self):
         self.assertIn("deploy/docker/worker.Dockerfile", [image.dockerfile for image in IMAGES])
