@@ -37,7 +37,8 @@ Container logs, Kubernetes event messages and the incident signal details
 built from them are written by the workload. The adversary here is anything
 that can make the workload print text: a crafted request, a bad configuration
 value or a compromised dependency. Its goal is to steer the model, for example
-towards a rollback or an escalation. These controls apply in agent mode:
+towards a rollback or an escalation. These controls apply in agent mode; the
+remote Planner worker has its own row:
 
 | Control | Where | What it does |
 |---|---|---|
@@ -47,6 +48,14 @@ towards a rollback or an escalation. These controls apply in agent mode:
 | Export | `experiments/boutique/harness/agent_live.py` (`export_telemetry`) | `logs.csv` holds the cleaned message, `message_sha256` (the hash of the raw line) and `suspicious_rules`; a cell that starts with `=`, `+`, `-` or `@` gets a leading `'`. `telemetry-export.json` counts `suspicious_lines`, `truncated_lines` and `control_chars_removed`. The raw lines stay in the saved observations. |
 | Injection gate | `services/planner/agent_provider.py` (`injection_finding`, `AgentPlanner`) | Code, not the model, checks the raw incident signals, every exported log row and the diagnosis fields. If any matches a rule, the attempt saves `injection-finding.json` (rule ids and counts, `decided_by: rule`), the journal keeps the same finding, and the Recovery Planner is not called: the attempt ends in the fixed `SUSPECTED_INJECTION` escalation and the incident moves to NEEDS_REVIEW with no Guard request and no write. If the agent abstained first, the attempt ends in the `ABSTAINED` escalation and the finding is still recorded. There is no setting that turns the gate off. |
 | No free text between roles | `services/planner/agent_provider.py` (`recovery_context`) | The Recovery Planner reads cleaned prediction fields and evidence ids, never the Reporter's explanation or limitations. |
+| Remote Planner worker | `runtime/remote_adapters.py` (`OllamaProvider`) | Before any model call, code checks the raw incident signals (reason and detail) with the same rules. A flagged signal ends planning in the fixed `SUSPECTED_INJECTION` escalation, and the attempt's saved usage keeps the finding (rule ids and counts). Otherwise the model reads the incident's trusted fields and its signals quoted under `untrusted_telemetry_evidence` (prompt version `recovery-v2`). This worker exports no logs and runs no diagnosis, so the signals are all it checks. |
+
+Two paths that hand telemetry to other code are outside these controls. Provider
+mode (`-ProviderScript`) passes the raw planning context to the operator's own
+trusted provider script; if that script calls a model, cleaning and gating are
+its job. The offline RCAEval CaseToolkit benchmark
+(`agent/datasets/casetoolkit.py`) sends upstream tool output, which can include
+raw log rows, to the model; it is not on the live path.
 
 The offline tests (`tests/test_untrusted_telemetry.py`) use the adversarial
 corpus in `tests/fixtures/adversarial_logs/`: 19 attacks, including
@@ -55,7 +64,12 @@ forged section header, and 26 benign Boutique, gRPC, JVM, database and
 Kubernetes lines that must match no rule. A recording scripted model shows that
 no attack text reaches any prompt; an obedient scripted model that would answer
 ROLLBACK is never asked, and the run ends in NEEDS_REVIEW with zero writes;
-benign logs still reach ROLLBACK and RECOVERED.
+benign logs still reach ROLLBACK and RECOVERED. A line whose instruction falls
+past the export's 2000-character cut is still gated through its
+`suspicious_rules` column. For the remote Planner worker, a recording fake
+Ollama server that always answers ROLLBACK receives no request for any attack,
+and the saved proposal is the `SUSPECTED_INJECTION` escalation; a benign signal
+reaches it only quoted and still gives a ROLLBACK.
 
 Remaining risk. The rules are a curated pattern list, not a complete defence:
 a paraphrase they miss reaches the model as a cleaned excerpt and can still
@@ -64,7 +78,12 @@ rollback-only actions, the Guard's checks and authenticated approval enforce.
 The Reporter's root cause reason is model text passed on cleaned, not chosen
 from a vocabulary code owns (P2.05). Inside the RCA agent the Analyzer's summary
 still reaches the Reporter. A false positive escalates a genuine incident to an
-operator, which is a safe failure. Templating could hide a decisive detail, so
+operator, which is a safe failure; ordinary lines such as `user: alice not
+found` (role marker) or `helm upgrade failed; action=rollback triggered`
+(forged proposal field) are flagged today, so the rules still need checking
+against real logs. If an attempt on flagged telemetry fails in the model three
+times before its check runs, the incident ends in the `ATTEMPTS_EXHAUSTED`
+escalation and no finding is recorded. Templating could hide a decisive detail, so
 the cleaned excerpt is kept beside the template. No live run has exercised the
 gate yet; the planned check is an adversarial fault whose configuration value
 carries instruction text, plus three normal runs that must still recover.

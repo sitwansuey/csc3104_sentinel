@@ -115,12 +115,14 @@ def planning_budget(config):
     return budget
 
 
-def injection_finding(incident, telemetry, prediction=None):
+def injection_finding(incident, telemetry=None, prediction=None):
     """The code-owned injection check for one attempt, or None when nothing is flagged.
 
     Scans the raw incident signals, every row of the exported logs.csv (its
     suspicious_rules column, written from the raw line, and the message) and
-    the diagnosis fields. The finding holds rule ids and counts, never text.
+    the diagnosis fields. Without a telemetry folder, as in the remote Planner
+    worker, only the signals (and any prediction) are checked. The finding
+    holds rule ids and counts, never text.
     """
     rules, sources = set(), {"incident_signals": 0, "logs": 0, "diagnosis": 0}
 
@@ -131,8 +133,8 @@ def injection_finding(incident, telemetry, prediction=None):
 
     for signal in incident["signals"]:
         check("incident_signals", {*suspicious(signal["reason"]), *suspicious(signal["detail"])})
-    path = Path(telemetry) / "logs.csv"
-    if path.is_file():
+    path = Path(telemetry) / "logs.csv" if telemetry is not None else None
+    if path is not None and path.is_file():
         with path.open(encoding="utf-8", newline="") as stream:
             for row in csv.DictReader(stream):
                 recorded = {rule for rule in str(row.get("suspicious_rules") or "").split(";") if rule in RULES}
@@ -293,8 +295,10 @@ class AgentPlanner:
 
         The injection gate runs first and in code: flagged telemetry ends the
         attempt in the fixed SUSPECTED_INJECTION escalation without a model call.
+        It reads the finding carried on this attempt's own diagnosis, and also
+        fails closed on the planner's current finding.
         """
-        if self.finding:
+        if context["diagnosis"].get("injection") or self.finding:
             raise PlanningError("SUSPECTED_INJECTION", terminal=True)
         failures = context["diagnosis"]["prediction"].values()
         containers = baseline_containers(context["baselines"])
