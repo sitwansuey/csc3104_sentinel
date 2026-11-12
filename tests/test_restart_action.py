@@ -444,6 +444,32 @@ class RestartExecutorTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             candidate_template({**self.proposal, "action": "SCALE"}, live_template, baseline)
 
+    def test_handlers_refuse_a_tampered_baseline_without_the_guard(self):
+        """Defence in depth: each handler checks the baseline itself, not only the Guard."""
+        baseline = self.inputs["baseline"]
+        live_template = self.cluster.snapshot["deployment"]["spec"]["template"]
+        rollback = fixture("messages/proposal.json")
+        self.assertEqual(candidate_template(rollback, live_template, baseline), baseline["pod_template"])
+        tampered_template = deepcopy(baseline)
+        tampered_template["pod_template"]["spec"]["containers"][0]["image"] = "tampered"
+        cases = {
+            "missing": None,
+            "not an object": ["baseline"],
+            "no template": {key: value for key, value in baseline.items() if key != "pod_template"},
+            "template not an object": dict(baseline, pod_template="template"),
+            "other target": dict(baseline, target=dict(baseline["target"], uid="other")),
+            "other baseline": dict(baseline, baseline_id="BASE-OTHER"),
+            "stale hash": dict(baseline, template_sha256="0" * 64),
+            "edited template": tampered_template,
+        }
+        for proposal in (self.proposal, rollback):
+            for name, stored in cases.items():
+                with self.subTest(action=proposal["action"], case=name), self.assertRaises(ContractError):
+                    candidate_template(proposal, live_template, deepcopy(stored))
+        mismatched = dict(rollback, parameters=dict(rollback["parameters"], template_sha256="d" * 64))
+        with self.assertRaises(ContractError):
+            candidate_template(mismatched, live_template, baseline)
+
     def test_guard_refusal_at_execution_makes_no_write(self):
         healthy = fixture("observations.json")["healthy"][-1]
         self.cluster.snapshot["deployment"]["status"] = healthy["deployment"]["status"]
@@ -631,7 +657,14 @@ class RestartFlowTests(unittest.TestCase):
         return flow
 
     def test_demo_restart_reaches_recovered_with_one_write(self):
-        demonstrate_restart()
+        import contextlib
+        import io
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            demonstrate_restart()
+        summary = json.loads(output.getvalue())
+        self.assertEqual({key: summary[key] for key in ("action", "status", "writes", "restart_history")},
+                         {"action": "RESTART", "status": "RECOVERED", "writes": 1, "restart_history": 1})
 
     def test_restart_budget_persists_across_component_restarts(self):
         flow = self.flow()
