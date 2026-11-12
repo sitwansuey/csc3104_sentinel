@@ -26,7 +26,7 @@ consistency.
 | Service bearer tokens | Environment variables named in config (`runtime/service_identity.py::load_identities`) | Each token is a role identity on the Coordinator |
 | Executor ledger and locks | `services/executor/store.py::SQLiteExecutionLedger`, `services/executor/store.py::LocalTargetCoordinator` | Stops repeated or concurrent writes |
 | Trusted Guard inputs | Policy and baseline files read by `runtime/live_executor.py::LiveGuardAuthorizer` | The Guard is only as good as these files |
-| Model prompt context | `runtime/remote_adapters.py::OllamaProvider`; agent mode in `experiments/boutique/harness/agent_live.py` | Carries workload telemetry to the model |
+| Model prompt context | `runtime/remote_adapters.py::OllamaProvider`; agent mode in `experiments/boutique/harness/agent_live.py` and the remote agent Planner (`runtime/remote_adapters.py::AgentPlannerAdapter`) | Carries workload telemetry to the model |
 | Lab control token | `runtime/lab_control.py::LabControl.capabilities` | Releases a fault-injection scenario |
 | Images and CI | `deploy/docker/`, `.github/workflows/checks.yml` | Code that runs with the credentials above |
 

@@ -134,6 +134,93 @@ combined with `--coordinator-url`. The optional Kustomize composition
 `kubectl apply -k deploy/sentinel` binds Observer to HTTPS without mounting the
 Coordinator PVC; the original standalone Observer lab manifest is preserved.
 
+## Agent mode
+
+A Planner configuration with `"mode": "agent"` plans with the RCA agent
+instead of the single-prompt provider. It uses the same
+`services/planner/agent_provider.py::AgentPlanner` as the local agent
+experiment ([planner](planner.md#agent-mode-through-the-journal)), wrapped by
+`runtime/remote_adapters.py::AgentPlannerAdapter`. Each claimed
+`planner.request` runs the `diagnoser` and `finalize` hooks inside one
+`planner.db` attempt, with the same `planning_budget_seconds`, a journal lease
+of that budget plus 60 s, and the same error codes. A retryable failure uses
+one of `max_attempts`; a terminal failure, or the last failed attempt, saves an
+`ESCALATE`, and the incident moves to NEEDS_REVIEW. A saved proposal is
+re-sent without another model call. Each incident gets its own workspace,
+`<state_directory>/agent/incident-<digest>/attempt-<n>/`. Nothing falls back:
+a model failure never becomes a deterministic or fixture proposal.
+
+```json
+{
+  "role": "planner",
+  "mode": "agent",
+  "url": "https://sentinel-coordinator.sentinel-demo.svc:8766",
+  "identity": "planner-1",
+  "token_env": "SENTINEL_PLANNER_TOKEN",
+  "ca": "/config/ca.crt",
+  "state_directory": "/data",
+  "baselines": "/config/observed-baseline.json",
+  "model_config": "/config/rca-config.json",
+  "model_endpoint": "http://host.docker.internal:11434",
+  "telemetry_directory": "/observer",
+  "cluster_id": "lab-cluster",
+  "context": "planner-readonly",
+  "kubeconfig": "/credentials/planner-readonly.yaml",
+  "max_attempts": 3,
+  "retry_seconds": 5,
+  "preflight_seconds": 30
+}
+```
+
+- `model_config` (optional) holds overrides of
+  [`rca-config.json`](../data/sentinel/samples/rca-config.json): model,
+  timeouts and `planning_budget_seconds`. `model_endpoint` (optional) replaces
+  its `base_url`. A plain-http endpoint off loopback, such as
+  `host.docker.internal` from a container, also needs
+  `"allow_insecure_remote": true` in `model_config`; prompts then cross the
+  Docker host network unencrypted, and Ollama has no authentication.
+- `baselines` names exactly one reviewed baseline (an object or a one-item
+  list). It is read once, at start.
+- `telemetry_directory` is a read-only directory of Observer snapshots
+  (`*-observation.json`, as the agent harness writes them). Each attempt
+  exports the incident's window from it. This worker does not write it.
+- The agent reads the target Deployment before diagnosis and again before it
+  saves a ROLLBACK, so unlike provider mode it needs a read-only Deployment
+  read: `"in_cluster": true` (its projected ServiceAccount) or `context` with an
+  optional `kubeconfig` (kubectl). The incident target must name the configured
+  `cluster_id`. A bound lab fault run may use the file test cluster instead.
+- `provider` is refused in agent mode, so the deterministic planner cannot be
+  mixed in.
+- For every role, a configuration key that looks like a secret (token, secret,
+  password, API key, authorization, bearer or credential) is refused unless
+  its name ends in `_env`; so is one in `model_config`. Secrets come only from
+  the environment variables those `*_env` keys name. The Ollama client sends no
+  credential.
+
+**Preflight.** Before each claim the worker checks that the model endpoint
+answers `/api/tags` and lists every configured model. A passed check is reused
+for `preflight_seconds` (30 by default); a failed one is never reused. While it
+fails, the worker claims nothing, prints
+`{"status": "not_ready", "error_code": "MODEL_UNAVAILABLE"}`, logs
+`worker.status` with that reason and the cause's class name only, backs off,
+and `/readyz` answers 503. Saved results waiting to be re-sent wait too. A
+model that fails after a passed preflight is an attempt failure
+(`MODEL_UNAVAILABLE`), retried and then escalated as above. One pass can last
+the whole planning budget, so keep `--live-seconds` above
+`planning_budget_seconds` plus 60 (the 900 s default covers the 600 s budget).
+
+**Fallback.** If no model endpoint can be reached (for example,
+`host.docker.internal` does not resolve), the fallback is a deployment choice,
+not an automatic switch: run the Planner in provider mode with
+`"provider": "deterministic"`. That is accepted only in a lab fault run, and its
+proposals are always labelled synthetic (below).
+
+Tested offline only (`tests/test_remote_agent_planner.py`): the hooks and
+budget lease reach `prepare()`, retries and terminal codes end as on the local
+path, and one test runs the worker as its own OS process with a loopback
+Coordinator, the file test cluster and `tests/support/fake_ollama.py`, then
+runs it again and sees no second model call. That is one host. No live model, container or cluster has run agent mode remotely.
+
 ## Probes, the deterministic planner and lab runs
 
 `--health-port PORT` serves `/healthz` and `/readyz` on 127.0.0.1 only.
@@ -141,18 +228,20 @@ Coordinator PVC; the original standalone Observer lab manifest is preserved.
 pass within `--live-seconds` (900 by default), so a loop stuck inside one pass
 turns unhealthy; set it above the longest pass you expect, such as a Planner's
 model call. `/readyz` answers 200 once
-the configuration was accepted and the Coordinator answered a polling pass
-within `--ready-seconds` (60 by default). The bodies hold booleans and ages in
-seconds, nothing else.
+the configuration was accepted, the worker's preflight passed (only the agent
+Planner has one, see [Agent mode](#agent-mode)), and the Coordinator answered a
+polling pass within `--ready-seconds` (60 by default). The bodies hold booleans
+and ages in seconds, nothing else.
 
 A Planner configuration may set `"provider": "deterministic"` with an optional
 `"attempt_lease_seconds"`, but only in a lab fault run (below). It plans with
-the offline mock provider instead of a model, and every attempt it serves is
-saved in the Planner journal with usage `synthetic_planner: true`. That label
-stays in the Planner's journal: it is not in the proposal, so an operator
-approving one cannot see it, which is why any other run refuses this provider.
-Never use it as evidence of planning quality. Ollama stays the default; any
-other provider name is refused.
+the offline mock provider instead of a model. It is always labelled synthetic:
+every attempt it serves is saved in the Planner journal with usage
+`synthetic_planner: true`, and the proposal's own rationale starts with
+`SYNTHETIC: deterministic lab planner, not model output.`, so the Coordinator,
+the dashboard and an operator approving it can see the label. It is still a
+stand-in for planning, so any other run refuses it. Never use it as evidence
+of planning quality. Ollama stays the default; any other provider name is refused.
 
 `"cluster": "file:PATH"` points a Guard, Executor or Verifier at the shared
 test cluster in `tests/support/file_cluster.py`. A worker accepts it only in a
@@ -181,13 +270,75 @@ recovery, zero-write revocation, post-journal revocation, long inference renewal
 expired leases, lost responses, crash after a repair and missing-evidence timeout.
 These are network integration regressions, not a live model/Kubernetes acceptance.
 
-Reuse the existing `deploy/docker/demo-runner.Dockerfile` packaging for workers
-that need its kubectl/Executor runtime; override the container command with
-`python -m runtime.worker_service --config /config/worker.json`. Rebuild from the
+`python -m unittest tests.test_remote_agent_planner tests.test_worker_dockerfile`
+covers [agent mode](#agent-mode) and the [worker image](#worker-image) file.
+
+Package workers with the [worker image](#worker-image). Rebuild from the
 tested source and capture the actual image digest. Supply each process only its
-own credentials, trusted configuration and persistent component volume. Planner
-needs no Kubernetes credential. Keep Guard/Verifier Kubernetes access read-only;
+own credentials, trusted configuration and persistent component volume. A
+provider-mode Planner needs no Kubernetes credential; an agent-mode Planner
+needs read-only `get` on its target Deployment. Keep Guard/Verifier Kubernetes access read-only;
 reuse `executor-rbac.yaml` and Executor packaging for writes. Coordinator's
 image/Service and optional Observer composition are provided, but the complete
 four-worker Kubernetes rollout, restricted identity evidence, multi-host
 ownership and owner release sign-off remain #62/#63 acceptance work.
+
+## Worker image
+
+`deploy/docker/worker.Dockerfile` builds one image, `sentinel-worker`, for
+every worker role. It is in the release build list
+(`scripts/release/policy.py`), so a release builds and scans it with the same
+Trivy gate as the other images ([release](release.md)).
+
+- Both base images are pinned by digest. The kubectl build stage is the demo
+  runner's, line for line, so the two images share it (a test checks this).
+  The runtime base is `python:3.12-alpine3.23`.
+- Python packages come only from `requirements.lock`, with `--require-hashes`
+  and prebuilt wheels only (`--only-binary=:all:`); pip is then removed.
+- It holds the worker code, the RCA agent, the runbooks, the sample RCA
+  configuration, the Observer-snapshot exporter's module chain and kubectl
+  (Guard and Executor read and write through it). It has no shell and no
+  BusyBox.
+- It runs as uid 10001. State goes to `/data` (a volume); the only other path
+  written is `/tmp`, so the root filesystem can be read-only.
+- The entrypoint is `python -m runtime.worker_service`. The default command is
+  `--role planner --config /config/worker.json --health-port 8080`; pass
+  another `--role` for another worker. `--role` refuses to start a
+  configuration written for a different role.
+- `HEALTHCHECK` fetches `/readyz` on `127.0.0.1:8080` inside the container, so
+  keep `--health-port 8080` when you change the command. The probe server
+  listens on loopback only, and Kubernetes ignores `HEALTHCHECK`, so a
+  Kubernetes `httpGet` probe cannot reach it: use an `exec` probe that runs the
+  same `python -c` command.
+
+```powershell
+docker build -f deploy/docker/worker.Dockerfile -t sentinel-worker:local .
+docker run --rm --read-only --tmpfs /tmp -v sentinel-planner:/data `
+  -v "${PWD}/planner-config:/config:ro" -v "${PWD}/observer-snapshots:/observer:ro" `
+  -e SENTINEL_PLANNER_TOKEN sentinel-worker:local --role planner --config /config/worker.json --health-port 8080
+```
+
+`-e SENTINEL_PLANNER_TOKEN` with no value passes the variable from your shell,
+so the token is not in the command line.
+
+**Recorded (local build, not a release).** On 12 Nov 2026 the image was built
+locally on one Windows host with Docker Desktop, from this branch before commit,
+and scanned with the release pipeline's pinned Trivy (0.76.1, database of
+12 Nov 2026) and its gate: 0 Critical, 0 High, 0 Medium, 0 Low and 1 Unknown
+finding. The Unknown one (CVE-2026-97054) is in the Go standard library
+compiled into the kubectl binary, from the build stage shared with the demo
+runner, and has a fix in Go 1.27.4; it is not in a Sentinel layer. The gate
+passed. These counts are not a committed evidence bundle, and no container
+was started from the image.
+
+**Live check needed (not done).** Run the
+[multi-process topology](../experiments/distributed/README.md) with the
+Planner as a container on Docker Desktop in agent mode, reaching Ollama at
+`http://host.docker.internal:11434` after its preflight passes, and record
+RECOVERED or a saved ESCALATE. The topology cannot do this yet: it starts every
+worker as a local process, its fault proxies listen on 127.0.0.1 (a container
+cannot reach them), and its file mode needs `tests/support/file_cluster.py`,
+which the image does not contain. So the run needs a topology change first:
+a proxy address the container can reach, and kind mode with a read-only
+kubeconfig whose API server address the container can also reach.
+Containers on one Docker host are still not separate machines.

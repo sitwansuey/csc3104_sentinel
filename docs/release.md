@@ -130,7 +130,8 @@ notes if needed, then publish the draft in the GitHub UI.
 | `SHA256SUMS` | SHA-256 of every other asset, in `sha256sum` format. |
 
 The images are `sentinel-boutique-runner`, `sentinel-coordinator`,
-`sentinel-guard`, `sentinel-observer` and `sentinel-security-inspector`,
+`sentinel-guard`, `sentinel-observer`, `sentinel-security-inspector` and
+`sentinel-worker` (the networked worker roles, [remote workers](remote-workers.md#worker-image)),
 each tagged with the version. Nothing is pushed to a registry; the repository
 is private, so archives plus checksums match the offline transfer in
 [packaging](packaging.md).

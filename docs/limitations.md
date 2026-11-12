@@ -30,13 +30,13 @@ the fix and regenerate.
 | [L-ORPHANED-EXECUTOR-LEDGER](#l-orphaned-executor-ledger) | defect | open | A crashed Executor whose peer finished the action keeps it in doubt and refuses that workload | P3.04 | #18, #58 |
 | [L-EXEC-WEDGE](#l-exec-wedge) | defect | mitigated | A write rejected with its resource version unchanged waits in NEEDS_RECONCILIATION unless fencing is on | P2.06, P5.08 | #61 |
 | [L-EXEC-REDELIVERY](#l-exec-redelivery) | defect | mitigated | A replacement Executor without the ledger row reported CONFLICT for a write that was applied | P3.01, P4.01 | #18, #58 |
-| [L-AGENT-JOURNAL](#l-agent-journal) | defect | mitigated | Agent mode bypasses the durable Planner journal | P2.01 | #14, #54 |
+| [L-AGENT-JOURNAL](#l-agent-journal) | defect | mitigated | Agent mode bypasses the durable Planner journal | P2.01, P3.07 | #14, #54 |
 | [L-AGENT-APPROVAL](#l-agent-approval) | defect | mitigated | No live run yet shows a person approving through the authenticated API | P2.02, P2.03 | #10 |
 | [L-NO-LOGGING](#l-no-logging) | defect | mitigated | Structured logs cover only the networked entrypoints, and no live run has collected them | P1.07, P3.02 | #62 |
 | [L-SINGLE-COORDINATOR](#l-single-coordinator) | limitation | open | The Coordinator is one process with one SQLite file | P3.06, P4.02, P5.01 | #62, #63 |
 | [L-HOST-LOCAL-EXECUTOR](#l-host-local-executor) | limitation | open | The Executor ledger and target locks are host-local | P3.04 | #18, #58, #59 |
 | [L-NO-FENCING](#l-no-fencing) | limitation | open | No fencing of abandoned or revoked writes across hosts | P2.06, P3.04, P3.05 | #18, #58, #61 |
-| [L-SINGLE-HOST-DISTRIBUTION](#l-single-host-distribution) | limitation | open | The networked worker layer has only run on one host | P3.01, P4.01 | #62, #63 |
+| [L-SINGLE-HOST-DISTRIBUTION](#l-single-host-distribution) | limitation | open | The networked worker layer has only run on one host | P3.01, P3.07, P4.01 | #62, #63 |
 | [L-ONE-FAULT-ONE-ACTION](#l-one-fault-one-action) | limitation | open | One fault type and one repair action | P2.08, P3.08, P3.09 | #74, #76 |
 | [L-RESTART-BUDGET-LOCAL](#l-restart-budget-local) | limitation | open | The restart budget is kept per Executor ledger, and only local wiring gives it to the Guard | P4.03 | #74, #77 |
 | [L-NO-DIAGNOSIS-ACCURACY](#l-no-diagnosis-accuracy) | limitation | open | No diagnosis-accuracy evaluation | P2.07, P4.04 | #17, #75 |
@@ -108,11 +108,11 @@ the fix and regenerate.
 
 ### L-AGENT-JOURNAL
 
-**Agent mode bypasses the durable Planner journal.** Defect, mitigated; recorded 2026-11-11. Planned: P2.01. Issues: #14, #54.
+**Agent mode bypasses the durable Planner journal.** Defect, mitigated; recorded 2026-11-11. Planned: P2.01, P3.07. Issues: #14, #54.
 
-- Impact: Fixed in code: agent planning now runs through prepare() and the PlannerStore journal. A model failure is retried up to three times; an abstention, a diagnosis of another component, a NO_ACTION answer or a target changed during inference ends at once. Every failure ends in a saved, delivered ESCALATE, so the incident moves to NEEDS_REVIEW, and a saved proposal replays without another model call. Still open: the planning budget applies per attempt, so one incident can use three budgets, and the remote Planner worker has no agent mode. Live verification pending: no agent run has used the journal yet, and every committed agent bundle predates it, so those failed runs left the incident OPEN.
+- Impact: Fixed in code: agent planning now runs through prepare() and the PlannerStore journal. A model failure is retried up to three times; an abstention, a diagnosis of another component, a NO_ACTION answer or a target changed during inference ends at once. Every failure ends in a saved, delivered ESCALATE, so the incident moves to NEEDS_REVIEW, and a saved proposal replays without another model call. Still open: the planning budget applies per attempt, so one incident can use three budgets. The remote Planner worker now has an agent mode with the same hooks and journal (P3.07), tested offline only, as one OS process on one host with a fake model server. Live verification pending: no agent run has used the journal yet, and every committed agent bundle predates it, so those failed runs left the incident OPEN.
 - Workaround: For runs recorded before this change, read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.
-- Evidence: `experiments/boutique/harness/agent_live.py:209`; `services/planner/worker.py:136`; `services/planner/worker.py:150`; `tests/test_agent_journal.py:200`; `tests/test_agent_journal.py:274`; `docs/planner.md`; claim `C-AGENT-FAIL-CLOSED`.
+- Evidence: `experiments/boutique/harness/agent_live.py:209`; `services/planner/worker.py:136`; `services/planner/worker.py:150`; `tests/test_agent_journal.py:200`; `tests/test_agent_journal.py:274`; `docs/planner.md`; `runtime/remote_adapters.py`; `tests/test_remote_agent_planner.py`; claim `C-AGENT-FAIL-CLOSED`.
 
 ### L-AGENT-APPROVAL
 
@@ -156,11 +156,11 @@ the fix and regenerate.
 
 ### L-SINGLE-HOST-DISTRIBUTION
 
-**The networked worker layer has only run on one host.** Limitation, open; recorded 2026-11-11. Planned: P3.01, P4.01. Issues: #62, #63.
+**The networked worker layer has only run on one host.** Limitation, open; recorded 2026-11-11. Planned: P3.01, P3.07, P4.01. Issues: #62, #63.
 
-- Impact: Since P3.01 the Coordinator and every worker run as separate processes on one host, with their own state, credentials and TCP connections, under injected network, process and timing faults (CI, file-backed test cluster). That is still one machine: one kernel clock, one disk and loopback networking. The delivery layer has not run in containers, on separate nodes or against the kind lab (the harness's kind mode has not been run), and containers or kind nodes on one Docker host would still not be separate machines.
+- Impact: Since P3.01 the Coordinator and every worker run as separate processes on one host, with their own state, credentials and TCP connections, under injected network, process and timing faults (CI, file-backed test cluster). That is still one machine: one kernel clock, one disk and loopback networking. The delivery layer has not run in containers, on separate nodes or against the kind lab (the harness's kind mode has not been run), and containers or kind nodes on one Docker host would still not be separate machines. A worker image for every role (P3.07) has been built and scanned locally, but no container has run from it, and the topology cannot yet start a worker as a container.
 - Workaround: None; read the distributed design as untested beyond one host.
-- Evidence: `tests/test_worker_transport.py:163`; `experiments/distributed/topology.py`; `deploy/sentinel/COORDINATOR.md`.
+- Evidence: `tests/test_worker_transport.py:163`; `experiments/distributed/topology.py`; `deploy/sentinel/COORDINATOR.md`; `docs/remote-workers.md`.
 
 ### L-ONE-FAULT-ONE-ACTION
 
