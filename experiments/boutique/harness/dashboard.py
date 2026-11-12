@@ -15,6 +15,7 @@ from runtime.boutique_observability import emit_observation
 from runtime.dashboard import make_server
 from runtime.telemetry import emit_cluster_snapshot, emit_event
 from scripts.dashboard import ensure_frontend
+from experiments.boutique.harness import targets
 from experiments.boutique.harness.targets import default_target
 from experiments.recovery.live import require, save
 from shared import log
@@ -274,12 +275,13 @@ class BoutiqueDashboard:
             inventory = next((item for item in observations if item["stage"] == "inventory"), None)
             require(inventory and len(inventory["services"]) == 11,
                     "Dashboard must expose all eleven Boutique Deployments")
+            # The predicted storefront impact is per target in the catalog: a broken shipping
+            # configuration leaves home and add to cart working, a broken cart breaks every step.
+            profile = targets.profile(self.target)
             for stage in ("primary-fault", "crash-fault"):
                 measured = next((item for item in observations if item["stage"] == stage), None)
-                require(measured and measured["journey"]["home_status"] == 200
-                        and measured["journey"]["cart_status"] != 200
-                        and measured["journey"]["checkout_status"] != 200
-                        and measured["journey"]["passed"] is False,
+                require(measured and measured["journey"]["passed"] is False
+                        and targets.impact_matches(profile, measured["journey"]),
                         "Dashboard must show actual downstream shopping failures")
             measured = [item for item in observations if item["stage"] == "verification"]
             # A failed journey is acceptable only as convergence evidence the outcome itself discloses.

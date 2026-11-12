@@ -365,30 +365,56 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "zero counters"):
             self.verify()
 
-    def verify_connected(self, journeys):
-        """Connected acceptance over fake shopping measurements: (action, observed_at, passed) rows."""
+    def verify_connected(self, journeys, *, target=None, fault=None):
+        """Connected acceptance over fake shopping measurements: (action, observed_at, passed) rows.
+
+        target: the run's recovery target (the catalog default when None); fault: the
+        storefront journey measured while the fault is in place (shipping's impact by default).
+        """
         scope = {"cluster_id": "test-cluster", "namespace": "test-namespace", "incident_id": None, "action_id": None}
         broken = {"home_status": 200, "add_to_cart_status": 302, "cart_status": 500, "checkout_status": 500,
                   "passed": False, "order_confirmed": False}
+        faulty = dict(fault or broken, passed=False, order_confirmed=False)
         history = [dict(scope, stage="inventory", observed_at="2026-10-26T09:59:00Z", journey=None,
                         services=[{"name": "service-" + str(index)} for index in range(11)])]
-        history += [dict(scope, stage=stage, observed_at="2026-10-26T09:59:30Z", services=None, journey=dict(broken))
+        history += [dict(scope, stage=stage, observed_at="2026-10-26T09:59:30Z", services=None, journey=dict(faulty))
                     for stage in ("primary-fault", "crash-fault")]
         history += [dict(scope, stage="verification", observed_at=observed_at, services=None, action_id=action,
                          journey=dict(broken, cart_status=200, checkout_status=200, passed=True, order_confirmed=True)
                          if passed else dict(broken))
                     for action, observed_at, passed in journeys]
         snapshot = dict(self.snapshot, boutique_history=history)
+        if target is not None:
+            snapshot["cluster_history"] = [dict(sample, pods=[{"name": target + "-healthy-pod"}])
+                                           for sample in snapshot["cluster_history"]]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "unnecessary-rollback").mkdir()
             (root / "unnecessary-rollback" / "proof.json").write_text(json.dumps(self.proof), encoding="utf-8")
             self.write_approvals(root)
             dashboard = BoutiqueDashboard(root, context="test-context", cluster_id="test-cluster",
-                                          namespace="test-namespace", port=0, application_collector=lambda: [])
+                                          namespace="test-namespace", port=0, application_collector=lambda: [],
+                                          target=target)
             dashboard.url = "http://127.0.0.1:9999"
             with patch.object(dashboard, "_snapshot", return_value=snapshot):
                 return dashboard.verify(operator_id="lab-operator")
+
+    def test_fault_impact_on_the_dashboard_must_match_the_target_s_catalog_prediction(self):
+        # Seen live on the cart target (C1): every storefront step fails, home included,
+        # while the shipping fault leaves home and add to cart working.
+        confirmed = [(action, "2026-10-26T10:00:" + second + "Z", True)
+                     for action in ("ACT-0", "ACT-1") for second in ("10", "15", "20")]
+        cart_down = {"home_status": 500, "add_to_cart_status": 500, "cart_status": 500, "checkout_status": 500}
+        shipping_down = {"home_status": 200, "add_to_cart_status": 302, "cart_status": 500, "checkout_status": 500}
+        self.assertEqual(self.verify_connected(confirmed, target="cartservice", fault=cart_down)["status"], "PASS")
+        self.assertEqual(self.verify_connected(confirmed, fault=shipping_down)["status"], "PASS")
+        for label, target, fault in (("shipping impact on the cart target", "cartservice", shipping_down),
+                                     ("cart impact on the shipping target", None, cart_down),
+                                     ("cart target with only checkout failing", "cartservice",
+                                      dict(cart_down, home_status=200, add_to_cart_status=302, cart_status=200)),
+                                     ("shipping target with a working cart", None, dict(shipping_down, cart_status=200))):
+            with self.subTest(label), self.assertRaisesRegex(RuntimeError, "downstream shopping failures"):
+                self.verify_connected(confirmed, target=target, fault=fault)
 
     def test_failed_verification_journey_needs_disclosed_pre_window_convergence(self):
         confirmed = [(action, "2026-10-26T10:00:" + second + "Z", True)
