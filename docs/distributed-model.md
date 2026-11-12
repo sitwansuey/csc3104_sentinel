@@ -649,7 +649,13 @@ only after the pass has re-sent any saved result and passed the store-change
 and clock checks above, so a worker that may not claim does not read the
 cluster either. A seal is an ordinary Executor command in this order: its
 saved `fence_result` is re-sent first, and a new seal is claimed only past
-the same checks. With the decision table, a
+the same checks. If that seal's lease expired before its result was
+accepted, the same host may claim it again under the next epoch; the saved
+result names the old epoch and would get HTTP 409 every time, so the worker
+discards it and seals again under the new one; when the earlier fence
+committed, that seal reads it and sends nothing
+(`tests/test_fencing.py::SealDeliveryGateTests.test_a_seal_saved_under_an_expired_lease_is_sealed_again_under_the_new_epoch`).
+With the decision table, a
 row is closed when the action's evidence is on the target or the target has
 moved past V0. Nothing is sent. A row still at V0 without evidence stays in
 doubt, backs off, and waits for its own command or a seal. The row is closed

@@ -57,7 +57,7 @@
         {"at": "services/coordinator/core.py:160", "text": "_answers_current_request(message, store, answers)"},
         {"at": "services/coordinator/core.py:235", "text": "_issued_after(store, answers, \"guard_result\""},
         {"at": "runtime/worker_transport.py:318", "text": "Result answers a superseded request"},
-        {"at": "runtime/remote_worker.py:162", "text": "lease_duration(delivery, clock) / 3"},
+        {"at": "runtime/remote_worker.py:174", "text": "lease_duration(delivery, clock) / 3"},
         {"at": "services/guard/core.py:159", "text": "if approved_at > checked_at + skew:"},
         {"at": "runtime/worker_http.py:320", "text": "self.samples.clear()"},
         {"at": "runtime/live_executor.py:126", "text": "now=self.clock()"},
@@ -251,7 +251,7 @@
         {"at": "services/coordinator/store.py:129", "text": "lower(hex(randomblob(16)))"},
         {"at": "services/coordinator/store.py:444", "text": "UPDATE store_meta SET commit_counter=commit_counter+1"},
         {"at": "runtime/worker_http.py:410", "text": "elif floor is not None and compared < floor:"},
-        {"at": "runtime/remote_worker.py:278", "text": "\"status\": \"store_changed\""},
+        {"at": "runtime/remote_worker.py:293", "text": "\"status\": \"store_changed\""},
         {"at": "scripts/coordinator_restore_check.py"},
         {"at": "tests/test_store_generation.py:374", "text": "def test_a_rolled_back_database_stops_claiming_keeps_saved_results_and_resumes_after_acceptance"},
         {"at": "tests/test_store_generation.py:440", "text": "def test_a_backup_missing_only_the_last_acknowledged_result_is_detected"}

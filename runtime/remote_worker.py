@@ -85,6 +85,18 @@ class WorkerJournal:
     def release(self, key):
         self.db.execute("UPDATE worker_deliveries SET delivery=NULL WHERE request_key=?", (key,))
 
+    def discard_seal(self, key):
+        """Forget a saved fence_result, so the same seal can run again under a new claim's epoch.
+
+        Only a seal's result: the Coordinator accepts a fence_result only at
+        the epoch of the claim that carries it, and sealing again writes no
+        Pod template. Every other saved result stays immutable.
+        """
+        row = self.get(key)
+        if row is None or row["result"] is None or row["result"]["kind"] != "fence_result":
+            raise ValueError("Only a saved fence_result can be discarded")
+        self.db.execute("UPDATE worker_deliveries SET result=NULL,report=NULL WHERE request_key=?", (key,))
+
     def accepted(self, key, position=None, *, remember=False):
         """Mark a result acknowledged, with the Coordinator position of the acknowledging reply.
 
@@ -222,7 +234,10 @@ class RemoteWorker:
     come first, so a worker that would refuse the claim anyway never runs
     its preflight or its sweep. A seal delivery (executor.seal) goes through
     the same pass as any other Executor command: its saved fence_result is
-    re-sent first and a new seal is claimed only past the same gates.
+    re-sent first and a new seal is claimed only past the same gates. A
+    saved fence_result whose epoch differs from a new claim's fence_epoch
+    (its own lease expired before the result was accepted) can never be
+    accepted, so it is discarded and the seal runs again under the new epoch.
     """
 
     def __init__(self, client, journal, adapter, *, renewal_interval=5, max_clock_skew=None,
@@ -409,6 +424,12 @@ class RemoteWorker:
         self.current = delivery_ids(delivery)
         key = self.journal.bind(delivery)
         row = self.journal.get(key)
+        if (row["result"] is not None and row["result"]["kind"] == "fence_result"
+                and row["result"]["epoch"] != delivery.get("fence_epoch")):
+            # A seal saved under an earlier claim whose lease expired: that
+            # epoch is no longer the workload's, so seal again under this one.
+            self.journal.discard_seal(key)
+            row = self.journal.get(key)
         if row["result"] is not None:
             return self._send(row)
         if deferred:

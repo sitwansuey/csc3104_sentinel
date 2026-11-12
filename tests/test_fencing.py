@@ -707,6 +707,34 @@ class SealDeliveryGateTests(FencingLab):
         self.assertEqual(set(client.calls), {"clock"})  # Measured again; no sweep, no claim.
         self.assertEqual(self.claim("executor-c")["topic"], "executor.seal")
 
+    def test_a_seal_saved_under_an_expired_lease_is_sealed_again_under_the_new_epoch(self):
+        """The saved epoch-2 result can never be accepted once the claim moved on; re-sending it would loop."""
+        self.queue_seal()
+        worker, client = self.worker("executor-b")
+        client.failing_results = 1
+        with self.assertRaises(ConnectionError):
+            worker.once()  # Sealed and saved under epoch 2; the reply to the result is lost.
+        (row,) = worker.journal.pending()
+        self.assertEqual(row["result"]["epoch"], 2)
+        self.now += 31  # Its lease expires before the saved result is re-sent.
+        self.assertEqual(worker.once(), {"status": "accepted", "replay": False})
+        self.assertEqual(worker.journal.get(row["request_key"])["result"]["epoch"], 3)
+        self.assertEqual((self.owner()["seal_required"], self.owner()["epoch"], self.state()), (0, 3, "FAILED"))
+        self.assertEqual(len(self.fences()), 1)  # The second seal reads the first fence and sends nothing.
+        self.assertEqual(self.template_writes(), [])
+
+    def test_the_journal_discards_only_a_saved_seal(self):
+        journal = WorkerJournal(self.directory / "journal.db")
+        self.stack.callback(journal.close)
+        key = journal.bind({"topic": "executor.request", "payload": {"proposal": self.proposal}})
+        with self.assertRaises(ValueError):  # Nothing saved yet.
+            journal.discard_seal(key)
+        journal.save(key, sample_result(self.proposal))
+        with self.assertRaises(ValueError):  # An execution_result stays immutable.
+            journal.discard_seal(key)
+        self.assertEqual(journal.get(key)["result"]["kind"], "execution_result")
+
+
 
 class ContractTests(unittest.TestCase):
     def setUp(self):
