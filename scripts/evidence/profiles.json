@@ -68,6 +68,11 @@
     "guard-eval": {
       "description": "Offline Guard fixture evaluation (scripts/evaluate_guard.py)",
       "include": ["results.json", "README.md"]
+    },
+    "rcaeval": {
+      "description": "One method on one split of the pre-registered RCAEval sample (scripts/evaluation/rcaeval_run.py); scores and predictions only, never telemetry or trajectories",
+      "include": ["summary.json", "versions.json", "run.json", "predictions.jsonl", "scores/summary.json",
+                  "scores/per-case.jsonl"]
     }
   }
 }

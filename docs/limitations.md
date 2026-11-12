@@ -164,9 +164,9 @@ the fix and regenerate.
 
 **No diagnosis-accuracy evaluation.** Limitation, open; recorded 2026-11-11. Planned: P2.07, P4.04. Issues: #17, #75.
 
-- Impact: There is no committed RCAEval result and no comparison of retrieval alone, retrieval with validation, and full Sentinel. Agent results show recovery on one fault, not diagnosis accuracy.
+- Impact: There is no committed RCAEval result and no comparison of retrieval alone, retrieval with validation, and full Sentinel. Agent results show recovery on one fault, not diagnosis accuracy. A pre-registered Online Boutique evaluation is prepared but not run: the protocol, the stratified sampler, the BARO and anomaly-rank baselines, a runner that locks the eval split until the dev runs are frozen, and a report with Wilson intervals and paired tests. All of it is tested on synthetic data only. No RCAEval telemetry has been downloaded, no model has been run under the protocol, and the licence and citation still need a person's confirmation.
 - Workaround: None; do not quote agent recovery counts as accuracy.
-- Evidence: claim `C-AGENT-ALL`; `agent/datasets/README.md`.
+- Evidence: claim `C-AGENT-ALL`; `agent/datasets/README.md`; `docs/evaluation/rcaeval/PROTOCOL.md`.
 
 ### L-OVERLAPPING-FAULTS
 

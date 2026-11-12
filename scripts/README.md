@@ -35,5 +35,11 @@ and lists or checks its command steps; see [the instructions README](../docs/ins
 `submission/` holds the article claim-macro generator and the submission
 readiness gate; see [the submission kit](../docs/submission/README.md).
 
+`evaluation/` holds the pre-registered RCAEval Online Boutique evaluation:
+`rcaeval_sample.py` draws the stratified sample, `rcaeval_run.py` runs one method
+over one split (the eval split stays locked until the dev runs are frozen), and
+`rcaeval_report.py` computes intervals and paired tests. See
+[the run guide](../docs/evaluation/rcaeval/README.md).
+
 `tracker/` holds the reviewed issue-tracker plan and dry-run tools for tracker
 and branch clean-up; see [its README](tracker/README.md).
