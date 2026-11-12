@@ -187,7 +187,8 @@ after a 30 s outage, 56.7 s after a 75 s one. After it no worker waited more
 than 15 s, and the first worker was back within 1.9 s, but after a 30 s
 outage the slowest worker came back later than the old schedule happened to
 bring it: the jitter trades a lucky alignment for a bound. Every run reached
-RECOVERED with one write. The restarted Coordinator answered `/readyz` about
+RECOVERED (the restart reports record the final state, not the number of
+template writes). The restarted Coordinator answered `/readyz` about
 0.5 s after its process started.
 
 **Restore drill** (`claims.py restore`, workers polling every 0.2 s): the Coordinator's database was copied
