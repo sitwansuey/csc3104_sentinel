@@ -130,7 +130,8 @@ def s2(topology):
     else:
         topology.links[stale].set_mode("blackhole")
     if topology.mode == "kind":  # Kind counts writes without the writer's name: wait for any write.
-        _wait(lambda: topology.kind_writes(), 60, "the other Executor did not write")
+        _wait(lambda: any(row["marker"] != "unobserved" for row in topology.kind_writes()), 60,
+              "the other Executor did not write")
     else:
         _wait(lambda: any(row["host"] != stale for row in _writes(topology)), 60, "the other Executor did not write")
     if method == "suspend":

@@ -83,7 +83,7 @@ def patch_action(operations, *, template_changed=False):
     patch carries ("write", "fence" or "none"); action_id comes from it,
     "unknown" when it is malformed and "unannotated" when there is none.
     The kind mode of the multi-process harness classifies what it observes on
-    a live Deployment the same way (experiments/distributed/topology.py::observed_write).
+    a live Deployment the same way (experiments/distributed/topology.py::observed_writes).
     """
     marker, action_id = "none", "unannotated"
     for name, key in (("write", ACTION_ANNOTATION), ("fence", FENCE_ANNOTATION)):

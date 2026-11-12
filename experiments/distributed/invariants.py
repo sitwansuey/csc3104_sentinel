@@ -68,10 +68,17 @@ def i1(records):
 
     A committed template write that does not carry a valid evidence annotation
     of its own action (unannotated, malformed, or a fence that changed the
-    template) fails, since it cannot be tied to one action.
+    template) fails, since it cannot be tied to one action. So does a kind-mode
+    "unobserved" row: commits between two reads of the Deployment that the
+    reads do not account for, which may hide a template write
+    (experiments/distributed/topology.py::observed_writes).
     """
     writes, failures = defaultdict(int), []
     for row in records.get("cluster_writes", []):
+        if row["marker"] == "unobserved":
+            failures.append(f"{row.get('unaccounted', 'some')} commit(s) between two reads not accounted for; "
+                            "a template write may be hidden")
+            continue
         if row["marker"] != "write" or row["action_id"] in {"unknown", "unannotated"}:
             failures.append(f"{row['action_id']}: template written by a "
                             f"{'fence' if row['marker'] == 'fence' else 'patch without valid action evidence'}")

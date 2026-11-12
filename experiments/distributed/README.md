@@ -127,17 +127,32 @@ restricted Executor adapter, the Observer is the real CLI, and template writes
 are counted from the Deployment itself, independently of Sentinel's records.
 The harness reads the Deployment at the start and then every
 `kind_poll_seconds` (0.5 s), and counts a write by its effect, as file mode
-does (`topology.py::observed_write`, mirroring
-`tests/support/file_cluster.py::patch_action`): the pod template's fingerprint
-changed since the last read, or a new `sentinel.io/execution` evidence
-annotation names the template now in place. The new evidence annotation names
-the action; a template change without one is unannotated and fails I1.
-`metadata.generation` is not used: a real API server also raises it for an
-annotation-only change, as the live fence runs showed
-(`C-EXECUTOR-WEDGE-FENCE`), so an Executor fence (the harness sets
-`fence_after_seconds`) or any other metadata change counts no write. Two
-writes between one read and the next are seen as one, so the count is a lower
-bound when writes come faster than the poll, and the time of a write is when
-it was first seen. The harness does not inject the workload fault or prepare
-the bundle; nothing else may write to the Deployment during a run. This mode
-has not been run against the cluster, so no claim rests on it.
+does (`topology.py::observed_writes`, mirroring
+`tests/support/file_cluster.py::patch_action`): the fingerprint of the whole
+pod template changed since the last read (a RESTART, which changes only the
+restart annotation inside the template, counts), or a new
+`sentinel.io/execution` evidence annotation names the template now in place.
+The new evidence annotation names the action; a template change without one is
+unannotated and fails I1. `metadata.generation` does not count writes: a real
+API server also raises it for an annotation-only change, as the live fence runs
+showed (`C-EXECUTOR-WEDGE-FENCE`), so an Executor fence (the harness sets
+`fence_after_seconds`) or any other metadata change counts no write.
+
+Generation is used only to tell when a read missed something. Under the
+apps/v1 Deployment strategy every commit that changes the spec or the
+annotations raises it by one, and changes at least one of four parts: the
+template or its evidence, the fence marker, the other annotations, or the rest
+of the spec. When generation rose between two reads by more than the number of
+parts that differ, the window gets an `unobserved` row (action `unknown`) and
+I1 fails, because two writes, or a write and its revert, can look like one
+write or none from two reads. So a kind-mode I1 pass is not bought by polling
+too slowly; harmless commits close together (two fences between reads) fail it
+too, and the run must be repeated. `summary.json` counts these windows under
+`unobserved_windows`, apart from `committed_writes`. The check is a bound, not
+a full history: one commit that changes several parts lets one more commit go
+unflagged, and without a generation in both reads nothing is flagged. The time
+of a write is when it was first seen, up to `kind_poll_seconds` after it
+committed, so I2 can place a write that committed just before a revocation
+after it. The harness does not inject the workload fault or prepare the
+bundle; nothing else may write to the Deployment during a run. This mode has
+not been run against the cluster, so no claim rests on it.

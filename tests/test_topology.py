@@ -17,6 +17,7 @@ from experiments.distributed.topology import (
 from services.executor.core import ACTION_ANNOTATION, encode_evidence
 from services.executor.reconciliation import FENCE_ANNOTATION, fence_marker
 from services.executor.store import fingerprint
+from shared.actions import restart_template
 
 KIND_TARGET = {"cluster_id": "sentinel-boutique-connected", "namespace": "boutique", "kind": "Deployment",
                "name": "shippingservice", "uid": "uid-1"}
@@ -39,9 +40,12 @@ def kind_topology(directory, target):
 class FakeLabDeployment:
     """The lab Deployment as kubectl get returns it, changed the way a real API server changes it.
 
-    Every committed change raises resourceVersion. metadata.generation rises for
-    a template write and, as the live fence runs showed (C-EXECUTOR-WEDGE-FENCE),
-    for an annotation-only change too.
+    Every committed change raises resourceVersion. metadata.generation rises,
+    as in the apps/v1 Deployment strategy, for every commit that changes the
+    spec or the annotations: a template write and, as the live fence runs
+    showed (C-EXECUTOR-WEDGE-FENCE), an annotation-only change too. A
+    label-only change leaves it alone. Each change commits under the lock,
+    atomically, as the API server commits it.
     """
 
     def __init__(self, target=KIND_TARGET, template=TEMPLATE_A):
@@ -52,7 +56,9 @@ class FakeLabDeployment:
                            "spec": {"replicas": 1, "template": json.loads(json.dumps(template))}}
         self.calls = []
         self.attempts = 0
-        self.lock = threading.Lock()  # The API server commits each change atomically.
+        self.lock = threading.Lock()
+        # The spec and annotations as last committed; a test may change the object in place before a commit.
+        self.committed = self._generation_inputs()
 
     def runner(self, command, **_options):
         import subprocess
@@ -60,10 +66,20 @@ class FakeLabDeployment:
             self.calls.append(command)
             return subprocess.CompletedProcess(command, 0, json.dumps(self.deployment).encode(), b"")
 
-    def _commit(self):
-        metadata = self.deployment["metadata"]
-        metadata["generation"] += 1
-        metadata["resourceVersion"] = str(int(metadata["resourceVersion"]) + 1)
+    def _generation_inputs(self):
+        return json.dumps([self.deployment["spec"], self.deployment["metadata"]["annotations"]], sort_keys=True)
+
+    def _commit(self, change=None):
+        """One commit: apply change, raise resourceVersion, and raise generation as apps/v1 does."""
+        with self.lock:
+            if change is not None:
+                change(self.deployment)
+            metadata = self.deployment["metadata"]
+            current = self._generation_inputs()
+            if current != self.committed and "generation" in metadata:
+                metadata["generation"] += 1
+            self.committed = current
+            metadata["resourceVersion"] = str(int(metadata["resourceVersion"]) + 1)
 
     def evidence(self, action_id, template):
         self.attempts += 1
@@ -72,24 +88,28 @@ class FakeLabDeployment:
 
     def rollback(self, action_id, template):
         """The Executor's conditional restore: the template and its evidence annotation in one patch."""
-        with self.lock:
-            self.deployment["spec"]["template"] = json.loads(json.dumps(template))
-            self.deployment["metadata"]["annotations"][ACTION_ANNOTATION] = self.evidence(action_id, template)
-            self._commit()
+        evidence = self.evidence(action_id, template)
+
+        def change(deployment):
+            deployment["spec"]["template"] = json.loads(json.dumps(template))
+            deployment["metadata"]["annotations"][ACTION_ANNOTATION] = evidence
+        self._commit(change)
 
     def fence(self, action_id, nonce="c" * 32):
         """The Executor's fence: the fence annotation only, never the spec."""
-        self.deployment["metadata"]["annotations"][FENCE_ANNOTATION] = json.dumps(fence_marker(action_id, nonce))
-        self._commit()
+        marker = json.dumps(fence_marker(action_id, nonce))
+        self._commit(lambda deployment: deployment["metadata"]["annotations"].__setitem__(FENCE_ANNOTATION, marker))
 
     def annotate(self, key, value):
-        self.deployment["metadata"]["annotations"][key] = value
-        self._commit()
+        self._commit(lambda deployment: deployment["metadata"]["annotations"].__setitem__(key, value))
+
+    def label(self, key, value):
+        self._commit(lambda deployment: deployment["metadata"]["labels"].__setitem__(key, value))
 
     def set_template(self, template):
         """A template change by someone other than the Executor, with no new evidence."""
-        self.deployment["spec"]["template"] = json.loads(json.dumps(template))
-        self._commit()
+        copy = json.loads(json.dumps(template))
+        self._commit(lambda deployment: deployment["spec"].__setitem__("template", copy))
 
 
 class TopologyConfigurationTests(unittest.TestCase):
@@ -301,15 +321,89 @@ class KindWriteCountTests(unittest.TestCase):
 
     def test_other_metadata_changes_that_raise_generation_count_no_write(self):
         self.lab.annotate("example.com/owner", "team-a")
-        self.lab.deployment["metadata"]["labels"]["tier"] = "backend"
-        self.lab._commit()
+        self.lab.label("tier", "backend")
+        self.lab._commit(lambda deployment: deployment["spec"].__setitem__("replicas", 2))
         self.assertEqual(self.lab.deployment["metadata"]["generation"], 6)
         self.assertEqual(self.writes(), [])
+        self.lab.annotate("example.com/owner", "team-b")
+        self.assertEqual(self.writes(), [])
+
+    def test_a_restart_write_counts_one_write(self):
+        """A RESTART changes only the restart annotation inside the template, and that is a template write."""
+        restarted = restart_template(TEMPLATE_A, "RST-" + "1" * 16)
+        self.lab.rollback("ACT-R", restarted)
+        (row,) = self.writes()
+        self.assertEqual((row["marker"], row["action_id"], row["template_changed"]), ("write", "ACT-R", 1))
+        self.assertEqual(row["template_sha256"], fingerprint(restarted))
+        self.assertTrue(self.i1([row]))
+
+    def test_a_restart_that_changes_only_the_token_counts_again(self):
+        self.lab.rollback("ACT-R", restart_template(TEMPLATE_A, "RST-" + "1" * 16))
+        self.writes()
+        self.lab.rollback("ACT-S", restart_template(TEMPLATE_A, "RST-" + "2" * 16))
+        rows = self.writes()
+        self.assertEqual([(row["action_id"], row["template_changed"]) for row in rows], [("ACT-R", 1), ("ACT-S", 1)])
+        self.assertTrue(self.i1(rows))
 
     def test_a_new_evidence_annotation_for_another_template_is_not_a_write(self):
-        """Only an evidence annotation that names the template in place shows a template write."""
+        """One commit that only adds evidence naming another template writes no template, as in file mode."""
         self.lab.annotate(ACTION_ANNOTATION, self.lab.evidence("ACT-1", TEMPLATE_C))
         self.assertEqual(self.writes(), [])
+
+    def test_two_writes_between_two_reads_fail_i1(self):
+        """A poll cannot see both writes, so the commits it cannot account for fail I1, as file mode does."""
+        for second in (TEMPLATE_B, TEMPLATE_C):
+            with self.subTest(second=second["spec"]["containers"][0]["image"]):
+                lab = FakeLabDeployment()
+                self.topology.kind_begin(lab.runner)
+                lab.rollback("ACT-1", TEMPLATE_B)
+                lab.rollback("ACT-1", second)
+                rows = self.topology.kind_writes(lab.runner)
+                self.assertEqual([(row["marker"], row["action_id"]) for row in rows],
+                                 [("write", "ACT-1"), ("unobserved", "unknown")])
+                self.assertEqual(rows[1]["unaccounted"], 1)
+                self.assertFalse(self.i1(rows))
+
+    def test_two_actions_written_between_two_reads_fail_i1(self):
+        self.lab.rollback("ACT-1", TEMPLATE_B)
+        self.lab.rollback("ACT-2", TEMPLATE_C)
+        rows = self.writes()
+        self.assertEqual([(row["marker"], row["action_id"]) for row in rows],
+                         [("write", "ACT-2"), ("unobserved", "unknown")])
+        self.assertFalse(self.i1(rows))
+
+    def test_a_write_reverted_between_two_reads_fails_i1(self):
+        """The evidence of a write whose template is gone again shows only in the generation count."""
+        self.lab.rollback("ACT-1", TEMPLATE_B)
+        self.lab.set_template(TEMPLATE_A)
+        rows = self.writes()
+        self.assertEqual([(row["marker"], row["action_id"], row["template_changed"]) for row in rows],
+                         [("unobserved", "unknown", 0)])
+        (result,) = [item for item in invariants.check({"cluster_writes": rows}) if item["id"] == "I1"]
+        self.assertFalse(result["passed"])
+        self.assertIn("1 commit(s) between two reads not accounted for", result["detail"])
+
+    def test_two_fences_between_two_reads_fail_safe(self):
+        """Harmless commits the reads cannot tell apart fail I1 too: the count never passes on a guess."""
+        self.lab.fence("ACT-1")
+        self.lab.fence("ACT-2", nonce="d" * 32)
+        rows = self.writes()
+        self.assertEqual([row["marker"] for row in rows], ["unobserved"])
+        self.assertFalse(self.i1(rows))
+
+    def test_a_fence_and_a_template_change_between_two_reads_are_not_labelled_a_fence(self):
+        self.lab.fence("ACT-1")
+        self.lab.set_template(TEMPLATE_B)
+        rows = self.writes()
+        self.assertEqual([(row["marker"], row["action_id"]) for row in rows], [("none", "unannotated")])
+        self.assertFalse(self.i1(rows))
+
+    def test_without_a_generation_no_window_is_flagged(self):
+        """Without metadata.generation in both reads, the count falls back to a lower bound."""
+        del self.lab.deployment["metadata"]["generation"]
+        self.lab.rollback("ACT-1", TEMPLATE_B)
+        self.lab.rollback("ACT-2", TEMPLATE_C)
+        self.assertEqual([(row["marker"], row["action_id"]) for row in self.writes()], [("write", "ACT-2")])
 
     def test_template_changes_without_valid_evidence_are_writes_that_fail_i1(self):
         self.lab.set_template(TEMPLATE_B)
@@ -383,11 +477,11 @@ class KindWriteCountTests(unittest.TestCase):
         def version():
             return cluster.snapshot(target)["deployment"]["metadata"]["resourceVersion"]
 
-        def restore(action_id, attempt):
-            api.conditional_restore(target=deepcopy(target), version=version(), template=deepcopy(template),
+        def restore(action_id, attempt, written=template):
+            api.conditional_restore(target=deepcopy(target), version=version(), template=deepcopy(written),
                                     evidence={"action_id": action_id, "proposal_sha256": "f" * 64,
                                               "target_uid": target["uid"],
-                                              "template_sha256": fingerprint(template),
+                                              "template_sha256": fingerprint(written),
                                               "attempt_id": attempt * 32})
         def rogue(operations):
             """A patch from outside Sentinel, sent as kubectl would send it."""
@@ -401,6 +495,7 @@ class KindWriteCountTests(unittest.TestCase):
                                    marker=fence_marker("ACT-2", "d" * 32)),
                  lambda: rogue([{"op": "add", "path": "/metadata/labels/tier", "value": "backend"}]),
                  lambda: restore("ACT-3", "b"),
+                 lambda: restore("ACT-4", "c", restart_template(template, "RST-" + "4" * 16)),
                  lambda: rogue([{"op": "replace", "path": "/spec/template/spec/containers/0/image",
                                  "value": "rogue:1"}]))
         for step in steps:
@@ -409,8 +504,9 @@ class KindWriteCountTests(unittest.TestCase):
         kind = [(row["marker"], row["action_id"]) for row in topology.kind_writes(read)]
         file = [(row["marker"], row["action_id"]) for row in cluster.committed_writes()]
         self.assertEqual(kind, file)
-        self.assertEqual(kind, [("write", "ACT-1"), ("write", "ACT-3"), ("none", "unannotated")])
-        self.assertEqual([row["kind"] for row in cluster.requests()], ["write", "fence", "other", "write", "write"])
+        self.assertEqual(kind, [("write", "ACT-1"), ("write", "ACT-3"), ("write", "ACT-4"), ("none", "unannotated")])
+        self.assertEqual([row["kind"] for row in cluster.requests()],
+                         ["write", "fence", "other", "write", "write", "write"])
 
 
 if __name__ == "__main__":

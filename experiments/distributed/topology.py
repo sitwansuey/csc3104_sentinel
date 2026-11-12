@@ -24,7 +24,7 @@ gated test offset. The file mode backs Kubernetes with tests/support/file_cluste
 kind mode targets only the connected kind lab (KIND_CONTEXTS) and refuses every
 other context. Both modes count a template write by its effect on the pod
 template, never by metadata.generation, so a metadata-only Executor fence is
-not a write in either (observed_write, kind_writes).
+not a write in either (observed_writes, kind_writes).
 """
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
@@ -73,18 +73,28 @@ def check_kind_context(context):
 def observation(deployment):
     """What a template-write count needs from one read of the Deployment.
 
-    template_sha256 fingerprints spec.template the way the Executor and the
-    file cluster do (services/executor/store.py::fingerprint); evidence and
-    fence are the raw sentinel.io/execution and sentinel.io/fence annotations.
+    template_sha256 fingerprints the whole spec.template, restart annotation
+    included, the way the Executor and the file cluster do
+    (services/executor/store.py::fingerprint); evidence and fence are the raw
+    sentinel.io/execution and sentinel.io/fence annotations. other_annotations
+    and other_spec fingerprint the rest of the annotations and of the spec,
+    and generation is metadata.generation (None when absent): together they
+    let observed_writes tell when more changes were committed between two
+    reads than the reads show.
     """
     from services.executor.core import ACTION_ANNOTATION
     from services.executor.reconciliation import FENCE_ANNOTATION
     from services.executor.store import fingerprint
+    from shared.canonical import sha256_hex
     metadata = deployment.get("metadata") or {}
-    annotations = metadata.get("annotations") or {}
-    template = (deployment.get("spec") or {}).get("template")
+    annotations = dict(metadata.get("annotations") or {})
+    spec = dict(deployment.get("spec") or {})
+    template = spec.pop("template", None)
+    generation = metadata.get("generation")
     return {"template_sha256": fingerprint(template) if isinstance(template, dict) else None,
-            "evidence": annotations.get(ACTION_ANNOTATION), "fence": annotations.get(FENCE_ANNOTATION),
+            "evidence": annotations.pop(ACTION_ANNOTATION, None), "fence": annotations.pop(FENCE_ANNOTATION, None),
+            "other_annotations": sha256_hex(annotations), "other_spec": sha256_hex(spec),
+            "generation": generation if type(generation) is int else None,
             "resource_version": metadata.get("resourceVersion"), "observed_at": time.time()}
 
 
@@ -97,40 +107,68 @@ def _evidence_template(value):
     return found if isinstance(found, str) else None
 
 
-def observed_write(previous, current):
-    """The template write between two successive observations, or None.
+def observed_writes(previous, current):
+    """The rows for what was committed between two successive observations.
 
     A write is counted by its effect, as the file cluster counts a patch
     (tests/support/file_cluster.py::patch_action): the pod template's
-    fingerprint changed, or a new sentinel.io/execution evidence annotation
-    appeared whose template_sha256 is the template now in place (a Sentinel
-    write that put back the same template, so the fingerprint alone cannot
-    show it). Anything else changes metadata only and is not a write: an
-    Executor fence, a label, another annotation, or the Deployment
+    fingerprint changed (a RESTART changes only the restart annotation inside
+    the template, and that counts), or a new sentinel.io/execution evidence
+    annotation appeared whose template_sha256 is the template now in place (a
+    Sentinel write that put back the same template, so the fingerprint alone
+    cannot show it). Anything else changes metadata only and is not a write:
+    an Executor fence, a label, another annotation, or the Deployment
     controller's own bookkeeping, even though the API server raises
-    metadata.generation for some of them. A counted write is then labelled by
-    the annotation it brought, as in file mode: new evidence names its action
-    ("unknown" when it is malformed or names another template), else a new
-    fence marker makes it a fence that changed the template, else it is
-    unannotated. I1 fails on every label but a valid evidence annotation.
+    metadata.generation for some of them. A counted write is labelled by the
+    annotation it brought, as in file mode: new evidence names its action, or
+    "unknown" when the evidence is malformed or names a template other than
+    the changed one; else a new fence marker makes it a fence that changed the
+    template, when one commit made both changes; else it is unannotated. With
+    the template unchanged, new evidence that names another template yields
+    no write row of its own.
+
+    Reads are polled, so several commits can fall between two of them. The
+    apps/v1 Deployment strategy raises metadata.generation once for every
+    commit that changes the spec or the annotations, and each such commit
+    changes at least one of four parts: the template or its evidence, the
+    fence marker, the other annotations, or the rest of the spec. When
+    generation rose by more than the number of parts that differ, some commit
+    is not accounted for and could be a hidden template write (two writes, or
+    a write and its revert). That window adds an "unobserved" row with
+    action_id "unknown", on which I1 fails, so a kind-mode I1 pass is not
+    bought by polling too slowly. Harmless commits can raise it too (two
+    fences between reads), which fails safe. One commit that changes several
+    parts lets one more commit go unflagged, and without a generation in
+    both reads no window is flagged.
     """
     from tests.support.file_cluster import annotation_action_id
     template_changed = current["template_sha256"] != previous["template_sha256"]
     evidence = current["evidence"] if current["evidence"] != previous["evidence"] else None
     fence = current["fence"] if current["fence"] != previous["fence"] else None
     matches = evidence is not None and _evidence_template(evidence) == current["template_sha256"]
-    if not template_changed and not matches:
-        return None
-    if evidence is not None:
-        marker, action_id = "write", annotation_action_id(evidence) if matches else "unknown"
-    elif fence is not None:
-        marker, action_id = "fence", annotation_action_id(fence)
-    else:
-        marker, action_id = "none", "unannotated"
-    return {"host": "unknown", "action_id": action_id, "kind": "write", "marker": marker,
-            "template_changed": int(template_changed), "state": "committed",
-            "resource_version": current["resource_version"], "template_sha256": current["template_sha256"],
-            "decided_at": current["observed_at"]}
+    commits = (current["generation"] - previous["generation"]
+               if None not in (current["generation"], previous["generation"]) else None)
+    parts = sum((template_changed or evidence is not None, fence is not None,
+                 current["other_annotations"] != previous["other_annotations"],
+                 current["other_spec"] != previous["other_spec"]))
+
+    def row(marker, action_id, changed, **extra):
+        return {"host": "unknown", "action_id": action_id, "kind": "write", "marker": marker,
+                "template_changed": int(changed), "state": "committed",
+                "resource_version": current["resource_version"], "template_sha256": current["template_sha256"],
+                "decided_at": current["observed_at"], **extra}
+    rows = []
+    if template_changed or matches:
+        if evidence is not None:
+            marker, action_id = "write", annotation_action_id(evidence) if matches else "unknown"
+        elif fence is not None and (commits is None or commits <= 1):
+            marker, action_id = "fence", annotation_action_id(fence)
+        else:
+            marker, action_id = "none", "unannotated"
+        rows.append(row(marker, action_id, template_changed))
+    if commits is not None and commits > parts:
+        rows.append(row("unobserved", "unknown", False, unaccounted=commits - parts))
+    return rows
 
 
 def free_port():
@@ -524,32 +562,34 @@ class Topology:
         return first
 
     def kind_observe(self, runner=subprocess.run):
-        """Read the Deployment once and record the template write since the last read, if any."""
+        """Read the Deployment once and record the rows for what changed since the last read."""
         with self._kind_lock:
             if self.kind_last is None:
                 raise RuntimeError("Kind writes are counted only after kind_begin")
             current = observation(self.kind_deployment(runner))
-            write = observed_write(self.kind_last, current)
+            rows = observed_writes(self.kind_last, current)
             self.kind_last = current
-            if write is not None:
-                self.kind_rows.append(write)
-            return write
+            self.kind_rows.extend(rows)
+            return rows
 
     def kind_writes(self, runner=subprocess.run):
         """Committed template writes since the start, counted from the Deployment itself.
 
         Independent of Sentinel's records: each read of the Deployment is
-        compared with the one before (observed_write), so a write is a change
+        compared with the one before (observed_writes), so a write is a change
         of the pod template, or a new evidence annotation for the template in
         place, and never a metadata-only change such as an Executor fence,
         even though a real API server raises metadata.generation for that.
         Rows have the shape file mode records, with host "unknown" (the
         Deployment does not name the writer) and decided_at the time the write
-        was first seen. During a run a watcher reads every kind_poll_seconds.
-        Two writes between one read and the next are seen as at most one, so
-        the count is a lower bound when writes come faster than the poll; any
-        writer other than Sentinel is counted too, so nothing else may change
-        the template during a run.
+        was first seen, up to kind_poll_seconds after it committed, so I2 can
+        place a write that committed just before a revocation after it.
+        During a run a watcher reads every kind_poll_seconds. Two writes
+        between one read and the next are seen as at most one, but the
+        generation check in observed_writes then adds an "unobserved" row on
+        which I1 fails, so too slow a poll fails I1 instead of hiding a
+        write. Any writer other than Sentinel is counted too, so nothing else
+        may change the template during a run.
         """
         self.kind_observe(runner)
         with self._kind_lock:

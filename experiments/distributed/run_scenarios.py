@@ -91,7 +91,8 @@ def run_once(name, *, mode="file", out=None, repeat=1, context=None, kind_bundle
             "max_abs_theta_seconds": round(row["max_abs_offset"], 3), "reports": row["reports"]}
             for row in records["worker_clocks"]},
         "states": sorted({row["state"] for row in records["incidents"]}),
-        "committed_writes": len(records["cluster_writes"]),
+        "committed_writes": sum(row["marker"] != "unobserved" for row in records["cluster_writes"]),
+        "unobserved_windows": sum(row["marker"] == "unobserved" for row in records["cluster_writes"]),
         "invariants": results, "passed": not failed,
         "expected_failures": sorted(scenario.expected_failures), "known_defect": scenario.known_defect or None,
         "matches_expectation": failed == set(scenario.expected_failures) and error is None,
