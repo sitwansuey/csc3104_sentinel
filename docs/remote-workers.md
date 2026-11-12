@@ -42,6 +42,15 @@ VERIFYING until an independent outcome. Executor uses its existing conditional
 write/reconciliation ledger and obtains fresh approval plus live delivery
 authority under its target lock, including the post-journal final check.
 
+Executor commands are claimed one workload at a time: while an Executor holds
+a live lease on a command for a workload, no other Executor can claim one for
+it. Each claim carries the workload's next ownership epoch (`fence_epoch`).
+When the Coordinator withdraws a claimed `executor.request`, it queues an
+`executor.seal` that another Executor performs before anything else runs on
+that workload, and new planning for it waits. Before each claim an Executor
+settles its own in-doubt ledger rows that live state already decides. See
+[the seal](distributed-model.md#target-ownership-epochs-and-the-seal-p304).
+
 The Coordinator orders each result by the request it answers, not by the
 worker's timestamps, so a worker whose clock is off by minutes no longer wedges
 an action. A result that answers a superseded request gets HTTP 409, and the

@@ -36,14 +36,14 @@ python -m unittest tests.test_distributed_processes -v
 ```
 
 The first line runs the plan's CI subset (S1b, S1c, S2, S4, S5). `--all` adds
-S0, S1a, S1d, S1e, S3, S6, S7 and S7b. Each run prints one JSON line and, with
+S0, S1a, S1d, S1e, S3, S6, S7, S7b and S8. Each run prints one JSON line and, with
 `--out`, writes `<date>-<scenario>[-rN]/` with `summary.json`, `timeline.jsonl`
 (every process's log lines and the transitions journal, in time order) and
 `coordinator-records.json`. These files hold identifiers, states and counts
 only: no credential, lease token, payload or absolute path. The exit code is 0
 when every run matched its expectation. A full `--all` pass takes about
-two and a half minutes. Set `SENTINEL_DISTRIBUTED_ALL=1` to run every scenario
-in the unit tests too (the default subset takes about 75 s).
+three minutes. Set `SENTINEL_DISTRIBUTED_ALL=1` to run every scenario
+in the unit tests too (the default subset takes about 90 s).
 
 ## Pieces
 
@@ -56,7 +56,7 @@ in the unit tests too (the default subset takes about 75 s).
 | Observer feed | `observer_feed.py` | The real Observer state machine and outbox over a synthetic observation series, delivered with the real HTTP ingress. |
 | Inputs | `fixtures.py` | The committed samples, moved to the current time and renamed to the file cluster, with a strict live-profile policy and a short health window. |
 | Invariants | `invariants.py` | I1-I6 and X1-X4, below. |
-| Scenarios | `scenarios.py`, `run_scenarios.py` | S0-S7b, below. |
+| Scenarios | `scenarios.py`, `run_scenarios.py` | S0-S8, below. |
 | Measurements | `claims.py` | P3.06: `rate` (claims per second over a seeded backlog), `restart` (S5 with timed restarts: seconds from the restarted Coordinator's `/readyz` to each worker's first claim, from its access log) and `restore` (a restore drill). Results are in the [distributed model](../../docs/distributed-model.md#recovery-time-and-restore-measured-on-one-host). |
 
 Process faults: kill uses `Popen.kill()` (SIGKILL on POSIX, TerminateProcess on
@@ -95,8 +95,8 @@ run on Linux yet.
 | --- | --- | --- |
 | S0 | none | RECOVERED, 1 write, all invariants hold |
 | S1a | Planner killed mid-inference, restarted | RECOVERED, 1 write, all hold |
-| S1b | Executor killed after its write intent; peer takes over; crashed host restarted after the incident ends | RECOVERED, 1 write by the peer; **I6 fails**: the crashed host's ledger keeps WRITE_STARTED |
-| S1c | Executor killed after its patch committed; peer takes over | RECOVERED, 1 write; the peer adopted it by its evidence annotation (defect (b) of the plan does not reproduce); **I6 fails** as in S1b |
+| S1b | Executor killed after its write intent; peer takes over; crashed host restarted after the incident ends | RECOVERED, 1 write by the peer, all hold. Before P3.04 I6 failed: the crashed host's ledger kept WRITE_STARTED. It now settles the row from the peer's evidence before claiming |
+| S1c | Executor killed after its patch committed; peer takes over | RECOVERED, 1 write; the peer adopted it by its evidence annotation (defect (b) of the plan does not reproduce); all hold (I6 failed before P3.04, as in S1b) |
 | S1d | Verifier killed mid-collection, restarted | RECOVERED, 1 write, all hold |
 | S1e | Executor killed after its write intent, peer stopped, crashed host restarted at once | FAILED with 0 writes: the host fenced its own in-doubt write (P2.06), all hold |
 | S2 | Lease holder stalled past its lease before the patch | RECOVERED, 1 write by the peer; the stale host's patch was refused and it adopted the peer's write (defect (c) did not reproduce on this base), all hold |
@@ -105,6 +105,7 @@ run on Linux yet.
 | S5 | Coordinator killed after committing a result, before the reply; restarted, and restarted again later | RECOVERED, 1 write, all hold |
 | S6 | Every worker link blackholed for 12 s while an approval was created | no write and no progress during the partition, then RECOVERED, all hold |
 | S7 | Both Executors' clocks 300 s behind (gated offset on the whole Executor clock, including its local Guard re-check), no skew bound, operator approval required | Before P3.03 the write landed but its result was refused with HTTP 400 for the whole run and the incident stayed READY (I3 and I5 failed). Since P3.03 orders results by Coordinator sequence, the result is accepted; the Executor's own Guard re-check sees the Coordinator-stamped approval 300 s in its future and refuses: FAILED, 0 writes, no HTTP 400, all hold, with θ ≈ 300 s measured for both Executors (3 of 3 runs on this branch). It does not recover, because no Executor is within a bound |
+| S8 | Approval revoked while the lease holder is blocked at `executor.before_patch`, after its last checks (P3.04) | The other Executor seals the target; the paused patch is refused (CONFLICT): FAILED, 0 writes, all hold (3 of 3 runs) |
 | S7b | executor-a's clock 5 s behind, a 2 s skew bound on every worker and the Coordinator | executor-a measures θ ≈ 5 s, stays unready (`clock_skew`) and never claims; executor-b does the work: RECOVERED, 1 write, all hold (3 of 3 runs on this branch) |
 
 S1b and S1c keep the crashed Executor down until the incident ends so that

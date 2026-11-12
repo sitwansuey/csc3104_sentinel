@@ -137,7 +137,6 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 
 <!-- BEGIN GENERATED:limitations-summary -->
 - [L-OBSERVER-ZERO-REPLICAS](docs/limitations.md#l-observer-zero-replicas): A Deployment scaled to zero replicas is treated as healthy (defect, open; planned P5.07)
-- [L-ORPHANED-EXECUTOR-LEDGER](docs/limitations.md#l-orphaned-executor-ledger): A crashed Executor whose peer finished the action keeps it in doubt and refuses that workload (defect, open; planned P3.04)
 - [L-EXEC-WEDGE](docs/limitations.md#l-exec-wedge): A write rejected with its resource version unchanged waits in NEEDS_RECONCILIATION unless fencing is on (defect, mitigated; planned P2.06, P5.08)
 - [L-EXEC-REDELIVERY](docs/limitations.md#l-exec-redelivery): A replacement Executor without the ledger row reported CONFLICT for a write that was applied (defect, mitigated; planned P3.01, P4.01)
 - [L-CLOCK-ORDERING](docs/limitations.md#l-clock-ordering): Lifecycle ordering compared wall-clock timestamps written by different components (defect, mitigated; planned P3.03, P4.01)
@@ -146,9 +145,8 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-RAW-LOGS-PROMPT](docs/limitations.md#l-raw-logs-prompt): Sentinel's planning prompts carry log text only cleaned and quoted, and the injection gate is a pattern list no live run has exercised (defect, mitigated; planned P2.04, P2.05, P4.04)
 - [L-FREE-TEXT-DECISION](docs/limitations.md#l-free-text-decision): The live diagnosis was model free text and the rollback choice had no change evidence (defect, mitigated; planned P2.05, P4.04)
 - [L-NO-LOGGING](docs/limitations.md#l-no-logging): Structured logs cover only the networked entrypoints, and no live run has collected them (defect, mitigated; planned P1.07, P3.02)
+- [L-ORPHANED-EXECUTOR-LEDGER](docs/limitations.md#l-orphaned-executor-ledger): A crashed Executor whose peer finished the action kept it in doubt and refused that workload (defect, mitigated; planned P3.04, P4.01)
 - [L-SINGLE-COORDINATOR](docs/limitations.md#l-single-coordinator): The Coordinator is one process with one SQLite file (limitation, open; planned P4.02, P5.01)
-- [L-HOST-LOCAL-EXECUTOR](docs/limitations.md#l-host-local-executor): The Executor ledger and target locks are host-local (limitation, open; planned P3.04)
-- [L-NO-FENCING](docs/limitations.md#l-no-fencing): No fencing of abandoned or revoked writes across hosts (limitation, open; planned P2.06, P3.04, P3.05)
 - [L-SINGLE-HOST-DISTRIBUTION](docs/limitations.md#l-single-host-distribution): The networked worker layer has only run on one host (limitation, open; planned P3.01, P4.01)
 - [L-RESTART-BUDGET-LOCAL](docs/limitations.md#l-restart-budget-local): The restart budget is kept per Executor ledger, and only local wiring gives it to the Guard (limitation, open; planned P4.03)
 - [L-NO-DIAGNOSIS-ACCURACY](docs/limitations.md#l-no-diagnosis-accuracy): No diagnosis-accuracy evaluation (limitation, open; planned P2.07, P4.04)
@@ -159,6 +157,8 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-NO-RELEASE](docs/limitations.md#l-no-release): No tagged, scanned release image (limitation, open; planned P2.09, P2.10)
 - [L-LAB-CERTS](docs/limitations.md#l-lab-certs): Security lab certificates are two-day fixtures with no rotation (limitation, open; planned P5.06)
 - [L-RESTORE-DETECTION](docs/limitations.md#l-restore-detection): A Coordinator restored from a backup is detected, but lost acknowledged results are re-driven by hand (limitation, mitigated; planned P4.02)
+- [L-HOST-LOCAL-EXECUTOR](docs/limitations.md#l-host-local-executor): The Executor ledger and target locks are host-local (limitation, mitigated; planned P3.04, P4.01)
+- [L-NO-FENCING](docs/limitations.md#l-no-fencing): Abandoned or revoked Executor writes are fenced only by a seal, tested offline (limitation, mitigated; planned P3.04, P3.05, P4.01)
 - [L-ONE-FAULT-ONE-ACTION](docs/limitations.md#l-one-fault-one-action): One fault type and one repair action (limitation, mitigated; planned P2.08, P3.08, P3.09)
 - [L-MODEL-LATENCY](docs/limitations.md#l-model-latency): Model cold loads make agent planning slow and variable (limitation, mitigated; planned P2.01)
 - [L-UNPINNED-BASE-IMAGES](docs/limitations.md#l-unpinned-base-images): Sentinel component images used unpinned base image tags (limitation, mitigated; planned P1.09)

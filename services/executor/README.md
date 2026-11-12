@@ -124,9 +124,10 @@ uncertain journal can clear that exclusion.
 SQLite supplies durable records, while the file lock protects the whole local
 read/validate/write sequence. All cooperating workers must share these paths.
 Separate ledgers or lock directories do not coordinate. This is single-host
-coordination; it has no distributed lease, fencing token or ownership-loss
-protocol. Across hosts, the Deployment itself is the shared record: a write is
-recognised by its evidence annotation, never by another host's ledger.
+coordination. Across hosts, the Deployment itself is the shared record: a write is
+recognised by its evidence annotation, never by another host's ledger. Since
+P3.04 the Coordinator also gives each workload one Executor owner at a time,
+with an epoch per claim, and fences an abandoned write with a seal (below).
 
 ## The write and ledger are separate commits
 
@@ -267,8 +268,9 @@ decides with the table: APPLIED if our evidence is there, otherwise SUPERSEDED.
   a row in `executor_fences`. The escalation below still applies, and the
   fences continue after it until the action is settled or an operator clears
   the ledger row.
-- The marker is one annotation family for later Coordinator-commanded fences:
-  `{action_id, nonce}` with an optional integer `epoch`.
+- The marker is one annotation family for this fence and the Coordinator's
+  seal: `{action_id, nonce}`, with the integer `epoch` on a seal, which also
+  writes `sentinel.io/fence-epoch`.
 - Turn it on with `fence_after_seconds` in the Executor worker configuration,
   or `--fence-after SECONDS` with `runtime/live_executor.py` (0 fences at once,
   for an operator who has decided to abort).
@@ -285,6 +287,27 @@ A fence that a peer host sent is not in this host's journal, so this host
 reports SUPERSEDED (can no longer commit) rather than CONFLICT. The fence has not
 yet been run against a cluster; the wedge harness's `admission-deny` scenario is
 the planned live check.
+
+### The seal: a fence on the Coordinator's command (P3.04)
+
+When the Coordinator withdraws an `executor.request` that an Executor has
+claimed (a revoked approval, new evidence, a new Guard decision), or a later
+holder reports FAILED, it queues `executor.seal` and blocks the workload. Any
+Executor that claims it runs `seal(proposal, epoch, adapters)` with the
+delivery's `fence_epoch`. It reads the target: this action's evidence means
+the write landed (APPLIED, sent to review); a deleted, recreated or moved
+target means no write of the action can commit (SEALED, nothing sent);
+otherwise it sends `fence()` at the proposal's resource version with a fresh
+nonce and the epoch, and reads again. After 5 passes it reports UNSEALED. It
+neither reads nor changes this host's ledger, and the remote worker checks
+its lease before each fence. The answer is a `fence_result` message. The
+argument that this fences every abandoned write, and its limits, are in the
+[distributed model](../../docs/distributed-model.md#target-ownership-epochs-and-the-seal-p304).
+
+A remote Executor also settles its own in-doubt ledger rows before each claim
+(`settle`): a row whose action's evidence is on the target, or whose target
+moved, is closed without sending anything. This frees a host whose peer
+finished an action while it was down (scenarios S1b and S1c).
 
 ### Repeated uncertainty, backoff and escalation
 
@@ -390,6 +413,6 @@ trusted stores. The CLI does not make a fixture approval authoritative by itself
 The actual connected experiment uses Role 6 dependency and sustained outcome
 workers. Tests proved real RBAC, conditional writes, process competition and
 post-write crash reconciliation; scope/revision are recorded in the status guide.
-Cross-host ownership/fencing and protected-workload recovery remain separate
-work. The optional authenticated approval service requires explicit reader
+Cross-host ownership and the seal (P3.04) are tested offline only;
+protected-workload recovery remains separate work. The optional authenticated approval service requires explicit reader
 wiring and target grants. Local OS locks are not distributed leases.

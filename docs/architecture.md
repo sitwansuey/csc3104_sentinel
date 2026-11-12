@@ -61,10 +61,14 @@ a conditional, metadata-only fence write: the API server lets only one of the
 two commit, so a committed fence proves the write never did (CONFLICT/FENCED). Duplicate
 payloads replay saved results; changed payloads under an existing ID are rejected. A refreshed Planner resource version gets a new ID.
 
-OS workload locks and SQLite serialization coordinate one host. They do not
-provide distributed leases or fencing. The optional [HTTP delivery layer](../runtime/README.md)
-has role-scoped claims/leases and replay handling; those leases do not establish
-cross-host Kubernetes mutation ownership. Production deployment remains separate.
+OS workload locks and SQLite serialization coordinate one host. The optional
+[HTTP delivery layer](../runtime/README.md) has role-scoped claims/leases and
+replay handling. A lease alone does not stop a stale Kubernetes write, so the
+Coordinator also gives each workload one Executor owner at a time, with an
+epoch per claim, and when it withdraws a command an Executor may still be
+executing it has another Executor seal the target: a metadata-only patch
+with the same resourceVersion test, after which the abandoned patch can
+never commit (P3.04, tested offline only). Production deployment remains separate.
 The [distributed model](distributed-model.md) states the failure model, why the
 Coordinator is a single consistent (CP) leader, how worker results are ordered
 by Coordinator sequence numbers rather than clocks, and where a measured clock

@@ -127,9 +127,21 @@ uses a fake Deployment API; RESTART has not run against a cluster.
 `tests/test_distributed_processes.py` runs fault scenarios with the Coordinator
 and every worker as separate processes on one host, against a file-backed test
 cluster, and checks invariants from their records and logs. The default subset
-takes about 75 s; set `SENTINEL_DISTRIBUTED_ALL=1` for every scenario. These are
+takes about 90 s; set `SENTINEL_DISTRIBUTED_ALL=1` for every scenario. These are
 processes on one host, not separate machines; see the
 [harness guide](../experiments/distributed/README.md).
+
+`tests/test_fencing.py` covers target-ownership epochs and the seal (P3.04).
+It stops one Executor at the `executor.before_patch` fault point after its
+last checks, revokes the approval, lets a second Executor seal the target and
+shows the first one's patch refused with zero template writes, against the
+production kubectl adapter and the file-backed test cluster. Without the seal
+the same script shows one write after the revocation. It also covers a seal
+that finds the write already landed (NEEDS_REVIEW), bounded seal attempts,
+one live Executor claim per workload, epochs across a Coordinator restart,
+the planning block, a revocation with no claim (no seal), the `fence_result`
+contract and a crashed Executor settling its own ledger. No seal has been sent
+to a real API server.
 
 The Planner handoff checks inject unavailable/invalid providers, restart during
 backoff, exhaust attempts after a worker death, fence a replaced lease and replay
