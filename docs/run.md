@@ -67,8 +67,10 @@ The shell equivalent is `bash scripts/run-sentinel.sh --setup --cleanup --connec
 Omit `-Connected` on Windows for the smaller shipping-only lab. Use
 `-StorefrontPort 8081` or `-DashboardPort 8766` if a port is occupied.
 `-Target cartservice` (with `-Connected`, without `-UIControls`) repairs the
-catalog's second target instead of shipping; it has not been run on a cluster
-yet (see [testing](testing.md#second-recovery-target-cartservice-c1-c2)).
+catalog's second target instead of shipping. The connected harness has run
+with cartservice as the target (C1, harness-authored proposals,
+`C-CART-TARGET-LIVE`); no agent-mode cartservice run has been made (see
+[testing](testing.md#second-recovery-target-cartservice-c1-c2)).
 
 For terminal-controlled injection replace `-UIControls` with
 `-PauseBeforeInjection`. If injecting manually, wait at the first healthy

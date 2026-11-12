@@ -68,7 +68,8 @@ Coordinator also gives each workload one Executor owner at a time, with an
 epoch per claim, and when it withdraws a command an Executor may still be
 executing it has another Executor seal the target: a metadata-only patch
 with the same resourceVersion test, after which the abandoned patch can
-never commit (P3.04, tested offline only). Production deployment remains separate.
+never commit (P3.04; run live only in kind-mode S8 on one kind node,
+`C-SEAL-LIVE`). Production deployment remains separate.
 The [distributed model](distributed-model.md) states the failure model, why the
 Coordinator is a single consistent (CP) leader, how worker results are ordered
 by Coordinator sequence numbers rather than clocks, and where a measured clock

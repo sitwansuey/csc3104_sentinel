@@ -29,9 +29,11 @@
 # such a Deployment, an administrator removes the annotation:
 #   kubectl annotate deployment <name> sentinel.io/fence-epoch-
 #
-# Status: written and checked structurally (tests/test_deploy_manifests.py);
-# not yet verified against an API server. The live check is
+# Status: checked structurally (tests/test_deploy_manifests.py) and evaluated
+# once by an API server (Kubernetes 1.37 on kind, 12 Nov 2026: 24 of 24 probes,
+# claim C-ADMISSION-POLICY-LIVE) by
 # scripts/validation/test_executor_admission_live.py, in a disposable namespace.
+# Nothing installs it in the Boutique lab namespaces.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:

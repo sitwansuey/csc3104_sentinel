@@ -507,7 +507,12 @@ runner, and has a fix in Go 1.27.4; it is not in a Sentinel layer. The gate
 passed. These counts are not a committed evidence bundle, and no container
 was started from the image.
 
-**Live check needed (not done).** Run the
+**Live check partly done.** On 12 Nov 2026 an agent-mode Planner ran from
+the image built at be6e636 as a container on Docker Desktop against a
+Coordinator on the host (started by an operator script, not the topology),
+saved a ROLLBACK proposal from qwen3:14b and stayed ready through an 89.6 s pass
+(`C-WORKER-CONTAINER-READINESS`); no Guard, Executor or Verifier ran. Still
+needed: run the
 [multi-process topology](../experiments/distributed/README.md) with the
 Planner as a container on Docker Desktop in agent mode, reaching Ollama at
 `http://host.docker.internal:11434` after its preflight passes, and record

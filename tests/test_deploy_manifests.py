@@ -6,7 +6,7 @@ the policy is bound to the identity and namespace executor-rbac.yaml grants,
 that each rule still names the fields it protects, and that every patch the
 production adapter sends stays inside what the policy allows. Whether the API
 server enforces it is for scripts/validation/test_executor_admission_live.py,
-which has not been run yet.
+which has run once against a kind API server (claim C-ADMISSION-POLICY-LIVE).
 """
 
 from contextlib import redirect_stderr, redirect_stdout

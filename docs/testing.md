@@ -423,7 +423,12 @@ and the Executor's per-target baselines and the Guard's per-target ceilings
 (`tests/test_live_executor.py`), and that `prepare()` writes the selected
 target's ceilings, policy target and `baselines/<target>.json` that the real
 Executor then reads (`tests/test_boutique_connected.py::PreparedRunInputsTests`).
-No cartservice run has been made on a cluster. The cart probe writes to the
+C1 has run twice on the connected lab with harness-authored proposals
+(`C-CART-TARGET-LIVE`): the first run, at b79fb5d, failed only the dashboard
+acceptance check, which still expected shipping's impact (fixed in a932a5f),
+and the rerun passed. Both showed the impact the catalog predicts (home, add
+to cart, cart and checkout fail), so C1 stays the primary fault and C2 has not
+run. No agent-mode cartservice run has been made. The cart probe writes to the
 application under test: AddItem and EmptyCart on Redis for a fresh
 `sentinel-probe-*` user. If a call fails between them, that probe cart stays in
 Redis; this is harmless in the lab. The live checks, in order:

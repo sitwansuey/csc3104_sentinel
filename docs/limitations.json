@@ -337,7 +337,7 @@
         {"at": "experiments/distributed/topology.py", "text": "class Topology:"},
         {"at": "experiments/distributed/kind_bundle.py", "text": "class KindLab:"},
         {"at": "deploy/sentinel/COORDINATOR.md", "text": "not recorded Kubernetes acceptance"},
-        {"at": "docs/remote-workers.md", "text": "Live check needed (not done)."},
+        {"at": "docs/remote-workers.md", "text": "Live check partly done."},
         {"claim": "C-DISTRIBUTED-KIND-ALL"},
         {"claim": "C-DISTRIBUTED-KIND-BE6E636"},
         {"claim": "C-WORKER-CONTAINER-READINESS"}

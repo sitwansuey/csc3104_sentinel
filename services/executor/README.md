@@ -423,6 +423,7 @@ trusted stores. The CLI does not make a fixture approval authoritative by itself
 The actual connected experiment uses Role 6 dependency and sustained outcome
 workers. Tests proved real RBAC, conditional writes, process competition and
 post-write crash reconciliation; scope/revision are recorded in the status guide.
-Cross-host ownership and the seal (P3.04) are tested offline only;
+Cross-host ownership (P3.04) is tested offline only, and the seal has run live
+only in kind-mode S8 on one kind node on one host (`C-SEAL-LIVE`);
 protected-workload recovery remains separate work. The optional authenticated approval service requires explicit reader
 wiring and target grants. Local OS locks are not distributed leases.

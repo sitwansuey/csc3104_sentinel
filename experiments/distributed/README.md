@@ -251,19 +251,23 @@ Kind-mode defaults that differ from file mode:
   rollout (a cold image pull) can still open a duplicate, which is then
   counted, not hidden.
 
-**What has run.** One operator session on 12 Nov 2026 ran kind mode against
-`kind-sentinel-boutique-connected` with scratch versions of `kind_bundle.py`
-and of the per-run injection (a wrapper around one scenario per invocation):
-S1b, S1c, S2, S4, S5 and S8 twice each, 12 runs, every one matching its
-expectation once the health policy was relaxed to the profile above (the first
-attempt, with the stricter profile and the 60 s deadline, failed I3 with the
-action still VERIFYING). Two runs (S1b and S2) also opened a duplicate incident
-during the rollout, which the Guard rejected. Those raw outputs are not
-committed evidence bundles, and the committed `kind_bundle.py`, the in-harness
-injection and restore, the 180 s deadline and the 15 s Observer window have
-been tested offline only (`tests/test_kind_bundle.py`, with the fake lab
-Deployment of `tests/test_topology.py`); they have not run against the
-cluster. The session also left the fence annotations of its S8 runs
+**What has run.** Two operator sessions on 12 Nov 2026 ran kind mode against
+`kind-sentinel-boutique-connected`, S1b, S1c, S2, S4, S5 and S8 twice each,
+with the synthetic planner; every run is a committed evidence bundle
+([results](../../docs/results.md#distributed-scenarios)). The first session,
+at 0a8d4d7, used scratch versions of `kind_bundle.py` and of the per-run
+injection: 12 of 12 runs matched their expectation once the health policy was
+relaxed to the profile above (the first attempt, with the stricter profile and
+the 60 s deadline, failed I3 with the action still VERIFYING), and two runs
+(S1b and S2) opened a duplicate incident during the rollout, which the Guard
+rejected (`C-DISTRIBUTED-KIND-0A8D4D7`). The second, at be6e636, used the
+committed `kind_bundle.py`, the in-harness injection and restore, the 180 s
+deadline and the 15 s Observer window: 11 of 12 matched, with no duplicate
+incident, and S2 r2 failed I5 after its Verifier command was delivered 8 times
+(`C-DISTRIBUTED-KIND-BE6E636`; the suspected cause, the retry back-off
+spacing the Verifier's samples past the policy's 20 s gap, is in
+[L-VERIFIER-RETRY-BACKOFF](../../docs/limitations.md#l-verifier-retry-backoff)).
+Each session left the fence annotations of its S8 runs
 (`sentinel.io/fence`, `sentinel.io/fence-epoch`) on the Deployment; the
 restore puts back the template only, and leaves those metadata annotations
 as they are. With the P3.05 admission policy installed, that matters: each run

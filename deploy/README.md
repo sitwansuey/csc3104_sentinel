@@ -87,7 +87,9 @@ to be denied by RBAC (no scale subresource grant), and a dry-run label patch
 checks that the policy's username match catches the Executor token. For
 pods/exec it records that `kubectl auth can-i` answers no; it attempts no exec.
 It removes the namespace, policy and binding on exit, and refuses any other
-context and anything naming `sentinel-lab`. It has not been run yet:
+context and anything naming `sentinel-lab`. It ran once, on 12 Nov 2026 at
+599f44f against Kubernetes 1.37, and matched 24 of 24 probes, including the
+epoch-1 seal denied as described above (`C-ADMISSION-POLICY-LIVE`):
 
 ```powershell
 python scripts/validation/test_executor_admission_live.py --context kind-sentinel-boutique-connected
