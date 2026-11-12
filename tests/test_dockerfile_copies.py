@@ -44,6 +44,34 @@ class DockerfileSharedModuleTests(unittest.TestCase):
             with self.subTest(dockerfile=dockerfile.name):
                 self.assertEqual(self.missing(dockerfile), [])
 
+    @staticmethod
+    def runtime_modules(text):
+        """runtime.* modules a file imports at module level or inside a function."""
+        names = set(re.findall(r"^\s*(?:from|import) runtime\.([a-z_]+)\b", text, re.MULTILINE))
+        for group in re.findall(r"^\s*from runtime import ([^\n#]+)", text, re.MULTILINE):
+            names.update(name.strip().split(" as ")[0] for name in group.strip("()").split(","))
+        return {name for name in names if name}
+
+    def missing_runtime(self, dockerfile):
+        """runtime/*.py files that a copied runtime file imports but the image does not copy."""
+        sources = self.copied(dockerfile)
+        if "runtime/" in sources:
+            return []
+        copied = [ROOT / source for source in sources if source.startswith("runtime/") and source.endswith(".py")]
+        needed = set().union(set(), *(self.runtime_modules(path.read_text(encoding="utf-8")) for path in copied))
+        return [f"runtime/{name}.py" for name in sorted(needed) if f"runtime/{name}.py" not in sources]
+
+    def test_every_imported_runtime_module_is_copied(self):
+        # The Coordinator and Observer images copy runtime/worker_http.py, which imports runtime/fault_points.py
+        # at module level: without it the container fails at import (found while packaging P4.01).
+        for dockerfile in sorted((ROOT / "deploy/docker").glob("*.Dockerfile")):
+            with self.subTest(dockerfile=dockerfile.name):
+                self.assertEqual(self.missing_runtime(dockerfile), [])
+
+    def test_runtime_import_forms_are_recognised(self):
+        text = "from runtime import fault_points, log as x\nfrom runtime.worker_http import y\n    import runtime.z\n"
+        self.assertEqual(self.runtime_modules(text), {"fault_points", "log", "worker_http", "z"})
+
     def test_import_forms_are_recognised(self):
         text = "from shared import log, provenance\nfrom shared.canonical import x\nimport shared.contracts\n"
         self.assertEqual(self.shared_modules(text), {"log", "provenance", "canonical", "contracts"})
