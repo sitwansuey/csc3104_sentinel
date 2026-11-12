@@ -86,8 +86,8 @@ UID/resourceVersion preconditions close stale-write races at the Kubernetes API.
 Revocation and a separate API write still require a future fencing design for
 strong cross-host guarantees.
 
-Actual repair uses a ServiceAccount restricted to the configured Deployment's
-get/patch operations. RBAC cannot limit fields, so a ValidatingAdmissionPolicy
+Actual repair uses a ServiceAccount restricted to get/patch on the configured
+Deployments its Role names. RBAC cannot limit fields, so a ValidatingAdmissionPolicy
 for that ServiceAccount (`deploy/sentinel/executor-admission.yaml`) allows only
 Pod template changes that carry new action evidence, only the sentinel.io
 execution and fence annotations, and no lower fence epoch. It is written and

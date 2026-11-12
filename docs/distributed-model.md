@@ -492,7 +492,9 @@ beside it). Each claim of an `executor.request`, `executor.reconcile` or
 same identity claims again, and the delivery carries it as `fence_epoch`
 (`services/coordinator/store.py::SQLiteStore.claim_target`). The epoch is a
 row in the Coordinator's database, so it survives a Coordinator restart and
-never goes back. While one Executor holds a live lease on a command for a
+never goes back, unless an operator restores an older copy of that database
+(the restore above, and the admission policy's cost for a restored store
+below). While one Executor holds a live lease on a command for a
 workload, no other Executor command for that workload can be claimed
 (`runtime/worker_transport.py::Delivery._target_free`), and a result from a
 claim that is no longer the workload's latest gets HTTP 409
