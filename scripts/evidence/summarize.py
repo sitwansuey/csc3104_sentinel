@@ -33,9 +33,10 @@ from experiments.analysis import timeline  # noqa: E402
 from scripts.evidence import collect, limitations  # noqa: E402
 
 TARGETS = {
-    "docs/results.md": ("runs", "recovery-checks", "agent-runs", "guard-rejection", "guard-eval", "executor-wedge",
-                        "timings", "latency", "model-calls", "chaos", "security-lab", "observer", "claims"),
-    "evidence/README.md": ("index",),
+    "docs/results.md": ("runs", "recovery-checks", "agent-runs", "scenario-runs", "guard-rejection", "guard-eval",
+                        "executor-wedge", "timings", "latency", "model-calls", "chaos", "security-lab", "observer",
+                        "claims"),
+    "evidence/README.md": ("index", "exclusions"),
     "docs/limitations.md": ("limitations",),
     "README.md": ("limitations-summary",),
 }
@@ -50,6 +51,7 @@ BLOCK = re.compile(r"(<!-- BEGIN GENERATED:(?P<name>[a-z0-9-]+) -->\n)(?P<body>.
                    re.DOTALL)
 OUTCOMES = ("PASS", "FAILED", "INTERRUPTED", "INCOMPLETE")
 NONE = "_No bundles yet._"
+EXCLUSIONS = "evidence/exclusions.json"
 SECURITY_PROBES = ("invalid_quantity", "missing_client_certificate", "wrong_client_identity", "direct_service_bypass",
                    "direct_pod_ip_bypass", "direct_egress_bypass", "proxy_outage", "outage_direct_bypass")
 
@@ -138,6 +140,28 @@ def verify_bundles(root):
         relative = manifest_path.parent.relative_to(evidence).as_posix()
         if relative not in indexed:
             problems.append(f"evidence/{relative}: bundle directory is missing from index.json")
+    return problems + verify_exclusions(root, seen)
+
+
+def load_exclusions(root):
+    """Runs deliberately not collected, each with its reason (evidence/exclusions.json), or []."""
+    path = Path(root) / EXCLUSIONS
+    return json.loads(path.read_text(encoding="utf-8")).get("excluded", []) if path.exists() else []
+
+
+def verify_exclusions(root, bundle_ids):
+    """An excluded run needs a run name, class, revision and reason, and must not also be a bundle."""
+    problems, seen = [], set()
+    for entry in load_exclusions(root):
+        run = str(entry.get("run") or "")
+        for key in ("run", "class", "source_revision", "reason"):
+            if not str(entry.get(key) or "").strip():
+                problems.append(f"{EXCLUSIONS}: {run or 'an entry'} needs a {key}")
+        if run in seen:
+            problems.append(f"{EXCLUSIONS}: {run} is listed twice")
+        seen.add(run)
+        if run.lower() in bundle_ids:
+            problems.append(f"{EXCLUSIONS}: {run} is both excluded and collected as a bundle")
     return problems
 
 
@@ -170,7 +194,7 @@ def summary_of(bundle):
 
 
 def wedge_summary(bundle):
-    """The scenario summary of an executor-wedge bundle (rv-race.json or delete-recreate.json), or {}."""
+    """The scenario summary of an executor-wedge bundle (rv-race, delete-recreate or admission-deny), or {}."""
     for name in collect.WEDGE_SUMMARIES:
         value = bundle.json(name)
         if isinstance(value, dict):
@@ -197,7 +221,9 @@ def failure_class(summary):
                           ("escalate", "agent escalated"),
                           ("not_recovered", "not recovered"), ("awaiting_approval", "stopped awaiting approval")):
         if needle in text.lower():
-            return label
+            code = failure.get("error_code") if isinstance(failure, dict) else None
+            # The planning error code says why the agent escalated (ABSTAINED, DIAGNOSIS_OFF_TARGET, ...).
+            return f"{label} ({code})" if label == "agent escalated" and code else label
     return summary.get("error_type") or summary.get("integration_error") or "unspecified"
 
 
@@ -614,6 +640,97 @@ def wedge_resolutions(bundles):
     return "; ".join(parts) or "no wedge runs"
 
 
+def recovered_ratio(bundles):
+    """Cited runs that passed expecting a recovery; an expected escalation passes but never recovers."""
+    return ratio(sum(outcome(b) == "PASS" and not expected_escalation(b) for b in bundles), len(bundles))
+
+
+def expected_escalations(bundles):
+    """Cited runs that passed as an expected escalation and left no Executor record."""
+    return ratio(sum(expected_escalation(b) and not _has_file(b, "execution.json") for b in bundles), len(bundles))
+
+
+def approval_refusals(bundles):
+    """Cited runs stopped by a refused approval, with no approval granted and no execution for the refused action."""
+    stopped = 0
+    for bundle in bundles:
+        approval = summary_of(bundle).get("operator_approval") or {}
+        stopped += (outcome(bundle) == "FAILED" and approval.get("mode") == "reject"
+                    and bool(approval.get("refusals")) and not approval.get("approvals")
+                    and not _has_file(bundle, "approved-rollback/execution.json"))
+    return ratio(stopped, len(bundles))
+
+
+def log_tool_results(bundle):
+    """Results of the agent's logs tool in the bundle's collected branch results."""
+    found = []
+    for item in bundle.manifest.get("files", []):
+        if "/branch-" in item["path"] and item["path"].endswith("/result.json"):
+            for output in (bundle.json(item["path"]) or {}).get("outputs") or []:
+                if isinstance(output, dict) and output.get("tool") == "logs":
+                    found.append(output.get("result") or {})
+    return found
+
+
+def injection_free(bundles):
+    """Cited runs with no injection finding and no flagged log line in any collected logs-tool result.
+
+    A run with no collected logs-tool result does not count: absence of a finding
+    proves nothing unless the gate's inputs were seen.
+    """
+    clean = 0
+    for bundle in bundles:
+        results = log_tool_results(bundle)
+        clean += (bool(results) and "injection_finding" not in summary_of(bundle)
+                  and all(result.get("suspected_injection_lines") == 0 for result in results))
+    return ratio(clean, len(bundles))
+
+
+def scenario_result(bundle):
+    return bundle.json("scenario-result.json") or summary_of(bundle).get("scenario_result") or {}
+
+
+def scenario_parts(bundle):
+    """Scenario, revision, outcome, decision, how it was decided, writes, state, match and labels for one run."""
+    result = scenario_result(bundle)
+    source, codes = result.get("decision_source"), list(result.get("eligibility_codes") or [])
+    if source == "planning_failure":
+        how = f"from a planning failure ({result.get('planning_error_code') or 'no code'})"
+    elif source in ("rule", "model"):
+        how = f"decided by the {source}" + (f" ({', '.join(codes)})" if codes else "")
+    else:
+        how = f"from {source or 'an unrecorded source'}"
+    writes = result.get("executor_writes")
+    labels = (result.get("labels") or {}).get("status") or ("pending" if result.get("labels_pending") else "unknown")
+    return [result.get("scenario") or "unknown", short(bundle.entry.get("source_revision")), outcome(bundle),
+            result.get("actual") or "no decision", how, str(writes) if isinstance(writes, int) else "unmeasured",
+            result.get("coordinator_state") or "unknown",
+            "yes" if result.get("matched_expected") is True else "no", labels]
+
+
+def scenario_rows(bundles):
+    members = sorted((b for b in bundles if b.run_class == "agent" and scenario_result(b)),
+                     key=lambda b: (b.entry.get("captured_at") or "", b.bundle_id))
+    return [[bundle.bundle_id, *scenario_parts(bundle)] for bundle in members]
+
+
+def scenario_outcomes(bundles):
+    """Per cited catalog run, in claim order, with consecutive identical runs counted once."""
+    groups = []
+    for bundle in bundles:
+        name, revision, result, actual, how, writes, state, matched, labels = scenario_parts(bundle)
+        head = f"{name} at {revision} {result}"
+        tail = (f"{actual} {how}, {writes} Executor write{'' if writes == '1' else 's'}, {state}, "
+                f"{'matched' if matched == 'yes' else 'did not match'} the pre-registered expected outcome, "
+                f"labels {labels}")
+        if groups and groups[-1][:2] == [head, tail]:
+            groups[-1][2] += 1
+        else:
+            groups.append([head, tail, 1])
+    return "; ".join(f"{head}{f' x{count}' if count > 1 else ''}: {tail}" for head, tail, count in groups) \
+        or "no scenario runs"
+
+
 DERIVATIONS = {
     "pass_ratio": pass_ratio,
     "zero_write_rejections": zero_write_rejections,
@@ -622,6 +739,11 @@ DERIVATIONS = {
     "fail_closed": fail_closed,
     "preflight_stops": preflight_stops,
     "wedge_resolutions": wedge_resolutions,
+    "recovered_ratio": recovered_ratio,
+    "expected_escalations": expected_escalations,
+    "approval_refusals": approval_refusals,
+    "injection_free": injection_free,
+    "scenario_outcomes": scenario_outcomes,
 }
 
 
@@ -677,6 +799,12 @@ def index_table(root):
         rows.append([run_class, str(len(members)), count("provenance", "recorded"), count("provenance", "inferred"),
                      count("status", "superseded"), count("status", "withdrawn")])
     return table(["Class", "Bundles", "Recorded", "Inferred", "Superseded", "Withdrawn"], rows)
+
+
+def exclusions_table(root):
+    rows = [[entry.get("run"), entry.get("class"), short(entry.get("source_revision")), entry.get("attempted_at") or
+             "unknown", entry.get("reason")] for entry in load_exclusions(root)]
+    return table(["Run", "Class", "Revision", "Attempted at", "Reason not collected"], rows, "_No excluded runs._")
 
 
 def limitation_blocks(root):
@@ -745,10 +873,14 @@ def render_blocks(root):
     return {
         **limitation_blocks(root),
         "index": index_table(root),
+        "exclusions": exclusions_table(root),
         "runs": runs_table(bundles),
         "recovery-checks": table(["Class", "Check", "Passed / runs"], recovery_matrix(bundles)),
         "agent-runs": table(["Revision", "Provenance", "Runs", "RECOVERED", "Not recovered", "Model calls (median)",
                              "Model seconds (median)", "Failure classes"], agent_runs(bundles)),
+        "scenario-runs": table(["Bundle", "Scenario", "Revision", "Outcome", "Decision", "How decided",
+                                "Executor writes", "Coordinator state", "Matched pre-registered outcome", "Labels"],
+                               scenario_rows(bundles)),
         "guard-rejection": table(["Runs", "Refused", "Executor writes for the refused action", "Unmeasured"],
                                  [[str(guard["runs"]), ratio(guard["refused"], guard["runs"]), str(guard["writes"]),
                                    str(guard["writes_unknown"])]] if guard["runs"] else []),

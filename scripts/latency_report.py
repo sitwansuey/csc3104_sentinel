@@ -37,7 +37,8 @@ METHOD = {
         "detection": "start -> incident observed",
         "planning": "incident observed -> last planning-progress record (run folder only)",
         "model": "sum of model call wall times; null when planning did not finish",
-        "guard": "planning end -> Guard ALLOW; includes the dependency check and the lab's pre-authorised approval",
+        "guard": "planning end -> Guard ALLOW; includes the dependency check and the lab approval (pre-authorised "
+                 "before 4139385, automated auto-lab through the approval API from 4139385)",
         "decision": "incident observed -> Guard ALLOW; in harness mode includes the scripted negative cases",
         "execution": "Guard ALLOW -> Executor result recorded",
         "verification": "Executor result -> end of the Verifier outcome window",
@@ -47,7 +48,8 @@ METHOD = {
 }
 LIMITATIONS = [
     "One Windows/amd64 host with Docker Desktop and kind; runs share the host, cluster and model.",
-    "One fault type (invalid shipping PORT); lab approval is pre-authorised, so no human wait is included.",
+    "Mostly one fault type (invalid shipping PORT); from 870aa7d also the unscored catalog scenarios R2 and N1. "
+    "Lab approval is pre-authorised or automated (auto-lab), so no human wait is included.",
     "Runs before fault_injected_at was recorded start from the first failing snapshot, which understates detection.",
     "Stages marked run_folder come from local run folders that are not committed and cannot be rechecked in CI.",
     "Model time depends on the GPU, model and context size of the run; it is not portable to other hosts.",

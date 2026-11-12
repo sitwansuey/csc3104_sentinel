@@ -326,6 +326,127 @@ class ExecutorWedgeTests(unittest.TestCase):
         self.assertIn("| executor-wedge | 3 | 2 | 1 | 0 | 0 | 0 recorded, 3 inferred |",
                       summarize.runs_table(list(self.bundles.values())))
 
+    def test_admission_deny_resolution_reads_the_fence(self):
+        collect.collect(fx.wedge_run(self.root / "source", "deny", scenario="admission-deny"), "executor-wedge",
+                        "wedge-deny", evidence_root=self.root / "evidence", context=fx.context(),
+                        inferred_revision="b" * 40, inferred_basis="fixture")
+        bundle = next(b for b in summarize.load_bundles(self.root) if b.bundle_id == "wedge-deny")
+        self.assertEqual(summarize.wedge_resolutions([bundle]), "admission-deny at bbbbbbb PASS: CONFLICT/FENCED on 5/5 "
+                                                                "reconcile passes, second proposal APPLIED")
+
+
+class Phase2DerivationTests(unittest.TestCase):
+    """Catalog scenario runs, expected escalations, refused approvals and the injection gate."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        runs = self.root / "source"
+        recorded = lambda revision: {"source_revision": revision * 40, "dirty": False}
+        cases = {
+            "r2-fail": dict(status="FAILED", actual="ESCALATE", source="planning_failure", writes=0,
+                            state="NEEDS_REVIEW", matched=False, error_code="ABSTAINED"),
+            "r2-pass": {},
+            "r1-a": dict(scenario="R1"),
+            "r1-b": dict(scenario="R1"),
+            "n1-pass": dict(scenario="N1", actual="ESCALATE", source="rule", codes=("TEMPLATE_ALREADY_BASELINE",),
+                            writes=0, state="NEEDS_REVIEW", expected="escalated",
+                            error_code="TEMPLATE_ALREADY_BASELINE"),
+            "flagged": dict(scenario="R1", flagged_lines=1),
+            "finding": dict(scenario="R1", finding={"decided_by": "rule", "rules": ["override"]}),
+        }
+        for name, options in cases.items():
+            run = fx.scenario_run(runs, name, **options)
+            summary = json.loads((run / "summary.json").read_text(encoding="utf-8"))
+            summary["provenance"] = recorded("8" if name.endswith("fail") else "d")
+            fx.write(run / "summary.json", summary)
+            collect.collect(run, "agent", name, evidence_root=self.root / "evidence", context=fx.context())
+        connected = runs / "reject"
+        fx.write(connected / "summary.json", {
+            "status": "FAILED", "started_at": "2026-11-11T22:09:33Z", "checks": [],
+            "error": "Operator did not approve ACT-1; no Executor write attempted",
+            "operator_approval": {"mode": "reject", "approvals": [], "refusals": [{"action_id": "ACT-1"}]}})
+        fx.write(connected / "approved-rollback/proposal.json", {"action": "ROLLBACK"})
+        collect.collect(connected, "connected-harness", "reject", evidence_root=self.root / "evidence",
+                        context=fx.context(), inferred_revision=fx.REVISION, inferred_basis="fixture")
+        self.bundles = {b.bundle_id: b for b in summarize.load_bundles(self.root)}
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def pick(self, *names):
+        return [self.bundles[name] for name in names]
+
+    def test_scenario_outcomes_name_the_decision_and_never_hide_a_failure(self):
+        value = summarize.scenario_outcomes(self.pick("r2-fail", "r2-pass", "r1-a", "r1-b", "n1-pass"))
+        self.assertEqual(value, "; ".join([
+            "R2 at 8888888 FAILED: ESCALATE from a planning failure (ABSTAINED), 0 Executor writes, NEEDS_REVIEW, "
+            "did not match the pre-registered expected outcome, labels pending",
+            "R2 at ddddddd PASS: ROLLBACK decided by the model, 1 Executor write, RECOVERED, matched the "
+            "pre-registered expected outcome, labels pending",
+            "R1 at ddddddd PASS x2: ROLLBACK decided by the model, 1 Executor write, RECOVERED, matched the "
+            "pre-registered expected outcome, labels pending",
+            "N1 at ddddddd PASS: ESCALATE decided by the rule (TEMPLATE_ALREADY_BASELINE), 0 Executor writes, "
+            "NEEDS_REVIEW, matched the pre-registered expected outcome, labels pending"]))
+        self.assertEqual(summarize.scenario_outcomes([]), "no scenario runs")
+
+    def test_scenario_rows_list_every_catalog_run(self):
+        rows = {row[0]: row[1:] for row in summarize.scenario_rows(list(self.bundles.values()))}
+        self.assertNotIn("reject", rows)
+        self.assertEqual(rows["r2-fail"], ["R2", "8888888", "FAILED", "ESCALATE", "from a planning failure (ABSTAINED)",
+                                           "0", "NEEDS_REVIEW", "no", "pending"])
+
+    def test_recovered_ratio_never_counts_an_expected_escalation(self):
+        self.assertEqual(summarize.recovered_ratio(self.pick("r2-fail", "r2-pass", "n1-pass")), "1/3")
+        self.assertEqual(summarize.pass_ratio(self.pick("r2-fail", "r2-pass", "n1-pass")), "2/3")
+        self.assertEqual(summarize.expected_escalations(self.pick("n1-pass", "r2-pass")), "1/2")
+
+    def test_injection_free_needs_a_clean_logs_result_and_no_finding(self):
+        self.assertEqual(summarize.injection_free(self.pick("r1-a", "flagged", "finding", "reject")), "1/4")
+
+    def test_refused_approval_counts_only_without_an_execution_record(self):
+        self.assertEqual(summarize.approval_refusals(self.pick("reject", "r2-pass")), "1/2")
+
+    def test_escalation_failure_class_names_the_planning_code(self):
+        self.assertEqual(summarize.failure_class(summarize.summary_of(self.bundles["r2-fail"])),
+                         "agent escalated (ABSTAINED)")
+
+
+class ExclusionTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = build(self.temp.name)
+        self.path = self.root / summarize.EXCLUSIONS
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def exclude(self, *entries):
+        self.path.write_text(json.dumps({"schema": "sentinel-evidence-exclusions-v1", "excluded": list(entries)}),
+                             encoding="utf-8")
+
+    def test_no_register_means_no_exclusions(self):
+        self.assertEqual(summarize.load_exclusions(self.root), [])
+        self.assertEqual(summarize.exclusions_table(self.root), "_No excluded runs._")
+
+    def test_excluded_runs_are_listed_with_their_reason(self):
+        self.exclude({"run": "boutique-live-x", "class": "agent", "source_revision": "a" * 40,
+                      "attempted_at": "2026-11-12T05:04:57Z", "reason": "Docker engine down"})
+        self.assertEqual(summarize.verify_bundles(self.root), [])
+        self.assertIn("| boutique-live-x | agent | aaaaaaa | 2026-11-12T05:04:57Z | Docker engine down |",
+                      summarize.exclusions_table(self.root))
+        self.assertEqual(run(self.root)[0], 0)
+        self.assertIn("boutique-live-x", (self.root / "evidence/README.md").read_text(encoding="utf-8"))
+
+    def test_an_exclusion_needs_a_reason_and_cannot_also_be_a_bundle(self):
+        self.exclude({"run": "AGENT-A1", "class": "agent", "source_revision": "a" * 40, "reason": "x"},
+                     {"run": "other", "class": "agent", "source_revision": "a" * 40, "reason": " "},
+                     {"run": "other", "class": "agent", "source_revision": "a" * 40, "reason": "y"})
+        problems = summarize.verify_bundles(self.root)
+        self.assertIn("evidence/exclusions.json: AGENT-A1 is both excluded and collected as a bundle", problems)
+        self.assertIn("evidence/exclusions.json: other needs a reason", problems)
+        self.assertIn("evidence/exclusions.json: other is listed twice", problems)
+
 
 class PreflightTests(unittest.TestCase):
     def test_only_a_preflight_stop_before_injection_counts(self):

@@ -62,13 +62,16 @@ def preflight_run(root, name, *, injected=False, started="2026-11-11T10:10:00Z")
 
 
 def wedge_run(root, name, *, scenario="rv-race", fixed=True, started="2026-11-11T20:21:23Z"):
-    """An Executor wedge harness folder: fixed=True resolves SUPERSEDED, False stays NEEDS_RECONCILIATION."""
+    """An Executor wedge harness folder: fixed=True resolves (SUPERSEDED, or CONFLICT/FENCED for admission-deny),
+    False stays NEEDS_RECONCILIATION."""
     run = Path(root) / name
-    basis = {"rv-race": "ADVANCED_WITHOUT_EVIDENCE", "delete-recreate": "TARGET_REPLACED"}[scenario]
-    status = "SUPERSEDED" if fixed else "NEEDS_RECONCILIATION"
+    basis = {"rv-race": "ADVANCED_WITHOUT_EVIDENCE", "delete-recreate": "TARGET_REPLACED",
+             "admission-deny": "FENCED"}[scenario]
+    resolved = "CONFLICT" if scenario == "admission-deny" else "SUPERSEDED"
+    status = resolved if fixed else "NEEDS_RECONCILIATION"
     results = [{"label": "execute", "status": status if scenario == "rv-race" else None, "passes": 1},
                {"label": "reconcile", "status": status, "basis": basis if fixed else None, "passes": 5}]
-    checks = [{"name": "first action resolves as SUPERSEDED/" + basis, "passed": fixed,
+    checks = [{"name": f"first action resolves as {resolved}/{basis}", "passed": fixed,
                "observed": [status, basis if fixed else None]},
               {"name": "ledger releases the workload", "passed": fixed},
               {"name": "a new proposal for the workload is admitted", "passed": fixed}]
@@ -80,6 +83,8 @@ def wedge_run(root, name, *, scenario="rv-race", fixed=True, started="2026-11-11
                                        "reconcile_pass_statuses": [status] * 5, "results": results,
                                        "checks": checks})
     write(run / "manifests.json", {"apiVersion": "v1", "kind": "List", "items": []})
+    if scenario == "admission-deny":
+        write(run / "admission-policy.json", {"apiVersion": "v1", "kind": "List", "items": []})
     write(run / "executor.sqlite", b"SQLite format 3\x00")
     write(run / "locks/target.lock", "")
     return run
@@ -125,4 +130,32 @@ def observer_run(root, name):
     run = Path(root) / name
     write(run / "summary.json", {"status": "PASS", "started_at": "2026-11-11T14:00:00Z",
                                  "detection_elapsed_seconds": 7.42, "duplicate_suppression_seconds": 61.9})
+    return run
+
+
+def scenario_run(root, name, *, scenario="R2", status="PASS", actual="ROLLBACK", source="model", codes=(), writes=1,
+                 state="RECOVERED", matched=True, error_code=None, expected="recovered", flagged_lines=0,
+                 finding=None, started="2026-11-12T08:00:00Z"):
+    """An agent run of a catalog scenario with its scenario-result.json and one logs-tool branch result."""
+    run = Path(root) / name
+    result = {"scenario": scenario, "actual": actual, "decision_source": source, "decided_by": source if source in (
+        "rule", "model") else None, "eligibility_codes": list(codes), "executor_writes": writes,
+        "coordinator_state": state, "matched_expected": matched, "planning_error_code": error_code,
+        "labels": {"status": "pending", "by": None, "on": None}, "labels_pending": True}
+    summary = {"status": status, "started_at": started, "checks": [], "expected_outcome": expected,
+               "scenario": {"id": scenario, "labels": "pending"}, "scenario_result": result}
+    if error_code:
+        summary["agent_failure"] = {"error": f"ESCALATE {error_code} after 1 attempt(s)", "error_code": error_code}
+    if finding is not None:
+        summary["injection_finding"] = finding
+    write(run / "summary.json", summary)
+    write(run / "scenario-result.json", result)
+    write(run / "approved-rollback/planning-status.json", {"attempts": 1, "error_code": error_code})
+    write(run / "approved-rollback/attempt-1/agent/report.json", {"failures": []})
+    write(run / "approved-rollback/attempt-1/agent/branch-003/result.json", {"state": "success", "outputs": [
+        {"evidence_id": "branch-003", "tool": "logs", "result": {"suspected_injection_lines": flagged_lines}}]})
+    write(run / "approved-rollback/attempt-1/agent/branch-003/task.json", {"tool": "logs"})
+    write(run / "approved-rollback/attempt-1/telemetry/logs.csv", "timestamp,message\n")
+    if writes:
+        write(run / "approved-rollback/execution.json", {"status": "APPLIED"})
     return run

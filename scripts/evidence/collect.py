@@ -36,7 +36,7 @@ MANIFEST_SCHEMA = "sentinel-evidence-manifest-v1"
 IGNORED_NAMES = frozenset({"runs", "outputs", "build", "dist", "node_modules"})
 BUNDLE_ID = re.compile(r"[a-z0-9][a-z0-9._-]{2,95}")
 # Scenario summaries written by scripts/validation/test_executor_wedge_live.py, one per run folder.
-WEDGE_SUMMARIES = ("rv-race.json", "delete-recreate.json")
+WEDGE_SUMMARIES = ("rv-race.json", "delete-recreate.json", "admission-deny.json")
 SUMMARY_FILES = ("summary.json", "data/evidence/summary.json", "batch.json", "validation.json", "results.json",
                  *WEDGE_SUMMARIES)
 
