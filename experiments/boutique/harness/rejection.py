@@ -93,7 +93,7 @@ def run_unnecessary_rollback(experiment):
         "observed_generation": before["generation"],
         "signals": [{"evidence_id": "INJECTED-" + uuid4().hex[:12],
                      "source": "demo_harness", "reason": "InjectedFalseAlarm",
-                     "detail": "Injected false alarm: shippingservice is healthy and already uses the "
+                     "detail": "Injected false alarm: " + experiment.name + " is healthy and already uses the "
                                "requested baseline. This tests an incorrect rollback recommendation; "
                                "the Observer did not detect a real Pod failure.", "at": observed_at}],
     }

@@ -1,9 +1,11 @@
 """Offline connected-workload checks; HTTP services and Kubernetes are fake."""
 
+from contextlib import redirect_stdout
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
+from io import StringIO
 import json
 from pathlib import Path
 import tempfile
@@ -14,11 +16,15 @@ from unittest.mock import Mock, patch
 
 from experiments.boutique.harness.connected import (APPLICATIONS, UPSTREAM, UPSTREAM_SHA256, ConnectedBoutiqueExperiment,
                                         configured_graph, connected_manifest, decoded_resources, image_digest, readiness)
+from experiments.boutique.harness import targets
+from experiments.boutique.harness.live import shipping_manifest, validate_cart
+from experiments.boutique.harness.scenarios import CatalogError
 from experiments.boutique.traffic.storefront import StorefrontProbe
 from scripts.test_boutique_live import BoutiqueExperiment
 from services.executor.store import fingerprint
 from services.verifier.core import verify
 
+ROOT = Path(__file__).resolve().parents[1]
 
 def resources():
     items = []
@@ -139,6 +145,491 @@ class ConnectedConfigTests(unittest.TestCase):
                 self.assertEqual(verify(execution, measured, policy)["status"], "NOT_RECOVERED")
             finally:
                 experiment.store.close()
+
+
+def connected_lab(directory, target="shippingservice"):
+    experiment = ConnectedBoutiqueExperiment(Path(directory) / "run")
+    experiment.select_target(target)
+    return experiment
+
+
+SHIPPING_FAULT = {"home_status": 200, "add_to_cart_status": 302, "cart_status": 500, "checkout_status": 500,
+                  "passed": False}
+CART_FAULT = {"home_status": 500, "add_to_cart_status": 500, "cart_status": 500, "checkout_status": 500,
+              "passed": False}
+
+
+class CartTargetTests(unittest.TestCase):
+    """The second catalog target (P3.09): overrides, readiness, RBAC, probe and impact come from the catalog."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.directory = temporary.name
+        for patcher in (patch("shared.provenance.collect", return_value={"source_revision": "test"}),
+                        patch("subprocess.run", side_effect=AssertionError("cluster command attempted"))):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def lab(self, target="shippingservice"):
+        experiment = connected_lab(self.directory + "/" + target, target)
+        self.addCleanup(experiment.store.close)
+        return experiment
+
+    def test_manifest_applies_the_cart_reviewed_overrides_and_keeps_shipping_reviewed_spec(self):
+        images = {name + ":1": "example/" + name + "@sha256:" + "a" * 64 for name in APPLICATIONS}
+        original = resources()
+        result = connected_manifest(original, images, "sentinel-boutique-connected")
+        deployments = {item["metadata"]["name"]: item for item in result["items"] if item["kind"] == "Deployment"}
+        upstream = next(item for item in original if item["kind"] == "Deployment"
+                        and item["metadata"]["name"] == "cartservice")
+        cart = deployments["cartservice"]["spec"]
+        self.assertEqual(cart["strategy"], {"type": "Recreate"})
+        self.assertEqual(cart["minReadySeconds"], 2)
+        # Only the reviewed overrides change; the upstream wiring and container stay.
+        self.assertEqual(set(cart), set(upstream["spec"]) | {"strategy", "minReadySeconds"})
+        self.assertEqual((cart["replicas"], cart["selector"]), (upstream["spec"]["replicas"], upstream["spec"]["selector"]))
+        self.assertEqual(cart["template"]["spec"]["containers"][0]["env"],
+                         upstream["spec"]["template"]["spec"]["containers"][0]["env"])
+        reviewed = shipping_manifest("example/shippingservice@sha256:" + "a" * 64)["items"][2]["spec"]
+        self.assertEqual(deployments["shippingservice"]["spec"], reviewed)
+        self.assertEqual({key: reviewed[key] for key in ("strategy", "minReadySeconds")},
+                         targets.profile("shippingservice").spec_overrides)
+        # Non-target applications keep the upstream rollout strategy.
+        self.assertNotIn("strategy", deployments["frontend"]["spec"])
+
+    def test_readiness_excludes_the_selected_target_only(self):
+        deployments = [item for item in resources() if item.get("kind") == "Deployment"
+                       and item["metadata"]["name"] in APPLICATIONS]
+        cart = readiness(deployments, "cartservice")
+        self.assertNotIn("cartservice", cart)
+        self.assertIs(cart["shippingservice"], True)
+        self.assertEqual(set(cart), APPLICATIONS - {"cartservice"})
+        self.assertEqual(set(readiness(deployments)), APPLICATIONS - {"shippingservice"})
+        with tempfile.TemporaryDirectory() as directory:
+            experiment = connected_lab(directory, "cartservice")
+            try:
+                experiment.graph = configured_graph(connected_manifest(
+                    resources(), {name + ":1": "e/" + name + "@sha256:" + "a" * 64 for name in APPLICATIONS},
+                    "sentinel-boutique-connected"))
+                target = next(item for item in deployments if item["metadata"]["name"] == "cartservice")
+                target["metadata"].update(uid="cart-uid", namespace=experiment.namespace, resourceVersion="7")
+                experiment.kubectl = Mock(return_value=SimpleNamespace(stdout=json.dumps({"items": deployments})))
+                proposal = {"schema_version": "1.0", "kind": "proposal", "incident_id": "INC-1",
+                            "action_id": "ACT-1", "action": "ROLLBACK", "based_on_resource_version": "7",
+                            "target": {"cluster_id": experiment.cluster_id, "namespace": experiment.namespace,
+                                       "kind": "Deployment", "name": "cartservice", "uid": "cart-uid"},
+                            "parameters": {"baseline_id": "B", "template_sha256": "a" * 64},
+                            "rationale": "test", "evidence_refs": ["E"]}
+                saved = experiment.dependency_result(proposal)
+                state = json.loads((experiment.directory / "dependency-readiness.json").read_text(encoding="utf-8"))
+            finally:
+                experiment.store.close()
+        self.assertNotIn("cartservice", state["known_health"])
+        self.assertEqual((saved["status"], saved["target"]["name"]), ("CLEAR", "cartservice"))
+        self.assertIn("cartservice", saved["affected_services"])
+
+    def test_executor_role_lists_exactly_the_enabled_targets(self):
+        for scope, names in (("connected", ["cartservice", "shippingservice"]), ("lab", ["shippingservice"]),
+                             ("package", ["shippingservice"])):
+            with self.subTest(scope=scope):
+                self.assertEqual(list(targets.enabled_targets(scope)), names)
+                text = targets.executor_rbac("sentinel-boutique", targets.enabled_targets(scope))
+                self.assertEqual([line.strip() for line in text.splitlines() if "resourceNames" in line],
+                                 ["resourceNames: " + json.dumps(names)])
+                self.assertNotIn("demo-api", text)
+                self.assertNotIn("sentinel-demo", text)
+        for target in ("shippingservice", "cartservice"):
+            with self.subTest(target=target):
+                experiment = self.lab(target)
+                experiment.write_executor_rbac()
+                written = experiment.rbac_path.read_text(encoding="utf-8")
+                self.assertIn('resourceNames: ["cartservice", "shippingservice"]', written)
+                self.assertIn("namespace: sentinel-boutique-connected", written)
+                self.assertEqual(experiment.executor_names(), ["cartservice", "shippingservice"])
+        with self.assertRaises(CatalogError):
+            targets.executor_rbac("sentinel-boutique", [])
+        with self.assertRaises(CatalogError):
+            targets.executor_rbac("sentinel-boutique", ["shippingservice"],
+                                  template='resourceNames: ["demo-api"]\nresourceNames: ["x"]\n')
+
+    def test_isolated_lab_role_is_unchanged_for_shipping(self):
+        # The text the harness wrote before the catalog: replace the namespace and demo-api with the target.
+        template = (ROOT / "deploy/sentinel/executor-rbac.yaml").read_text(encoding="utf-8")
+        before = template.replace("sentinel-demo", "sentinel-boutique").replace("demo-api", "shippingservice")
+        self.assertEqual(targets.executor_rbac("sentinel-boutique", ["shippingservice"]), before)
+
+    def test_cart_target_takes_its_profile_from_the_catalog(self):
+        experiment = self.lab("cartservice")
+        self.assertEqual((experiment.name, experiment.service_account), ("cartservice", "cartservice"))
+        self.assertEqual(experiment.allowed_registries, ["us-central1-docker.pkg.dev"])
+        self.assertEqual(experiment.ceilings["container_requests"]["cpu"], "200m")
+        self.assertEqual(experiment.scenario["id"], "C1")
+        self.assertEqual(experiment.summary["recovery_target"], "cartservice")
+        self.assertEqual(experiment.baseline_inputs(), {"baseline": None, "baselines": experiment.directory / "baselines"})
+        self.assertIn(("patch", "deployment/paymentservice"), experiment.denied_permissions())
+        shipping = self.lab()
+        self.assertEqual((shipping.service_account, shipping.scenario["id"]), ("shippingservice", "R1"))
+        self.assertEqual(shipping.ceilings["container_requests"]["cpu"], "100m")
+        experiment.target = {"name": "cartservice"}
+        with self.assertRaisesRegex(RuntimeError, "cannot change after preparation"):
+            experiment.select_target("shippingservice")
+        with self.assertRaisesRegex(CatalogError, "Unknown recovery target"):
+            shipping.select_target("paymentservice")
+        self.assertEqual(shipping.name, "shippingservice")
+
+    def test_every_executor_entry_reads_the_per_target_baselines_directory(self):
+        from experiments.recovery import live as recovery
+        experiment = self.lab("cartservice")
+        folder = experiment.directory / "baselines"
+        self.assertEqual(experiment.baseline_arguments(), ["--baselines", str(folder)])
+        config = experiment.directory / "worker.json"
+        config.write_text(json.dumps({"directory": str(experiment.directory), "folder": str(experiment.directory),
+                                      "credentials": "unused", "cluster_id": experiment.cluster_id,
+                                      "context": experiment.restricted_context, "baselines": str(folder)}),
+                          encoding="utf-8")
+        with patch.object(recovery, "build_adapters", side_effect=RuntimeError("stop before Kubernetes")) as build, \
+                patch.object(recovery, "executor_client_from_environment", return_value=None):
+            with self.assertRaisesRegex(RuntimeError, "stop before Kubernetes"):
+                recovery.crash_worker(config)
+        self.assertEqual(build.call_args.kwargs["baselines"], str(folder))
+        self.assertNotIn("baseline", build.call_args.kwargs)
+
+    def test_cart_is_not_offered_in_the_isolated_lab(self):
+        experiment = BoutiqueExperiment(Path(self.directory) / "isolated")
+        self.addCleanup(experiment.store.close)
+        experiment.select_target("cartservice")
+        with self.assertRaisesRegex(RuntimeError, "not offered in this lab scope"):
+            experiment.executor_names()
+        experiment.prepared = None
+        with patch("experiments.boutique.harness.live.command", return_value="sentinel-boutique-lab-control-plane"):
+            with self.assertRaisesRegex(RuntimeError, "no isolated lab manifest"):
+                experiment.prepare_image()
+
+    def test_execution_scope_lists_the_measured_identity_of_every_enabled_target(self):
+        experiment = self.lab("cartservice")
+        experiment.target = {"cluster_id": experiment.cluster_id, "namespace": experiment.namespace,
+                             "kind": "Deployment", "name": "cartservice", "uid": "cart-uid"}
+        experiment.kubectl = Mock(return_value=SimpleNamespace(stdout=json.dumps({"metadata": {"uid": "ship-uid"}})))
+        self.assertEqual(experiment.execution_scope(), [
+            {"cluster_id": experiment.cluster_id, "namespace": experiment.namespace, "kind": "Deployment",
+             "name": "cartservice", "uid": "cart-uid"},
+            {"cluster_id": experiment.cluster_id, "namespace": experiment.namespace, "kind": "Deployment",
+             "name": "shippingservice", "uid": "ship-uid"}])
+        experiment.kubectl.assert_called_once_with("get", "deployment", "shippingservice", "-o", "json")
+
+    def test_permissions_check_both_targets_and_deny_other_boutique_writes(self):
+        experiment = self.lab("cartservice")
+        asked = []
+
+        def kubectl(*arguments, **options):
+            if arguments[:2] == ("auth", "can-i"):
+                asked.append(arguments[2:4])
+                allowed = arguments[3] in ("deployment/cartservice", "deployment/shippingservice") \
+                    and arguments[2] in ("get", "patch")
+                return SimpleNamespace(stdout="yes\n" if allowed else "no\n", stderr="", returncode=0)
+            return SimpleNamespace(stdout="", stderr="Error: forbidden", returncode=1)
+
+        experiment.kubectl = kubectl
+        experiment.check = Mock()
+        experiment.permissions()
+        self.assertEqual(asked[:4], [("get", "deployment/cartservice"), ("patch", "deployment/cartservice"),
+                                     ("get", "deployment/shippingservice"), ("patch", "deployment/shippingservice")])
+        self.assertIn(("patch", "deployment/paymentservice"), asked)
+        self.assertIn(("delete", "deployment/cartservice"), asked)
+
+    def test_storefront_impact_is_the_catalog_prediction_per_target(self):
+        cart, shipping = targets.profile("cartservice"), targets.profile("shippingservice")
+        self.assertTrue(targets.impact_matches(cart, CART_FAULT))
+        self.assertFalse(targets.impact_matches(cart, SHIPPING_FAULT))
+        self.assertTrue(targets.impact_matches(shipping, SHIPPING_FAULT))
+        self.assertFalse(targets.impact_matches(shipping, CART_FAULT))
+        self.assertEqual(targets.impact_phrase(shipping), "cart and checkout fail")
+        for target, journey, check in (
+                ("shippingservice", SHIPPING_FAULT, "Connected cart and checkout fail while shipping configuration is broken"),
+                ("cartservice", CART_FAULT,
+                 "Connected home, add to cart, cart and checkout fail while cart configuration is broken")):
+            with self.subTest(target=target):
+                experiment = self.lab(target)
+                experiment.storefront = Mock()
+                experiment.storefront.journey.return_value = dict(journey)
+                experiment.record_shopping = Mock()
+                with patch.object(BoutiqueExperiment, "fault", return_value={"incident_id": "INC-1"}):
+                    self.assertEqual(experiment.fault("primary"), {"incident_id": "INC-1"})
+                self.assertEqual(experiment.summary["checks"][-1]["name"], check)
+                wrong = CART_FAULT if target == "shippingservice" else SHIPPING_FAULT
+                experiment.storefront.journey.return_value = dict(wrong)
+                with patch.object(BoutiqueExperiment, "fault", return_value={"incident_id": "INC-2"}), \
+                        self.assertRaisesRegex(RuntimeError, "Storefront impact differs from the catalog prediction"):
+                    experiment.fault("crash")
+
+    def test_cart_probe_uses_the_vendored_proto_and_shipping_probe_is_unchanged(self):
+        cart = self.lab("cartservice")
+        cart.client_image = "docker.io/fullstorydev/grpcurl@sha256:" + "c" * 64
+        pod = cart.probe_pod("cart-probe-1", "hipstershop.CartService/GetCart", {"userId": "u"})
+        container = pod["spec"]["containers"][0]
+        self.assertEqual(container["args"], ["-plaintext", "-max-time", "5", "-import-path", "/proto", "-proto",
+                                             "cart.proto", "-d", '{"userId": "u"}', "cartservice:7070",
+                                             "hipstershop.CartService/GetCart"])
+        self.assertEqual(pod["spec"]["volumes"], [{"name": "proto", "configMap": {"name": "sentinel-probe-proto"}}])
+        self.assertEqual(container["volumeMounts"], [{"name": "proto", "mountPath": "/proto", "readOnly": True}])
+        shipping = self.lab()
+        shipping.client_image = cart.client_image
+        request = {"items": [{"productId": "demo-item", "quantity": 1}]}
+        # The probe Pod the shipping harness always created.
+        self.assertEqual(shipping.probe_pod("shipping-probe-1", "hipstershop.ShippingService/GetQuote", request), {
+            "apiVersion": "v1", "kind": "Pod", "metadata": {"name": "shipping-probe-1", "namespace": shipping.namespace},
+            "spec": {"restartPolicy": "Never", "activeDeadlineSeconds": 45, "automountServiceAccountToken": False,
+                     "securityContext": {"runAsNonRoot": True, "runAsUser": 1000,
+                                         "seccompProfile": {"type": "RuntimeDefault"}},
+                     "containers": [{"name": "probe", "image": cart.client_image, "imagePullPolicy": "Never",
+                         "args": ["-plaintext", "-max-time", "5", "-d", json.dumps(request),
+                                  "shippingservice:50051", "hipstershop.ShippingService/GetQuote"],
+                         "resources": {"requests": {"cpu": "10m", "memory": "16Mi"},
+                                       "limits": {"cpu": "100m", "memory": "64Mi"}},
+                         "securityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
+                                             "capabilities": {"drop": ["ALL"]}}}]}})
+        shipping.kubectl = Mock()
+        shipping.install_probe_schema()  # Shipping uses server reflection: nothing to publish.
+        shipping.kubectl.assert_not_called()
+        cart.kubectl = Mock()
+        cart.install_probe_schema()
+        configmap = json.loads((cart.directory / "probe-proto.json").read_text(encoding="utf-8"))
+        self.assertEqual(configmap["metadata"], {"name": "sentinel-probe-proto", "namespace": cart.namespace})
+        self.assertIn("service CartService", configmap["data"]["cart.proto"])
+
+    def test_cart_round_trip_reaches_redis_and_is_validated(self):
+        cart = self.lab("cartservice")
+        calls = []
+
+        def grpc_call(method, request):
+            calls.append((method, request))
+            if method.endswith("GetCart"):
+                return {"userId": request["userId"], "items": [{"productId": "OLJCESPC7Z", "quantity": 1}]}
+            return {}
+
+        cart.grpc_call = grpc_call
+        response = cart.probe()
+        user = response["user_id"]
+        self.assertTrue(user.startswith("sentinel-probe-"))
+        self.assertEqual([method.rsplit("/", 1)[1] for method, _ in calls], ["AddItem", "GetCart", "EmptyCart"])
+        self.assertEqual({request["userId"] for _, request in calls}, {user})
+        good = {"user_id": user, "cart": {"userId": user, "items": [{"productId": "OLJCESPC7Z", "quantity": 1}]},
+                "emptied": True}
+        self.assertEqual(validate_cart(good), good["cart"])
+        for change in ({"cart": {"userId": "someone-else", "items": good["cart"]["items"]}},
+                       {"cart": {"userId": user, "items": []}},
+                       {"cart": {"userId": user, "items": good["cart"]["items"] * 2}},
+                       {"user_id": "other-user", "cart": {"userId": "other-user", "items": good["cart"]["items"]}},
+                       {"emptied": False}):
+            with self.subTest(change=change), self.assertRaises(RuntimeError):
+                validate_cart({**good, **change})
+
+
+def iso(moment):
+    return moment.isoformat().replace("+00:00", "Z")
+
+
+class PreparedRunInputsTests(unittest.TestCase):
+    """prepare() writes the policy and per-target baseline the live Executor reads (P3.09).
+
+    kubectl, the image step and the health window are fake; the Guard and the
+    Executor are the real ones, reading only the files prepare() wrote.
+    """
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.directory = Path(temporary.name)
+        for patcher in (patch("shared.provenance.collect", return_value={"source_revision": "test"}),
+                        patch("subprocess.run", side_effect=AssertionError("cluster command attempted")),
+                        patch("runtime.live_executor.read_reference_versions", return_value=[])):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def template(name, cpu):
+        """A reviewed-style healthy Pod template for one catalog target."""
+        profile = targets.profile(name)
+        env = [{"name": "REDIS_ADDR", "value": "redis-cart:6379"} if name == "cartservice"
+               else {"name": "PORT", "value": str(profile.port)}]
+        return {"metadata": {"labels": {"app": name}}, "spec": {
+            "serviceAccountName": profile.service_account, "automountServiceAccountToken": False,
+            "securityContext": {"runAsNonRoot": True, "runAsUser": 1000, "seccompProfile": {"type": "RuntimeDefault"}},
+            "containers": [{"name": profile.container, "image": profile.image_repository + "@sha256:" + "a" * 64,
+                            "imagePullPolicy": "Never", "env": env,
+                            "resources": {"requests": {"cpu": cpu, "memory": "64Mi"},
+                                          "limits": {"cpu": "300m", "memory": "128Mi"}},
+                            "securityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
+                                                "capabilities": {"drop": ["ALL"]}}}]}}
+
+    def deployment(self, experiment, name, template, version="7", ready=1):
+        return {"apiVersion": "apps/v1", "kind": "Deployment",
+                "metadata": {"name": name, "namespace": experiment.namespace, "uid": name + "-uid",
+                             "resourceVersion": version, "generation": 1},
+                "spec": {"replicas": 1, "selector": {"matchLabels": {"app": name}}, "template": deepcopy(template)},
+                "status": {"observedGeneration": 1, "replicas": 1, "readyReplicas": ready, "availableReplicas": ready}}
+
+    def prepared(self, target, cpu):
+        """Run the real prepare() for target, whose healthy template requests cpu."""
+        experiment = connected_lab(self.directory / target / cpu, target)
+        self.addCleanup(experiment.store.close)
+        deployments = {name: self.deployment(experiment, name, self.template(name, cpu if name == target else "100m"))
+                       for name in targets.enabled_targets("connected")}
+        commands = []
+
+        def kubectl(*arguments, **options):
+            commands.append(arguments)
+            if arguments[:2] == ("get", "deployment") and arguments[2] in deployments:
+                return SimpleNamespace(stdout=json.dumps(deployments[arguments[2]]), stderr="", returncode=0)
+            if arguments[:2] == ("config", "view"):
+                cluster = {"server": "https://127.0.0.1:6443", "certificate-authority-data": "b2ZmbGluZQ=="}
+                return SimpleNamespace(stdout=json.dumps({"clusters": [{"cluster": cluster}]}), stderr="", returncode=0)
+            if arguments[:2] == ("create", "token") or arguments[0] == "apply":
+                return SimpleNamespace(stdout="offline-token\n", stderr="", returncode=0)
+            raise AssertionError("Unexpected kubectl call: " + " ".join(arguments))
+
+        def prepare_image():
+            experiment.write_executor_rbac()
+            return deployments[target]["spec"]["template"]["spec"]["containers"][0]["image"]
+
+        start = datetime.now(timezone.utc) - timedelta(seconds=21)
+        samples = [{"at": iso(start + timedelta(seconds=10 * index)), "ready_replicas": 1, "resource_version": "7"}
+                   for index in range(3)]
+        experiment.kubectl = kubectl
+        experiment.prepare_image = prepare_image
+        experiment.health_window = Mock(return_value=samples)
+        with redirect_stdout(StringIO()):
+            experiment.prepare()
+        return experiment, commands
+
+    def read(self, experiment, *parts):
+        return json.loads(experiment.directory.joinpath(*parts).read_text(encoding="utf-8"))
+
+    def run_executor(self, experiment, name=None):
+        """Ask the real Executor, built from prepare()'s files, to roll name back; returns (decision, result, writes)."""
+        from runtime.live_executor import build_adapters
+        from services.executor.core import execute
+        from services.guard.core import proposal_fingerprint
+        from tests.support.executor_fake import FakeDeploymentAPI
+
+        name = name or experiment.name
+        scope = {item["name"]: item for item in self.read(experiment, "allowed-targets.json")}
+        target = scope[name]
+        baseline = self.read(experiment, "baselines", name + ".json")
+        current = datetime.now(timezone.utc)
+        # The bad rollout: the measured healthy template with only its configuration changed.
+        broken = deepcopy(baseline["pod_template"])
+        broken["spec"]["containers"][0]["env"][0]["value"] += "0"
+        live = self.deployment(experiment, name, broken, version="8", ready=0)
+        live["metadata"]["uid"] = target["uid"]
+        snapshot = {"source": "offline-test", "captured_at": iso(current), "cluster_id": experiment.cluster_id,
+                    "deployment": live, "pods": [{"apiVersion": "v1", "kind": "Pod",
+                        "metadata": {"name": name + "-1", "namespace": experiment.namespace, "uid": "pod-uid",
+                                     "labels": {"app": name}},
+                        "status": {"phase": "Running", "containerStatuses": [{
+                            "name": "server", "ready": False, "restartCount": 4,
+                            "state": {"waiting": {"reason": "CrashLoopBackOff", "message": "Back-off"}},
+                            "lastState": {"terminated": {"exitCode": 1, "reason": "Error"}}}]}}],
+                    "events": [], "logs": []}
+        proposal = {"schema_version": "1.0", "kind": "proposal", "incident_id": "INC-PREPARED-1",
+                    "action_id": "ACT-PREPARED-1", "action": "ROLLBACK", "target": target,
+                    "parameters": {"baseline_id": baseline["baseline_id"], "template_sha256": baseline["template_sha256"]},
+                    "based_on_resource_version": "8", "rationale": "Offline test of the prepared run inputs.",
+                    "evidence_refs": ["E-1"]}
+        inputs = Path(tempfile.mkdtemp(prefix="inputs-", dir=self.directory))
+        dependencies, approval = inputs / "dependencies.json", inputs / "approval.json"
+        dependencies.write_text(json.dumps({
+            "schema_version": "1.0", "kind": "dependency_result", "incident_id": proposal["incident_id"],
+            "action_id": proposal["action_id"], "target": target, "status": "CLEAR", "affected_services": [name],
+            "blockers": [], "unknowns": [], "checked_at": iso(current)}), encoding="utf-8")
+        approval.write_text(json.dumps({
+            "action_id": proposal["action_id"], "proposal_sha256": proposal_fingerprint(proposal),
+            "policy_version": self.read(experiment, "policy.json")["policy_version"], "operator_id": "offline-operator",
+            "decision": "APPROVED", "approved_at": iso(current - timedelta(seconds=2)),
+            "expires_at": iso(current + timedelta(seconds=120))}), encoding="utf-8")
+        cluster = FakeDeploymentAPI(snapshot, clock=lambda: datetime.now(timezone.utc))
+        with patch("services.executor.kubernetes_adapter.KubectlDeploymentAPI", return_value=cluster):
+            adapters = build_adapters(
+                context=experiment.restricted_context, cluster_id=experiment.cluster_id,
+                kubeconfig=experiment.credentials, allowed_targets=experiment.directory / "allowed-targets.json",
+                ledger=inputs / "executor.db", locks=inputs / "locks", policy=experiment.directory / "policy.json",
+                dependencies=dependencies, approval=approval, **experiment.baseline_inputs())
+            self.addCleanup(adapters.ledger.close)
+            decision = adapters.authorizer.validate(proposal, cluster.read(target), now=current).decision
+            result = execute(proposal, adapters)
+        return decision, result, cluster.writes
+
+    def test_a_cart_run_writes_the_cart_ceilings_and_its_guard_allows_the_cart_baseline(self):
+        experiment, _commands = self.prepared("cartservice", "200m")
+        policy = self.read(experiment, "policy.json")
+        self.assertEqual(policy["resource_constraints"]["max_container_requests"], {"cpu": "200m", "memory": "64Mi"})
+        self.assertEqual(policy["workload_constraints"]["max_pod_requests"], {"cpu": "250m", "memory": "128Mi"})
+        self.assertEqual(policy["security_constraints"]["allowed_service_accounts"], ["cartservice"])
+        self.assertEqual(policy["security_constraints"]["allowed_image_registries"], ["us-central1-docker.pkg.dev"])
+        decision, result, writes = self.run_executor(experiment)
+        self.assertEqual(decision["verdict"], "ALLOW", decision["reason_codes"])
+        self.assertEqual(result["status"], "APPLIED")
+        self.assertEqual(len(writes), 1)
+
+    def test_a_cart_run_guard_rejects_an_over_ceiling_cart_baseline_with_zero_writes(self):
+        experiment, _commands = self.prepared("cartservice", "400m")
+        decision, result, writes = self.run_executor(experiment)
+        self.assertEqual(decision["verdict"], "REJECT")
+        self.assertIn("RESOURCE_REQUEST_EXCEEDS_POLICY", decision["reason_codes"])
+        self.assertNotEqual(result["status"], "APPLIED")
+        self.assertEqual(writes, [])
+
+    def test_a_shipping_run_still_writes_the_shipping_ceilings(self):
+        experiment, _commands = self.prepared("shippingservice", "100m")
+        policy = self.read(experiment, "policy.json")
+        self.assertEqual(policy["resource_constraints"]["max_container_requests"], {"cpu": "100m", "memory": "64Mi"})
+        self.assertEqual(policy["security_constraints"]["allowed_service_accounts"], ["shippingservice"])
+        decision, result, writes = self.run_executor(experiment)
+        self.assertEqual((decision["verdict"], result["status"], len(writes)), ("ALLOW", "APPLIED", 1))
+        # The cart baseline request would exceed the shipping ceiling.
+        experiment, _commands = self.prepared("shippingservice", "200m")
+        decision, _result, writes = self.run_executor(experiment)
+        self.assertEqual(decision["verdict"], "REJECT")
+        self.assertIn("RESOURCE_REQUEST_EXCEEDS_POLICY", decision["reason_codes"])
+        self.assertEqual(writes, [])
+
+    def test_prepare_writes_the_selected_targets_baseline_file_that_the_executor_reads(self):
+        for name in ("cartservice", "shippingservice"):
+            with self.subTest(target=name):
+                experiment, _commands = self.prepared(name, "100m")
+                baseline = self.read(experiment, "baseline.json")
+                self.assertEqual(self.read(experiment, "baselines", name + ".json"), baseline)
+                self.assertEqual(baseline["target"], experiment.target)
+                self.assertEqual(baseline["target"]["name"], name)
+                self.assertEqual(sorted(path.name for path in (experiment.directory / "baselines").iterdir()),
+                                 [name + ".json"])
+                self.assertEqual(experiment.baseline_inputs(),
+                                 {"baseline": None, "baselines": experiment.directory / "baselines"})
+                decision, result, writes = self.run_executor(experiment)
+                self.assertEqual((decision["verdict"], result["status"], len(writes)), ("ALLOW", "APPLIED", 1))
+                self.assertEqual(writes[0]["deployment"]["spec"]["template"], baseline["pod_template"])
+
+    def test_the_policy_names_only_the_selected_target_while_the_allowlist_names_both(self):
+        experiment, commands = self.prepared("cartservice", "200m")
+        policy = self.read(experiment, "policy.json")
+        scope = self.read(experiment, "allowed-targets.json")
+        self.assertEqual(policy["targets"], [experiment.target])
+        self.assertEqual([item["name"] for item in scope], ["cartservice", "shippingservice"])
+        self.assertEqual(scope[1]["uid"], "shippingservice-uid")
+        self.assertIn('resourceNames: ["cartservice", "shippingservice"]',
+                      (experiment.directory / "executor-rbac.yaml").read_text(encoding="utf-8"))
+        self.assertIn(("apply", "-f", str(experiment.directory / "executor-rbac.yaml")), commands)
+        # A baseline planted for the other enabled target still meets the policy target list.
+        other = self.prepared("shippingservice", "100m")[0]
+        planted = self.read(other, "baselines", "shippingservice.json")
+        planted["target"] = scope[1]
+        (experiment.directory / "baselines" / "shippingservice.json").write_text(json.dumps(planted), encoding="utf-8")
+        decision, result, writes = self.run_executor(experiment, "shippingservice")
+        self.assertEqual(decision["verdict"], "REJECT")
+        self.assertIn("TARGET_NOT_ALLOWED", decision["reason_codes"])
+        self.assertNotEqual(result["status"], "APPLIED")
+        self.assertEqual(writes, [])
 
 
 class StorefrontHTTPTests(unittest.TestCase):

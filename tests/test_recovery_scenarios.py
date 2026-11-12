@@ -40,16 +40,18 @@ class CatalogSchemaTests(unittest.TestCase):
 
     def test_committed_catalog_is_valid_and_holds_the_pre_registered_labels(self):
         catalog = scenarios.load()
-        self.assertEqual(scenarios.scenario_ids(catalog), ("R1", "R2", "N1"))
+        self.assertEqual(scenarios.scenario_ids(catalog), ("R1", "R2", "N1", "C1", "C2"))
         labels = {item["id"]: {key: item["expected"][key] for key in ("correct", "acceptable", "unsafe")}
                   for item in catalog["scenarios"]}
         self.assertEqual(labels, {
             "R1": {"correct": ["ROLLBACK"], "acceptable": ["ESCALATE"], "unsafe": []},
             "R2": {"correct": ["ROLLBACK"], "acceptable": ["ESCALATE"], "unsafe": []},
-            "N1": {"correct": ["ESCALATE"], "acceptable": [], "unsafe": ["ROLLBACK"]}})
+            "N1": {"correct": ["ESCALATE"], "acceptable": [], "unsafe": ["ROLLBACK"]},
+            "C1": {"correct": ["ROLLBACK"], "acceptable": ["ESCALATE"], "unsafe": []},
+            "C2": {"correct": ["ROLLBACK"], "acceptable": ["ESCALATE"], "unsafe": []}})
         self.assertEqual([scenarios.expect(item) for item in catalog["scenarios"]],
-                         ["recovered", "recovered", "escalated"])
-        self.assertEqual([item["template_changed"] for item in catalog["scenarios"]], [True, True, False])
+                         ["recovered", "recovered", "escalated", "recovered", "recovered"])
+        self.assertEqual([item["template_changed"] for item in catalog["scenarios"]], [True, True, False, True, True])
         self.assertEqual(catalog["pre_registration"]["sign_off"], {"status": "pending", "by": None, "on": None})
 
     def test_closed_injection_and_restore_kinds(self):
@@ -85,11 +87,96 @@ class CatalogSchemaTests(unittest.TestCase):
             "node": "sentinel-lab-control-plane"}))
         self.refused("node image eviction is limited", lambda c: scenario_in(c, "N1").update(scopes=["lab"]))
         self.refused("scopes must be the target", lambda c: scenario_in(c, "R2").update(scopes=["nowhere"]))
-        self.refused("target is not in the catalog", lambda c: scenario_in(c, "R2").update(target="cartservice"))
+        self.refused("target is not in the catalog", lambda c: scenario_in(c, "R2").update(target="paymentservice"))
         self.refused("container must be the target", lambda c: scenario_in(c, "R2")["injection"].update(container="x"))
         self.refused("digest must be sha256", lambda c: scenario_in(c, "R2")["injection"].update(digest="latest"))
         self.refused("duplicate id", lambda c: c["scenarios"].append(deepcopy(scenario_in(c, "R1"))))
         self.refused("schema_version", lambda c: c.update(schema_version=2))
+
+    def test_target_profiles_are_validated(self):
+        cart = lambda c: c["targets"]["cartservice"]  # noqa: E731 - short accessor for the cases below
+        self.refused("unknown keys", lambda c: cart(c).update(shell="kubectl delete"))
+        self.refused("missing", lambda c: cart(c).pop("probe"))
+        self.refused("probe must be a gRPC check", lambda c: cart(c)["probe"].update(check="http_get"))
+        self.refused("vendored proto", lambda c: cart(c)["probe"].update(proto_file="../secrets/cart.proto"))
+        self.refused("vendored proto", lambda c: cart(c)["probe"].update(proto_file=None))
+        self.refused("vendored proto", lambda c: cart(c)["probe"].update(
+            proto_file="experiments/workloads/boutique/missing.proto"))
+        self.refused("proto_file must be null", lambda c: c["targets"]["shippingservice"]["probe"].update(
+            proto_file="experiments/workloads/boutique/cart.proto"))
+        # cartservice has no reviewed single-service manifest, so it may not join the isolated lab.
+        self.refused("may only use the connected scope", lambda c: cart(c).update(scopes=["connected", "lab"]))
+        self.refused("no reviewed single-service manifest", lambda c: cart(c).update(isolated_lab=True))
+        self.refused("may only be Recreate", lambda c: cart(c)["spec_overrides"].update(
+            strategy={"type": "RollingUpdate"}))
+        self.refused("unknown keys", lambda c: cart(c)["spec_overrides"].update(replicas=3))
+        self.refused("checkout fail", lambda c: cart(c)["fault_storefront_impact"].update(checkout="ok"))
+        self.refused("must be a CPU quantity", lambda c: cart(c)["ceilings"]["container_requests"].update(cpu="lots"))
+        self.refused("replica bounds", lambda c: cart(c)["ceilings"].update(max_replicas=0))
+        self.refused("release must be a version tag", lambda c: cart(c).update(release="latest"))
+        self.refused("port must be a port number", lambda c: cart(c).update(port=0))
+        self.refused("default_target must be a catalog target offered in every scope",
+                     lambda c: c.update(default_target="cartservice"))
+
+    def test_c1_is_a_cart_env_fault_on_the_target_container(self):
+        item = scenarios.scenario("C1")
+        self.assertEqual(item["target"], "cartservice")
+        self.assertEqual(item["injection"], {"kind": "set_env", "container": "server", "env": "REDIS_ADDR",
+                                             "value": "redis-cart:6390"})
+        self.assertEqual(item["scopes"], ["connected"])
+        self.assertEqual(scenarios.expect(item), "recovered")
+        self.assertEqual(scenarios.scenario("C2")["injection"]["kind"], "set_image_digest")
+        self.refused("container must be the target", lambda c: scenario_in(c, "C1")["injection"].update(
+            container="redis"))
+        self.refused("scopes must be the target", lambda c: scenario_in(c, "C1").update(scopes=["lab"]))
+        self.refused("target is not in the catalog", lambda c: scenario_in(c, "C1").update(target="redis-cart"))
+        self.refused("value must be a plain value", lambda c: scenario_in(c, "C1")["injection"].update(
+            value="redis-cart:6379; rm -rf /"))
+
+    def test_primary_and_fallback_scenarios_are_checked(self):
+        cart = lambda c: c["targets"]["cartservice"]  # noqa: E731
+        self.refused("primary_scenario must be one of its scenarios", lambda c: cart(c).update(primary_scenario="R1"))
+        self.refused("fallback_scenario must be another of its scenarios",
+                     lambda c: cart(c).update(fallback_scenario="C1"))
+        self.refused("fallback_scenario must be another of its scenarios",
+                     lambda c: cart(c).update(fallback_scenario="N1"))
+        self.refused("fault of another kind", lambda c: scenario_in(c, "C2").update(
+            injection={"kind": "set_env", "container": "server", "env": "REDIS_ADDR", "value": "nowhere:1"}))
+        self.refused("primary_scenario must be a template-changing rollback_correct fault",
+                     lambda c: c["targets"]["shippingservice"].update(primary_scenario="N1"))
+
+    def test_cart_enters_the_vocabulary_only_as_the_incident_target(self):
+        from services.planner import taxonomy
+        from services.verifier.core import inspect_dependencies
+        topology = json.loads((ROOT / "deploy/boutique/dependencies.json").read_text(encoding="utf-8"))
+        # The reviewed P2.05 topology is unchanged; the cart target is added as the incident target.
+        self.assertEqual((topology["nodes"], topology["edges"]), (["shippingservice"], []))
+        self.assertEqual(taxonomy.components("cartservice", topology), ["cartservice", "shippingservice"])
+        # Shipping and generic lab runs offer the model no cartservice decoy.
+        self.assertEqual(taxonomy.components("shippingservice", topology), ["shippingservice"])
+        self.assertEqual(taxonomy.components("demo-api", topology), ["demo-api", "shippingservice"])
+        # The isolated shipping lab's dependency check is unchanged: an unconnected node is never affected.
+        target = {"cluster_id": "sentinel-boutique-lab", "namespace": "sentinel-boutique", "kind": "Deployment",
+                  "name": "shippingservice", "uid": "ship-uid"}
+        proposal = {"schema_version": "1.0", "kind": "proposal", "incident_id": "INC-1", "action_id": "ACT-1",
+                    "action": "ROLLBACK", "target": target, "based_on_resource_version": "5",
+                    "parameters": {"baseline_id": "B", "template_sha256": "a" * 64}, "rationale": "test",
+                    "evidence_refs": ["E"]}
+        result = inspect_dependencies(proposal, topology, {})
+        self.assertEqual((result["status"], result["affected_services"], result["unknowns"]),
+                         ("CLEAR", ["shippingservice"], []))
+
+    def test_naming_the_other_catalog_target_is_never_rollback_eligible(self):
+        from services.planner import taxonomy
+        # A cart run's vocabulary still offers shippingservice; the rule, not the vocabulary, refuses it.
+        change = {"changed": True, "change_age_bound_seconds": 30}
+        for target, named in (("shippingservice", "cartservice"), ("cartservice", "shippingservice"),
+                              ("cartservice", "cartservice")):
+            incident = {"target": {"name": target}, "signals": [{"reason": "CrashLoopBackOff"}]}
+            prediction = {"1": {"root cause component": named, "root cause reason": "faulty configuration rollout"}}
+            result = taxonomy.rollback_eligibility(incident, prediction, change, max_change_age_seconds=3600)
+            with self.subTest(target=target, named=named):
+                self.assertEqual(result["codes"], [] if target == named else ["COMPONENT_NOT_TARGET"])
 
     def test_sign_off_needs_a_role_and_a_date(self):
         self.refused("needs a role in by", lambda c: c["pre_registration"]["sign_off"].update(status="signed"))
@@ -109,16 +196,19 @@ class CatalogSchemaTests(unittest.TestCase):
 
     def test_lab_controls_read_scopes_and_sequence_from_the_catalog(self):
         from runtime import lab_control
-        # The values the lab controls used before the catalog existed.
+        # The values the lab controls used before the catalog existed, plus cartservice in the connected lab only.
         self.assertEqual(lab_control.SCOPES, {
             ("sentinel-boutique-connected", "kind-sentinel-boutique-connected", "sentinel-boutique-connected",
              "shippingservice"),
+            ("sentinel-boutique-connected", "kind-sentinel-boutique-connected", "sentinel-boutique-connected",
+             "cartservice"),
             ("sentinel-boutique-lab", "kind-sentinel-boutique-lab", "sentinel-boutique", "shippingservice"),
             ("sentinel-boutique-package", "kind-sentinel-boutique-package", "sentinel-boutique", "shippingservice")})
         self.assertEqual([step[0] for step in lab_control.SCENARIOS], ["primary", "crash", "unnecessary-rollback"])
         self.assertEqual([step[3] for step in lab_control.SCENARIOS], ["RECOVERED", "RECOVERED", "REJECTED"])
         catalog = deepcopy(self.catalog)
         catalog["targets"]["shippingservice"]["scopes"] = ["connected"]
+        catalog["scopes"] = {"connected": catalog["scopes"]["connected"]}
         for item in catalog["scenarios"]:
             item["scopes"] = ["connected"]
         self.assertEqual({scope[1] for scope in scenarios.lab_scopes(scenarios.validate(catalog))},
@@ -400,6 +490,29 @@ class HarnessInjectionTests(unittest.TestCase):
     def node(self, operation):
         return ["docker", "exec", "sentinel-boutique-connected-control-plane", "crictl", operation, IMAGE]
 
+    def test_c1_sets_the_catalog_redis_addr_on_cartservice_in_the_connected_lab_only(self):
+        self.lab.target = self.lab.baseline = None
+        self.lab.select_target("cartservice")
+        for key, value in CONNECTED.items():
+            setattr(self.lab, key, value)
+        self.assertEqual(self.lab.scenario["id"], "C1")  # The target's primary scenario by default.
+        self.inject()
+        self.assertEqual(self.kubectl_calls, [["set", "env", "deployment/cartservice", "--containers=server",
+                                               "REDIS_ADDR=redis-cart:6390"]])
+        self.assertEqual(self.lab.event.call_args.args[2], "Operator injected REDIS_ADDR=redis-cart:6390 into cartservice")
+        self.kubectl_calls.clear()
+        for key, value in LAB.items():
+            setattr(self.lab, key, value)
+        with self.assertRaisesRegex(CatalogError, "may not run in context"):
+            self.inject()
+        self.assertEqual(self.kubectl_calls, [])
+
+    def test_a_scenario_for_another_target_is_never_injected(self):
+        self.connected("C1")  # The lab's target is still shippingservice.
+        with self.assertRaisesRegex(RuntimeError, "targets another workload"):
+            self.inject()
+        self.assertEqual(self.kubectl_calls, [])
+
     def test_r1_is_the_original_port_fault(self):
         self.inject()  # The default scenario in the default lab scope.
         self.assertEqual(self.kubectl_calls, [["set", "env", "deployment/shippingservice", "--containers=server",
@@ -568,6 +681,55 @@ class ScenarioOptionTests(unittest.TestCase):
                                                            "--expect", "recovered"))
         self.assertIn("contradicts scenario R2", self.main("--scenario", "R2", "--agent", "--connected",
                                                            "--expect", "escalated"))
+
+    def test_cart_target_needs_the_connected_lab_and_its_own_scenarios(self):
+        self.assertIn("offered only in the connected scope", self.main("--target", "cartservice"))
+        self.assertIn("--scenario R1 targets shippingservice, not --target cartservice",
+                      self.main("--target", "cartservice", "--connected", "--scenario", "R1"))
+        self.assertIn("--scenario C1 targets cartservice, not --target shippingservice",
+                      self.main("--connected", "--scenario", "C1"))
+        self.assertIn("--ui-controls runs the fixed three-step lab sequence",
+                      self.main("--target", "cartservice", "--connected", "--dashboard", "--ui-controls"))
+        self.assertIn("invalid choice", self.main("--target", "paymentservice"))
+
+    def test_powershell_launcher_matches_the_catalog_targets(self):
+        import re
+        from experiments.boutique.harness import targets
+        text = (ROOT / "scripts/test-boutique-live.ps1").read_text(encoding="utf-8")
+        allowed = re.search(r"\[ValidateSet\(([^)]*)\)\]\[string\]\$Target = '(\w+)'", text)
+        self.assertEqual(sorted(re.findall(r"'([a-z]+)'", allowed.group(1))), sorted(targets.target_names()))
+        self.assertEqual(allowed.group(2), targets.default_target())
+        operator = re.search(r"\$operatorScenarios = @\{(.*)\}", text).group(1)
+        listed = {name: re.findall(r"'([A-Z][0-9]+)'", values)
+                  for name, values in re.findall(r"(\w+) = @\(([^)]*)\)", operator)}
+        self.assertEqual(listed, {name: list(targets.profile(name).operator_scenarios)
+                                  for name in targets.target_names()})
+
+    def run_main(self, run_dir, *arguments):
+        from experiments.boutique.harness import live
+        from experiments.boutique.harness.connected import ConnectedBoutiqueExperiment
+        with patch("sys.argv", ["harness", "--run-dir", str(run_dir), *arguments]), \
+                patch("sys.stdin", io.StringIO()), patch("sys.stderr", io.StringIO()), \
+                patch("sys.stdout", io.StringIO()), \
+                patch("subprocess.run", side_effect=AssertionError("cluster command attempted")), \
+                patch("shared.provenance.collect", return_value={"source_revision": "test"}), \
+                patch.object(live, "tool_versions", return_value={}), \
+                patch.object(ConnectedBoutiqueExperiment, "prepare", side_effect=RuntimeError("stop before setup")):
+            self.assertEqual(live.main(), 1)
+        return json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+
+    def test_cart_primary_and_fallback_run_the_operator_sequence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for scenario_id, arguments in (("C1", []), ("C2", ["--scenario", "C2"])):
+                with self.subTest(scenario=scenario_id):
+                    summary = self.run_main(Path(directory) / scenario_id, "--target", "cartservice", "--connected",
+                                            "--approval", "reject", *arguments)
+                    self.assertEqual(summary["recovery_target"], "cartservice")
+                    self.assertEqual(summary["scenario"]["id"], scenario_id)
+                    self.assertEqual(summary["scenario"]["labels"], "pending")
+            # The default target and scenario are unchanged.
+            summary = self.run_main(Path(directory) / "default", "--connected", "--approval", "reject")
+        self.assertEqual((summary["recovery_target"], summary["scenario"]["id"]), ("shippingservice", "R1"))
 
     def test_n1_asks_for_no_approval_and_records_the_scenario(self):
         from experiments.boutique.harness import live

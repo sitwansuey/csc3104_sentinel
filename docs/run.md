@@ -66,6 +66,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-
 The shell equivalent is `bash scripts/run-sentinel.sh --setup --cleanup --connected --dashboard --exit-after-test --approval auto-lab`.
 Omit `-Connected` on Windows for the smaller shipping-only lab. Use
 `-StorefrontPort 8081` or `-DashboardPort 8766` if a port is occupied.
+`-Target cartservice` (with `-Connected`, without `-UIControls`) repairs the
+catalog's second target instead of shipping; it has not been run on a cluster
+yet (see [testing](testing.md#second-recovery-target-cartservice-c1-c2)).
 
 For terminal-controlled injection replace `-UIControls` with
 `-PauseBeforeInjection`. If injecting manually, wait at the first healthy

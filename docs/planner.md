@@ -138,6 +138,11 @@ template change, ended in ESCALATE decided by the rule
 (`TEMPLATE_ALREADY_BASELINE`) with zero writes, and R2 reached ROLLBACK and
 RECOVERED (C-SCENARIO-LIVE-UNSCORED). The enum can push a confused model into a wrong but valid
 name; `insufficient evidence` is in the list and is never rollback-eligible.
+The cartservice target enters the vocabulary only as the incident target, so a
+shipping run is never offered `cartservice`. A cart run is still offered
+`shippingservice` from the topology; if the model names it, the eligibility rule
+refuses ROLLBACK as `COMPONENT_NOT_TARGET`, so the wrong name escalates instead
+of repairing.
 The citation check may raise the live abstention rate. The first live R2 and N1
 runs (scenario catalog) abstained at it: the metrics scan of a container that
 never started had no findings, and the rule then required every cited result to

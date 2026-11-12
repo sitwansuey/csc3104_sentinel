@@ -163,7 +163,7 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-CHAOS-NOT-WIRED](docs/limitations.md#l-chaos-not-wired): Chaos Mesh faults are injection only, and HTTP and DNS faults do not run on this host (limitation, open; planned P4.03)
 - [L-NO-RELEASE](docs/limitations.md#l-no-release): No tagged, scanned release image (limitation, open; planned P2.09, P2.10)
 - [L-LAB-CERTS](docs/limitations.md#l-lab-certs): Security lab certificates are two-day fixtures with no rotation (limitation, open; planned P5.06)
-- [L-ONE-FAULT-ONE-ACTION](docs/limitations.md#l-one-fault-one-action): One fault type and one repair action (limitation, mitigated; planned P2.08, P3.08, P3.09)
+- [L-ONE-FAULT-ONE-ACTION](docs/limitations.md#l-one-fault-one-action): One fault type, one repair action and one live target (limitation, mitigated; planned P2.08, P3.08, P3.09)
 - [L-MODEL-LATENCY](docs/limitations.md#l-model-latency): Model cold loads make agent planning slow and variable (limitation, mitigated; planned P2.01)
 - [L-UNPINNED-BASE-IMAGES](docs/limitations.md#l-unpinned-base-images): Sentinel component images used unpinned base image tags (limitation, mitigated; planned P1.09)
 - [L-EVIDENCE-INFERRED](docs/limitations.md#l-evidence-inferred): Most committed evidence has inferred provenance (limitation, mitigated; planned P2.09)

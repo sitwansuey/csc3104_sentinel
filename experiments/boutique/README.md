@@ -51,6 +51,8 @@ cannot pass N1 or count as an acceptable R1 or R2 result.
 | R1 | Invalid PORT rollout | yes | ROLLBACK | ESCALATE | none |
 | R2 | Rollout to an image digest that is not on the node | yes | ROLLBACK | ESCALATE | none |
 | N1 | Shipping image removed from the node, Pod deleted | no | ESCALATE | none | ROLLBACK |
+| C1 | Cart rollout with `REDIS_ADDR=redis-cart:6390`, a port nothing listens on | yes | ROLLBACK | ESCALATE | none |
+| C2 | Cart rollout to an image digest that is not on the node (fallback for C1) | yes | ROLLBACK | ESCALATE | none |
 
 N1 also pre-registers two codes. `rule_code` is `TEMPLATE_ALREADY_BASELINE`:
 the rollback eligibility rule must report it, so a correct N1 shows that the
@@ -61,9 +63,50 @@ records `rule_code_matched` and `guard_on_rollback_matched` (null when the
 check does not apply). `matched_expected` is true only for a correct score
 with no check that failed.
 
-These labels were committed before any live run of R2 or N1. They are an
+These labels were committed before any live run of R2, N1, C1 or C2. They are an
 owner decision: a team member must review them and set
 `pre_registration.sign_off` to signed before a scored trial is reported.
 Until then each `scenario-result.json` records the labels as pending. A label
 changed after a scored trial needs a new pre-registration commit, and the
 earlier trials for that scenario no longer count.
+
+## Recovery targets
+
+The catalog's `targets` hold every per-target constant the live harness
+uses, and `harness/targets.py` turns each into a `TargetProfile`: container,
+ServiceAccount, image repository and release, gRPC port and probe, the
+reviewed Deployment spec overrides, the storefront steps a fault must break,
+the Guard's resource ceilings, the primary fault and its fallback, and the
+lab scopes where the target may be repaired. `harness/scenarios.py` validates
+them against a closed schema.
+
+| Target | Scopes | Probe | Container request ceiling | Primary / fallback |
+| --- | --- | --- | --- | --- |
+| shippingservice (default) | connected, lab, package | `GetQuote` through server reflection | 100m CPU, 64Mi | R1 / none |
+| cartservice | connected only | `AddItem`, `GetCart`, `EmptyCart` for a fresh `sentinel-probe-*` user, with the vendored `experiments/workloads/boutique/cart.proto` | 200m CPU, 64Mi | C1 / C2 |
+
+- **Spec overrides.** Both targets run with `strategy: Recreate` and
+  `minReadySeconds: 2`. Upstream uses RollingUpdate, where a bad rollout
+  leaves the old Pod serving and there is no fault to repair; Recreate is a
+  lab artifice for both targets.
+- **Executor scope.** The generated Role lists exactly the targets enabled in
+  the lab scope by `resourceNames`: shippingservice in the single-service lab
+  and package clusters, and shippingservice and cartservice in the connected
+  lab. `allowed-targets.json` lists the same targets with their measured UIDs.
+  The permission check also expects `patch deployment/paymentservice` to be
+  denied.
+- **Baselines.** The Executor reads `baselines/<target>.json` and refuses a
+  file whose target is not the proposal's target.
+- **Ceilings.** cartservice requests 200m CPU upstream, above shipping's 100m
+  ceiling, so each target has its own. A template above the cart ceiling
+  (for example 400m) is still rejected.
+- **Readiness.** The connected dependency check and Verifier readiness leave
+  out only the selected target.
+
+Select a target with `--target` (default `shippingservice`, unchanged
+behaviour); cartservice needs `--connected`. The operator sequence runs the
+target's primary scenario, or its fallback with `--scenario`. The dashboard's
+fixed lab buttons (`--ui-controls`) still name the shipping PORT fault, so
+they are refused for cartservice. C1 and C2 have only run offline; see
+[testing](../../docs/testing.md#second-recovery-target-cartservice-c1-c2) for
+the live checks still to do.

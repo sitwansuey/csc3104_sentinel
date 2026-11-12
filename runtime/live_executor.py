@@ -9,7 +9,9 @@ build_adapters returns the same injected interface used by the local team worker
 Its ledger and lock directory must be shared by every worker on one host. There
 are no distributed leases. Reconciliation needs only retained scope,
 credentials and proposal (the local journal is optional); it never reauthorizes
-or starts a spec mutation. With --fence-after SECONDS it may send one
+or starts a spec mutation. --baselines DIR replaces --baseline with one
+measured baseline per target, DIR/<target name>.json; a file whose target is
+not the proposal's target refuses execution. With --fence-after SECONDS it may send one
 metadata-only fence for a write still in doubt after that long (0 fences at
 once). Exit codes: 0 APPLIED/NOOP, 2 FAILED, 3 CONFLICT,
 4 NEEDS_RECONCILIATION, 5 SUPERSEDED, 1 no result.
@@ -21,6 +23,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import re
 import sys
 
 from services.executor.core import ExecutionAdapters, GuardCheck, execute, reconcile
@@ -38,10 +41,23 @@ from shared.contracts import ContractError, validate_message
 
 LOG = log.get_logger("executor")
 EXIT_CODES = {"APPLIED": 0, "NOOP": 0, "FAILED": 2, "CONFLICT": 3, "NEEDS_RECONCILIATION": 4, "SUPERSEDED": 5}
+# A baseline file name is the target's Kubernetes name, so it can never leave the directory.
+_TARGET_NAME = re.compile(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?")
 
 
 def _utc_now():
     return datetime.now(timezone.utc)
+
+
+def target_baseline(directory, target):
+    """The measured baseline for target from directory/<name>.json; AdapterError if it is for another target."""
+    name = target.get("name") if isinstance(target, dict) else None
+    if not isinstance(name, str) or not _TARGET_NAME.fullmatch(name):
+        raise AdapterError("INVALID_BASELINE", "baseline", "The proposal target has no valid baseline name")
+    baseline = load_json(Path(directory) / (name + ".json"), "baseline")
+    if not isinstance(baseline, dict) or baseline.get("target") != target:
+        raise AdapterError("BASELINE_TARGET_MISMATCH", "baseline", "The baseline belongs to another target")
+    return baseline
 
 
 class LiveGuardAuthorizer:
@@ -56,9 +72,11 @@ class LiveGuardAuthorizer:
     """
 
     def __init__(self, *, policy, baseline, dependencies, approval, context,
-                 cluster_id, kubeconfig, server_dry_run=False, approval_reader=None, clock=None):
+                 cluster_id, kubeconfig, server_dry_run=False, approval_reader=None, clock=None,
+                 baselines=None):
         self.paths = dict(policy=policy, baseline=baseline,
                           dependencies=dependencies, approval=approval)
+        self.baselines = baselines
         self.clock = clock or (lambda: _utc_now())
         self.context, self.cluster_id, self.kubeconfig = context, cluster_id, kubeconfig
         self.dependency_reader = lambda proposal: load_json(self.paths["dependencies"], "dependencies")
@@ -71,7 +89,8 @@ class LiveGuardAuthorizer:
         inputs = {
             "proposal": deepcopy(proposal), "live_state": deepcopy(live_state),
             "policy": policy,
-            "baseline": load_json(self.paths["baseline"], "baseline"),
+            "baseline": (target_baseline(self.baselines, proposal["target"]) if self.baselines is not None
+                         else load_json(self.paths["baseline"], "baseline")),
             "dependencies": self.dependency_reader(deepcopy(proposal)),
             "approval": deepcopy(self.approval_reader(deepcopy(proposal))), "preview": None,
         }
@@ -111,10 +130,18 @@ def _same_file(first, second):
     return first == second or (first.exists() and second.exists() and os.path.samefile(first, second))
 
 
-def _protect_outputs(ledger, locks, inputs, allowed_targets):
-    """Reject writable aliases of inputs/credentials before opening SQLite/locks."""
+def _protect_outputs(ledger, locks, inputs, allowed_targets, directories=()):
+    """Reject writable aliases of inputs/credentials before opening SQLite/locks.
+
+    directories are input directories (a baselines directory): the ledger and
+    the lock directory must not be inside one, nor contain one.
+    """
     try:
         database, lock_directory = Path(ledger).resolve(), Path(locks).resolve()
+        for folder in (Path(path).resolve() for path in directories if path is not None):
+            if (folder in database.parents or folder == lock_directory or folder in lock_directory.parents
+                    or lock_directory in folder.parents):
+                raise ValueError("Ledger or locks overlap an input directory")
         protected = [Path(path).resolve() for path in inputs if path is not None]
         writable = [database, *(Path(str(database) + suffix) for suffix in ("-journal", "-wal", "-shm"))]
         writable.extend(lock_directory / (target_key(target) + ".lock") for target in allowed_targets)
@@ -133,13 +160,14 @@ def _protect_outputs(ledger, locks, inputs, allowed_targets):
 def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, locks,
                    policy=None, baseline=None, dependencies=None, approval=None,
                    server_dry_run=False, reconcile_only=False, runner=None, approval_reader=None,
-                   fence_after_seconds=None, clock=None):
+                   fence_after_seconds=None, clock=None, baselines=None):
     """Build the standard team ExecutionAdapters using an explicit live client.
 
     allowed_targets is a trusted list of complete target identities or its JSON
     path, independent of the proposal. New execution requires all four trusted
     input paths (or an injected authoritative approval_reader) and a strict live
-    policy before any API read. reconcile_only
+    policy before any API read. baselines, a directory of per-target baselines,
+    replaces baseline; at most one of them is given. reconcile_only
     defers those files entirely because the core reconciliation path never
     writes the spec. fence_after_seconds comes from trusted configuration only;
     None (the default) disables fencing. clock (UTC) is this host's one clock:
@@ -156,10 +184,12 @@ def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, 
     if not kubeconfig:
         raise AdapterError("ARGUMENT_ERROR", "kubeconfig", "An explicit restricted kubeconfig is required")
     paths = dict(policy=policy, baseline=baseline, dependencies=dependencies, approval=approval)
-    _protect_outputs(ledger, locks, [*paths.values(), kubeconfig, scope_path], targets)
+    if baseline is not None and baselines is not None:
+        raise AdapterError("ARGUMENT_ERROR", "command_line", "Give either one baseline or a baselines directory")
+    _protect_outputs(ledger, locks, [*paths.values(), kubeconfig, scope_path], targets, [baselines])
     if not reconcile_only:
-        if any(paths[key] is None for key in ("policy", "baseline", "dependencies")) or (
-                approval is None and approval_reader is None):
+        if (any(paths[key] is None for key in ("policy", "dependencies")) or (baseline is None and baselines is None)
+                or (approval is None and approval_reader is None)):
             raise AdapterError("ARGUMENT_ERROR", "command_line", "Execution requires trusted policy, baseline, dependencies and approval paths")
         validate_policy(load_json(policy, "policy"), require_live=True)
     options = dict(context=context, cluster_id=cluster_id, kubeconfig=kubeconfig,
@@ -169,7 +199,7 @@ def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, 
     cluster = KubectlDeploymentAPI(**options)
     authorizer = LiveGuardAuthorizer(**paths, context=context, cluster_id=cluster_id,
                                      kubeconfig=kubeconfig, server_dry_run=server_dry_run,
-                                     approval_reader=approval_reader, clock=clock)
+                                     approval_reader=approval_reader, clock=clock, baselines=baselines)
     coordination = LocalTargetCoordinator(locks)
     store = SQLiteExecutionLedger(ledger)
     return ExecutionAdapters(ledger=store, coordination=coordination, cluster=cluster,
@@ -194,6 +224,8 @@ def _parser():
         parser.add_argument(f"--{name}", required=True, metavar="PATH")
     for name in ("policy", "baseline", "dependencies", "approval"):
         parser.add_argument(f"--{name}", metavar="PATH", help="Trusted JSON input; required for new execution")
+    parser.add_argument("--baselines", metavar="DIR",
+                        help="Trusted per-target baselines (DIR/<target name>.json), instead of --baseline")
     parser.add_argument("--context", required=True, help="Explicit restricted kubectl context")
     parser.add_argument("--cluster-id", required=True, help="Trusted Sentinel cluster identity")
     parser.add_argument("--server-dry-run", action="store_true", help="Obtain optional server admission evidence before execution")
@@ -215,13 +247,13 @@ def main(argv=None):
         _protect_outputs(args.ledger, args.locks,
                          [args.proposal, args.policy, args.baseline, args.dependencies,
                           args.approval, args.kubeconfig, args.allowed_targets],
-                         [proposal["target"]])
+                         [proposal["target"]], [args.baselines])
         adapters = build_adapters(
             context=args.context, cluster_id=args.cluster_id, kubeconfig=args.kubeconfig,
             allowed_targets=args.allowed_targets, ledger=args.ledger, locks=args.locks,
             policy=args.policy, baseline=args.baseline, dependencies=args.dependencies,
             approval=args.approval, server_dry_run=args.server_dry_run,
-            reconcile_only=args.reconcile, fence_after_seconds=args.fence_after,
+            reconcile_only=args.reconcile, fence_after_seconds=args.fence_after, baselines=args.baselines,
         )
         result = (reconcile if args.reconcile else execute)(proposal, adapters)
     except Exception as exc:  # noqa: BLE001 - top-level boundary: print one error code and exit 1

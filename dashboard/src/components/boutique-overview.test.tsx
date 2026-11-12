@@ -39,6 +39,16 @@ describe("Boutique application overview", () => {
       expect(screen.queryByText("READY", {exact:true})).not.toBeInTheDocument()
     })
 
+  it("names the run's recovery target from the inventory", () => {
+    const records = observations()
+    records[0].services = records[0].services!.map(service =>
+      ({...service, name: service.name === "shippingservice" ? "cartservice" : service.name}))
+    render(<BoutiqueOverview records={records} cluster={cluster} now={now} stale={false} inspect={vi.fn()}/>)
+    expect(screen.getByText(/restricted recovery in this run target cartservice\./)).toBeInTheDocument()
+    expect(screen.queryByText(/shipping only/)).not.toBeInTheDocument()
+    expect(screen.getByText("Target fault")).toBeInTheDocument()
+  })
+
   it("does not mix scopes or turn absent data into success", () => {
     render(<BoutiqueOverview records={observations()} cluster={{...cluster, namespace:"other"}} now={now} stale={false} inspect={vi.fn()}/>)
     expect(screen.getByText("No Boutique inventory yet")).toBeInTheDocument()

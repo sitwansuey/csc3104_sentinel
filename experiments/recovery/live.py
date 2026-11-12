@@ -45,6 +45,12 @@ CONTEXT = "kind-sentinel-lab"
 NAMESPACE = "sentinel-demo"
 NAME = "demo-api"
 RESTRICTED_CONTEXT = "sentinel-executor-lab"
+# Guard resource ceilings for the generic lab workload. Boutique targets take theirs from the catalog.
+LAB_CEILINGS = {"container_requests": {"cpu": "100m", "memory": "64Mi"},
+                "container_limits": {"cpu": "500m", "memory": "128Mi"},
+                "pod_requests": {"cpu": "250m", "memory": "128Mi"},
+                "rollout_requests": {"cpu": "1", "memory": "512Mi"},
+                "max_replicas": 2, "max_surge_replicas": 1}
 
 
 def now():
@@ -68,6 +74,17 @@ def save(path, value):
 def require(condition, message):
     if not condition:
         raise RuntimeError(message)
+
+
+def policy_ceilings(ceilings):
+    """The Guard policy's resource and workload constraints for one target's ceilings."""
+    return {"resource_constraints": {"require_requests_and_limits": True,
+                                     "max_container_requests": deepcopy(ceilings["container_requests"]),
+                                     "max_container_limits": deepcopy(ceilings["container_limits"])},
+            "workload_constraints": {"max_pod_requests": deepcopy(ceilings["pod_requests"]),
+                                     "max_rollout_requests": deepcopy(ceilings["rollout_requests"]),
+                                     "max_replicas": ceilings["max_replicas"],
+                                     "max_surge_replicas": ceilings["max_surge_replicas"]}}
 
 
 def loaded_image_digest(inspection, listing):
@@ -102,6 +119,7 @@ class Experiment:
     allowed_registries = ["docker.io"]
     service_account = "default"
     rbac_path = ROOT / "deploy/sentinel/executor-rbac.yaml"
+    ceilings = LAB_CEILINGS
     publish_dependency_results = False
     health_outcome_description = " after executor rollback; Role 6 outcome remains pending"
     approval_mode = "interactive"
@@ -217,7 +235,7 @@ class Experiment:
         deployment = self.deployment()
         self.target = {"cluster_id": self.cluster_id, "namespace": self.namespace,
                        "kind": "Deployment", "name": self.name, "uid": deployment["metadata"]["uid"]}
-        save(self.directory / "allowed-targets.json", [self.target])
+        save(self.directory / "allowed-targets.json", self.execution_scope())
         template = deployment["spec"]["template"]
         samples = self.health_window(template)
         self.baseline = {"baseline_id": "BASE-LIVE-" + uuid4().hex[:12], "target": self.target,
@@ -228,6 +246,8 @@ class Experiment:
                              "target": self.target, "template_sha256": fingerprint(template),
                              "window_start": samples[0]["at"], "window_end": samples[-1]["at"]}}
         save(self.directory / "baseline.json", self.baseline)
+        # The Executor can also read baselines keyed by target name; it refuses one for another target.
+        save(self.directory / "baselines" / (self.name + ".json"), self.baseline)
         save(self.directory / "baseline-health.json", samples)
         policy = {"policy_id": "executor-live-lab", "policy_version": "executor-live-lab-1",
                   "profile": "live", "targets": [self.target], "allowed_actions": ["ROLLBACK"],
@@ -241,12 +261,7 @@ class Experiment:
                   "security_constraints": {"deny_privileged": True, "deny_host_access": True,
                       "allowed_image_registries": self.allowed_registries, "allowed_service_accounts": [self.service_account],
                       "forbid_service_account_change": True},
-                  "resource_constraints": {"require_requests_and_limits": True,
-                      "max_container_requests": {"cpu": "100m", "memory": "64Mi"},
-                      "max_container_limits": {"cpu": "500m", "memory": "128Mi"}},
-                  "workload_constraints": {"max_pod_requests": {"cpu": "250m", "memory": "128Mi"},
-                      "max_rollout_requests": {"cpu": "1", "memory": "512Mi"},
-                      "max_replicas": 2, "max_surge_replicas": 1}}
+                  **policy_ceilings(self.ceilings)}
         save(self.directory / "policy.json", policy)
         self.policy = policy
         self.kubectl("apply", "-f", str(self.rbac_path))
@@ -267,6 +282,26 @@ class Experiment:
             json.dump(private_config, stream)
         self.check("healthy baseline captured with real service samples and immutable image", image=image)
 
+    def execution_scope(self):
+        """The Executor's independent target allowlist (allowed-targets.json); only this target by default."""
+        return [self.target]
+
+    def executor_names(self):
+        """Deployment names the restricted executor Role may get and patch."""
+        return [self.name]
+
+    def denied_permissions(self):
+        return [("delete", "deployment/" + self.name), ("get", "secrets"),
+                ("create", "pods/exec"), ("patch", "deployment/outside-executor-scope")]
+
+    def baseline_inputs(self):
+        """How the Executor reads the measured baseline: one file here; Boutique uses a per-target directory."""
+        return {"baseline": self.directory / "baseline.json"}
+
+    def baseline_arguments(self):
+        return [argument for key, path in self.baseline_inputs().items() if path is not None
+                for argument in ("--" + key, str(path))]
+
     def health_window(self, expected_template):
         samples = []
         for index in range(3):
@@ -285,9 +320,8 @@ class Experiment:
         return samples
 
     def permissions(self):
-        allowed = [("get", "deployment/" + self.name), ("patch", "deployment/" + self.name)]
-        denied = [("delete", "deployment/" + self.name), ("get", "secrets"),
-                  ("create", "pods/exec"), ("patch", "deployment/outside-executor-scope")]
+        allowed = [(verb, "deployment/" + name) for name in self.executor_names() for verb in ("get", "patch")]
+        denied = self.denied_permissions()
         results = []
         for verb, resource in allowed + denied:
             result = self.kubectl("auth", "can-i", verb, resource, restricted=True, allow_failure=True)
@@ -385,7 +419,7 @@ class Experiment:
     def adapters(self, folder, *, coordinator=False, reconcile_only=False):
         return build_adapters(context=self.restricted_context, cluster_id=self.cluster_id, kubeconfig=self.credentials,
             allowed_targets=self.directory / "allowed-targets.json", ledger=self.directory / "executor.sqlite",
-            locks=self.directory / "locks", policy=self.directory / "policy.json", baseline=self.directory / "baseline.json",
+            locks=self.directory / "locks", policy=self.directory / "policy.json", **self.baseline_inputs(),
             dependencies=folder / "dependencies.json", approval=folder / "approval.json", server_dry_run=True,
             approval_reader=self.approval_authority().executor_client() if coordinator else None,
             reconcile_only=reconcile_only)
@@ -446,7 +480,7 @@ class Experiment:
                 "--allowed-targets", str(self.directory / "allowed-targets.json"), "--kubeconfig", str(self.credentials),
                 "--context", self.restricted_context, "--cluster-id", self.cluster_id, "--ledger", str(self.directory / "executor.sqlite"),
                 "--locks", str(self.directory / "locks"), "--policy", str(self.directory / "policy.json"),
-                "--baseline", str(self.directory / "baseline.json"), "--dependencies", str(folder / "dependencies.json"),
+                *self.baseline_arguments(), "--dependencies", str(folder / "dependencies.json"),
                 "--approval", str(folder / "approval.json")]
             with adapters.coordination.hold(self.target):
                 rival = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=30)
@@ -481,7 +515,9 @@ class Experiment:
         incident = self.fault("crash")
         folder, proposal = self.case("crash-after-write", incident, coordinator=True)
         configuration = {"directory": str(self.directory), "folder": str(folder), "credentials": str(self.credentials),
-                         "cluster_id": self.cluster_id, "context": self.restricted_context}
+                         "cluster_id": self.cluster_id, "context": self.restricted_context,
+                         **{key: str(path) for key, path in self.baseline_inputs().items()
+                            if key == "baselines" and path is not None}}
         save(folder / "worker.json", configuration)
         # The Executor token reaches the worker only through its environment, never argv or worker.json.
         worker = subprocess.run([sys.executable, str(self.entrypoint), "--crash-worker", str(folder / "worker.json")],
@@ -565,7 +601,9 @@ def crash_worker(configuration):
     adapters = build_adapters(context=config.get("context", RESTRICTED_CONTEXT),
         cluster_id=config.get("cluster_id", "sentinel-lab"), kubeconfig=config["credentials"],
         allowed_targets=directory / "allowed-targets.json", ledger=directory / "executor.sqlite", locks=directory / "locks",
-        policy=directory / "policy.json", baseline=directory / "baseline.json", dependencies=folder / "dependencies.json",
+        policy=directory / "policy.json", dependencies=folder / "dependencies.json",
+        **({"baselines": config["baselines"]} if "baselines" in config else
+           {"baseline": directory / "baseline.json"}),
         approval_reader=executor_client_from_environment(), server_dry_run=True)
     actual = adapters.cluster
 

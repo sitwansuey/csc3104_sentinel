@@ -13,7 +13,7 @@ from services.guard.common import json_sha256
 from services.planner.agent_provider import AgentPlanner, names_target, planning_budget
 from services.planner.store import PlannerStore
 from services.planner.taxonomy import components, policy as decision_policy
-from experiments.boutique.harness import scenarios
+from experiments.boutique.harness import scenarios, targets
 from experiments.boutique.harness.durable_case import run_durable_case
 from experiments.recovery.live import require, save
 
@@ -171,7 +171,7 @@ class AgentPlanningMixin:
         # Record the planning mode up front so a failed run is still identifiable.
         self.summary.update(planning="Live RCA agent and Ollama Recovery Planner", model=config["model"],
                             decision_policy=config.get("decision_policy", "gated"),
-                            scope="Online Boutique shippingservice; real Observer/Coordinator/Agent/Guard/Executor/Verifier")
+                            scope=f"Online Boutique {getattr(self, 'name', None) or targets.default_target()}; real Observer/Coordinator/Agent/Guard/Executor/Verifier")
         return config
 
     def prepare(self):

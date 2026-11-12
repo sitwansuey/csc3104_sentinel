@@ -7,13 +7,17 @@ param([switch]$Setup, [switch]$Cleanup, [switch]$Dashboard,
       [ValidateSet('interactive','auto-lab','reject','ui')][string]$Approval = 'interactive',
       [string]$Operator, [string]$RunDirectory,
       [ValidateSet('recovered','escalated')][string]$Expect = 'recovered',
-      [string]$Scenario)
+      [string]$Scenario,
+      [ValidateSet('shippingservice','cartservice')][string]$Target = 'shippingservice')
 
 $ErrorActionPreference = 'Stop'
 if ($ExitAfterTest -and -not $Dashboard) { throw '-ExitAfterTest requires -Dashboard.' }
 if ($AgentConfig -and -not $Agent) { throw '-AgentConfig requires -Agent.' }
 if ($Expect -ne 'recovered' -and -not $Agent) { throw '-Expect escalated requires -Agent.' }
-if ($Scenario -and $Scenario -ne 'R1' -and -not ($Agent -and $Connected)) { throw "-Scenario $Scenario requires -Agent -Connected." }
+# Fail fast before any cluster setup; the harness applies the same catalog rules (experiments/boutique/catalog.json).
+$operatorScenarios = @{shippingservice = @('R1'); cartservice = @('C1', 'C2')}
+if ($Target -ne 'shippingservice' -and -not $Connected) { throw "-Target $Target requires -Connected." }
+if ($Scenario -and $operatorScenarios[$Target] -notcontains $Scenario -and -not ($Agent -and $Connected)) { throw "-Scenario $Scenario requires -Agent -Connected." }
 if ($Agent -and $GuardRejection) { throw '-Agent and -GuardRejection are separate scenarios.' }
 if ($Agent -and $ProviderScript) { throw '-Agent and -ProviderScript are separate planning modes.' }
 if ($UIControls -and (-not $Dashboard -or $PauseBeforeInjection)) { throw '-UIControls requires -Dashboard and replaces -PauseBeforeInjection.' }
@@ -60,6 +64,7 @@ try {
     if ($AgentConfig) { $testOptions += @('--agent-config', $AgentConfig) }
     if ($Expect -ne 'recovered') { $testOptions += @('--expect', $Expect) }
     if ($Scenario) { $testOptions += @('--scenario', $Scenario) }
+    if ($Target -ne 'shippingservice') { $testOptions += @('--target', $Target) }
     if ($ProviderScript) { $testOptions += @('--provider-script', $ProviderScript) }
     if ($ProviderPolicy) { $testOptions += @('--provider-policy', $ProviderPolicy) }
     $testOptions += @('--approval', $Approval)
