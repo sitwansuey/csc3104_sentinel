@@ -1,0 +1,64 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": {
+        "budget_seconds": 600,
+        "decision": {
+          "codes": [],
+          "decided_by": "model",
+          "eligible": true,
+          "enforced": true,
+          "model_action": "ROLLBACK",
+          "overridden": false,
+          "policy": "gated"
+        },
+        "model_calls": 5,
+        "model_calls_completed": 5,
+        "model_seconds": 56.836,
+        "planning_attempt": 1,
+        "seconds": 57.199
+      }
+    }
+  ],
+  "attempts": 1,
+  "delivered": 1,
+  "error_code": null,
+  "incident_id": "INC-347359BA50FB",
+  "next_attempt": 0.0,
+  "proposal": {
+    "action": "ROLLBACK",
+    "action_id": "ACT-41af852b72161d4dedc6e2df",
+    "based_on_resource_version": "94153",
+    "evidence_refs": [
+      "E-5A3F90547DF9",
+      "E-47AE788423A8",
+      "E-69A043D71AB1",
+      "E-853EDFBA367D",
+      "E-58C87A46B1F2",
+      "E-7857419C6F72",
+      "E-5D3779152F4F",
+      "E-76664039197E",
+      "E-D66544EA253E",
+      "E-3686B5E2EA13",
+      "E-25FF6A788FDF",
+      "E-34F92316B4FF",
+      "E-4772DEC81425"
+    ],
+    "incident_id": "INC-347359BA50FB",
+    "kind": "proposal",
+    "parameters": {
+      "baseline_id": "BASE-LIVE-7d931303dc05",
+      "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+    },
+    "rationale": "The incident evidence indicates a container startup failure in the 'shippingservice' deployment, as evidenced by the 'CrashLoopBackOff' status, readiness probe failures, and container restarts. The change evidence shows that the deployment's configuration was modified, specifically the 'PORT' environment variable was changed from '50051' to 'invalid-port'. This change likely caused the container to fail to start, leading to the observed issues. The rollback action is appropriate because the evidence supports that a harmful configuration rollout (setting an invalid port) caused the failure. Restoring the previously healthy baseline configuration will revert the invalid change and restore the deployment to a known working state.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    }
+  }
+}

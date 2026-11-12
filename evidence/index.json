@@ -780,6 +780,226 @@
       "provenance": "inferred",
       "status": "current",
       "reason": null
+    },
+    {
+      "bundle_id": "executor-wedge-admission-deny-p2-20261111t220612z",
+      "class": "executor-wedge",
+      "path": "2026-11-11/executor-wedge-admission-deny-p2-20261111t220612z",
+      "captured_at": "2026-11-11T22:06:12.214841Z",
+      "source_revision": "4139385a2935718fe10b53f0df9316ad25263741",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "executor-wedge-rv-race-p2-20261111t220648z",
+      "class": "executor-wedge",
+      "path": "2026-11-11/executor-wedge-rv-race-p2-20261111t220648z",
+      "captured_at": "2026-11-11T22:06:48.901423Z",
+      "source_revision": "4139385a2935718fe10b53f0df9316ad25263741",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "executor-wedge-delete-recreate-p2-20261111t220650z",
+      "class": "executor-wedge",
+      "path": "2026-11-11/executor-wedge-delete-recreate-p2-20261111t220650z",
+      "captured_at": "2026-11-11T22:06:50.759573Z",
+      "source_revision": "4139385a2935718fe10b53f0df9316ad25263741",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261111t220652z-f42864",
+      "class": "connected-harness",
+      "path": "2026-11-11/boutique-live-20261111t220652z-f42864",
+      "captured_at": "2026-11-11T22:06:52.891819Z",
+      "source_revision": "4139385a2935718fe10b53f0df9316ad25263741",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261111t220933z-5145ad",
+      "class": "connected-harness",
+      "path": "2026-11-11/boutique-live-20261111t220933z-5145ad",
+      "captured_at": "2026-11-11T22:09:33.527007Z",
+      "source_revision": "4139385a2935718fe10b53f0df9316ad25263741",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261111t221055z-4a90ef",
+      "class": "guard-rejection",
+      "path": "2026-11-11/boutique-live-20261111t221055z-4a90ef",
+      "captured_at": "2026-11-11T22:10:55.683118Z",
+      "source_revision": "4139385a2935718fe10b53f0df9316ad25263741",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261111t221204z-602449",
+      "class": "agent",
+      "path": "2026-11-11/boutique-live-20261111t221204z-602449",
+      "captured_at": "2026-11-11T22:12:04.768467Z",
+      "source_revision": "4139385a2935718fe10b53f0df9316ad25263741",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261111t221600z-772bbe",
+      "class": "agent",
+      "path": "2026-11-11/boutique-live-20261111t221600z-772bbe",
+      "captured_at": "2026-11-11T22:16:00.678784Z",
+      "source_revision": "4139385a2935718fe10b53f0df9316ad25263741",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261111t221737z-2b9319",
+      "class": "agent",
+      "path": "2026-11-11/boutique-live-20261111t221737z-2b9319",
+      "captured_at": "2026-11-11T22:17:38.437505Z",
+      "source_revision": "4139385a2935718fe10b53f0df9316ad25263741",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261111t222004z-07f850",
+      "class": "agent",
+      "path": "2026-11-11/boutique-live-20261111t222004z-07f850",
+      "captured_at": "2026-11-11T22:20:05.540885Z",
+      "source_revision": "4139385a2935718fe10b53f0df9316ad25263741",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "executor-wedge-admission-deny-p2b-20261112t050853z",
+      "class": "executor-wedge",
+      "path": "2026-11-12/executor-wedge-admission-deny-p2b-20261112t050853z",
+      "captured_at": "2026-11-12T05:08:54.123419Z",
+      "source_revision": "54090922d41d2b0aa480c72f6f0b94d20196cdad",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261112t050930z-ba0f81",
+      "class": "agent",
+      "path": "2026-11-12/boutique-live-20261112t050930z-ba0f81",
+      "captured_at": "2026-11-12T05:09:31.304113Z",
+      "source_revision": "54090922d41d2b0aa480c72f6f0b94d20196cdad",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261112t051156z-009b69",
+      "class": "agent",
+      "path": "2026-11-12/boutique-live-20261112t051156z-009b69",
+      "captured_at": "2026-11-12T05:11:57.179269Z",
+      "source_revision": "54090922d41d2b0aa480c72f6f0b94d20196cdad",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261112t051406z-ef3fbb",
+      "class": "agent",
+      "path": "2026-11-12/boutique-live-20261112t051406z-ef3fbb",
+      "captured_at": "2026-11-12T05:14:06.996870Z",
+      "source_revision": "54090922d41d2b0aa480c72f6f0b94d20196cdad",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261112t074450z-38278f",
+      "class": "agent",
+      "path": "2026-11-12/boutique-live-20261112t074450z-38278f",
+      "captured_at": "2026-11-12T07:44:50.592776Z",
+      "source_revision": "870aa7d49e87003b25c93a1149a535f33eb88d2d",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261112t074810z-311065",
+      "class": "agent",
+      "path": "2026-11-12/boutique-live-20261112t074810z-311065",
+      "captured_at": "2026-11-12T07:48:11.162502Z",
+      "source_revision": "870aa7d49e87003b25c93a1149a535f33eb88d2d",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261112t075130z-fb6439",
+      "class": "agent",
+      "path": "2026-11-12/boutique-live-20261112t075130z-fb6439",
+      "captured_at": "2026-11-12T07:51:30.737831Z",
+      "source_revision": "870aa7d49e87003b25c93a1149a535f33eb88d2d",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261112t075413z-3d1324",
+      "class": "agent",
+      "path": "2026-11-12/boutique-live-20261112t075413z-3d1324",
+      "captured_at": "2026-11-12T07:54:13.544529Z",
+      "source_revision": "870aa7d49e87003b25c93a1149a535f33eb88d2d",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261112t075550z-26a26a",
+      "class": "agent",
+      "path": "2026-11-12/boutique-live-20261112t075550z-26a26a",
+      "captured_at": "2026-11-12T07:55:51.282054Z",
+      "source_revision": "870aa7d49e87003b25c93a1149a535f33eb88d2d",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261112t080534z-160519",
+      "class": "agent",
+      "path": "2026-11-12/boutique-live-20261112t080534z-160519",
+      "captured_at": "2026-11-12T08:05:34.800436Z",
+      "source_revision": "dab3b3fc7ddb3df0223897b3f2a7d005df3d1bd8",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261112t080756z-29fd09",
+      "class": "agent",
+      "path": "2026-11-12/boutique-live-20261112t080756z-29fd09",
+      "captured_at": "2026-11-12T08:07:57.425461Z",
+      "source_revision": "dab3b3fc7ddb3df0223897b3f2a7d005df3d1bd8",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261112t081032z-63d609",
+      "class": "agent",
+      "path": "2026-11-12/boutique-live-20261112t081032z-63d609",
+      "captured_at": "2026-11-12T08:10:33.112547Z",
+      "source_revision": "dab3b3fc7ddb3df0223897b3f2a7d005df3d1bd8",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
     }
   ]
 }

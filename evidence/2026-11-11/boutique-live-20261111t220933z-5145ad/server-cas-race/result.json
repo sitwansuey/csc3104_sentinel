@@ -1,0 +1,5 @@
+{
+  "note": "Transport classifies server errors conservatively; core would reconcile, not retry.",
+  "patch_attempts": 1,
+  "template_unchanged": true
+}
