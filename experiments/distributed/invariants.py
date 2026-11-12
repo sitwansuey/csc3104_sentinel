@@ -2,7 +2,8 @@
 
 Numbering follows the A1 design and the P3.01 plan entry:
 
-- I1: at most one committed template write per action.
+- I1: at most one committed template write per action, and none without
+  that action's evidence annotation.
 - I2: no template write after a revocation unless the action went to review.
 - I3: every incident reaches a terminal or reviewable state (RECOVERED,
   FAILED, NEEDS_REVIEW or REJECTED) within the scenario deadline.
@@ -63,10 +64,19 @@ def _result(identifier, failures, passed_detail):
 
 
 def i1(records):
-    writes = defaultdict(int)
+    """Writes come from the cluster's own record, classified by effect (tests/support/file_cluster.py).
+
+    A committed template write that does not carry a valid evidence annotation
+    of its own action (unannotated, malformed, or a fence that changed the
+    template) fails, since it cannot be tied to one action.
+    """
+    writes, failures = defaultdict(int), []
     for row in records.get("cluster_writes", []):
+        if row["marker"] != "write" or row["action_id"] in {"unknown", "unannotated"}:
+            failures.append(f"{row['action_id']}: template written by a "
+                            f"{'fence' if row['marker'] == 'fence' else 'patch without valid action evidence'}")
         writes[row["action_id"]] += 1
-    failures = [f"{action}: {count} committed writes" for action, count in sorted(writes.items()) if count > 1]
+    failures += [f"{action}: {count} committed writes" for action, count in sorted(writes.items()) if count > 1]
     return _result("I1", failures, f"{sum(writes.values())} committed write(s) over {len(writes)} action(s)")
 
 

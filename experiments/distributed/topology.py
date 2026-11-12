@@ -67,6 +67,8 @@ def check_kind_context(context):
 
 
 def free_port():
+    """A loopback port free now. Another process could take it before a child binds it
+    (a small race); the child then fails to start and the readiness wait times out."""
     with socket.socket() as sock:
         sock.bind((LOOPBACK, 0))
         return sock.getsockname()[1]
@@ -277,7 +279,9 @@ class Topology:
     def _worker_config(self, name, role, link):
         config = {"role": role, "identity": name, "url": f"{self.scheme}://{LOOPBACK}:{link['delivery'].port}",
                   "token_env": env_name("SENTINEL_DELIVERY_TOKEN_", name),
-                  "state_directory": str(self.paths["state"] / name), "timeout": self.worker_timeout}
+                  "state_directory": str(self.paths["state"] / name), "timeout": self.worker_timeout,
+                  # Every worker names its cluster, so runtime/fault_points.py::bind can tie the lab gate to it.
+                  "cluster_id": self.cluster_id}
         if self.tls:
             config["ca"] = str(self.certificates["ca"])
         config_dir = self.paths["config"]
@@ -437,8 +441,9 @@ class Topology:
         deployment = self.kind_deployment(runner)
         delta = deployment["metadata"]["generation"] - self.kind_start_generation
         evidence = deployment["metadata"].get("annotations", {}).get(ACTION_ANNOTATION)
-        action = json.loads(evidence).get("action_id", "unknown") if evidence else "unknown"
-        return [{"action_id": action, "host": "unknown", "decided_at": time.time()} for _ in range(max(0, delta))]
+        action = json.loads(evidence).get("action_id", "unknown") if evidence else "unannotated"
+        return [{"action_id": action, "host": "unknown", "decided_at": time.time(),
+                 "marker": "write" if evidence else "none"} for _ in range(max(0, delta))]
 
     def stop(self):
         self._operator_stop.set()

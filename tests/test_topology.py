@@ -62,6 +62,14 @@ class TopologyConfigurationTests(unittest.TestCase):
         self.assertEqual(configs["planner-1"]["provider"], "deterministic")
         self.assertTrue(all(configs[name]["cluster"].startswith("file:") for name in ("guard-1", "executor-a")))
 
+    def test_every_worker_config_binds_the_lab_gate_in_its_own_environment(self):
+        from runtime import fault_points
+        for name, _ in WORKERS:
+            config = json.loads((self.run_dir / "config" / (name + ".json")).read_text(encoding="utf-8"))
+            self.assertEqual(config["cluster_id"], "file-sentinel-distributed", name)
+            with self.subTest(name=name), patch.dict(os.environ, self.topology.processes[name].env, clear=True):
+                self.assertIs(fault_points.bind(config), True)
+
     def test_identities_and_approval_permissions_are_bound_to_the_target(self):
         config = self.run_dir / "config"
         identities = json.loads((config / "identities.json").read_text(encoding="utf-8"))

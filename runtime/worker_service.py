@@ -43,16 +43,18 @@ def client(config):
                         timeout=config.get("timeout", 15), tls_context=context)
 
 
-def lab_cluster(config, stack):
+def lab_cluster(config, stack, lab):
     """The file-backed lab cluster named by config["cluster"], or None for a real one.
 
-    Only a lab fault run may use it (runtime/fault_points.py), so a production
-    worker can never be pointed at a fake by its configuration alone.
+    Only a worker bound to the file lab cluster (runtime/fault_points.py::bind)
+    may use it, so a production worker can never be pointed at a fake by its
+    configuration alone.
     """
     name = config.get("cluster")
     if name is None:
         return None
-    if not isinstance(name, str) or not name.startswith("file:") or not fault_points.enabled():
+    if (not lab or config.get("cluster_id") != fault_points.FILE_CLUSTER
+            or not isinstance(name, str) or not name.startswith("file:")):
         raise ValueError("A file cluster is accepted only in a lab fault run")
     from tests.support.file_cluster import FileCluster
     cluster = FileCluster(name.removeprefix("file:"))
@@ -60,10 +62,17 @@ def lab_cluster(config, stack):
     return cluster
 
 
-def planner_provider(config):
-    """(provider, attempt lease seconds). Ollama is the default; deterministic is labelled synthetic."""
+def planner_provider(config, lab=False):
+    """(provider, attempt lease seconds). Ollama is the default.
+
+    The deterministic provider is accepted only in a bound lab fault run, because
+    its synthetic_planner label stays in the Planner's own journal and never
+    reaches the proposal an operator approves.
+    """
     name = config.get("provider", "ollama")
     if name == "deterministic":
+        if not lab:
+            raise ValueError("The deterministic planner is accepted only in a lab fault run")
         lease = config.get("attempt_lease_seconds", 30)
         if type(lease) not in (int, float) or not math.isfinite(lease) or not 0 < lease <= 3600:
             raise ValueError("Attempt lease must be positive, finite and at most one hour")
@@ -80,13 +89,14 @@ def planner_provider(config):
 
 def adapter(config, directory, stack):
     role = config["role"]
-    cluster = lab_cluster(config, stack)
-    clock = fault_points.offset_clock(utc_now)
+    lab = fault_points.bind(config)  # Raises when lab variables are set for a worker aimed elsewhere.
+    cluster = lab_cluster(config, stack, lab)
+    clock = fault_points.offset_clock(utc_now) if lab else utc_now
     if role == "planner":
         from services.planner.store import PlannerStore
         journal = PlannerStore(directory / "planner.db")
         stack.callback(journal.close)
-        provider, lease_seconds = planner_provider(config)
+        provider, lease_seconds = planner_provider(config, lab)
         baselines = reader(config["baselines"])
         def baseline_list(incident):
             value = baselines(incident)
@@ -120,12 +130,12 @@ def adapter(config, directory, stack):
     options["dependencies"] = config.get("dependencies", directory / "remote-dependencies.json")
     options.update(approval_reader=approval, server_dry_run=config.get("server_dry_run", False))
     if role == "executor":
-        lab = {"runner": cluster.kubectl(config["identity"])} if cluster is not None else {}
+        runner = {"runner": cluster.kubectl(config["identity"])} if cluster is not None else {}
         live = build_adapters(**options, allowed_targets=config["allowed_targets"],
                               ledger=directory / "executor.db", locks=directory / "locks",
-                              fence_after_seconds=config.get("fence_after_seconds"), **lab)
+                              fence_after_seconds=config.get("fence_after_seconds"), **runner)
         stack.callback(live.ledger.close)
-        if fault_points.enabled():  # Lab fault runs only: named stop points and the test clock offset.
+        if lab:  # Bound lab fault runs only: named stop points and the test clock offset.
             live = replace(live, clock=fault_points.offset_clock(live.clock),
                            ledger=fault_points.CheckpointLedger(live.ledger),
                            cluster=fault_points.CheckpointCluster(live.cluster))
@@ -162,6 +172,8 @@ def main(argv=None):
     parser.add_argument("--health-port", type=int, help="Serve /healthz and /readyz on 127.0.0.1 at this port")
     parser.add_argument("--ready-seconds", type=float, default=60,
                         help="/readyz fails when the last Coordinator answer is older than this")
+    parser.add_argument("--live-seconds", type=float, default=900,
+                        help="/healthz fails when the loop started no pass for this long; set it above the longest pass")
     args = parser.parse_args(argv)
     if not math.isfinite(args.poll_seconds) or not 0 < args.poll_seconds <= 60:
         parser.error("Poll interval must be positive and at most 60 seconds")
@@ -169,8 +181,10 @@ def main(argv=None):
         parser.error("Health port must be from 0 to 65535")
     if not math.isfinite(args.ready_seconds) or not 0 < args.ready_seconds <= 3600:
         parser.error("Readiness window must be positive and at most one hour")
+    if not math.isfinite(args.live_seconds) or not 0 < args.live_seconds <= 86400:
+        parser.error("Liveness window must be positive and at most one day")
     stopping = threading.Event()
-    health = WorkerHealth(ready_seconds=args.ready_seconds)
+    health = WorkerHealth(ready_seconds=args.ready_seconds, live_seconds=args.live_seconds)
     previous = {}
     try:
         config = read_json(args.config)

@@ -1,12 +1,13 @@
 """The file cluster runs the production kubectl adapter with the in-process fakes' semantics."""
 from contextlib import ExitStack
 from copy import deepcopy
+import json
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from experiments.distributed import fixtures
+from experiments.distributed import fixtures, invariants
 from services.executor.core import ACTION_ANNOTATION, ConditionalWriteConflict, encode_evidence
 from services.executor.kubernetes_adapter import KubectlDeploymentAPI
 from services.executor.reconciliation import FENCE_ANNOTATION, fence_marker
@@ -145,15 +146,60 @@ class FileClusterTests(unittest.TestCase):
             self.cluster.verifier_readers({"baseline": paths["baseline"], "dependency_graph": paths["graph"],
                                            "samples_per_pass": 0}, clock=utc_now)
 
-    def test_patch_actions_are_classified_from_the_annotation(self):
+    def test_patch_actions_are_classified_by_effect_and_then_by_annotation(self):
         evidence = encode_evidence(self.evidence("ACT-9"))
+        template = {"op": "replace", "path": "/spec/template", "value": {}}
+        fence = {"op": "add", "path": "/metadata/annotations/sentinel.io~1fence",
+                 "value": '{"action_id":"ACT-8","nonce":"n"}'}
         self.assertEqual(patch_action([{"op": "add", "path": "/metadata/annotations",
-                                        "value": {ACTION_ANNOTATION: evidence}}]), ("write", "ACT-9"))
-        self.assertEqual(patch_action([{"op": "add", "path": "/metadata/annotations/sentinel.io~1fence",
-                                        "value": '{"action_id":"ACT-8","nonce":"n"}'}]), ("fence", "ACT-8"))
-        self.assertEqual(patch_action([{"op": "add", "path": "/metadata/annotations/sentinel.io~1fence",
-                                        "value": "not json"}]), ("fence", "unknown"))
-        self.assertEqual(patch_action("nonsense"), ("other", "unknown"))
+                                        "value": {ACTION_ANNOTATION: evidence}}, template]),
+                         ("write", "write", "ACT-9"))
+        self.assertEqual(patch_action([fence]), ("fence", "fence", "ACT-8"))
+        self.assertEqual(patch_action([dict(fence, value="not json")]), ("fence", "fence", "unknown"))
+        self.assertEqual(patch_action([fence, template]), ("write", "fence", "ACT-8"))
+        self.assertEqual(patch_action([fence], template_changed=True), ("write", "fence", "ACT-8"))
+        for path in ("/spec/template", "/spec/template/spec/containers/0/image", "/spec", ""):
+            with self.subTest(path=path):
+                self.assertEqual(patch_action([{"op": "replace", "path": path, "value": 1}]),
+                                 ("write", "none", "unannotated"))
+        self.assertEqual(patch_action([{"op": "test", "path": "/spec/template", "value": {}}]),
+                         ("other", "none", "unannotated"))
+        self.assertEqual(patch_action([{"op": "replace", "path": "/spec/replicas", "value": 2}]),
+                         ("other", "none", "unannotated"))
+        self.assertEqual(patch_action([{"op": "move", "from": "/spec/template", "path": "/x"}]),
+                         ("write", "none", "unannotated"))
+        self.assertEqual(patch_action("nonsense"), ("other", "none", "unannotated"))
+
+    def kubectl_patch(self, operations, host="rogue"):
+        patch_file = self.directory / "rogue-patch.json"
+        patch_file.write_text(json.dumps(operations), encoding="utf-8")
+        return self.cluster.run(["kubectl", "--context=file-cluster", "patch", "deployment", self.target["name"],
+                                 "-n", self.target["namespace"], "--type=json", "--patch-file", str(patch_file)],
+                                host=host)
+
+    def test_an_unannotated_template_write_is_recorded_as_a_write_and_fails_i1(self):
+        reply = self.kubectl_patch([{"op": "replace", "path": "/spec/template", "value": self.template}])
+        self.assertEqual(reply.returncode, 0)
+        (write,) = self.cluster.committed_writes()
+        self.assertEqual((write["kind"], write["marker"], write["action_id"], write["template_changed"]),
+                         ("write", "none", "unannotated", 1))
+        self.assertEqual(write["template_sha256"], fingerprint(self.template))
+        (result,) = [item for item in invariants.check({"cluster_writes": self.cluster.committed_writes()})
+                     if item["id"] == "I1"]
+        self.assertFalse(result["passed"])
+
+    def test_a_fence_that_changes_the_template_is_a_write_and_fails_i1(self):
+        marker = fence_marker("ACT-1", "e" * 32)
+        image = "/spec/template/spec/containers/0/image"
+        reply = self.kubectl_patch([
+            {"op": "add", "path": "/metadata/annotations", "value": {FENCE_ANNOTATION: json.dumps(marker)}},
+            {"op": "replace", "path": image, "value": "rogue:1"}])
+        self.assertEqual(reply.returncode, 0)
+        (write,) = self.cluster.committed_writes()
+        self.assertEqual((write["kind"], write["marker"], write["action_id"]), ("write", "fence", "ACT-1"))
+        (result,) = [item for item in invariants.check({"cluster_writes": self.cluster.committed_writes()})
+                     if item["id"] == "I1"]
+        self.assertFalse(result["passed"])
 
 
 if __name__ == "__main__":

@@ -1,6 +1,9 @@
 """A TCP fault proxy between one worker and the Coordinator. No admin rights needed.
 
-Modes apply to each new connection, from the moment it is accepted:
+Modes apply to each new connection, from the moment it is accepted. A
+connection already open keeps forwarding in its old mode, so a mode is a hard
+partition only for clients that open one connection per request, as the
+worker and approval clients do (runtime/worker_http.py, runtime/approval_http.py):
 
 - pass: forward both ways.
 - blackhole: accept and read, never forward or answer, so the client times out.

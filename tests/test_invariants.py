@@ -28,7 +28,7 @@ def clean():
                       "finished": 10.0, "result_digest": "r1"}],
         "message_digests": ["m1"],
         "revocations": [],
-        "cluster_writes": [{"action_id": ACTION, "host": "executor-a", "decided_at": 100.0}],
+        "cluster_writes": [{"action_id": ACTION, "host": "executor-a", "decided_at": 100.0, "marker": "write"}],
         "executor_ledgers": {"executor-a": [{"action_id": ACTION, "phase": "DONE"}], "executor-b": []},
         "worker_results": [{"identity": "executor-a", "event_id": 1, "accepted": True,
                             "result_digest": "r1", "message_digest": "m1"}],
@@ -58,8 +58,17 @@ class InvariantTests(unittest.TestCase):
 
     def test_two_committed_writes_for_one_action_fail_i1(self):
         records = clean()
-        records["cluster_writes"].append({"action_id": ACTION, "host": "executor-b", "decided_at": 101.0})
+        records["cluster_writes"].append({"action_id": ACTION, "host": "executor-b", "decided_at": 101.0,
+                                          "marker": "write"})
         self.assertEqual(failed(records), {"I1"})
+
+    def test_an_unannotated_malformed_or_fence_template_write_fails_i1(self):
+        for row in ({"action_id": "unannotated", "marker": "none"}, {"action_id": "unknown", "marker": "write"},
+                    {"action_id": ACTION, "marker": "fence"}):
+            records = clean()
+            records["cluster_writes"] = [dict(row, host="executor-b", decided_at=101.0)]
+            with self.subTest(row=row):
+                self.assertEqual(failed(records), {"I1"})
 
     def test_a_write_after_revocation_fails_i2_unless_the_action_went_to_review(self):
         records = clean()
@@ -153,7 +162,8 @@ class InvariantTests(unittest.TestCase):
 
     def test_details_name_counts_and_identifiers_only(self):
         records = clean()
-        records["cluster_writes"].append({"action_id": ACTION, "host": "executor-b", "decided_at": 101.0})
+        records["cluster_writes"].append({"action_id": ACTION, "host": "executor-b", "decided_at": 101.0,
+                                          "marker": "write"})
         (i1,) = [item for item in invariants.check(records) if item["id"] == "I1"]
         self.assertEqual(i1["detail"], "ACT-1: 2 committed writes")
 

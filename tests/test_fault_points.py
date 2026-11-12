@@ -42,6 +42,26 @@ class FaultPointTests(unittest.TestCase):
                 exit_.assert_not_called()
         self.assertTrue((self.run_dir / "executor.before_patch.action").exists())
 
+    def test_bind_ties_the_gate_to_the_configured_cluster_and_context(self):
+        lab = {"cluster_id": "file-sentinel-distributed", "context": "file-cluster"}
+        off = {fault_points.ENV_DIRECTORY: "", fault_points.ENV_CLUSTER: ""}
+        with self.environment(**off):
+            self.assertIs(fault_points.bind({"cluster_id": "sentinel-lab"}), False)  # No lab variable: an ordinary run.
+        with self.environment():
+            self.assertIs(fault_points.bind(lab), True)
+            self.assertIs(fault_points.bind({"cluster_id": "file-sentinel-distributed"}), True)
+        refused = [({}, {"cluster_id": "sentinel-lab", "context": "kind-sentinel-lab"}),
+                   ({}, dict(lab, context="kind-sentinel-lab")), ({}, dict(lab, context="prod")),
+                   ({}, {"context": "file-cluster"}), ({}, dict(lab, cluster_id=["file-sentinel-distributed"])),
+                   ({fault_points.ENV_CLUSTER: "sentinel-lab"}, {"cluster_id": "sentinel-lab"}),
+                   ({fault_points.ENV_CLUSTER: "sentinel-boutique-connected"}, lab),
+                   ({fault_points.ENV_DIRECTORY: str(self.run_dir / "missing")}, lab),
+                   (dict(off, **{fault_points.ENV_CLOCK_OFFSET: "5"}), lab)]
+        for changes, config in refused:
+            with self.subTest(changes=changes, config=config), self.environment(**changes):
+                with self.assertRaises(ValueError):
+                    fault_points.bind(config)
+
     def test_an_unknown_point_is_refused_even_when_inert(self):
         with self.environment(**{fault_points.ENV_DIRECTORY: ""}), self.assertRaises(ValueError):
             fault_points.checkpoint("executor.anywhere")

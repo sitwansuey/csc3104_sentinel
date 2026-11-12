@@ -5,6 +5,15 @@ A checkpoint does nothing unless both environment variables are set:
 - SENTINEL_FAULT_POINTS names an existing run directory, and
 - SENTINEL_FAULT_CLUSTER names a cluster on the lab allowlist (LAB_CLUSTERS).
 
+A worker also binds the gate to the cluster its configuration targets
+(bind()). With any lab variable set, it starts only when its configured
+cluster_id is the gated lab cluster and any configured context is that
+cluster's lab context; otherwise it refuses to start. So a worker configured
+for any other cluster, the original lab cluster included, never runs a hook,
+a proxy or the clock offset. The Coordinator has no cluster in its
+configuration, so its one point (coordinator.after_commit_before_reply) is
+gated by the two variables alone; it can only stop or exit the Coordinator.
+
 The multi-process harness (experiments/distributed/topology.py) sets both for
 the processes it starts. A harness arms a point by writing "<name>.action"
 (or "<name>@<qualifier>.action") into the run directory with the word
@@ -16,7 +25,10 @@ harness creates "<name>.release". Nothing here reads a token, a payload or a
 cluster object, and nothing is logged beyond the point name.
 
 The same gate allows a test clock offset (SENTINEL_TEST_CLOCK_OFFSET, in
-seconds) so a lab run can give one process a skewed clock.
+seconds) so a lab run can give one process a skewed clock. A bound worker
+reads its Guard, Executor and Verifier clocks through it, so the offset can
+change freshness and expiry decisions; that is what it is for, and why it
+applies only to a worker bound to a lab cluster.
 """
 from datetime import datetime, timedelta
 import math
@@ -32,8 +44,13 @@ ENV_CLUSTER = "SENTINEL_FAULT_CLUSTER"
 ENV_CLOCK_OFFSET = "SENTINEL_TEST_CLOCK_OFFSET"
 ENV_PROCESS = "SENTINEL_FAULT_PROCESS"  # The harness's name for this process, recorded when a point fires.
 # Clusters a fault run may target: the file-backed fake and the connected kind
-# lab. Any other cluster, the original lab cluster included, keeps every point inert.
-LAB_CLUSTERS = frozenset({"file-sentinel-distributed", "sentinel-boutique-connected"})
+# lab, each with the only Kubernetes contexts a bound worker may name for it.
+FILE_CLUSTER = "file-sentinel-distributed"
+LAB_CONTEXTS = {FILE_CLUSTER: frozenset({"file-cluster"}),
+                "sentinel-boutique-connected": frozenset({"kind-sentinel-boutique-connected"})}
+LAB_CLUSTERS = frozenset(LAB_CONTEXTS)
+# Never a fault target, as a cluster_id, a context or the gated cluster, whatever the environment says.
+REFUSED = frozenset({"sentinel-lab", "kind-sentinel-lab"})
 NAMES = frozenset({
     "planner.mid_inference",
     "executor.after_start_write",
@@ -58,6 +75,35 @@ def directory():
 
 def enabled():
     return directory() is not None
+
+
+def requested():
+    """True when any lab variable is set, valid or not."""
+    return any(os.environ.get(name) for name in (ENV_DIRECTORY, ENV_CLUSTER, ENV_CLOCK_OFFSET))
+
+
+def bind(config):
+    """Bind the lab gate to the cluster a worker configuration targets.
+
+    False when no lab variable is set: an ordinary run, with no hook, proxy,
+    file cluster or clock offset. True only when the gate is on, the configured
+    cluster_id is the gated lab cluster and any configured context is that
+    cluster's lab context. Every other case raises ValueError, so a worker
+    configured for another cluster refuses to start rather than run a hook.
+    """
+    if not requested():
+        return False
+    cluster_id, context = config.get("cluster_id"), config.get("context")
+    gated = os.environ.get(ENV_CLUSTER, "")
+    if {value for value in (cluster_id, context, gated) if isinstance(value, str)} & REFUSED:
+        raise ValueError("This cluster is never a fault-injection target")
+    if not enabled():
+        raise ValueError("Lab variables are set but the fault gate is incomplete")
+    if cluster_id != gated:
+        raise ValueError("The worker's configured cluster is not the gated lab cluster")
+    if context is not None and context not in LAB_CONTEXTS[cluster_id]:
+        raise ValueError("The worker's configured context is not the lab cluster's context")
+    return True
 
 
 def _take(run, name, qualifier):

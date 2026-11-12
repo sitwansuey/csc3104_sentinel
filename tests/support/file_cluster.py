@@ -12,6 +12,9 @@ patch of the named Deployment), so the production adapter, with its patch
 file, its UID and resourceVersion tests and its response checks, runs
 unchanged against this file. Every patch request is recorded with its action,
 its outcome and the wall-clock time of the decision, for invariant checks.
+A request counts as a template write by what it does, not by what it is
+labelled: any patch that writes the pod template, or that changed it when it
+committed, is a write, whatever annotation it carries or lacks (patch_action).
 
 Nothing here contacts a cluster. The worker service accepts a file cluster
 only when lab fault points are enabled (runtime/fault_points.py).
@@ -46,17 +49,50 @@ def _annotation_value(operations, key):
     return None
 
 
-def patch_action(operations):
-    """(kind, action_id) of an Executor patch: a template write or a fence."""
-    for kind, key in (("write", ACTION_ANNOTATION), ("fence", FENCE_ANNOTATION)):
+TEMPLATE = "/spec/template"
+
+
+def writes_template(operations):
+    """True when a mutating operation writes at, under or above /spec/template."""
+    for operation in operations if isinstance(operations, list) else []:
+        if not isinstance(operation, dict) or operation.get("op") == "test":
+            continue
+        paths = [operation.get("path")] + ([operation.get("from")] if operation.get("op") == "move" else [])
+        for path in paths:
+            if isinstance(path, str) and (path == TEMPLATE or path.startswith(TEMPLATE + "/")
+                                          or TEMPLATE.startswith(path + "/") or path == ""):
+                return True
+    return False
+
+
+def patch_action(operations, *, template_changed=False):
+    """(kind, marker, action_id) of one patch request, classified by its effect.
+
+    kind is "write" for any patch that writes the pod template or changed it,
+    "fence" for one that carries the fence annotation and leaves the template
+    alone, and "other" otherwise. marker names the Sentinel annotation the
+    patch carries ("write", "fence" or "none"); action_id comes from it,
+    "unknown" when it is malformed and "unannotated" when there is none.
+    """
+    marker, action_id = "none", "unannotated"
+    for name, key in (("write", ACTION_ANNOTATION), ("fence", FENCE_ANNOTATION)):
         value = _annotation_value(operations, key)
         if isinstance(value, str):
             try:
-                action_id = json.loads(value).get("action_id")
+                found = json.loads(value).get("action_id")
             except (ValueError, AttributeError):
-                action_id = None
-            return kind, action_id if isinstance(action_id, str) else "unknown"
-    return "other", "unknown"
+                found = None
+            marker, action_id = name, found if isinstance(found, str) else "unknown"
+            break
+    if template_changed or writes_template(operations):
+        return "write", marker, action_id
+    return ("fence" if marker == "fence" else "other"), marker, action_id
+
+
+def _template_sha256(server):
+    deployment = server.deployment
+    template = deployment.get("spec", {}).get("template") if isinstance(deployment, dict) else None
+    return fingerprint(template) if isinstance(template, dict) else None
 
 
 class FileCluster:
@@ -73,7 +109,8 @@ class FileCluster:
                 deployment TEXT, last TEXT, revision INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS cluster_requests (
                 seq INTEGER PRIMARY KEY, host TEXT NOT NULL, action_id TEXT NOT NULL,
-                kind TEXT NOT NULL, state TEXT NOT NULL, from_version TEXT,
+                kind TEXT NOT NULL, marker TEXT NOT NULL, template_changed INTEGER NOT NULL,
+                state TEXT NOT NULL, from_version TEXT,
                 resource_version TEXT, template_sha256 TEXT, decided_at REAL NOT NULL);
         """)
 
@@ -131,21 +168,28 @@ class FileCluster:
             raise
 
     def run(self, command, *, host):
-        """Answer one kubectl command atomically, recording any patch request."""
+        """Answer one kubectl command atomically, recording any patch request.
+
+        A kubectl patch is one request, so a template change between the load
+        and the save of this command belongs to the request that committed.
+        """
         with self._transaction() as server:
+            before = _template_sha256(server)
             simulator = SimKubectl(server, host=host)
             reply = simulator(command)
+            after = _template_sha256(server)
             for request in server.requests:
-                kind, action_id = patch_action(request.operations)
+                changed = request.state == "committed" and before != after
+                kind, marker, action_id = patch_action(request.operations, template_changed=changed)
                 template = next((operation["value"] for operation in request.operations
-                                 if operation.get("path") == "/spec/template"), None)
+                                 if operation.get("path") == TEMPLATE), None)
                 tests = {operation.get("path"): operation.get("value") for operation in request.operations
                          if operation.get("op") == "test"}
-                self.db.execute("""INSERT INTO cluster_requests(host,action_id,kind,state,from_version,
-                    resource_version,template_sha256,decided_at) VALUES(?,?,?,?,?,?,?,?)""",
-                    (host, action_id, kind, request.state, tests.get("/metadata/resourceVersion"),
-                     request.resource_version, fingerprint(template) if isinstance(template, dict) else None,
-                     time.time()))
+                written = fingerprint(template) if isinstance(template, dict) else (after if changed else None)
+                self.db.execute("""INSERT INTO cluster_requests(host,action_id,kind,marker,template_changed,state,
+                    from_version,resource_version,template_sha256,decided_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    (host, action_id, kind, marker, int(changed), request.state,
+                     tests.get("/metadata/resourceVersion"), request.resource_version, written, time.time()))
             self._save(server)
         return reply
 
@@ -218,5 +262,9 @@ class FileCluster:
         return [dict(row) for row in self.db.execute(query + " ORDER BY seq", parameters)]
 
     def committed_writes(self):
-        """Committed template writes, the quantity invariant I1 bounds per action."""
+        """Committed template writes, the quantity invariant I1 bounds per action.
+
+        Each row's marker shows whether the write carried this action's
+        evidence annotation; I1 fails on any write that did not.
+        """
         return [row for row in self.requests("write") if row["state"] == "committed"]

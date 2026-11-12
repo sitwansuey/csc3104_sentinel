@@ -1,6 +1,8 @@
 """Liveness and readiness of one worker process, served on loopback only.
 
-/healthz answers 200 while the polling loop is running and not stopping.
+/healthz answers 200 while the polling loop is not stopping and started a pass
+within the liveness window, so a loop stuck inside one pass (a hung inference
+or blocked I/O) turns unhealthy once the window passes.
 /readyz answers 200 only when the worker's configuration was accepted and the
 Coordinator answered a polling pass within the readiness window. Both bodies
 hold booleans and ages in seconds only, never configuration or credentials.
@@ -15,8 +17,8 @@ import time
 class WorkerHealth:
     """Monotonic timestamps of the loop heartbeat and the last Coordinator answer."""
 
-    def __init__(self, *, ready_seconds=60, clock=time.monotonic):
-        self.ready_seconds, self.clock = ready_seconds, clock
+    def __init__(self, *, ready_seconds=60, live_seconds=900, clock=time.monotonic):
+        self.ready_seconds, self.live_seconds, self.clock = ready_seconds, live_seconds, clock
         self._configured = False
         self._beat = None
         self._contact = None
@@ -34,8 +36,9 @@ class WorkerHealth:
         return None if stamp is None else round(self.clock() - stamp, 3)
 
     def live(self, stopping=None):
-        alive = self._beat is not None and not (stopping is not None and stopping.is_set())
-        return (200 if alive else 503), {"alive": alive, "loop_age_seconds": self._age(self._beat)}
+        age = self._age(self._beat)
+        alive = age is not None and age <= self.live_seconds and not (stopping is not None and stopping.is_set())
+        return (200 if alive else 503), {"alive": alive, "loop_age_seconds": age}
 
     def ready(self, stopping=None):
         age = self._age(self._contact)
