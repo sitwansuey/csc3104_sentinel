@@ -1,4 +1,4 @@
-"""Fault scenarios S0-S7b for the multi-process topology (A1 design).
+"""Fault scenarios S0-S8 for the multi-process topology (A1 design).
 
 Each scenario starts a Topology, injects one kind of fault at a precise point,
 lets the system finish, and returns notes. run_scenarios.py then checks the
@@ -7,8 +7,11 @@ same code is inert in any run that is not a lab fault run.
 
 expected_failures names the invariants a scenario is known to break on this
 code base; those are the "before" evidence for later items. S1b and S1c
-leave the crashed Executor's ledger in doubt after its peer finished the
-action (P3.04). S7 showed the clock-skew wedge until P3.03 ordered results by
+left the crashed Executor's ledger in doubt after its peer finished the
+action until P3.04 made a restarted Executor settle its in-doubt rows from
+live state before claiming. S8 is the P3.04 hazard: an approval revoked
+while the lease holder is paused just before its patch, so the other
+Executor seals the target. S7 showed the clock-skew wedge until P3.03 ordered results by
 Coordinator sequence; it now ends FAILED with no write instead of wedging,
 because a host 300 s behind refuses the approval by its own clock. S7b
 checks the skew bound fails closed while the in-bound peer recovers the
@@ -249,16 +252,46 @@ def s7b(topology):
             "statuses": sorted({record.get("status") for record in topology.processes[skewed].stdout_records()})}
 
 
-ORPHANED_LEDGER = ("Orphaned in-doubt ledger row: the other Executor finishes the action, so no command "
-                   "reaches the restarted host, whose ledger keeps the action WRITE_STARTED and refuses later "
-                   "actions on that workload (TargetBusy) until reconciled by hand (P3.04)")
+def s8(topology):
+    """Revoke the approval while the lease holder is paused just before its patch; the other Executor seals.
+
+    The paused Executor passed its last lease and approval checks before the
+    pause, so only the seal stops its patch: the Coordinator queues
+    executor.seal when it withdraws the claimed command, the other Executor
+    sends a metadata-only patch with the same resourceVersion test, and the
+    paused patch is refused when it resumes. The action ends FAILED with no
+    template write.
+    """
+    stem = topology.arm("executor.before_patch", "block")
+    topology.start_observer()
+    topology.wait_reached(stem)
+    paused = topology.reached_by(stem)
+    (row,) = [item for item in topology.incidents() if item["state"] == "READY"]
+    topology.revoke(row["active_action_id"])
+    _wait(lambda: _sealed(topology), 30, "the other Executor did not seal the target")
+    topology.release(stem)
+    topology.wait_terminal(45)
+    from experiments.distributed.invariants import _rows
+    ledger = topology.paths["state"] / paused / "executor.db"
+    # The paused Executor resumes, its patch is refused, and it closes its own ledger row.
+    _wait(lambda: [row["phase"] for row in _rows(ledger, "SELECT phase FROM executor_actions")] == ["DONE"], 30,
+          paused + " did not finish its write attempt after the release")
+    (owner,) = _sealed(topology)
+    (status,) = _rows(ledger, "SELECT json_extract(result, '$.status') AS status FROM executor_actions")
+    return {"paused": paused, "paused_result": status["status"], "sealed_epoch": owner["sealed_epoch"],
+            "epoch": owner["epoch"], "writes_after_release": len(_writes(topology))}
+
+
+def _sealed(topology):
+    return topology.query("SELECT epoch, sealed_epoch FROM target_ownership WHERE sealed_epoch > 0 "
+                          "AND seal_required = 0")
+
+
 SCENARIOS = {scenario.name: scenario for scenario in (
     Scenario("S0", "No fault (baseline)", s0),
     Scenario("S1a", "Kill the Planner mid-inference", s1a),
-    Scenario("S1b", "Kill an Executor after the write intent, before the patch", s1b,
-             expected_failures=frozenset({"I6"}), known_defect=ORPHANED_LEDGER),
-    Scenario("S1c", "Kill an Executor after the patch, before the result is saved", s1c,
-             expected_failures=frozenset({"I6"}), known_defect=ORPHANED_LEDGER),
+    Scenario("S1b", "Kill an Executor after the write intent, before the patch", s1b),
+    Scenario("S1c", "Kill an Executor after the patch, before the result is saved", s1c),
     Scenario("S1d", "Kill the Verifier mid-collection", s1d),
     Scenario("S1e", "Kill an Executor after the write intent; only it comes back", s1e),
     Scenario("S2", "Stall the lease-holding Executor past its lease", s2),
@@ -270,5 +303,6 @@ SCENARIOS = {scenario.name: scenario for scenario in (
              options={"clock_offsets": {"executor-a": -300, "executor-b": -300}}),
     Scenario("S7b", "One Executor's clock 5 s behind with a 2 s skew bound", s7b, deadline_seconds=45,
              options={"clock_offsets": {"executor-a": -5}, "max_clock_skew": 2}),
+    Scenario("S8", "Revoke the approval while the lease holder is paused before its patch", s8),
 )}
 DEFAULT = ("S1b", "S1c", "S2", "S4", "S5")  # The plan's CI subset; S7 checks ordering under skew.
