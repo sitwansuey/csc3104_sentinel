@@ -1,0 +1,82 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "kind-lab-session-be6e636-20261112",
+  "class": "kind-lab-session",
+  "captured_at": null,
+  "source_run_dir_name": "phase3-live2",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+    "basis": "Operator records of the 12 Nov 2026 kind-mode session (about 17:55-18:30 UTC) with the committed experiments/distributed/kind_bundle.py at this revision from a clean worktree of integration/phase3 (operator record). The bundle directory, which held the executor kubeconfig, was outside the run folder and was deleted; prepare.out lists its file names only."
+  },
+  "files": [
+    {
+      "path": "NOTES.txt",
+      "sha256": "8728da5b6bd6df5744e5787637270e7685c352016af0c1dc75fc250825e9d9c9",
+      "bytes": 1213,
+      "redactions": 0
+    },
+    {
+      "path": "kind-summary.json",
+      "sha256": "0b54cc082c5b2eef408f5ffc94e84488fda38da2443b19b5c583b19c9979da90",
+      "bytes": 20306,
+      "redactions": 0
+    },
+    {
+      "path": "prepare.out",
+      "sha256": "5046f9b741fbab847a5433ec1e8669c7c7c6a7f26f19c3a01dc6d750af21db79",
+      "bytes": 1427,
+      "redactions": 0
+    },
+    {
+      "path": "restore-check-inject.json",
+      "sha256": "834685a0139ebabecf10e60657756bd1f1f99b8105295fb14a7d3348fd26d5d3",
+      "bytes": 564,
+      "redactions": 0
+    },
+    {
+      "path": "restore-check.json",
+      "sha256": "0f33d8647bcc1883d6cca9bd5d9bcfaff2d7a0d89c800be2e72df2f952745ecd",
+      "bytes": 716,
+      "redactions": 0
+    },
+    {
+      "path": "state/after-deployments.json",
+      "sha256": "016421ee7bd55e6b69dc7e98489690c15ebf43efe29a5a45fcbf73239255ca38",
+      "bytes": 72123,
+      "redactions": 4
+    },
+    {
+      "path": "state/annotation-patch-shippingservice.json",
+      "sha256": "cec14a51a8e23ac15515a4f078b514ce561578f7d772ae9feaaff64ac255e422",
+      "bytes": 815,
+      "redactions": 0
+    },
+    {
+      "path": "state/before-deployments.json",
+      "sha256": "911756021b55f72b28ea5bbfc317645e10ce51a52ae49c39b8b22bdaff6473df",
+      "bytes": 72123,
+      "redactions": 4
+    },
+    {
+      "path": "state/pre-cleanup-cartservice.json",
+      "sha256": "7616bde32864b1c3c7c41268928c598f69b08d825c84faff2b236907356c748f",
+      "bytes": 5950,
+      "redactions": 0
+    },
+    {
+      "path": "state/pre-cleanup-shippingservice.json",
+      "sha256": "6d09475c1936c234a0c8a11c756ec720882764a87f05cc2180deb1c600ecee62",
+      "bytes": 6409,
+      "redactions": 0
+    },
+    {
+      "path": "state/start-targets.json",
+      "sha256": "b1b96272b3c0fa8f251864f05a1ac3022d4b7bcc10627183e824a390d258292c",
+      "bytes": 6738,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

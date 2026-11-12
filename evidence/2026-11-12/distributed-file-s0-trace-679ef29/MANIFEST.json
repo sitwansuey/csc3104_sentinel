@@ -1,0 +1,46 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "distributed-file-s0-trace-679ef29",
+  "class": "distributed-scenario",
+  "captured_at": "2026-11-12T06:43:58.149985Z",
+  "source_run_dir_name": "2026-11-12-S0",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "679ef298abe3dd4b5904278aa981ca02af2970f8",
+    "basis": "summary.json git_revision is stamped by run_scenarios itself, but it records no dirty-tree flag, so provenance is inferred. File mode (file-backed fake cluster), deterministic synthetic planner, one host, run with SENTINEL_LOG_FORMAT=json from integration/phase3 at 679ef29 (operator record). trace-waterfall.txt is scripts/trace_view.py output over this run's timeline.jsonl, attached from beside the run folder."
+  },
+  "files": [
+    {
+      "path": "coordinator-records.json",
+      "sha256": "a8f037cc80733c7aaa351c40dacad75c32b1f7fe7cef8e9d54f303411a2ff9e7",
+      "bytes": 39781,
+      "redactions": 1
+    },
+    {
+      "path": "summary.json",
+      "sha256": "46bd3754311709dd234a42d088975b8667f1c8e56b1a7444b64ae1ccbdee07f0",
+      "bytes": 2687,
+      "redactions": 0
+    },
+    {
+      "path": "timeline.jsonl",
+      "sha256": "68b34d6b69779292576cfdcaf86316a9025dd9ba18dbf357e483d9a7fe02dc6e",
+      "bytes": 69928,
+      "redactions": 0
+    },
+    {
+      "path": "trace-waterfall.txt",
+      "sha256": "716fc34692d4b9024801e8d58d32aedf9ae3f5194ca94e9727f4e6424c3683c2",
+      "bytes": 9092,
+      "redactions": 0
+    }
+  ],
+  "omitted": [],
+  "attached": [
+    {
+      "path": "trace-waterfall.txt",
+      "source_name": "S0-waterfall.txt"
+    }
+  ]
+}

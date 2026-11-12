@@ -1,0 +1,78 @@
+{
+  "scenario": "S8",
+  "label": "r1",
+  "pre": {
+    "at": "2026-11-12T16:04:38.848001Z",
+    "generation": 137,
+    "resource_version": "139137",
+    "observed_generation": 137,
+    "available": 1,
+    "ready": 1,
+    "template_is_baseline": true,
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+    "sentinel_annotations": {
+      "sentinel.io/execution": "{\"action_id\":\"ACT-ef3a90b9b6f7ac1173669132\",\"attempt_id\":\"b9e4893b05a949c9b127006a4187ac00\",\"proposal_sha256\":\"64f9acf4c0aaa93384258d41b6f91db0c8fba4684603986eb2b5e9c7c3832646\",\"target_uid\":\"7afb61df-2d75-4529-ae2c-5825a573335d\",\"template_sha256\":\"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"}"
+    }
+  },
+  "inject": {
+    "at": "2026-11-12T16:04:39.060639Z",
+    "rc": 0,
+    "stdout": "deployment.apps/shippingservice env updated"
+  },
+  "fault_visible": {
+    "at": "2026-11-12T16:04:59.199989Z",
+    "cart_http_status": 500,
+    "generation": 138,
+    "resource_version": "139193",
+    "observed_generation": 138,
+    "available": 0,
+    "ready": 0,
+    "template_is_baseline": false,
+    "template_sha256": "bbf3cdf1bdf5cb2da049b116f062f52273d7cc6d1b40a2109adb21a60b1ad7ae",
+    "sentinel_annotations": {
+      "sentinel.io/execution": "{\"action_id\":\"ACT-ef3a90b9b6f7ac1173669132\",\"attempt_id\":\"b9e4893b05a949c9b127006a4187ac00\",\"proposal_sha256\":\"64f9acf4c0aaa93384258d41b6f91db0c8fba4684603986eb2b5e9c7c3832646\",\"target_uid\":\"7afb61df-2d75-4529-ae2c-5825a573335d\",\"template_sha256\":\"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"}"
+    }
+  },
+  "harness": {
+    "rc": 0,
+    "seconds": 9.7,
+    "stdout": "{\"scenario\": \"S8\", \"repeat\": 1, \"states\": [\"FAILED\"], \"writes\": 0, \"failed\": [], \"matches_expectation\": true, \"seconds\": 9.4, \"error\": null}",
+    "stderr_tail": ""
+  },
+  "post": {
+    "at": "2026-11-12T16:05:08.974280Z",
+    "generation": 139,
+    "resource_version": "139268",
+    "observed_generation": 139,
+    "available": 0,
+    "ready": 0,
+    "template_is_baseline": false,
+    "template_sha256": "bbf3cdf1bdf5cb2da049b116f062f52273d7cc6d1b40a2109adb21a60b1ad7ae",
+    "sentinel_annotations": {
+      "sentinel.io/execution": "{\"action_id\":\"ACT-ef3a90b9b6f7ac1173669132\",\"attempt_id\":\"b9e4893b05a949c9b127006a4187ac00\",\"proposal_sha256\":\"64f9acf4c0aaa93384258d41b6f91db0c8fba4684603986eb2b5e9c7c3832646\",\"target_uid\":\"7afb61df-2d75-4529-ae2c-5825a573335d\",\"template_sha256\":\"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"}",
+      "sentinel.io/fence": "{\"action_id\":\"ACT-04a8923f64b74e3bdacb3913\",\"epoch\":2,\"nonce\":\"aef70cc330ce416ea1207ce8d711753c\"}",
+      "sentinel.io/fence-epoch": "2"
+    }
+  },
+  "operator_restore": {
+    "at": "2026-11-12T16:05:09.060588Z",
+    "rc": 0,
+    "stderr": ""
+  },
+  "healthy_after": true,
+  "final": {
+    "at": "2026-11-12T16:05:15.593816Z",
+    "generation": 140,
+    "resource_version": "139319",
+    "observed_generation": 140,
+    "available": 1,
+    "ready": 1,
+    "template_is_baseline": true,
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+    "sentinel_annotations": {
+      "sentinel.io/execution": "{\"action_id\":\"ACT-ef3a90b9b6f7ac1173669132\",\"attempt_id\":\"b9e4893b05a949c9b127006a4187ac00\",\"proposal_sha256\":\"64f9acf4c0aaa93384258d41b6f91db0c8fba4684603986eb2b5e9c7c3832646\",\"target_uid\":\"7afb61df-2d75-4529-ae2c-5825a573335d\",\"template_sha256\":\"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"}",
+      "sentinel.io/fence": "{\"action_id\":\"ACT-04a8923f64b74e3bdacb3913\",\"epoch\":2,\"nonce\":\"aef70cc330ce416ea1207ce8d711753c\"}",
+      "sentinel.io/fence-epoch": "2"
+    }
+  }
+}

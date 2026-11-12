@@ -1,0 +1,52 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "executor-admission-20261112t135924z",
+  "class": "executor-admission",
+  "captured_at": "2026-11-12T13:59:24.217293Z",
+  "source_run_dir_name": "executor-admission-20261112T135924Z",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "599f44f4bc0d1d880f3a505d2e6f485ea7ecdf6a",
+    "basis": "Operator record: scripts/validation/test_executor_admission_live.py ran from a clean checkout of branch feat/executor-admission-policy at this revision (later merged into integration/phase3) against kind-sentinel-boutique-connected; admission.json carries no provenance block, so the revision is stated, not stamped."
+  },
+  "files": [
+    {
+      "path": "admission.json",
+      "sha256": "f21a5b3f304fe35dee57a18c9b5226820cf68920e1cb7f75d95063e9772fde72",
+      "bytes": 13686,
+      "redactions": 0
+    },
+    {
+      "path": "check.json",
+      "sha256": "a6ee6df44ce1031885154d5409931527e48faec5e11dbd9380332e2af51b287d",
+      "bytes": 113,
+      "redactions": 0
+    },
+    {
+      "path": "deployment.json",
+      "sha256": "4a3010c6e1ded3e7057626516f71c7750f0a117461a8438df9d0beac5c611652",
+      "bytes": 948,
+      "redactions": 0
+    },
+    {
+      "path": "executor-admission.yaml",
+      "sha256": "937bd01b4d834764336dfaaa921481814d539ad7007497e205db86d96b1663bc",
+      "bytes": 8773,
+      "redactions": 0
+    },
+    {
+      "path": "executor-rbac.yaml",
+      "sha256": "8d41fd3b23bdd62c71a0a0052b2a6d1ef5e7f1c46ea1771ce0a366b388e76bf2",
+      "bytes": 1353,
+      "redactions": 0
+    },
+    {
+      "path": "probe.json",
+      "sha256": "1866dc11d108bfc6788d2ae2c04effa5dc5d56463927802d23b5d526f03ccfef",
+      "bytes": 93,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

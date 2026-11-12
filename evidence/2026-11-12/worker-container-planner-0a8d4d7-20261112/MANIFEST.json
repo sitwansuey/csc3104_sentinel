@@ -1,0 +1,76 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "worker-container-planner-0a8d4d7-20261112",
+  "class": "worker-container",
+  "captured_at": null,
+  "source_run_dir_name": "task2",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "c973eddea4a8ba479a8ea2f67044d6a1ec42d471",
+    "basis": "Operator record: the image sentinel-worker:p3live was built from branch fix/phase3-live-worker-image at this revision because the integration/phase3 Dockerfile at 0a8d4d7 failed to build (ImportError); the host Coordinator ran from integration/phase3 at 0a8d4d7. No orchestrator event or health record was kept: the Docker state files and container logs are the record."
+  },
+  "files": [
+    {
+      "path": "config-badmodel/model.json",
+      "sha256": "ca0678bd12a1a17643bef9e5d8a1ac5e353b72ff4d75d69581aee52f9a589b7d",
+      "bytes": 36,
+      "redactions": 0
+    },
+    {
+      "path": "config-badmodel/worker.json",
+      "sha256": "9a991dbf86f2ea89c507b731d604f5ca8c0522e640ab215e496edd5a20c331dc",
+      "bytes": 591,
+      "redactions": 1
+    },
+    {
+      "path": "config/model.json",
+      "sha256": "ca0678bd12a1a17643bef9e5d8a1ac5e353b72ff4d75d69581aee52f9a589b7d",
+      "bytes": 36,
+      "redactions": 0
+    },
+    {
+      "path": "config/worker.json",
+      "sha256": "b54ebebfe882fa84c5432101aec2256bbdd3c3cf1bc1a87ed37215f0be89bdd4",
+      "bytes": 591,
+      "redactions": 1
+    },
+    {
+      "path": "coordinator.stderr.log",
+      "sha256": "c6125cbdfee6332225e0f2c3d7b2ed2a3127b257660e0baa68b24d48245d55ef",
+      "bytes": 8568,
+      "redactions": 0
+    },
+    {
+      "path": "incident.json",
+      "sha256": "4a75f2e76897500822a199ad694f178bcb44cbe082560ea184478a45b38b3076",
+      "bytes": 3852,
+      "redactions": 1
+    },
+    {
+      "path": "sentinel-p3live-planner-badmodel.log",
+      "sha256": "41ccb09e1e03c2096dfbce59a274ec069716b55c57f2e1eb83898179bc410707",
+      "bytes": 14348,
+      "redactions": 0
+    },
+    {
+      "path": "sentinel-p3live-planner-badmodel.state.json",
+      "sha256": "9d9495a11bee93c80bc7e5843de57da1774794650aa4a109fb4e81b873069517",
+      "bytes": 6319,
+      "redactions": 0
+    },
+    {
+      "path": "sentinel-p3live-planner.log",
+      "sha256": "f1b46b8aa629c14bdf6eb2c4368db97da9f70090dd72f747518145e645a4b105",
+      "bytes": 3994,
+      "redactions": 0
+    },
+    {
+      "path": "sentinel-p3live-planner.state.json",
+      "sha256": "bcd918507964f271568d4f1097ce288f6e2829d288b7b78d8a26ac5134cca353",
+      "bytes": 3215,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

@@ -28,6 +28,20 @@
       "source_revision": "54090922d41d2b0aa480c72f6f0b94d20196cdad",
       "attempted_at": "2026-11-12T05:05:19Z",
       "reason": "Infrastructure failure, not a Sentinel result: the Docker Desktop engine was down, so 'kind get nodes' failed before any experiment step (no checks ran and no fault was injected; only the preflight model warm-up ran, recorded in the run folder's model-runtime.json, and there was no RCA or planning model call). The run folder keeps its FAILED summary. Docker was restarted and the set was rerun at the same revision (boutique-live-20261112t050930z-ba0f81, -051156z-009b69 and -051406z-ef3fbb)."
+    },
+    {
+      "run": "worker-image-build-0a8d4d7-20261112",
+      "class": "worker-container",
+      "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+      "attempted_at": "2026-11-12T16:10:34Z",
+      "reason": "A build, not a run: docker build of deploy/docker/worker.Dockerfile at this integration/phase3 revision failed in the image's own import check (ImportError: cannot import name 'scenarios' from 'experiments.boutique.harness', because the image did not copy the catalog modules agent_live imports), so no container started. This was a Sentinel defect, fixed in c973edd and merged in e5823f1; the 12 Nov container run (worker-container-planner-0a8d4d7-20261112) used an image built from c973edd, and the be6e636 image built cleanly. The time is the build log's last write; no run folder exists."
+    },
+    {
+      "run": "worker-container-task2-attempt0-be6e636-20261112T181009Z",
+      "class": "worker-container",
+      "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+      "attempted_at": "2026-11-12T18:10:09Z",
+      "reason": "Operator tooling failure, not a Sentinel result: the scratch orchestrator stopped while making the throwaway TLS certificates, because the inherited OPENSSL_CONF named a file that did not exist (openssl req exited 1). Its own record shows it created no RBAC, container or volume and injected no fault; the only Sentinel step that ran was a kind_bundle restore that found the target already healthy at baseline (0.3 s, generation unchanged at 184), and a scan of its files found no credential. Rerun at the same revision with a private openssl.cnf as worker-container-planner-be6e636-20261112t181036z."
     }
   ]
 }

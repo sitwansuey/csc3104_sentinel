@@ -1,0 +1,25 @@
+Phase 3 live operator notes (kind-sentinel-boutique-connected only). Times UTC, 12 Nov 2026.
+
+Bundle: bundle/ made by prepare_kind_bundle.py (docstring says exactly what it does). Restricted kubeconfig
+(sentinel-executor SA token, 4h) was deleted at the end. policy.json health was changed after attempt 0
+(policy-v1 kept in state/policy-v1.json): minimum_samples 3->2, stable_window 4->10, max_sample_gap 10->20,
+grace 30->60, timeout 60->90, because the Coordinator's pending-retry backoff (1,2,4,8,16 s) spaces
+single-sample Verifier passes beyond a 10 s gap and the scenario deadline is 60 s.
+Each run: kind_run.py (inject R1 PORT=invalid-port, run run_scenarios for one scenario, operator restore if
+the template is not the baseline). Health for the Verifier: storefront /cart and /_healthz through
+kubectl port-forward service/frontend 127.0.0.1:18631 (stopped at the end).
+Runs: kind/attempt0-policy-v1 (S1b, I3 failed: VERIFYING at deadline), kind/r1, kind/r2; summary-all.json.
+Raw kept run directories: %TEMP%/sentinel-<scenario>-* (no credentials by X2).
+
+Task 2: sentinel-worker:p3live built from branch fix/phase3-live-worker-image (c973edd); the
+integration/phase3 Dockerfile fails to build (agent_live imports scenarios/targets not copied).
+Coordinator on 127.0.0.1:18766/18767 with throwaway CA (task2/tls, SAN host.docker.internal); tokens only in env.
+Planner containers --read-only --tmpfs /tmp, named volumes; good model URL vs http://host.docker.internal:11999.
+Incident fed by task2/feed_incident.py (real Observer collector + ObserverStore + RemoteIngress) during an R1
+injection; the agent saved a model ROLLBACK (planner.db copied to task2/planner.db); fault then restored.
+Containers, volumes, temporary read-only SA/Role/RoleBinding removed; no network created; image kept.
+
+STOPPED: final 'timeout 20 docker info' at ~16:18 failed (recovered on a re-check at 16:18:43). Per the
+safety rule no further live work was done. NOT DONE: removal of sentinel.io/fence and sentinel.io/fence-epoch
+from deployment/shippingservice and restoring its sentinel.io/execution annotation to the start value
+(state/before-deployments.json), and a fresh after-state capture.

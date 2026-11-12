@@ -1,0 +1,93 @@
+{
+  "schema": "sentinel-distributed-run-v1",
+  "scenario": "S0",
+  "title": "No fault (baseline)",
+  "mode": "file",
+  "repeat": 1,
+  "date": "2026-11-12",
+  "started_at": "2026-11-12T06:43:58.149985Z",
+  "duration_seconds": 7.5,
+  "single_host": true,
+  "separate_processes": true,
+  "synthetic_planner": true,
+  "cluster": "file-backed fake (tests/support/file_cluster.py)",
+  "tls": true,
+  "lease_seconds": 4,
+  "deadline_seconds": 60,
+  "git_revision": "679ef298abe3dd4b5904278aa981ca02af2970f8",
+  "python": "3.13.2",
+  "os": "Windows",
+  "notes": {},
+  "harness_error": null,
+  "states": [
+    "RECOVERED"
+  ],
+  "committed_writes": 1,
+  "invariants": [
+    {
+      "id": "I1",
+      "name": "At most one committed template write per action",
+      "passed": true,
+      "detail": "1 committed write(s) over 1 action(s)"
+    },
+    {
+      "id": "I2",
+      "name": "No template write after revocation unless surfaced for review",
+      "passed": true,
+      "detail": "0 revocation(s), no write after any"
+    },
+    {
+      "id": "I3",
+      "name": "Every incident terminal or reviewable within the deadline",
+      "passed": true,
+      "detail": "RECOVERED"
+    },
+    {
+      "id": "I4",
+      "name": "No delivery has two acknowledged results",
+      "passed": true,
+      "detail": "7 acknowledged command(s), one result each"
+    },
+    {
+      "id": "I5",
+      "name": "No poison loop (bounded attempts, at most two HTTP 400 refusals per command)",
+      "passed": true,
+      "detail": "at most 1 attempt(s) per command, 0 HTTP 400 result(s)"
+    },
+    {
+      "id": "I6",
+      "name": "No Executor ledger ends with a write in doubt",
+      "passed": true,
+      "detail": "1 ledger row(s), none in doubt"
+    },
+    {
+      "id": "X1",
+      "name": "Lease ownership exclusive",
+      "passed": true,
+      "detail": "7 delivery lease(s), each held by one identity at a time"
+    },
+    {
+      "id": "X2",
+      "name": "No secret in logs, configuration files or argv",
+      "passed": true,
+      "detail": "33 file(s) and 7 argv list(s) clean"
+    },
+    {
+      "id": "X3",
+      "name": "No acknowledged message lost",
+      "passed": true,
+      "detail": "7 acknowledged result(s) all recorded"
+    },
+    {
+      "id": "X4",
+      "name": "Transitions journal consistent with incidents and outbox",
+      "passed": true,
+      "detail": "7 transition(s) consistent"
+    }
+  ],
+  "passed": true,
+  "expected_failures": [],
+  "known_defect": null,
+  "matches_expectation": true,
+  "limits": "Separate OS processes on one host: one kernel clock, one disk, loopback networking. Not separate machines; clock skew is simulated by a gated offset, not measured."
+}

@@ -72,6 +72,33 @@
       "description": "Offline Guard fixture evaluation (scripts/evaluate_guard.py)",
       "include": ["results.json", "README.md"]
     },
+    "distributed-scenario": {
+      "description": "One experiments/distributed/run_scenarios.py run: Coordinator and workers as separate processes on one host, against the file-backed test cluster (file mode) or a kind lab Deployment (kind mode); kind-wrapper.json and trace-waterfall.txt are operator records attached from beside the run folder",
+      "include": ["summary.json", "timeline.jsonl", "coordinator-records.json", "kind-wrapper.json",
+                  "trace-waterfall.txt"]
+    },
+    "kind-lab-session": {
+      "description": "Operator records of one kind-mode lab session: bundle preparation and its RBAC checks, the Verifier policy, a restore check, the run index and lab-state snapshots; no scenario results (those are distributed-scenario bundles)",
+      "include": ["prepare.out", "restore-check-inject.json", "restore-check.json", "kind-summary.json",
+                  "summary-all.json", "NOTES.txt", "bundle/rbac-checks.json", "bundle/policy.json",
+                  "bundle/allowed-targets.json", "bundle/baseline-health.json", "cleanup-patch.json",
+                  "state/policy-v1.json", "state/start-targets.json", "state/pre-cleanup-*.json",
+                  "state/annotation-patch-*.json", "state/before-deployments.json", "state/after-deployments.json"]
+    },
+    "executor-admission": {
+      "description": "Live check of the Executor admission policy (scripts/validation/test_executor_admission_live.py) in a disposable namespace with a restricted executor token",
+      "include": ["admission.json", "deployment.json", "executor-admission.yaml", "executor-rbac.yaml", "check.json",
+                  "probe.json"]
+    },
+    "worker-container": {
+      "description": "A worker image run as a container against a Coordinator on the host: orchestrator events, health and /readyz samples, container logs and Docker state, and the Planner's saved report",
+      "include": ["events.jsonl", "health.jsonl", "incident.json", "restore.json", "*.state.json", "*planner*.log",
+                  "coordinator.stderr.log", "config/worker.json", "config/model.json", "config-*/worker.json",
+                  "config-*/model.json", "planner-data/agent/*/attempt-*/agent/report.json",
+                  "planner-data/agent/*/attempt-*/agent/plan-0.json",
+                  "planner-data/agent/*/attempt-*/agent/usage.json",
+                  "planner-data/agent/*/attempt-*/agent/execution-summary.json"]
+    },
     "rcaeval": {
       "description": "One method on one split of the pre-registered RCAEval sample (scripts/evaluation/rcaeval_run.py); scores and predictions only, never telemetry or trajectories",
       "include": ["summary.json", "versions.json", "run.json", "predictions.jsonl", "scores/summary.json",

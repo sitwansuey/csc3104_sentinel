@@ -1,0 +1,46 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "distributed-kind-s5-r2-0a8d4d7",
+  "class": "distributed-scenario",
+  "captured_at": "2026-11-12T16:08:38.618098Z",
+  "source_run_dir_name": "2026-11-12-S5",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+    "basis": "summary.json git_revision 0a8d4d72abc6c6b26146558200ba6b42605fbb14 is stamped by run_scenarios itself, but it records no dirty-tree flag or tool versions, so provenance is inferred. The kind-mode runs were driven by SCRATCH operator tools that were never committed (prepare_kind_bundle.py for the bundle and kind_run.py for the R1 injection, the per-run wrapper record attached as kind-wrapper.json, and the operator restore), with the Sentinel code from a clean worktree of integration/phase3 at this revision (operator record, 12 Nov 2026)."
+  },
+  "files": [
+    {
+      "path": "coordinator-records.json",
+      "sha256": "1e4ed40c46d606313983a670ce0077e4529de77d0c439d5ac6fd0a7c8217a9b3",
+      "bytes": 130388,
+      "redactions": 1
+    },
+    {
+      "path": "summary.json",
+      "sha256": "6118bc0f00a7e57e313d8310781eb908a5d1b26fc37d985f2fbe135430f1dafb",
+      "bytes": 3776,
+      "redactions": 0
+    },
+    {
+      "path": "timeline.jsonl",
+      "sha256": "59ff76c3c0b9012ceef9a6cbaf68c89e464b318243328627fe5a0d4ad98fc337",
+      "bytes": 87560,
+      "redactions": 0
+    },
+    {
+      "path": "kind-wrapper.json",
+      "sha256": "7747118465472a9e65ef713d70833ca2afeace9ad7c1aa3449b41c3c8d417fbd",
+      "bytes": 4047,
+      "redactions": 0
+    }
+  ],
+  "omitted": [],
+  "attached": [
+    {
+      "path": "kind-wrapper.json",
+      "source_name": "S5-wrapper.json"
+    }
+  ]
+}

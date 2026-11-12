@@ -1,0 +1,25 @@
+[
+  {
+    "op": "test",
+    "path": "/metadata/uid",
+    "value": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  },
+  {
+    "op": "test",
+    "path": "/metadata/resourceVersion",
+    "value": "153610"
+  },
+  {
+    "op": "replace",
+    "path": "/metadata/annotations/sentinel.io~1execution",
+    "value": "{\"action_id\":\"ACT-161b0b7ba56603a893ba87b6\",\"attempt_id\":\"788598ba4cbe47d8a4abe696658f24ac\",\"proposal_sha256\":\"e87347b981aefeb1564f8ff0fd54b0f7033235fd6d0de88064fdf748d33714c1\",\"target_uid\":\"7afb61df-2d75-4529-ae2c-5825a573335d\",\"template_sha256\":\"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"}"
+  },
+  {
+    "op": "remove",
+    "path": "/metadata/annotations/sentinel.io~1fence"
+  },
+  {
+    "op": "remove",
+    "path": "/metadata/annotations/sentinel.io~1fence-epoch"
+  }
+]

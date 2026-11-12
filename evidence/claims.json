@@ -69,10 +69,11 @@
         "boutique-live-20261112t075550z-26a26a",
         "boutique-live-20261112t080534z-160519",
         "boutique-live-20261112t080756z-29fd09",
-        "boutique-live-20261112t081032z-63d609"
+        "boutique-live-20261112t081032z-63d609",
+        "boutique-live-20261112t112406z-01cb56"
       ],
-      "scope_caveat": "Every committed agent bundle, failures included: deliberate negative tests (unreachable model server, missing model, a forced 1 s planning budget), runs on older revisions, and the 2026-11-12 catalog runs R2 and N1, which are unscored (labels pending). A run counts only when it passed expecting RECOVERED; the two runs that passed as an expected escalation (the forced budget run and N1 at dab3b3f) never recover and count as not recovered. Mostly one fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Lab approval pre-authorised before 4139385; from 4139385 automated auto-lab (automated-lab identity, no person), except the forced-budget run and both N1 runs, which asked for no approval (mode not-requested). One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 19 runs from 4afc879 onwards.",
-      "value": "24/39"
+      "scope_caveat": "Every committed agent bundle, failures included: deliberate negative tests (unreachable model server, missing model, a forced 1 s planning budget), runs on older revisions, and the 2026-11-12 catalog runs R2 and N1, which are unscored (labels pending), and the R1 run at b79fb5d on the connected lab as changed for the cartservice target. A run counts only when it passed expecting RECOVERED; the two runs that passed as an expected escalation (the forced budget run and N1 at dab3b3f) never recover and count as not recovered. Mostly one fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Lab approval pre-authorised before 4139385; from 4139385 automated auto-lab (automated-lab identity, no person), except the forced-budget run and both N1 runs, which asked for no approval (mode not-requested). One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 20 runs from 4afc879 onwards.",
+      "value": "25/40"
     },
     {
       "id": "C-AGENT-FAIL-CLOSED",
@@ -361,6 +362,169 @@
       ],
       "scope_caveat": "Every agent run at 870aa7d and dab3b3f, failures included (R1, R2 and N1). It shows only that the gate raised no false positive on these live logs. No adversarial log line was injected live, so the gate has not been exercised against an attack outside the offline corpus, and the remote Planner worker's gate has not run live. Model qwen3:14b on the local Ollama server; each bundle's model-runtime.json records Q4_K_M fully on the GPU (gpu_fraction 1.0) with keep_alive 30m, and every model call in model-calls.json loaded in under 1 s; the preflight warm-up, also in model-runtime.json, is separate and was a cold load of 19.4 s in the first run. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 870aa7d and dab3b3f on integration/phase2, clean trees, 2026-11-12 UTC.",
       "value": "8/8"
+    },
+    {
+      "id": "C-TRACE-FILE-679EF29",
+      "text": "With SENTINEL_LOG_FORMAT=json, scripts/trace_view.py rebuilt each run's timeline into one connected trace across the Observer, Coordinator, Planner, Guard, Executor and Verifier processes: {value}",
+      "derive": "trace_shapes",
+      "bundles": [
+        "distributed-file-s0-trace-679ef29",
+        "distributed-file-s1a-trace-679ef29"
+      ],
+      "scope_caveat": "Two runs. File mode: a file-backed fake cluster, not Kubernetes; the deterministic synthetic planner, no model; separate OS processes on one Windows host with TLS, not separate machines. In S1a the Planner was killed at planner.mid_inference (exit 73) and restarted: its span never ends, because the process died before span.end, so the retry is the only worker.process span for planner.request and is not drawn as a sibling of the lost one. trace-waterfall.txt in each bundle is the trace_view output, attached from beside the run folder. A scan of both timelines found no token-named field and no bearer or lease_token text. Provenance inferred: run_scenarios stamped git_revision 679ef29 (integration/phase3) but no dirty flag, 2026-11-12 UTC.",
+      "value": "S0 PASS: 1 trace, 54 spans over 4.5 s from observer.ingest, 0 spans whose parent never ended; S1a PASS: 1 trace, 55 spans over 9.2 s from observer.ingest, 1 span whose parent never ended"
+    },
+    {
+      "id": "C-DISTRIBUTED-KIND-0A8D4D7",
+      "text": "Kind-mode distributed scenarios with scratch operator tools at 0a8d4d7, after the health policy was relaxed: {value}",
+      "derive": "distributed_expectations",
+      "bundles": [
+        "distributed-kind-s1b-r1-0a8d4d7",
+        "distributed-kind-s1c-r1-0a8d4d7",
+        "distributed-kind-s2-r1-0a8d4d7",
+        "distributed-kind-s4-r1-0a8d4d7",
+        "distributed-kind-s5-r1-0a8d4d7",
+        "distributed-kind-s8-r1-0a8d4d7",
+        "distributed-kind-s1b-r2-0a8d4d7",
+        "distributed-kind-s1c-r2-0a8d4d7",
+        "distributed-kind-s2-r2-0a8d4d7",
+        "distributed-kind-s4-r2-0a8d4d7",
+        "distributed-kind-s5-r2-0a8d4d7",
+        "distributed-kind-s8-r2-0a8d4d7"
+      ],
+      "scope_caveat": "Two runs per scenario (S1b, S1c, S2, S4, S5, S8), with the 60 s scenario deadline and Verifier policy distributed-kind-lab-2. SCRATCH tools that were never committed prepared the bundle, injected R1 and restored the baseline (each bundle's kind-wrapper.json is that wrapper's record); only the Sentinel code was at 0a8d4d7. The first attempt, under policy distributed-kind-lab-1 (3 samples, 10 s gap), FAILED I3 with the action still VERIFYING at the deadline and is counted in C-DISTRIBUTED-KIND-ALL. S1b r1 and S2 r2 also opened a duplicate incident during the Recreate rollout (Observer failure window 2 s), which the Guard rejected with zero writes. Kind mode: the Executors patched the real shippingservice Deployment through a restricted token, and R1 (an invalid PORT) was injected before each run and the baseline template restored after it. The Planner is the deterministic synthetic planner (no model); the Observer, Guard and Verifier are the real ones, with TLS between the processes. The scenarios are fault-injection checks against the harness's own expectations and invariants (I1-I6, X1-X4), not scored trials. One Windows/amd64 host with Docker Desktop and one kind node (cluster kind-sentinel-boutique-connected): the Coordinator and every worker were separate OS processes on that host, with one kernel clock, one disk and loopback networking, so this is not a test across machines. Provenance inferred: run_scenarios stamped git_revision but no dirty flag; the clean tree is an operator statement, 2026-11-12 UTC.",
+      "value": "12/12 matched their expectation (S1b 2/2, S1c 2/2, S2 2/2, S4 2/2, S5 2/2, S8 2/2); every invariant held in 12/12; 0 unobserved windows; 0 harness errors"
+    },
+    {
+      "id": "C-DISTRIBUTED-KIND-BE6E636",
+      "text": "Kind-mode distributed scenarios with the committed kind tools at be6e636: {value}",
+      "derive": "distributed_expectations",
+      "bundles": [
+        "distributed-kind-s1b-r1-be6e636",
+        "distributed-kind-s1b-r2-be6e636",
+        "distributed-kind-s1c-r1-be6e636",
+        "distributed-kind-s1c-r2-be6e636",
+        "distributed-kind-s2-r1-be6e636",
+        "distributed-kind-s2-r2-be6e636",
+        "distributed-kind-s4-r1-be6e636",
+        "distributed-kind-s4-r2-be6e636",
+        "distributed-kind-s5-r1-be6e636",
+        "distributed-kind-s5-r2-be6e636",
+        "distributed-kind-s8-r1-be6e636",
+        "distributed-kind-s8-r2-be6e636"
+      ],
+      "scope_caveat": "Two runs per scenario, with the committed experiments/distributed/kind_bundle.py and the in-harness injection and restore, the 180 s kind default deadline and the 15 s Observer window; no duplicate incident was opened. S2 r2 FAILED: the Executor write committed and the template went back to baseline, but the Verifier ended FAILED and I5 found command 9 (verifier.request) delivered 8 times against MAX_ATTEMPTS 6. Its passes after the write came at about +1, +2.6, +5.1, +9.7, +18.3, +34.9, +67.5 and +127.7 s, spaced by the Coordinator's doubling retry back-off; once a gap passes the policy's 20 s max_sample_gap, a target that turns healthy late cannot collect 2 samples close enough together. That cause is inferred: the Verifier's own samples are not in the bundle, so whether the 60 s convergence grace or the 90 s timeout decided FAILED is not known (L-VERIFIER-RETRY-BACKOFF). It is not fixed. I5 has no margin in kind mode: the Verifier command took 5 or 6 delivery attempts in each of the 9 passing non-S8 runs (6 in S1b r2 and S4 r2). R1 became visible 1.4-1.5 s after injection in 8 runs and 20.2-21.7 s in S1c r2, S2 r1, S2 r2 and S8 r2; other sessions were running tests on the same host at the time, which may explain the slow runs but was not measured. Kind mode: the Executors patched the real shippingservice Deployment through a restricted token, and R1 (an invalid PORT) was injected before each run and the baseline template restored after it. The Planner is the deterministic synthetic planner (no model); the Observer, Guard and Verifier are the real ones, with TLS between the processes. The scenarios are fault-injection checks against the harness's own expectations and invariants (I1-I6, X1-X4), not scored trials. One Windows/amd64 host with Docker Desktop and one kind node (cluster kind-sentinel-boutique-connected): the Coordinator and every worker were separate OS processes on that host, with one kernel clock, one disk and loopback networking, so this is not a test across machines. Provenance inferred: run_scenarios stamped git_revision be6e636 but no dirty flag; the clean worktree is an operator statement, 2026-11-12 UTC.",
+      "value": "11/12 matched their expectation (S1b 2/2, S1c 2/2, S2 1/2, S4 2/2, S5 2/2, S8 2/2); every invariant held in 11/12; failed: S2 I5; 0 unobserved windows; 0 harness errors"
+    },
+    {
+      "id": "C-DISTRIBUTED-KIND-ALL",
+      "text": "Every kind-mode distributed scenario run on 12 Nov 2026, failures included: {value}",
+      "derive": "distributed_expectations",
+      "bundles": [
+        "distributed-kind-s1b-attempt0-0a8d4d7",
+        "distributed-kind-s1b-r1-0a8d4d7",
+        "distributed-kind-s1c-r1-0a8d4d7",
+        "distributed-kind-s2-r1-0a8d4d7",
+        "distributed-kind-s4-r1-0a8d4d7",
+        "distributed-kind-s5-r1-0a8d4d7",
+        "distributed-kind-s8-r1-0a8d4d7",
+        "distributed-kind-s1b-r2-0a8d4d7",
+        "distributed-kind-s1c-r2-0a8d4d7",
+        "distributed-kind-s2-r2-0a8d4d7",
+        "distributed-kind-s4-r2-0a8d4d7",
+        "distributed-kind-s5-r2-0a8d4d7",
+        "distributed-kind-s8-r2-0a8d4d7",
+        "distributed-kind-s1b-r1-be6e636",
+        "distributed-kind-s1b-r2-be6e636",
+        "distributed-kind-s1c-r1-be6e636",
+        "distributed-kind-s1c-r2-be6e636",
+        "distributed-kind-s2-r1-be6e636",
+        "distributed-kind-s2-r2-be6e636",
+        "distributed-kind-s4-r1-be6e636",
+        "distributed-kind-s4-r2-be6e636",
+        "distributed-kind-s5-r1-be6e636",
+        "distributed-kind-s5-r2-be6e636",
+        "distributed-kind-s8-r1-be6e636",
+        "distributed-kind-s8-r2-be6e636"
+      ],
+      "scope_caveat": "The denominator holds the failed first attempt at 0a8d4d7 (policy distributed-kind-lab-1, I3 failed with the action VERIFYING at the 60 s deadline), the 12 runs with scratch tools at 0a8d4d7 (C-DISTRIBUTED-KIND-0A8D4D7) and the 12 runs with committed tools at be6e636, where S2 r2 failed I5 (C-DISTRIBUTED-KIND-BE6E636). Two sessions on one day; repeated runs share the host, the cluster and the target Deployment, so they are not independent trials. Kind mode: the Executors patched the real shippingservice Deployment through a restricted token, and R1 (an invalid PORT) was injected before each run and the baseline template restored after it. The Planner is the deterministic synthetic planner (no model); the Observer, Guard and Verifier are the real ones, with TLS between the processes. The scenarios are fault-injection checks against the harness's own expectations and invariants (I1-I6, X1-X4), not scored trials. One Windows/amd64 host with Docker Desktop and one kind node (cluster kind-sentinel-boutique-connected): the Coordinator and every worker were separate OS processes on that host, with one kernel clock, one disk and loopback networking, so this is not a test across machines. Provenance inferred for every run.",
+      "value": "23/25 matched their expectation (S1b 4/5, S1c 4/4, S2 3/4, S4 4/4, S5 4/4, S8 4/4); every invariant held in 23/25; failed: S1b I3; S2 I5; 0 unobserved windows; 0 harness errors"
+    },
+    {
+      "id": "C-SEAL-LIVE",
+      "text": "Scenario S8 in kind mode, where the Coordinator withdraws a command a paused Executor holds and the other Executor seals the Deployment: {value}",
+      "derive": "seal_outcomes",
+      "bundles": [
+        "distributed-kind-s8-r1-0a8d4d7",
+        "distributed-kind-s8-r2-0a8d4d7",
+        "distributed-kind-s8-r1-be6e636",
+        "distributed-kind-s8-r2-be6e636"
+      ],
+      "scope_caveat": "Four runs, two per revision; the incident is expected to end FAILED (cause fence_result) and each did. Each seal was a metadata-only patch to the real shippingservice Deployment: metadata.generation went 138 to 139 and 151 to 152 at 0a8d4d7, and 177 to 178 and 180 to 181 at be6e636, with no template write, and the operator restore after each run raised it once more. The paused Executor's conditional patch was refused (CONFLICT) and the write watcher counted 0 writes after release. The Coordinator answered the paused Executor's later calls with HTTP 409 lease_not_current on renew and, where it sent its result, result_changed; in be6e636 r2 the result_changed 409 went to guard-1 instead, and the paused executor-b logged a lost lease and retried. No 'stale epoch' answer was seen. The P3.05 admission policy was not installed during these runs, so they do not show a seal under the policy (see C-ADMISSION-POLICY-LIVE). The seal leaves sentinel.io/fence and sentinel.io/fence-epoch on the Deployment and the restore puts back only the template; the operator removed them afterwards with a uid- and resourceVersion-tested metadata patch kept in the kind-lab-session bundles. The fence annotation itself is kept only for be6e636 r2 (state/pre-cleanup-shippingservice.json); r2 overwrote the r1 annotation. Synthetic planner. One Windows/amd64 host with Docker Desktop and one kind node (cluster kind-sentinel-boutique-connected): the Coordinator and every worker were separate OS processes on that host, with one kernel clock, one disk and loopback networking, so this is not a test across machines. Provenance inferred, 2026-11-12 UTC.",
+      "value": "0a8d4d7 PASS: executor-b paused, executor-a sealed at fence epoch 2 (FENCED), the paused patch CONFLICT, 0 writes after release, 0 committed template writes, incident FAILED, HTTP 409 to executor-b: renew lease_not_current, result result_changed; 0a8d4d7 PASS: executor-a paused, executor-b sealed at fence epoch 2 (FENCED), the paused patch CONFLICT, 0 writes after release, 0 committed template writes, incident FAILED, HTTP 409 to executor-a: renew lease_not_current, result result_changed; be6e636 PASS: executor-b paused, executor-a sealed at fence epoch 2 (FENCED), the paused patch CONFLICT, 0 writes after release, 0 committed template writes, incident FAILED, HTTP 409 to executor-b: renew lease_not_current, result result_changed; be6e636 PASS: executor-b paused, executor-a sealed at fence epoch 2 (FENCED), the paused patch CONFLICT, 0 writes after release, 0 committed template writes, incident FAILED, HTTP 409 to executor-b: renew lease_not_current"
+    },
+    {
+      "id": "C-ADMISSION-POLICY-LIVE",
+      "text": "The P3.05 Executor admission policy, evaluated by a real API server with a restricted Executor token: {value}",
+      "derive": "admission_probes",
+      "bundles": [
+        "executor-admission-20261112t135924z"
+      ],
+      "scope_caveat": "One run of scripts/validation/test_executor_admission_live.py in a disposable namespace (sentinel-admission-a957fc8f) on kind-sentinel-boutique-connected, with the policy bound to that namespace only; it is not installed in the Boutique lab namespaces, and the kind-mode scenario runs ran without it. Allowed through the production KubectlDeploymentAPI: a real ROLLBACK, a real RESTART, seals at epoch 5, 6 (higher) and 6 (equal), and an Executor fence without an epoch. Denied by the policy with the rule named and the object unchanged: replicas, spec.paused, a label, a foreign annotation changed or added, the fence annotation removed, a template change without new evidence, a seal that changes the template, a lower epoch, a malformed epoch, a malformed epoch with no stored epoch, and a seal at epoch 1 from a fresh Coordinator store ('may not decrease'), which the adapter reported as WriteOutcomeUnknown. That last probe confirms live the cost recorded in L-EXECUTOR-FIELD-LIMITS: a new or restored store cannot seal a Deployment fenced earlier at a higher epoch. Denied by RBAC: kubectl scale, get secrets, delete and create a Deployment (server dry run), and pods/exec create and get (auth can-i no). The namespace, the policy and the private credentials were removed afterwards. One kind node on one Windows host. Provenance inferred: branch feat/executor-admission-policy at 599f44f (since merged into integration/phase3), operator statement, 2026-11-12 UTC.",
+      "value": "24/24 probes as expected on Kubernetes 1.37 (6 allowed, 12 denied by the policy, 12 of them with the rule named and the object unchanged, 6 denied by RBAC); namespace, policy and private credentials removed"
+    },
+    {
+      "id": "C-CART-TARGET-LIVE",
+      "text": "The connected walkthrough (two verified recoveries, crash reconciliation and a refused unnecessary rollback) on the second recovery target, cartservice with fault C1 (REDIS_ADDR set to a port nothing listens on), passed end to end in {value} runs",
+      "derive": "pass_ratio",
+      "bundles": [
+        "boutique-live-20261112t111640z-b8eaa6",
+        "boutique-live-20261112t112846z-f1c4ed"
+      ],
+      "scope_caveat": "Two runs; C1's labels are pending owner sign-off, so these are not scored trials. The first run, at b79fb5d, FAILED only on the harness's dashboard acceptance check, which still expected shipping's impact (home working); every Sentinel check in it passed, including two RECOVERED rollbacks, the crash reconciliation without resubmission and the Guard's ROLLBACK_ALREADY_AT_BASELINE rejection with zero Executor patch attempts. The check was fixed in a932a5f, and the rerun at a932a5f passed every check. Both runs showed the impact the catalog predicts for C1: home, add to cart, cart and checkout all answered 500, so C1 stays the primary cart fault and C2 was not needed. Harness-authored proposals, no model; no agent-mode cartservice run has been made. Approval auto-lab (automated-lab identity, no person). One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: b79fb5d and a932a5f, clean trees, 2026-11-12 UTC.",
+      "value": "1/2"
+    },
+    {
+      "id": "C-SHIPPING-REGRESSION-B79FB5D",
+      "text": "With cartservice added to the connected lab (both targets in the Executor Role, cart on a Recreate rollout), the shipping walkthrough and an agent-mode R1 run on shippingservice passed in {value} runs",
+      "derive": "pass_ratio",
+      "bundles": [
+        "boutique-live-20261112t112137z-9b327b",
+        "boutique-live-20261112t112406z-01cb56"
+      ],
+      "scope_caveat": "Two runs, one of each, as a regression check of the changed connected lab. The walkthrough used harness-authored proposals; the agent run used qwen3:14b, reached ROLLBACK and RECOVERED, and its R1 labels are pending, so it is not a scored trial. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Approval auto-lab (automated-lab identity, no person). One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected). Provenance recorded: b79fb5d, clean tree, 2026-11-12 UTC.",
+      "value": "2/2"
+    },
+    {
+      "id": "C-WORKER-CONTAINER-READINESS",
+      "text": "An agent-mode Planner run from the worker image as a container against a Coordinator on the host, at be6e636: {value}",
+      "derive": "container_readiness",
+      "bundles": [
+        "worker-container-planner-be6e636-20261112t181036z"
+      ],
+      "scope_caveat": "One run. Image sentinel-worker:p3live2 built from deploy/docker/worker.Dockerfile at be6e636 (revision label), read-only root, tmpfs /tmp, a named volume for /data, default --ready-seconds 60 and the image's HEALTHCHECK (interval 30 s, timeout 5 s, start period 60 s, retries 3). The real Observer path opened INC-3F6B8409B555 and the Planner (qwen3:14b on the host's Ollama over plain HTTP, allow_insecure_remote) saved a ROLLBACK proposal in one planning attempt; the Coordinator moved the incident to VALIDATING. No Guard, Executor or Verifier ran. The pass outlasted the 60 s readiness window and the container stayed ready, which the pre-fix image did not (C-WORKER-READINESS-BEFORE-FIX). Lease renewals are inferred, not logged: the Coordinator writes no info-level renew line, and the evidence is a single-attempt receipt finishing about 90 s after the claim under a 30 s lease. At 18:24:31, after the pass and while the Coordinator was up, the Planner logged a worker.status retry after a TimeoutError and /readyz contact age reached 8.4 and 19.1 s; /readyz stayed 200 and Docker stayed healthy. /readyz turns 503 about one readiness window after the Coordinator stops, but Docker's own status needs up to 3 more 30 s checks. Other sessions ran tests on the same host at the time. The Planner's Kubernetes credential was a 45-minute get-only token for one Deployment, held in memory only; the CA and server keys were deleted. One Windows/amd64 host with Docker Desktop: the container and the Coordinator share one machine. Provenance inferred: operator statement and the image's revision label, 2026-11-12 UTC.",
+      "value": "88/88 health samples Docker healthy with /readyz 200 while the Coordinator was up (longest planning pass 89.6 s, highest contact age 19.1 s); /readyz 503 62.0 s and Docker unhealthy 126.0 s after the Coordinator stopped"
+    },
+    {
+      "id": "C-WORKER-READINESS-BEFORE-FIX",
+      "text": "Before 8bda4e3, Docker's record of the agent-mode Planner container and of a deliberately broken one: {value}",
+      "derive": "container_health",
+      "bundles": [
+        "worker-container-planner-0a8d4d7-20261112"
+      ],
+      "scope_caveat": "One session: the Coordinator ran at 0a8d4d7 and the image was built from c973edd, because the worker image at 0a8d4d7 failed to build (an ImportError, listed under the excluded runs). The working Planner planned a ROLLBACK for INC-90ED7FECF863 in one 128.7 s pass; Docker kept its last five health checks, and two of them failed during that pass because /readyz counted only the end of a pass as Coordinator contact (L-WORKER-READINESS-LONG-PASS, fixed in 8bda4e3). Docker never marked it unhealthy, because three failures in a row are needed. The broken container had an unreachable model URL: /readyz answered 503 prerequisites_failed, Docker marked it unhealthy and it claimed nothing, as intended. The scratch orchestrator kept no event or health sample record, so the readiness table shows the run as INCOMPLETE. One Windows/amd64 host with Docker Desktop. Provenance inferred: operator statement, 2026-11-12 UTC.",
+      "value": "sentinel-p3live-planner-badmodel: unhealthy, 5/5 kept checks failed; sentinel-p3live-planner: healthy, 2/5 kept checks failed"
+    },
+    {
+      "id": "C-KIND-LAB-SESSIONS",
+      "text": "Kind lab preparation for the kind-mode sessions: {value}",
+      "derive": "lab_sessions",
+      "bundles": [
+        "kind-lab-session-0a8d4d7-20261112",
+        "kind-lab-session-be6e636-20261112"
+      ],
+      "scope_caveat": "Two sessions. At 0a8d4d7 a scratch tool prepared the bundle; at be6e636 the committed kind_bundle prepare did. Six checks of the Executor token each time: get and patch shippingservice allowed; delete, patch paymentservice, get secrets and list pods refused. The be6e636 restore check put R1 on the target with the committed injection and then ran kind_bundle restore: generation 183 to 184, Available, template back at baseline (template_sha256 5434e0fd...ef26). The restore puts back only the Pod template: the S8 fence annotations and a changed sentinel.io/execution stayed until the operator removed them with a uid- and resourceVersion-tested metadata patch. Across the be6e636 session shippingservice went from generation 156 to 187 and its deployment.kubernetes.io/revision from 137 to 165 through about 28 rollouts; its template and sentinel.* annotations ended as they started. Only the Deployments have an after-snapshot in the bundle; the namespace, RBAC, admission-policy and Docker inventories were saved before the session only. One kind node on one Windows host. Provenance inferred, 2026-11-12 UTC.",
+      "value": "0a8d4d7: Executor RBAC checks 6/6 as expected, no restore check; be6e636: Executor RBAC checks 6/6 as expected, the restore check returned the target healthy at its baseline template in 21.8 s"
     }
   ]
 }

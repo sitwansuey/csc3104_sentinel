@@ -1000,6 +1000,366 @@
       "provenance": "recorded",
       "status": "current",
       "reason": null
+    },
+    {
+      "bundle_id": "distributed-file-s0-trace-679ef29",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-file-s0-trace-679ef29",
+      "captured_at": "2026-11-12T06:43:58.149985Z",
+      "source_revision": "679ef298abe3dd4b5904278aa981ca02af2970f8",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-file-s1a-trace-679ef29",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-file-s1a-trace-679ef29",
+      "captured_at": "2026-11-12T06:44:05.696677Z",
+      "source_revision": "679ef298abe3dd4b5904278aa981ca02af2970f8",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s1b-attempt0-0a8d4d7",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s1b-attempt0-0a8d4d7",
+      "captured_at": "2026-11-12T15:57:23.068814Z",
+      "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s1b-r1-0a8d4d7",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s1b-r1-0a8d4d7",
+      "captured_at": "2026-11-12T15:59:47.948094Z",
+      "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s1c-r1-0a8d4d7",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s1c-r1-0a8d4d7",
+      "captured_at": "2026-11-12T16:01:16.561258Z",
+      "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s2-r1-0a8d4d7",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s2-r1-0a8d4d7",
+      "captured_at": "2026-11-12T16:02:10.559194Z",
+      "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s4-r1-0a8d4d7",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s4-r1-0a8d4d7",
+      "captured_at": "2026-11-12T16:03:04.886768Z",
+      "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s5-r1-0a8d4d7",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s5-r1-0a8d4d7",
+      "captured_at": "2026-11-12T16:04:09.800545Z",
+      "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s8-r1-0a8d4d7",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s8-r1-0a8d4d7",
+      "captured_at": "2026-11-12T16:04:59.376129Z",
+      "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s1b-r2-0a8d4d7",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s1b-r2-0a8d4d7",
+      "captured_at": "2026-11-12T16:05:17.150426Z",
+      "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s1c-r2-0a8d4d7",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s1c-r2-0a8d4d7",
+      "captured_at": "2026-11-12T16:06:07.652173Z",
+      "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s2-r2-0a8d4d7",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s2-r2-0a8d4d7",
+      "captured_at": "2026-11-12T16:06:42.090723Z",
+      "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s4-r2-0a8d4d7",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s4-r2-0a8d4d7",
+      "captured_at": "2026-11-12T16:07:33.452584Z",
+      "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s5-r2-0a8d4d7",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s5-r2-0a8d4d7",
+      "captured_at": "2026-11-12T16:08:38.618098Z",
+      "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s8-r2-0a8d4d7",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s8-r2-0a8d4d7",
+      "captured_at": "2026-11-12T16:09:08.210508Z",
+      "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s1b-r1-be6e636",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s1b-r1-be6e636",
+      "captured_at": "2026-11-12T17:55:29.797541Z",
+      "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s1c-r1-be6e636",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s1c-r1-be6e636",
+      "captured_at": "2026-11-12T17:57:39.599033Z",
+      "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s2-r1-be6e636",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s2-r1-be6e636",
+      "captured_at": "2026-11-12T17:59:44.356091Z",
+      "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s4-r1-be6e636",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s4-r1-be6e636",
+      "captured_at": "2026-11-12T18:04:08.824086Z",
+      "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s5-r1-be6e636",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s5-r1-be6e636",
+      "captured_at": "2026-11-12T18:05:55.870044Z",
+      "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s8-r1-be6e636",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s8-r1-be6e636",
+      "captured_at": "2026-11-12T18:07:27.572816Z",
+      "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s1b-r2-be6e636",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s1b-r2-be6e636",
+      "captured_at": "2026-11-12T17:56:22.263133Z",
+      "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s1c-r2-be6e636",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s1c-r2-be6e636",
+      "captured_at": "2026-11-12T17:58:35.554887Z",
+      "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s2-r2-be6e636",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s2-r2-be6e636",
+      "captured_at": "2026-11-12T18:01:08.436220Z",
+      "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s4-r2-be6e636",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s4-r2-be6e636",
+      "captured_at": "2026-11-12T18:04:53.974113Z",
+      "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s5-r2-be6e636",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s5-r2-be6e636",
+      "captured_at": "2026-11-12T18:06:41.615171Z",
+      "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s8-r2-be6e636",
+      "class": "distributed-scenario",
+      "path": "2026-11-12/distributed-kind-s8-r2-be6e636",
+      "captured_at": "2026-11-12T18:07:58.744140Z",
+      "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "kind-lab-session-0a8d4d7-20261112",
+      "class": "kind-lab-session",
+      "path": "2026-11-12/kind-lab-session-0a8d4d7-20261112",
+      "captured_at": null,
+      "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "kind-lab-session-be6e636-20261112",
+      "class": "kind-lab-session",
+      "path": "2026-11-12/kind-lab-session-be6e636-20261112",
+      "captured_at": null,
+      "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "executor-admission-20261112t135924z",
+      "class": "executor-admission",
+      "path": "2026-11-12/executor-admission-20261112t135924z",
+      "captured_at": "2026-11-12T13:59:24.217293Z",
+      "source_revision": "599f44f4bc0d1d880f3a505d2e6f485ea7ecdf6a",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261112t111640z-b8eaa6",
+      "class": "connected-harness",
+      "path": "2026-11-12/boutique-live-20261112t111640z-b8eaa6",
+      "captured_at": "2026-11-12T11:16:40.913605Z",
+      "source_revision": "b79fb5d91850bb4eb09370bf322730d261a07b18",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261112t112137z-9b327b",
+      "class": "connected-harness",
+      "path": "2026-11-12/boutique-live-20261112t112137z-9b327b",
+      "captured_at": "2026-11-12T11:21:37.744745Z",
+      "source_revision": "b79fb5d91850bb4eb09370bf322730d261a07b18",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261112t112406z-01cb56",
+      "class": "agent",
+      "path": "2026-11-12/boutique-live-20261112t112406z-01cb56",
+      "captured_at": "2026-11-12T11:24:06.839907Z",
+      "source_revision": "b79fb5d91850bb4eb09370bf322730d261a07b18",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261112t112846z-f1c4ed",
+      "class": "connected-harness",
+      "path": "2026-11-12/boutique-live-20261112t112846z-f1c4ed",
+      "captured_at": "2026-11-12T11:28:46.575872Z",
+      "source_revision": "a932a5f9967883cd6912d672aaa73f3e31238106",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "worker-container-planner-0a8d4d7-20261112",
+      "class": "worker-container",
+      "path": "2026-11-12/worker-container-planner-0a8d4d7-20261112",
+      "captured_at": null,
+      "source_revision": "c973eddea4a8ba479a8ea2f67044d6a1ec42d471",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "worker-container-planner-be6e636-20261112t181036z",
+      "class": "worker-container",
+      "path": "2026-11-12/worker-container-planner-be6e636-20261112t181036z",
+      "captured_at": "2026-11-12T18:10:36Z",
+      "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
     }
   ]
 }

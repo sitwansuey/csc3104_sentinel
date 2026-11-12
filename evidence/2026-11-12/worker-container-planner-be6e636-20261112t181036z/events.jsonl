@@ -1,0 +1,15 @@
+{"t": 4.7, "utc": "2026-11-12T18:10:36Z", "event": "coordinator_started", "pid": 15476, "server_key_deleted": true}
+{"t": 5.0, "utc": "2026-11-12T18:10:36Z", "event": "readonly_rbac_created", "sa": "sentinel-planner-readonly-p3live2", "token_minutes": "<redacted:811786ad>"}
+{"t": 6.0, "utc": "2026-11-12T18:10:37Z", "event": "container_started", "image_config": "sha256:463b96f19e5b4e5cd0573123246865cc02a61c98c472e7870a047989e8a277a2 {\"Test\":[\"CMD\",\"python\",\"-c\",\"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=3)\"],\"Interval\":30000000000,\"Timeout\":5000000000,\"StartPeriod\":60000000000,\"Retries\":3} [\"--role\",\"planner\",\"--config\",\"/config/worker.json\",\"--health-port\",\"8080\"]"}
+{"t": 6.8, "utc": "2026-11-12T18:10:38Z", "event": "container_kube_read", "rc": 0, "uid_matches": true, "can_patch": "no"}
+{"t": 18.8, "utc": "2026-11-12T18:10:50Z", "event": "container_initial_health", "running": true, "health": "healthy", "failing_streak": 0, "last_check_start": "2026-11-12T18:10:42.285378521Z", "last_check_exit": 0, "readyz": "200 {\"ready\": true, \"contact_age_seconds\": 1.287}"}
+{"t": 20.8, "utc": "2026-11-12T18:10:52Z", "event": "r1_injected", "fault_visible": true, "visible_after_seconds": 1.4}
+{"t": 26.5, "utc": "2026-11-12T18:10:58Z", "event": "incident_opened", "incident_id": "INC-3F6B8409B555", "signals": 10}
+{"t": 26.5, "utc": "2026-11-12T18:10:58Z", "event": "incident_delivered", "flush": {"delivered": 1, "error": null}}
+{"t": 929.4, "utc": "2026-11-12T18:26:00Z", "event": "pass_timeout", "seconds_since_delivery": 902.9, "span": null}
+{"t": 950.5, "utc": "2026-11-12T18:26:22Z", "event": "coordinator_stopped", "returncode": 1}
+{"t": 1012.6, "utc": "2026-11-12T18:27:24Z", "event": "readyz_503", "after_stop_seconds": 62.0, "readyz": "503 {\"ready\": false, \"contact_age_seconds\": 62.344}"}
+{"t": 1076.6, "utc": "2026-11-12T18:28:28Z", "event": "docker_unhealthy", "after_stop_seconds": 126.0, "running": true, "health": "unhealthy", "failing_streak": 3, "last_check_start": "2026-11-12T18:28:25.301367694Z", "last_check_exit": 1, "readyz": "503 {\"ready\": false, \"contact_age_seconds\": 126.103}"}
+{"t": 1146.2, "utc": "2026-11-12T18:29:37Z", "event": "restore", "returncode": 0, "tail": "thy\": true,\n \"seconds\": 68.0,\n \"after\": {\n  \"generation\": 186,\n  \"observed_generation\": 186,\n  \"resource_version\": \"153610\",\n  \"desired\": 1,\n  \"available\": 1,\n  \"updated\": 1,\n  \"template_is_baseline\": true,\n  \"template_sha256\": \"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"\n }\n}\n"}
+{"t": 1146.4, "utc": "2026-11-12T18:29:37Z", "event": "credential_scan", "files_with_a_credential": []}
+{"t": 1146.4, "utc": "2026-11-12T18:29:37Z", "event": "result", "incident_id": "INC-3F6B8409B555", "readyz_503_after_stop": 62.0, "docker_unhealthy_after_stop": 126.0, "created": {"rbac": true, "container": true, "volume": true, "injected": true}}

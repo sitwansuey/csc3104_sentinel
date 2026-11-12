@@ -284,5 +284,74 @@ class JournalExportTests(unittest.TestCase):
             self.assertFalse(any(p.suffix.startswith(".sqlite") for p in (Path(temp) / "evidence").rglob("*")))
 
 
+class Phase3CollectTests(unittest.TestCase):
+    """Distributed scenario folders, operator attachments and orchestrator event files."""
+
+    def test_distributed_bundle_keeps_the_run_records_but_not_the_store(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = fx.distributed_run(temp, "2026-11-12-S1b")
+            manifest = collect.collect(run, "distributed-scenario", "dist-a", evidence_root=Path(temp) / "evidence",
+                                       context=context(), inferred_revision=REVISION, inferred_basis="fixture")
+            self.assertEqual({item["path"] for item in manifest["files"]},
+                             {"summary.json", "timeline.jsonl", "coordinator-records.json"})
+            self.assertEqual(manifest["captured_at"], "2026-11-12T17:55:29.797541Z")
+            self.assertNotIn("attached", manifest)
+
+    def test_attachment_is_sanitised_allowlisted_and_named_in_the_manifest(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = fx.distributed_run(temp, "2026-11-12-S8")
+            wrapper = write(Path(temp) / "S8-wrapper.json", {"stdout": "C:\\Users\\tester\\run", "token": "abc"})
+            manifest = collect.collect(run, "distributed-scenario", "dist-b", evidence_root=Path(temp) / "evidence",
+                                       context=context(), inferred_revision=REVISION, inferred_basis="fixture",
+                                       attachments=((wrapper, "kind-wrapper.json"),))
+            self.assertEqual(manifest["attached"], [{"path": "kind-wrapper.json", "source_name": "S8-wrapper.json"}])
+            kept = (Path(temp) / "evidence/2026-11-12/dist-b/kind-wrapper.json").read_text(encoding="utf-8")
+            self.assertNotIn("tester", kept)
+            self.assertNotIn('"abc"', kept)
+            self.assertIn("<redacted:", kept)
+
+    def test_attachments_outside_the_allowlist_or_colliding_are_refused(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = fx.distributed_run(temp, "2026-11-12-S2")
+            extra = write(Path(temp) / "extra.json", {"a": 1})
+            kubeconfig = write(Path(temp) / "executor-kubeconfig.json", {"kind": "Config"})
+            patterns = collect.load_profiles()["distributed-scenario"]["include"]
+            for source, published in ((extra, "notes.json"), (extra, "../kind-wrapper.json"),
+                                      (extra, "sub\\kind-wrapper.json"), (extra, "summary.json"),
+                                      (Path(temp) / "missing.json", "kind-wrapper.json"),
+                                      (kubeconfig, "kind-wrapper.json")):
+                with self.subTest(published=published, source=source.name), self.assertRaises(ValueError):
+                    collect.attachment_sources(((source, published),), patterns, run)
+            with self.assertRaises(ValueError):
+                collect.attachment_sources(((extra, "kind-wrapper.json"), (extra, "kind-wrapper.json")), patterns, run)
+            self.assertFalse((Path(temp) / "evidence").exists())
+
+    def test_attach_argument_splits_at_the_last_equals_sign(self):
+        self.assertEqual(collect.parse_attachment("C:/a=b/S8-wrapper.json=kind-wrapper.json"),
+                         (Path("C:/a=b/S8-wrapper.json"), "kind-wrapper.json"))
+        for value in ("kind-wrapper.json", "=kind-wrapper.json", "source.json="):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                collect.parse_attachment(value)
+
+    def test_orchestrator_events_give_the_capture_time(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = fx.container_run(temp, "task2")
+            self.assertEqual(collect.captured_at(run), "2026-11-12T18:10:36Z")
+            manifest = collect.collect(run, "worker-container", "container-a", evidence_root=Path(temp) / "evidence",
+                                       context=context(), inferred_revision=REVISION, inferred_basis="fixture")
+            self.assertEqual({item["path"] for item in manifest["files"]},
+                             {"events.jsonl", "health.jsonl", "planner-container.state.json",
+                              "planner-container.log"})
+
+    def test_admission_summary_gives_the_capture_time(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = fx.admission_run(temp, "executor-admission-20261112T135924Z")
+            write(run / "executor.kubeconfig", "kind: Config\n")
+            manifest = collect.collect(run, "executor-admission", "admission-a", evidence_root=Path(temp) / "evidence",
+                                       context=context(), inferred_revision=REVISION, inferred_basis="fixture")
+            self.assertEqual(manifest["captured_at"], "2026-11-12T13:59:24Z")
+            self.assertEqual([item["path"] for item in manifest["files"]], ["admission.json"])
+
+
 if __name__ == "__main__":
     unittest.main()

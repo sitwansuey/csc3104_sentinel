@@ -1,0 +1,27 @@
+{
+  "status": "healthy",
+  "before": {
+    "generation": 183,
+    "observed_generation": 183,
+    "resource_version": "151797",
+    "desired": 1,
+    "available": 0,
+    "updated": 1,
+    "template_is_baseline": false,
+    "template_sha256": "bbf3cdf1bdf5cb2da049b116f062f52273d7cc6d1b40a2109adb21a60b1ad7ae"
+  },
+  "operator_restore": true,
+  "restored_at": "2026-11-12T18:09:27.424866Z",
+  "healthy": true,
+  "seconds": 21.8,
+  "after": {
+    "generation": 184,
+    "observed_generation": 184,
+    "resource_version": "151857",
+    "desired": 1,
+    "available": 1,
+    "updated": 1,
+    "template_is_baseline": true,
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  }
+}

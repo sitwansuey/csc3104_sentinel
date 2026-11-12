@@ -159,3 +159,78 @@ def scenario_run(root, name, *, scenario="R2", status="PASS", actual="ROLLBACK",
     if writes:
         write(run / "approved-rollback/execution.json", {"status": "APPLIED"})
     return run
+
+
+def jsonl(path, records):
+    """Write one JSON object per line, as the distributed harness and the operator orchestrators do."""
+    return write(path, "".join(json.dumps(record) + "\n" for record in records))
+
+
+def span(name, span_id, parent=None, *, process="coordinator", ts="2026-11-12T06:44:00.000Z", ms=100.0,
+         trace="t" * 32, **extra):
+    record = {"process": process, "ts": ts, "event": "span.end", "trace_id": trace, "span_id": span_id,
+              "span_name": name, "duration_ms": ms, **extra}
+    if parent:
+        record["parent_span_id"] = parent
+    return record
+
+
+def distributed_run(root, name, *, scenario="S1b", mode="kind", matches=True, failed=(), states=("RECOVERED",),
+                    writes=1, timeline=(), notes=None, started="2026-11-12T17:55:29.797541Z", visible=None):
+    """One run_scenarios run folder: summary.json, timeline.jsonl and a coordinator-records.json."""
+    run = Path(root) / name
+    invariants = [{"id": key, "passed": key not in failed, "detail": "fixture"} for key in ("I1", "I3", "I5")]
+    summary = {"schema": "sentinel-distributed-run-v1", "scenario": scenario, "mode": mode, "started_at": started,
+               "duration_seconds": 50.8, "deadline_seconds": 180, "git_revision": REVISION, "harness_error": None,
+               "states": list(states), "committed_writes": writes, "unobserved_windows": 0,
+               "matches_expectation": matches, "invariants": invariants, "notes": notes or {}}
+    if visible is not None:
+        summary["kind_lab"] = {"fault": {"visible_after_seconds": visible}}
+    write(run / "summary.json", summary)
+    jsonl(run / "timeline.jsonl", list(timeline))
+    write(run / "coordinator-records.json", {"receipts": []})
+    write(run / "coordinator.sqlite", b"SQLite format 3\x00")
+    return run
+
+
+def admission_run(root, name, *, failing=()):
+    """A live admission-policy check: two allowed, two policy denials, one RBAC denial and two non-probe checks."""
+    run = Path(root) / name
+    probes = [("server fields", None), ("ROLLBACK", "ALLOWED"), ("seal 5", "ALLOWED"), ("replicas", "DENIED_BY_POLICY"),
+              ("lower epoch", "DENIED_BY_POLICY"), ("scale", "DENIED_BY_RBAC"), ("final state", None)]
+    checks = [{"name": label, "expected": expected, "passed": label not in failing, "rule_named": True,
+               "object_unchanged": expected != "ALLOWED"} for label, expected in probes]
+    write(run / "admission.json", {"status": "FAIL" if failing else "PASS", "started_at": "2026-11-12T13:59:24Z",
+                                   "server_version": "1.37", "checks": checks, "namespace_deleted": True,
+                                   "policy_deleted": True, "private_credentials_removed": True})
+    return run
+
+
+def docker_state(status, exit_codes):
+    return [{"State": {"Status": "running", "Health": {"Status": status, "FailingStreak": 0, "Log": [
+        {"Start": "2026-11-12T18:00:00Z", "ExitCode": code, "Output": ""} for code in exit_codes]}}}]
+
+
+def container_run(root, name, *, orchestrated=True, unready_sample=False):
+    """A worker container run: Docker state and a planner log, plus the orchestrator's records when orchestrated."""
+    run = Path(root) / name
+    write(run / "planner-container.state.json", docker_state("unhealthy", (0, 0, 1, 1, 1)))
+    end = {"event": "span.end", "span_name": "worker.process", "topic": "planner.request", "duration_ms": 89604.657}
+    write(run / "planner-container.log", "starting\n2026-11-12T18:12:28Z " + json.dumps(end) + "\n")
+    if orchestrated:
+        jsonl(run / "events.jsonl", [{"utc": "2026-11-12T18:10:36Z", "event": "container_started"},
+                                     {"utc": "2026-11-12T18:12:28Z", "event": "result"},
+                                     {"utc": "2026-11-12T18:26:22Z", "event": "coordinator_stopped"},
+                                     {"utc": "2026-11-12T18:27:24Z", "event": "readyz_503",
+                                      "after_stop_seconds": 62.0},
+                                     {"utc": "2026-11-12T18:28:28Z", "event": "docker_unhealthy",
+                                      "after_stop_seconds": 126.0}])
+        ready = lambda age: "200 " + json.dumps({"contact_age_seconds": age})
+        jsonl(run / "health.jsonl", [
+            {"utc": "2026-11-12T18:10:40Z", "health": "starting", "readyz": "503 {}"},
+            {"utc": "2026-11-12T18:10:49Z", "health": "healthy", "readyz": ready(1.5)},
+            {"utc": "2026-11-12T18:11:30Z", "health": "healthy",
+             "readyz": "503 {}" if unready_sample else ready(4.66)},
+            {"utc": "2026-11-12T18:24:33Z", "health": "healthy", "readyz": ready(19.062)},
+            {"utc": "2026-11-12T18:27:30Z", "health": "healthy", "readyz": "503 {}"}])
+    return run

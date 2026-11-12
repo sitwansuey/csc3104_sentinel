@@ -1,0 +1,19 @@
+{
+  "role": "planner",
+  "mode": "agent",
+  "url": "https://host.docker.internal:18766",
+  "identity": "planner-2",
+  "token_env": "<redacted:790f518d>",
+  "ca": "/config/ca.crt",
+  "state_directory": "/data",
+  "baselines": "/config/baseline.json",
+  "model_config": "/config/model.json",
+  "model_endpoint": "http://host.docker.internal:11999",
+  "telemetry_directory": "/observer",
+  "cluster_id": "sentinel-boutique-connected",
+  "context": "planner-readonly",
+  "kubeconfig": "/config/planner-readonly.kubeconfig",
+  "max_attempts": 2,
+  "retry_seconds": 5,
+  "preflight_seconds": 30
+}

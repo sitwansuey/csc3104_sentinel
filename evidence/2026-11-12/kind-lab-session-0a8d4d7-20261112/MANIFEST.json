@@ -1,0 +1,70 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "kind-lab-session-0a8d4d7-20261112",
+  "class": "kind-lab-session",
+  "captured_at": null,
+  "source_run_dir_name": "phase3-live",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+    "basis": "Operator records of the 12 Nov 2026 kind-mode session (about 15:56-16:18 UTC) driven by SCRATCH tools that were never committed, with Sentinel code from a clean worktree of integration/phase3 at this revision (operator record). cleanup-patch.json is the uid/resourceVersion-tested metadata patch the operator applied afterwards (13 Nov) to remove the S8 fence annotations."
+  },
+  "files": [
+    {
+      "path": "NOTES.txt",
+      "sha256": "cb782292f31db052ae3593795c8b879d4ba34836f7fc7b02ecb535cd3208b121",
+      "bytes": 2184,
+      "redactions": 0
+    },
+    {
+      "path": "bundle/allowed-targets.json",
+      "sha256": "753ec6fe28be9c530f4f8203694af2f82423c283b4afbd16500eea5591a7ed73",
+      "bytes": 216,
+      "redactions": 0
+    },
+    {
+      "path": "bundle/baseline-health.json",
+      "sha256": "72209f29e98a0f4f04efad92d99e88b84e03a6ee0a80f14ffd35db288dd8efc1",
+      "bytes": 1139,
+      "redactions": 0
+    },
+    {
+      "path": "bundle/policy.json",
+      "sha256": "202b6c2f6f67b2d009ace1f4bbaaba35b10f5ea45528839beb06b5e97136f5f2",
+      "bytes": 2261,
+      "redactions": 0
+    },
+    {
+      "path": "bundle/rbac-checks.json",
+      "sha256": "7009e485c1c11d53cf7bdd22608cad971c22bf364dfb8a98f47aa8d9487587f2",
+      "bytes": 663,
+      "redactions": 0
+    },
+    {
+      "path": "cleanup-patch.json",
+      "sha256": "6068a2b99ebbc5d6b373a11a20ffe202324c7efafd2ca41624bb1e43b3fab543",
+      "bytes": 815,
+      "redactions": 0
+    },
+    {
+      "path": "state/before-deployments.json",
+      "sha256": "ac3916700249b948cf52c5c32164c7aeefdabcc29f5a65f7d77b1a82aafd6c7a",
+      "bytes": 72123,
+      "redactions": 4
+    },
+    {
+      "path": "state/policy-v1.json",
+      "sha256": "7fdad65da8ff3240a602285e6793144d1ded7cc0dedb5d2f257e93341209f5f6",
+      "bytes": 2260,
+      "redactions": 0
+    },
+    {
+      "path": "summary-all.json",
+      "sha256": "c24987364c68cbd5f89befe849e4b0a9a3798a8cf8c64c92f0aa33dcc49b1a9a",
+      "bytes": 18239,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

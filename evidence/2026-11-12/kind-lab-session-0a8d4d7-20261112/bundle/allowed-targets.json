@@ -1,0 +1,9 @@
+[
+  {
+    "cluster_id": "sentinel-boutique-connected",
+    "namespace": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+]

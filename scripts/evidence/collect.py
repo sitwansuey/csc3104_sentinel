@@ -38,7 +38,9 @@ BUNDLE_ID = re.compile(r"[a-z0-9][a-z0-9._-]{2,95}")
 # Scenario summaries written by scripts/validation/test_executor_wedge_live.py, one per run folder.
 WEDGE_SUMMARIES = ("rv-race.json", "delete-recreate.json", "admission-deny.json")
 SUMMARY_FILES = ("summary.json", "data/evidence/summary.json", "batch.json", "validation.json", "results.json",
-                 *WEDGE_SUMMARIES)
+                 *WEDGE_SUMMARIES, "admission.json")
+# Line-per-event records whose first line's "utc" stamp gives the capture time (operator orchestrators).
+EVENT_FILES = ("events.jsonl",)
 
 # Code-level deny-list. A profile cannot override it.
 DENY_SEGMENT = re.compile(r"pki.*|locks?|node_modules|\.venv", re.IGNORECASE)
@@ -109,6 +111,19 @@ def _read_json(path):
         return None
 
 
+def _first_event(path):
+    """The first JSON object line of a .jsonl file, or {}."""
+    try:
+        with Path(path).open(encoding="utf-8-sig") as handle:
+            for line in handle:
+                if line.strip():
+                    value = json.loads(line)
+                    return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+    return {}
+
+
 UTC_STAMP = re.compile(r"\d{8}T\d{6}Z")
 # Packaged run folders are named from the host's local clock with no zone.
 LOCAL_STAMP = re.compile(r"\d{8}-\d{6}")
@@ -150,6 +165,10 @@ def captured_at(run_dir, local_offset=None):
             attempts = value.get("baseline_attempts")
             if isinstance(attempts, list) and attempts and isinstance(attempts[0], dict) and attempts[0].get("at"):
                 return attempts[0]["at"]
+    for name in EVENT_FILES:
+        first = _first_event(Path(run_dir) / name)
+        if isinstance(first.get("utc"), str):
+            return first["utc"]
     stamp = _stamp(Path(run_dir).name, local_offset)
     return stamp.isoformat().replace("+00:00", "Z") if stamp else None
 
@@ -195,11 +214,47 @@ def default_context(repo_root=None):
                             usernames=tuple(sorted(user for user in users if user)))
 
 
+def parse_attachment(value):
+    """'SOURCE=PUBLISHED' as (Path, posix path); the published path is checked by attachment_sources."""
+    source, separator, published = str(value).rpartition("=")
+    if not separator or not source or not published:
+        raise ValueError("An attachment looks like SOURCE=PUBLISHED_PATH")
+    return Path(source), published
+
+
+def attachment_sources(attachments, patterns, run_dir):
+    """Read operator files kept beside the run folder (such as a wrapper record) under a published path.
+
+    Each published path must be a plain relative path that passes the deny-list and the class
+    allowlist, and must not collide with a file collected from the run folder itself.
+    """
+    sources, seen = [], set()
+    for source, published in attachments:
+        source, path = Path(source), PurePosixPath(published)
+        if path.is_absolute() or ".." in path.parts or "\\" in published or published != path.as_posix():
+            raise ValueError("Attachment path must be relative with forward slashes: " + published)
+        if denied(published) or not allowed(published, patterns):
+            raise ValueError("Attachment path is not allowlisted for this class: " + published)
+        if published in seen or (Path(run_dir) / published).exists():
+            raise ValueError("Attachment path collides with another file: " + published)
+        if source.is_symlink() or not source.is_file():
+            raise ValueError("Attachment source is not a regular file: " + source.name)
+        if denied(source.name):
+            raise ValueError("Attachment source name is on the deny-list: " + source.name)
+        seen.add(published)
+        sources.append((published, source.read_bytes(), source.name))
+    return sources
+
+
 def collect(run_dir, run_class, bundle_id, *, evidence_root=EVIDENCE, profiles=None, date=None,
             inferred_revision=None, inferred_basis=None, include_model_io=False, context=None,
             file_cap=sanitise.FILE_CAP_BYTES, bundle_cap=sanitise.BUNDLE_CAP_BYTES, exports=(),
-            folder_utc_offset=None):
-    """Create evidence_root/<date>/<bundle_id>/ and append it to index.json."""
+            folder_utc_offset=None, attachments=()):
+    """Create evidence_root/<date>/<bundle_id>/ and append it to index.json.
+
+    attachments are (source path, published path) pairs for operator records kept outside the run
+    folder; they pass the same deny-list, allowlist and sanitiser and are named in the MANIFEST.
+    """
     run_dir, evidence_root = Path(run_dir), Path(evidence_root)
     profiles = profiles if profiles is not None else load_profiles()
     if run_class not in profiles:
@@ -233,12 +288,14 @@ def collect(run_dir, run_class, bundle_id, *, evidence_root=EVIDENCE, profiles=N
                  "basis": inferred_basis or "No provenance block in the run; revision not inferred"}
 
     outputs, omitted, total = [], [], 0
+    attached = attachment_sources(attachments, profiles[run_class]["include"], run_dir)
     sources = [(relative, (run_dir / relative).read_bytes()) for relative in
                select_files(run_dir, profiles[run_class]["include"])]
     for name in exports:
         value = EXPORTS[name](run_dir)
         if value is not None:
             sources.append((name, json.dumps(value).encode("utf-8")))
+    sources.extend((published, data) for published, data, _ in attached)
     for relative, data in sources:
         clean, redactions = sanitise.sanitise_bytes(data, relative, context)
         if len(clean) > file_cap:
@@ -257,6 +314,8 @@ def collect(run_dir, run_class, bundle_id, *, evidence_root=EVIDENCE, profiles=N
                 "files": [{"path": relative, "sha256": hashlib.sha256(clean).hexdigest(), "bytes": len(clean),
                            "redactions": redactions} for relative, clean, redactions in outputs],
                 "omitted": omitted}
+    if attached:
+        manifest["attached"] = [{"path": published, "source_name": name} for published, _, name in attached]
     staging = evidence_root / date / (".staging-" + bundle_id)
     try:
         staging.mkdir(parents=True)
@@ -293,13 +352,17 @@ def main(argv=None):
     parser.add_argument("--include-model-io", action="store_true", help="Keep model prompts/responses, 4 KB each")
     parser.add_argument("--export", action="append", default=[], choices=sorted(EXPORTS),
                         help="Also export a journal through its public reader")
+    parser.add_argument("--attach", action="append", default=[], metavar="SOURCE=PUBLISHED",
+                        help="Also collect an operator record kept outside the run folder (such as a wrapper "
+                             "record) under PUBLISHED, which the class allowlist must name")
     args = parser.parse_args(argv)
     try:
         manifest = collect(args.run, args.run_class, args.bundle_id, evidence_root=args.evidence_root,
                            date=args.date, inferred_revision=args.inferred_revision,
                            inferred_basis=args.inferred_basis, include_model_io=args.include_model_io,
                            context=default_context(args.repo_root), exports=tuple(args.export),
-                           folder_utc_offset=args.folder_utc_offset)
+                           folder_utc_offset=args.folder_utc_offset,
+                           attachments=tuple(parse_attachment(value) for value in args.attach))
     except (SanitiseError, ValueError, FileExistsError) as error:
         print("FAIL: " + str(error), file=sys.stderr)
         return 1

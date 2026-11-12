@@ -1,0 +1,17 @@
+{
+  "action_id": "ACT-LIVE-a77e17fb075c4949955954d882ed9084",
+  "details": "[basis=EVIDENCE_MATCH] Exact template and persisted action evidence confirm the write; health verification is pending.",
+  "incident_id": "INC-BCF4CCF00F9D",
+  "kind": "execution_result",
+  "recorded_at": "2026-11-12T11:32:36.585787Z",
+  "resource_version": "115491",
+  "schema_version": "1.0",
+  "status": "APPLIED",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "cartservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+  }
+}

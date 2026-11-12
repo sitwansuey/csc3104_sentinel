@@ -477,5 +477,133 @@ class FailureClassTests(unittest.TestCase):
         self.assertEqual(summarize.failure_class({"error": "odd", "error_type": "KeyError"}), "KeyError")
 
 
+class Phase3DerivationTests(unittest.TestCase):
+    """Distributed scenarios, the seal, traces, the admission check, worker containers and kind lab sessions."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        runs, evidence = self.root / "source", self.root / "evidence"
+
+        def add(run, run_class, bundle_id, attachments=(), date=None):
+            collect.collect(run, run_class, bundle_id, evidence_root=evidence, context=fx.context(), date=date,
+                            inferred_revision=fx.REVISION, inferred_basis="fixture", attachments=attachments)
+
+        sealed = {"process": "executor-a", "ts": "2026-11-12T18:07:52.033Z", "event": "executor.seal.sealed",
+                  "identity": "executor-a", "fence_epoch": 2, "basis": "FENCED"}
+        conflict = lambda operation, reason, identity: {
+            "process": "coordinator", "ts": "2026-11-12T18:07:52.300Z", "event": "http.access",
+            "operation": operation, "http_status": 409, "reason": reason, "identity": identity}
+        s8_notes = {"paused": "executor-b", "paused_result": "CONFLICT", "writes_after_release": 0}
+        add(fx.distributed_run(runs, "s1b", visible=1.4), "distributed-scenario", "kind-s1b")
+        add(fx.distributed_run(runs, "s2", scenario="S2", matches=False, failed=("I5",), states=("FAILED",),
+                               started="2026-11-12T18:01:08Z", visible=21.7), "distributed-scenario", "kind-s2")
+        add(fx.distributed_run(runs, "s8", scenario="S8", states=("FAILED",), writes=0, notes=s8_notes,
+                               started="2026-11-12T18:07:27Z",
+                               timeline=[sealed, conflict("renew", "lease_not_current", "executor-b"),
+                                         conflict("result", "result_changed", "guard-1"),
+                                         conflict("result", "result_changed", "executor-b")]),
+            "distributed-scenario", "kind-s8")
+        wrapper = fx.write(runs / "S1c-wrapper.json", {"inject": {"at": "2026-11-12T16:00:00Z"},
+                                                       "fault_visible": {"at": "2026-11-12T16:00:20.100Z"}})
+        add(fx.distributed_run(runs, "s1c", scenario="S1c", started="2026-11-12T16:01:16Z"), "distributed-scenario",
+            "kind-s1c", attachments=((wrapper, "kind-wrapper.json"),))
+        trace = [fx.span("observer.ingest", "a", process="observer-1", ts="2026-11-12T06:44:00.000Z", ms=0),
+                 fx.span("coordinator.ingest", "b", "a", ts="2026-11-12T06:44:00.100Z", ms=40),
+                 fx.span("worker.process", "c", "b", process="planner-1", ts="2026-11-12T06:44:04.500Z", ms=1000),
+                 fx.span("worker.process", "d", "lost", process="planner-1", ts="2026-11-12T06:44:02.000Z", ms=10)]
+        add(fx.distributed_run(runs, "s1a", scenario="S1a", mode="file", timeline=trace,
+                               started="2026-11-12T06:44:05Z"), "distributed-scenario", "file-s1a")
+        add(fx.admission_run(runs, "admission"), "executor-admission", "admission")
+        add(fx.admission_run(runs, "admission-bad", failing=("lower epoch",)), "executor-admission", "admission-bad")
+        add(fx.container_run(runs, "container"), "worker-container", "container")
+        add(fx.container_run(runs, "container-503", unready_sample=True), "worker-container", "container-503")
+        add(fx.container_run(runs, "container-old", orchestrated=False), "worker-container", "container-old",
+            date="2026-11-12")
+        rbac = [{"verb": "get", "expected": "yes", "answer": "yes"}, {"verb": "delete", "expected": "no",
+                                                                      "answer": "no"}]
+        lab = runs / "lab"
+        fx.write(lab / "prepare.out", json.dumps({"rbac": rbac}))
+        fx.write(lab / "restore-check.json", {"healthy": True, "seconds": 21.8, "after": {"template_is_baseline": True}})
+        add(lab, "kind-lab-session", "lab", date="2026-11-12")
+        old_lab = runs / "lab-old"
+        fx.write(old_lab / "bundle/rbac-checks.json", rbac[:1] + [{"verb": "delete", "expected": "no",
+                                                                  "answer": "yes"}])
+        add(old_lab, "kind-lab-session", "lab-old", date="2026-11-12")
+        self.bundles = {b.bundle_id: b for b in summarize.load_bundles(self.root)}
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def pick(self, *names):
+        return [self.bundles[name] for name in names]
+
+    def test_a_scenario_passes_only_when_it_matched_its_expectation(self):
+        self.assertEqual(summarize.outcome(self.bundles["kind-s1b"]), "PASS")
+        self.assertEqual(summarize.outcome(self.bundles["kind-s2"]), "FAILED")
+        self.assertEqual(summarize.outcome(self.bundles["kind-s8"]), "PASS")
+        bundle = self.bundles["kind-s1b"]
+        bundle.manifest["files"] = [item for item in bundle.manifest["files"] if item["path"] != "summary.json"]
+        self.assertEqual(summarize.outcome(bundle), "INCOMPLETE")
+
+    def test_expectations_keep_the_failure_in_the_denominator_and_name_it(self):
+        self.assertEqual(summarize.distributed_expectations(self.pick("kind-s1b", "kind-s2", "kind-s8")),
+                         "2/3 matched their expectation (S1b 1/1, S2 0/1, S8 1/1); every invariant held in 2/3; "
+                         "failed: S2 I5; 0 unobserved windows; 0 harness errors")
+
+    def test_rows_read_the_fault_visibility_from_the_run_or_its_wrapper(self):
+        rows = {row[0]: row for row in summarize.distributed_rows(list(self.bundles.values()))}
+        self.assertEqual(rows["kind-s2"][1:], ["kind", "S2", "0123456", "FAILED", "FAILED", "1", "0", "I5", "50.8",
+                                               "180", "21.7"])
+        self.assertEqual(rows["kind-s1c"][-1], "20.1")
+        self.assertEqual(rows["file-s1a"][-1], "n/a")
+
+    def test_seal_names_who_sealed_and_only_the_paused_executors_conflicts(self):
+        self.assertEqual(summarize.seal_outcomes(self.pick("kind-s8")),
+                         "0123456 PASS: executor-b paused, executor-a sealed at fence epoch 2 (FENCED), the paused "
+                         "patch CONFLICT, 0 writes after release, 0 committed template writes, incident FAILED, "
+                         "HTTP 409 to executor-b: renew lease_not_current, result result_changed")
+        self.assertIn("no Executor sealed at fence epoch n/a (no seal record)",
+                      summarize.seal_outcomes(self.pick("kind-s1b")))
+
+    def test_trace_shape_counts_spans_and_orphans(self):
+        self.assertEqual(summarize.trace_shapes(self.pick("file-s1a")),
+                         "S1a PASS: 1 trace, 4 spans over 4.5 s from observer.ingest, 1 span whose parent never ended")
+        self.assertEqual(summarize.trace_shapes([]), "no traced runs")
+
+    def test_admission_counts_each_expected_class_and_never_hides_a_failed_probe(self):
+        self.assertEqual(summarize.admission_probes(self.pick("admission", "admission-bad")),
+                         "5/5 probes as expected on Kubernetes 1.37 (2 allowed, 2 denied by the policy, 2 of them "
+                         "with the rule named and the object unchanged, 1 denied by RBAC); namespace, policy and "
+                         "private credentials removed; 4/5 probes as expected on Kubernetes 1.37 (2 allowed, 2 denied "
+                         "by the policy, 2 of them with the rule named and the object unchanged, 1 denied by RBAC); "
+                         "namespace, policy and private credentials removed")
+        self.assertEqual(summarize.outcome(self.bundles["admission-bad"]), "FAILED")
+
+    def test_container_readiness_counts_samples_while_the_coordinator_was_up(self):
+        self.assertEqual(summarize.container_readiness(self.pick("container")),
+                         "3/3 health samples Docker healthy with /readyz 200 while the Coordinator was up (longest "
+                         "planning pass 89.6 s, highest contact age 19.1 s); /readyz 503 62.0 s and Docker unhealthy "
+                         "126.0 s after the Coordinator stopped")
+        self.assertEqual(summarize.outcome(self.bundles["container"]), "PASS")
+        self.assertEqual(summarize.outcome(self.bundles["container-503"]), "FAILED")
+
+    def test_a_container_run_without_orchestrator_records_is_incomplete_but_keeps_docker_health(self):
+        bundle = self.bundles["container-old"]
+        self.assertEqual(summarize.outcome(bundle), "INCOMPLETE")
+        self.assertIn("no orchestrator health record", summarize.container_readiness([bundle]))
+        self.assertEqual(summarize.container_health([bundle]), "planner-container: unhealthy, 3/5 kept checks failed")
+        row = {row[0]: row for row in summarize.container_rows(list(self.bundles.values()))}["container-old"]
+        self.assertEqual(row[2:5], ["INCOMPLETE", "not recorded", "89.6"])
+
+    def test_lab_session_needs_every_rbac_answer_and_a_healthy_restore(self):
+        self.assertEqual(summarize.lab_sessions(self.pick("lab", "lab-old")),
+                         "0123456: Executor RBAC checks 2/2 as expected, the restore check returned the target "
+                         "healthy at its baseline template in 21.8 s; 0123456: Executor RBAC checks 1/2 as expected, "
+                         "no restore check")
+        self.assertEqual(summarize.outcome(self.bundles["lab"]), "PASS")
+        self.assertEqual(summarize.outcome(self.bundles["lab-old"]), "FAILED")
+
+
 if __name__ == "__main__":
     unittest.main()

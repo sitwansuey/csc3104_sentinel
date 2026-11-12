@@ -59,8 +59,8 @@ their source revision:
 <!-- END GENERATED:claim-c-agent-recorded -->
 
 <!-- BEGIN GENERATED:claim-c-agent-all -->
-> **C-AGENT-ALL:** Across every recorded agent-mode attempt, 24/39 reached RECOVERED.
-> Scope: Every committed agent bundle, failures included: deliberate negative tests (unreachable model server, missing model, a forced 1 s planning budget), runs on older revisions, and the 2026-11-12 catalog runs R2 and N1, which are unscored (labels pending). A run counts only when it passed expecting RECOVERED; the two runs that passed as an expected escalation (the forced budget run and N1 at dab3b3f) never recover and count as not recovered. Mostly one fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Lab approval pre-authorised before 4139385; from 4139385 automated auto-lab (automated-lab identity, no person), except the forced-budget run and both N1 runs, which asked for no approval (mode not-requested). One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 19 runs from 4afc879 onwards.
+> **C-AGENT-ALL:** Across every recorded agent-mode attempt, 25/40 reached RECOVERED.
+> Scope: Every committed agent bundle, failures included: deliberate negative tests (unreachable model server, missing model, a forced 1 s planning budget), runs on older revisions, and the 2026-11-12 catalog runs R2 and N1, which are unscored (labels pending), and the R1 run at b79fb5d on the connected lab as changed for the cartservice target. A run counts only when it passed expecting RECOVERED; the two runs that passed as an expected escalation (the forced budget run and N1 at dab3b3f) never recover and count as not recovered. Mostly one fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Lab approval pre-authorised before 4139385; from 4139385 automated auto-lab (automated-lab identity, no person), except the forced-budget run and both N1 runs, which asked for no approval (mode not-requested). One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 20 runs from 4afc879 onwards.
 <!-- END GENERATED:claim-c-agent-all -->
 
 [Testing](docs/testing.md) explains how to validate each mode and distinguish
@@ -142,6 +142,7 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 
 <!-- BEGIN GENERATED:limitations-summary -->
 - [L-OBSERVER-ZERO-REPLICAS](docs/limitations.md#l-observer-zero-replicas): A Deployment scaled to zero replicas is treated as healthy (defect, open; planned P5.07)
+- [L-VERIFIER-RETRY-BACKOFF](docs/limitations.md#l-verifier-retry-backoff): In kind mode the Coordinator's retry back-off can space the Verifier's samples past the health policy's gap (defect, open; planned P3.06, P4.01)
 - [L-EXEC-WEDGE](docs/limitations.md#l-exec-wedge): A write rejected with its resource version unchanged waits in NEEDS_RECONCILIATION unless fencing is on (defect, mitigated; planned P2.06, P5.08)
 - [L-EXEC-REDELIVERY](docs/limitations.md#l-exec-redelivery): A replacement Executor without the ledger row reported CONFLICT for a write that was applied (defect, mitigated; planned P3.01, P4.01)
 - [L-CLOCK-ORDERING](docs/limitations.md#l-clock-ordering): Lifecycle ordering compared wall-clock timestamps written by different components (defect, mitigated; planned P3.03, P4.01)
@@ -153,7 +154,6 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-WORKER-READINESS-LONG-PASS](docs/limitations.md#l-worker-readiness-long-pass): A worker's /readyz turned 503 during a long pass while it was renewing its lease (defect, mitigated; planned P3.07)
 - [L-ORPHANED-EXECUTOR-LEDGER](docs/limitations.md#l-orphaned-executor-ledger): A crashed Executor whose peer finished the action kept it in doubt and refused that workload (defect, mitigated; planned P3.04, P4.01)
 - [L-SINGLE-COORDINATOR](docs/limitations.md#l-single-coordinator): The Coordinator is one process with one SQLite file (limitation, open; planned P4.02, P5.01)
-- [L-EXECUTOR-FIELD-LIMITS](docs/limitations.md#l-executor-field-limits): The Executor's field limits are an admission policy not yet run against an API server (limitation, open; planned P3.05)
 - [L-SINGLE-HOST-DISTRIBUTION](docs/limitations.md#l-single-host-distribution): The networked worker layer has only run on one host (limitation, open; planned P3.01, P3.07, P4.01)
 - [L-RESTART-BUDGET-LOCAL](docs/limitations.md#l-restart-budget-local): The restart budget is kept per Executor ledger, and only local wiring gives it to the Guard (limitation, open; planned P4.03)
 - [L-NO-DIAGNOSIS-ACCURACY](docs/limitations.md#l-no-diagnosis-accuracy): No diagnosis-accuracy evaluation (limitation, open; planned P2.07, P4.04)
@@ -165,7 +165,8 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-LAB-CERTS](docs/limitations.md#l-lab-certs): Security lab certificates are two-day fixtures with no rotation (limitation, open; planned P5.06)
 - [L-RESTORE-DETECTION](docs/limitations.md#l-restore-detection): A Coordinator restored from a backup is detected, but lost acknowledged results are re-driven by hand (limitation, mitigated; planned P4.02)
 - [L-HOST-LOCAL-EXECUTOR](docs/limitations.md#l-host-local-executor): The Executor ledger and target locks are host-local (limitation, mitigated; planned P3.04, P4.01)
-- [L-NO-FENCING](docs/limitations.md#l-no-fencing): Abandoned or revoked Executor writes are fenced only by a seal, tested offline (limitation, mitigated; planned P3.04, P3.05, P4.01)
+- [L-NO-FENCING](docs/limitations.md#l-no-fencing): Abandoned or revoked Executor writes are fenced only by a seal, run live on one kind node (limitation, mitigated; planned P3.04, P3.05, P4.01)
+- [L-EXECUTOR-FIELD-LIMITS](docs/limitations.md#l-executor-field-limits): The Executor's field limits are an admission policy checked live once but installed nowhere by default (limitation, mitigated; planned P3.05)
 - [L-ONE-FAULT-ONE-ACTION](docs/limitations.md#l-one-fault-one-action): One fault type, one repair action and one live target (limitation, mitigated; planned P2.08, P3.08, P3.09)
 - [L-MODEL-LATENCY](docs/limitations.md#l-model-latency): Model cold loads make agent planning slow and variable (limitation, mitigated; planned P2.01)
 - [L-UNPINNED-BASE-IMAGES](docs/limitations.md#l-unpinned-base-images): Sentinel component images used unpinned base image tags (limitation, mitigated; planned P1.09)

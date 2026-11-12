@@ -96,18 +96,22 @@ is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.
 <!-- BEGIN GENERATED:index -->
 | Class | Bundles | Recorded | Inferred | Superseded | Withdrawn |
 | --- | --- | --- | --- | --- | --- |
-| agent | 39 | 19 | 20 | 0 | 0 |
+| agent | 40 | 20 | 20 | 0 | 0 |
 | chaos-batch | 17 | 0 | 17 | 0 | 0 |
-| connected-harness | 7 | 3 | 4 | 0 | 0 |
+| connected-harness | 10 | 6 | 4 | 0 | 0 |
+| distributed-scenario | 27 | 0 | 27 | 0 | 0 |
+| executor-admission | 1 | 0 | 1 | 0 | 0 |
 | executor-wedge | 7 | 0 | 7 | 0 | 0 |
 | guard-eval | 1 | 1 | 0 | 0 | 0 |
 | guard-rejection | 4 | 2 | 2 | 0 | 0 |
+| kind-lab-session | 2 | 0 | 2 | 0 | 0 |
 | observer-acceptance | 3 | 0 | 3 | 0 | 0 |
 | packaged | 9 | 0 | 9 | 0 | 0 |
 | provider-recovery | 1 | 0 | 1 | 0 | 0 |
 | security-lab | 3 | 0 | 3 | 0 | 0 |
 | shipping-lab | 2 | 0 | 2 | 0 | 0 |
 | ui-session | 7 | 0 | 7 | 0 | 0 |
+| worker-container | 2 | 0 | 2 | 0 | 0 |
 <!-- END GENERATED:index -->
 
 ## Excluded runs
@@ -119,4 +123,6 @@ is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.
 | boutique-live-20261112T050457Z-1072d5 | agent | 5409092 | 2026-11-12T05:04:58Z | Infrastructure failure, not a Sentinel result: the Docker Desktop engine was down, so 'kind get nodes' failed before any experiment step (no checks ran and no fault was injected; only the preflight model warm-up ran, recorded in the run folder's model-runtime.json, and there was no RCA or planning model call). Its warm-up was a cold load of qwen3:14b (16.2 s), so the set rerun at this revision started with the model already loaded. The run folder keeps its FAILED summary. Docker was restarted and the set was rerun at the same revision (boutique-live-20261112t050930z-ba0f81, -051156z-009b69 and -051406z-ef3fbb). |
 | boutique-live-20261112T050516Z-f67f76 | agent | 5409092 | 2026-11-12T05:05:17Z | Infrastructure failure, not a Sentinel result: the Docker Desktop engine was down, so 'kind get nodes' failed before any experiment step (no checks ran and no fault was injected; only the preflight model warm-up ran, recorded in the run folder's model-runtime.json, and there was no RCA or planning model call). The run folder keeps its FAILED summary. Docker was restarted and the set was rerun at the same revision (boutique-live-20261112t050930z-ba0f81, -051156z-009b69 and -051406z-ef3fbb). |
 | boutique-live-20261112T050518Z-faa61d | agent | 5409092 | 2026-11-12T05:05:19Z | Infrastructure failure, not a Sentinel result: the Docker Desktop engine was down, so 'kind get nodes' failed before any experiment step (no checks ran and no fault was injected; only the preflight model warm-up ran, recorded in the run folder's model-runtime.json, and there was no RCA or planning model call). The run folder keeps its FAILED summary. Docker was restarted and the set was rerun at the same revision (boutique-live-20261112t050930z-ba0f81, -051156z-009b69 and -051406z-ef3fbb). |
+| worker-image-build-0a8d4d7-20261112 | worker-container | 0a8d4d7 | 2026-11-12T16:10:34Z | A build, not a run: docker build of deploy/docker/worker.Dockerfile at this integration/phase3 revision failed in the image's own import check (ImportError: cannot import name 'scenarios' from 'experiments.boutique.harness', because the image did not copy the catalog modules agent_live imports), so no container started. This was a Sentinel defect, fixed in c973edd and merged in e5823f1; the 12 Nov container run (worker-container-planner-0a8d4d7-20261112) used an image built from c973edd, and the be6e636 image built cleanly. The time is the build log's last write; no run folder exists. |
+| worker-container-task2-attempt0-be6e636-20261112T181009Z | worker-container | be6e636 | 2026-11-12T18:10:09Z | Operator tooling failure, not a Sentinel result: the scratch orchestrator stopped while making the throwaway TLS certificates, because the inherited OPENSSL_CONF named a file that did not exist (openssl req exited 1). Its own record shows it created no RBAC, container or volume and injected no fault; the only Sentinel step that ran was a kind_bundle restore that found the target already healthy at baseline (0.3 s, generation unchanged at 184), and a scan of its files found no credential. Rerun at the same revision with a private openssl.cnf as worker-container-planner-be6e636-20261112t181036z. |
 <!-- END GENERATED:exclusions -->

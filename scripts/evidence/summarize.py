@@ -30,12 +30,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from experiments.analysis import timeline  # noqa: E402
+from scripts import trace_view  # noqa: E402
 from scripts.evidence import collect, limitations  # noqa: E402
 
 TARGETS = {
     "docs/results.md": ("runs", "recovery-checks", "agent-runs", "scenario-runs", "guard-rejection", "guard-eval",
                         "executor-wedge", "timings", "latency", "model-calls", "chaos", "security-lab", "observer",
-                        "claims"),
+                        "distributed-runs", "kind-lab-sessions", "executor-admission", "worker-container", "claims"),
     "evidence/README.md": ("index", "exclusions"),
     "docs/limitations.md": ("limitations",),
     "README.md": ("limitations-summary",),
@@ -74,6 +75,26 @@ class Bundle:
         if relative not in {item["path"] for item in self.manifest.get("files", [])}:
             return None
         return json.loads((self.directory / relative).read_text(encoding="utf-8"))
+
+    def text(self, relative):
+        if relative not in {item["path"] for item in self.manifest.get("files", [])}:
+            return None
+        return (self.directory / relative).read_text(encoding="utf-8")
+
+    def jsonl(self, relative):
+        """JSON object lines of a collected file, skipping any other line; None when the file is not collected."""
+        text = self.text(relative)
+        if text is None:
+            return None
+        rows = []
+        for line in text.splitlines():
+            try:
+                value = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(value, dict):
+                rows.append(value)
+        return rows
 
 
 class EvidenceError(ValueError):
@@ -184,6 +205,18 @@ def outcome(bundle):
         return "PASS" if results.get("expectations_met") is True else "FAILED"
     if bundle.run_class == "executor-wedge":
         return {"PASS": "PASS", "FAIL": "FAILED"}.get(wedge_summary(bundle).get("status"), "INCOMPLETE")
+    if bundle.run_class == "distributed-scenario":
+        summary = bundle.json("summary.json")
+        if not isinstance(summary, dict) or not isinstance(summary.get("matches_expectation"), bool):
+            return "INCOMPLETE"
+        return "PASS" if summary["matches_expectation"] and not summary.get("harness_error") else "FAILED"
+    if bundle.run_class == "executor-admission":
+        return {"PASS": "PASS", "FAIL": "FAILED"}.get((bundle.json("admission.json") or {}).get("status"),
+                                                       "INCOMPLETE")
+    if bundle.run_class == "worker-container":
+        return container_record(bundle)["outcome"]
+    if bundle.run_class == "kind-lab-session":
+        return lab_session_record(bundle)["outcome"]
     summary = bundle.json("summary.json") or bundle.json("data/evidence/summary.json") or {}
     status = summary.get("status")
     return status if status in OUTCOMES else "INCOMPLETE"
@@ -455,6 +488,305 @@ def observer(bundles):
         rows.append([bundle.bundle_id, outcome(bundle), value("detection_elapsed_seconds"),
                      value("duplicate_suppression_seconds")])
     return rows
+
+
+# ----- Phase 3: distributed scenarios, admission policy, worker containers, kind lab sessions -----
+
+def distributed_summary(bundle):
+    value = bundle.json("summary.json") if bundle.run_class == "distributed-scenario" else None
+    return value if isinstance(value, dict) else {}
+
+
+def failed_invariants(summary):
+    return [item.get("id") for item in summary.get("invariants") or []
+            if isinstance(item, dict) and item.get("passed") is not True]
+
+
+def fault_visible_after(bundle):
+    """Seconds from the kind R1 injection until the target showed it: the run's kind_lab block, else the wrapper."""
+    fault = ((distributed_summary(bundle).get("kind_lab") or {}).get("fault") or {})
+    if isinstance(fault.get("visible_after_seconds"), (int, float)):
+        return fault["visible_after_seconds"]
+    wrapper = bundle.json("kind-wrapper.json") or {}
+    injected, visible = (wrapper.get("inject") or {}).get("at"), (wrapper.get("fault_visible") or {}).get("at")
+    return _seconds(injected, visible) if injected and visible else None
+
+
+def distributed_rows(bundles):
+    members = sorted((b for b in bundles if b.run_class == "distributed-scenario"),
+                     key=lambda b: (b.entry.get("captured_at") or "", b.bundle_id))
+    rows = []
+    for bundle in members:
+        summary = distributed_summary(bundle)
+        failed = failed_invariants(summary)
+        visible = fault_visible_after(bundle)
+        rows.append([bundle.bundle_id, summary.get("mode") or "unknown", summary.get("scenario") or "unknown",
+                     short(bundle.entry.get("source_revision")), outcome(bundle),
+                     ", ".join(summary.get("states") or []) or "none", str(summary.get("committed_writes", "n/a")),
+                     str(summary.get("unobserved_windows", "n/a")), ", ".join(failed) or "none",
+                     str(summary.get("duration_seconds", "n/a")), str(summary.get("deadline_seconds", "n/a")),
+                     "n/a" if visible is None else f"{visible:g}"])
+    return rows
+
+
+def distributed_expectations(bundles):
+    """Cited scenario runs that matched their expectation, per scenario, with every failed invariant named."""
+    summaries = [(bundle, distributed_summary(bundle)) for bundle in bundles]
+    per = {}
+    for bundle, summary in summaries:
+        name = summary.get("scenario") or "unknown"
+        row = per.setdefault(name, [0, 0])
+        row[0] += outcome(bundle) == "PASS"
+        row[1] += 1
+    held = sum(bool(summary.get("invariants")) and not failed_invariants(summary) for _, summary in summaries)
+    failures = [f"{summary.get('scenario') or 'unknown'} {', '.join(failed_invariants(summary))}"
+                for _, summary in summaries if failed_invariants(summary)]
+    windows = sum(int(summary.get("unobserved_windows") or 0) for _, summary in summaries)
+    errors = sum(bool(summary.get("harness_error")) for _, summary in summaries)
+    text = (f"{ratio(sum(outcome(b) == 'PASS' for b in bundles), len(bundles))} matched their expectation ("
+            + ", ".join(f"{name} {ratio(a, n)}" for name, (a, n) in per.items())
+            + f"); every invariant held in {ratio(held, len(bundles))}")
+    if failures:
+        text += "; failed: " + "; ".join(failures)
+    return text + f"; {windows} unobserved windows; {errors} harness errors"
+
+
+def _sealed(bundle):
+    for record in bundle.jsonl("timeline.jsonl") or []:
+        if record.get("event") == "executor.seal.sealed":
+            return record
+    return {}
+
+
+def _conflicts(bundle, identity):
+    """'operation reason' of each HTTP 409 the Coordinator answered to one identity, in log order."""
+    return [f"{record.get('operation')} {record.get('reason')}" for record in bundle.jsonl("timeline.jsonl") or []
+            if record.get("event") == "http.access" and record.get("http_status") == 409
+            and record.get("identity") == identity]
+
+
+def seal_outcomes(bundles):
+    """Per cited S8 run: who paused and who sealed, at which epoch, and what the paused write and Executor got."""
+    parts = []
+    for bundle in bundles:
+        summary = distributed_summary(bundle)
+        notes, sealed = summary.get("notes") or {}, _sealed(bundle)
+        paused = notes.get("paused") or "unknown"
+        conflicts = _conflicts(bundle, paused)
+        parts.append(f"{short(bundle.entry.get('source_revision'))} {outcome(bundle)}: {paused} paused, "
+                     f"{sealed.get('identity') or 'no Executor'} sealed at fence epoch "
+                     f"{sealed.get('fence_epoch', 'n/a')} ({sealed.get('basis') or 'no seal record'}), the paused "
+                     f"patch {notes.get('paused_result') or 'unknown'}, {notes.get('writes_after_release', 'n/a')} "
+                     f"writes after release, {summary.get('committed_writes', 'n/a')} committed template writes, "
+                     f"incident {', '.join(summary.get('states') or []) or 'unknown'}, HTTP 409 to {paused}: "
+                     f"{', '.join(conflicts) or 'none'}")
+    return "; ".join(parts) or "no S8 runs"
+
+
+def trace_shapes(bundles):
+    """Per cited run: traces in its timeline, spans, wall time and spans whose parent span never ended."""
+    parts = []
+    for bundle in bundles:
+        summary = distributed_summary(bundle)
+        records = trace_view.read_lines((bundle.text("timeline.jsonl") or "").splitlines())
+        traces = {key: value for key, value in trace_view.build(records).items() if value["spans"]}
+        spans = [span for trace in traces.values() for span in trace["spans"].values()]
+        orphans = sum(bool(root.get("missing_parent")) for trace in traces.values() for root in trace["roots"])
+        first = [root.get("span_name") for trace in traces.values() for root in trace["roots"]
+                 if not root.get("missing_parent")]
+        wall = max(s["end"] for s in spans) - min(s["start"] for s in spans) if spans else 0
+        parts.append(f"{summary.get('scenario') or 'unknown'} {outcome(bundle)}: {len(traces)} trace"
+                     f"{'' if len(traces) == 1 else 's'}, {len(spans)} spans over {wall:.1f} s from "
+                     f"{', '.join(first) or 'no root'}, {orphans} span{'' if orphans == 1 else 's'} whose parent "
+                     "never ended")
+    return "; ".join(parts) or "no traced runs"
+
+
+def admission_record(bundle):
+    record = bundle.json("admission.json") or {}
+    probes = [check for check in record.get("checks") or [] if isinstance(check, dict) and check.get("expected")]
+    expected = lambda name: [check for check in probes if check.get("expected") == name]
+    policy = expected("DENIED_BY_POLICY")
+    return {"probes": probes, "passed": sum(check.get("passed") is True for check in probes),
+            "allowed": len(expected("ALLOWED")), "policy": len(policy),
+            "policy_named_unchanged": sum(check.get("rule_named") is True and check.get("object_unchanged") is True
+                                          for check in policy),
+            "rbac": len(expected("DENIED_BY_RBAC")),
+            "cleaned": all(record.get(key) is True for key in ("namespace_deleted", "policy_deleted",
+                                                                "private_credentials_removed")),
+            "server": record.get("server_version")}
+
+
+def admission_rows(bundles):
+    rows = []
+    for bundle in sorted((b for b in bundles if b.run_class == "executor-admission"),
+                         key=lambda b: (b.entry.get("captured_at") or "", b.bundle_id)):
+        record = admission_record(bundle)
+        rows.append([bundle.bundle_id, short(bundle.entry.get("source_revision")), bundle.entry.get("provenance"),
+                     outcome(bundle), ratio(record["passed"], len(record["probes"])), str(record["allowed"]),
+                     f"{record['policy']} ({record['policy_named_unchanged']} with the rule named and the object "
+                     "unchanged)", str(record["rbac"]), "yes" if record["cleaned"] else "no"])
+    return rows
+
+
+def admission_probes(bundles):
+    parts = []
+    for bundle in bundles:
+        record = admission_record(bundle)
+        parts.append(f"{ratio(record['passed'], len(record['probes']))} probes as expected on Kubernetes "
+                     f"{record['server'] or 'unknown'} ({record['allowed']} allowed, {record['policy']} denied by the "
+                     f"policy, {record['policy_named_unchanged']} of them with the rule named and the object "
+                     f"unchanged, {record['rbac']} denied by RBAC); namespace, policy and private credentials "
+                     f"{'removed' if record['cleaned'] else 'NOT all removed'}")
+    return "; ".join(parts) or "no admission runs"
+
+
+def _contact_age(sample):
+    text = str(sample.get("readyz") or "")
+    try:
+        return json.loads(text.split(" ", 1)[1]).get("contact_age_seconds")
+    except (IndexError, ValueError, AttributeError):
+        return None
+
+
+def _planning_passes(bundle):
+    """Durations (s) of the Planner's worker.process spans for planner.request in the container logs."""
+    found = []
+    for item in bundle.manifest.get("files", []):
+        if not item["path"].endswith(".log") or "planner" not in item["path"]:
+            continue
+        for line in (bundle.text(item["path"]) or "").splitlines():
+            start = line.find("{")
+            try:
+                record = json.loads(line[start:]) if start >= 0 else None
+            except ValueError:
+                continue
+            if isinstance(record, dict) and record.get("event") == "span.end" \
+                    and record.get("span_name") == "worker.process" and record.get("topic") == "planner.request" \
+                    and isinstance(record.get("duration_ms"), (int, float)):
+                found.append(record["duration_ms"] / 1000)
+    return found
+
+
+def container_record(bundle):
+    """Readiness of a worker container while its Coordinator was up, and how soon it turned unready after the stop.
+
+    Needs the orchestrator's events.jsonl and health.jsonl; without them the outcome is INCOMPLETE.
+    """
+    events, health = bundle.jsonl("events.jsonl"), bundle.jsonl("health.jsonl")
+    if not events or not health:
+        passes = _planning_passes(bundle)
+        return {"outcome": "INCOMPLETE", "longest_pass": max(passes) if passes else None}
+    by_event = {event.get("event"): event for event in events}
+    stopped = (by_event.get("coordinator_stopped") or {}).get("utc")
+    first = next((index for index, sample in enumerate(health) if sample.get("health") == "healthy"), None)
+    window = [sample for sample in health[first:] if stopped and str(sample.get("utc")) < stopped] \
+        if first is not None else []
+    good = [sample for sample in window if sample.get("health") == "healthy"
+            and str(sample.get("readyz") or "").startswith("200")]
+    ages = [age for age in (_contact_age(sample) for sample in window) if isinstance(age, (int, float))]
+    passes = _planning_passes(bundle)
+    after_503 = (by_event.get("readyz_503") or {}).get("after_stop_seconds")
+    after_unhealthy = (by_event.get("docker_unhealthy") or {}).get("after_stop_seconds")
+    passed = ("result" in by_event and bool(window) and len(good) == len(window) and bool(passes)
+              and after_503 is not None and after_unhealthy is not None)
+    return {"outcome": "PASS" if passed else "FAILED", "window": len(window), "good": len(good),
+            "max_age": max(ages) if ages else None, "longest_pass": max(passes) if passes else None,
+            "after_503": after_503, "after_unhealthy": after_unhealthy}
+
+
+def docker_states(bundle):
+    """Per collected `docker inspect` record (*.state.json): the container's Docker health status when it was saved
+    and how many of the health checks Docker still kept (its last five) had failed."""
+    parts = []
+    for item in bundle.manifest.get("files", []):
+        if not item["path"].endswith(".state.json"):
+            continue
+        value = bundle.json(item["path"])
+        value = value[0] if isinstance(value, list) and value else value
+        state = (value.get("State") or value) if isinstance(value, dict) else {}
+        health = state.get("Health") if isinstance(state.get("Health"), dict) else {}
+        checks = [entry for entry in health.get("Log") or [] if isinstance(entry, dict)]
+        failed = sum(entry.get("ExitCode") != 0 for entry in checks)
+        name = item["path"].rsplit("/", 1)[-1][:-len(".state.json")]
+        parts.append(f"{name}: {health.get('Status') or 'no health status'}, "
+                     f"{ratio(failed, len(checks))} kept checks failed")
+    return "; ".join(parts) or "not recorded"
+
+
+def container_health(bundles):
+    """Docker's saved health record of every container in the cited bundles, in the cited order."""
+    return "; ".join(docker_states(bundle) for bundle in bundles) or "no container runs"
+
+
+def container_rows(bundles):
+    rows = []
+    for bundle in sorted((b for b in bundles if b.run_class == "worker-container"),
+                         key=lambda b: (b.entry.get("captured_at") or "", b.bundle_id)):
+        record = container_record(bundle)
+        value = lambda key: "n/a" if record.get(key) is None else f"{record[key]:.1f}"
+        rows.append([bundle.bundle_id, short(bundle.entry.get("source_revision")), record["outcome"],
+                     ratio(record["good"], record["window"]) if "window" in record else "not recorded",
+                     value("longest_pass"), value("max_age"), value("after_503"), value("after_unhealthy"),
+                     docker_states(bundle)])
+    return rows
+
+
+def container_readiness(bundles):
+    parts = []
+    for bundle in bundles:
+        record = container_record(bundle)
+        if "window" not in record:
+            parts.append(f"{bundle.bundle_id}: no orchestrator health record")
+            continue
+        fmt = lambda key: "n/a" if record.get(key) is None else f"{record[key]:.1f} s"
+        parts.append(f"{ratio(record['good'], record['window'])} health samples Docker healthy with /readyz 200 "
+                     f"while the Coordinator was up (longest planning pass {fmt('longest_pass')}, highest contact "
+                     f"age {fmt('max_age')}); /readyz 503 {fmt('after_503')} and Docker unhealthy "
+                     f"{fmt('after_unhealthy')} after the Coordinator stopped")
+    return "; ".join(parts) or "no container runs"
+
+
+def lab_session_record(bundle):
+    try:
+        prepare = json.loads(bundle.text("prepare.out") or "null")
+    except ValueError:
+        prepare = None
+    rbac = prepare.get("rbac") if isinstance(prepare, dict) else None
+    rbac = rbac if isinstance(rbac, list) else bundle.json("bundle/rbac-checks.json")
+    if not isinstance(rbac, list) or not rbac:
+        return {"outcome": "INCOMPLETE"}
+    matched = sum(isinstance(check, dict) and check.get("answer") == check.get("expected") for check in rbac)
+    restore = bundle.json("restore-check.json")
+    restored = None if restore is None else (restore.get("healthy") is True
+                                             and (restore.get("after") or {}).get("template_is_baseline") is True)
+    outcome_ = "PASS" if matched == len(rbac) and restored is not False else "FAILED"
+    return {"outcome": outcome_, "matched": matched, "checks": len(rbac), "restored": restored,
+            "restore_seconds": (restore or {}).get("seconds")}
+
+
+def lab_session_rows(bundles):
+    rows = []
+    for bundle in sorted((b for b in bundles if b.run_class == "kind-lab-session"),
+                         key=lambda b: (b.entry.get("captured_at") or "", b.bundle_id)):
+        record = lab_session_record(bundle)
+        restore = {None: "not run", True: f"healthy at baseline after {record.get('restore_seconds')} s",
+                   False: "not healthy"}[record.get("restored")]
+        rows.append([bundle.bundle_id, short(bundle.entry.get("source_revision")), record["outcome"],
+                     ratio(record.get("matched", 0), record.get("checks", 0)), restore])
+    return rows
+
+
+def lab_sessions(bundles):
+    parts = []
+    for bundle in bundles:
+        record = lab_session_record(bundle)
+        restore = {None: "no restore check", True: f"the restore check returned the target healthy at its baseline "
+                   f"template in {record.get('restore_seconds')} s", False: "the restore check did NOT end healthy"}
+        parts.append(f"{short(bundle.entry.get('source_revision'))}: Executor RBAC checks "
+                     f"{ratio(record.get('matched', 0), record.get('checks', 0))} as expected, "
+                     + restore[record.get("restored")])
+    return "; ".join(parts) or "no kind lab sessions"
 
 
 # ----- latency ledger (scripts/latency_report.py) -----
@@ -744,6 +1076,13 @@ DERIVATIONS = {
     "approval_refusals": approval_refusals,
     "injection_free": injection_free,
     "scenario_outcomes": scenario_outcomes,
+    "distributed_expectations": distributed_expectations,
+    "seal_outcomes": seal_outcomes,
+    "trace_shapes": trace_shapes,
+    "admission_probes": admission_probes,
+    "container_readiness": container_readiness,
+    "container_health": container_health,
+    "lab_sessions": lab_sessions,
 }
 
 
@@ -895,6 +1234,17 @@ def render_blocks(root):
         "security-lab": table(["Bundle", "Outcome", "Valid mTLS quote", "Blocked probes", "Shopping after restore"],
                               security_lab(bundles)),
         "observer": table(["Bundle", "Outcome", "Detection s", "Duplicate suppression s"], observer(bundles)),
+        "distributed-runs": table(["Bundle", "Mode", "Scenario", "Revision", "Outcome", "Incident states",
+                                   "Committed writes", "Unobserved windows", "Failed invariants", "Duration s",
+                                   "Deadline s", "Fault visible after s"], distributed_rows(bundles)),
+        "kind-lab-sessions": table(["Bundle", "Revision", "Outcome", "Executor RBAC checks as expected",
+                                    "Restore check"], lab_session_rows(bundles)),
+        "executor-admission": table(["Bundle", "Revision", "Provenance", "Outcome", "Probes as expected", "Allowed",
+                                     "Denied by policy", "Denied by RBAC", "Cleaned up"], admission_rows(bundles)),
+        "worker-container": table(["Bundle", "Revision", "Outcome", "Healthy samples while the Coordinator was up",
+                                   "Longest planning pass s", "Highest contact age s", "/readyz 503 after stop s",
+                                   "Docker unhealthy after stop s", "Docker health when saved"],
+                                  container_rows(bundles)),
         "claims": claims_table(claims, bundles),
     }
 
