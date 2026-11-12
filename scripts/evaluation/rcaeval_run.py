@@ -18,9 +18,9 @@ Output, under --out (an ignored run folder):
 The eval split is refused until the same label has a complete dev run whose
 prompt hash matches the current code and configuration, and that hash is
 recorded in a committed freeze file. The prompt hash covers every file that
-shapes the method (prompts, agent code, adapters, upstream baseline code) and
-the effective configuration. A rerun continues only with --resume, and
-completed cases are never rerun.
+shapes the method (prompts, agent code, adapters, upstream baseline code),
+the effective configuration and the per-case --timeout. A rerun continues
+only with --resume, and completed cases are never rerun.
 """
 
 import argparse
@@ -139,11 +139,11 @@ def effective_config(method, config_path):
     return config
 
 
-def fingerprint(method, config):
-    """Files, configuration and the prompt hash over both."""
+def fingerprint(method, config, timeout):
+    """Files, configuration, per-case timeout and the prompt hash over all three."""
     files = method_files(method)
-    return {"method": method, "files": files, "config": config,
-            "prompt_sha256": canonical.sha256_hex({"method": method, "files": files, "config": config})}
+    shaped = {"method": method, "files": files, "config": config, "timeout_s": timeout}
+    return {**shaped, "prompt_sha256": canonical.sha256_hex(shaped)}
 
 
 def freeze_committed(path):
@@ -171,7 +171,7 @@ def eval_gate(out_root, label, current, freeze_path, sample_sha):
     elif dev.get("sample_sha256") != sample_sha:
         problems.append(f"the dev run of '{label}' used another sample")
     elif dev.get("prompt_sha256") != current["prompt_sha256"]:
-        problems.append(f"the code or configuration of '{label}' changed after its dev run; rerun dev")
+        problems.append(f"the code, configuration or timeout of '{label}' changed after its dev run; rerun dev")
     freeze = read_json(freeze_path)
     if not freeze:
         problems.append("no freeze file; run 'freeze' after the dev runs and commit the file")
@@ -202,15 +202,17 @@ def freeze(out_root, labels, *, sample_path=DEFAULT_SAMPLE, freeze_path=DEFAULT_
             raise GateError(f"'{label}' has no complete dev run under {out_root}")
         if dev.get("sample_sha256") != sample_sha:
             raise GateError(f"the dev run of '{label}' used another sample")
-        current = fingerprint(dev["method"], dev["config"])
+        current = fingerprint(dev["method"], dev["config"], dev.get("timeout_s"))
         if current["prompt_sha256"] != dev.get("prompt_sha256"):
-            raise GateError(f"the code of '{label}' changed after its dev run; rerun dev before freezing")
+            raise GateError(f"the code, configuration or timeout of '{label}' changed after its dev run; "
+                            "rerun dev before freezing")
         previous = methods.get(label)
         if previous and previous.get("prompt_sha256") != current["prompt_sha256"]:
             raise GateError(f"'{label}' is already frozen with another hash; changing it is a protocol deviation: "
                             "record it and freeze the change under a new label")
         if not previous:
             methods[label] = {"method": dev["method"], "prompt_sha256": current["prompt_sha256"],
+                              "timeout_s": current["timeout_s"],
                               "files": current["files"], "dev_status": dev.get("status"),
                               "dev_finished_at": dev.get("finished_at"), "frozen_at": utc_now()}
     value = {"schema": FREEZE_SCHEMA, "sample_sha256": sample_sha, "methods": dict(sorted(methods.items()))}
@@ -273,6 +275,7 @@ def versions(method, label, current, data_dir, sample, sample_sha):
             "reference_code_revision": ev.REFERENCE_REVISION, "python": platform.python_version(),
             "packages": {name: package_version(name) for name in PACKAGES},
             "method": method, "label": label, "prompt_sha256": current["prompt_sha256"], "files": current["files"],
+            "timeout_s": current["timeout_s"],
             "model": {"tag": config.get("model"), "role_models": config.get("role_models"), "seed": config.get("seed"),
                       "runtime": model_runtime(config)} if llm else None,
             "gpu": "see model.runtime placement; the GPU model is not recorded" if llm else "not used"}
@@ -300,7 +303,8 @@ def finalize(output, export, *, split, method, label, sample, sample_sha, curren
     summary = {"schema": RUN_SCHEMA, "status": status, "complete": complete, "interrupted": interrupted,
                "started_at": started, "finished_at": utc_now(), "split": split, "method": method, "label": label,
                "sample": sample.get("name"), "sample_sha256": sample_sha, "answers_sha256": scores["answers_sha256"],
-               "prompt_sha256": current["prompt_sha256"], "config": current["config"], "n_cases": len(answers),
+               "prompt_sha256": current["prompt_sha256"], "config": current["config"],
+               "timeout_s": current["timeout_s"], "n_cases": len(answers),
                "n_predicted": len(predictions), "n_errors": scores["n_errors"],
                "n_abstained": sum(p.get("status") == "abstained" for p in predictions.values()),
                "service": scores["service"], "indicator": scores["indicator"], "provenance": record,
@@ -323,7 +327,7 @@ def execute(*, split, method, data_dir=DEFAULT_DATA, sample_path=DEFAULT_SAMPLE,
         raise ValueError("timeout must be positive")
     out_root = Path(out_root)
     sample, sample_sha = load_sample(sample_path)
-    current = fingerprint(method, effective_config(method, config_path))
+    current = fingerprint(method, effective_config(method, config_path), timeout)
     if split == "eval":
         problems = eval_gate(out_root, label, current, freeze_path, sample_sha)
         if problems:

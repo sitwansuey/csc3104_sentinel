@@ -145,6 +145,21 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("changed after its dev run", str(raised.exception))
         self.assertIn("changed after the freeze", str(raised.exception))
 
+    def test_another_timeout_after_the_freeze_keeps_eval_locked(self):
+        self.run_split("dev", timeout=600)
+        runner.freeze(self.out, ["sentinel"], sample_path=self.sample, freeze_path=self.freeze_file)
+        frozen = json.loads(self.freeze_file.read_text(encoding="utf-8"))
+        self.assertEqual(frozen["methods"]["sentinel"]["timeout_s"], 600)
+        with self.assertRaises(runner.GateError) as raised:
+            self.run_split("eval", timeout=900)
+        self.assertIn("timeout of 'sentinel' changed after its dev run", str(raised.exception))
+        self.assertIn("changed after the freeze", str(raised.exception))
+        self.assertFalse((self.out / "eval").exists())
+        summary = self.run_split("eval", timeout=600)
+        self.assertEqual((summary["status"], summary["timeout_s"]), ("PASS", 600))
+        versions = json.loads((self.out / "eval/sentinel/versions.json").read_text(encoding="utf-8"))
+        self.assertEqual(versions["timeout_s"], 600)
+
     def test_freeze_needs_a_complete_dev_run_and_never_changes_a_frozen_hash(self):
         with self.assertRaises(KeyboardInterrupt):
             self.run_split("dev", run_method=InProcess(interrupt_after=1))
@@ -228,13 +243,15 @@ class RunnerTests(unittest.TestCase):
 
 class FingerprintTests(unittest.TestCase):
     def test_prompt_hash_tracks_files_and_configuration(self):
-        first = runner.fingerprint("baro", {})
-        self.assertEqual(first, runner.fingerprint("baro", {}))
-        self.assertNotEqual(first["prompt_sha256"], runner.fingerprint("baro", {"x": 1})["prompt_sha256"])
+        first = runner.fingerprint("baro", {}, 600)
+        self.assertEqual(first, runner.fingerprint("baro", {}, 600))
+        self.assertEqual(first["timeout_s"], 600)
+        self.assertNotEqual(first["prompt_sha256"], runner.fingerprint("baro", {"x": 1}, 600)["prompt_sha256"])
+        self.assertNotEqual(first["prompt_sha256"], runner.fingerprint("baro", {}, 900)["prompt_sha256"])
         self.assertIn("agent/datasets/baselines.py", first["files"])
-        self.assertIn("agent/datasets/casetoolkit.py", runner.fingerprint("casetoolkit", {})["files"])
+        self.assertIn("agent/datasets/casetoolkit.py", runner.fingerprint("casetoolkit", {}, 600)["files"])
         with patch.object(runner, "method_files", return_value={"agent/agent.py": "changed"}):
-            self.assertNotEqual(first["prompt_sha256"], runner.fingerprint("baro", {})["prompt_sha256"])
+            self.assertNotEqual(first["prompt_sha256"], runner.fingerprint("baro", {}, 600)["prompt_sha256"])
         with self.assertRaises(ValueError):
             runner.method_files("unknown")
 

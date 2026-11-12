@@ -14,7 +14,7 @@ root-cause service first (service-level AC@1)? How does it compare with two
 non-LLM baselines run on the same cases: BARO and plain anomaly ranking?
 
 **Secondary.** The same model through RCAEval's CaseToolkit, with the
-mandatory evidence review on and off. Also AC@3, Avg@5, MRR, abstention and
+mandatory evidence review on and off. Also AC@3, Avg@5, MRR@5, abstention and
 latency for every method.
 
 **Out of scope.** RCAEval measures offline diagnosis accuracy only. It says
@@ -105,8 +105,10 @@ Each configuration has a label. The run, the freeze and the report all use it.
   and standard deviation. As in the RCAEval benchmark, the known inject time is
   given, so BARO's change-point detection step is not used. A ranking is cut
   once it holds five distinct services and five entries. That leaves AC@1 to
-  AC@5 and Avg@5 unchanged at both levels. A frame with no change, or no
-  samples on one side of the inject time, is an abstention, not an error.
+  AC@5 and Avg@5 unchanged at both levels, but loses any rank beyond five, so
+  MRR is reported cut at rank five (MRR@5) for every method. A frame with no
+  change, or no samples on one side of the inject time, is an abstention, not
+  an error.
 - **Sentinel** returns one service or abstains. Its AC@3, AC@5 and Avg@5
   therefore equal its AC@1, and the report says so.
 - A smaller model (for example `qwen3:8b`) may be run as an exploratory
@@ -116,14 +118,15 @@ Each configuration has a label. The run, the freeze and the report all use it.
 ## Frozen prompt hash
 
 - The **prompt hash** of a label is the SHA-256 over the hashes of every file
-  that shapes the method and over its effective configuration. The files are
-  the agent code and knowledge base for `sentinel`, the CaseToolkit adapter and
-  the upstream toolkit for `casetoolkit-*`, and the baseline adapter and the
-  upstream BARO, N-Sigma and preprocessing code for the baselines. The harness
-  files `agent/datasets/evaluate.py` and `agent/datasets/rcaeval.py` count for
-  every label. Line endings are read as LF, so Windows and Linux checkouts give
-  the same hash. The list is `method_files()` in
-  `scripts/evaluation/rcaeval_run.py`.
+  that shapes the method, over its effective configuration and over the
+  per-case `--timeout` (a shorter timeout turns slow cases into errors). The
+  files are the agent code and knowledge base for `sentinel`, the CaseToolkit
+  adapter and the upstream toolkit for `casetoolkit-*`, and the baseline
+  adapter and the upstream BARO, N-Sigma and preprocessing code for the
+  baselines. The harness files `agent/datasets/evaluate.py` and
+  `agent/datasets/rcaeval.py` count for every label. Line endings are read as
+  LF, so Windows and Linux checkouts give the same hash. The list is
+  `method_files()` in `scripts/evaluation/rcaeval_run.py`.
 - Each run records its prompt hash in `summary.json` and `versions.json`.
 - After the dev runs, `rcaeval_run.py freeze` writes
   `docs/evaluation/rcaeval/freeze.json`, and that file is committed.
@@ -131,9 +134,9 @@ Each configuration has a label. The run, the freeze and the report all use it.
   hold: the label has a complete dev run under the same output folder with the
   current hash; the freeze file holds the label with the same hash; and the
   freeze file is committed with no local changes.
-- Changing a frozen file or configuration afterwards is a deviation. The
-  changed method needs a new dev run and a new label, and it is reported as
-  such.
+- Changing a frozen file, configuration or timeout afterwards is a deviation.
+  The changed method needs a new dev run and a new label, and it is reported
+  as such.
 
 ## Metrics
 
@@ -145,7 +148,7 @@ Missing, failed and abstained cases count as misses in every denominator.
 - **Primary:** service-level AC@1, with a 95% Wilson score interval (Wilson,
   1927).
 - **Secondary:** AC@3 and AC@5 with Wilson intervals; Avg@5 (the mean of AC@1
-  to AC@5) and MRR with 95% percentile bootstrap intervals over cases (Efron,
+  to AC@5) and MRR@5 with 95% percentile bootstrap intervals over cases (Efron,
   1979; 10,000 resamples, seed 3104); indicator-level AC@1.
 - **Abstention rate** and **error rate**, with Wilson intervals.
 - **Unsafe-action rate:** not applicable. RCAEval scores diagnosis only, and no
@@ -189,8 +192,8 @@ Each of these is a deviation and is reported in the results README:
   freeze file are committed;
 - changing the sample rule, seed, manifest, labels, configurations, metrics or
   pre-registered comparisons after registration;
-- changing a frozen file or configuration (a prompt hash that differs from
-  `freeze.json`);
+- changing a frozen file, configuration or per-case timeout (a prompt hash
+  that differs from `freeze.json`);
 - rerunning a completed case, or dropping, replacing or excluding any case. A
   resume (`--resume`) that only runs cases with no prediction yet is not a
   deviation;

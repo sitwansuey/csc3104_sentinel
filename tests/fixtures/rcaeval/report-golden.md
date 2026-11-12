@@ -1,8 +1,8 @@
 # RCAEval eval results
 
-Sample `sample-ob-v1`, answers sha256 `aaaaaaaaaaaa`. Service-level scores. Intervals are 95%: Wilson score for AC@k and rates; a percentile bootstrap over cases (1000 resamples, seed 11) for Avg@5, MRR and paired differences.
+Sample `sample-ob-v1`, answers sha256 `aaaaaaaaaaaa`. Service-level scores. Intervals are 95%: Wilson score for AC@k and rates; a percentile bootstrap over cases (1000 resamples, seed 11) for Avg@5, MRR@5 and paired differences.
 
-| Method | n | AC@1 | AC@3 | Avg@5 | MRR | Indicator AC@1 | Abstained | Errors | Median s | p90 s |
+| Method | n | AC@1 | AC@3 | Avg@5 | MRR@5 | Indicator AC@1 | Abstained | Errors | Median s | p90 s |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | anomaly-rank | 10 | 0.400 [0.168, 0.687] | 0.600 [0.313, 0.832] | 0.600 [0.300, 0.860] | 0.525 [0.250, 0.800] | 0.300 [0.108, 0.603] | 0 | 0 | 0.400 | 0.510 |
 | baro | 10 | 0.500 [0.237, 0.763] | 0.800 [0.490, 0.943] | 0.720 [0.460, 0.920] | 0.633 [0.367, 0.850] | 0.300 [0.108, 0.603] | 0 | 0 | 0.500 | 0.610 |

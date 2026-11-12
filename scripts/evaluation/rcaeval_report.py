@@ -8,8 +8,9 @@ must be the same split with the same answers file (answers_sha256).
 Reported per method, at service level unless named otherwise:
 - AC@1, AC@3, AC@5, indicator-level AC@1, abstention and error rates, each with
   a 95% Wilson score interval;
-- Avg@5 (mean of AC@1..AC@5) and MRR, each with a seeded percentile bootstrap
-  interval over cases;
+- Avg@5 (mean of AC@1..AC@5) and MRR@5 (reciprocal rank, 0 beyond rank 5),
+  each with a seeded percentile bootstrap interval over cases. MRR is cut at
+  rank 5 for every method because the baselines record only their top five;
 - latency: median, 90th percentile and maximum per-case wall time, and model
   token totals from each prediction's usage;
 - unsafe-action rate: not applicable, since RCAEval scores diagnosis only.
@@ -38,6 +39,8 @@ Z95 = 1.959963984540054
 DEFAULT_SEED = 3104
 DEFAULT_RESAMPLES = 10_000
 TOP1_METHODS = ("sentinel",)
+# Baseline rankings are stored cut at five services, so MRR is cut there for every method.
+MRR_CUTOFF = 5
 # Per-prediction usage counts summed into model_tokens (they survive evidence sanitising).
 TOKEN_KEYS = ("input_tokens", "output_tokens")
 UNSAFE_NOTE = "Not applicable: RCAEval scores diagnosis only, and no method acts on a cluster."
@@ -148,14 +151,14 @@ def method_metrics(result, *, seed, resamples):
     n = len(rows)
     ranks = [row["service_rank"] for row in rows]
     average = [sum(hit(rank, k) for k in range(1, 6)) / 5 for rank in ranks]
-    reciprocal = [1 / rank if rank else 0.0 for rank in ranks]
+    reciprocal = [1 / rank if hit(rank, MRR_CUTOFF) else 0.0 for rank in ranks]
     walls = sorted(result["wall"].values())
     metrics = {"method": result["method"], "n": n}
     for k in (1, 3, 5):
         metrics[f"AC@{k}"] = rate(sum(hit(rank, k) for rank in ranks), n)
     metrics["Avg@5"] = {"value": sum(average) / n if n else None,
                         "ci95": bootstrap_ci(average, seed=seed, resamples=resamples)}
-    metrics["MRR"] = {"value": sum(reciprocal) / n if n else None,
+    metrics["MRR@5"] = {"value": sum(reciprocal) / n if n else None,
                       "ci95": bootstrap_ci(reciprocal, seed=seed, resamples=resamples)}
     metrics["indicator_AC@1"] = rate(sum(hit(row["indicator_rank"], 1) for row in rows), n)
     metrics["abstention_rate"] = rate(sum(row["status"] == "abstained" for row in rows), n)
@@ -270,13 +273,13 @@ def markdown(report):
     lines = [f"# RCAEval {report['split']} results", "",
              f"Sample `{report['sample']}`, answers sha256 `{str(report['answers_sha256'])[:12]}`. Service-level "
              "scores. Intervals are 95%: Wilson score for AC@k and rates; a percentile bootstrap over cases "
-             f"({report['resamples']} resamples, seed {report['seed']}) for Avg@5, MRR and paired differences.", "",
-             "| Method | n | AC@1 | AC@3 | Avg@5 | MRR | Indicator AC@1 | Abstained | Errors | Median s | p90 s |",
+             f"({report['resamples']} resamples, seed {report['seed']}) for Avg@5, MRR@5 and paired differences.", "",
+             "| Method | n | AC@1 | AC@3 | Avg@5 | MRR@5 | Indicator AC@1 | Abstained | Errors | Median s | p90 s |",
              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for label, metrics in report["methods"].items():
         latency = metrics["latency_s"] or {}
         lines.append(f"| {label} | {metrics['n']} | {with_ci(metrics['AC@1'])} | {with_ci(metrics['AC@3'])} | "
-                     f"{with_ci(metrics['Avg@5'])} | {with_ci(metrics['MRR'])} | {with_ci(metrics['indicator_AC@1'])} | "
+                     f"{with_ci(metrics['Avg@5'])} | {with_ci(metrics['MRR@5'])} | {with_ci(metrics['indicator_AC@1'])} | "
                      f"{metrics['abstention_rate']['count']} | {metrics['error_rate']['count']} | "
                      f"{number(latency.get('median'))} | {number(latency.get('p90'))} |")
     lines += ["", "Paired comparisons: exact McNemar test on AC@1, Holm-adjusted across the rows below, and a "
