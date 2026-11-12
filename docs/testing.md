@@ -377,8 +377,10 @@ their source revision. Their values and caveats are in
 The catalog's second target is cartservice, on `kind-sentinel-boutique-connected`
 only ([recovery targets](../experiments/boutique/README.md#recovery-targets)).
 Its primary fault, C1, sets `REDIS_ADDR=redis-cart:6390`, a port nothing
-listens on, so cart reads and writes fail while the process stays up. The
-design's fallback, C2, rolls cart out to an image digest that is not on the
+listens on, so cart reads and writes are expected to fail. Whether the Pod
+then stays Ready, turns NotReady or restarts is not known yet: upstream
+cartservice has a gRPC liveness probe, which may depend on Redis, so restarts
+are possible, and the spike below decides. The design's fallback, C2, rolls cart out to an image digest that is not on the
 node, which gives ErrImageNeverPull under `imagePullPolicy: Never`. Both are
 pre-registered with ROLLBACK correct and ESCALATE acceptable, and both labels
 are pending sign-off like R1, R2 and N1. `--target shippingservice` (the
@@ -391,8 +393,13 @@ targets, the cart probe and the catalog's storefront impact
 (`tests/test_boutique_connected.py::CartTargetTests`), the scopes the lab
 controls take from the catalog (`tests/test_lab_control.py::CatalogScopeTests`),
 and the Executor's per-target baselines and the Guard's per-target ceilings
-(`tests/test_live_executor.py`). No cartservice run has been made on a
-cluster. The live checks, in order:
+(`tests/test_live_executor.py`), and that `prepare()` writes the selected
+target's ceilings, policy target and `baselines/<target>.json` that the real
+Executor then reads (`tests/test_boutique_connected.py::PreparedRunInputsTests`).
+No cartservice run has been made on a cluster. The cart probe writes to the
+application under test: AddItem and EmptyCart on Redis for a fresh
+`sentinel-probe-*` user. If a call fails between them, that probe cart stays in
+Redis; this is harmless in the lab. The live checks, in order:
 
 1. **Spike (about 30 minutes) to choose the fault.** On a healthy connected
    lab, set the bad address by hand and watch the cart Pod for ten minutes:
@@ -420,9 +427,22 @@ cluster. The live checks, in order:
    reconciliation with 0 writes; Verifier RECOVERED with sustained cart and
    checkout; and the final unnecessary rollback REJECTED with 0 writes. The
    permission check must show get and patch allowed on both targets and
-   `patch deployment/paymentservice` denied.
+   `patch deployment/paymentservice` denied. In the run folder, also check
+   that `policy.json` has `max_container_requests.cpu` `200m` and `targets`
+   naming cartservice only, that the initial Guard decision ALLOWs the cart
+   baseline (200m request), that `allowed-targets.json` lists the measured
+   identities of both cartservice and shippingservice, and that
+   `baselines/cartservice.json` equals `baseline.json`, names the cart
+   identity as `target`, and holds the template the approved ROLLBACK
+   restored (the Executor reads only that file).
 3. **Shipping regression.** Rerun the default connected and single-service
    labs unchanged (no `-Target`) and compare the checks with earlier runs.
+   The connected lab itself has changed for shipping runs too: the connected
+   manifest now gives cartservice `strategy: Recreate` and
+   `minReadySeconds: 2` in every run, and the connected Role and
+   `allowed-targets.json` name both targets. Check that `policy.json` still
+   has the 100m request ceiling and names shippingservice only, and that
+   `baselines/shippingservice.json` exists and holds the restored template.
 
 ## Specialised role checks
 
