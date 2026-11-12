@@ -19,8 +19,8 @@ import time
 class PreflightFailed(RuntimeError):
     """A component's own prerequisite (such as its model endpoint) is unusable.
 
-    The worker then claims nothing and reports not ready until a later
-    preflight passes. code is a short upper-case identifier; the cause text is
+    The worker then claims no new work (saved results are still re-sent)
+    and reports not ready until a later preflight passes. code is a short upper-case identifier; the cause text is
     never part of it.
     """
 

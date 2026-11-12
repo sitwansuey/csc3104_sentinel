@@ -106,7 +106,7 @@ losing that node needs a manual restore from a backup, and nothing detects a
 restore that silently drops acknowledged results.
 
 **Recovery time (RTO)** has not been measured. After repeated errors a worker
-backs off for up to 60 s (`runtime/worker_service.py:359::main::min(60`), which adds
+backs off for up to 60 s (`runtime/worker_service.py:365::main::min(60`), which adds
 to recovery time after a Coordinator restart.
 
 ## Time and ordering: the clock dependence today
@@ -155,7 +155,7 @@ run. They become real when workers run on separate machines.
 `CoordinatorError`, which is a `ValueError`. The worker API answers it with
 HTTP 400 (`runtime/worker_http.py:180-182::handler::except (ValueError, KeyError, TypeError)`). The worker releases a saved
 result only on 404 or 409 and re-raises anything else
-(`runtime/remote_worker.py:138-143::RemoteWorker.once::except ProtocolError`), and a saved result can
+(`runtime/remote_worker.py:155-160::RemoteWorker.once::except ProtocolError`), and a saved result can
 never change (`runtime/remote_worker.py::WorkerJournal.save`). So the worker
 resends the same rejected result until its lease expires. The Coordinator checks
 lease expiry before the lifecycle (`runtime/worker_transport.py:167-168::Delivery.finish::row["expires"]`),
@@ -179,7 +179,7 @@ from the Coordinator's clock (`runtime/worker_transport.py::Delivery.claim`),
 so they do not depend on skew between hosts. They do use wall-clock time, so a
 step of the Coordinator's clock moves every lease at once. The one
 cross-clock use is the worker's renewal interval
-(`runtime/remote_worker.py:73::Lease.__init__::self.interval`). It is capped at 5 s, so with
+(`runtime/remote_worker.py:78::Lease.__init__::self.interval`). It is capped at 5 s, so with
 the configured delivery leases (30 s by default, 300 s in the manifest) skew
 can only make renewal more frequent. With a lease shorter than 5 s, a worker
 clock far behind the Coordinator's could make renewal too rare. The Planner's

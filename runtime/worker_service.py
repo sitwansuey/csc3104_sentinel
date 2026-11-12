@@ -323,28 +323,34 @@ def main(argv=None):
             component = adapter(config, directory, stack)
             journal = WorkerJournal(directory / "transport.db")
             stack.callback(journal.close)
-            worker = RemoteWorker(connection, journal, component)
+            # A component with its own prerequisite (the agent Planner's model) checks it just
+            # before a claim. While it fails the worker claims no new work and /readyz stays 503,
+            # but saved results are still re-sent: delivering one needs no model.
+            preflight = getattr(component, "preflight", None)
+
+            def before_claim():
+                try:
+                    preflight()
+                except PreflightFailed:
+                    health.prerequisites(False)
+                    raise
+                health.prerequisites(True)
+            worker = RemoteWorker(connection, journal, component,
+                                  before_claim=before_claim if preflight is not None else None)
             health.configured()
             if threading.current_thread() is threading.main_thread():
                 for sig in (signal.SIGINT, signal.SIGTERM):
                     previous[sig] = signal.signal(sig, lambda *_: stopping.set())
             failures = 0
             stack.enter_context(log.bind(identity=config.get("identity"), role=config.get("role")))
-            # A component with its own prerequisite (the agent Planner's model) checks it before
-            # every claim; while it fails, the worker claims nothing and /readyz stays 503.
-            preflight = getattr(component, "preflight", None)
             while not stopping.is_set():
                 error = None
                 health.heartbeat()
                 try:
-                    if preflight is not None:
-                        preflight()
-                        health.prerequisites(True)
                     status = worker.once()
                     health.contacted()  # once() returned, so the Coordinator answered this pass.
                     failures = 0
                 except PreflightFailed as caught:
-                    health.prerequisites(False)
                     error = caught
                     failures += 1
                     status = {"status": "not_ready", "error_code": caught.code}

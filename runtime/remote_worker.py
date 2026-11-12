@@ -56,6 +56,11 @@ class WorkerJournal:
         return [self.get(row[0]) for row in self.db.execute("""SELECT request_key FROM worker_deliveries
             WHERE result IS NOT NULL AND accepted=0 AND delivery IS NOT NULL ORDER BY rowid LIMIT 1000""")]
 
+    def held(self):
+        """True while a saved result waits, unaccepted, for its request to be delivered again."""
+        return self.db.execute("""SELECT 1 FROM worker_deliveries
+            WHERE result IS NOT NULL AND accepted=0 AND delivery IS NULL LIMIT 1""").fetchone() is not None
+
     def release(self, key):
         self.db.execute("UPDATE worker_deliveries SET delivery=NULL WHERE request_key=?", (key,))
 
@@ -100,9 +105,21 @@ class Lease:
 
 
 class RemoteWorker:
-    def __init__(self, client, journal, adapter, *, renewal_interval=5):
+    """One polling pass at a time: re-send saved results, then claim and process new work.
+
+    before_claim, when given, is a prerequisite for new work only (the agent
+    Planner's model preflight). It runs just before a claim and raises to claim
+    nothing. A saved result needs no prerequisite, so it never waits for one:
+    pending results are re-sent first, and while a released saved result waits
+    for its request to come back the worker claims anyway, sends a saved result
+    if the claim matches one, and otherwise checks the prerequisite before any
+    processing and hands the request back with retry when it fails.
+    """
+
+    def __init__(self, client, journal, adapter, *, renewal_interval=5, before_claim=None):
         self.client, self.journal, self.adapter = client, journal, adapter
         self.renewal_interval = renewal_interval
+        self.before_claim = before_claim
         # IDs of the delivery handled by the latest once(), for status log lines.
         self.current = {}
 
@@ -141,6 +158,9 @@ class RemoteWorker:
                 # Retain the immutable result for a replacement delivery, but
                 # never keep retrying a lease that can no longer commit it.
                 self.journal.release(row["request_key"])
+        deferred = self.before_claim is not None and self.journal.held()
+        if self.before_claim is not None and not deferred:
+            self.before_claim()
         delivery = self.client.post("claim", {})["delivery"]
         if delivery is None:
             return {"status": "idle"}
@@ -149,9 +169,23 @@ class RemoteWorker:
         row = self.journal.get(key)
         if row["result"] is not None:
             return self._send(row)
+        if deferred:
+            self._check_before_work(key, delivery)
         with log.bind(**self.current), tracing.start_span(
                 "worker.process", parent=tracing.parse_traceparent(delivery.get("traceparent"))):
             return self._process(key, delivery)
+
+    def _check_before_work(self, key, delivery):
+        """Run before_claim for a claimed request with no saved result; hand it back if it fails."""
+        try:
+            self.before_claim()
+        except Exception:
+            try:
+                self.client.post("retry", {name: delivery[name] for name in ("delivery_id", "lease_token")})
+            except Exception as error:  # noqa: BLE001 - lease expiry still makes the request claimable again
+                log.failure(LOG, "transport.retry.failed", error)
+            self.journal.release(key)
+            raise
 
     def _process(self, key, delivery):
         try:

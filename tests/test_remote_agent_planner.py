@@ -430,13 +430,57 @@ class AgentWorkerProcessTests(unittest.TestCase):
         self.assertEqual([(s["status"], s["reason"], s["cause"], s["error_type"]) for s in status],
                          [("not_ready", "MODEL_UNAVAILABLE", "RuntimeError", "PreflightFailed")])
 
+    def run_in_process(self, path, *arguments):
+        """One --once pass of main() in this process: (exit code, last printed status, health)."""
+        health = WorkerHealth()
+        output = io.StringIO()
+        with patch.dict(os.environ, {TOKEN_ENV: "p" * 40, **self.inputs.gate}), redirect_stdout(output),                 redirect_stderr(io.StringIO()), patch("runtime.worker_service.WorkerHealth", return_value=health):
+            code = worker_service.main([*arguments, "--config", str(path), "--once"])
+        return code, json.loads(output.getvalue().splitlines()[-1]), health
+
+    def test_a_saved_result_is_resent_while_the_model_is_down(self):
+        RemoteIngress(self.client("observer-1", "o" * 40))(self.inputs.incident)
+        _, path = self.inputs.config(self.url, self.inputs.model_config(self.model.url))
+        original, lost = WorkerClient.post, []
+
+        def post(client, operation, body):
+            if operation == "result" and not lost:
+                lost.append(body["delivery_id"])
+                raise TimeoutError("the result request was lost before the Coordinator read it")
+            return original(client, operation, body)
+        with patch.object(WorkerClient, "post", post):
+            code, status, _ = self.run_in_process(path)
+        self.assertEqual((code, status), (1, {"status": "retry", "error_code": "TimeoutError"}))
+        with PlannerStore(self.inputs.root / "planner-state/planner.db") as journal:
+            saved = journal.get(self.inputs.incident["incident_id"])
+        self.assertEqual((saved["proposal"]["action"], saved["delivered"]), ("ROLLBACK", 0))
+        self.assertEqual(self.incident_state(), ("OPEN", None))
+        self.model.__exit__(None, None, None)  # The model goes down; the saved result needs none.
+        asked = len(self.model.paths())
+        code, status, health = self.run_in_process(path)
+        self.assertEqual((code, status), (0, {"status": "accepted", "replay": False}))
+        state, proposal = self.incident_state()
+        self.assertEqual(state, "VALIDATING")
+        self.assertEqual(proposal, saved["proposal"])
+        self.assertEqual(len(self.model.paths()), asked)  # Neither a preflight nor a model call.
+        with PlannerStore(self.inputs.root / "planner-state/planner.db") as journal:
+            self.assertEqual(journal.get(self.inputs.incident["incident_id"])["delivered"], 1)
+        # The next pass has no saved result to send, so it preflights and is not ready.
+        code, status, health = self.run_in_process(path)
+        self.assertEqual((code, status), (1, {"status": "not_ready", "error_code": "MODEL_UNAVAILABLE"}))
+        health.heartbeat()
+        health.contacted()
+        self.assertEqual(health.ready()[0], 503)
+
     def test_a_configuration_for_another_role_is_refused(self):
         _, path = self.inputs.config(self.url, self.inputs.model_config(self.model.url))
-        output = io.StringIO()
-        with redirect_stdout(output), redirect_stderr(io.StringIO()):
-            self.assertEqual(worker_service.main(["--role", "executor", "--config", str(path), "--once"]), 1)
-        self.assertEqual(json.loads(output.getvalue())["status"], "configuration_error")
+        # With the lab gate and the token in place, only the role check can refuse this configuration.
+        code, status, _ = self.run_in_process(path, "--role", "executor")
+        self.assertEqual((code, status["status"]), (1, "configuration_error"))
         self.assertEqual(self.model.paths(), [])
+        code, status, _ = self.run_in_process(path, "--role", "planner")
+        self.assertEqual((code, status), (0, {"status": "idle"}))
+        self.assertEqual(self.model.paths(), ["/api/tags"])
 
 
 class ReadinessTests(unittest.TestCase):

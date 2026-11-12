@@ -45,9 +45,9 @@ class AgentPlannerAdapter(PlannerAdapter):
     finalize hooks inside one claimed PlannerStore attempt, so a retryable
     PlanningError consumes a bounded attempt, a terminal one or exhaustion saves
     an ESCALATE, and a saved proposal replays without another model call, as
-    on the local agent path. preflight() checks the model endpoint before the
-    worker claims; a failure raises PreflightFailed and the worker stays not
-    ready. A passed check is reused for preflight_seconds.
+    on the local agent path. preflight() checks the model endpoint just before
+    the worker claims new work; a failure raises PreflightFailed and the worker
+    stays not ready. A passed check is reused for preflight_seconds.
     """
 
     def __init__(self, journal, *, config, folder, baseline, telemetry, deployment_reader,
