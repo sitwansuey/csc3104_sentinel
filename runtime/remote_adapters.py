@@ -112,9 +112,9 @@ class VerifierAdapter:
                 from shared.contracts import validate_message
                 proposal = delivery["payload"].get("proposal")
                 validate_message(proposal)
-                if (proposal["kind"] != "proposal" or proposal["action"] != "ROLLBACK"
+                if (proposal["kind"] != "proposal" or proposal["action"] not in ("ROLLBACK", "RESTART")
                         or any(proposal[k] != execution[k] for k in ("action_id", "incident_id", "target"))):
-                    raise ValueError("Verification requires the exact executed rollback proposal")
+                    raise ValueError("Verification requires the exact executed rollback or restart proposal")
                 policy["health"]["expected_template_sha256"] = proposal["parameters"]["template_sha256"]
             job = self.journal.start(execution, policy, now=self.clock())
         elif job["execution"] != execution:

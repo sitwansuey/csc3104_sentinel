@@ -1,4 +1,4 @@
-"""Non-persisting Kubernetes admission preview for a bound rollback candidate.
+"""Non-persisting Kubernetes admission preview for a bound ROLLBACK or RESTART candidate.
 
 Every Kubernetes patch in this module includes ``--dry-run=server``. A passing
 Deployment preview establishes API acceptance of that exact template only; it
@@ -18,6 +18,7 @@ from services.guard.core import GuardInputError, proposal_fingerprint, template_
 from services.guard.adapters import (
     AdapterError, KUBECTL_TIMEOUT_SECONDS, _DNS_LABEL, _DNS_SUBDOMAIN, _parse_json,
 )
+from shared.actions import restart_template, restart_token
 from shared.canonical import canonical_json
 from shared.contracts import ContractError
 
@@ -58,7 +59,10 @@ def _private_file(path):
 def server_dry_run(proposal: dict, live_state: dict, baseline: dict, *,
                    context: str, cluster_id: str,
                    kubeconfig: str | Path | None = None) -> dict:
-    """Preview an exact rollback via a UID/version-conditional JSON Patch.
+    """Preview an exact candidate template via a UID/version-conditional JSON Patch.
+
+    A ROLLBACK candidate is the baseline template; a RESTART candidate is the
+    baseline template plus the planner-bound restart token.
 
     Invalid proposal/context inputs raise a safe AdapterError. Inconsistent
     snapshots, unavailable API access and ambiguous kubectl errors return
@@ -102,7 +106,7 @@ def server_dry_run(proposal: dict, live_state: dict, baseline: dict, *,
                         checked_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
         return snapshot
 
-    if proposal["action"] != "ROLLBACK":
+    if proposal["action"] not in ("ROLLBACK", "RESTART"):
         return finish("UNKNOWN", "UNSUPPORTED_PREVIEW_ACTION")
     if not isinstance(live_state, dict) or live_state.get("cluster_id") != cluster_id:
         return finish("UNKNOWN", "LIVE_PRECONDITION_FAILED")
@@ -119,11 +123,19 @@ def server_dry_run(proposal: dict, live_state: dict, baseline: dict, *,
         digest = template_sha256(template)
     except (GuardInputError, TypeError, ValueError, RecursionError):
         return finish("UNKNOWN", "BASELINE_PRECONDITION_FAILED")
-    if digest != baseline.get("template_sha256") or digest != snapshot["template_sha256"]:
+    if digest != baseline.get("template_sha256"):
         return finish("UNKNOWN", "BASELINE_PRECONDITION_FAILED")
     if (not isinstance(template.get("spec"), dict)
             or not isinstance(template["spec"].get("containers"), list)
             or not template["spec"]["containers"]):
+        return finish("UNKNOWN", "BASELINE_PRECONDITION_FAILED")
+    if proposal["action"] == "RESTART":
+        token = restart_token(proposal["incident_id"], baseline["baseline_id"])
+        if proposal["parameters"]["restart_token"] != token:
+            return finish("UNKNOWN", "BASELINE_PRECONDITION_FAILED")
+        template = restart_template(template, token)
+        digest = template_sha256(template)
+    if digest != snapshot["template_sha256"]:
         return finish("UNKNOWN", "BASELINE_PRECONDITION_FAILED")
 
     patch = [

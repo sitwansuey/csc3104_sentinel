@@ -9,13 +9,17 @@ from services.planner.worker import prepare
 
 def process_planner_requests(store, bus, *, baseline_reader, retriever, provider,
                              journal=None, max_attempts=3, retry_seconds=5, lease_seconds=120,
-                             diagnoser=None, finalize=None):
-    """Plan pending incidents. diagnoser and finalize need the durable journal (see prepare())."""
+                             diagnoser=None, finalize=None, template_reader=None):
+    """Plan pending incidents. diagnoser and finalize need the durable journal (see prepare()).
+
+    template_reader(incident), when given, is a trusted read of the target's
+    current Pod template; without it the Planner never proposes RESTART.
+    """
     if journal is not None:
         return _process_durable(store, bus, baseline_reader=baseline_reader, retriever=retriever,
             provider=provider, journal=journal, max_attempts=max_attempts,
             retry_seconds=retry_seconds, lease_seconds=lease_seconds,
-            diagnoser=diagnoser, finalize=finalize)
+            diagnoser=diagnoser, finalize=finalize, template_reader=template_reader)
     if diagnoser is not None or finalize is not None:
         raise ValueError("Agent planning hooks require the durable Planner journal")
     proposals = []
@@ -29,7 +33,9 @@ def process_planner_requests(store, bus, *, baseline_reader, retriever, provider
         if current and current['state'] == 'OPEN' and not store.planning_blocker(incident['incident_id']):
             # Inference and external reads can take minutes. Never hold the
             # Coordinator writer while waiting for them.
-            proposal = propose(incident, baseline_reader(deepcopy(incident)), retriever, provider)
+            live_template = template_reader(deepcopy(incident)) if template_reader is not None else None
+            proposal = propose(incident, baseline_reader(deepcopy(incident)), retriever, provider,
+                               live_template=live_template)
         else:
             proposal = None
         with store.transaction():
@@ -49,7 +55,7 @@ def process_planner_requests(store, bus, *, baseline_reader, retriever, provider
 
 
 def _process_durable(store, bus, *, baseline_reader, retriever, provider, journal,
-                     max_attempts, retry_seconds, lease_seconds, diagnoser, finalize):
+                     max_attempts, retry_seconds, lease_seconds, diagnoser, finalize, template_reader):
     proposals = []
     # A crash after Coordinator commit can precede the local delivery marker.
     # Reconcile from the exact accepted business payload, not a transport flag.
@@ -69,7 +75,7 @@ def _process_durable(store, bus, *, baseline_reader, retriever, provider, journa
         proposal = prepare(incident, journal=journal, baseline_reader=baseline_reader,
             retriever=retriever, provider=provider, max_attempts=max_attempts,
             retry_seconds=retry_seconds, lease_seconds=lease_seconds,
-            diagnoser=diagnoser, finalize=finalize)
+            diagnoser=diagnoser, finalize=finalize, template_reader=template_reader)
         if proposal is None:
             continue
         with store.transaction():

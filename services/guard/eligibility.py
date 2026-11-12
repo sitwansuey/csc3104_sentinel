@@ -375,8 +375,10 @@ def _security(spec, containers, live_state, rules):
 
 def assess(proposal, live_state, baseline, policy, checked_at):
     """Return detailed PASS/FAIL/UNKNOWN/SKIP findings without performing I/O."""
-    if proposal.get("action") != "ROLLBACK":
-        return [_result("ROLLBACK_ELIGIBILITY", "proposal.action", proposal.get("action"), "ROLLBACK", "Rollback-specific checks do not apply.", "SKIP")]
+    # A RESTART writes the baseline template plus a token, so new Pods are
+    # created from it: the same health, security and reference rules apply.
+    if proposal.get("action") not in ("ROLLBACK", "RESTART"):
+        return [_result("ROLLBACK_ELIGIBILITY", "proposal.action", proposal.get("action"), "ROLLBACK or RESTART", "Template eligibility checks do not apply.", "SKIP")]
     baseline_rules = policy.get("baseline_constraints")
     security_rules = policy.get("security_constraints")
     if baseline_rules is None and security_rules is None:

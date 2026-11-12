@@ -221,6 +221,11 @@ class SQLiteStore:
             result[field] = json.loads(result[field]) if result[field] else None
         return result
 
+    def actions_for_incident(self, incident_id):
+        """Every action proposed for the incident, oldest first."""
+        rows = self.db.execute("SELECT action_id FROM actions WHERE incident_id=? ORDER BY rowid", (incident_id,))
+        return [self.action(row[0]) for row in rows.fetchall()]
+
     def planning_blocker(self, incident_id):
         """Serialize recoveries for a workload, leaving other targets independent.
 

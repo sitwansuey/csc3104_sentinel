@@ -254,10 +254,10 @@ def assess(proposal, live_state, baseline, policy, checked_at):
     """Return detailed PASS/FAIL/UNKNOWN/SKIP findings without external I/O."""
     validate_policy(policy)
     findings = []
-    if proposal.get("action") != "ROLLBACK":
+    if proposal.get("action") not in ("ROLLBACK", "RESTART"):
         action = proposal.get("action")
-        safe_action = action if isinstance(action, str) and action in {"RESTART", "SCALE", "NO_ACTION", "ESCALATE"} else "invalid action"
-        return [finding("RESOURCE_CHECKS_SKIPPED", "proposal.action", safe_action, "ROLLBACK", "Resource checks apply to rollback templates.", "SKIP")]
+        safe_action = action if isinstance(action, str) and action in {"SCALE", "NO_ACTION", "ESCALATE"} else "invalid action"
+        return [finding("RESOURCE_CHECKS_SKIPPED", "proposal.action", safe_action, "ROLLBACK or RESTART", "Resource checks apply to templates that a ROLLBACK or RESTART writes.", "SKIP")]
     constraints = _container_policy(policy) if "resource_constraints" in policy else None
     workload = _workload_policy(policy) if "workload_constraints" in policy else None
     if constraints is None and workload is None:

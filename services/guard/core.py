@@ -9,6 +9,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import re
 
+from shared.actions import IMPLEMENTED_ACTIONS, TEMPLATE_ACTIONS
 from shared.contracts import ACTION_TYPES, ContractError, validate_message
 from services.guard.common import (
     GuardInputError, mapping as _mapping, string as _string,
@@ -107,7 +108,10 @@ def _baseline_reasons(proposal, baseline, checked_at):
         reasons.append("BASELINE_TARGET_MISMATCH")
     if baseline["baseline_id"] != proposal["parameters"]["baseline_id"]:
         reasons.append("BASELINE_ID_MISMATCH")
-    if digest != baseline["template_sha256"] or digest != proposal["parameters"]["template_sha256"]:
+    # A ROLLBACK writes the baseline itself. A RESTART writes the baseline plus a
+    # token; services/guard/restart.py binds its resulting hash.
+    if digest != baseline["template_sha256"] or (
+            proposal["action"] == "ROLLBACK" and digest != proposal["parameters"]["template_sha256"]):
         reasons.append("BASELINE_HASH_MISMATCH")
     if healthy_at > checked_at:
         reasons.append("BASELINE_FROM_FUTURE")
@@ -158,7 +162,7 @@ def _state_policy_reasons(proposal, policy, live_target, resource_version,
         rejected.append("TARGET_NOT_ALLOWED")
     if proposal["action"] not in policy["allowed_actions"]:
         rejected.append("ACTION_NOT_ALLOWED")
-    elif proposal["action"] != "ROLLBACK":
+    elif proposal["action"] not in IMPLEMENTED_ACTIONS:
         rejected.append("ACTION_NOT_IMPLEMENTED")
     if any(live_target[key] != proposal["target"][key] for key in TARGET_FIELDS if key != "uid"):
         rejected.append("LIVE_TARGET_MISMATCH")
@@ -197,7 +201,7 @@ def assess_state_policy(proposal, live_state, policy, *, now=None) -> list[str]:
 def _evaluate_core(proposal: dict, live_state: dict, policy: dict,
              baseline: dict | None, dependencies: dict, approval: dict | None = None,
              *, now: datetime | None = None, _trace=None) -> dict:
-    """Validate one explicit rollback without performing Kubernetes writes.
+    """Validate one typed ROLLBACK or RESTART without performing Kubernetes writes.
 
     Malformed wire inputs raise ContractError. Invalid policy/live-state inputs
     raise GuardInputError; no resource version is invented for unavailable state.
@@ -216,7 +220,7 @@ def _evaluate_core(proposal: dict, live_state: dict, policy: dict,
     rejected = _state_policy_reasons(proposal, policy, live_target,
                                      resource_version, captured_at, checked_at)
     escalated = []
-    if proposal["action"] == "ROLLBACK":
+    if proposal["action"] in TEMPLATE_ACTIONS:
         rejected.extend(_baseline_reasons(proposal, baseline, checked_at))
 
     dependency_unknowns = []

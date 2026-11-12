@@ -302,6 +302,23 @@ class SQLiteExecutionLedger:
             result.append(item)
         return result
 
+    def restart_history(self, target):
+        """Every RESTART write this ledger started for the workload, oldest first.
+
+        The workload key ignores the UID, like the target lock, so recreating a
+        Deployment does not reset its restart budget. A write counts once it has
+        started, whatever its outcome: one still in doubt may have restarted Pods.
+        Adopted rows (another host's write reconciled here) count too.
+        """
+        history = []
+        for row in self.db.execute(
+                "SELECT action_id,proposal,write_started_at FROM executor_actions "
+                "WHERE target_key=? AND write_started_at IS NOT NULL ORDER BY write_started_at,rowid",
+                (target_key(target),)):
+            if json.loads(row["proposal"]).get("action") == "RESTART":
+                history.append({"action_id": row["action_id"], "started_at": row["write_started_at"]})
+        return history
+
     def results(self, action_id):
         return [json.loads(row[0]) for row in self.db.execute(
             "SELECT result FROM executor_results WHERE action_id=? ORDER BY id", (action_id,)

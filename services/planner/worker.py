@@ -86,7 +86,8 @@ def _rebound(proposal, finalize):
 
 
 def prepare(incident, *, journal, baseline_reader, retriever, provider,
-            max_attempts=3, retry_seconds=5, lease_seconds=120, diagnoser=None, finalize=None):
+            max_attempts=3, retry_seconds=5, lease_seconds=120, diagnoser=None, finalize=None,
+            template_reader=None):
     """Return the exact saved proposal, or None until the next eligible attempt.
 
     diagnoser(incident, attempt=n), when given, diagnoses inside the claimed
@@ -94,6 +95,8 @@ def prepare(incident, *, journal, baseline_reader, retriever, provider,
     in a saved ESCALATE. finalize(proposal), when given, rebinds a ROLLBACK to
     the live resource version before it is saved, so the rebound proposal is the
     one delivered and replayed. A PlanningError from any step is saved by code.
+    template_reader(incident), when given, returns the target's current Pod
+    template from a trusted read; propose() needs it before it accepts RESTART.
     """
     validate_message(incident)
     if incident["kind"] != "incident":
@@ -140,8 +143,9 @@ def prepare(incident, *, journal, baseline_reader, retriever, provider,
                 finally:
                     if usage() is not None:
                         journal.save_context(incident_id, token, snapshot, usage())
+            live_template = template_reader(deepcopy(incident)) if template_reader is not None else None
             proposal = propose(incident, baseline_reader(deepcopy(incident)), retriever, recorded_provider,
-                               diagnosis=diagnosis)
+                               diagnosis=diagnosis, live_template=live_template)
             if finalize is not None and proposal["action"] == "ROLLBACK":
                 proposal = _rebound(proposal, finalize)
         except Exception as error:  # noqa: BLE001 - model and provider errors are retried, then escalated

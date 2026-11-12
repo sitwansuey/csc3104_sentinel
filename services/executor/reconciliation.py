@@ -39,6 +39,9 @@ ACTION_ANNOTATION = "sentinel.io/execution"
 # optional ownership epoch, which later Coordinator-commanded fences may set.
 FENCE_ANNOTATION = "sentinel.io/fence"
 _EVIDENCE_FIELDS = frozenset({"action_id", "proposal_sha256", "target_uid", "template_sha256", "attempt_id"})
+# Actions whose evidence names the action. A ROLLBACK keeps the five-field form
+# written before other actions existed, so the absence of "action" means ROLLBACK.
+_NAMED_ACTIONS = frozenset({"RESTART"})
 _FENCE_FIELDS = frozenset({"action_id", "nonce"})
 _NONCE = re.compile(r"[a-f0-9]{32}\Z")
 _IDENTITY_FIELDS = ("cluster_id", "kind", "namespace", "name")
@@ -142,22 +145,36 @@ def fence_nonce(annotation: Optional[str], action_id: str) -> Optional[str]:
     return nonce if marker["action_id"] == action_id and isinstance(nonce, str) else None
 
 
+def evidence_fields_valid(evidence: Any) -> bool:
+    """True for the five-field ROLLBACK form, or those fields plus a named action type."""
+    if not isinstance(evidence, dict):
+        return False
+    fields = set(evidence)
+    if fields == _EVIDENCE_FIELDS:
+        return True
+    return fields == _EVIDENCE_FIELDS | {"action"} and evidence["action"] in _NAMED_ACTIONS
+
+
+def _evidence_action(evidence: Mapping[str, Any]) -> Any:
+    return evidence.get("action", "ROLLBACK")
+
+
 def action_attempt(annotation: Optional[str], proposal: Mapping[str, Any]) -> Optional[str]:
     """Return the attempt nonce if the annotation is exact evidence for this action.
 
-    Matching is at action level: action ID, proposal hash, target UID and
-    template hash must all match, so a peer's attempt of the same action counts.
-    A copied marker for another action or a changed proposal does not.
+    Matching is at action level: action ID, action type, proposal hash, target
+    UID and template hash must all match, so a peer's attempt of the same action
+    counts. A copied marker for another action or a changed proposal does not.
     """
     if not isinstance(annotation, str) or len(annotation) > 4096:
         return None
     try:
         evidence = json.loads(annotation)
-        if (not isinstance(evidence, dict) or set(evidence) != _EVIDENCE_FIELDS
-                or canonical_json(evidence) != annotation):
+        if not evidence_fields_valid(evidence) or canonical_json(evidence) != annotation:
             return None
         attempt = evidence["attempt_id"]
         matches = (evidence["action_id"] == proposal["action_id"]
+                   and _evidence_action(evidence) == proposal["action"]
                    and evidence["proposal_sha256"] == fingerprint(proposal)
                    and evidence["target_uid"] == proposal["target"]["uid"]
                    and evidence["template_sha256"] == proposal["parameters"]["template_sha256"]

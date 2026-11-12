@@ -11,9 +11,9 @@
       "workaround": "Turn fencing on: fence_after_seconds in the Executor worker configuration, or --fence-after with runtime/live_executor.py --reconcile. With fencing off, an operator inspects the Deployment and clears the Executor ledger row by hand for the unchanged-version case. The deleted, recreated and moved-version cases need no workaround.",
       "cites": [
         {"at": "services/executor/kubernetes_adapter.py:243", "text": "Live write returned an error; reconcile its outcome"},
-        {"at": "services/executor/reconciliation.py:213", "text": "Basis.UNCHANGED_IN_DOUBT, version, may_fence=True"},
-        {"at": "services/executor/core.py:44", "text": "Live state does not confirm this attempt"},
-        {"at": "services/executor/core.py:272-273", "text": "adapters.ledger.record_fence(action_id, nonce, _now(adapters))"},
+        {"at": "services/executor/reconciliation.py:230", "text": "Basis.UNCHANGED_IN_DOUBT, version, may_fence=True"},
+        {"at": "services/executor/core.py:47", "text": "Live state does not confirm this attempt"},
+        {"at": "services/executor/core.py:276-277", "text": "adapters.ledger.record_fence(action_id, nonce, _now(adapters))"},
         {"at": "services/executor/kubernetes_adapter.py:214", "text": "A fence may change metadata only"},
         {"at": "tests/test_executor_reconciliation_table.py:325", "text": "def test_external_version_bump_supersedes_and_releases_the_workload"},
         {"at": "tests/test_executor_reconciliation_table.py:357", "text": "def test_unchanged_version_stays_in_doubt_and_is_deduplicated"},
@@ -34,8 +34,8 @@
       "impact": "Fixed in code; live verification is left to P3.01 and P4.01. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host given a reconcile command with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it never starts that write. An execute command on a fresh host can still write, and the resourceVersion test in the patch lets at most one write for the action commit. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. No run has used more than one Executor host; the 2026-11-11 live runs each used one.",
       "workaround": "Run one Executor with one ledger directory, as every documented run does, until a multi-host run verifies this.",
       "cites": [
-        {"at": "services/executor/core.py:421", "text": "# Another host may already have committed this same action."},
-        {"at": "services/executor/core.py:365", "text": "# Journal the action as in doubt here, so this host can never start it."},
+        {"at": "services/executor/core.py:420", "text": "# Another host may already have committed this same action."},
+        {"at": "services/executor/core.py:364", "text": "# Journal the action as in doubt here, so this host can never start it."},
         {"at": "tests/test_executor_reconciliation_table.py:420", "text": "def test_peer_adoption_gives_applied_with_zero_writes_on_host_b"},
         {"at": "tests/test_executor_reconciliation_table.py:475", "text": "def test_reconcile_on_a_host_with_no_row_returns_a_result"},
         {"at": "services/executor/store.py:3", "text": "Every worker must use the same ledger and lock directory"}
@@ -52,8 +52,8 @@
       "impact": "The Coordinator refuses a result whose timestamp is not later than the evidence it follows. If the Executor's clock is behind the Guard's, an applied execution result is refused with HTTP 400, and the remote worker retries it forever because it gives up only on 404 or 409. Lease renewal also mixes the Coordinator's and the worker's clocks.",
       "workaround": "Run every component on one host, so they share one clock. All committed runs did.",
       "cites": [
-        {"at": "services/coordinator/core.py:149-150", "text": "Execution predates Guard validation"},
-        {"at": "services/coordinator/core.py:169-170", "text": "Health window predates execution"},
+        {"at": "services/coordinator/core.py:154-155", "text": "Execution predates Guard validation"},
+        {"at": "services/coordinator/core.py:174-175", "text": "Health window predates execution"},
         {"at": "runtime/worker_http.py:157", "text": "except (ValueError, KeyError, TypeError) as exc:"},
         {"at": "runtime/remote_worker.py:132", "text": "if error.status not in {404, 409}:"},
         {"at": "runtime/remote_worker.py:73", "text": "time.time()) / 3"}
@@ -71,8 +71,8 @@
       "workaround": "For runs recorded before this change, read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.",
       "cites": [
         {"at": "experiments/boutique/harness/agent_live.py:209", "text": "state = run_durable_case(self, incident"},
-        {"at": "services/planner/worker.py:133", "text": "raise PlanningError(\"ABSTAINED\", terminal=True)"},
-        {"at": "services/planner/worker.py:146", "text": "proposal = _rebound(proposal, finalize)"},
+        {"at": "services/planner/worker.py:136", "text": "raise PlanningError(\"ABSTAINED\", terminal=True)"},
+        {"at": "services/planner/worker.py:150", "text": "proposal = _rebound(proposal, finalize)"},
         {"at": "tests/test_agent_journal.py:200", "text": "def test_unavailable_model_retries_with_backoff_across_restart_then_escalates"},
         {"at": "tests/test_agent_journal.py:274", "text": "def test_lost_delivery_replays_the_same_action_without_a_model_call"},
         {"at": "docs/planner.md", "text": "Agent mode through the journal"},
@@ -135,7 +135,7 @@
       "cites": [
         {"at": "shared/log.py:235", "text": "def entrypoint(component: str)"},
         {"at": "runtime/worker_http.py:259", "text": "@log.entrypoint(\"worker_http\")"},
-        {"at": "services/executor/core.py:236-237", "text": "any read failure leaves the outcome unknown"},
+        {"at": "services/executor/core.py:240-241", "text": "any read failure leaves the outcome unknown"},
         {"at": "docs/observability.md", "text": "only when their entrypoint configures logging"},
         {"at": "tests/test_except_audit.py:39", "text": "def test_repository_has_no_unjustified_broad_handler"}
       ],
@@ -197,7 +197,7 @@
       "workaround": "Single-host runs only; the restricted adapter supplies the exact conditional JSON Patch.",
       "cites": [
         {"at": "deploy/sentinel/executor-rbac.yaml:3", "text": "Kubernetes RBAC limits resources/verbs, not individual Deployment fields"},
-        {"at": "services/executor/kubernetes_adapter.py:30", "text": "PROCESS_TIMEOUT_SECONDS = 15"}
+        {"at": "services/executor/kubernetes_adapter.py:31", "text": "PROCESS_TIMEOUT_SECONDS = 15"}
       ],
       "planned": ["P2.06", "P3.04", "P3.05"],
       "issues": [18, 58, 61]
@@ -223,15 +223,32 @@
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-11",
-      "impact": "Every live recovery is an invalid shipping PORT where ROLLBACK is always right, so no result shows a choice between actions. RESTART and SCALE are in the contract, but Guard and the Executor refuse them.",
-      "workaround": "Quote results only for this fault and action.",
+      "impact": "Every live recovery is an invalid shipping PORT where ROLLBACK is always right, so no live result shows a choice between actions. RESTART is now implemented through the Planner, Guard, Executor and Verifier, but it has only run offline against a fake Deployment API; it has never run against a cluster. SCALE is in the contract and is still refused.",
+      "workaround": "Quote live results only for this fault and action. Describe RESTART as tested offline only.",
       "cites": [
-        {"at": "services/guard/core.py:161-162", "text": "ACTION_NOT_IMPLEMENTED"},
-        {"at": "services/executor/core.py:414", "text": "Only explicit baseline ROLLBACK is implemented."},
+        {"at": "services/guard/core.py:165-166", "text": "ACTION_NOT_IMPLEMENTED"},
+        {"at": "services/executor/core.py:413", "text": "Only explicit baseline ROLLBACK and RESTART are implemented."},
+        {"at": "tests/test_restart_action.py", "text": "FakeDeploymentAPI"},
         {"claim": "C-CONNECTED-HARNESS"}
       ],
       "planned": ["P2.08", "P3.08", "P3.09"],
       "issues": [74, 76]
+    },
+    {
+      "id": "L-RESTART-BUDGET-LOCAL",
+      "title": "The restart budget is kept per Executor ledger, and only local wiring gives it to the Guard",
+      "kind": "limitation",
+      "status": "open",
+      "since": "2026-11-12",
+      "impact": "The Guard counts a target's recent restarts from live_state.restart_history, which the Executor reads from its own SQLite ledger under the target lock, so the budget survives an Executor restart. Executors on other hosts keep separate ledgers, so each host would have its own budget. The HTTP Guard worker and the live harnesses do not supply the history yet, so a RESTART there escalates as RESTART_BUDGET_UNKNOWN; only the offline demonstration wires it.",
+      "workaround": "Run one Executor per target, as every committed run does. Treat RESTART as tested offline only.",
+      "cites": [
+        {"at": "services/executor/store.py:305", "text": "def restart_history(self, target):"},
+        {"at": "services/guard/restart.py:121", "text": "RESTART_BUDGET_UNKNOWN"},
+        {"at": "experiments/validation/demo_offline_flow.py:102", "text": "self.ledger.restart_history"}
+      ],
+      "planned": ["P4.03"],
+      "issues": [74, 77]
     },
     {
       "id": "L-NO-DIAGNOSIS-ACCURACY",
