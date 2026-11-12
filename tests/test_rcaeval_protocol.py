@@ -199,6 +199,34 @@ class DownloaderTests(Fixture):
         self.assertEqual(status["requested_files"], 2 * len(dev))
         self.assertIn("split dev", status["scope"])
 
+    def sample_from_index(self):
+        _, _, _, output = self.download(["--index-only"])
+        sample = self.root / "sample.json"
+        sampler.write(sampler.build(output), sample)
+        return sample
+
+    def test_cases_from_above_200_mb_needs_yes(self):
+        sample = self.sample_from_index()
+        cases = json.loads(sample.read_text(encoding="utf-8"))["splits"]
+        code, downloads, errors, _ = self.download(["--cases-from", str(sample), "--split", "all"],
+                                                   metric_bytes=20_000_000)
+        self.assertEqual(code, 1)
+        downloads.assert_not_called()
+        self.assertIn(str((len(cases["dev"]) + len(cases["eval"])) * 20_000_010) + " bytes", errors)
+        code, downloads, _, _ = self.download(["--cases-from", str(sample), "--split", "all", "--yes"],
+                                              metric_bytes=20_000_000)
+        self.assertEqual(code, 0)
+        self.assertEqual(downloads.call_count, 2 * (len(cases["dev"]) + len(cases["eval"])))
+
+    def test_one_case_or_a_sample_still_refuses_another_licence(self):
+        sample = self.sample_from_index()
+        for arguments in (["--case", self.rows[0]["case"]], ["--cases-from", str(sample), "--split", "dev"]):
+            for remote in ({"licence": "other"}, {"gated": True}):
+                code, downloads, errors, _ = self.download(arguments, **remote)
+                self.assertEqual(code, 1, (arguments, remote))
+                downloads.assert_not_called()
+                self.assertIn("RCAEval import failed", errors)
+
     def test_cases_from_with_unknown_cases_or_another_index_refuses(self):
         _, _, _, output = self.download(["--index-only"])
         sample = self.root / "sample.json"

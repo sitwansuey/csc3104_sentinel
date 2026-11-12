@@ -162,6 +162,12 @@ class ReportTests(unittest.TestCase):
         self.assertIn("sentinel: prompt hash differs from the freeze file", found)
         self.assertTrue(any(item.startswith("methods were run at different source revisions") for item in found))
 
+    def test_a_run_whose_working_tree_state_is_unknown_is_a_deviation(self):
+        for invocations in (None, [{"at": "x", "source_revision": "1" * 40}]):
+            folder = result_folder(self.root / str(bool(invocations)), "baro", dirty=None, invocations=invocations)
+            found = report.build([folder], resamples=50)["deviations"]
+            self.assertEqual(found, ["baro: run from a dirty or unknown working tree"], invocations)
+
     def test_mrr_is_cut_at_rank_five_for_every_method(self):
         rows = [{"case_id": f"case-{i:016x}", "service_rank": rank, "indicator_rank": None, "status": "ok"}
                 for i, rank in enumerate([1, 2, 5, 6, 9, None, 1, 1, 1, 1])]

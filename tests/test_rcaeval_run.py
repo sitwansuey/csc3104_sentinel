@@ -4,13 +4,17 @@ from contextlib import redirect_stderr
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from agent.datasets import evaluate as ev
 from agent.datasets import rcaeval as data
+from scripts.evaluation import rcaeval_report as report
 from scripts.evaluation import rcaeval_run as runner
 from scripts.evaluation import rcaeval_sample as sampler
 from scripts.evidence import collect
@@ -127,6 +131,46 @@ class RunnerTests(unittest.TestCase):
         dev = {row["case_id"] for row in ev.read_jsonl(self.out / "dev/sentinel/predictions.jsonl")}
         self.assertFalse(dev & {row["case_id"] for row in ev.read_jsonl(self.out / "eval/sentinel/predictions.jsonl")})
 
+    def write_freeze(self, prompt_sha256, *, sample_sha256=None):
+        _, sample_sha = runner.load_sample(self.sample)
+        runner.write_json(self.freeze_file, {"schema": runner.FREEZE_SCHEMA,
+                                             "sample_sha256": sample_sha256 or sample_sha,
+                                             "methods": {"sentinel": {"method": "sentinel",
+                                                                      "prompt_sha256": prompt_sha256}}})
+
+    def assert_locked(self, message):
+        with self.assertRaises(runner.GateError) as raised:
+            self.run_split("eval")
+        self.assertIn(message, str(raised.exception))
+        self.assertFalse((self.out / "eval").exists())
+        return str(raised.exception)
+
+    def test_an_interrupted_dev_run_keeps_eval_locked_even_with_a_valid_freeze(self):
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_split("dev", run_method=InProcess(interrupt_after=1))
+        dev = json.loads((self.out / "dev/sentinel/summary.json").read_text(encoding="utf-8"))
+        self.assertFalse(dev["complete"])
+        self.write_freeze(dev["prompt_sha256"])
+        message = self.assert_locked("has not been run to completion")
+        self.assertEqual(message.count("\n- "), 1)
+
+    def test_a_dev_run_from_another_sample_keeps_eval_locked(self):
+        self.run_split("dev")
+        runner.freeze(self.out, ["sentinel"], sample_path=self.sample, freeze_path=self.freeze_file)
+        path = self.out / "dev/sentinel/summary.json"
+        summary = json.loads(path.read_text(encoding="utf-8"))
+        summary["sample_sha256"] = "0" * 64
+        path.write_text(json.dumps(summary), encoding="utf-8")
+        message = self.assert_locked("used another sample")
+        self.assertEqual(message.count("\n- "), 1)
+
+    def test_a_freeze_file_for_another_sample_keeps_eval_locked(self):
+        self.run_split("dev")
+        dev = json.loads((self.out / "dev/sentinel/summary.json").read_text(encoding="utf-8"))
+        self.write_freeze(dev["prompt_sha256"], sample_sha256="0" * 64)
+        message = self.assert_locked("freeze file is for another sample")
+        self.assertEqual(message.count("\n- "), 1)
+
     def test_an_uncommitted_freeze_file_keeps_eval_locked(self):
         self.run_split("dev")
         runner.freeze(self.out, ["sentinel"], sample_path=self.sample, freeze_path=self.freeze_file)
@@ -232,6 +276,26 @@ class RunnerTests(unittest.TestCase):
                          ["predictions.jsonl", "run.json", "scores/per-case.jsonl", "scores/summary.json",
                           "summary.json", "versions.json"])
 
+    def test_report_from_a_collected_bundle_matches_the_report_from_the_run_folder(self):
+        self.run_split("dev")
+        output = self.out / "dev/sentinel"
+        path = output / "predictions.jsonl"
+        predictions = ev.read_jsonl(path)
+        for index, prediction in enumerate(predictions):
+            prediction.setdefault("usage", {}).update({"input_tokens": 100 + index, "output_tokens": 10})
+        path.write_text("".join(json.dumps(row) + "\n" for row in predictions), encoding="utf-8")
+        collect.collect(output, "rcaeval", "rcaeval-dev-sentinel", evidence_root=self.root / "evidence",
+                        context=fx.context())
+        bundle = next((self.root / "evidence").glob("*/rcaeval-dev-sentinel"))
+        from_run = report.build([output], resamples=50)
+        from_bundle = report.build([bundle], resamples=50)
+        self.assertEqual(from_bundle, from_run)
+        metrics = from_bundle["methods"]["sentinel"]
+        self.assertEqual(metrics["model_tokens"], {"input_tokens": 201, "output_tokens": 20})
+        self.assertEqual(metrics["latency_s"]["n"], 2)
+        self.assertEqual(from_bundle["answers_sha256"], json.loads(
+            (output / "summary.json").read_text(encoding="utf-8"))["answers_sha256"])
+
     @unittest.skipUnless(HAS_RCAEVAL, "the pinned RCAEval package is not installed")
     def test_baro_runs_through_the_real_worker_and_ranks_the_spike_first(self):
         summary = runner.execute(split="dev", method="baro", data_dir=self.data_dir, sample_path=self.sample,
@@ -264,6 +328,51 @@ class FingerprintTests(unittest.TestCase):
     def test_freeze_outside_the_repository_is_not_committed(self):
         with tempfile.TemporaryDirectory() as temp:
             self.assertFalse(runner.freeze_committed(Path(temp) / "freeze.json"))
+
+
+@unittest.skipUnless(shutil.which("git"), "git is not installed")
+class FreezeCommittedTests(unittest.TestCase):
+    """The real git check, in a throwaway repository with no user or system git configuration."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.repo = Path(self.temp.name).resolve() / "repo"
+        self.repo.mkdir()
+        empty = Path(self.temp.name) / "gitconfig"
+        empty.write_text("", encoding="utf-8")
+        for patcher in (patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": str(empty), "GIT_CONFIG_NOSYSTEM": "1"}),
+                        patch.object(runner, "ROOT", self.repo)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.git("init", "-q")
+        self.freeze_file = self.repo / "docs/freeze.json"
+        self.freeze_file.parent.mkdir()
+
+    def git(self, *arguments):
+        subprocess.run(["git", "-c", "user.name=test", "-c", "user.email=test@example.invalid", *arguments],
+                       cwd=self.repo, check=True, capture_output=True, timeout=30)
+
+    def test_only_a_tracked_and_unchanged_freeze_file_counts_as_committed(self):
+        self.freeze_file.write_text('{"methods": {}}\n', encoding="utf-8")
+        self.assertFalse(runner.freeze_committed(self.freeze_file), "untracked")
+        self.git("add", "docs/freeze.json")
+        self.git("commit", "-q", "-m", "freeze")
+        self.assertTrue(runner.freeze_committed(self.freeze_file), "committed")
+        self.freeze_file.write_text('{"methods": {"x": {}}}\n', encoding="utf-8")
+        self.assertFalse(runner.freeze_committed(self.freeze_file), "committed, then changed")
+        self.git("checkout", "--", "docs/freeze.json")
+        self.assertTrue(runner.freeze_committed(self.freeze_file), "restored")
+        untracked = self.repo / "docs/freeze-untracked.json"
+        untracked.write_text('{"methods": {}}\n', encoding="utf-8")
+        self.assertFalse(runner.freeze_committed(untracked), "untracked, in a repository with commits")
+        staged =self.repo / "docs/freeze-2.json"
+        staged.write_text('{"methods": {}}\n', encoding="utf-8")
+        self.git("add", "docs/freeze-2.json")
+        self.assertFalse(runner.freeze_committed(staged), "staged but not committed")
+        self.freeze_file.write_text('{"methods": {"y": {}}}\n', encoding="utf-8")
+        self.git("add", "docs/freeze.json")
+        self.assertFalse(runner.freeze_committed(self.freeze_file), "change staged but not committed")
 
 
 if __name__ == "__main__":
