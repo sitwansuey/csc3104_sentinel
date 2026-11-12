@@ -138,17 +138,19 @@ The new evidence annotation names the action; a template change without one is
 unannotated and fails I1. `metadata.generation` does not count writes: a real
 API server also raises it for an annotation-only change, as the live fence runs
 showed (`C-EXECUTOR-WEDGE-FENCE`), so an Executor fence (the harness sets
-`fence_after_seconds`) or any other metadata change counts no write.
+`fence_after_seconds`), a Coordinator seal (the fence marker and its
+`sentinel.io/fence-epoch`, written in one patch, P3.04) or any other metadata
+change counts no write.
 
 Generation is used only to tell when a read missed something. Under the
 apps/v1 Deployment strategy every commit that changes the spec or the
 annotations raises it by one, and changes at least one of four parts: the
-template or its evidence, the fence marker, the other annotations, or the rest
-of the spec. When generation rose between two reads by more than the number of
+template or its evidence, the fence marker (with a seal's epoch), the other
+annotations, or the rest of the spec. When generation rose between two reads by more than the number of
 parts that differ, the window gets an `unobserved` row (action `unknown`) and
 I1 fails, because two writes, or a write and its revert, can look like one
 write or none from two reads. So a kind-mode I1 pass is not bought by polling
-too slowly; harmless commits close together (two fences between reads) fail it
+too slowly; harmless commits close together (two fences or seals between reads) fail it
 too, and the run must be repeated. `summary.json` counts these windows under
 `unobserved_windows`, apart from `committed_writes`. The check is a bound, not
 a full history: one commit that changes several parts lets one more commit go
