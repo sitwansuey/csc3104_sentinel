@@ -204,8 +204,9 @@ also installs a temporary ValidatingAdmissionPolicy and binding that deny Pod
 template changes to that one Deployment in that namespace, waits until a
 server-side dry run is denied, and deletes both again (also on failure). It
 expects NEEDS_RECONCILIATION before the 30 s settle delay, then CONFLICT/FENCED
-with one fence, the fence marker on the Deployment and an unchanged
-`metadata.generation`. Its unit tests use a fake kubectl. On 11 November 2026
+with one fence, the fence marker on the Deployment and an unchanged spec
+(`metadata.generation` still rises, because a Deployment counts annotation
+changes). Its unit tests use a fake kubectl. On 11 November 2026
 rv-race and delete-recreate ran once each against
 `kind-sentinel-boutique-connected`, and rv-race ran once more against main's
 Executor as the before case; the bundles and claim `C-EXECUTOR-WEDGE` are in

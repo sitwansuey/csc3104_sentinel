@@ -21,8 +21,9 @@ Scenarios (--scenario):
                    NEEDS_RECONCILIATION (UNCHANGED_IN_DOUBT). After the 30 s
                    settle delay a reconcile pass sends the metadata-only fence,
                    which commits: CONFLICT with basis FENCED, the fence marker
-                   on the Deployment and metadata.generation unchanged (no
-                   rollout). The policy is then removed and a new proposal must
+                   on the Deployment and the spec unchanged (no rollout;
+                   metadata.generation still rises, because the Deployment
+                   strategy counts annotation changes). The policy is then removed and a new proposal must
                    be admitted and APPLIED.
 
 Safety rules: --context is required and must be in ALLOWED_CONTEXTS. Any
@@ -244,6 +245,7 @@ class WedgeHarness:
         fence = (metadata.get("annotations") or {}).get(FENCE_ANNOTATION)
         record = {"label": label, "resource_version": metadata["resourceVersion"],
                   "generation": metadata.get("generation"), "uid_is_original": metadata["uid"] == self.original_uid,
+                  "spec_sha256": fingerprint(deployment["spec"]),
                   "evidence_action_id": json.loads(evidence)["action_id"] if evidence else None,
                   "fence_action_id": json.loads(fence)["action_id"] if fence else None,
                   "field_managers": sorted({entry.get("manager", "") for entry in metadata.get("managedFields", [])}),
@@ -454,8 +456,9 @@ class WedgeHarness:
         if self.scenario == "admission-deny":
             self.check("exactly one fence was sent", self.summary["results"][-1]["fence_attempts"] == 1)
             self.check("the fence marker names the first action", after["fence_action_id"] == first["action_id"])
-            self.check("generation is unchanged, so the fence started no rollout",
-                       after["generation"] == before["generation"])
+            # A Deployment's generation also rises on annotation changes, so compare the spec instead.
+            self.check("the spec is unchanged, so the fence started no rollout",
+                       after["spec_sha256"] == before["spec_sha256"])
             self.check("the Pod template is unchanged", after["template_is_baseline"] == before["template_is_baseline"])
             self.check("the admission policy is removed", self.remove_policy(wait=True))
         second = self.proposal("second")

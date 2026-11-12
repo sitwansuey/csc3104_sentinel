@@ -290,7 +290,9 @@ class ScenarioTests(unittest.TestCase):
         self.assertIn(harness.FENCE_AFTER_SECONDS + 1, time.sleeps)
         truth = {row["label"]: row for row in summary["ground_truth"]}
         before, after = truth["before first action"], truth["after first action"]
-        self.assertEqual(after["generation"], before["generation"])
+        self.assertEqual(after["spec_sha256"], before["spec_sha256"])
+        # The annotation-only fence still bumps generation, as a real Deployment does.
+        self.assertEqual(after["generation"], before["generation"] + 1)
         self.assertNotEqual(after["resource_version"], before["resource_version"])
         self.assertEqual(truth["after the denied write"]["resource_version"], before["resource_version"])
         self.assertTrue(after["fence_action_id"].startswith("ACT-WEDGE-first-"))
