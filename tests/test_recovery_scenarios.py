@@ -145,11 +145,16 @@ class CatalogSchemaTests(unittest.TestCase):
         self.refused("primary_scenario must be a template-changing rollback_correct fault",
                      lambda c: c["targets"]["shippingservice"].update(primary_scenario="N1"))
 
-    def test_reviewed_topology_vocabulary_names_exactly_the_catalog_targets(self):
+    def test_cart_enters_the_vocabulary_only_as_the_incident_target(self):
+        from services.planner import taxonomy
         from services.verifier.core import inspect_dependencies
         topology = json.loads((ROOT / "deploy/boutique/dependencies.json").read_text(encoding="utf-8"))
-        self.assertEqual(topology["nodes"], sorted(scenarios.load()["targets"]))
-        self.assertEqual(topology["edges"], [])
+        # The reviewed P2.05 topology is unchanged; the cart target is added as the incident target.
+        self.assertEqual((topology["nodes"], topology["edges"]), (["shippingservice"], []))
+        self.assertEqual(taxonomy.components("cartservice", topology), ["cartservice", "shippingservice"])
+        # Shipping and generic lab runs offer the model no cartservice decoy.
+        self.assertEqual(taxonomy.components("shippingservice", topology), ["shippingservice"])
+        self.assertEqual(taxonomy.components("demo-api", topology), ["demo-api", "shippingservice"])
         # The isolated shipping lab's dependency check is unchanged: an unconnected node is never affected.
         target = {"cluster_id": "sentinel-boutique-lab", "namespace": "sentinel-boutique", "kind": "Deployment",
                   "name": "shippingservice", "uid": "ship-uid"}
@@ -163,8 +168,7 @@ class CatalogSchemaTests(unittest.TestCase):
 
     def test_naming_the_other_catalog_target_is_never_rollback_eligible(self):
         from services.planner import taxonomy
-        topology = json.loads((ROOT / "deploy/boutique/dependencies.json").read_text(encoding="utf-8"))
-        self.assertEqual(taxonomy.components("cartservice", topology), ["cartservice", "shippingservice"])
+        # A cart run's vocabulary still offers shippingservice; the rule, not the vocabulary, refuses it.
         change = {"changed": True, "change_age_bound_seconds": 30}
         for target, named in (("shippingservice", "cartservice"), ("cartservice", "shippingservice"),
                               ("cartservice", "cartservice")):

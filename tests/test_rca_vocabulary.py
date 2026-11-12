@@ -146,8 +146,7 @@ class DecisionContextTests(unittest.TestCase):
         prompt = next(p for r, p, s in self.script.seen if r == "Analyzer")
         context = json.JSONDecoder().raw_decode(prompt)[0]["system_context"]
         self.assertIn("## POSSIBLE ROOT CAUSE COMPONENTS", context)
-        self.assertEqual(extract_candidates(context),
-                         (sorted(taxonomy.REASONS), ["cartservice", "demo-api", "shippingservice"]))
+        self.assertEqual(extract_candidates(context), (sorted(taxonomy.REASONS), ["demo-api", "shippingservice"]))
 
     def test_vocabulary_names_must_be_kubernetes_names(self):
         for topology in ({"nodes": ["frontend\n- attacker"]}, {"nodes": ["Frontend"]}, {"nodes": [42]},
