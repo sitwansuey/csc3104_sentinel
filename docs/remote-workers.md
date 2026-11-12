@@ -137,24 +137,35 @@ Coordinator PVC; the original standalone Observer lab manifest is preserved.
 ## Probes, the deterministic planner and lab runs
 
 `--health-port PORT` serves `/healthz` and `/readyz` on 127.0.0.1 only.
-`/healthz` answers 200 while the polling loop runs. `/readyz` answers 200 once
+`/healthz` answers 200 while the polling loop is not stopping and started a
+pass within `--live-seconds` (900 by default), so a loop stuck inside one pass
+turns unhealthy; set it above the longest pass you expect, such as a Planner's
+model call. `/readyz` answers 200 once
 the configuration was accepted and the Coordinator answered a polling pass
 within `--ready-seconds` (60 by default). The bodies hold booleans and ages in
 seconds, nothing else.
 
 A Planner configuration may set `"provider": "deterministic"` with an optional
-`"attempt_lease_seconds"`. It plans with the offline mock provider instead of a
-model, and every attempt it serves is saved in the Planner journal with usage
-`synthetic_planner: true`. Use it for CI and fault runs, never as evidence of
-planning quality. Ollama stays the default; any other provider name is refused.
+`"attempt_lease_seconds"`, but only in a lab fault run (below). It plans with
+the offline mock provider instead of a model, and every attempt it serves is
+saved in the Planner journal with usage `synthetic_planner: true`. That label
+stays in the Planner's journal: it is not in the proposal, so an operator
+approving one cannot see it, which is why any other run refuses this provider.
+Never use it as evidence of planning quality. Ollama stays the default; any
+other provider name is refused.
 
 `"cluster": "file:PATH"` points a Guard, Executor or Verifier at the shared
 test cluster in `tests/support/file_cluster.py`. A worker accepts it only in a
 lab fault run, when `SENTINEL_FAULT_POINTS` names an existing directory and
 `SENTINEL_FAULT_CLUSTER` is one of the lab clusters in `runtime/fault_points.py`;
 the same two variables enable the named fault points and the test clock
-offset. In any other run they are inert. The multi-process harness that sets
-them is described in [experiments/distributed](../experiments/distributed/README.md).
+offset. A worker binds them to its own configuration: with any of these
+variables (or `SENTINEL_TEST_CLOCK_OFFSET`) set, it starts only when its
+configured `cluster_id` is the gated lab cluster and any configured `context`
+is that cluster's lab context, and refuses to start otherwise. The original
+lab cluster and its context are always refused. With none of them set, a worker
+runs no hook and no offset. The multi-process harness that sets them is
+described in [experiments/distributed](../experiments/distributed/README.md).
 
 ## Reproduce and package
 

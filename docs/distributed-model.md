@@ -106,7 +106,7 @@ losing that node needs a manual restore from a backup, and nothing detects a
 restore that silently drops acknowledged results.
 
 **Recovery time (RTO)** has not been measured. After repeated errors a worker
-backs off for up to 60 s (`runtime/worker_service.py:208::main::min(60`), which adds
+backs off for up to 60 s (`runtime/worker_service.py:222::main::min(60`), which adds
 to recovery time after a Coordinator restart.
 
 ## Time and ordering: the clock dependence today
@@ -268,11 +268,18 @@ SQLite file shared by the processes
 (`tests/support/file_cluster.py::FileCluster`), driven through the production
 kubectl adapter. Named fault points stop or crash a process at an exact step
 (`runtime/fault_points.py::checkpoint`); they do nothing unless a lab run sets
-both of their environment variables. Invariants are computed afterwards from
-the Coordinator's records, the cluster's own write record, every ledger and
-transport journal, and the logs (`experiments/distributed/invariants.py::check`).
-CI runs the plan's subset plus S7 on Windows and Linux
-(`tests/test_distributed_processes.py::DistributedProcessTests`).
+both of their environment variables, and a worker started with those
+variables refuses to start unless its configured cluster is the gated lab
+cluster (`runtime/fault_points.py::bind`). Invariants are computed afterwards
+from the Coordinator's records, the cluster's own write record, every ledger
+and transport journal, and the logs (`experiments/distributed/invariants.py::check`).
+The cluster's record counts a patch as a template write by what it changes,
+not by Sentinel's annotation, so an unannotated write is counted and fails I1
+(`tests/support/file_cluster.py::patch_action`).
+The CI test matrix (ubuntu-latest and windows-latest) runs the default subset
+plus S7 (`tests/test_distributed_processes.py::DistributedProcessTests`). Only
+Windows runs have been observed so far, so the Linux path of S2 (SIGSTOP) and
+the throwaway CA made with Linux openssl are not yet verified.
 
 What this shows: the delivery protocol, leases, saved-result replay, peer
 adoption and the outbox survive process kills, a stalled lease holder, a
@@ -293,7 +300,7 @@ Results on this code base (file mode, one Windows host):
 | S0, S1a, S1d, S3, S4, S5, S6 | Reached RECOVERED with one write; every invariant held |
 | S1b, S1c: an Executor crashes after its write intent or after its patch, and its peer finishes the action | RECOVERED with one write. The peer adopted a committed write by its evidence annotation, so the redelivery defect (CONFLICT for an applied write) did not reproduce. **New defect:** no command reaches the crashed host once it restarts, so its ledger keeps the action WRITE_STARTED (I6 fails), and it refuses any later action on that workload (`services/executor/store.py::SQLiteExecutionLedger.prepare`) until someone reconciles it |
 | S1e: the crashed Executor is the only one that comes back | It fenced its own in-doubt write; FAILED with no write |
-| S2: the lease holder stalls before its patch (SIGSTOP on Linux; a blocked fault point and a blackholed link on Windows, which has no suspend without psutil) | The peer wrote; the stale host's patch was refused and it adopted the peer's write, so a peer's write no longer wedges the losing host |
+| S2: the lease holder stalls before its patch (SIGSTOP on Linux; a blocked fault point and a blackholed link on Windows, which has no suspend without psutil) | The peer wrote; the stale host's patch was refused and it adopted the peer's write, so on this base a peer's write did not wedge the losing host |
 | S7: both Executors 300 s behind | The clock-skew wedge above: the write landed, the result was refused with HTTP 400 for the whole run, and the incident stayed READY (I3 and I5 fail) |
 
 S1b, S1c and S7 are asserted as known failures, so the tests fail when a fix

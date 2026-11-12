@@ -2,7 +2,10 @@
 
 This harness runs the networked worker layer as separate operating-system
 processes, injects network, process and timing faults, and checks invariants
-from what the processes left behind. It runs in CI on Windows and Linux.
+from what the processes left behind. The CI test matrix (ubuntu-latest and
+windows-latest) runs its default subset; only Windows runs have been observed
+so far, so the Linux-only paths (SIGSTOP in S2, the CA made with Linux openssl)
+are not yet verified.
 
 **What it shows.** The Coordinator (`runtime.coordinator_server`) and each
 worker (`runtime.worker_service` as planner-1, guard-1, executor-a, executor-b
@@ -45,9 +48,9 @@ in the unit tests too (the default subset takes about 75 s).
 | Piece | File | Notes |
 | --- | --- | --- |
 | Topology | `topology.py` | Generates tokens (`secrets.token_urlsafe(32)`) and gives each child only its own, in its environment. The Coordinator gets all of them because it checks them. A throwaway CA and a 127.0.0.1 certificate (openssl, with a private configuration file) give HTTPS; the CA key is deleted after signing. Without openssl the run records `tls: false`. Binds loopback only. |
-| Fault proxy | `faultproxy.py` | pass, blackhole, reset, delay and drop-response, per worker, switched at run time. TLS passes through; drop-response lets the handshake finish and then drops the reply. |
-| Fault points | `runtime/fault_points.py` | Named stop points in the worker and Coordinator code paths. Inert unless `SENTINEL_FAULT_POINTS` names an existing directory and `SENTINEL_FAULT_CLUSTER` is a lab cluster (`file-sentinel-distributed` or `sentinel-boutique-connected`). An armed point fires once: it exits with code 73, like a crash, or blocks until released. |
-| File cluster | `tests/support/file_cluster.py` | One Deployment in SQLite, shared by every process. It reuses the simulator's RFC 6902 JSON Patch and etcd-like revision counter (`tests/support/sim_apiserver.py`) and answers the kubectl commands of the production adapter, so `KubectlDeploymentAPI` runs unchanged. Every patch is recorded with its action and outcome. Workers accept it only in a lab fault run. |
+| Fault proxy | `faultproxy.py` | pass, blackhole, reset, delay and drop-response, per worker, switched at run time. TLS passes through; drop-response lets the handshake finish and then drops the reply. A mode applies to connections accepted after it is set; an open connection keeps its mode. That is a hard partition here only because the worker and approval clients open one connection per request. |
+| Fault points | `runtime/fault_points.py` | Named stop points in the worker and Coordinator code paths. Inert unless `SENTINEL_FAULT_POINTS` names an existing directory and `SENTINEL_FAULT_CLUSTER` is a lab cluster (`file-sentinel-distributed` or `sentinel-boutique-connected`). With either variable (or a clock offset) set, a worker starts only if its configured `cluster_id` is that cluster and any configured context is its lab context; otherwise it refuses to start. An armed point fires once: it exits with code 73, like a crash, or blocks until released. |
+| File cluster | `tests/support/file_cluster.py` | One Deployment in SQLite, shared by every process. It reuses the simulator's RFC 6902 JSON Patch and etcd-like revision counter (`tests/support/sim_apiserver.py`) and answers the kubectl commands of the production adapter, so `KubectlDeploymentAPI` runs unchanged. Every patch is recorded with its outcome and classified by effect: any patch that writes or changed the pod template is a template write, with or without Sentinel's evidence annotation. Workers accept it only in a lab fault run. |
 | Observer feed | `observer_feed.py` | The real Observer state machine and outbox over a synthetic observation series, delivered with the real HTTP ingress. |
 | Inputs | `fixtures.py` | The committed samples, moved to the current time and renamed to the file cluster, with a strict live-profile policy and a short health window. |
 | Invariants | `invariants.py` | I1-I6 and X1-X4, below. |
@@ -64,7 +67,7 @@ renewals. Workers serve `/healthz` and `/readyz` on 127.0.0.1
 
 | Id | Holds when |
 | --- | --- |
-| I1 | At most one committed template write per action (from the cluster's own record) |
+| I1 | At most one committed template write per action, and none without that action's evidence annotation (from the cluster's own record, classified by effect) |
 | I2 | No template write after a revocation unless the action went to review |
 | I3 | Every incident is RECOVERED, FAILED, NEEDS_REVIEW or REJECTED within the scenario deadline |
 | I4 | No delivery has two different acknowledged results |
@@ -82,8 +85,8 @@ message, journal consistent with the outbox).
 ## Scenarios and results on this code base
 
 Results from the file mode on one Windows host, three runs per scenario
-(`--all --repeat 3`), each run matching the row below. Nothing here was run on
-Linux by hand; CI runs the default subset there.
+(`--all --repeat 3`), each run matching the row below. Nothing here has been
+run on Linux yet.
 
 | Scenario | Fault | Result |
 | --- | --- | --- |
@@ -93,7 +96,7 @@ Linux by hand; CI runs the default subset there.
 | S1c | Executor killed after its patch committed; peer takes over | RECOVERED, 1 write; the peer adopted it by its evidence annotation (defect (b) of the plan does not reproduce); **I6 fails** as in S1b |
 | S1d | Verifier killed mid-collection, restarted | RECOVERED, 1 write, all hold |
 | S1e | Executor killed after its write intent, peer stopped, crashed host restarted at once | FAILED with 0 writes: the host fenced its own in-doubt write (P2.06), all hold |
-| S2 | Lease holder stalled past its lease before the patch | RECOVERED, 1 write by the peer; the stale host's patch was refused and it adopted the peer's write (defect (c) does not reproduce), all hold |
+| S2 | Lease holder stalled past its lease before the patch | RECOVERED, 1 write by the peer; the stale host's patch was refused and it adopted the peer's write (defect (c) did not reproduce on this base), all hold |
 | S3 | Lease holder's link blackholed after its write intent | RECOVERED, 1 write by the peer, all hold |
 | S4 | Response to the Executor's result dropped | RECOVERED; the resent saved body got a replay receipt, all hold |
 | S5 | Coordinator killed after committing a result, before the reply; restarted, and restarted again later | RECOVERED, 1 write, all hold |
