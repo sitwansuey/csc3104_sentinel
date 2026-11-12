@@ -2,6 +2,7 @@ import { useState } from "react"
 import { CheckCircle2, LoaderCircle, ShieldAlert, ShieldCheck, Undo2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { actionEffect } from "@/lib/actions"
 import type { Action, ApprovalRequest } from "@/lib/types"
 
 /** States in which the approval authority still accepts a revocation (before execution is reported). */
@@ -90,6 +91,7 @@ function ApprovalCard({request, action, sessionId, stale, paused, now, refresh}:
     ["Target", `${request.target.cluster_id}/${request.target.namespace} ${request.target.kind}/${request.target.name}`],
     ["Target UID", request.target.uid],
     ["Action", request.action],
+    ["Effect", actionEffect(request.action)],
     ["Action ID", request.action_id],
     ["Baseline", request.baseline_id],
     ["Template SHA-256", request.template_sha256_prefix],

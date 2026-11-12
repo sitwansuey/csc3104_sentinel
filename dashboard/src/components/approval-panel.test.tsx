@@ -60,6 +60,12 @@ describe("dashboard approval panel", () => {
     expect(screen.queryByRole("button", {name: "Approve"})).not.toBeInTheDocument()
   })
 
+  it("explains a RESTART as new Pods from the unchanged template", () => {
+    show([request({action: "RESTART"})])
+    expect(screen.getByText("RESTART")).toBeInTheDocument()
+    expect(screen.getByText(/replaces every Pod\. No configuration change\./)).toBeInTheDocument()
+  })
+
   it("keeps the model's text literal, so a script payload is shown and never run", () => {
     const payload = "<script>window.__ran = true</script><img src=x onerror=alert(1)>"
     const view = show([request({rationale: payload, rationale_truncated: true})])

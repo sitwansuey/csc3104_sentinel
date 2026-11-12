@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Fields, Status } from "@/components/records"
+import { actionEffect } from "@/lib/actions"
 import type { Action, Snapshot, Target, WireMessage } from "@/lib/types"
 
 interface IncidentDetailsProps {
@@ -133,7 +134,7 @@ export function IncidentDetails({ snapshot, incidentId, open, onOpenChange }: In
             </div>) : <AwaitingRecord detail="No detection message for this exact incident and workload is available." />}
           </DetailSection>
           <DetailSection title="Recovery proposal" member="Member 3 · Planner / RCA">
-            {proposal ? <><Fields entries={[["Action", proposal.action], ["Based on version", proposal.based_on_resource_version], ["Producer time", timestamp(messageTimestamp(proposal))]]} />
+            {proposal ? <><Fields entries={[["Action", proposal.action], ["Effect", actionEffect(proposal.action)], ["Based on version", proposal.based_on_resource_version], ["Producer time", timestamp(messageTimestamp(proposal))]]} />
               <p className="break-words text-sm leading-relaxed">{proposal.rationale || "No rationale recorded."}</p>
               <div><p className="mb-2 text-xs font-medium">Evidence references</p><TextList values={proposal.evidence_refs} empty="No evidence references recorded." /><p className="mt-2 text-[11px] text-muted-foreground">References are displayed as supplied; this dashboard does not resolve or validate their contents.</p></div>
               <RecordedJson value={proposal} label="Inspect proposal & parameters" />
