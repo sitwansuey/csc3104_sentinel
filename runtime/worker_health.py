@@ -5,8 +5,8 @@ within the liveness window, so a loop stuck inside one pass (a hung inference
 or blocked I/O) turns unhealthy once the window passes.
 /readyz answers 200 only when the worker's configuration was accepted, its
 last preflight (if the component has one, such as the agent Planner's model
-check) passed, the Coordinator answered a polling pass within the readiness
-window, the worker's clock was within its configured skew bound at the
+check) passed, the worker had a successful exchange with the Coordinator
+within the readiness window, the worker's clock was within its configured skew bound at the
 latest pass, and no Coordinator store change (a replaced or rolled-back
 database) is waiting for an operator. A 503 body adds a true boolean for
 each of the preflight, clock and store conditions that fails:
@@ -14,6 +14,13 @@ prerequisites_failed (the result of the last preflight that ran), clock_skew
 and store_changed. A stale Coordinator answer shows only in
 contact_age_seconds. Both bodies hold booleans and ages in seconds only,
 never configuration or credentials.
+
+Contact is every Coordinator request answered with 200 (contacted() is the
+WorkerClient's answered callback): a claim, each lease renewal while a long
+pass runs, a result, a clock measurement, plus the end of each completed
+pass. So a Planner inside a model call longer than the readiness window
+stays ready while its renewals succeed, and turns not ready one window
+after they stop. A refused, failed or timed-out request never counts.
 """
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -66,6 +73,7 @@ class WorkerHealth:
         self._beat = self.clock()
 
     def contacted(self):
+        """Record a successful Coordinator exchange; also called from the lease renewal thread."""
         self._contact = self.clock()
 
     def _age(self, stamp):

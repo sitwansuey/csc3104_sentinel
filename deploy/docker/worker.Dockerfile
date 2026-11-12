@@ -64,7 +64,10 @@ USER 10001:10001
 VOLUME ["/data"]
 # /readyz is served on 127.0.0.1 inside the container only (runtime/worker_health.py), so the probe runs
 # here too. Keep --health-port 8080 when you override the command. Kubernetes ignores HEALTHCHECK: use an
-# exec probe with the same command (docs/remote-workers.md).
+# exec probe with the same command (docs/remote-workers.md). /readyz counts every successful Coordinator
+# exchange as contact, lease renewals during a long model call included, so a Planner mid-inference stays
+# healthy while it renews (default --ready-seconds 60, renewals at least every 5 s); it turns unhealthy once
+# no exchange has succeeded for the readiness window, or a preflight, clock or store check fails.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=3)"]
 STOPSIGNAL SIGTERM

@@ -110,7 +110,7 @@ up the lost commits (below).
 
 **Recovery time (RTO): bounded worker back-off.** After failed passes in a
 row a worker waits a random time between 0 and its poll interval × 2^failures,
-at most 15 s (`runtime/worker_service.py:70::backoff_seconds::return random() * min(`).
+at most 15 s (`runtime/worker_service.py:75::backoff_seconds::return random() * min(`).
 So once a restarted Coordinator is ready, every worker reaches it within the
 attempt it may have had in flight, at most 15 s of waiting and one more
 request, and the workers do not retry in step. Before P3.06 the wait
