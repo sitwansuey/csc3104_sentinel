@@ -6,20 +6,28 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import signal
 import ssl
 import threading
 
 from runtime import fault_points
 from runtime.remote_adapters import (
-    DeterministicProvider, ExecutorAdapter, GuardAdapter, OllamaProvider, PlannerAdapter, VerifierAdapter, utc_now,
+    AgentPlannerAdapter, DeterministicProvider, ExecutorAdapter, GuardAdapter, OllamaProvider, PlannerAdapter,
+    VerifierAdapter, utc_now,
 )
 from runtime.remote_worker import RemoteWorker, WorkerJournal
-from runtime.worker_health import WorkerHealth, serve_health
+from runtime.worker_health import PreflightFailed, WorkerHealth, serve_health
 from runtime.worker_http import WorkerClient
 from shared import log
 
 LOG = log.get_logger("worker_service")
+ROLES = ("planner", "guard", "executor", "verifier")
+PLANNER_MODES = ("provider", "agent")
+# Configuration keys that would hold a secret value rather than name its variable.
+SECRET_KEY = re.compile(r"(?:^|[_-])(?:tokens?|secrets?|password|passwd|api_?key|authorization|bearer|"
+                        r"credentials?)(?:[_-]|$)", re.IGNORECASE)
+DNS_NAME = re.compile(r"[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?")
 
 
 def read_json(path):
@@ -62,12 +70,116 @@ def lab_cluster(config, stack, lab):
     return cluster
 
 
+def refuse_inline_secrets(value, path="config"):
+    """ValueError when trusted configuration holds a secret value itself.
+
+    A worker takes every secret from an environment variable that its
+    configuration names with a key ending in _env (token_env, for example), so
+    no token reaches a configuration file, argv or a mounted ConfigMap.
+    """
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if isinstance(key, str) and not key.lower().endswith("_env") and SECRET_KEY.search(key):
+                raise ValueError(f"{path}.{key} looks like a secret; name an environment variable with a *_env key")
+            refuse_inline_secrets(item, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            refuse_inline_secrets(item, f"{path}[{index}]")
+
+
+def agent_model_config(config):
+    """The RCA agent configuration: the sample defaults, then model_config, then model_endpoint.
+
+    The endpoint and model come from trusted configuration. The Ollama client
+    sends no credential, and a secret in either file is refused.
+    """
+    from services.rca.core import DEFAULT_CONFIG
+    model = read_json(DEFAULT_CONFIG)
+    if config.get("model_config") is not None:
+        override = read_json(config["model_config"])
+        if not isinstance(override, dict):
+            raise ValueError("model_config must hold a JSON object")
+        refuse_inline_secrets(override, "model_config")
+        model.update(override)
+    if "model_endpoint" in config:
+        model["base_url"] = config["model_endpoint"]
+    model["allow_abstention"] = True  # An abstention is a saved ESCALATE, never a stopped worker.
+    return model
+
+
+def observer_telemetry(directory):
+    """Export one incident's window from read-only Observer snapshots (*-observation.json)."""
+    path = Path(directory)
+    if not path.is_dir():
+        raise ValueError("telemetry_directory must be an existing directory of Observer snapshots")
+
+    def export(destination, incident):
+        from experiments.boutique.harness.agent_live import export_telemetry
+        export_telemetry(path, incident["target"], destination, incident=incident)
+    return export
+
+
+def agent_target_reader(config, cluster):
+    """A read-only Deployment read for the agent's target checks and rebinding.
+
+    The lab file cluster in a bound lab run; otherwise the projected in-cluster
+    identity (in_cluster: true) or an explicit kubectl context. The incident
+    target must name the configured cluster_id.
+    """
+    cluster_id = config.get("cluster_id")
+    if not isinstance(cluster_id, str) or not cluster_id:
+        raise ValueError("An agent Planner needs the cluster_id of the cluster it reads")
+    if cluster is not None:
+        def read(target):
+            return cluster.snapshot(target)["deployment"]
+    elif config.get("in_cluster"):
+        from services.observer.kubernetes import InClusterReader
+        api = InClusterReader()
+
+        def read(target):
+            if target.get("kind") != "Deployment" or not all(
+                    isinstance(target.get(key), str) and DNS_NAME.fullmatch(target[key]) for key in ("namespace", "name")):
+                raise ValueError("Expected a valid Deployment target")
+            return api.get(f"/apis/apps/v1/namespaces/{target['namespace']}/deployments/{target['name']}")
+    else:
+        from services.guard.adapters import read_deployment
+        context = config.get("context")
+        if not isinstance(context, str) or not context:
+            raise ValueError("An agent Planner needs in_cluster or an explicit kubectl context")
+
+        def read(target):
+            return read_deployment(target, context=context, cluster_id=cluster_id,
+                                   kubeconfig=config.get("kubeconfig"))["deployment"]
+
+    def deployment(target):
+        if target.get("cluster_id") != cluster_id:
+            raise ValueError("The incident target is in another cluster")
+        return read(target)
+    return deployment
+
+
+def agent_planner(config, journal, directory, cluster):
+    """The remote agent Planner: AgentPlanner hooks, the durable journal and a model preflight."""
+    if "provider" in config:
+        raise ValueError("Agent mode plans with the RCA agent; remove provider from its configuration")
+    baseline = read_json(config["baselines"])
+    if isinstance(baseline, list):
+        if len(baseline) != 1:
+            raise ValueError("Agent mode plans with exactly one reviewed baseline")
+        baseline = baseline[0]
+    return AgentPlannerAdapter(journal, config=agent_model_config(config), folder=directory / "agent",
+                               baseline=baseline, telemetry=observer_telemetry(config["telemetry_directory"]),
+                               deployment_reader=agent_target_reader(config, cluster),
+                               max_attempts=config.get("max_attempts", 3), retry_seconds=config.get("retry_seconds", 5),
+                               preflight_seconds=config.get("preflight_seconds", 30))
+
+
 def planner_provider(config, lab=False):
     """(provider, attempt lease seconds). Ollama is the default.
 
-    The deterministic provider is accepted only in a bound lab fault run, because
-    its synthetic_planner label stays in the Planner's own journal and never
-    reaches the proposal an operator approves.
+    The deterministic provider is accepted only in a bound lab fault run. Its
+    rationale and its journal usage both say it is synthetic, but it is a
+    stand-in for planning, not planning, so no other run may serve it.
     """
     name = config.get("provider", "ollama")
     if name == "deterministic":
@@ -80,6 +192,7 @@ def planner_provider(config, lab=False):
     if name != "ollama":
         raise ValueError("Planner provider must be ollama or deterministic")
     model = read_json(config["model_config"])
+    refuse_inline_secrets(model, "model_config")
     timeout = model.get("timeout", 300)
     if type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 < timeout <= 3600:
         raise ValueError("Model timeout must be positive, finite and at most one hour")
@@ -89,13 +202,19 @@ def planner_provider(config, lab=False):
 
 def adapter(config, directory, stack):
     role = config["role"]
+    refuse_inline_secrets(config)
     lab = fault_points.bind(config)  # Raises when lab variables are set for a worker aimed elsewhere.
     cluster = lab_cluster(config, stack, lab)
     clock = fault_points.offset_clock(utc_now) if lab else utc_now
     if role == "planner":
         from services.planner.store import PlannerStore
+        mode = config.get("mode", "provider")
+        if mode not in PLANNER_MODES:
+            raise ValueError("Planner mode must be provider or agent")
         journal = PlannerStore(directory / "planner.db")
         stack.callback(journal.close)
+        if mode == "agent":
+            return agent_planner(config, journal, directory, cluster)
         provider, lease_seconds = planner_provider(config, lab)
         baselines = reader(config["baselines"])
         def baseline_list(incident):
@@ -160,6 +279,9 @@ def report(status, error=None):
     level = log.WARNING if error is not None else log.DEBUG if status["status"] == "idle" else log.INFO
     log.emit(LOG, "worker.status", level=level, status=status["status"], replay=status.get("replay"),
              error_type=type(error).__name__ if error is not None else None,
+             # A failed preflight: its fixed code and the class of its cause, never the cause text.
+             reason=error.code if isinstance(error, PreflightFailed) else None,
+             cause=type(error.__cause__).__name__ if isinstance(error, PreflightFailed) else None,
              **{key: status.get(key) for key in ("delivery_id", "event_id", "topic", "action_id", "incident_id")})
 
 
@@ -168,6 +290,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path, help="Trusted JSON; secret values stay in environment")
     parser.add_argument("--once", action="store_true", help="One bounded polling pass")
+    parser.add_argument("--role", choices=ROLES,
+                        help="Refuse to start unless the configuration is for this role (a container image argument)")
     parser.add_argument("--poll-seconds", type=float, default=2)
     parser.add_argument("--health-port", type=int, help="Serve /healthz and /readyz on 127.0.0.1 at this port")
     parser.add_argument("--ready-seconds", type=float, default=60,
@@ -188,6 +312,8 @@ def main(argv=None):
     previous = {}
     try:
         config = read_json(args.config)
+        if args.role is not None and config.get("role") != args.role:
+            raise ValueError("The configuration is for another worker role")
         connection = client(config)
         directory = Path(config["state_directory"])
         directory.mkdir(parents=True, exist_ok=True)
@@ -204,13 +330,24 @@ def main(argv=None):
                     previous[sig] = signal.signal(sig, lambda *_: stopping.set())
             failures = 0
             stack.enter_context(log.bind(identity=config.get("identity"), role=config.get("role")))
+            # A component with its own prerequisite (the agent Planner's model) checks it before
+            # every claim; while it fails, the worker claims nothing and /readyz stays 503.
+            preflight = getattr(component, "preflight", None)
             while not stopping.is_set():
                 error = None
                 health.heartbeat()
                 try:
+                    if preflight is not None:
+                        preflight()
+                        health.prerequisites(True)
                     status = worker.once()
                     health.contacted()  # once() returned, so the Coordinator answered this pass.
                     failures = 0
+                except PreflightFailed as caught:
+                    health.prerequisites(False)
+                    error = caught
+                    failures += 1
+                    status = {"status": "not_ready", "error_code": caught.code}
                 except Exception as caught:  # noqa: BLE001 - a failed pass is retried with backoff; report() logs it
                     error = caught
                     failures += 1

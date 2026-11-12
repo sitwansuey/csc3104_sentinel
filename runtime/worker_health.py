@@ -3,9 +3,11 @@
 /healthz answers 200 while the polling loop is not stopping and started a pass
 within the liveness window, so a loop stuck inside one pass (a hung inference
 or blocked I/O) turns unhealthy once the window passes.
-/readyz answers 200 only when the worker's configuration was accepted and the
-Coordinator answered a polling pass within the readiness window. Both bodies
-hold booleans and ages in seconds only, never configuration or credentials.
+/readyz answers 200 only when the worker's configuration was accepted, its
+last preflight (if the component has one, such as the agent Planner's model
+check) passed, and the Coordinator answered a polling pass within the
+readiness window. Both bodies hold booleans and ages in seconds only, never
+configuration or credentials.
 """
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,17 +16,35 @@ import threading
 import time
 
 
+class PreflightFailed(RuntimeError):
+    """A component's own prerequisite (such as its model endpoint) is unusable.
+
+    The worker then claims nothing and reports not ready until a later
+    preflight passes. code is a short upper-case identifier; the cause text is
+    never part of it.
+    """
+
+    def __init__(self, code):
+        super().__init__(code)
+        self.code = code
+
+
 class WorkerHealth:
     """Monotonic timestamps of the loop heartbeat and the last Coordinator answer."""
 
     def __init__(self, *, ready_seconds=60, live_seconds=900, clock=time.monotonic):
         self.ready_seconds, self.live_seconds, self.clock = ready_seconds, live_seconds, clock
         self._configured = False
+        self._prerequisites = True
         self._beat = None
         self._contact = None
 
     def configured(self):
         self._configured = True
+
+    def prerequisites(self, met):
+        """Record the last preflight result; a failed one keeps /readyz at 503."""
+        self._prerequisites = bool(met)
 
     def heartbeat(self):
         self._beat = self.clock()
@@ -42,7 +62,7 @@ class WorkerHealth:
 
     def ready(self, stopping=None):
         age = self._age(self._contact)
-        ready = (self._configured and age is not None and age <= self.ready_seconds
+        ready = (self._configured and self._prerequisites and age is not None and age <= self.ready_seconds
                  and not (stopping is not None and stopping.is_set()))
         return (200 if ready else 503), {"ready": ready, "contact_age_seconds": age}
 
