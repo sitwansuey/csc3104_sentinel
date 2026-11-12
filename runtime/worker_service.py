@@ -366,6 +366,9 @@ def main(argv=None):
                     health.clock_checked(worker.clock_ready())  # Out of bound: not ready, no claims.
                     failures = 0
                 except PreflightFailed as caught:
+                    # The skew check runs before the preflight, so this pass measured the clock in
+                    # bound: record it, and /readyz names the preflight alone as the reason.
+                    health.clock_checked(worker.clock_ready())
                     error = caught
                     failures += 1
                     status = {"status": "not_ready", "error_code": caught.code}

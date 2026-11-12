@@ -23,7 +23,7 @@ from experiments.validation.demo_offline_flow import OfflineFlow, fixture
 from runtime.coordinator_server import servers
 from runtime.remote_adapters import ExecutorAdapter, GuardAdapter, PlannerAdapter, VerifierAdapter
 from runtime.remote_worker import Lease, RemoteIngress, RemoteWorker, WorkerJournal, lease_duration
-from runtime.worker_health import WorkerHealth
+from runtime.worker_health import PreflightFailed, WorkerHealth
 from runtime.worker_http import ClockEstimator, WorkerClient, WorkerHTTPServer, handler, serve_until_stopped
 from runtime.worker_transport import Delivery, ProtocolError, digest, parse_clock_estimate
 from services.coordinator.core import LocalEventBus, approve, handle, record_message
@@ -327,12 +327,12 @@ class SkewBoundTests(unittest.TestCase):
         return WorkerClient(self.url, role, self.services[role][1], timeout=5,
                             clock=lambda: time.time() + offset)
 
-    def worker(self, client):
+    def worker(self, client, before_claim=None):
         adapter = Mock()
         adapter.process.side_effect = lambda delivery, lease: (sample("proposal"), None)
         journal = WorkerJournal(self.directory / f"journal-{id(client)}.db")
         self.addCleanup(journal.close)
-        return RemoteWorker(client, journal, adapter, max_clock_skew=2), adapter
+        return RemoteWorker(client, journal, adapter, max_clock_skew=2, before_claim=before_claim), adapter
 
     def receipts(self):
         with SQLiteStore(self.database) as store:
@@ -403,6 +403,60 @@ class SkewBoundTests(unittest.TestCase):
             with self.assertRaises(ProtocolError) as refused:  # A Coordinator with a bound refuses it too.
                 Delivery(store, max_clock_skew=2).claim("planner", "planner", clock_estimate=client.clock.estimate())
         self.assertEqual(refused.exception.status, 409)
+
+    def test_an_out_of_bound_worker_never_runs_its_claim_prerequisite(self):
+        prerequisite = Mock()
+        worker, adapter = self.worker(self.client("planner", offset=-5), before_claim=prerequisite)
+        self.assertEqual(worker.once()["status"], "clock_skew")
+        self.assertEqual((prerequisite.call_count, self.receipts(), adapter.process.call_count), (0, 0, 0))
+        # Deferred path: a released saved result is held, so the worker claims first and would
+        # check the prerequisite after the claim. A clock step seen on the claim's reply hands the
+        # delivery back before the prerequisite runs.
+        offset = [0.0]
+        client = WorkerClient(self.url, "planner", self.services["planner"][1], timeout=5,
+                              clock=lambda: time.time() + offset[0])
+        worker, adapter = self.worker(client, before_claim=prerequisite)
+        client.post("clock", {})
+        offset[0] = 10.0
+        with patch.object(worker.journal, "held", return_value=True):
+            self.assertEqual(worker.once()["status"], "clock_skew")
+        self.assertEqual((prerequisite.call_count, adapter.process.call_count), (0, 0))
+        with SQLiteStore(self.database) as store:
+            self.assertLessEqual(store.db.execute("SELECT expires FROM transport_receipts").fetchone()[0], time.time())
+
+    def test_a_saved_result_is_resent_while_out_of_bound_and_the_prerequisite_fails(self):
+        offset = [0.0]
+        client = WorkerClient(self.url, "planner", self.services["planner"][1], timeout=5,
+                              clock=lambda: time.time() + offset[0])
+        original = client.post
+
+        def lose_result(operation, body):
+            if operation == "result":
+                raise TimeoutError("the result request was lost before the Coordinator read it")
+            return original(operation, body)
+        prerequisite = Mock()
+        worker, adapter = self.worker(client, before_claim=prerequisite)
+        with patch.object(client, "post", side_effect=lose_result), self.assertRaises(TimeoutError):
+            worker.once()
+        self.assertEqual((prerequisite.call_count, adapter.process.call_count), (1, 1))
+        offset[0] = -5.0  # The clock steps out of bound and the prerequisite starts failing.
+        prerequisite.side_effect = PreflightFailed("MODEL_UNAVAILABLE")
+        self.assertEqual(worker.once(), {"status": "accepted", "replay": False})
+        self.assertEqual((prerequisite.call_count, adapter.process.call_count), (1, 1))
+        self.assertFalse(worker.clock_ready())  # The result's own exchange measured the step.
+        self.assertEqual(worker.once()["status"], "clock_skew")  # New work: refused before the prerequisite.
+        self.assertEqual(prerequisite.call_count, 1)
+
+    def test_a_failing_prerequisite_with_the_clock_in_bound_claims_nothing_and_stays_clock_ready(self):
+        prerequisite = Mock(side_effect=PreflightFailed("MODEL_UNAVAILABLE"))
+        worker, adapter = self.worker(self.client("planner"), before_claim=prerequisite)
+        with self.assertRaises(PreflightFailed):
+            worker.once()
+        self.assertEqual((prerequisite.call_count, self.receipts(), adapter.process.call_count), (1, 0, 0))
+        self.assertTrue(worker.clock_ready())  # Readiness is held back by the prerequisite alone.
+        prerequisite.side_effect = None
+        self.assertEqual(worker.once()["status"], "accepted")
+        self.assertEqual((prerequisite.call_count, adapter.process.call_count), (2, 1))
 
     def test_readiness_follows_the_latest_measurement_not_the_pass_status(self):
         offset = [5.0]

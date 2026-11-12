@@ -406,7 +406,9 @@ class RemoteWorkerTests(unittest.TestCase):
                              before_claim=prerequisite)
         with self.assertRaises(PreflightFailed):
             worker.once()
-        self.assertEqual((operations, prerequisite.call_count, self.provider.call_count), ([], 1, 0))
+        # A worker with no skew bound still measures its clock once before its first claim
+        # (a Coordinator with its own bound refuses a claim without an estimate); it never claims.
+        self.assertEqual((operations, prerequisite.call_count, self.provider.call_count), (["clock"], 1, 0))
         self.assertEqual(self.client("replacement").post("claim", {})["delivery"]["topic"], "planner.request")
 
     def test_a_failing_claim_prerequisite_never_holds_back_a_saved_result(self):
@@ -448,7 +450,8 @@ class RemoteWorkerTests(unittest.TestCase):
         with patch.object(worker.journal, "held", return_value=True):  # Some other saved result waits.
             with self.assertRaises(PreflightFailed):
                 worker.once()
-        self.assertEqual((operations, prerequisite.call_count, self.provider.call_count), (["claim", "retry"], 1, 0))
+        self.assertEqual((operations, prerequisite.call_count, self.provider.call_count),
+                         (["clock", "claim", "retry"], 1, 0))
         (row,) = worker.journal.db.execute("SELECT delivery, result FROM worker_deliveries").fetchall()
         self.assertEqual(tuple(row), (None, None))
         self.assertEqual(self.state(), "OPEN")

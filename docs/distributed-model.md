@@ -106,7 +106,7 @@ losing that node needs a manual restore from a backup, and nothing detects a
 restore that silently drops acknowledged results.
 
 **Recovery time (RTO)** has not been measured. After repeated errors a worker
-backs off for up to 60 s (`runtime/worker_service.py:380::main::min(60`), which adds
+backs off for up to 60 s (`runtime/worker_service.py:383::main::min(60`), which adds
 to recovery time after a Coordinator restart.
 
 ## Time and ordering
@@ -224,6 +224,11 @@ The bound is enforced, and fails closed, only where it is configured:
   exchange, the worker hands the claimed request back unprocessed
   (`runtime/remote_worker.py::RemoteWorker._skewed_since_claim`). Saved
   results are still sent, because their order does not depend on clocks.
+  A claim prerequisite (the agent Planner's model preflight) runs only after
+  this check passes, so an out-of-bound worker never runs it; its `/readyz`
+  is 503 while either the clock or the prerequisite fails
+  (`runtime/remote_worker.py::RemoteWorker.once`,
+  `runtime/worker_service.py::main`).
 - A Coordinator started with `--max-clock-skew-seconds` refuses a claim, with
   HTTP 409, from a worker whose latest reported estimate is missing or
   outside the bound (`runtime/worker_transport.py:130::Delivery.claim::Worker clock skew exceeds the bound`).

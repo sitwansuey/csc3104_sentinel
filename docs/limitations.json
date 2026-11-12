@@ -62,7 +62,7 @@
         {"at": "runtime/live_executor.py:107", "text": "now=self.clock()"},
         {"at": "services/verifier/store.py:78", "text": "Monitoring cannot start before execution"},
         {"at": "tests/test_distributed_processes.py:62", "text": "def test_s7_executor_clocks_300_s_behind_end_failed_without_a_write_or_a_wedge"},
-        {"at": "tests/test_clock_skew.py:675", "text": "def test_per_role_clocks_300_s_apart_reach_recovered"}
+        {"at": "tests/test_clock_skew.py:729", "text": "def test_per_role_clocks_300_s_apart_reach_recovered"}
       ],
       "planned": ["P3.03", "P4.01"],
       "issues": [18, 63]

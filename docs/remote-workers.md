@@ -174,6 +174,16 @@ re-sent without another model call. Each incident gets its own workspace,
 `<state_directory>/agent/incident-<digest>/attempt-<n>/`. Nothing falls back:
 a model failure never becomes a deterministic or fixture proposal.
 
+The remote agent Planner applies the same code-owned checks as the local
+path, because it runs the same `AgentPlanner` hooks: the injection gate
+([Untrusted inputs](planner.md#untrusted-inputs)) and the decision context
+([Code-owned decision context](planner.md#code-owned-decision-context)). The
+Reporter must use the reason taxonomy and cite evidence ids of collected
+results that name the component, or the attempt abstains, and the rollback
+eligibility rule decides before and after the Recovery Planner. The worker
+configuration has no reviewed topology, so the component vocabulary is the
+incident target alone.
+
 ```json
 {
   "role": "planner",
@@ -240,7 +250,13 @@ a proposal saved in the Planner journal whose worker stopped before recording
 it for transport is replayed, without a model call, only by the first claim
 after a preflight passes. A model that fails after a passed
 preflight is an attempt failure (`MODEL_UNAVAILABLE`), retried and then
-escalated as above. One pass can last the whole planning budget, so keep
+escalated as above. With `max_clock_skew_seconds` set, the skew check runs
+before the preflight: a worker whose clock is out of bound prints `clock_skew`
+and runs no preflight, but still re-sends saved results. A pass whose preflight
+fails had its clock in bound, so `/readyz` then answers 503 without
+`"clock_skew": true`. Without a bound the worker still measures its clock once
+before its first claim, so that exchange precedes the first preflight. One
+pass can last the whole planning budget, so keep
 `--live-seconds` above `planning_budget_seconds` plus 60 (the 900 s default
 covers the 600 s budget).
 
@@ -265,7 +281,9 @@ proposals are always labelled synthetic (below).
 
 Tested offline only (`tests/test_remote_agent_planner.py`): the hooks and
 budget lease reach `prepare()`, retries and terminal codes end as on the local
-path, and one test runs the worker as its own OS process with a loopback
+path, the injection gate, vocabulary, citation and eligibility checks end in
+their fixed escalations, `/readyz` follows both the skew bound and the
+preflight, and one test runs the worker as its own OS process with a loopback
 Coordinator, the file test cluster and `tests/support/fake_ollama.py`, then
 runs it again and sees no second model call. That is one host. No live model, container or cluster has run agent mode remotely.
 
