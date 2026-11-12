@@ -286,14 +286,20 @@ class AgentPlanningMixin:
         require(state == expected and (state != "NEEDS_REVIEW" or proposal["action"] == "ESCALATE"),
                 f"Agent recovery stopped at {state}; expected {expected}")
         if graded is not None and self.scenario_gates_pass:
-            require(graded["score"] == "correct",
-                    f"Scenario {graded['scenario']} scored {graded['score']}: decision {graded['actual']}; "
-                    f"pre-registered correct {graded['expected']['correct']}")
+            require(graded["matched_expected"],
+                    f"Scenario {graded['scenario']} scored {graded['score']}: decision {graded['actual']} "
+                    f"from {graded['decision_source']}; pre-registered correct {graded['expected']['correct']}"
+                    + (f", rule code {graded['expected']['rule_code']} matched {graded['rule_code_matched']}"
+                       if "rule_code" in graded["expected"] else ""))
         if state == "NEEDS_REVIEW":
             # The expected escalation is not a repair: the administrator removes the fault.
             require(self.emergency_restore(), "Administrator restore after the expected escalation failed")
-            self.check("agent planning failure ended in a saved ESCALATE and NEEDS_REVIEW",
-                       error_code=record["error_code"], attempts=record["attempts"])
+            source = (graded or {}).get("decision_source")
+            # A decided escalation is not a planning failure; say which one this was.
+            name = (f"scenario escalation decided by the {source} ended in a saved ESCALATE and NEEDS_REVIEW"
+                    if source in ("rule", "model") else
+                    "agent planning failure ended in a saved ESCALATE and NEEDS_REVIEW")
+            self.check(name, error_code=record["error_code"], attempts=record["attempts"])
 
     def scenario_facts(self, incident, state, action_id, folder):
         """What happened after planning, read from the Coordinator and the Executor's own stats."""
@@ -319,7 +325,8 @@ class AgentPlanningMixin:
     def save_scenario_result(self, graded):
         save(self.directory / "scenario-result.json", graded)
         self.summary["scenario_result"] = graded
-        self.event(3, "status", f"Scenario {graded['scenario']}: decision {graded['actual']}, scored {graded['score']}",
+        self.event(3, "status", f"Scenario {graded['scenario']}: decision {graded['actual']} "
+                   f"from {graded['decision_source']}, scored {graded['score']}",
                    target=self.target)
         return graded
 
@@ -328,14 +335,22 @@ class AgentPlanningMixin:
         item = getattr(self, "scenario", None)
         if item is None:
             return None
-        outcome = scenarios.decision(proposal, (record or {}).get("error_code"))
-        decision = planner.decision or {}
+        error_code = (record or {}).get("error_code")
+        outcome = scenarios.decision(proposal, error_code)
+        decision = planner.decision
+        if decision is None and (folder / "planner.db").is_file():
+            # A replayed proposal made no attempt in this process: read the last attempt's decision from the journal.
+            with PlannerStore(folder / "planner.db") as journal:
+                decision = (journal.attempt_usage(incident["incident_id"]) or {}).get("decision")
+        decision = decision or {}
         facts = self.scenario_facts(incident, state, proposal["action_id"], folder)
-        facts.update(planning_error_code=(record or {}).get("error_code"),
+        facts.update(planning_error_code=error_code,
                      decided_by=decision.get("decided_by"), model_action=decision.get("model_action"),
                      rule_overrode_model=bool(decision.get("overridden")),
                      eligibility_codes=list(decision.get("codes") or []))
-        return self.save_scenario_result(scenarios.result(item, outcome, **facts))
+        source = scenarios.decision_source(proposal, error_code, decided_by=facts["decided_by"],
+                                           model_action=facts["model_action"])
+        return self.save_scenario_result(scenarios.result(item, outcome, source=source, **facts))
 
     def score_delivered(self, incident, folder, planner):
         """Score a delivered proposal when a later step failed; None when unscored or nothing was delivered."""
@@ -355,8 +370,8 @@ class AgentPlanningMixin:
             return False
         self.summary["expected_outcome"] = self.expect
         graded = self.save_scenario_result(scenarios.result(
-            item, "NO_INCIDENT", **self.scenario_facts(None, None, None, self.directory)))
-        return item["expected"]["incident"] is not True and graded["score"] == "correct"
+            item, "NO_INCIDENT", source="observer", **self.scenario_facts(None, None, None, self.directory)))
+        return item["expected"]["incident"] is not True and graded["matched_expected"]
 
     def planning_stopped(self, incident, record, planner, state, started):
         """Record one visible stop: summary.json and the dashboard 'Agent planning stopped' event."""

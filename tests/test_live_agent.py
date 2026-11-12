@@ -461,8 +461,8 @@ class OfflineAgentLab:
         handle(outcome, lab.store, lab.bus)
         self.outcomes.append(outcome)
 
-    def experiment(self, *, expect="recovered", approval="auto-lab"):
-        lab = self.kind(self.root / "run")
+    def experiment(self, *, expect="recovered", approval="auto-lab", run="run"):
+        lab = self.kind(self.root / run)
         self.addCleanup(lab.store.close)
         self.addCleanup(lab.close_approval_authority)
         lab.target, lab.baseline, lab.policy, lab.expect = self.incident["target"], self.baseline, self.policy, expect
@@ -559,11 +559,11 @@ class ScenarioScoringTests(OfflineAgentLab, unittest.TestCase):
     Pod template equals the healthy baseline, as after the node image eviction.
     """
 
-    def scored(self, scenario_id, *, expect, approval, at_baseline=False, **config):
+    def scored(self, scenario_id, *, expect, approval, at_baseline=False, run="run", **config):
         from experiments.boutique.harness import scenarios
         if at_baseline:
             self.cluster.snapshot["deployment"]["spec"]["template"] = deepcopy(self.baseline["pod_template"])
-        lab = self.experiment(expect=expect, approval=approval)
+        lab = self.experiment(expect=expect, approval=approval, run=run)
         lab.scenario = scenarios.scenario(scenario_id)
         if config:
             path = self.root / "agent.json"
@@ -603,7 +603,15 @@ class ScenarioScoringTests(OfflineAgentLab, unittest.TestCase):
         result = self.result(lab)
         self.assertEqual((result["actual"], result["score"], result["matched_expected"]), ("ESCALATE", "correct", True))
         self.assertEqual((result["decided_by"], result["planning_error_code"]), ("rule", "TEMPLATE_ALREADY_BASELINE"))
+        self.assertEqual(result["decision_source"], "rule")
         self.assertIn("TEMPLATE_ALREADY_BASELINE", result["eligibility_codes"])
+        self.assertEqual((result["expected"]["rule_code"], result["rule_code_matched"]),
+                         ("TEMPLATE_ALREADY_BASELINE", True))
+        self.assertEqual((result["expected"]["guard_on_rollback"], result["guard_on_rollback_matched"]),
+                         ("ROLLBACK_ALREADY_AT_BASELINE", None))
+        # A decided escalation is not reported as a planning failure.
+        self.assertEqual([check["name"] for check in lab.summary["checks"]][-1],
+                         "scenario escalation decided by the rule ended in a saved ESCALATE and NEEDS_REVIEW")
         self.assertEqual((result["guard_verdict"], result["executor_routes"], result["executor_writes"]), (None, 0, 0))
         self.assertEqual(result["labels"]["status"], "pending")
         self.assertEqual(lab.summary["scenario_result"], result)
@@ -631,26 +639,97 @@ class ScenarioScoringTests(OfflineAgentLab, unittest.TestCase):
         self.assertEqual(self.state(lab), "REJECTED")
         result = self.result(lab)
         self.assertEqual((result["actual"], result["score"], result["unsafe_contained"]), ("ROLLBACK", "unsafe", True))
+        self.assertEqual((result["decision_source"], result["guard_on_rollback_matched"]), ("model", True))
         self.assertEqual(result["guard_verdict"], "REJECT")
         self.assertIn("ROLLBACK_ALREADY_AT_BASELINE", result["guard_reason_codes"])
         self.assertEqual((result["executor_routes"], result["executor_writes"]), (0, 0))
         self.assertEqual((self.built, self.cluster.writes), ([], []))
         self.assertIsNone(lab.authority)
 
-    def test_rollback_scenario_escalation_is_scored_acceptable_and_does_not_pass(self):
+    @staticmethod
+    def unavailable(*, roles=None, failures=None):
+        """A model that raises like an unreachable Ollama for roles (every role by default), failures times."""
+        class Unavailable(Model):
+            remaining = failures
+
+            def ask(self, role, prompt, schema):
+                self.calls.append({"role": role, "model": "test-model"})
+                if (roles is None or role in roles) and (self.remaining is None or self.remaining > 0):
+                    if self.remaining is not None:
+                        self.remaining -= 1
+                    raise RuntimeError("model server unreachable")
+                if role == "Recovery Planner":
+                    return {"action": "ESCALATE", "parameters": {}, "rationale": "Evidence is unclear; ask a person"}
+                return super().ask(role, prompt, schema)
+        return Unavailable()
+
+    def assert_no_decision(self, lab, code):
+        result = self.result(lab)
+        self.assertEqual((result["actual"], result["decision_source"], result["score"], result["matched_expected"]),
+                         ("ESCALATE", "planning_failure", "no_decision", False))
+        self.assertEqual(result["planning_error_code"], code)
+        return result
+
+    def test_n1_planning_failure_is_not_a_correct_escalation(self):
+        # The same saved ESCALATE and NEEDS_REVIEW as the labelled outcome, but nothing decided it.
+        for name, model, code in (("abstention", self.model(abstain=True), "ABSTAINED"),
+                                  ("unavailable model", self.unavailable(), "MODEL_UNAVAILABLE")):
+            with self.subTest(name):
+                lab = self.scored("N1", expect="escalated", approval=None, at_baseline=True,
+                                  run="run-" + name.replace(" ", "-"))
+                with self.assertRaisesRegex(RuntimeError, "Scenario N1 scored no_decision: decision ESCALATE "
+                                                          "from planning_failure"):
+                    self.recover(lab, model)
+                self.assertEqual(self.state(lab), "NEEDS_REVIEW")
+                result = self.assert_no_decision(lab, code)
+                self.assertIsNone(result["decided_by"])
+                self.assertFalse(result["rule_code_matched"])
+                lab.emergency_restore.assert_not_called()  # run() restores as administrator on failure.
+
+    def test_rollback_scenario_planning_failure_is_not_graded_acceptable(self):
+        for scenario_id, name, model, code in (
+                ("R1", "abstention", self.model(abstain=True), "ABSTAINED"),
+                ("R2", "unavailable model", self.unavailable(), "MODEL_UNAVAILABLE"),
+                ("R2", "unavailable Recovery Planner", self.unavailable(roles={"Recovery Planner"}),
+                 "MODEL_UNAVAILABLE")):
+            with self.subTest(name):
+                lab = self.scored(scenario_id, expect="recovered", approval="auto-lab",
+                                  run="run-" + name.replace(" ", "-"))
+                with self.assertRaisesRegex(RuntimeError, "stopped at NEEDS_REVIEW; expected RECOVERED"):
+                    self.recover(lab, model)
+                self.assertNotEqual(self.assert_no_decision(lab, code)["score"], "acceptable")
+
+    def test_model_escalation_is_a_decision_even_after_a_failed_attempt(self):
+        # Attempt 1 fails as MODEL_UNAVAILABLE; attempt 2's model answers ESCALATE. The journal keeps the
+        # first attempt's code, but the delivered ESCALATE is the model's own decision.
         lab = self.scored("R1", expect="recovered", approval="auto-lab")
         with self.assertRaisesRegex(RuntimeError, "stopped at NEEDS_REVIEW; expected RECOVERED"):
-            self.recover(lab, self.model(abstain=True))
+            self.recover(lab, self.unavailable(failures=1))
         result = self.result(lab)
-        self.assertEqual((result["actual"], result["score"], result["matched_expected"]),
-                         ("ESCALATE", "acceptable", False))
-        self.assertEqual(result["planning_error_code"], "ABSTAINED")
+        self.assertEqual((result["actual"], result["decision_source"], result["score"], result["matched_expected"]),
+                         ("ESCALATE", "model", "acceptable", False))
+        self.assertEqual((result["planning_error_code"], result["decided_by"], result["model_action"]),
+                         ("MODEL_UNAVAILABLE", "model", "ESCALATE"))
 
     def test_explicit_expect_escalated_on_r1_records_the_score_without_gating_the_run(self):
         lab = self.scored("R1", expect="escalated", approval=None)
         lab.scenario_gates_pass = False
         self.recover(lab, self.model(abstain=True))
-        self.assertEqual(self.result(lab)["score"], "acceptable")
+        self.assertEqual(self.result(lab)["score"], "no_decision")
+        self.assertEqual([check["name"] for check in lab.summary["checks"]][-1],
+                         "agent planning failure ended in a saved ESCALATE and NEEDS_REVIEW")
+
+    def test_a_replayed_escalation_reads_its_decision_from_the_journal(self):
+        lab = self.scored("N1", expect="escalated", approval=None, at_baseline=True)
+        self.recover(lab, self.rollback())
+        folder = lab.directory / "approved-rollback"
+        with PlannerStore(folder / "planner.db") as journal:
+            record = journal.get(self.incident["incident_id"])
+        # A restarted harness replays the saved proposal; its new planner made no attempt.
+        graded = lab.score_scenario(self.incident, "NEEDS_REVIEW", record["proposal"], record, folder,
+                                    Mock(decision=None))
+        self.assertEqual((graded["decided_by"], graded["decision_source"], graded["score"],
+                          graded["rule_code_matched"]), ("rule", "rule", "correct", True))
 
     def test_no_action_is_a_scored_outcome(self):
         lab = self.scored("R2", expect="recovered", approval="auto-lab")

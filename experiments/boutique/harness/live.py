@@ -788,6 +788,8 @@ def main():
     if graded:
         print(f"Scenario {graded['scenario']} ({graded['name']}): decision {graded['actual']}, scored {graded['score']}; "
               f"labels {graded['labels']['status']}", flush=True)
+        if graded.get("labels_pending"):
+            print("WARNING: the scenario labels are not signed off; do not report this trial as scored", flush=True)
     return 0
 
 
