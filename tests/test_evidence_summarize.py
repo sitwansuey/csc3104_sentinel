@@ -573,16 +573,28 @@ class Phase3DerivationTests(unittest.TestCase):
 
     def test_admission_counts_each_expected_class_and_never_hides_a_failed_probe(self):
         self.assertEqual(summarize.admission_probes(self.pick("admission", "admission-bad")),
-                         "5/5 probes as expected on Kubernetes 1.37 (2 allowed, 2 denied by the policy, 2 of them "
+                         "5/5 probes as expected on Kubernetes 1.37 (2 allowed, 2 denied by the policy, all 2 "
                          "with the rule named and the object unchanged, 1 denied by RBAC); namespace, policy and "
                          "private credentials removed; 4/5 probes as expected on Kubernetes 1.37 (2 allowed, 2 denied "
-                         "by the policy, 2 of them with the rule named and the object unchanged, 1 denied by RBAC); "
+                         "by the policy, all 2 with the rule named and the object unchanged, 1 denied by RBAC); "
                          "namespace, policy and private credentials removed")
         self.assertEqual(summarize.outcome(self.bundles["admission-bad"]), "FAILED")
 
+    def test_admission_counts_policy_denials_without_the_rule_named_separately(self):
+        record = {"passed": 3, "probes": [{}, {}, {}], "server": "1.37", "allowed": 1, "policy": 2,
+                  "policy_named_unchanged": 1, "rbac": 0, "cleaned": True}
+        original = summarize.admission_record
+        summarize.admission_record = lambda bundle: record
+        try:
+            value = summarize.admission_probes([object()])
+        finally:
+            summarize.admission_record = original
+        self.assertIn("2 denied by the policy, 1 of them with the rule named and the object unchanged", value)
+
     def test_container_readiness_counts_samples_while_the_coordinator_was_up(self):
         self.assertEqual(summarize.container_readiness(self.pick("container")),
-                         "3/3 health samples Docker healthy with /readyz 200 while the Coordinator was up (longest "
+                         "3/3 health samples Docker healthy with /readyz 200 from the first Docker-healthy one until "
+                         "the Coordinator stopped (4 taken while it was up, 3/4 answering /readyz 200; longest "
                          "planning pass 89.6 s, highest contact age 19.1 s); /readyz 503 62.0 s and Docker unhealthy "
                          "126.0 s after the Coordinator stopped")
         self.assertEqual(summarize.outcome(self.bundles["container"]), "PASS")
@@ -594,7 +606,7 @@ class Phase3DerivationTests(unittest.TestCase):
         self.assertIn("no orchestrator health record", summarize.container_readiness([bundle]))
         self.assertEqual(summarize.container_health([bundle]), "planner-container: unhealthy, 3/5 kept checks failed")
         row = {row[0]: row for row in summarize.container_rows(list(self.bundles.values()))}["container-old"]
-        self.assertEqual(row[2:5], ["INCOMPLETE", "not recorded", "89.6"])
+        self.assertEqual(row[2:6], ["INCOMPLETE", "not recorded", "not recorded", "89.6"])
 
     def test_lab_session_needs_every_rbac_answer_and_a_healthy_restore(self):
         self.assertEqual(summarize.lab_sessions(self.pick("lab", "lab-old")),
