@@ -1,9 +1,11 @@
 """Offline connected-workload checks; HTTP services and Kubernetes are fake."""
 
+from contextlib import redirect_stdout
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
+from io import StringIO
 import json
 from pathlib import Path
 import tempfile
@@ -422,6 +424,212 @@ class CartTargetTests(unittest.TestCase):
                        {"emptied": False}):
             with self.subTest(change=change), self.assertRaises(RuntimeError):
                 validate_cart({**good, **change})
+
+
+def iso(moment):
+    return moment.isoformat().replace("+00:00", "Z")
+
+
+class PreparedRunInputsTests(unittest.TestCase):
+    """prepare() writes the policy and per-target baseline the live Executor reads (P3.09).
+
+    kubectl, the image step and the health window are fake; the Guard and the
+    Executor are the real ones, reading only the files prepare() wrote.
+    """
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.directory = Path(temporary.name)
+        for patcher in (patch("shared.provenance.collect", return_value={"source_revision": "test"}),
+                        patch("subprocess.run", side_effect=AssertionError("cluster command attempted")),
+                        patch("runtime.live_executor.read_reference_versions", return_value=[])):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def template(name, cpu):
+        """A reviewed-style healthy Pod template for one catalog target."""
+        profile = targets.profile(name)
+        env = [{"name": "REDIS_ADDR", "value": "redis-cart:6379"} if name == "cartservice"
+               else {"name": "PORT", "value": str(profile.port)}]
+        return {"metadata": {"labels": {"app": name}}, "spec": {
+            "serviceAccountName": profile.service_account, "automountServiceAccountToken": False,
+            "securityContext": {"runAsNonRoot": True, "runAsUser": 1000, "seccompProfile": {"type": "RuntimeDefault"}},
+            "containers": [{"name": profile.container, "image": profile.image_repository + "@sha256:" + "a" * 64,
+                            "imagePullPolicy": "Never", "env": env,
+                            "resources": {"requests": {"cpu": cpu, "memory": "64Mi"},
+                                          "limits": {"cpu": "300m", "memory": "128Mi"}},
+                            "securityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
+                                                "capabilities": {"drop": ["ALL"]}}}]}}
+
+    def deployment(self, experiment, name, template, version="7", ready=1):
+        return {"apiVersion": "apps/v1", "kind": "Deployment",
+                "metadata": {"name": name, "namespace": experiment.namespace, "uid": name + "-uid",
+                             "resourceVersion": version, "generation": 1},
+                "spec": {"replicas": 1, "selector": {"matchLabels": {"app": name}}, "template": deepcopy(template)},
+                "status": {"observedGeneration": 1, "replicas": 1, "readyReplicas": ready, "availableReplicas": ready}}
+
+    def prepared(self, target, cpu):
+        """Run the real prepare() for target, whose healthy template requests cpu."""
+        experiment = connected_lab(self.directory / target / cpu, target)
+        self.addCleanup(experiment.store.close)
+        deployments = {name: self.deployment(experiment, name, self.template(name, cpu if name == target else "100m"))
+                       for name in targets.enabled_targets("connected")}
+        commands = []
+
+        def kubectl(*arguments, **options):
+            commands.append(arguments)
+            if arguments[:2] == ("get", "deployment") and arguments[2] in deployments:
+                return SimpleNamespace(stdout=json.dumps(deployments[arguments[2]]), stderr="", returncode=0)
+            if arguments[:2] == ("config", "view"):
+                cluster = {"server": "https://127.0.0.1:6443", "certificate-authority-data": "b2ZmbGluZQ=="}
+                return SimpleNamespace(stdout=json.dumps({"clusters": [{"cluster": cluster}]}), stderr="", returncode=0)
+            if arguments[:2] == ("create", "token") or arguments[0] == "apply":
+                return SimpleNamespace(stdout="offline-token\n", stderr="", returncode=0)
+            raise AssertionError("Unexpected kubectl call: " + " ".join(arguments))
+
+        def prepare_image():
+            experiment.write_executor_rbac()
+            return deployments[target]["spec"]["template"]["spec"]["containers"][0]["image"]
+
+        start = datetime.now(timezone.utc) - timedelta(seconds=21)
+        samples = [{"at": iso(start + timedelta(seconds=10 * index)), "ready_replicas": 1, "resource_version": "7"}
+                   for index in range(3)]
+        experiment.kubectl = kubectl
+        experiment.prepare_image = prepare_image
+        experiment.health_window = Mock(return_value=samples)
+        with redirect_stdout(StringIO()):
+            experiment.prepare()
+        return experiment, commands
+
+    def read(self, experiment, *parts):
+        return json.loads(experiment.directory.joinpath(*parts).read_text(encoding="utf-8"))
+
+    def run_executor(self, experiment, name=None):
+        """Ask the real Executor, built from prepare()'s files, to roll name back; returns (decision, result, writes)."""
+        from runtime.live_executor import build_adapters
+        from services.executor.core import execute
+        from services.guard.core import proposal_fingerprint
+        from tests.support.executor_fake import FakeDeploymentAPI
+
+        name = name or experiment.name
+        scope = {item["name"]: item for item in self.read(experiment, "allowed-targets.json")}
+        target = scope[name]
+        baseline = self.read(experiment, "baselines", name + ".json")
+        current = datetime.now(timezone.utc)
+        # The bad rollout: the measured healthy template with only its configuration changed.
+        broken = deepcopy(baseline["pod_template"])
+        broken["spec"]["containers"][0]["env"][0]["value"] += "0"
+        live = self.deployment(experiment, name, broken, version="8", ready=0)
+        live["metadata"]["uid"] = target["uid"]
+        snapshot = {"source": "offline-test", "captured_at": iso(current), "cluster_id": experiment.cluster_id,
+                    "deployment": live, "pods": [{"apiVersion": "v1", "kind": "Pod",
+                        "metadata": {"name": name + "-1", "namespace": experiment.namespace, "uid": "pod-uid",
+                                     "labels": {"app": name}},
+                        "status": {"phase": "Running", "containerStatuses": [{
+                            "name": "server", "ready": False, "restartCount": 4,
+                            "state": {"waiting": {"reason": "CrashLoopBackOff", "message": "Back-off"}},
+                            "lastState": {"terminated": {"exitCode": 1, "reason": "Error"}}}]}}],
+                    "events": [], "logs": []}
+        proposal = {"schema_version": "1.0", "kind": "proposal", "incident_id": "INC-PREPARED-1",
+                    "action_id": "ACT-PREPARED-1", "action": "ROLLBACK", "target": target,
+                    "parameters": {"baseline_id": baseline["baseline_id"], "template_sha256": baseline["template_sha256"]},
+                    "based_on_resource_version": "8", "rationale": "Offline test of the prepared run inputs.",
+                    "evidence_refs": ["E-1"]}
+        inputs = Path(tempfile.mkdtemp(prefix="inputs-", dir=self.directory))
+        dependencies, approval = inputs / "dependencies.json", inputs / "approval.json"
+        dependencies.write_text(json.dumps({
+            "schema_version": "1.0", "kind": "dependency_result", "incident_id": proposal["incident_id"],
+            "action_id": proposal["action_id"], "target": target, "status": "CLEAR", "affected_services": [name],
+            "blockers": [], "unknowns": [], "checked_at": iso(current)}), encoding="utf-8")
+        approval.write_text(json.dumps({
+            "action_id": proposal["action_id"], "proposal_sha256": proposal_fingerprint(proposal),
+            "policy_version": self.read(experiment, "policy.json")["policy_version"], "operator_id": "offline-operator",
+            "decision": "APPROVED", "approved_at": iso(current - timedelta(seconds=2)),
+            "expires_at": iso(current + timedelta(seconds=120))}), encoding="utf-8")
+        cluster = FakeDeploymentAPI(snapshot, clock=lambda: datetime.now(timezone.utc))
+        with patch("services.executor.kubernetes_adapter.KubectlDeploymentAPI", return_value=cluster):
+            adapters = build_adapters(
+                context=experiment.restricted_context, cluster_id=experiment.cluster_id,
+                kubeconfig=experiment.credentials, allowed_targets=experiment.directory / "allowed-targets.json",
+                ledger=inputs / "executor.db", locks=inputs / "locks", policy=experiment.directory / "policy.json",
+                dependencies=dependencies, approval=approval, **experiment.baseline_inputs())
+            self.addCleanup(adapters.ledger.close)
+            decision = adapters.authorizer.validate(proposal, cluster.read(target), now=current).decision
+            result = execute(proposal, adapters)
+        return decision, result, cluster.writes
+
+    def test_a_cart_run_writes_the_cart_ceilings_and_its_guard_allows_the_cart_baseline(self):
+        experiment, _commands = self.prepared("cartservice", "200m")
+        policy = self.read(experiment, "policy.json")
+        self.assertEqual(policy["resource_constraints"]["max_container_requests"], {"cpu": "200m", "memory": "64Mi"})
+        self.assertEqual(policy["workload_constraints"]["max_pod_requests"], {"cpu": "250m", "memory": "128Mi"})
+        self.assertEqual(policy["security_constraints"]["allowed_service_accounts"], ["cartservice"])
+        self.assertEqual(policy["security_constraints"]["allowed_image_registries"], ["us-central1-docker.pkg.dev"])
+        decision, result, writes = self.run_executor(experiment)
+        self.assertEqual(decision["verdict"], "ALLOW", decision["reason_codes"])
+        self.assertEqual(result["status"], "APPLIED")
+        self.assertEqual(len(writes), 1)
+
+    def test_a_cart_run_guard_rejects_an_over_ceiling_cart_baseline_with_zero_writes(self):
+        experiment, _commands = self.prepared("cartservice", "400m")
+        decision, result, writes = self.run_executor(experiment)
+        self.assertEqual(decision["verdict"], "REJECT")
+        self.assertIn("RESOURCE_REQUEST_EXCEEDS_POLICY", decision["reason_codes"])
+        self.assertNotEqual(result["status"], "APPLIED")
+        self.assertEqual(writes, [])
+
+    def test_a_shipping_run_still_writes_the_shipping_ceilings(self):
+        experiment, _commands = self.prepared("shippingservice", "100m")
+        policy = self.read(experiment, "policy.json")
+        self.assertEqual(policy["resource_constraints"]["max_container_requests"], {"cpu": "100m", "memory": "64Mi"})
+        self.assertEqual(policy["security_constraints"]["allowed_service_accounts"], ["shippingservice"])
+        decision, result, writes = self.run_executor(experiment)
+        self.assertEqual((decision["verdict"], result["status"], len(writes)), ("ALLOW", "APPLIED", 1))
+        # The cart baseline request would exceed the shipping ceiling.
+        experiment, _commands = self.prepared("shippingservice", "200m")
+        decision, _result, writes = self.run_executor(experiment)
+        self.assertEqual(decision["verdict"], "REJECT")
+        self.assertIn("RESOURCE_REQUEST_EXCEEDS_POLICY", decision["reason_codes"])
+        self.assertEqual(writes, [])
+
+    def test_prepare_writes_the_selected_targets_baseline_file_that_the_executor_reads(self):
+        for name in ("cartservice", "shippingservice"):
+            with self.subTest(target=name):
+                experiment, _commands = self.prepared(name, "100m")
+                baseline = self.read(experiment, "baseline.json")
+                self.assertEqual(self.read(experiment, "baselines", name + ".json"), baseline)
+                self.assertEqual(baseline["target"], experiment.target)
+                self.assertEqual(baseline["target"]["name"], name)
+                self.assertEqual(sorted(path.name for path in (experiment.directory / "baselines").iterdir()),
+                                 [name + ".json"])
+                self.assertEqual(experiment.baseline_inputs(),
+                                 {"baseline": None, "baselines": experiment.directory / "baselines"})
+                decision, result, writes = self.run_executor(experiment)
+                self.assertEqual((decision["verdict"], result["status"], len(writes)), ("ALLOW", "APPLIED", 1))
+                self.assertEqual(writes[0]["deployment"]["spec"]["template"], baseline["pod_template"])
+
+    def test_the_policy_names_only_the_selected_target_while_the_allowlist_names_both(self):
+        experiment, commands = self.prepared("cartservice", "200m")
+        policy = self.read(experiment, "policy.json")
+        scope = self.read(experiment, "allowed-targets.json")
+        self.assertEqual(policy["targets"], [experiment.target])
+        self.assertEqual([item["name"] for item in scope], ["cartservice", "shippingservice"])
+        self.assertEqual(scope[1]["uid"], "shippingservice-uid")
+        self.assertIn('resourceNames: ["cartservice", "shippingservice"]',
+                      (experiment.directory / "executor-rbac.yaml").read_text(encoding="utf-8"))
+        self.assertIn(("apply", "-f", str(experiment.directory / "executor-rbac.yaml")), commands)
+        # A baseline planted for the other enabled target still meets the policy target list.
+        other = self.prepared("shippingservice", "100m")[0]
+        planted = self.read(other, "baselines", "shippingservice.json")
+        planted["target"] = scope[1]
+        (experiment.directory / "baselines" / "shippingservice.json").write_text(json.dumps(planted), encoding="utf-8")
+        decision, result, writes = self.run_executor(experiment, "shippingservice")
+        self.assertEqual(decision["verdict"], "REJECT")
+        self.assertIn("TARGET_NOT_ALLOWED", decision["reason_codes"])
+        self.assertNotEqual(result["status"], "APPLIED")
+        self.assertEqual(writes, [])
 
 
 class StorefrontHTTPTests(unittest.TestCase):
