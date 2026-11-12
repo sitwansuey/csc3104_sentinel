@@ -103,7 +103,9 @@ Failure events include `executor.observe.unavailable`,
 `observer.collection.failed`, `observer.delivery.failed`,
 `verifier.collection.failed`, `http.readiness.failed`,
 `dashboard.snapshot.failed`, `inspector.request.failed` and
-`progress.notify.failed`. Harness and validation scripts use `chaos.*`,
+`progress.notify.failed`. The dashboard's approval relay emits
+`dashboard.approval.relayed` and `dashboard.approval.refused` with the
+operation, the HTTP status and, once relayed, the action ID. Harness and validation scripts use `chaos.*`,
 `telemetry.*`, `experiment.*`, `recovery.*` and `validation.*` names. These
 processes print the lines only when their entrypoint configures logging.
 

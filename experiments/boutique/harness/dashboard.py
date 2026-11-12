@@ -27,13 +27,14 @@ def _instant(value):
 
 class BoutiqueDashboard:
     def __init__(self, directory, *, context, cluster_id, namespace, port=8765, bind="127.0.0.1", lab_control=None,
-                 application_collector=None):
+                 application_collector=None, approval_relay=None):
         self.directory = Path(directory)
         self.telemetry = self.directory / "telemetry.sqlite3"
         self.context, self.cluster_id, self.namespace = context, cluster_id, namespace
         self.port = port
         self.bind = bind
         self.lab_control = lab_control
+        self.approval_relay = approval_relay
         self.application_collector = application_collector
         self.stop = threading.Event()
         self.server = None
@@ -42,7 +43,7 @@ class BoutiqueDashboard:
     def start(self):
         ensure_frontend()
         self.server = make_server(self.directory / "coordinator.sqlite", self.telemetry, port=self.port,
-                                  bind=self.bind, lab_control=self.lab_control)
+                                  bind=self.bind, lab_control=self.lab_control, approval_relay=self.approval_relay)
         self.url = f"http://127.0.0.1:{self.server.server_port}"
         self.event(1, "status", "Live Boutique experiment; configured proposal source; Role 6 dependency and outcome verification integrated")
         self.threads = [threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": .25}, daemon=True),
@@ -316,6 +317,8 @@ class BoutiqueDashboard:
 
     def close(self):
         control_error = None
+        if self.approval_relay:
+            self.approval_relay.close()  # A waiting dashboard approver stops waiting; nothing more is relayed.
         if self.lab_control:
             try:
                 self.lab_control.finish("STOPPED")

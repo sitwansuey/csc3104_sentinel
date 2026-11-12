@@ -4,7 +4,7 @@ param([switch]$Setup, [switch]$Cleanup, [switch]$Dashboard,
       [switch]$PauseBeforeInjection, [switch]$GuardRejection, [switch]$UIControls, [switch]$Connected,
       [ValidateRange(1,65535)][int]$StorefrontPort = 8080,
       [switch]$Agent, [string]$AgentConfig, [string]$ProviderScript, [string]$ProviderPolicy,
-      [ValidateSet('interactive','auto-lab','reject')][string]$Approval = 'interactive',
+      [ValidateSet('interactive','auto-lab','reject','ui')][string]$Approval = 'interactive',
       [string]$Operator, [string]$RunDirectory,
       [ValidateSet('recovered','escalated')][string]$Expect = 'recovered')
 
@@ -15,6 +15,7 @@ if ($Expect -ne 'recovered' -and -not $Agent) { throw '-Expect escalated require
 if ($Agent -and $GuardRejection) { throw '-Agent and -GuardRejection are separate scenarios.' }
 if ($Agent -and $ProviderScript) { throw '-Agent and -ProviderScript are separate planning modes.' }
 if ($UIControls -and (-not $Dashboard -or $PauseBeforeInjection)) { throw '-UIControls requires -Dashboard and replaces -PauseBeforeInjection.' }
+if ($Approval -eq 'ui' -and -not $UIControls) { throw '-Approval ui requires -Dashboard -UIControls.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
 . (Join-Path $PSScriptRoot 'install-dependencies.ps1') -FunctionsOnly
