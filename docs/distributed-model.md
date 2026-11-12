@@ -106,7 +106,7 @@ losing that node needs a manual restore from a backup, and nothing detects a
 restore that silently drops acknowledged results.
 
 **Recovery time (RTO)** has not been measured. After repeated errors a worker
-backs off for up to 60 s (`runtime/worker_service.py:237::main::min(60`), which adds
+backs off for up to 60 s (`runtime/worker_service.py:380::main::min(60`), which adds
 to recovery time after a Coordinator restart.
 
 ## Time and ordering

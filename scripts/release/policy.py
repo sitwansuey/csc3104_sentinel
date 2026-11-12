@@ -54,6 +54,7 @@ IMAGES = (
     Image("sentinel-observer", "deploy/docker/observer.Dockerfile", "Sentinel Observer"),
     Image("sentinel-security-inspector", "deploy/docker/security-inspector.Dockerfile",
           "Sentinel security inspector"),
+    Image("sentinel-worker", "deploy/docker/worker.Dockerfile", "Sentinel worker"),
 )
 
 

@@ -439,7 +439,9 @@ preflight stop for a missing model:
 
 The agent experiment is a local one-incident path. It plans through the durable
 journal inside the harness process; it is not a separately deployed Planner
-worker, and the remote Planner worker does not offer agent mode yet. An
+worker. The remote Planner worker also has an agent mode (`"mode": "agent"`,
+[remote workers](remote-workers.md#agent-mode)) with the same hooks, codes and
+journal, tested offline as its own process on one host; no live run has used it. An
 abstention ends in NEEDS_REVIEW before execution and leaves its artifacts; full
 production incident handling remains separate work.
 No general multi-service repair or Chaos Mesh repair policy is added here.
