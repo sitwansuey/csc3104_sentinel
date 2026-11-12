@@ -179,6 +179,7 @@ files = [
     "shared/canonical.py",
     "shared/log.py",
     "shared/provenance.py",
+    "shared/tracing.py",
     "services/executor/reconciliation.py",
 ]
 strict = true

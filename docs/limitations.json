@@ -54,8 +54,8 @@
       "cites": [
         {"at": "services/coordinator/core.py:149-150", "text": "Execution predates Guard validation"},
         {"at": "services/coordinator/core.py:169-170", "text": "Health window predates execution"},
-        {"at": "runtime/worker_http.py:157", "text": "except (ValueError, KeyError, TypeError) as exc:"},
-        {"at": "runtime/remote_worker.py:132", "text": "if error.status not in {404, 409}:"},
+        {"at": "runtime/worker_http.py:174", "text": "except (ValueError, KeyError, TypeError) as exc:"},
+        {"at": "runtime/remote_worker.py:139", "text": "if error.status not in {404, 409}:"},
         {"at": "runtime/remote_worker.py:73", "text": "time.time()) / 3"}
       ],
       "planned": ["P3.03"],
@@ -130,11 +130,12 @@
       "kind": "defect",
       "status": "mitigated",
       "since": "2026-11-11",
-      "impact": "Fixed in code for the networked processes: shared/log.py writes allowlisted JSON lines; the Coordinator server, worker HTTP, approval HTTP and worker service entrypoints configure it; every POST request gets one http.access line, or an auth.denied line for a 401 or 403, while GET /healthz, GET /readyz and GET requests for unknown paths (404) get none; lifecycle transitions are journalled; and every broad except handler re-raises or logs the error class, which CI enforces. Not covered: the live harnesses (the Executor wedge harness included), agent mode and the in-process pipelines that every recorded run used never configure logging, so their log events are dropped. Exception messages are never logged, only class names, by design. There is no cross-process tracing. No live run has collected logs yet.",
-      "workaround": "For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json.",
+      "impact": "Fixed in code for the networked processes: shared/log.py writes allowlisted JSON lines; the Coordinator server, worker HTTP, approval HTTP and worker service entrypoints configure it; every POST request gets one http.access line, or an auth.denied line for a 401 or 403, while GET /healthz, GET /readyz and GET requests for unknown paths (404) get none; lifecycle transitions are journalled; and every broad except handler re-raises or logs the error class, which CI enforces. Not covered: the live harnesses (the Executor wedge harness included), agent mode and the in-process pipelines that every recorded run used never configure logging, so their log events are dropped. Exception messages are never logged, only class names, by design. Since P3.02, W3C trace context follows an incident through outbox rows, claimed deliveries and worker HTTP requests, and spans are written as span.start and span.end log lines; approvals and the in-process pipelines add no spans of their own, there is no OpenTelemetry export, and no live run has produced a trace. No live run has collected logs yet.",
+      "workaround": "For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json and print the traces with scripts/trace_view.py.",
       "cites": [
-        {"at": "shared/log.py:235", "text": "def entrypoint(component: str)"},
-        {"at": "runtime/worker_http.py:259", "text": "@log.entrypoint(\"worker_http\")"},
+        {"at": "shared/log.py:236", "text": "def entrypoint(component: str)"},
+        {"at": "runtime/worker_http.py:285", "text": "@log.entrypoint(\"worker_http\")"},
+        {"at": "shared/tracing.py:123", "text": "def start_span("},
         {"at": "services/executor/core.py:236-237", "text": "any read failure leaves the outcome unknown"},
         {"at": "docs/observability.md", "text": "only when their entrypoint configures logging"},
         {"at": "tests/test_except_audit.py:39", "text": "def test_repository_has_no_unjustified_broad_handler"}
@@ -166,8 +167,8 @@
       "workaround": "Restart the Coordinator on the same volume; saved requests replay from SQLite.",
       "cites": [
         {"at": "deploy/sentinel/coordinator.yaml:62-64", "text": "type: Recreate"},
-        {"at": "services/coordinator/store.py:133", "text": "sqlite3.connect"},
-        {"at": "runtime/worker_transport.py:103", "text": "delay = min(60"}
+        {"at": "services/coordinator/store.py:139", "text": "sqlite3.connect"},
+        {"at": "runtime/worker_transport.py:104", "text": "delay = min(60"}
       ],
       "planned": ["P3.06", "P4.02", "P5.01"],
       "issues": [62, 63]

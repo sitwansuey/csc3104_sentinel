@@ -1,5 +1,6 @@
 """Run with python -m runtime.worker_http --help. Secrets are never logged."""
 import argparse
+from contextlib import ExitStack
 import ipaddress
 import json
 import math
@@ -16,7 +17,7 @@ from urllib.parse import urlsplit
 from runtime.service_identity import authenticate, load_identities
 from runtime.worker_transport import Delivery, INGRESS, ProtocolError, TOPICS, delivery_ids
 from services.coordinator.core import SQLiteStore
-from shared import log
+from shared import log, tracing
 
 MAX_BODY = 1024 * 1024
 LOG = log.get_logger("worker_http")
@@ -73,6 +74,15 @@ def access_log(logger, operation, status, started, *, outcome=None, reason=None,
              **{key: safe_id(value) for key, value in ids.items()})
 
 
+def inbound_trace(headers):
+    """The caller's span from exactly one well-formed traceparent header, else None.
+
+    Call only after authentication. The value labels log lines; it grants nothing.
+    """
+    values = headers.get_all("traceparent") or []
+    return tracing.parse_traceparent(values[0]) if len(values) == 1 else None
+
+
 def _message_ids(message):
     return ({"incident_id": message.get("incident_id"), "action_id": message.get("action_id")}
             if isinstance(message, dict) else {})
@@ -107,64 +117,77 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
 
         def do_POST(self):
             started, operation = time.monotonic(), OPERATIONS.get(self.path, "unknown")
-            ids, outcome, reason, error_type = {}, None, None, None
-            try:
-                if stopping is not None and stopping.is_set():
-                    raise ProtocolError(503, "Coordinator is stopping; retry the saved request")
-                name, role = authenticate(self.headers, services)
-                ids["identity"] = name
-                lengths = self.headers.get_all("Content-Length", [])
-                if len(lengths) != 1 or self.headers.get("Transfer-Encoding"):
-                    raise ProtocolError(400, "Ambiguous request framing")
-                length = int(lengths[0])
-                if not 0 < length <= MAX_BODY:
-                    raise ProtocolError(413, "Invalid body length")
-                raw = self.rfile.read(length)
-                if len(raw) != length:
-                    raise ProtocolError(400, "Incomplete request body")
-                body = json.loads(raw)
-                if not isinstance(body, dict):
-                    raise ProtocolError(400, "Expected JSON object")
-                # IDs only: the lease token and the body itself are never logged.
-                ids["delivery_id"] = body.get("delivery_id")
-                ids.update(_message_ids(body.get("message") or body.get("result") or body.get("proposal")))
-                with SQLiteStore(database, clock=clock) as store:
-                    delivery = Delivery(store, lease_seconds=lease_seconds, retention_seconds=retention_seconds,
-                                        dependency_requests=dependency_requests)
-                    if self.path == "/v1/claim":
-                        answer = delivery.claim(name, role)
-                        ids.update(delivery_ids(answer["delivery"]))
-                        outcome = "claimed" if answer["delivery"] else "idle"
-                    elif self.path == "/v1/ingest":
-                        answer = delivery.ingest(role, body["message"])
-                        outcome = "replay" if answer.get("replay") else "accepted"
-                    elif self.path == "/v1/renew":
-                        answer = delivery.renew(name, role, body["delivery_id"], body["lease_token"])
-                        outcome = "renewed"
-                    elif self.path == "/v1/dependencies":
-                        answer = delivery.dependencies(role, body["proposal"])
-                    elif self.path in ("/v1/result", "/v1/retry"):
-                        answer = delivery.finish(name, role, body["delivery_id"], body["lease_token"],
-                                                 body.get("result"), retry=self.path == "/v1/retry",
-                                                 report=body.get("report"))
-                        outcome = ("retry" if self.path == "/v1/retry"
-                                   else "replay" if answer.get("replay") else "accepted")
-                    else:
-                        raise ProtocolError(404, "Unknown endpoint")
-                status, response = 200, answer
-            except ProtocolError as exc:
-                status, reason, response = exc.status, reason_class(exc.status, str(exc)), {"error": str(exc)}
-            except (ValueError, KeyError, TypeError) as exc:
-                status, error_type = 400, type(exc).__name__
-                response = {"error": "Invalid input or lifecycle transition"}
-            except (TimeoutError, socket.timeout):
-                status, response = 408, {"error": "Request timed out"}
-            except Exception as exc:  # noqa: BLE001 - an internal error answers 503; access_log records error_type
-                status, error_type = 503, type(exc).__name__
-                response = {"error": "Coordinator unavailable; retry the saved request"}
-            # Log before replying, so the line exists once the client sees the answer.
-            access_log(LOG, operation, status, started, outcome=outcome, reason=reason,
-                       error_type=error_type, **ids)
+            ids, outcome, reason, error_type, span = {}, None, None, None, None
+            with ExitStack() as scope:
+                try:
+                    if stopping is not None and stopping.is_set():
+                        raise ProtocolError(503, "Coordinator is stopping; retry the saved request")
+                    name, role = authenticate(self.headers, services)
+                    ids["identity"] = name
+                    # Only an authenticated caller's traceparent is read, so a
+                    # forged header in a refused request never reaches a log line.
+                    parent = inbound_trace(self.headers)
+                    if parent is not None:
+                        span = scope.enter_context(tracing.start_span(
+                            "coordinator." + operation, parent=parent, operation=operation, identity=name))
+                    lengths = self.headers.get_all("Content-Length", [])
+                    if len(lengths) != 1 or self.headers.get("Transfer-Encoding"):
+                        raise ProtocolError(400, "Ambiguous request framing")
+                    length = int(lengths[0])
+                    if not 0 < length <= MAX_BODY:
+                        raise ProtocolError(413, "Invalid body length")
+                    raw = self.rfile.read(length)
+                    if len(raw) != length:
+                        raise ProtocolError(400, "Incomplete request body")
+                    body = json.loads(raw)
+                    if not isinstance(body, dict):
+                        raise ProtocolError(400, "Expected JSON object")
+                    # IDs only: the lease token and the body itself are never logged.
+                    ids["delivery_id"] = body.get("delivery_id")
+                    ids.update(_message_ids(body.get("message") or body.get("result") or body.get("proposal")))
+                    with SQLiteStore(database, clock=clock) as store:
+                        delivery = Delivery(store, lease_seconds=lease_seconds, retention_seconds=retention_seconds,
+                                            dependency_requests=dependency_requests)
+                        if self.path == "/v1/claim":
+                            answer = delivery.claim(name, role)
+                            ids.update(delivery_ids(answer["delivery"]))
+                            outcome = "claimed" if answer["delivery"] else "idle"
+                        elif self.path == "/v1/ingest":
+                            answer = delivery.ingest(role, body["message"])
+                            outcome = "replay" if answer.get("replay") else "accepted"
+                        elif self.path == "/v1/renew":
+                            answer = delivery.renew(name, role, body["delivery_id"], body["lease_token"])
+                            outcome = "renewed"
+                        elif self.path == "/v1/dependencies":
+                            answer = delivery.dependencies(role, body["proposal"])
+                        elif self.path in ("/v1/result", "/v1/retry"):
+                            answer = delivery.finish(name, role, body["delivery_id"], body["lease_token"],
+                                                     body.get("result"), retry=self.path == "/v1/retry",
+                                                     report=body.get("report"))
+                            outcome = ("retry" if self.path == "/v1/retry"
+                                       else "replay" if answer.get("replay") else "accepted")
+                        else:
+                            raise ProtocolError(404, "Unknown endpoint")
+                    status, response = 200, answer
+                except ProtocolError as exc:
+                    status, reason, response = exc.status, reason_class(exc.status, str(exc)), {"error": str(exc)}
+                except (ValueError, KeyError, TypeError) as exc:
+                    status, error_type = 400, type(exc).__name__
+                    response = {"error": "Invalid input or lifecycle transition"}
+                except (TimeoutError, socket.timeout):
+                    status, response = 408, {"error": "Request timed out"}
+                except Exception as exc:  # noqa: BLE001 - an internal error answers 503; access_log records error_type
+                    status, error_type = 503, type(exc).__name__
+                    response = {"error": "Coordinator unavailable; retry the saved request"}
+                if span is not None:
+                    span.set(http_status=status, outcome=outcome, reason=reason)
+                    if status >= 400:
+                        span.fail(error_type)
+                    elif outcome in {"idle", "renewed"}:
+                        span.quiet()
+                # Log before replying, so the line exists once the client sees the answer.
+                access_log(LOG, operation, status, started, outcome=outcome, reason=reason,
+                           error_type=error_type, **ids)
             self.reply(status, response)
 
         def reply(self, status, value):
@@ -209,9 +232,12 @@ class WorkerClient:
         else:
             connection = HTTPConnection(self.url.hostname, self.url.port, timeout=self.timeout)
         try:
-            connection.request("POST", "/v1/" + operation, encoded,
-                {"Authorization": "Bearer " + self.token, "X-Service-Identity": self.identity,
-                 "Content-Type": "application/json"})
+            headers = {"Authorization": "Bearer " + self.token, "X-Service-Identity": self.identity,
+                       "Content-Type": "application/json"}
+            traceparent = tracing.current_traceparent()
+            if traceparent is not None:
+                headers["traceparent"] = traceparent
+            connection.request("POST", "/v1/" + operation, encoded, headers)
             response = connection.getresponse()
             raw = response.read(MAX_BODY + 1)
             if len(raw) > MAX_BODY:

@@ -62,7 +62,7 @@ the fix and regenerate.
 
 - Impact: The Coordinator refuses a result whose timestamp is not later than the evidence it follows. If the Executor's clock is behind the Guard's, an applied execution result is refused with HTTP 400, and the remote worker retries it forever because it gives up only on 404 or 409. Lease renewal also mixes the Coordinator's and the worker's clocks.
 - Workaround: Run every component on one host, so they share one clock. All committed runs did.
-- Evidence: `services/coordinator/core.py:149-150`; `services/coordinator/core.py:169-170`; `runtime/worker_http.py:157`; `runtime/remote_worker.py:132`; `runtime/remote_worker.py:73`.
+- Evidence: `services/coordinator/core.py:149-150`; `services/coordinator/core.py:169-170`; `runtime/worker_http.py:174`; `runtime/remote_worker.py:139`; `runtime/remote_worker.py:73`.
 
 ### L-RAW-LOGS-PROMPT
 
@@ -116,9 +116,9 @@ the fix and regenerate.
 
 **Structured logs cover only the networked entrypoints, and no live run has collected them.** Defect, mitigated; recorded 2026-11-11. Planned: P1.07, P3.02. Issues: #62.
 
-- Impact: Fixed in code for the networked processes: shared/log.py writes allowlisted JSON lines; the Coordinator server, worker HTTP, approval HTTP and worker service entrypoints configure it; every POST request gets one http.access line, or an auth.denied line for a 401 or 403, while GET /healthz, GET /readyz and GET requests for unknown paths (404) get none; lifecycle transitions are journalled; and every broad except handler re-raises or logs the error class, which CI enforces. Not covered: the live harnesses (the Executor wedge harness included), agent mode and the in-process pipelines that every recorded run used never configure logging, so their log events are dropped. Exception messages are never logged, only class names, by design. There is no cross-process tracing. No live run has collected logs yet.
-- Workaround: For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json.
-- Evidence: `shared/log.py:235`; `runtime/worker_http.py:259`; `services/executor/core.py:236-237`; `docs/observability.md`; `tests/test_except_audit.py:39`.
+- Impact: Fixed in code for the networked processes: shared/log.py writes allowlisted JSON lines; the Coordinator server, worker HTTP, approval HTTP and worker service entrypoints configure it; every POST request gets one http.access line, or an auth.denied line for a 401 or 403, while GET /healthz, GET /readyz and GET requests for unknown paths (404) get none; lifecycle transitions are journalled; and every broad except handler re-raises or logs the error class, which CI enforces. Not covered: the live harnesses (the Executor wedge harness included), agent mode and the in-process pipelines that every recorded run used never configure logging, so their log events are dropped. Exception messages are never logged, only class names, by design. Since P3.02, W3C trace context follows an incident through outbox rows, claimed deliveries and worker HTTP requests, and spans are written as span.start and span.end log lines; approvals and the in-process pipelines add no spans of their own, there is no OpenTelemetry export, and no live run has produced a trace. No live run has collected logs yet.
+- Workaround: For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json and print the traces with scripts/trace_view.py.
+- Evidence: `shared/log.py:236`; `runtime/worker_http.py:285`; `shared/tracing.py:123`; `services/executor/core.py:236-237`; `docs/observability.md`; `tests/test_except_audit.py:39`.
 
 ### L-SINGLE-COORDINATOR
 
@@ -126,7 +126,7 @@ the fix and regenerate.
 
 - Impact: No replica takes over if the Coordinator host or its volume is lost; work waits until it returns. Workers back off for up to 60 s, which lengthens recovery after a restart.
 - Workaround: Restart the Coordinator on the same volume; saved requests replay from SQLite.
-- Evidence: `deploy/sentinel/coordinator.yaml:62-64`; `services/coordinator/store.py:133`; `runtime/worker_transport.py:103`.
+- Evidence: `deploy/sentinel/coordinator.yaml:62-64`; `services/coordinator/store.py:139`; `runtime/worker_transport.py:104`.
 
 ### L-HOST-LOCAL-EXECUTOR
 

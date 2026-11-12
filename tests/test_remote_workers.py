@@ -24,7 +24,8 @@ from services.planner.core import mock_provider
 from services.coordinator.read import read_records
 from services.planner.store import PlannerStore
 from services.verifier.core import inspect_dependencies
-from shared import log
+from scripts import trace_view
+from shared import log, tracing
 
 
 class RemoteWorkerTests(unittest.TestCase):
@@ -147,6 +148,53 @@ class RemoteWorkerTests(unittest.TestCase):
         claims = [r for r in records if r["event"] == "http.access" and r["operation"] == "claim"
                   and r["outcome"] == "claimed"]
         self.assertTrue(claims and all({"delivery_id", "event_id", "topic", "attempt"} <= set(r) for r in claims))
+
+    def test_full_loopback_flow_is_one_connected_trace(self):
+        stream = self.captured_logs()
+        self.test_all_six_components_recover_over_http_with_managed_approval_and_owned_stores()
+        text = stream.getvalue()
+        records = [json.loads(line) for line in text.splitlines()]
+        ends = [r for r in records if r["event"] == "span.end"]
+        self.assertEqual(len({r["trace_id"] for r in ends}), 1)
+        (trace,) = trace_view.build(records).values()
+        (root,) = trace["roots"]
+        self.assertEqual((root["span_name"], root.get("missing_parent")), ("observer.ingest", False))
+        processed = [r.get("topic") for r in ends if r["span_name"] == "worker.process"]
+        self.assertEqual(sorted(processed), ["executor.request", "guard.request", "guard.request",
+                                             "planner.request", "verifier.request"])
+        self.assertLessEqual({"coordinator.ingest", "coordinator.result", "coordinator.renew", "coordinator.record",
+                              "worker.result"}, {r["span_name"] for r in ends})
+        moves = [r["to_state"] for r in trace["transitions"] if r.get("action_id") == self.proposal["action_id"]]
+        self.assertEqual(moves[-1], "RECOVERED")
+        for secret in self.secrets():
+            self.assertNotIn(secret, text)
+        output = io.StringIO()
+        log_file = self.f.path / "trace.log"
+        log_file.write_text(text, encoding="utf-8")
+        self.assertEqual(trace_view.main([str(log_file), "--db", str(self.f.path / "coordinator.db")],
+                                         stdout=output), 0)
+        self.assertIn("-> RECOVERED", output.getvalue())
+        self.assertIn("journal for " + self.incident["incident_id"], output.getvalue())
+        self.assertNotIn("parent not in these logs", output.getvalue())
+
+    def test_a_result_replayed_after_restart_keeps_the_original_parent(self):
+        stream = self.captured_logs()
+        RemoteIngress(self.client("observer"))(self.incident)
+        worker = self.worker("planner", self.planner)
+        with patch.object(worker, "_send", side_effect=TimeoutError("worker stopped before sending")):
+            with self.assertRaises(TimeoutError):
+                worker.once()
+        (saved,) = worker.journal.pending()
+        parent = tracing.parse_traceparent(saved["delivery"]["traceparent"])
+        self.assertEqual(self.worker("planner", self.planner).once()["status"], "accepted")
+        ends = [json.loads(line) for line in stream.getvalue().splitlines()]
+        ends = {r["span_name"]: r for r in ends if r["event"] == "span.end"}
+        process, result, server = ends["worker.process"], ends["worker.result"], ends["coordinator.result"]
+        self.assertEqual(process["status"], "error")
+        for span in (process, result):
+            self.assertEqual((span["trace_id"], span["parent_span_id"]), (parent.trace_id, parent.span_id))
+        self.assertEqual(server["parent_span_id"], result["span_id"])
+        self.assertEqual(self.provider.call_count, 1)
 
     def test_worker_http_denials_and_conflicts_log_exactly_one_line_without_secrets(self):
         stream = self.captured_logs()

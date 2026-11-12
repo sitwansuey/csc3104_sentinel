@@ -15,7 +15,7 @@ import sqlite3
 # _json and _digest stay importable for approvals.py, core.py and approval_http.py.
 from shared.canonical import canonical_json as _json, sha256_hex as _digest
 
-from shared import log
+from shared import log, tracing
 
 LOG = log.get_logger("coordinator")
 
@@ -76,6 +76,12 @@ MIGRATIONS = (
             outbox_high_water INTEGER, recorded_at TEXT NOT NULL
         )""",
         "CREATE INDEX IF NOT EXISTS transitions_incident ON transitions(incident_id, seq)",
+    )),
+    (3, (
+        # W3C traceparent of the span that enqueued a command, and of the span
+        # that recorded an incident. Observability only; NULL on older rows.
+        "ALTER TABLE outbox ADD COLUMN trace_context TEXT",
+        "ALTER TABLE incidents ADD COLUMN trace_context TEXT",
     )),
 )
 SCHEMA_VERSION = MIGRATIONS[-1][0]
@@ -187,9 +193,13 @@ class SQLiteStore:
         seq = self.db.execute("""INSERT INTO transitions(incident_id,action_id,from_state,to_state,cause,
             outbox_high_water,recorded_at) VALUES(?,?,?,?,?,?,?)""",
             (incident_id, action_id, from_state, to_state, cause, high_water, self.now())).lastrowid
+        # The line is written after commit, possibly outside this span: name it explicitly.
+        span = tracing.current()
+        trace = span or self.trace_context(incident_id=incident_id)
+        ids = {"trace_id": trace and trace.trace_id, "span_id": span and span.span_id}
         self.after_commit(lambda: log.emit(
             LOG, "coordinator.state.transition", seq=seq, incident_id=incident_id, action_id=action_id,
-            from_state=from_state, to_state=to_state, cause=kind, outbox_high_water=high_water))
+            from_state=from_state, to_state=to_state, cause=kind, outbox_high_water=high_water, **ids))
 
     def transitions(self, incident_id=None):
         query, parameters = "SELECT * FROM transitions", ()
@@ -283,11 +293,31 @@ class SQLiteStore:
                     if item["kind"] == "dependency_result" and item["action_id"] == action_id),
                    key=lambda item: _time(item["checked_at"]), default=None)
 
+    def trace_context(self, *, incident_id=None, action_id=None):
+        """The trace context stored with an incident, found by incident or action id.
+
+        It labels log lines only and is never used to decide anything.
+        """
+        if incident_id is not None:
+            row = self.db.execute("SELECT trace_context FROM incidents WHERE incident_id=?",
+                                  (incident_id,)).fetchone()
+        elif action_id is not None:
+            row = self.db.execute("""SELECT i.trace_context FROM actions a
+                JOIN incidents i ON i.incident_id=a.incident_id WHERE a.action_id=?""", (action_id,)).fetchone()
+        else:
+            row = None
+        return tracing.parse_traceparent(row[0]) if row else None
+
     def enqueue(self, topic, payload, action_id=None):
-        event_id = self.db.execute("INSERT INTO outbox(topic,payload,action_id) VALUES(?,?,?)",
-                                   (topic, _json(payload), action_id)).lastrowid
+        # Rows written outside a span (local pipelines, approvals) join the incident's trace.
+        span = tracing.current()
+        trace = span or self.trace_context(action_id=action_id)
+        event_id = self.db.execute("INSERT INTO outbox(topic,payload,action_id,trace_context) VALUES(?,?,?,?)",
+                                   (topic, _json(payload), action_id, trace and trace.traceparent)).lastrowid
+        # Logged after commit, possibly in another span: name this row's trace explicitly.
+        ids = {"trace_id": trace and trace.trace_id, "span_id": span and span.span_id}
         self.after_commit(lambda: log.emit(LOG, "coordinator.outbox.enqueued", event_id=event_id,
-                                           topic=topic, action_id=action_id))
+                                           topic=topic, action_id=action_id, **ids))
 
     def set_state(self, incident_id, action_id, state, *, cause=None):
         self._journal(incident_id, action_id, state, cause)
@@ -314,8 +344,8 @@ class SQLiteStore:
 
     def add_incident(self, incident_id, target, state):
         self._journal(incident_id, None, state)
-        self.db.execute("INSERT INTO incidents VALUES(?,?,?,NULL)",
-                        (incident_id, _json(target), state))
+        self.db.execute("""INSERT INTO incidents(incident_id,target,state,active_action_id,trace_context)
+            VALUES(?,?,?,NULL,?)""", (incident_id, _json(target), state, tracing.current_traceparent()))
 
     def add_action(self, action_id, incident_id, proposal, state):
         self.db.execute("INSERT INTO actions(action_id,incident_id,proposal,state) VALUES(?,?,?,?)",
