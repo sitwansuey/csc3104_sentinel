@@ -8,6 +8,7 @@ from uuid import uuid4
 from services.coordinator.core import LocalEventBus, acknowledge, dispatch_pending, record_message
 from shared.canonical import sha256_hex as digest
 from shared.contracts import validate_message
+from shared.tracing import parse_traceparent
 from runtime.service_identity import ProtocolError
 
 
@@ -108,9 +109,14 @@ class Delivery:
                 # Protected approvals are read through the authenticated,
                 # target-scoped approval service, not generic worker routing.
                 payload["approval"] = None
-            return {"delivery": {"delivery_id": receipt["delivery_id"], "lease_token": token,
-                    "expires_at": expires, "attempt": receipt["attempts"] + 1, "topic": row["topic"],
-                    "event_id": row["id"], "payload": payload}}
+            delivery = {"delivery_id": receipt["delivery_id"], "lease_token": token,
+                        "expires_at": expires, "attempt": receipt["attempts"] + 1, "topic": row["topic"],
+                        "event_id": row["id"], "payload": payload}
+            # The span that enqueued the command, so the worker continues its trace.
+            context = parse_traceparent(row["trace_context"])
+            if context is not None:
+                delivery["traceparent"] = context.traceparent
+            return {"delivery": delivery}
 
     def dependencies(self, role, proposal):
         if role not in {"guard", "executor"}:

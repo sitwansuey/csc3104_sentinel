@@ -7,7 +7,7 @@ write Kubernetes state. The executor must still obtain fresh Guard validation.
 from copy import deepcopy
 import json
 
-from shared import log
+from shared import log, tracing
 from shared.contracts import validate_message
 from services.coordinator.store import (
     CoordinatorError, LOG, SQLiteStore, _digest, _json, _require, _time,
@@ -192,7 +192,12 @@ def record_message(message: dict, store: SQLiteStore) -> bool:
         _require(old == payload, "Stable message ID reused with changed payload")
         store.after_commit(lambda: log.emit(LOG, "coordinator.message.duplicate", level=log.DEBUG, **ids))
         return False
-    with store.transition_cause(key, message["kind"]):
+    # Continue the caller's span; otherwise join the incident's stored trace, or
+    # start a new one for a new incident. Trace data never affects the decision.
+    parent = None if tracing.current() or message["kind"] == "incident" else store.trace_context(
+        incident_id=message["incident_id"])
+    with store.transition_cause(key, message["kind"]), tracing.start_span(
+            "coordinator.record", parent=parent, defer=store.after_commit, **ids):
         _apply(message, store)
     store.add_message(key, payload)
     store.after_commit(lambda: log.emit(LOG, "coordinator.message.recorded", **ids))

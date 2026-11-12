@@ -20,6 +20,8 @@ and optional; none runs during ordinary application setup.
 bundles. `latency_report.py` builds the per-stage latency ledger under
 `evidence/evaluation/latency/` from the agent and connected-harness bundles,
 reading their original run folders only for files bundles do not keep.
+`trace_view.py` prints a waterfall per trace from JSON log files, offline; see
+[traces](../docs/observability.md#reading-a-trace).
 `check_doc_links.py` fails on dead relative Markdown links and anchors.
 `check_doc_citations.py` fails when a file, line range, symbol or claim id cited
 in the threat-model or distributed-model docs no longer exists, or when the

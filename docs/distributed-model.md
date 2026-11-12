@@ -67,9 +67,9 @@ What is single-host today:
 The Coordinator is the authorisation state machine. It decides which proposal
 is active for a workload, when an action is READY, and which command a worker
 may claim. Every change runs inside `BEGIN IMMEDIATE`, so SQLite admits one
-writer at a time (`services/coordinator/store.py:301-313::SQLiteStore.transaction::@contextmanager`).
+writer at a time (`services/coordinator/store.py:331-343::SQLiteStore.transaction::@contextmanager`).
 Each claim, renew and result also replays the outbox revocation rules inside
-the same transaction (`runtime/worker_transport.py:52-79::Delivery.transaction::@contextmanager`).
+the same transaction (`runtime/worker_transport.py:53-80::Delivery.transaction::@contextmanager`).
 
 If two writable Coordinators existed during a partition, each could admit a
 different proposal for the same workload, or move the same action to READY on
@@ -122,8 +122,8 @@ processes. Each timestamp comes from the producer's own wall clock.
 | `services/coordinator/core.py:88::_apply::previous_finding["checked_at"]` dependency finding newer than stored | Verifier vs Verifier | A newer finding from another Verifier host is rejected, with the same wedge |
 | `services/coordinator/core.py:112::_apply::latest["checked_at"]` Guard ALLOW not older than latest finding | Guard vs Verifier | Skew alone does not trip it: a Guard that sees a finding from its future escalates instead of allowing (row below). It still catches a finding that arrived after the Guard read its inputs |
 | `services/coordinator/core.py:169::_apply::window_start` health window after the write | Verifier vs Executor | The built-in Verifier never trips this check: it marks samples stamped before the write invalid (`services/verifier/core.py:205-206::_assess::at < executed_at`). A Verifier clock behind the Executor's therefore ends the job UNKNOWN at its deadline, and the incident goes to NEEDS_REVIEW instead of RECOVERED |
-| `services/coordinator/core.py:246::approve::guard["checked_at"]` approval not before Guard decision | Coordinator vs Guard | Coordinator behind: the approval is refused until its clock passes the decision time |
-| `services/guard/core.py:144::_approval_reasons::approved_at > checked_at` approval not from the future | Coordinator vs Guard or Executor | Guard behind: a fresh approval escalates as APPROVAL_FROM_FUTURE, and `approve()` cannot override that reason (`services/coordinator/core.py:243-244::approve::guard["reason_codes"]`). Revoking (`services/coordinator/approvals.py:94::ApprovalAccess.call::"approval": None`) and approving again stamps a new approval with the Coordinator's clock, which passes only if the Guard's next evaluation comes more than the skew after it. While the skew lasts it usually fails the same way, so the clocks must be fixed first. Executor behind: its local re-check refuses (see below the table) |
+| `services/coordinator/core.py:251::approve::guard["checked_at"]` approval not before Guard decision | Coordinator vs Guard | Coordinator behind: the approval is refused until its clock passes the decision time |
+| `services/guard/core.py:144::_approval_reasons::approved_at > checked_at` approval not from the future | Coordinator vs Guard or Executor | Guard behind: a fresh approval escalates as APPROVAL_FROM_FUTURE, and `approve()` cannot override that reason (`services/coordinator/core.py:248-249::approve::guard["reason_codes"]`). Revoking (`services/coordinator/approvals.py:94::ApprovalAccess.call::"approval": None`) and approving again stamps a new approval with the Coordinator's clock, which passes only if the Guard's next evaluation comes more than the skew after it. While the skew lasts it usually fails the same way, so the clocks must be fixed first. Executor behind: its local re-check refuses (see below the table) |
 | `services/guard/core.py:146::_approval_reasons::checked_at >= expires_at` approval expiry | Coordinator or operator vs Guard or Executor | Guard or Executor behind: an approval stays usable for up to the skew longer than intended. Executor ahead: its local re-check sees the approval as expired and refuses (below the table) |
 | `services/guard/core.py:230::_evaluate_core::dependency_at > checked_at` finding not from the future | Verifier vs Guard or Executor | Verifier ahead of the Guard: the finding is UNKNOWN, so the Guard escalates or rejects (by policy). Executor behind the Verifier: its local re-check refuses (below the table) |
 | `services/guard/core.py:232-233::_evaluate_core::max_dependency_age_seconds` finding not too old | Verifier vs Guard or Executor | Verifier ahead: old evidence is accepted for up to the skew longer. Verifier behind, or Executor ahead: fresh evidence looks stale, and the Guard escalates or rejects, or the Executor's re-check refuses |
@@ -153,12 +153,12 @@ run. They become real when workers run on separate machines.
 
 **The wedge in remote workers.** A rejected lifecycle check raises
 `CoordinatorError`, which is a `ValueError`. The worker API answers it with
-HTTP 400 (`runtime/worker_http.py:163-165::handler::except (ValueError, KeyError, TypeError)`). The worker releases a saved
+HTTP 400 (`runtime/worker_http.py:180-182::handler::except (ValueError, KeyError, TypeError)`). The worker releases a saved
 result only on 404 or 409 and re-raises anything else
-(`runtime/remote_worker.py:131-136::RemoteWorker.once::except ProtocolError`), and a saved result can
+(`runtime/remote_worker.py:138-143::RemoteWorker.once::except ProtocolError`), and a saved result can
 never change (`runtime/remote_worker.py::WorkerJournal.save`). So the worker
 resends the same rejected result until its lease expires. The Coordinator checks
-lease expiry before the lifecycle (`runtime/worker_transport.py:161-162::Delivery.finish::row["expires"]`),
+lease expiry before the lifecycle (`runtime/worker_transport.py:167-168::Delivery.finish::row["expires"]`),
 so the worker then gets 409, releases the row, claims the same request again
 after a back-off and resends the same result. This loops for ever. The action stays READY (or
 VALIDATING), and later incidents for the same workload wait behind it
@@ -312,7 +312,7 @@ wedge are left for P3.04 and P3.03.
 | Item | Change |
 | --- | --- |
 | P2.06 | Live run of the fenced abort (wedge harness `admission-deny`); the code and offline tests are in place |
-| P3.02 | Trace context across outbox rows, deliveries and worker requests |
+| P3.02 | A trace of one incident from a live multi-process run; trace context across outbox rows, deliveries and worker requests, and the offline viewer, are in the code and tested offline ([traces](observability.md#traces)) |
 | P3.01 | Done in file mode (above). Left: a kind-mode run against the connected lab and committed evidence bundles |
 | P3.03 | Order lifecycle events by Coordinator sequence instead of producer clocks, measure a skew bound, and make lease expiry relative |
 | P3.04 | Per-target ownership epochs and a seal command that fences abandoned Executor writes |

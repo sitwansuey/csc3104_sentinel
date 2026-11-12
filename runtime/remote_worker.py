@@ -7,7 +7,7 @@ import threading
 import time
 
 from runtime.worker_transport import ProtocolError, delivery_ids, digest
-from shared import log
+from shared import log, tracing
 from shared.canonical import canonical_json as encoded
 from shared.contracts import validate_message
 
@@ -109,7 +109,14 @@ class RemoteWorker:
     def _send(self, row):
         delivery = row["delivery"]
         self.current = delivery_ids(delivery)
-        body = {key: delivery[key] for key in ("delivery_id", "lease_token")}
+        # Inside worker.process this is its child. A result replayed after a
+        # restart continues from the saved delivery's traceparent instead.
+        parent = None if tracing.current() else tracing.parse_traceparent(delivery.get("traceparent"))
+        with log.bind(**self.current), tracing.start_span("worker.result", parent=parent):
+            return self._post_result(row, delivery)
+
+    def _post_result(self, row, delivery):
+        body ={key: delivery[key] for key in ("delivery_id", "lease_token")}
         body["result"] = row["result"]
         if row["report"] is not None:
             body["report"] = row["report"]
@@ -142,7 +149,8 @@ class RemoteWorker:
         row = self.journal.get(key)
         if row["result"] is not None:
             return self._send(row)
-        with log.bind(**self.current):
+        with log.bind(**self.current), tracing.start_span(
+                "worker.process", parent=tracing.parse_traceparent(delivery.get("traceparent"))):
             return self._process(key, delivery)
 
     def _process(self, key, delivery):
@@ -177,6 +185,13 @@ class RemoteIngress:
 
     def __call__(self, message):
         validate_message(message)
+        if message["kind"] == "incident" and tracing.current() is None:
+            # A new incident starts its trace here; the Coordinator continues it.
+            with tracing.start_span("observer.ingest", incident_id=message["incident_id"]):
+                return self._post(message)
+        return self._post(message)
+
+    def _post(self, message):
         result = self.client.post("ingest", {"message": message})
         if result.get("accepted") is not True:
             raise ProtocolError(502, "Coordinator did not acknowledge the saved message")

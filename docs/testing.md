@@ -76,7 +76,8 @@ python scripts/ci/coverage_gate.py coverage.json
   `# noqa: BLE001 - <reason>` and log through `shared/log.py`. See
   [Logs](observability.md#broad-exception-handlers).
 - **mypy.** `--strict` on `shared/canonical.py`, `shared/log.py`,
-  `shared/provenance.py` and `services/executor/reconciliation.py` only. The
+  `shared/provenance.py`, `shared/tracing.py` and
+  `services/executor/reconciliation.py` only. The
   rest of the code is not type-checked yet.
 - **Coverage.** Line and branch coverage of `services`, `runtime`, `shared`
   and `agent`, on Ubuntu only. `.coverage-floors.json` holds a floor per

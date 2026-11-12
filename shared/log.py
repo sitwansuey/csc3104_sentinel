@@ -7,6 +7,7 @@ default, or key=value text. Only the identifier and status fields in FIELDS are
 written. Anything else is dropped, including tokens, Authorization headers,
 request bodies and payloads. Correlation IDs bound with bind() live in a
 contextvar; start threads with context_thread() so they inherit them.
+shared/tracing.py binds trace_id and span_id here while a span is open.
 A handler that catches a broad exception and carries on reports it with
 failure(), which records the class name only, never the message.
 """
@@ -40,7 +41,7 @@ FIELDS = frozenset({
     "incident_id", "action_id", "event_id", "delivery_id", "topic", "attempt",
     "identity", "role", "operation", "outcome", "reason", "status", "http_status",
     "method", "path", "error_type", "error_ref", "duration_ms", "fence_epoch", "basis",
-    "trace_id", "span_id", "from_state", "to_state", "cause", "seq", "outbox_high_water",
+    "trace_id", "span_id", "parent_span_id", "span_name", "from_state", "to_state", "cause", "seq", "outbox_high_water",
     "replay", "message_kind", "port", "schema_version",
 })
 SECRET_KEY = re.compile(r"(?i)token|authori[sz]ation|secret|password|passwd|credential|cookie|payload|body")
