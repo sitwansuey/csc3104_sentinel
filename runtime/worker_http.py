@@ -34,9 +34,13 @@ SERVER_TIME_HEADER = "X-Sentinel-Server-Time"
 CLOCK_ESTIMATE_HEADER = "X-Sentinel-Clock-Estimate"
 CLOCK_SAMPLES = 8
 # Restore detection: every reply that opened the store names the database
-# (its generation) and how far it has got (its commit counter).
+# (its generation) and how far it has got (its commit counter), both after the
+# request's own commit and before the request changed anything. The worker
+# compares the second with what it saw earlier, so the request's own commit
+# cannot hide a restore that lost exactly one commit.
 STORE_GENERATION_HEADER = "X-Sentinel-Store-Generation"
 STORE_COMMIT_HEADER = "X-Sentinel-Store-Commit"
+STORE_COMMIT_BEFORE_HEADER = "X-Sentinel-Store-Commit-Before"
 GENERATION = re.compile(r"[0-9a-f]{32}")
 SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
 # Denial and conflict reason classes. Messages are fixed strings from the
@@ -160,7 +164,7 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
         def do_POST(self):
             started, operation = time.monotonic(), OPERATIONS.get(self.path, "unknown")
             ids, outcome, reason, error_type, span = {}, None, None, None, None
-            store, position = None, None
+            store, position, before = None, None, None
             with ExitStack() as scope:
                 try:
                     if stopping is not None and stopping.is_set():
@@ -191,6 +195,9 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
                     ids.update(_message_ids(body.get("message") or body.get("result") or body.get("proposal")))
                     # Closed when this scope ends, after its position is read for the reply.
                     store = scope.enter_context(SQLiteStore(database, clock=clock))
+                    # Read before this request changes anything: the worker compares it,
+                    # not the counter after its own commit, with what it saw before.
+                    before = store_position(store)
                     delivery = Delivery(store, lease_seconds=lease_seconds, retention_seconds=retention_seconds,
                                         dependency_requests=dependency_requests, max_clock_skew=max_clock_skew)
                     if self.path == "/v1/claim":
@@ -241,9 +248,9 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
             if status == 200 and operation == "result":
                 # Inert outside lab fault runs (runtime/fault_points.py): committed, not yet answered.
                 fault_points.checkpoint("coordinator.after_commit_before_reply", qualifier=_result_kind(body))
-            self.reply(status, response, position)
+            self.reply(status, response, position, before)
 
-        def reply(self, status, value, position=None):
+        def reply(self, status, value, position=None, before=None):
             data = json.dumps(value, allow_nan=False).encode()
             try:
                 self.send_response(status)
@@ -252,6 +259,8 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
                 if position is not None and position[0] is not None:
                     self.send_header(STORE_GENERATION_HEADER, position[0])
                     self.send_header(STORE_COMMIT_HEADER, str(position[1]))
+                    if before is not None and before[0] == position[0]:
+                        self.send_header(STORE_COMMIT_BEFORE_HEADER, str(before[1]))
                 # Read as late as possible, so the worker's RTT brackets it.
                 self.send_header(SERVER_TIME_HEADER, f"{server_time():.6f}")
                 self.end_headers()
@@ -342,13 +351,20 @@ class StoreWatch:
     reply, and stays set until reset(); the worker then stops claiming
     (runtime/remote_worker.py::RemoteWorker.store_status).
 
+    The counter compared is the one the Coordinator read before the request
+    changed anything (before), when the reply carries it: the counter after
+    the request's own commit would hide a restore that lost exactly one
+    commit. A reply from a Coordinator that sends no before value is compared
+    by its counter after the commit only. highest only ever grows.
+
     Only replies received before a request was sent are compared with its
     reply (floor()), since requests in flight together (a lease renewal
     beside a claim) may be answered in either order.
     """
     def __init__(self):
         self._lock = threading.Lock()
-        self.generation = self.highest = self.change = self.last = None
+        self._replies = threading.local()  # The latest reply each thread received.
+        self.generation = self.highest = self.change = None
 
     def seed(self, generation, commit, change=None):
         """Start from a remembered position, and a change already recorded, if any."""
@@ -363,20 +379,34 @@ class StoreWatch:
         with self._lock:
             return self.highest
 
-    def observe(self, floor, generation, commit):
-        """Record one reply's position; return the change it reveals, if it is the first."""
+    def last_seen(self):
+        """(generation, counter after its commit) of the latest reply this thread received, or None.
+
+        Per thread, so a lease renewal answered on another thread is never
+        taken for the reply to this thread's own request.
+        """
+        return getattr(self._replies, "position", None)
+
+    def observe(self, floor, generation, commit, before=None):
+        """Record one reply's position; return the change it reveals, if it is the first.
+
+        before is the reply's counter from before the request changed
+        anything; it is ignored when absent or malformed.
+        """
         position = parse_store_position(generation, commit)
         if position is None:
             return None
         generation, commit = position
+        start = parse_store_position(generation, before)
+        compared = min(commit, start[1]) if start is not None else commit
+        self._replies.position = position
         with self._lock:
-            self.last = position
             if self.generation is None:
                 self.generation, self.highest = generation, commit
                 return None
             if generation != self.generation:
                 reason = "generation_changed"
-            elif floor is not None and commit < floor:
+            elif floor is not None and compared < floor:
                 reason = "rolled_back"
             else:
                 if self.change is None:
@@ -385,7 +415,7 @@ class StoreWatch:
             if self.change is not None:
                 return None
             self.change = {"reason": reason, "previous_generation": self.generation,
-                           "previous_commit": self.highest, "generation": generation, "commit": commit}
+                           "previous_commit": self.highest, "generation": generation, "commit": compared}
             return self.change
 
 
@@ -439,7 +469,8 @@ class WorkerClient:
             header = getattr(response, "getheader", None)  # Absent on minimal stand-in responses.
             self.clock.observe(started, header(SERVER_TIME_HEADER) if header else None)
             if header:
-                self.store.observe(floor, header(STORE_GENERATION_HEADER), header(STORE_COMMIT_HEADER))
+                self.store.observe(floor, header(STORE_GENERATION_HEADER), header(STORE_COMMIT_HEADER),
+                                   header(STORE_COMMIT_BEFORE_HEADER))
             raw = response.read(MAX_BODY + 1)
             if len(raw) > MAX_BODY:
                 raise ProtocolError(502, "Coordinator response exceeds 1 MiB")

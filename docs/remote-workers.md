@@ -147,13 +147,16 @@ and they do not all retry at the same moment
 (`runtime/worker_service.py::backoff_seconds`). Before P3.06 the wait grew to
 60 s with no jitter.
 
-**A restored Coordinator database.** Every Coordinator reply names its
-database (a random generation made once per database file) and a commit
-counter that grows with every transaction that changes something. Each worker
-remembers what it has seen, and in `transport.db` the position at its latest
-acknowledged result. If a reply names another generation (the database was
-replaced) or a lower counter than one seen before the request was sent (it was
-restored from an earlier copy), the worker logs `worker.store_generation_changed`
+**A restored Coordinator database.** Every Coordinator reply to a request
+that got past authentication names its database (a random generation made
+once per database file) and its commit counter, a number that grows with
+every transaction that changes something: both the counter after the
+request's own commit and the counter read before the request changed
+anything. Each worker remembers what it has seen, and in `transport.db` the
+position at its latest acknowledged result. If a reply names another
+generation (the database was replaced), or its counter from before the
+request is lower than one seen before the request was sent (it was restored
+from an earlier copy), the worker logs `worker.store_generation_changed`
 or `worker.store_rollback_detected`, prints the status `store_changed`,
 answers `/readyz` with 503 and stops claiming new work, also after a restart.
 It keeps sending results it has saved and drops none. To resume:
@@ -174,9 +177,18 @@ It keeps sending results it has saved and drops none. To resume:
    recovered 5 of 5. Then run the check again: a replayed result can issue a
    request whose saved answer was listed under `review`.
 
-A restore that adds commits again before any worker sees it (the counter
-passes the remembered value) is not detected by the workers; run the check
-with `--previous-commit` after every restore.
+A worker's own request cannot hide a restore, so a backup that lacks only the
+newest acknowledged result is detected. But if a restore lost k commits and
+other workers' requests commit k or more times before this worker's next
+exchange (every idle claim commits, so six workers polling every 2 s make
+about three commits a second), that worker does not notice. A worker whose
+Coordinator sends no store headers (one older than P3.06) detects nothing.
+So before a restore, note the counter of the database you are about to
+replace (`SELECT commit_counter FROM store_meta`), and run the check with
+`--previous-commit` after every restore. The backup's own counter does not
+help: the restored database has the same one. If the node or volume was lost
+and the old counter cannot be read, the positions remembered in the workers'
+`transport.db` files are the only reference; pass all of them to the check.
 
 Verifier uses `role: verifier`, its connection fields/state directory, `policy`,
 and `evidence` pointing to a live inventory with the format of

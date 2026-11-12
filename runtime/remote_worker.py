@@ -80,11 +80,24 @@ class WorkerJournal:
     def release(self, key):
         self.db.execute("UPDATE worker_deliveries SET delivery=NULL WHERE request_key=?", (key,))
 
-    def accepted(self, key, position=None):
-        """Mark a result acknowledged, with the Coordinator position of the acknowledging reply."""
+    def accepted(self, key, position=None, *, remember=False):
+        """Mark a result acknowledged, with the Coordinator position of the acknowledging reply.
+
+        With remember, also keep that position as the furthest seen
+        (remember_store), in the same transaction, so a crash cannot leave
+        the result acknowledged and the remembered position behind it.
+        """
         generation, commit = position or (None, None)
-        self.db.execute("UPDATE worker_deliveries SET accepted=1,accepted_generation=?,accepted_commit=? "
-                        "WHERE request_key=?", (generation, commit, key))
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            self.db.execute("UPDATE worker_deliveries SET accepted=1,accepted_generation=?,accepted_commit=? "
+                            "WHERE request_key=?", (generation, commit, key))
+            if remember and position is not None:
+                self.remember_store(generation, commit)
+            self.db.execute("COMMIT")
+        except BaseException:
+            self.db.execute("ROLLBACK")
+            raise
 
     def store_position(self):
         """(generation, commit counter, change): what this worker remembers of the Coordinator's database."""
@@ -311,10 +324,9 @@ class RemoteWorker:
         if hasattr(self.adapter, "acknowledge"):
             self.adapter.acknowledge(deepcopy(row["result"]))
         watch = self._watch()
-        position = watch.last if watch is not None else None
-        self.journal.accepted(row["request_key"], position)
-        if position is not None and watch.change is None:
-            self.journal.remember_store(*position)  # A restarted worker compares later replies with it.
+        position = watch.last_seen() if watch is not None else None  # This thread's result reply.
+        # A restarted worker compares later replies with the remembered position.
+        self.journal.accepted(row["request_key"], position, remember=watch is not None and watch.change is None)
         return {"status": "accepted", "replay": response.get("replay", False)}
 
     def once(self):

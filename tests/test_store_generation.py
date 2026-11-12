@@ -14,6 +14,7 @@ from pathlib import Path
 import shutil
 import sqlite3
 import tempfile
+import threading
 import time
 import unittest
 
@@ -62,6 +63,18 @@ class CountingClient(WorkerClient):
 
     def post(self, operation, body):
         self.operations.append(operation)
+        return super().post(operation, body)
+
+
+class BackupBeforeResultClient(CountingClient):
+    """A real client that backs up the Coordinator database just before it sends its first result."""
+    def __init__(self, *args, database, backup, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.database, self.backup = database, backup
+
+    def post(self, operation, body):
+        if operation == "result" and not self.backup.exists():
+            copy_database(self.database, self.backup)
         return super().post(operation, body)
 
 
@@ -201,6 +214,46 @@ class StoreWatchTests(unittest.TestCase):
         self.assertIsNone(watch.observe(watch.floor(), "f" * 32, "100"))
         self.assertEqual(watch.generation, "f" * 32)
 
+    def test_the_counter_before_the_request_is_compared_so_its_own_commit_hides_nothing(self):
+        watch = StoreWatch()
+        watch.observe(None, GENERATION, "5")
+        # A restore lost one commit (5 -> 4); this request's own commit brings it back to 5.
+        change = watch.observe(watch.floor(), GENERATION, "5", "4")
+        self.assertEqual(change, {"reason": "rolled_back", "previous_generation": GENERATION,
+                                  "previous_commit": 5, "generation": GENERATION, "commit": 4})
+
+    def test_a_before_value_at_the_floor_is_not_a_change(self):
+        watch = StoreWatch()
+        watch.observe(None, GENERATION, "5")
+        self.assertIsNone(watch.observe(watch.floor(), GENERATION, "6", "5"))
+        self.assertIsNone(watch.observe(watch.floor(), GENERATION, "6", "6"))  # A read-only request.
+        for malformed in ("x", "-1", "", None):
+            with self.subTest(before=malformed):
+                self.assertIsNone(watch.observe(watch.floor(), GENERATION, "7", malformed))
+        self.assertEqual((watch.highest, watch.change), (7, None))
+
+    def test_the_highest_counter_only_grows(self):
+        watch = StoreWatch()
+        watch.observe(None, GENERATION, "5")
+        shared = watch.floor()  # A claim and a renewal sent together.
+        self.assertIsNone(watch.observe(shared, GENERATION, "7"))
+        self.assertIsNone(watch.observe(shared, GENERATION, "6"))  # The renewal answered later.
+        self.assertEqual(watch.highest, 7)
+        self.assertIsNone(watch.observe(5, GENERATION, "6"))  # A floor read before 7 arrived.
+        self.assertEqual(watch.highest, 7)
+        change = watch.observe(watch.floor(), GENERATION, "6")
+        self.assertEqual((change["reason"], change["previous_commit"]), ("rolled_back", 7))
+
+    def test_the_latest_reply_is_kept_per_thread(self):
+        watch = StoreWatch()
+        self.assertIsNone(watch.last_seen())
+        watch.observe(None, GENERATION, "5")  # This thread's result reply.
+        renewal = threading.Thread(target=watch.observe, args=(watch.floor(), GENERATION, "9"))
+        renewal.start()  # A lease renewal answered afterwards on another thread.
+        renewal.join()
+        self.assertEqual(watch.last_seen(), (GENERATION, 5))
+        self.assertEqual(watch.highest, 9)
+
     def test_missing_or_malformed_headers_are_ignored(self):
         watch = StoreWatch()
         for generation, commit in ((None, None), ("XYZ", "1"), (GENERATION, "-1"), (GENERATION, "1e3"),
@@ -209,6 +262,41 @@ class StoreWatchTests(unittest.TestCase):
                 self.assertIsNone(parse_store_position(generation, commit))
                 self.assertIsNone(watch.observe(None, generation, commit))
         self.assertIsNone(watch.generation)
+
+
+class JournalPositionTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.journal = WorkerJournal(Path(directory.name) / "transport.db")
+        self.addCleanup(self.journal.close)
+
+    def bound(self):
+        key = self.journal.bind({"delivery_id": "D-1", "lease_token": "t" * 32, "topic": "planner.request",
+                                 "payload": {"incident": {"incident_id": "INC-1"}}})
+        self.journal.save(key, sample("proposal.json"))
+        return key
+
+    def test_the_remembered_counter_keeps_the_larger_value_for_one_generation(self):
+        self.journal.remember_store(GENERATION, 9)
+        self.journal.remember_store(GENERATION, 4)
+        self.assertEqual(self.journal.store_position(), (GENERATION, 9, None))
+        self.journal.remember_store("f" * 32, 2)  # Another generation replaces it.
+        self.assertEqual(self.journal.store_position(), ("f" * 32, 2, None))
+
+    def test_acknowledging_a_result_and_remembering_its_position_commit_together(self):
+        key = self.bound()
+        self.journal.db.execute("""CREATE TRIGGER refuse BEFORE INSERT ON coordinator_store
+            BEGIN SELECT RAISE(ABORT, 'disk full'); END""")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.journal.accepted(key, (GENERATION, 7), remember=True)
+        (row,) = self.journal.db.execute("SELECT accepted, accepted_commit FROM worker_deliveries")
+        self.assertEqual(tuple(row), (0, None))  # Neither was written.
+        self.journal.db.execute("DROP TRIGGER refuse")
+        self.journal.accepted(key, (GENERATION, 7), remember=True)
+        (row,) = self.journal.db.execute("SELECT accepted, accepted_commit FROM worker_deliveries")
+        self.assertEqual(tuple(row), (1, 7))
+        self.assertEqual(self.journal.store_position(), (GENERATION, 7, None))
 
 
 class ReadinessTests(unittest.TestCase):
@@ -221,6 +309,32 @@ class ReadinessTests(unittest.TestCase):
         status, body = health.ready()
         self.assertEqual((status, body["ready"], body["store_changed"]), (503, False, True))
         health.store_checked(True)
+        self.assertEqual(health.ready()[0], 200)
+
+    def test_a_polling_pass_that_finds_a_store_change_turns_readyz_unready(self):
+        class Worker:
+            current = {}
+
+            def __init__(self, changed):
+                self.changed = changed
+
+            def once(self):
+                return {"status": "store_changed", "reason": "rolled_back"} if self.changed else {"status": "idle"}
+
+            def clock_ready(self):
+                return True
+
+            def store_ready(self):
+                return not self.changed
+
+        health = WorkerHealth(clock=lambda: 5.0)
+        health.configured()
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            self.assertEqual(worker_service.poll(Worker(True), health, threading.Event(), 2, once=True), 0)
+        status, body = health.ready()
+        self.assertEqual((status, body.get("store_changed")), (503, True))
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            worker_service.poll(Worker(False), health, threading.Event(), 2, once=True)
         self.assertEqual(health.ready()[0], 200)
 
 
@@ -322,6 +436,30 @@ class LoopbackRestoreTests(unittest.TestCase):
         self.assertEqual(len(self.events("worker.store_change_accepted")), 1)
         self.assertFalse(coordinator_restore_check.check(
             self.database, [self.directory / "planner-transport.db"])["may_lose_acknowledged_work"])
+
+    def test_a_backup_missing_only_the_last_acknowledged_result_is_detected(self):
+        RemoteIngress(self.client("observer"))(sample("incident.json"))
+        backup = self.directory / "backup.db"
+        adapter = Planner()
+        worker = self.planner(adapter, BackupBeforeResultClient(
+            self.url, "planner", self.services["planner"][1], timeout=5, database=self.database, backup=backup))
+        self.assertEqual(worker.once()["status"], "accepted")
+        generation, remembered, _change = worker.journal.store_position()
+        with SQLiteStore(backup) as store:
+            self.assertEqual(store.position(), (generation, remembered - 1))  # A gap of exactly one commit.
+
+        copy_database(backup, self.database)
+        self.assertEqual(self.state(), "OPEN")
+        # The claim commits too (the worker's clock report), which brings the
+        # counter back to the remembered value; the counter read before the
+        # claim's own changes still shows the restore.
+        self.assertEqual(worker.once(), {"status": "store_changed", "reason": "rolled_back"})
+        self.assertFalse(worker.store_ready())
+        with SQLiteStore(self.database) as store:
+            self.assertEqual(store.position(), (generation, remembered))
+        (logged,) = self.events("worker.store_rollback_detected")
+        self.assertEqual((logged["previous_commit"], logged["commit_counter"]), (remembered, remembered - 1))
+        self.assertEqual(adapter.calls, 1)
 
     def test_a_replaced_database_is_a_generation_change(self):
         RemoteIngress(self.client("observer"))(sample("incident.json"))

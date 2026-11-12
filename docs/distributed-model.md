@@ -104,7 +104,9 @@ transaction should survive a process crash or Pod restart on the same volume.
 This has not been measured. kind's local-path volume is tied to one node, so
 losing that node needs a manual restore from a backup. A backup older than
 the last commit drops results the Coordinator had already acknowledged; since
-P3.06 the workers detect such a restore and stop claiming (below).
+P3.06 a worker that saw a later commit detects such a restore at its next
+exchange and stops claiming, unless other workers' requests have already made
+up the lost commits (below).
 
 **Recovery time (RTO): bounded worker back-off.** After failed passes in a
 row a worker waits a random time between 0 and its poll interval × 2^failures,
@@ -116,26 +118,39 @@ followed a fixed doubling schedule up to 60 s with no jitter.
 
 **Restore detection.** Migration 5 gives the database a random generation,
 made once per database file, and a commit counter that grows by one in every
-transaction that changes a row
-(`services/coordinator/store.py::SQLiteStore.count_commit`). Every reply to a
-worker carries both (`X-Sentinel-Store-Generation`, `X-Sentinel-Store-Commit`).
-A worker that sees another generation (the database was replaced) or a
-counter lower than one it saw before it sent the request (the file was
-restored from an earlier copy) stops claiming, answers `/readyz` with 503 and
-logs the change once (`runtime/worker_http.py::StoreWatch`,
+transaction run through `SQLiteStore.transaction` or `Delivery.transaction`
+that changes a row (`services/coordinator/store.py::SQLiteStore.count_commit`;
+the in-process `core.handle` path marks outbox rows delivered after its
+transaction, and those updates are not counted). Every reply to a worker
+that got as far as opening the store carries the generation and two
+counters: the one after the request's own commit
+(`X-Sentinel-Store-Generation`, `X-Sentinel-Store-Commit`) and the one read
+before the request changed anything (`X-Sentinel-Store-Commit-Before`).
+Replies refused earlier (bad credentials, a stopping Coordinator) carry none.
+A worker that sees another generation (the database was replaced), or a
+counter before the request lower than one it saw before it sent the request
+(the file was restored from an earlier copy), stops claiming, answers
+`/readyz` with 503 and logs the change once (`runtime/worker_http.py::StoreWatch`,
 `runtime/remote_worker.py::RemoteWorker.store_status`). It keeps sending the
 results it has saved and drops none, and it stays stopped across restarts
 until an operator runs `scripts/coordinator_restore_check.py`, which lists the
 acknowledged results the restored database lacks, and clears the worker with
 `worker_service --accept-store` ([procedure](remote-workers.md)). Only replies
 to requests sent after an earlier reply arrived are compared, so a lease
-renewal and a claim in flight together cannot raise a false alarm. A worker
-notices only at its next exchange, and only if it saw a higher counter
-before: if the restored Coordinator commits past that counter first (other
-workers' claims also count), that worker does not notice, which is why the
-check takes the counter noted before the restore (`--previous-commit`). A
-restarted worker remembers the position of its latest acknowledged result,
-not of every reply. The Observer does not watch the store.
+renewal and a claim in flight together cannot raise a false alarm. Because
+the counter before the request is compared, the request's own commit (every
+claim commits, since it records the worker's clock) cannot hide a lost
+commit, so a backup that lacks only the newest acknowledged result is
+detected (`tests/test_store_generation.py::LoopbackRestoreTests.test_a_backup_missing_only_the_last_acknowledged_result_is_detected`).
+What remains: a worker notices only at its next exchange, and only if it saw
+a higher counter before. If a restore lost k commits and other workers'
+requests commit k or more times before this worker's next exchange (each
+idle claim counts), that worker does not notice. That is why the check takes
+the counter noted before the restore (`--previous-commit`). A worker talking
+to a Coordinator that sends no store headers (one older than P3.06, or one
+that could not read its position) detects nothing. A restarted worker
+remembers the position of its latest acknowledged result, not of every
+reply. The Observer does not watch the store.
 
 **Index.** Migration 5 also stores each message's kind and action id in
 indexed columns (`messages(kind, action_id)`), so finding the newest message
@@ -183,8 +198,10 @@ Executor's result and the Verifier's outcome, both acknowledged, were gone.
 In all 13 drills every worker turned unready with `store_changed` within
 0.31 s of the restarted Coordinator being ready, and the restore check listed
 exactly those two results: the Executor's as `replay` (its request was
-pending again) and the Verifier's as `review`. Each drill then cleared the
-workers with `--accept-store`:
+pending again) and the Verifier's as `review`. The drills ran before workers
+compared the counter read before each request; that comparison flags every
+reply the earlier one flagged, so it can only make a worker notice sooner.
+Each drill then cleared the workers with `--accept-store`:
 
 - Clearing the Executor that held the replay first, and the rest once its
   result was back (5 drills): the Executor resent its saved result, which

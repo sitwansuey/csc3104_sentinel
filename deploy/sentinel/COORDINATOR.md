@@ -137,10 +137,14 @@ transport mechanisms, separate from Executor write fencing.
 
 **Restoring the database from a backup.** The database has a store generation
 and a commit counter (migration 5 in `services/coordinator/store.py`), and
-every worker reply carries both. Note the counter before you restore if you
-can (`SELECT commit_counter FROM store_meta`). After the restore, workers that
-see a lower counter or another generation stop claiming and report
-`store_changed`. Run `scripts/coordinator_restore_check.py` with the restored
+every worker reply carries both. Before you restore, note the counter of the
+database you are replacing if it can still be read
+(`SELECT commit_counter FROM store_meta`); if it cannot, the positions the
+workers' `transport.db` files remember are the only reference. After the restore, workers
+that see a lower counter or another generation stop claiming and report
+`store_changed`. A worker misses the restore if other workers' requests have
+already made up the lost commits before its next exchange, so do not rely on
+the workers alone. Run `scripts/coordinator_restore_check.py` with the restored
 database, every worker's `transport.db` and `--previous-commit`, then clear
 each worker with `python -m runtime.worker_service --config CONFIG --accept-store`,
 those holding `replay` items first ([remote workers](../../docs/remote-workers.md)).
