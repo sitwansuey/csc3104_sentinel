@@ -1,6 +1,6 @@
 from collections import Counter
 from copy import deepcopy
-from contextlib import closing
+from contextlib import closing, redirect_stdout
 from datetime import datetime, timezone, timedelta
 import hashlib
 import io
@@ -235,6 +235,22 @@ def lab_items():
     return protect + network_policy.security_lab_policies(network_policy.load_graph())
 
 
+def protect_items():
+    return [item for item in lab_items() if item["metadata"]["name"].startswith("protect-")]
+
+
+def stored(items):
+    """Policies as the API server returns them: server metadata added, empty rule lists omitted."""
+    result = []
+    for item in deepcopy(items):
+        item["metadata"].update({"uid": "u-" + item["metadata"]["name"], "resourceVersion": "7", "generation": 1})
+        for key in ("ingress", "egress"):
+            if item["spec"].get(key) == []:
+                del item["spec"][key]
+        result.append(item)
+    return result
+
+
 class ReviewedGraphTests(unittest.TestCase):
     def test_reviewed_graph_is_the_pinned_upstream_wiring(self):
         graph = network_policy.load_graph()
@@ -415,17 +431,73 @@ class SecurityLabPolicyTests(unittest.TestCase):
         self.assertEqual(len(sources), 2 + len(APPLICATIONS) + 2 + 1)
         self.assertTrue({"intruder", "traffic", "app-security-test", "probe-cartservice"} <= sources)
 
+    def test_policy_differences_name_missing_extra_and_changed_policies(self):
+        reviewed = lab_items()
+        self.assertEqual(network_policy.policy_differences(reviewed, stored(reviewed), "the cluster"), [])
+        changed = deepcopy(reviewed)
+        policy = next(item for item in changed if item["metadata"]["name"] == "ingress-redis-cart")
+        policy["spec"]["ingress"][0]["from"].append({"podSelector": {"matchLabels": {"app": "frontend"}}})
+        extra = {"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+                 "metadata": {"name": "allow-all", "namespace": NAMESPACE},
+                 "spec": {"podSelector": {}, "policyTypes": ["Ingress"], "ingress": [{}]}}
+        found = [item for item in changed if not item["metadata"]["name"].startswith("egress-")] + [extra, changed[0]]
+        reasons = network_policy.policy_differences(reviewed, found, "the cluster")
+        self.assertEqual(reasons[0], "the cluster lists the NetworkPolicy 'protect-shippingservice' twice")
+        self.assertTrue(reasons[1].startswith("the cluster lacks reviewed NetworkPolicies: egress-cartservice, "))
+        self.assertEqual(reasons[2:], ["the cluster has unreviewed NetworkPolicies: allow-all",
+                                       "the cluster has changed NetworkPolicies: ingress-redis-cart"])
 
-def matrix_rows(*cells):
-    return [{"source": source, "destination": destination, "expected": expected, "observed": observed}
+    def test_an_empty_peer_list_admits_every_peer_as_in_kubernetes(self):
+        for rule in ({"from": []}, {"from": [], "ports": []}, {}):
+            items = [{"metadata": {"name": "p", "namespace": NAMESPACE},
+                      "spec": {"podSelector": {"matchLabels": {"app": "redis-cart"}}, "policyTypes": ["Ingress"],
+                               "ingress": [rule]}}]
+            with self.subTest(rule=rule):
+                self.assertTrue(network_policy.allowed(items, pod({"app": "sentinel-intruder"}),
+                                                       pod({"app": "redis-cart"}), 6379))
+
+
+def matrix_rows(*cells, seconds=3):
+    """Cells as run_matrix records them; a closed cell waited out the connect timeout unless seconds says otherwise."""
+    return [{"source": source, "destination": destination, "expected": expected, "observed": observed,
+             "seconds": seconds if observed == "closed" else 0}
             for source, destination, expected, observed in cells]
 
 
 class MatrixVerdictTests(unittest.TestCase):
-    GOOD = (("app-cartservice", "redis-cart", "allow", "open"), ("intruder", "redis-cart", "deny", "closed"))
+    GOOD = (("app-cartservice", "redis-cart", "allow", "open"), ("intruder", "redis-cart", "deny", "closed"),
+            ("app-productcatalogservice", "cartservice", "deny", "closed"),
+            ("app-paymentservice", "checkoutservice", "deny", "closed"))
 
     def test_pass_needs_every_allowed_open_every_forbidden_refused_and_the_journey(self):
-        self.assertEqual(network_policy.evaluate(matrix_rows(*self.GOOD), journey_passed=True)["status"], "PASS")
+        verdict = network_policy.evaluate(matrix_rows(*self.GOOD), journey_passed=True)
+        self.assertEqual(verdict["status"], "PASS", verdict["reasons"])
+        self.assertEqual(verdict["forbidden"], {"cells": 3, "closed": 3, "timed_out": 3})
+
+    def test_a_missing_or_allowed_sampled_forbidden_edge_is_unknown(self):
+        # Judged against a set without the graph policies, intruder -> redis-cart is expected to connect.
+        for rows in (matrix_rows(*self.GOOD[:3]),
+                     matrix_rows(*self.GOOD[:1], ("intruder", "redis-cart", "allow", "open"), *self.GOOD[2:])):
+            with self.subTest(rows=rows):
+                verdict = network_policy.evaluate(rows, journey_passed=True)
+                self.assertEqual(verdict["status"], "UNKNOWN")
+                self.assertTrue(any("sampled forbidden edges" in reason for reason in verdict["reasons"]))
+        self.assertEqual(network_policy.evaluate(matrix_rows(*self.GOOD[:3]), journey_passed=True,
+                                                 required_denials=())["status"], "PASS")
+
+    def test_a_forbidden_edge_refused_at_once_is_unknown_not_a_policy_drop(self):
+        rows = matrix_rows(*self.GOOD[:1]) + matrix_rows(*self.GOOD[1:], seconds=0)
+        verdict = network_policy.evaluate(rows, journey_passed=True)
+        self.assertEqual(verdict["status"], "UNKNOWN")
+        self.assertIn("refused at once", verdict["reasons"][0])
+        self.assertEqual(verdict["forbidden"]["timed_out"], 0)
+
+    def test_policy_drift_is_unknown_and_never_hides_a_fail(self):
+        verdict = network_policy.evaluate(matrix_rows(*self.GOOD), journey_passed=True,
+                                          policy_drift=["the cluster lacks reviewed NetworkPolicies: x"])
+        self.assertEqual((verdict["status"], verdict["reasons"]), ("UNKNOWN", ["the cluster lacks reviewed NetworkPolicies: x"]))
+        self.assertEqual(network_policy.evaluate(matrix_rows(*self.GOOD), journey_passed=False,
+                                                 policy_drift=["drift"])["status"], "FAIL")
 
     def test_a_forbidden_edge_that_connects_is_unknown_never_pass(self):
         verdict = network_policy.evaluate(matrix_rows(*self.GOOD, ("intruder", "cartservice", "deny", "open")),
@@ -472,13 +544,17 @@ class TesterPodTests(unittest.TestCase):
 class FakeCluster:
     """kubectl for run_matrix: testers connect according to the policies, or to everything."""
 
-    def __init__(self, items, *, enforce=True, control=True, create_fails=()):
+    def __init__(self, items, *, enforce=True, control=True, create_fails=(), live=None, live_fails=False):
         self.items, self.enforce, self.control, self.create_fails = items, enforce, control, set(create_fails)
+        # live: the policies the API server reports; by default exactly the enforced ones.
+        self.live, self.live_fails = items if live is None else live, live_fails
         self.pods, self.calls, self.manifest = {}, [], overlay(upstream_manifest(), envoy_image="e", inspector_image="i")
 
     def __call__(self, *args):
         self.calls.append(args)
         done = lambda stdout="", code=0: SimpleNamespace(stdout=stdout, stderr="", returncode=code)
+        if args[1:3] == ("get", "networkpolicies"):
+            return done(code=1) if self.live_fails else done(json.dumps({"items": stored(self.live)}))
         if args[1:3] == ("get", "services"):
             services = [{"metadata": {"name": entry["id"]}, "spec": {"clusterIP": f"10.96.1.{index}"}}
                         for index, entry in enumerate(network_policy.matrix_destinations(self.manifest), 1)]
@@ -533,6 +609,7 @@ class MatrixRunTests(unittest.TestCase):
     def test_enforcing_cluster_passes_with_every_cell_tested(self):
         result = self.run_matrix(FakeCluster(lab_items()))
         self.assertEqual(result["verdict"]["status"], "PASS", result["verdict"]["reasons"])
+        self.assertEqual(result["policy_drift"], [])
         self.assertEqual(result["verdict"]["untested"], 0)
         self.assertEqual(result["verdict"]["allowed"]["cells"], 19)
         self.assertEqual(result["verdict"]["forbidden"]["timed_out"], result["verdict"]["forbidden"]["cells"])
@@ -552,9 +629,41 @@ class MatrixRunTests(unittest.TestCase):
                 self.assertEqual(result["verdict"]["status"], "UNKNOWN")
                 self.assertGreater(result["verdict"]["untested"], 0)
 
+    def test_judged_without_the_graph_policies_is_never_pass(self):
+        # An older run folder applied only the protect-* chain; judged against that, every edge "works as expected".
+        cluster = FakeCluster(protect_items())
+        with tempfile.TemporaryDirectory() as folder:
+            result = network_policy.run_matrix(
+                cluster, folder, namespace=NAMESPACE, items=protect_items(), journey_passed=True,
+                sources=network_policy.matrix_sources(APPLICATIONS | {"security-gateway"}, ("cartservice",),
+                                                      extra=("security-test",)),
+                destinations=network_policy.matrix_destinations(cluster.manifest), run_id="run1234567",
+                clock=iter(range(10_000)).__next__, sleep=lambda _: None)
+        self.assertEqual(result["verdict"]["status"], "UNKNOWN")
+        self.assertEqual(result["policy_drift"], [])
+        self.assertIn("sampled forbidden edges missing or judged allowed: intruder->redis-cart, "
+                      "app-productcatalogservice->cartservice, app-paymentservice->checkoutservice",
+                      result["verdict"]["reasons"])
+
+    def test_cluster_whose_live_policies_differ_from_the_reviewed_set_is_unknown(self):
+        permissive = {"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+                      "metadata": {"name": "allow-intruder", "namespace": NAMESPACE},
+                      "spec": {"podSelector": {"matchLabels": {"app": "paymentservice"}}, "policyTypes": ["Ingress"],
+                               "ingress": [{"from": [{"podSelector": {"matchLabels": {"app": "sentinel-intruder"}}}]}]}}
+        cases = {"only protect-*": (FakeCluster(protect_items()), "lacks reviewed NetworkPolicies: default-deny-egress"),
+                 "extra policy": (FakeCluster(lab_items(), live=lab_items() + [permissive]),
+                                  "has unreviewed NetworkPolicies: allow-intruder"),
+                 "unreadable": (FakeCluster(lab_items(), live_fails=True), "could not be read")}
+        for case, (cluster, reason) in cases.items():
+            with self.subTest(case=case):
+                result = self.run_matrix(cluster)
+                self.assertEqual(result["verdict"]["status"], "UNKNOWN")
+                self.assertTrue(any(reason in entry for entry in result["policy_drift"]), result["policy_drift"])
+                self.assertTrue(any(reason in entry for entry in result["verdict"]["reasons"]))
+
     def test_over_tight_policy_fails(self):
         items = [item for item in lab_items() if item["metadata"]["name"] != "egress-cartservice"]
-        cluster = FakeCluster(items)
+        cluster = FakeCluster(items, live=lab_items())
         with tempfile.TemporaryDirectory() as folder:
             # The run judges against the reviewed set, while the cluster enforces a set without cart -> redis egress.
             result = network_policy.run_matrix(
@@ -566,11 +675,17 @@ class MatrixRunTests(unittest.TestCase):
         self.assertIn("app-cartservice->redis-cart", result["verdict"]["reasons"][0])
 
 
+def lab_manifest(policies=None):
+    """The applied manifest prepare writes: the overlay plus the reviewed graph policies."""
+    manifest = overlay(upstream_manifest(), envoy_image="e", inspector_image="i")
+    manifest["items"].extend(network_policy.security_lab_policies(network_policy.load_graph()) if policies is None else policies)
+    return manifest
+
+
 class SecurityLabMatrixWiringTests(unittest.TestCase):
-    def test_lab_judges_the_applied_policies_with_every_identity(self):
+    def test_lab_judges_the_reviewed_policies_with_every_identity(self):
         from scripts.security import boutique_security as lab
-        manifest = overlay(upstream_manifest(), envoy_image="e", inspector_image="i")
-        manifest["items"].extend(network_policy.security_lab_policies(network_policy.load_graph()))
+        manifest = lab_manifest()
         seen = {}
 
         def run_matrix(kubectl, directory, **kwargs):
@@ -579,11 +694,226 @@ class SecurityLabMatrixWiringTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder, patch.object(lab, "run_matrix", side_effect=run_matrix):
             (Path(folder) / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
             lab.network_matrix(Path(folder), True)
+        self.assertEqual(seen["items"], lab_items())
         self.assertEqual(seen["items"], [item for item in manifest["items"] if item["kind"] == "NetworkPolicy"])
         self.assertEqual(len(seen["items"]), 2 + 17)
+        self.assertEqual(seen["policy_drift"], [])
         self.assertIn("app-security-test", {source["id"] for source in seen["sources"]})
         self.assertIn("probe-cartservice", {source["id"] for source in seen["sources"]})
         self.assertTrue(seen["journey_passed"])
+
+    def matrix(self, manifest, cluster):
+        from scripts.security import boutique_security as lab
+        context = []
+
+        def command(args, **kwargs):
+            context.append(tuple(args[:2]))
+            return cluster(*args[2:])
+        with tempfile.TemporaryDirectory() as folder, patch.object(lab, "command", side_effect=command):
+            (Path(folder) / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            result = lab.network_matrix(Path(folder), True)
+        self.assertEqual(set(context), {("kubectl", "--context=kind-sentinel-boutique-security")})
+        return result
+
+    def test_reviewed_manifest_on_an_enforcing_cluster_passes(self):
+        result = self.matrix(lab_manifest(), FakeCluster(lab_items()))
+        self.assertEqual(result["verdict"]["status"], "PASS", result["verdict"]["reasons"])
+
+    def test_run_folder_without_the_graph_policies_is_never_pass(self):
+        # An older run folder: manifest.json and the cluster hold only the protect-* chain.
+        result = self.matrix(lab_manifest(policies=[]), FakeCluster(protect_items()))
+        self.assertEqual(result["verdict"]["status"], "UNKNOWN")
+        self.assertTrue(result["policy_drift"][0].startswith("manifest.json lacks reviewed NetworkPolicies: default-deny-egress"))
+        cell = next(row for row in result["rows"] if (row["source"], row["destination"]) == ("intruder", "redis-cart"))
+        self.assertEqual((cell["expected"], cell["observed"]), ("deny", "open"))
+
+    def test_cluster_whose_live_policies_differ_is_never_pass(self):
+        tampered = deepcopy(lab_items())
+        policy = next(item for item in tampered if item["metadata"]["name"] == "ingress-redis-cart")
+        policy["spec"]["ingress"][0]["from"].append({"podSelector": {"matchLabels": {"app": "sentinel-intruder"}}})
+        result = self.matrix(lab_manifest(), FakeCluster(lab_items(), live=tampered))
+        self.assertEqual(result["verdict"]["status"], "UNKNOWN")
+        self.assertEqual(result["policy_drift"], ["the cluster has changed NetworkPolicies: ingress-redis-cart"])
+
+    def test_stale_committed_policy_file_refuses_the_matrix(self):
+        from scripts.security import boutique_security as lab
+        with tempfile.TemporaryDirectory() as folder:
+            stale = Path(folder) / "policies.json"
+            stale.write_text(network_policy.SECURITY_POLICIES.read_text(encoding="utf-8").replace("6379", "6380"),
+                             encoding="utf-8")
+            (Path(folder) / "manifest.json").write_text(json.dumps(lab_manifest()), encoding="utf-8")
+            with patch.object(network_policy, "SECURITY_POLICIES", stale), patch.object(lab, "run_matrix") as run:
+                with self.assertRaisesRegex(ValueError, "differ from the reviewed file"):
+                    lab.network_matrix(Path(folder), True)
+            run.assert_not_called()
+
+
+class FakeLab:
+    """kube and probe for validate(): every shipping check gives its expected result."""
+
+    def __init__(self):
+        self.gateway_up, self.selectors, self.probes = True, [], []
+
+    def kube(self, *args, **kwargs):
+        if args[:3] == ("get", "pods", "-l"):
+            self.selectors.append(args[3])
+            if args[3].startswith("app=security-gateway"):
+                items = [{"status": {"podIP": "10.0.0.9"}}] if self.gateway_up else []
+            else:
+                items = [{"status": {"podIP": "10.0.0.5"}}]
+            return SimpleNamespace(stdout=json.dumps({"items": items}), returncode=0)
+        if args[:2] == ("scale", "deployment/security-gateway"):
+            self.gateway_up = args[2] == "--replicas=1"
+        return SimpleNamespace(stdout="", returncode=0)
+
+    def probe(self, directory, **kwargs):
+        self.probes.append(kwargs)
+        # Only the authenticated quote through a running gateway succeeds.
+        return {"succeeded": not kwargs and self.gateway_up, "output": ""}
+
+
+class SecurityLabValidationTests(unittest.TestCase):
+    def validate(self, matrix_status, *, probe=None):
+        from scripts.security import boutique_security as lab
+        fake = FakeLab()
+        storefront = SimpleNamespace(journey=lambda: {"passed": True}, _request=lambda opener, path: (200, "", None))
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(lab.provenance, "collect", return_value={"captured_by": "test"}), \
+                patch.object(lab, "kube", side_effect=fake.kube), \
+                patch.object(lab, "probe", side_effect=probe or fake.probe), \
+                patch.object(lab, "collect_inspections"), patch.object(lab, "emit_observation"), \
+                patch.object(lab, "network_matrix", return_value={"verdict": {"status": matrix_status}}) as matrix:
+            try:
+                error = None
+                lab.validate(Path(folder), storefront)
+            except RuntimeError as raised:
+                error = raised
+            saved = json.loads((Path(folder) / "validation.json").read_text(encoding="utf-8"))
+        matrix.assert_called_once()
+        self.assertIs(matrix.call_args.args[1], True)
+        return fake, saved, error
+
+    def test_every_check_and_a_matrix_pass_gives_a_passing_validation(self):
+        fake, saved, error = self.validate("PASS")
+        self.assertIsNone(error)
+        self.assertIs(saved["passed"], True)
+        self.assertEqual(saved["network_matrix"], {"status": "PASS"})
+        self.assertEqual(len(fake.probes), 9)
+
+    def test_a_matrix_that_is_not_pass_fails_the_validation_even_when_every_probe_passes(self):
+        for status in ("UNKNOWN", "FAIL"):
+            with self.subTest(status=status):
+                fake, saved, error = self.validate(status)
+                self.assertIsInstance(error, RuntimeError)
+                self.assertIs(saved["passed"], False)
+                self.assertEqual(saved["network_matrix"], {"status": status})
+                # Every other check gave its expected result, so the matrix alone failed the run.
+                self.assertTrue(saved["valid_mtls_quote"]["succeeded"])
+                self.assertFalse(saved["proxy_outage"]["succeeded"])
+                self.assertIs(saved["shopping_after_proxy_restore"]["passed"], True)
+                self.assertEqual(saved["empty_cart"]["status"], 200)
+
+    def test_a_crash_after_the_matrix_leaves_a_record_that_has_not_passed(self):
+        def probe(directory, **kwargs):
+            raise RuntimeError("probe Pod did not finish")
+        fake, saved, error = self.validate("PASS", probe=probe)
+        self.assertEqual(str(error), "probe Pod did not finish")
+        self.assertIs(saved["passed"], False)
+        self.assertEqual(saved["network_matrix"], {"status": "PASS"})
+
+    def test_workload_pod_lookups_exclude_matrix_testers(self):
+        fake, saved, error = self.validate("PASS")
+        excluded = ",!" + network_policy.MATRIX_LABEL
+        self.assertEqual(sorted(set(fake.selectors)), ["app=frontend" + excluded, "app=security-gateway" + excluded,
+                                                       "app=shippingservice" + excluded])
+
+
+def dry_run_resources(extra_env=None):
+    """kubectl create --dry-run output for the pinned upstream, with images; extra_env adds one caller env entry."""
+    resources = []
+    for item in upstream_manifest()["items"]:
+        item = {"apiVersion": "apps/v1" if item["kind"] == "Deployment" else "v1", **item}
+        if item["kind"] == "Deployment":
+            for container in item["spec"]["template"]["spec"]["containers"]:
+                container["image"] = "registry.example/" + item["metadata"]["name"] + ":v1"
+            if extra_env and item["metadata"]["name"] == extra_env[0]:
+                item["spec"]["template"]["spec"]["containers"][0]["env"].append(extra_env[1])
+        resources.append(item)
+    return json.dumps({"apiVersion": "v1", "kind": "List", "items": resources})
+
+
+class SecurityLabPrepareTests(unittest.TestCase):
+    def prepare(self, resources, folder):
+        from scripts.security import boutique_security as lab
+        commands, applied = [], []
+
+        def command(args, **kwargs):
+            args = [str(arg) for arg in args]
+            commands.append(args)
+            if args[:3] == ["docker", "image", "inspect"]:
+                repository = args[3].rsplit(":", 1)[0]
+                return SimpleNamespace(stdout=json.dumps([{"Id": "sha256:" + "e" * 64,
+                                                           "RepoDigests": [repository + "@sha256:" + "a" * 64]}]),
+                                       returncode=0)
+            return SimpleNamespace(stdout="", returncode=0)
+
+        def kube(*args, **kwargs):
+            if "--dry-run=client" in args:
+                return SimpleNamespace(stdout=resources, returncode=0)
+            if args[:2] == ("apply", "-f"):
+                applied.append(Path(args[2]).name)
+            return SimpleNamespace(stdout="", returncode=0)
+
+        def certificates(pki, **kwargs):
+            for identity in ("gateway", "upstream", "proxy-client", "client", "frontend-client", "checkoutservice-client"):
+                (pki / identity).mkdir()
+                for name in ("ca.crt", "tls.crt", "tls.key"):
+                    (pki / identity / name).write_bytes(b"test")
+        directory = Path(folder) / "run"
+        inspector = ("sentinel.local/security-inspector@sha256:" + "d" * 64, "sha256:" + "f" * 64)
+        with patch.object(lab, "setup_cluster", return_value="node-1"), \
+                patch.object(lab, "certificates", side_effect=certificates), \
+                patch.object(lab, "command", side_effect=command), patch.object(lab, "kube", side_effect=kube), \
+                patch.object(lab, "local_manifest", return_value=inspector):
+            try:
+                error = None
+                with redirect_stdout(io.StringIO()):
+                    lab.prepare(directory, None)
+            except ValueError as raised:
+                error = raised
+        return directory, commands, applied, error
+
+    def test_graph_drift_is_refused_before_any_image_pull(self):
+        edge = ("adservice", {"name": "PRODUCT_CATALOG_SERVICE_ADDR", "value": "productcatalogservice:3550"})
+        with tempfile.TemporaryDirectory() as folder:
+            directory, commands, applied, error = self.prepare(dry_run_resources(edge), folder)
+            self.assertFalse((directory / "manifest.json").exists())
+        self.assertRegex(str(error), "differs from the reviewed graph")
+        self.assertEqual([args for args in commands if "pull" in args], [])
+        self.assertEqual(applied, [])
+
+    def test_stale_reviewed_policy_file_is_refused_before_any_image_pull(self):
+        with tempfile.TemporaryDirectory() as folder:
+            stale = Path(folder) / "policies.json"
+            stale.write_text(network_policy.SECURITY_POLICIES.read_text(encoding="utf-8").replace("6379", "6380"),
+                             encoding="utf-8")
+            with patch.object(network_policy, "SECURITY_POLICIES", stale):
+                directory, commands, applied, error = self.prepare(dry_run_resources(), folder)
+        self.assertRegex(str(error), "differ from the reviewed file")
+        self.assertEqual([args for args in commands if "pull" in args], [])
+        self.assertEqual(applied, [])
+
+    def test_the_applied_manifest_carries_exactly_the_reviewed_policies(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory, commands, applied, error = self.prepare(dry_run_resources(), folder)
+            self.assertIsNone(error)
+            manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+            listed = json.loads((directory / "network-policies.json").read_text(encoding="utf-8"))
+        committed = json.loads(network_policy.SECURITY_POLICIES.read_text(encoding="utf-8"))["items"]
+        self.assertEqual(listed["items"], committed)
+        self.assertEqual([item for item in manifest["items"] if item["kind"] == "NetworkPolicy"], lab_items())
+        self.assertEqual(applied[0], "manifest.json")
+        self.assertIn(["docker", "exec", "node-1", "crictl", "pull", network_policy.MATRIX_IMAGE], commands)
 
 
 if __name__ == "__main__":

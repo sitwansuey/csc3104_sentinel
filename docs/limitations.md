@@ -202,7 +202,7 @@ the fix and regenerate.
 
 **The security lab protects only the shipping path.** Limitation, open; recorded 2026-11-11. Planned: P4.06, P5.04, P5.05. Issues: #69, #71.
 
-- Impact: Only the shipping path has mTLS and inspection. Default-deny NetworkPolicies for all 11 services, generated from the reviewed dependency graph, and a matrix that passes only when every forbidden connection is refused, are written and tested offline only. They have not run on the Calico lab, so no live result yet shows the other ten services refusing plaintext from other Pods. The rules match the Pod label app; they are not authentication. Normal connected recovery installs no NetworkPolicy, and the protected lab has never been combined with guarded recovery.
+- Impact: Only the shipping path has mTLS and inspection. Default-deny NetworkPolicies for all 11 services, generated from the reviewed dependency graph, and a matrix that passes only when every forbidden connection times out and the cluster's own policies are exactly the reviewed set, are written and tested offline only. They have not run on the Calico lab, so no live result yet shows the other ten services refusing plaintext from other Pods. The rules match the Pod label app; they are not authentication. Normal connected recovery installs no NetworkPolicy, and the protected lab has never been combined with guarded recovery.
 - Workaround: Quote security results for the shipping path only until a fresh lab run commits a network-matrix.json that shows PASS.
 - Evidence: claim `C-SECURITY-LAB`; `docs/security.md`; `scripts/security/network_policy.py`; `tests/test_security_connected.py`.
 

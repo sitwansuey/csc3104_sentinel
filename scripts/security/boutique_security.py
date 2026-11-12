@@ -23,9 +23,10 @@ sys.path.insert(0, str(ROOT))
 from runtime.security_store import import_inspections
 from experiments.boutique.harness.connected import APPLICATIONS, UPSTREAM, UPSTREAM_SHA256, connected_manifest, decoded_resources, image_digest
 from experiments.boutique.harness.dashboard import BoutiqueDashboard
-from scripts.security.boutique_security_manifest import GATEWAY, NAMESPACE, overlay
-from scripts.security.network_policy import (MATRIX_IMAGE, graph_from_manifest, matrix_destinations, matrix_sources,
-                                             probe_targets, reviewed_security_policies, run_matrix)
+from scripts.security.boutique_security_manifest import GATEWAY, NAMESPACE, overlay, protect_policies
+from scripts.security.network_policy import (MATRIX_IMAGE, MATRIX_LABEL, committed_security_policies, graph_from_manifest,
+                                             matrix_destinations, matrix_sources, policy_differences, probe_targets,
+                                             reviewed_security_policies, run_matrix)
 from experiments.boutique.traffic.storefront import StorefrontProbe
 from scripts.security.security_lab import CLIENT, ENVOY, INSPECTOR, certificates
 from runtime.boutique_observability import emit_observation, service_inventory
@@ -249,17 +250,34 @@ def inventory():
 
 
 def network_matrix(directory, journey_passed):
-    """Every tester identity against every Service, judged against the applied NetworkPolicies."""
+    """Every tester identity against every Service, judged against the reviewed NetworkPolicies.
+
+    The expected cells come from the protect-* chain and the committed
+    graph-derived set, never from the run folder. The run folder's
+    manifest.json (what prepare applied) and the cluster's live policies must
+    both be exactly that set, or the verdict cannot be PASS: an older run
+    folder without the graph policies would otherwise expect every forbidden
+    edge to connect.
+    """
     manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
-    policies = [item for item in manifest["items"] if item["kind"] == "NetworkPolicy"]
+    reviewed = protect_policies() + committed_security_policies()
+    applied = [item for item in manifest["items"] if item["kind"] == "NetworkPolicy"]
     sources = matrix_sources(APPLICATIONS | {GATEWAY[0]}, probe_targets(), extra=("security-test",))
     return run_matrix(lambda *args: command(["kubectl", "--context=" + CONTEXT, *args], required=False, timeout=60),
-                      directory, namespace=NAMESPACE, items=policies, sources=sources,
-                      destinations=matrix_destinations(manifest), journey_passed=journey_passed)
+                      directory, namespace=NAMESPACE, items=reviewed, sources=sources,
+                      destinations=matrix_destinations(manifest), journey_passed=journey_passed,
+                      policy_drift=policy_differences(reviewed, applied, "manifest.json"))
+
+
+def workload(app):
+    """A label selector for a workload's own Pods, excluding matrix testers that carry its label."""
+    return "app=" + app + ",!" + MATRIX_LABEL
 
 
 def validate(directory, storefront):
-    summary = {"provenance": provenance.collect(ROOT, tools=("kubectl", "kind", "docker"), captured_by="security-lab")}
+    # passed stays false in every partial save; only the final verdict sets it.
+    summary = {"provenance": provenance.collect(ROOT, tools=("kubectl", "kind", "docker"), captured_by="security-lab"),
+               "passed": False}
     def journey_window(key):
         attempts = []
         for _ in range(5):
@@ -282,15 +300,16 @@ def validate(directory, storefront):
     summary["missing_client_certificate"] = probe(directory, certificate=False)
     summary["wrong_client_identity"] = probe(directory, identity="proxy-client")
     summary["direct_service_bypass"] = probe(directory, target="shippingservice:50051", secure=False)
-    shipping = json.loads(kube("get", "pods", "-l", "app=shippingservice", "-o", "json").stdout)["items"][0]
+    # Matrix testers carry workload labels; never mistake a leftover one for the workload.
+    shipping = json.loads(kube("get", "pods", "-l", workload("shippingservice"), "-o", "json").stdout)["items"][0]
     summary["direct_pod_ip_bypass"] = probe(directory, target=shipping["status"]["podIP"] + ":50051", secure=False)
-    frontend = json.loads(kube("get", "pods", "-l", "app=frontend", "-o", "json").stdout)["items"][0]
+    frontend = json.loads(kube("get", "pods", "-l", workload("frontend"), "-o", "json").stdout)["items"][0]
     summary["direct_egress_bypass"] = probe(directory, target=frontend["status"]["podIP"] + ":50052", secure=False)
     collect_inspections(directory)
     kube("scale", "deployment/security-gateway", "--replicas=0")
     try:
         deadline = time.monotonic() + 60
-        while json.loads(kube("get", "pods", "-l", "app=security-gateway", "-o", "json").stdout)["items"]:
+        while json.loads(kube("get", "pods", "-l", workload(GATEWAY[0]), "-o", "json").stdout)["items"]:
             if time.monotonic() > deadline:
                 raise RuntimeError("Proxy did not stop for the failure test")
             time.sleep(.5)

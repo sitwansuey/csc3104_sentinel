@@ -75,8 +75,12 @@ gateway, so they cannot reopen the plaintext bypass.
 
 `start` refuses to continue, before pulling any image, when the graph derived
 from the manifest differs from the reviewed graph or the regenerated policies
-differ from the committed file. It applies the policies with the rest of the
-manifest and copies them to `network-policies.json` in the run folder.
+differ from the committed file. That check needs `kubectl create
+--dry-run=client`, so it runs after kind has created the lab cluster and
+installed Calico; `network_policy.py --check` in the preflight below covers the
+committed file before anything starts. `start` applies the policies with the
+rest of the manifest and copies them to `network-policies.json` in the run
+folder.
 
 These are L4 rules keyed on the Pod label `app`. They are not
 authentication: anyone allowed to create a Pod in the namespace can give it a
@@ -95,21 +99,34 @@ release that the upstream manifest pins by digest. Testers run as non-root
 without a token, and their readiness check never passes, so a tester carrying a
 workload's label never receives that workload's traffic.
 
-Each cell's expected result comes from evaluating the applied policies. Each
-tester first connects to kube-dns on TCP 53, which no policy blocks; if that
-control fails, the tester's results are not counted. The verdict in
-`network-matrix.json`, also copied into `validation.json`, is:
+Each cell's expected result comes from evaluating the reviewed policies: the
+`protect-*` chain plus the committed graph-derived set, never the run folder's
+copy. The run folder's `manifest.json` and the policies the cluster itself
+reports (`kubectl get networkpolicies`) must both be exactly that set; any
+missing, extra or changed policy is listed under `policy_drift` in
+`network-matrix.json`. So an older run folder that applied only the
+`protect-*` chain cannot pass. Each tester first connects to kube-dns on
+TCP 53, which no policy blocks; if that control fails, the tester's results
+are not counted. The verdict in `network-matrix.json`, also copied into
+`validation.json`, is:
 
-- PASS: every allowed connection worked, every forbidden one was refused, and
-  the storefront journey passed;
+- PASS: every allowed connection worked, every forbidden one timed out (a
+  dropped connection), the design's sampled forbidden edges (intruder to
+  redis-cart, productcatalogservice to cartservice, paymentservice to
+  checkoutservice) are among the forbidden cells, the policies match the
+  reviewed set, and the storefront journey passed;
 - FAIL: an allowed connection was refused, or the journey failed (the
   policies are too tight);
-- UNKNOWN, never PASS: a forbidden connection worked, a cell could not be
-  tested, or the journey result is missing.
+- UNKNOWN, never PASS: a forbidden connection worked, or was refused at once
+  rather than timing out (which shows a missing listener, not a policy
+  drop), a cell could not be tested, a sampled forbidden edge is missing or
+  judged allowed, the policies differ from the reviewed set or could not be
+  read, or the journey result is missing.
 
-`validation.json` passes only when the matrix is PASS. `forbidden.timed_out`
-counts refusals that waited out the timeout, which is how a dropped
-connection looks.
+`validation.json` passes only when the matrix is PASS, and it records
+`passed: false` until the last check finishes. The later shipping probes look
+up workload Pods with a selector that excludes matrix testers, so a tester
+that has not yet been removed is never mistaken for the workload.
 
 ### What a live run needs
 
@@ -135,9 +152,10 @@ python scripts/security/boutique_security.py start --directory data/experimentat
 ```
 
 Expected: the command prints PASS. In the run folder, `network-matrix.json`
-has `verdict.status` PASS, `forbidden.closed` and `forbidden.timed_out` equal
-to `forbidden.cells`, and `validation.json` has `passed: true`, including the
-existing shipping bypass and outage probes. Then commit the evidence:
+has `verdict.status` PASS, an empty `policy_drift`, `forbidden.closed` and
+`forbidden.timed_out` equal to `forbidden.cells`, and `validation.json` has
+`passed: true`, including the existing shipping bypass and outage probes.
+Then commit the evidence:
 
 ```powershell
 python scripts/evidence/collect.py --run data/experimentation/runs/protected-boutique-netpol --class security-lab --bundle-id protected-boutique-netpol

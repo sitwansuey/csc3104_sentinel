@@ -477,7 +477,7 @@
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-11",
-      "impact": "Only the shipping path has mTLS and inspection. Default-deny NetworkPolicies for all 11 services, generated from the reviewed dependency graph, and a matrix that passes only when every forbidden connection is refused, are written and tested offline only. They have not run on the Calico lab, so no live result yet shows the other ten services refusing plaintext from other Pods. The rules match the Pod label app; they are not authentication. Normal connected recovery installs no NetworkPolicy, and the protected lab has never been combined with guarded recovery.",
+      "impact": "Only the shipping path has mTLS and inspection. Default-deny NetworkPolicies for all 11 services, generated from the reviewed dependency graph, and a matrix that passes only when every forbidden connection times out and the cluster's own policies are exactly the reviewed set, are written and tested offline only. They have not run on the Calico lab, so no live result yet shows the other ten services refusing plaintext from other Pods. The rules match the Pod label app; they are not authentication. Normal connected recovery installs no NetworkPolicy, and the protected lab has never been combined with guarded recovery.",
       "workaround": "Quote security results for the shipping path only until a fresh lab run commits a network-matrix.json that shows PASS.",
       "cites": [
         {"claim": "C-SECURITY-LAB"},

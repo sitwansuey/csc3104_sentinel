@@ -22,11 +22,14 @@ kubectl port-forward enters a Pod through the container runtime's stream, not
 the Pod network, so NetworkPolicy does not apply to it.
 
 The matrix part runs a short-lived tester Pod per source identity and tries a
-TCP connection to every Service. It reports PASS only when every connection the
-policies allow works, every other one is refused, and the storefront journey
-passed. A forbidden connection that works, or a cell that could not be tested,
-gives UNKNOWN, never PASS: on a network plugin that ignores NetworkPolicy every
-forbidden edge connects.
+TCP connection to every Service. The cells are judged against the reviewed
+policy set, never the run folder's copy, and the cluster's own policies must
+be exactly that set. It reports PASS only when every connection the policies
+allow works, every other one times out, the design's sampled forbidden edges
+are among them, and the storefront journey passed. A forbidden connection that
+works or is refused at once, a cell that could not be tested, or a policy set
+that differs from the reviewed one gives UNKNOWN, never PASS: on a network
+plugin that ignores NetworkPolicy every forbidden edge connects.
 """
 
 import argparse
@@ -61,6 +64,11 @@ ENTRY = "frontend"
 # loadgenerator init container); its nc gives a plain TCP connect test.
 MATRIX_IMAGE = "docker.io/library/busybox@sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616"
 CONNECT_TIMEOUT = 3
+# The design's sampled forbidden edges (E9) as matrix cells. A run judged
+# against the wrong policy set (for example without the graph policies) would
+# expect these to connect, so the verdict needs each one judged forbidden.
+SAMPLED_DENIALS = (("intruder", "redis-cart"), ("app-productcatalogservice", "cartservice"),
+                   ("app-paymentservice", "checkoutservice"))
 DNS_RULE = {"to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}},
                     "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}}}],
             "ports": [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}]}
@@ -231,15 +239,44 @@ def render(items):
     return json.dumps({"apiVersion": "v1", "kind": "List", "items": items}, indent=2, sort_keys=True) + "\n"
 
 
-def reviewed_security_policies(derived_graph, *, graph_path=GRAPH, policies_path=SECURITY_POLICIES):
+def reviewed_security_policies(derived_graph, *, graph_path=None, policies_path=None):
     """The lab policies, only when the live graph is the reviewed one and regeneration matches the file."""
-    reviewed = load_graph(graph_path)
-    if not same_graph(reviewed, derived_graph):
+    if not same_graph(load_graph(graph_path or GRAPH), derived_graph):
         raise ValueError("The Boutique dependency graph differs from the reviewed graph file; review it first")
-    items = security_lab_policies(reviewed)
-    if render(items) != Path(policies_path).read_text(encoding="utf-8"):
+    return committed_security_policies(graph_path=graph_path, policies_path=policies_path)
+
+
+def committed_security_policies(*, graph_path=None, policies_path=None):
+    """The committed lab policies, only when regenerating them from the reviewed graph gives the same file."""
+    items = security_lab_policies(load_graph(graph_path or GRAPH))
+    if render(items) != Path(policies_path or SECURITY_POLICIES).read_text(encoding="utf-8"):
         raise ValueError("Generated NetworkPolicies differ from the reviewed file; run network_policy.py --write and review")
     return items
+
+
+def _spec(item):
+    # The API server omits empty rule lists, so a stored default-deny has no
+    # "ingress" key while the generated one has "ingress": [].
+    spec = dict(item.get("spec") or {})
+    for key in ("ingress", "egress"):
+        spec[key] = spec.get(key) or []
+    return spec
+
+
+def policy_differences(expected, found, where):
+    """Why the NetworkPolicies found differ from the expected set: missing, extra or changed, by name."""
+    want = {item["metadata"]["name"]: _spec(item) for item in expected}
+    have, reasons = {}, []
+    for item in found:
+        name = item.get("metadata", {}).get("name")
+        if name in have:
+            reasons.append(where + " lists the NetworkPolicy " + repr(name) + " twice")
+        have[name] = _spec(item)
+    for label, names in (("lacks reviewed", set(want) - set(have)), ("has unreviewed", set(have) - set(want)),
+                         ("has changed", {name for name in set(want) & set(have) if want[name] != have[name]})):
+        if names:
+            reasons.append(where + " " + label + " NetworkPolicies: " + ", ".join(sorted(map(str, names))))
+    return reasons
 
 
 # ----- a NetworkPolicy evaluator for the subset generated here -----
@@ -299,7 +336,8 @@ def _direction(items, pod, other, port, protocol, kind):
     for item in selecting:
         for rule in item["spec"].get(key) or ():
             listed = rule.get(peers)
-            if (listed is None or any(_peer(peer, other, item["metadata"]["namespace"]) for peer in listed)) \
+            # Kubernetes treats a missing or empty peer list as "every peer".
+            if (not listed or any(_peer(peer, other, item["metadata"]["namespace"]) for peer in listed)) \
                     and _port_ok(rule, port, protocol):
                 return True
     return False
@@ -357,17 +395,29 @@ def matrix_plan(items, namespace, sources, destinations):
     return rows
 
 
-def evaluate(rows, *, journey_passed):
+def _timed_out(row):
+    # A dropped SYN waits out the connect timeout; an instant refusal does not.
+    return row["observed"] == "closed" and (row.get("seconds") or 0) >= CONNECT_TIMEOUT - 1
+
+
+def evaluate(rows, *, journey_passed, policy_drift=(), required_denials=SAMPLED_DENIALS):
     """PASS, FAIL or UNKNOWN for a completed matrix.
 
     FAIL: an allowed edge was refused, or the storefront journey failed (the
     policies are too tight). UNKNOWN: a forbidden edge connected (enforcement
-    was not shown), a cell was not tested, the journey result is missing, or
-    the matrix has no allowed or no forbidden cell. PASS otherwise.
+    was not shown), a forbidden edge was refused at once instead of timing out
+    (a missing listener, not a policy drop), a cell was not tested, the
+    journey result is missing, the matrix has no allowed or no forbidden cell,
+    a sampled forbidden edge is missing or judged allowed, or the policies
+    applied differ from the reviewed set (policy_drift). PASS otherwise.
     """
     over_tight = [row for row in rows if row["expected"] == "allow" and row["observed"] == "closed"]
     leaked = [row for row in rows if row["expected"] == "deny" and row["observed"] == "open"]
+    refused = [row for row in rows if row["expected"] == "deny" and row["observed"] == "closed" and not _timed_out(row)]
     untested = [row for row in rows if row["observed"] not in {"open", "closed"}]
+    cells = {(row["source"], row["destination"]): row["expected"] for row in rows}
+    unjudged = [source + "->" + destination for source, destination in required_denials
+                if cells.get((source, destination)) != "deny"]
     reasons = []
     if over_tight:
         reasons.append("allowed edges refused: " + ", ".join(row["source"] + "->" + row["destination"] for row in over_tight))
@@ -375,12 +425,18 @@ def evaluate(rows, *, journey_passed):
         reasons.append("storefront journey failed")
     if leaked:
         reasons.append("forbidden edges connected: " + ", ".join(row["source"] + "->" + row["destination"] for row in leaked))
+    if refused:
+        reasons.append("forbidden edges refused at once, not dropped: "
+                       + ", ".join(row["source"] + "->" + row["destination"] for row in refused))
     if untested:
         reasons.append(f"{len(untested)} cells not tested")
     if journey_passed is not True and journey_passed is not False:
         reasons.append("storefront journey not recorded")
     if not any(row["expected"] == "allow" for row in rows) or not any(row["expected"] == "deny" for row in rows):
         reasons.append("the matrix needs allowed and forbidden cells")
+    if unjudged:
+        reasons.append("sampled forbidden edges missing or judged allowed: " + ", ".join(unjudged))
+    reasons.extend(policy_drift)
     if over_tight or journey_passed is False:
         status = "FAIL"
     elif reasons:
@@ -392,9 +448,7 @@ def evaluate(rows, *, journey_passed):
     return {"status": status, "reasons": reasons, "journey_passed": journey_passed,
             "allowed": {"cells": len(allow), "open": sum(row["observed"] == "open" for row in allow)},
             "forbidden": {"cells": len(deny), "closed": sum(row["observed"] == "closed" for row in deny),
-                          # A dropped SYN waits out the connect timeout; an instant refusal does not.
-                          "timed_out": sum(row["observed"] == "closed" and (row.get("seconds") or 0) >= CONNECT_TIMEOUT - 1
-                                           for row in deny)},
+                          "timed_out": sum(_timed_out(row) for row in deny)},
             "untested": len(untested)}
 
 
@@ -450,11 +504,14 @@ def _json(result):
     return json.loads(result.stdout)
 
 
-def run_matrix(kubectl, directory, *, namespace, items, sources, destinations, journey_passed,
+def run_matrix(kubectl, directory, *, namespace, items, sources, destinations, journey_passed, policy_drift=(),
                image=MATRIX_IMAGE, run_id=None, clock=time.monotonic, sleep=time.sleep):
     """Run the matrix live and write network-matrix.json.
 
-    kubectl(*args) runs kubectl with the lab context and returns a
+    items is the reviewed policy set the cells are judged against. The
+    cluster's own NetworkPolicies in the namespace must be exactly that set;
+    any difference, or a failed read, joins policy_drift and keeps the verdict
+    from PASS. kubectl(*args) runs kubectl with the lab context and returns a
     CompletedProcess without raising. Each tester first connects to kube-dns
     on TCP 53, which no policy here blocks; a tester whose control connection
     fails, that could not be created or that did not finish proves nothing
@@ -462,6 +519,12 @@ def run_matrix(kubectl, directory, *, namespace, items, sources, destinations, j
     """
     run_id = run_id or uuid4().hex[:10]
     rows = matrix_plan(items, namespace, sources, destinations)
+    drift = list(policy_drift)
+    live = kubectl("--namespace=" + namespace, "get", "networkpolicies", "-o", "json")
+    try:
+        drift += policy_differences(items, _json(live)["items"], "the cluster")
+    except (RuntimeError, ValueError, KeyError, TypeError, AttributeError):
+        drift.append("the cluster's NetworkPolicies could not be read")
     services = _json(kubectl("--namespace=" + namespace, "get", "services", "-o", "json"))["items"]
     addresses = {item["metadata"]["name"]: item["spec"].get("clusterIP") for item in services}
     dns = _json(kubectl("--namespace=kube-system", "get", "service", "kube-dns", "-o", "json"))
@@ -511,7 +574,8 @@ def run_matrix(kubectl, directory, *, namespace, items, sources, destinations, j
     testers = [{"source": source, **{key: value for key, value in by_source[source].items() if key != "observed"}}
                for source in sorted(by_source)]
     result = {"run_id": run_id, "namespace": namespace, "image": image, "connect_timeout_seconds": CONNECT_TIMEOUT,
-              "testers": testers, "rows": rows, "verdict": evaluate(rows, journey_passed=journey_passed)}
+              "policy_drift": drift, "testers": testers, "rows": rows,
+              "verdict": evaluate(rows, journey_passed=journey_passed, policy_drift=drift)}
     (Path(directory) / "network-matrix.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return result
 
