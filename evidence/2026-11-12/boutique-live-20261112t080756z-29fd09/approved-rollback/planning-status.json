@@ -1,0 +1,68 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": {
+        "budget_seconds": 600,
+        "model_calls": 2,
+        "model_calls_completed": 1,
+        "model_seconds": 49.354,
+        "planning_attempt": 1,
+        "seconds": 49.569
+      }
+    },
+    {
+      "attempt": 2,
+      "usage": {
+        "budget_seconds": 600,
+        "decision": {
+          "codes": [
+            "TEMPLATE_ALREADY_BASELINE"
+          ],
+          "decided_by": "rule",
+          "eligible": false,
+          "enforced": true,
+          "model_action": null,
+          "overridden": false,
+          "policy": "gated"
+        },
+        "model_calls": 2,
+        "model_calls_completed": 2,
+        "model_seconds": 11.678,
+        "planning_attempt": 2,
+        "seconds": 11.836
+      }
+    }
+  ],
+  "attempts": 2,
+  "delivered": 1,
+  "error_code": "TEMPLATE_ALREADY_BASELINE",
+  "incident_id": "INC-A600F431B0E4",
+  "next_attempt": 1794471010.661039,
+  "proposal": {
+    "action": "ESCALATE",
+    "action_id": "ACT-1dc2d260460880d44b9f3b48",
+    "based_on_resource_version": "96657",
+    "evidence_refs": [
+      "E-F3356ACD50FE",
+      "E-F23B99C04D99",
+      "E-8A4FEF1CA199",
+      "E-EC730E9BD976",
+      "E-5EB67B5DF1DF",
+      "E-0E6B393CC1C0",
+      "E-4BEA9B369F77"
+    ],
+    "incident_id": "INC-A600F431B0E4",
+    "kind": "proposal",
+    "parameters": {},
+    "rationale": "The live Pod template already matches the healthy baseline, so a rollback would change nothing. Decided by a code rule, not the model. Operator review is required. No repair is authorized.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    }
+  }
+}

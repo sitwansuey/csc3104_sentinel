@@ -1,0 +1,63 @@
+[
+  {
+    "attempt": 1,
+    "call_id": 1,
+    "error_type": "ValueError",
+    "eval_duration_seconds": 42.81596,
+    "load_duration_seconds": 0.0031574,
+    "model": "qwen3:14b",
+    "output_tokens": 2048,
+    "planning_attempt": 1,
+    "prompt_characters": 6247,
+    "prompt_eval_duration_seconds": 2.163893,
+    "prompt_tokens": 2609,
+    "role": "Analyzer",
+    "seconds": 45.03533249999964,
+    "status": "failed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 1,
+    "eval_duration_seconds": 8.174358,
+    "load_duration_seconds": 0.0048246,
+    "model": "qwen3:14b",
+    "output_tokens": 393,
+    "planning_attempt": 2,
+    "prompt_characters": 6247,
+    "prompt_eval_duration_seconds": 0.025458,
+    "prompt_tokens": 2609,
+    "role": "Analyzer",
+    "seconds": 8.252948600002128,
+    "status": "completed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 2,
+    "eval_duration_seconds": 5.798325,
+    "load_duration_seconds": 0.0043016,
+    "model": "qwen3:14b",
+    "output_tokens": 277,
+    "planning_attempt": 2,
+    "prompt_characters": 8243,
+    "prompt_eval_duration_seconds": 2.55695,
+    "prompt_tokens": 3040,
+    "role": "Reporter",
+    "seconds": 8.520516000000498,
+    "status": "completed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 3,
+    "eval_duration_seconds": 6.048296,
+    "load_duration_seconds": 0.0042773,
+    "model": "qwen3:14b",
+    "output_tokens": 300,
+    "planning_attempt": 2,
+    "prompt_characters": 6705,
+    "prompt_eval_duration_seconds": 2.076024,
+    "prompt_tokens": 2480,
+    "role": "Recovery Planner",
+    "seconds": 8.271152199999051,
+    "status": "completed"
+  }
+]

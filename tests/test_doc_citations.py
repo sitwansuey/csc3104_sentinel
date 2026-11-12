@@ -143,7 +143,7 @@ class CitationCheckTests(unittest.TestCase):
                  and match.group("anchor").startswith("_apply::")]
         self.assertGreaterEqual(len(cited), 6)
         source = (ROOT / relative).read_text(encoding="utf-8")
-        header = "def _apply(message, store):\n"
+        header = "def _apply(message, store, answers=None, producer=None):\n"
         self.assertEqual(source.count(header), 1)
         document = " ".join(f"`{span}`" for span in cited)
         for label, text in {"current": source,

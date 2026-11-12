@@ -56,7 +56,7 @@ def live_policy(policy):
     policy.update({
         "profile": "live", "decision_ttl_seconds": 300,
         "max_approval_lifetime_seconds": 300,
-        "max_state_age_seconds": 30, "max_dependency_age_seconds": 300,
+        "max_state_age_seconds": 30, "max_dependency_age_seconds": 300, "max_clock_skew_seconds": 2,
         "baseline_constraints": {
             "max_age_seconds": 3600, "min_healthy_duration_seconds": 30,
             "trusted_sources": ["synthetic-verifier"], "require_health_evidence": True,

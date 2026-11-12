@@ -1,0 +1,191 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "boutique-live-20261112t074450z-38278f",
+  "class": "agent",
+  "captured_at": "2026-11-12T07:44:50.592776Z",
+  "source_run_dir_name": "boutique-live-20261112T074450Z-38278f",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "recorded",
+    "captured_by": "harness",
+    "dirty": false,
+    "dirty_path_count": 0,
+    "dirty_paths_sha256": null,
+    "host_class": "windows-amd64",
+    "python": "3.13.2",
+    "schema": "sentinel-provenance-v1",
+    "source_revision": "870aa7d49e87003b25c93a1149a535f33eb88d2d",
+    "tools": {
+      "docker": "29.4.3",
+      "helm": "4.3.1+gc0d08d0",
+      "kind": "0.33.0",
+      "kubectl": "1.34.1",
+      "ollama": "0.40.16"
+    }
+  },
+  "files": [
+    {
+      "path": "approved-rollback/attempt-1/agent/branch-001/result.json",
+      "sha256": "7679d30bcc1a5533c65fb250ead3c797c589a908ede8ab5c501d3d2f3421b9c5",
+      "bytes": 3862,
+      "redactions": 2
+    },
+    {
+      "path": "approved-rollback/attempt-1/agent/branch-002/result.json",
+      "sha256": "1ae7f80b7e6432efbf33a420353f5a38a611fad8961cf1f60d17349a2059bb31",
+      "bytes": 374,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/attempt-1/agent/branch-003/result.json",
+      "sha256": "07327a872831f5963eaa3af71f1ca518d1917a3583fdafd1302fd74d05ac6043",
+      "bytes": 3532,
+      "redactions": 2
+    },
+    {
+      "path": "approved-rollback/attempt-1/agent/branch-004/result.json",
+      "sha256": "98dfd1504f43103a1c5ad01e5712916f70123f2988fa944a8b582bc0cfb91eb9",
+      "bytes": 7136,
+      "redactions": 4
+    },
+    {
+      "path": "approved-rollback/attempt-1/agent/branch-005/result.json",
+      "sha256": "03ecb80a42a265c6a44a2eebbab7cfd0f8473c128ad9003dbed582fa4f34430d",
+      "bytes": 3590,
+      "redactions": 2
+    },
+    {
+      "path": "approved-rollback/attempt-1/agent/branch-006/result.json",
+      "sha256": "03ecb80a42a265c6a44a2eebbab7cfd0f8473c128ad9003dbed582fa4f34430d",
+      "bytes": 3590,
+      "redactions": 2
+    },
+    {
+      "path": "approved-rollback/attempt-1/agent/branch-007/result.json",
+      "sha256": "03ecb80a42a265c6a44a2eebbab7cfd0f8473c128ad9003dbed582fa4f34430d",
+      "bytes": 3590,
+      "redactions": 2
+    },
+    {
+      "path": "approved-rollback/attempt-1/agent/branch-008/result.json",
+      "sha256": "0fea7840961eebb67df599e8c5a136883dbdfb781f5e7dc65bd9aa44f1ae5e0f",
+      "bytes": 3590,
+      "redactions": 2
+    },
+    {
+      "path": "approved-rollback/attempt-1/agent/branch-009/result.json",
+      "sha256": "0fea7840961eebb67df599e8c5a136883dbdfb781f5e7dc65bd9aa44f1ae5e0f",
+      "bytes": 3590,
+      "redactions": 2
+    },
+    {
+      "path": "approved-rollback/attempt-1/agent/branch-010/result.json",
+      "sha256": "0fea7840961eebb67df599e8c5a136883dbdfb781f5e7dc65bd9aa44f1ae5e0f",
+      "bytes": 3590,
+      "redactions": 2
+    },
+    {
+      "path": "approved-rollback/attempt-1/agent/report.json",
+      "sha256": "dfd94b49b0c22b94673a44c53b516080965a37d5095a1ea10581e518c1cfd90c",
+      "bytes": 1542,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/execution.json",
+      "sha256": "7bee6af6f3c204423b7ca561026d1af5e2b41b18b8062317171deffbe78586db",
+      "bytes": 604,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/initial-guard.json",
+      "sha256": "ae7e4fd9be69b45dd94b70d37be8ead803bfd7cb0cb3903638cb8298d0de082f",
+      "bytes": 789,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/model-calls.json",
+      "sha256": "f5c1a435a4d24848e8d25027eb4b02be9d9438e435a00dd37c138ec9ef788a58",
+      "bytes": 1970,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/model-proposal.json",
+      "sha256": "ae24f1aeb3c7eebcaa02e7558e52582a8c245a10db4be1d39365aa0bc7c2c93d",
+      "bytes": 1593,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/outcome.json",
+      "sha256": "6d983c5c317a9d082652e0ef6df066da8c8af6ba4a2604eeed8c82db26d5959e",
+      "bytes": 2415,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/planning-status.json",
+      "sha256": "e4bbfd9389840ecb3c5e950bed870e5a2612434de09d3dd986abf45ec8689ad5",
+      "bytes": 2304,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/proposal.json",
+      "sha256": "ae24f1aeb3c7eebcaa02e7558e52582a8c245a10db4be1d39365aa0bc7c2c93d",
+      "bytes": 1593,
+      "redactions": 0
+    },
+    {
+      "path": "images.json",
+      "sha256": "c84b74cdbde235194701e1d35ac5bf5f82a0ea23bbd1545ee13be25f0d74b4a7",
+      "bytes": 2741,
+      "redactions": 0
+    },
+    {
+      "path": "model-runtime.json",
+      "sha256": "beb402c4121c12d7216109990d20572b39d6770e65c576bae61cb3ec20661c3c",
+      "bytes": 830,
+      "redactions": 0
+    },
+    {
+      "path": "policy.json",
+      "sha256": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+      "bytes": 2352,
+      "redactions": 0
+    },
+    {
+      "path": "primary-incident.json",
+      "sha256": "217c56f15f150818780118a0cb514fd265b7f3d804c609371668538ce658fe70",
+      "bytes": 4841,
+      "redactions": 2
+    },
+    {
+      "path": "primary-storefront-impact.json",
+      "sha256": "067cc3d8dbce939eb2f176622741b951d03ff1e4765c312f8b6cc330080275e9",
+      "bytes": 313,
+      "redactions": 0
+    },
+    {
+      "path": "rbac-checks.json",
+      "sha256": "6fd5a39fb636f6959a24aceb57cd07ed4611c62e201cb11380dc99e85179acbe",
+      "bytes": 552,
+      "redactions": 0
+    },
+    {
+      "path": "scenario-result.json",
+      "sha256": "9cb50fbc6d999648cd1c8c7804b5204ce631361017b883364553761f621b492f",
+      "bytes": 1020,
+      "redactions": 0
+    },
+    {
+      "path": "summary.json",
+      "sha256": "19c700939d00097377de7766c9671e014d4158f90f4ef5bd157de2fbe1f9be84",
+      "bytes": 5639,
+      "redactions": 0
+    },
+    {
+      "path": "coordinator-journal.json",
+      "sha256": "81e1153718a7a45b23f3637268393f64fae2f728a2154627b04dc1bab4b253a0",
+      "bytes": 39087,
+      "redactions": 1
+    }
+  ],
+  "omitted": []
+}

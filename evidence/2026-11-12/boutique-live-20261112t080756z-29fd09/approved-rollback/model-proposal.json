@@ -1,0 +1,26 @@
+{
+  "action": "ESCALATE",
+  "action_id": "ACT-1dc2d260460880d44b9f3b48",
+  "based_on_resource_version": "96657",
+  "evidence_refs": [
+    "E-F3356ACD50FE",
+    "E-F23B99C04D99",
+    "E-8A4FEF1CA199",
+    "E-EC730E9BD976",
+    "E-5EB67B5DF1DF",
+    "E-0E6B393CC1C0",
+    "E-4BEA9B369F77"
+  ],
+  "incident_id": "INC-A600F431B0E4",
+  "kind": "proposal",
+  "parameters": {},
+  "rationale": "The live Pod template already matches the healthy baseline, so a rollback would change nothing. Decided by a code rule, not the model. Operator review is required. No repair is authorized.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

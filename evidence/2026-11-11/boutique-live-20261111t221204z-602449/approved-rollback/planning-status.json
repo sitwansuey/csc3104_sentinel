@@ -1,0 +1,63 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": {
+        "budget_seconds": 600,
+        "model_calls": 1,
+        "model_calls_completed": 0,
+        "model_seconds": 45.035,
+        "planning_attempt": 1,
+        "seconds": 45.234
+      }
+    },
+    {
+      "attempt": 2,
+      "usage": {
+        "budget_seconds": 600,
+        "model_calls": 3,
+        "model_calls_completed": 3,
+        "model_seconds": 25.045,
+        "planning_attempt": 2,
+        "seconds": 25.207
+      }
+    }
+  ],
+  "attempts": 2,
+  "delivered": 1,
+  "error_code": "INVALID_MODEL_OUTPUT",
+  "incident_id": "INC-A3DA09311555",
+  "next_attempt": 1794435270.284541,
+  "proposal": {
+    "action": "ROLLBACK",
+    "action_id": "ACT-5a435b620663bd7636cbd0a9",
+    "based_on_resource_version": "71579",
+    "evidence_refs": [
+      "E-BCFD12D5702C",
+      "E-FA7A88E7761D",
+      "E-B39668D05AF4",
+      "E-74A8A63FEE85",
+      "E-1E7D231FFC85",
+      "E-2454EC571440",
+      "E-4D5E1E806797",
+      "E-BB7D72351C50",
+      "E-D8A9299C6C38",
+      "E-EBCD44CC4D83"
+    ],
+    "incident_id": "INC-A3DA09311555",
+    "kind": "proposal",
+    "parameters": {
+      "baseline_id": "BASE-LIVE-caec583f5330",
+      "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+    },
+    "rationale": "The incident evidence indicates that the 'shippingservice' container is failing to listen on an invalid port, as shown in the log message from evidence E-EBCD44CC4D83. This failure results in the container crashing and restarting in a 'CrashLoopBackOff' state, as seen in evidence E-1E7D231FFC85. The readiness probe also fails due to the container not being ready, as noted in evidence E-2454EC571440. The 'MinimumReplicasUnavailable' event (E-B39668D05AF4) is a downstream effect of the container failure. The evidence corroborates the failure timeline and the causality of the incident. Since the root cause is a configuration issue (invalid port), and a healthy baseline is available, the appropriate action is to rollback to the known good configuration.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    }
+  }
+}

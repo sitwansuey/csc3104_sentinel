@@ -38,9 +38,12 @@ resource notes in [setup](docs/setup.md) before using Apple Silicon.
 [Run and observe](docs/run.md) explains manual/automatic injection, evidence,
 the files used at each stage and interrupted cleanup. [Planner mode](docs/planner.md)
 adds `-Agent`; it requires a reachable Ollama server and a model you installed.
-Live agent-mode runs are committed as evidence. They cover one fault type, where
-ROLLBACK is always the right action, with pre-authorised lab approval, so they
-do not show diagnosis accuracy in general. Owner acceptance is tracked in #56.
+Live agent-mode runs are committed as evidence. Almost all cover one fault
+type, where ROLLBACK is always the right action; runs before 4139385 used
+pre-authorised lab approval and later runs automated `auto-lab` approval through
+the authenticated API, with no person deciding. The catalog scenarios R2 and N1
+have run live but are unscored while their labels await sign-off
+(C-SCENARIO-LIVE-UNSCORED). None of this shows diagnosis accuracy in general. Owner acceptance is tracked in #56.
 
 <!-- BEGIN GENERATED:claim-c-agent-warm -->
 > **C-AGENT-WARM:** qwen3:14b agent mode reached RECOVERED in 3/3 consecutive runs after the target-name fix.
@@ -56,8 +59,8 @@ their source revision:
 <!-- END GENERATED:claim-c-agent-recorded -->
 
 <!-- BEGIN GENERATED:claim-c-agent-all -->
-> **C-AGENT-ALL:** Across every recorded agent-mode attempt, 14/24 reached RECOVERED.
-> Scope: Includes deliberate negative tests (unreachable model server, missing model) and runs on older revisions. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 4 runs at 4afc879.
+> **C-AGENT-ALL:** Across every recorded agent-mode attempt, 24/39 reached RECOVERED.
+> Scope: Every committed agent bundle, failures included: deliberate negative tests (unreachable model server, missing model, a forced 1 s planning budget), runs on older revisions, and the 2026-11-12 catalog runs R2 and N1, which are unscored (labels pending). A run counts only when it passed expecting RECOVERED; the two runs that passed as an expected escalation (the forced budget run and N1 at dab3b3f) never recover and count as not recovered. Mostly one fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Lab approval pre-authorised before 4139385; from 4139385 automated auto-lab (automated-lab identity, no person), except the forced-budget run and both N1 runs, which asked for no approval (mode not-requested). One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 19 runs from 4afc879 onwards.
 <!-- END GENERATED:claim-c-agent-all -->
 
 [Testing](docs/testing.md) explains how to validate each mode and distinguish
@@ -79,8 +82,10 @@ does not deploy six independent Sentinel microservices. The Executor experiment
 and the Boutique harness (walkthrough, provider and agent modes) approve through
 the [authenticated approval service](docs/approvals.md#live-harness-approval):
 a person types the action ID, or an unattended run opts in to recorded automated
-lab approval. The Verifier acceptance script still uses local lab approval. No
-live run has used this path yet; the committed live evidence used pre-authorised
+lab approval. The Verifier acceptance script still uses local lab approval. Live
+runs from 4139385 used this path in automated `auto-lab` mode, recorded under the
+`automated-lab` identity (C-CONNECTED-HARNESS-AUTOLAB, C-APPROVAL-REJECT); no live
+run yet shows a person approving, and earlier live evidence used pre-authorised
 lab approval. Deployed
 acceptance and cross-host execution ownership remain unfinished; the
 [known limitations](#known-limitations-and-open-defects) list what that means
@@ -136,20 +141,20 @@ Sentinel is a single-host prototype. This list is generated from
 and the code or evidence it cites, and CI fails when a citation stops resolving.
 
 <!-- BEGIN GENERATED:limitations-summary -->
-- [L-CLOCK-ORDERING](docs/limitations.md#l-clock-ordering): Lifecycle ordering compares wall-clock timestamps written by different components (defect, open; planned P3.03)
 - [L-OBSERVER-ZERO-REPLICAS](docs/limitations.md#l-observer-zero-replicas): A Deployment scaled to zero replicas is treated as healthy (defect, open; planned P5.07)
 - [L-ORPHANED-EXECUTOR-LEDGER](docs/limitations.md#l-orphaned-executor-ledger): A crashed Executor whose peer finished the action keeps it in doubt and refuses that workload (defect, open; planned P3.04)
 - [L-EXEC-WEDGE](docs/limitations.md#l-exec-wedge): A write rejected with its resource version unchanged waits in NEEDS_RECONCILIATION unless fencing is on (defect, mitigated; planned P2.06, P5.08)
 - [L-EXEC-REDELIVERY](docs/limitations.md#l-exec-redelivery): A replacement Executor without the ledger row reported CONFLICT for a write that was applied (defect, mitigated; planned P3.01, P4.01)
-- [L-AGENT-JOURNAL](docs/limitations.md#l-agent-journal): Agent mode bypasses the durable Planner journal (defect, mitigated; planned P2.01)
+- [L-CLOCK-ORDERING](docs/limitations.md#l-clock-ordering): Lifecycle ordering compared wall-clock timestamps written by different components (defect, mitigated; planned P3.03, P4.01)
+- [L-AGENT-JOURNAL](docs/limitations.md#l-agent-journal): Agent mode bypasses the durable Planner journal (defect, mitigated; planned P2.01, P3.07)
 - [L-AGENT-APPROVAL](docs/limitations.md#l-agent-approval): No live run yet shows a person approving through the authenticated API (defect, mitigated; planned P2.02, P2.03)
-- [L-RAW-LOGS-PROMPT](docs/limitations.md#l-raw-logs-prompt): Sentinel's planning prompts carry log text only cleaned and quoted, and the injection gate is a pattern list no live run has exercised (defect, mitigated; planned P2.04, P2.05, P4.04)
+- [L-RAW-LOGS-PROMPT](docs/limitations.md#l-raw-logs-prompt): Sentinel's planning prompts carry log text only cleaned and quoted, and the injection gate is a pattern list no live adversarial run has exercised (defect, mitigated; planned P2.04, P2.05, P4.04)
 - [L-FREE-TEXT-DECISION](docs/limitations.md#l-free-text-decision): The live diagnosis was model free text and the rollback choice had no change evidence (defect, mitigated; planned P2.05, P4.04)
 - [L-NO-LOGGING](docs/limitations.md#l-no-logging): Structured logs cover only the networked entrypoints, and no live run has collected them (defect, mitigated; planned P1.07, P3.02)
 - [L-SINGLE-COORDINATOR](docs/limitations.md#l-single-coordinator): The Coordinator is one process with one SQLite file (limitation, open; planned P3.06, P4.02, P5.01)
 - [L-HOST-LOCAL-EXECUTOR](docs/limitations.md#l-host-local-executor): The Executor ledger and target locks are host-local (limitation, open; planned P3.04)
 - [L-NO-FENCING](docs/limitations.md#l-no-fencing): No fencing of abandoned or revoked writes across hosts (limitation, open; planned P2.06, P3.04, P3.05)
-- [L-SINGLE-HOST-DISTRIBUTION](docs/limitations.md#l-single-host-distribution): The networked worker layer has only run on one host (limitation, open; planned P3.01, P4.01)
+- [L-SINGLE-HOST-DISTRIBUTION](docs/limitations.md#l-single-host-distribution): The networked worker layer has only run on one host (limitation, open; planned P3.01, P3.07, P4.01)
 - [L-RESTART-BUDGET-LOCAL](docs/limitations.md#l-restart-budget-local): The restart budget is kept per Executor ledger, and only local wiring gives it to the Guard (limitation, open; planned P4.03)
 - [L-NO-DIAGNOSIS-ACCURACY](docs/limitations.md#l-no-diagnosis-accuracy): No diagnosis-accuracy evaluation (limitation, open; planned P2.07, P4.04)
 - [L-OVERLAPPING-FAULTS](docs/limitations.md#l-overlapping-faults): Only one fault at a time has been verified (limitation, open; planned P4.05)

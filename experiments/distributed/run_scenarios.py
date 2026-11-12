@@ -84,13 +84,20 @@ def run_once(name, *, mode="file", out=None, repeat=1, context=None, kind_bundle
         "tls": topology.tls, "lease_seconds": topology.lease_seconds, "deadline_seconds": scenario.deadline_seconds,
         "git_revision": git_revision(), "python": platform.python_version(), "os": platform.system(),
         "notes": notes, "harness_error": error,
+        "clock_offsets_simulated": dict(topology.clock_offsets), "max_clock_skew_seconds": topology.max_clock_skew,
+        # theta = Coordinator clock minus worker clock, measured by each worker (Cristian's algorithm).
+        "clock_offsets_measured": {row["identity"]: {
+            "theta_seconds": round(row["offset"], 3), "uncertainty_seconds": round(row["uncertainty"], 3),
+            "max_abs_theta_seconds": round(row["max_abs_offset"], 3), "reports": row["reports"]}
+            for row in records["worker_clocks"]},
         "states": sorted({row["state"] for row in records["incidents"]}),
         "committed_writes": len(records["cluster_writes"]),
         "invariants": results, "passed": not failed,
         "expected_failures": sorted(scenario.expected_failures), "known_defect": scenario.known_defect or None,
         "matches_expectation": failed == set(scenario.expected_failures) and error is None,
         "limits": "Separate OS processes on one host: one kernel clock, one disk, loopback networking. "
-                  "Not separate machines; clock skew is simulated by a gated offset, not measured.",
+                  "Not separate machines; clock skew is simulated by a gated offset, and the measured "
+                  "offsets measure that simulation over loopback, not skew between hosts.",
     }
     if out is not None:
         folder = Path(out) / (f"{summary['date']}-{name}" + (f"-r{repeat}" if repeat > 1 else ""))

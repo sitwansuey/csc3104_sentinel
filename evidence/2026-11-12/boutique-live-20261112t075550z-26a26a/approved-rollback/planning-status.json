@@ -1,0 +1,46 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": {
+        "budget_seconds": 600,
+        "model_calls": 2,
+        "model_calls_completed": 2,
+        "model_seconds": 13.559,
+        "planning_attempt": 1,
+        "seconds": 13.791
+      }
+    }
+  ],
+  "attempts": 1,
+  "delivered": 1,
+  "error_code": "ABSTAINED",
+  "incident_id": "INC-8FC61A784B80",
+  "next_attempt": 0.0,
+  "proposal": {
+    "action": "ESCALATE",
+    "action_id": "ACT-e365adcfbce8337fdf9b4a89",
+    "based_on_resource_version": "95346",
+    "evidence_refs": [
+      "E-D3EFE84F754F",
+      "E-EDBC197DFBB4",
+      "E-05EAACA3B700",
+      "E-3414A3696665",
+      "E-F8E406BF40F0",
+      "E-004B9AB5AB0F",
+      "E-B57582F26462"
+    ],
+    "incident_id": "INC-8FC61A784B80",
+    "kind": "proposal",
+    "parameters": {},
+    "rationale": "RCA abstained: the evidence does not support a diagnosis. Operator review is required. No repair is authorized.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    }
+  }
+}

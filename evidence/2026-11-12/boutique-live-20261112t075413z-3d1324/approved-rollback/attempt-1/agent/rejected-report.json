@@ -1,0 +1,16 @@
+{
+  "failures": [
+    {
+      "root cause component": "shippingservice",
+      "root cause reason": "faulty configuration rollout",
+      "evidence_ids": [
+        "branch-003",
+        "branch-002",
+        "branch-003",
+        "branch-002"
+      ]
+    }
+  ],
+  "explanation": "The incident is attributed to a 'faulty configuration rollout' due to the 'ErrImageNeverPull' error, which indicates that the container image required for the pod is not available, and the pull policy is set to 'Never'. This is corroborated by multiple evidence IDs, including 'branch-003' and 'branch-002', which show that the deployment is failing due to the unavailability of the container image. The pull policy being set to 'Never' suggests that the deployment configuration is incorrectly configured, leading to the failure of the pod to start. The evidence IDs 'branch-003' and 'branch-002' provide supporting details about the error and the configuration issues. There are no contradictions in the evidence, and the timestamps are consistent with the incident timeline. The analysis is based on the provided telemetry and does not include any assumptions or inferred data beyond what is explicitly stated in the evidence.",
+  "limitations": "The analysis is based on the provided telemetry and does not include any external data or assumptions beyond what is explicitly stated in the evidence. The timestamps used are from the corroborated_onsets, and the evidence IDs cited are those that directly relate to the incident and its root cause."
+}

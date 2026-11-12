@@ -219,7 +219,9 @@ class CommandTests(unittest.TestCase):
                 self.assertEqual(command[command.index("--file") + 1], image.dockerfile)
                 self.assertIn(f"org.opencontainers.image.revision={REVISION}", command)
                 self.assertIn("org.opencontainers.image.version=1.0.0-rc.1", command)
-                self.assertEqual(f"SOURCE_REVISION={REVISION}" in command, image is RUNNER)
+                # Only images that declare the argument get it (the runner and the worker).
+                self.assertEqual(f"SOURCE_REVISION={REVISION}" in command,
+                                 image is RUNNER or image.name == "sentinel-worker")
 
     def test_trivy_runs_pinned_and_locked_down_without_the_docker_socket(self):
         command = build.trivy_command(["version"], scratch="/s", out="/o", cache="/c")

@@ -29,7 +29,7 @@
     {
       "id": "C-AGENT-ALL",
       "text": "Across every recorded agent-mode attempt, {value} reached RECOVERED",
-      "derive": "pass_ratio",
+      "derive": "recovered_ratio",
       "bundles": [
         "boutique-live-20261110t171150z-44469c",
         "boutique-live-20261110t171528z-3f8ebc",
@@ -54,10 +54,25 @@
         "boutique-live-20261111t202845z-ea7221",
         "boutique-live-20261111t202847z-3e370f",
         "boutique-live-20261111t203130z-728cc5",
-        "boutique-live-20261111t203342z-c264c5"
+        "boutique-live-20261111t203342z-c264c5",
+        "boutique-live-20261111t221204z-602449",
+        "boutique-live-20261111t221600z-772bbe",
+        "boutique-live-20261111t221737z-2b9319",
+        "boutique-live-20261111t222004z-07f850",
+        "boutique-live-20261112t050930z-ba0f81",
+        "boutique-live-20261112t051156z-009b69",
+        "boutique-live-20261112t051406z-ef3fbb",
+        "boutique-live-20261112t074450z-38278f",
+        "boutique-live-20261112t074810z-311065",
+        "boutique-live-20261112t075130z-fb6439",
+        "boutique-live-20261112t075413z-3d1324",
+        "boutique-live-20261112t075550z-26a26a",
+        "boutique-live-20261112t080534z-160519",
+        "boutique-live-20261112t080756z-29fd09",
+        "boutique-live-20261112t081032z-63d609"
       ],
-      "scope_caveat": "Includes deliberate negative tests (unreachable model server, missing model) and runs on older revisions. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 4 runs at 4afc879.",
-      "value": "14/24"
+      "scope_caveat": "Every committed agent bundle, failures included: deliberate negative tests (unreachable model server, missing model, a forced 1 s planning budget), runs on older revisions, and the 2026-11-12 catalog runs R2 and N1, which are unscored (labels pending). A run counts only when it passed expecting RECOVERED; the two runs that passed as an expected escalation (the forced budget run and N1 at dab3b3f) never recover and count as not recovered. Mostly one fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Lab approval pre-authorised before 4139385; from 4139385 automated auto-lab (automated-lab identity, no person), except the forced-budget run and both N1 runs, which asked for no approval (mode not-requested). One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 19 runs from 4afc879 onwards.",
+      "value": "24/39"
     },
     {
       "id": "C-AGENT-FAIL-CLOSED",
@@ -224,8 +239,128 @@
         "executor-wedge-rv-race-20261111t202123z",
         "executor-wedge-delete-recreate-20261111t202124z"
       ],
-      "scope_caveat": "One run per scenario, each in a disposable namespace on the local kind cluster; Guard is not under test. The before run copied the harness from 4afc879 into a checkout of main d5b2ed9 and replaced its shared.log import with a no-op stub. Covers a moved resourceVersion (rv-race) and a replaced target (delete-recreate) only: a rejected write that leaves the same UID at the same resourceVersion is not covered; at these revisions it stays NEEDS_RECONCILIATION, and the P2.06 fence for it has not been run live. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance inferred: the scenario summaries carry no provenance block, so each revision is the operator's statement of the checkout's HEAD at run time, recorded in the bundle MANIFEST basis.",
+      "scope_caveat": "One run per scenario, each in a disposable namespace on the local kind cluster; Guard is not under test. The before run copied the harness from 4afc879 into a checkout of main d5b2ed9 and replaced its shared.log import with a no-op stub. Covers a moved resourceVersion (rv-race) and a replaced target (delete-recreate) only: a rejected write that leaves the same UID at the same resourceVersion is not covered here; at these revisions it stays NEEDS_RECONCILIATION. The P2.06 fence for it ran live later at 4139385 and 5409092 (C-EXECUTOR-WEDGE-FENCE). One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance inferred: the scenario summaries carry no provenance block, so each revision is the operator's statement of the checkout's HEAD at run time, recorded in the bundle MANIFEST basis.",
       "value": "rv-race at d5b2ed9 FAILED: NEEDS_RECONCILIATION on 5/5 reconcile passes, second proposal not admitted; rv-race at 4afc879 PASS: SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE on 5/5 reconcile passes, second proposal APPLIED; delete-recreate at 4afc879 PASS: SUPERSEDED/TARGET_REPLACED on 5/5 reconcile passes, second proposal APPLIED"
+    },
+    {
+      "id": "C-EXECUTOR-WEDGE-FENCE",
+      "text": "Live Executor wedge harness on integration/phase2, including the admission-deny scenario that needs the P2.06 fence: {value}",
+      "derive": "wedge_resolutions",
+      "bundles": [
+        "executor-wedge-admission-deny-p2-20261111t220612z",
+        "executor-wedge-rv-race-p2-20261111t220648z",
+        "executor-wedge-delete-recreate-p2-20261111t220650z",
+        "executor-wedge-admission-deny-p2b-20261112t050853z"
+      ],
+      "scope_caveat": "One run per scenario per revision, each in a disposable namespace; Guard is not under test. In admission-deny a ValidatingAdmissionPolicy denies the Pod template change, so the write is rejected with the same UID at the same resourceVersion; with fencing on, a reconcile pass after the 30 s settle delay sends one metadata-only fence. The 4139385 admission-deny run is FAILED on one harness check only: it expected the fence to leave metadata.generation unchanged, but a Deployment bumps generation on an annotation change. Its other 11 checks passed (CONFLICT/FENCED, exactly one fence, the workload released, the second proposal APPLIED). The harness check was fixed in 17d4532 to compare the spec, and the rerun at 5409092 passed all 12 checks. Fencing is off by default in the Executor. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance inferred: the scenario summaries carry no provenance block, so each revision is the operator's statement of the clean checkout's HEAD at run time, recorded in the bundle MANIFEST basis.",
+      "value": "admission-deny at 4139385 FAILED: CONFLICT/FENCED on 5/5 reconcile passes, second proposal APPLIED; rv-race at 4139385 PASS: SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE on 5/5 reconcile passes, second proposal APPLIED; delete-recreate at 4139385 PASS: SUPERSEDED/TARGET_REPLACED on 5/5 reconcile passes, second proposal APPLIED; admission-deny at 5409092 PASS: CONFLICT/FENCED on 5/5 reconcile passes, second proposal APPLIED"
+    },
+    {
+      "id": "C-CONNECTED-HARNESS-AUTOLAB",
+      "text": "With approval through the authenticated approval API, the connected Boutique walkthrough (two verified recoveries, crash reconciliation and a refused unnecessary rollback) passed in {value} runs",
+      "derive": "pass_ratio",
+      "bundles": [
+        "boutique-live-20261111t220652z-f42864"
+      ],
+      "scope_caveat": "One run. Approval auto-lab: the harness approved through the authenticated approval API under the automated-lab identity, automated and labelled, with no person deciding. It shows the API path live, not a person approving; no interactive or dashboard (ui) approval has run live. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Harness-authored proposals, no model. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 4139385 on integration/phase2, clean tree, 2026-11-11 UTC.",
+      "value": "1/1"
+    },
+    {
+      "id": "C-APPROVAL-REJECT",
+      "text": "With every approval refused through the authenticated approval API, the run stopped with no approval granted and no Executor record for the refused rollback in {value} runs",
+      "derive": "approval_refusals",
+      "bundles": [
+        "boutique-live-20261111t220933z-5145ad"
+      ],
+      "scope_caveat": "One deliberate negative test (approval mode reject, an automated refusal, not a person): the connected walkthrough run is FAILED by design ('Operator did not approve ...; no Executor write attempted'), its summary records one refusal and no approval, and the bundle holds no execution record for the refused action; the harness then removed the injected fault as the lab administrator (operator_emergency_restore true), outside the Executor and not counted as recovery. The scripted negative cases that run before approval (missing approval, hard policy, stale state) still ran. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 4139385 on integration/phase2, clean tree, 2026-11-11 UTC.",
+      "value": "1/1"
+    },
+    {
+      "id": "C-GUARD-REJECTION-P2",
+      "text": "At 4139385, Guard rejection of an approved but unnecessary rollback: {value}",
+      "derive": "zero_write_rejections",
+      "bundles": [
+        "boutique-live-20261111t221055z-4a90ef"
+      ],
+      "scope_caveat": "One run of one scenario: the service is healthy and already at its baseline. The approval here is the fixed file-backed lab record of the Guard-only refusal check (approval mode not-requested), which never reaches the Coordinator and proves a refusal only. Counts Executor patch attempts for the refused action. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 4139385 on integration/phase2, clean tree, 2026-11-11 UTC.",
+      "value": "1/1 refused, 0 Executor writes"
+    },
+    {
+      "id": "C-AGENT-AUTOLAB-4139385",
+      "text": "At 4139385, qwen3:14b agent mode with auto-lab approval reached RECOVERED in {value} runs",
+      "derive": "recovered_ratio",
+      "bundles": [
+        "boutique-live-20261111t221204z-602449",
+        "boutique-live-20261111t221600z-772bbe",
+        "boutique-live-20261111t221737z-2b9319"
+      ],
+      "scope_caveat": "Three consecutive runs, failure included. The failed run ended NEEDS_REVIEW with zero Executor writes: the model named the target's container ('<pod>/server') as the root-cause component and the off-target check escalated it (DIAGNOSIS_OFF_TARGET). That was a defect in the check, fixed in 5300394, which accepts a <pod>/<container> reference to the target's own container; after the failed run the harness then removed the injected fault as the lab administrator (operator_emergency_restore true), outside the Executor and not counted as recovery. The first run (602449) recovered on its second planning attempt: the Analyzer's call in attempt 1 failed after about 45 s and 2048 output tokens (ValueError, journal code INVALID_MODEL_OUTPUT) and the journal retried. Approval auto-lab: the harness approved through the authenticated approval API under the automated-lab identity, automated and labelled, with no person deciding. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Model qwen3:14b on the local Ollama server; each bundle's model-runtime.json records Q4_K_M fully on the GPU (gpu_fraction 1.0) with keep_alive 30m, and every model call in model-calls.json loaded in under 1 s; the preflight warm-up, also in model-runtime.json, is separate and was a cold load of 18.1 s in the first run. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 4139385 on integration/phase2, clean tree, 2026-11-11 UTC.",
+      "value": "2/3"
+    },
+    {
+      "id": "C-AGENT-FORCED-ESCALATION",
+      "text": "Given a planning budget too short for any model call, agent mode escalated to NEEDS_REVIEW with no Executor record, as expected, in {value} runs",
+      "derive": "expected_escalations",
+      "bundles": [
+        "boutique-live-20261111t222004z-07f850"
+      ],
+      "scope_caveat": "One deliberate negative test: planning_budget_seconds 1 and --expect escalated. The journal made three attempts (two retries) and delivered the fixed BUDGET_EXCEEDED escalation with zero model calls completed; no approval was requested (mode not-requested). It shows the escalation path, not a recovery; the harness then removed the injected fault as the lab administrator (operator_emergency_restore true), outside the Executor and not counted as recovery. One fault type (invalid shipping PORT). One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 4139385 on integration/phase2, clean tree, 2026-11-11 UTC.",
+      "value": "1/1"
+    },
+    {
+      "id": "C-AGENT-AUTOLAB-5409092",
+      "text": "At 5409092, qwen3:14b agent mode with auto-lab approval reached RECOVERED in {value} consecutive runs",
+      "derive": "recovered_ratio",
+      "bundles": [
+        "boutique-live-20261112t050930z-ba0f81",
+        "boutique-live-20261112t051156z-009b69",
+        "boutique-live-20261112t051406z-ef3fbb"
+      ],
+      "scope_caveat": "Three runs only, after the off-target fix (5300394). Three earlier attempts at this revision failed before any experiment step because the Docker Desktop engine was down; they are listed in evidence/exclusions.json as infrastructure failures, not Sentinel results. Approval auto-lab: the harness approved through the authenticated approval API under the automated-lab identity, automated and labelled, with no person deciding. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Model qwen3:14b on the local Ollama server; each bundle's model-runtime.json records Q4_K_M fully on the GPU (gpu_fraction 1.0) with keep_alive 30m, and every model call in model-calls.json and every preflight warm-up loaded in under 1 s; the model was already loaded by the warm-up of an excluded attempt (16.2 s cold load, see evidence/exclusions.json). One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 5409092 on integration/phase2, clean tree, 2026-11-12 UTC.",
+      "value": "3/3"
+    },
+    {
+      "id": "C-AGENT-R1-870AA7D",
+      "text": "With the code-owned decision context and the telemetry injection gate merged, the standard PORT fault (catalog R1) in agent mode: {value}",
+      "derive": "scenario_outcomes",
+      "bundles": [
+        "boutique-live-20261112t074450z-38278f",
+        "boutique-live-20261112t074810z-311065",
+        "boutique-live-20261112t075130z-fb6439"
+      ],
+      "scope_caveat": "Three runs only. The catalog labels are pending owner sign-off, so these are not scored trials; scenario-result.json keeps the harness's provisional score. Each run's report names shippingservice and its planning-status.json records decided_by model with no eligibility code. Approval auto-lab: the harness approved through the authenticated approval API under the automated-lab identity, automated and labelled, with no person deciding. Model qwen3:14b on the local Ollama server; each bundle's model-runtime.json records Q4_K_M fully on the GPU (gpu_fraction 1.0) with keep_alive 30m, and every model call in model-calls.json loaded in under 1 s; the preflight warm-up, also in model-runtime.json, is separate and was a cold load of 19.4 s in the first run. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 870aa7d on integration/phase2, clean tree, 2026-11-12 UTC.",
+      "value": "R1 at 870aa7d PASS x3: ROLLBACK decided by the model, 1 Executor write, RECOVERED, matched the pre-registered expected outcome, labels pending"
+    },
+    {
+      "id": "C-SCENARIO-LIVE-UNSCORED",
+      "text": "Live catalog scenario runs, unscored with labels pending: {value}",
+      "derive": "scenario_outcomes",
+      "bundles": [
+        "boutique-live-20261112t075413z-3d1324",
+        "boutique-live-20261112t075550z-26a26a",
+        "boutique-live-20261112t080534z-160519",
+        "boutique-live-20261112t080756z-29fd09",
+        "boutique-live-20261112t081032z-63d609"
+      ],
+      "scope_caveat": "UNSCORED: the pre-registered labels in experiments/boutique/catalog.json await owner sign-off, so these runs say what happened and whether it matched the pre-registered expected outcome; they are not scored trials. One run per scenario per revision. At 870aa7d R2 and N1 both FAILED: the Reporter diagnosed shippingservice and a faulty configuration rollout (rejected-report.json) but also cited a metrics result with no findings, and the citation rule (every cited result must name the component) made it abstain. That was a defect, fixed in ded3dcc (a cited result that names no component is neutral) and merged in dab3b3f. ESCALATE is in R2's pre-registered acceptable list, but an ESCALATE from a planning failure scores no_decision, so the R2 run at 870aa7d did not match. The dab3b3f runs used that check with the older Reporter prompt wording; 784c91a aligned the prompt afterwards and has not run live. Live N1 showed ErrImageNeverPull with the Pod template at its baseline, and the node image was restored after each N1 run (node_image_restored true). N1 at dab3b3f reached its escalation on the second planning attempt: the Reporter's call in attempt 1 failed after about 45 s and 2048 output tokens (ValueError) and the journal retried. After the R2 and N1 runs at 870aa7d and the N1 run at dab3b3f the harness removed the injected fault as the lab administrator (operator_emergency_restore true), outside the Executor and not counted as recovery. N1 asks for no approval; R1 and R2 used auto-lab approval (automated-lab identity, no person). Model qwen3:14b on the local Ollama server; each bundle's model-runtime.json records Q4_K_M fully on the GPU (gpu_fraction 1.0) with keep_alive 30m, and every model call in model-calls.json and every preflight warm-up loaded in under 1 s. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 870aa7d and dab3b3f on integration/phase2, clean trees, 2026-11-12 UTC.",
+      "value": "R2 at 870aa7d FAILED: ESCALATE from a planning failure (ABSTAINED), 0 Executor writes, NEEDS_REVIEW, did not match the pre-registered expected outcome, labels pending; N1 at 870aa7d FAILED: ESCALATE from a planning failure (ABSTAINED), 0 Executor writes, NEEDS_REVIEW, did not match the pre-registered expected outcome, labels pending; R2 at dab3b3f PASS: ROLLBACK decided by the model, 1 Executor write, RECOVERED, matched the pre-registered expected outcome, labels pending; N1 at dab3b3f PASS: ESCALATE decided by the rule (TEMPLATE_ALREADY_BASELINE), 0 Executor writes, NEEDS_REVIEW, matched the pre-registered expected outcome, labels pending; R1 at dab3b3f PASS: ROLLBACK decided by the model, 1 Executor write, RECOVERED, matched the pre-registered expected outcome, labels pending"
+    },
+    {
+      "id": "C-INJECTION-GATE-BENIGN",
+      "text": "Agent runs with ordinary (non-adversarial) telemetry recorded no injection finding and no flagged log line in any collected logs-tool result in {value} runs",
+      "derive": "injection_free",
+      "bundles": [
+        "boutique-live-20261112t074450z-38278f",
+        "boutique-live-20261112t074810z-311065",
+        "boutique-live-20261112t075130z-fb6439",
+        "boutique-live-20261112t075413z-3d1324",
+        "boutique-live-20261112t075550z-26a26a",
+        "boutique-live-20261112t080534z-160519",
+        "boutique-live-20261112t080756z-29fd09",
+        "boutique-live-20261112t081032z-63d609"
+      ],
+      "scope_caveat": "Every agent run at 870aa7d and dab3b3f, failures included (R1, R2 and N1). It shows only that the gate raised no false positive on these live logs. No adversarial log line was injected live, so the gate has not been exercised against an attack outside the offline corpus, and the remote Planner worker's gate has not run live. Model qwen3:14b on the local Ollama server; each bundle's model-runtime.json records Q4_K_M fully on the GPU (gpu_fraction 1.0) with keep_alive 30m, and every model call in model-calls.json loaded in under 1 s; the preflight warm-up, also in model-runtime.json, is separate and was a cold load of 19.4 s in the first run. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 870aa7d and dab3b3f on integration/phase2, clean trees, 2026-11-12 UTC.",
+      "value": "8/8"
     }
   ]
 }

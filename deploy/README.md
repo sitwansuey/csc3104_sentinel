@@ -6,7 +6,9 @@ The Coordinator worker API has its own [ordered deployment and validation
 guide](sentinel/COORDINATOR.md), image, TLS Service and persistent volume. This
 is the Coordinator portion of #62. The [remote worker entrypoint](../docs/remote-workers.md)
 binds component algorithms and owned journals, and `kubectl apply -k deploy/sentinel`
-selects the HTTPS Observer composition. No worker rollout or whole-platform
+selects the HTTPS Observer composition. `docker/worker.Dockerfile` packages every
+worker role in one image ([worker image](../docs/remote-workers.md#worker-image));
+it has been built and scanned locally, but no container has run from it. No worker rollout or whole-platform
 Kubernetes acceptance has been run: the networked layer has only run on one
 host (`L-SINGLE-HOST-DISTRIBUTION` in [limitations](../docs/limitations.md)).
 
@@ -15,7 +17,7 @@ host (`L-SINGLE-HOST-DISTRIBUTION` in [limitations](../docs/limitations.md)).
 | `boutique/` | Pinned upstream Boutique manifest, license and single-service dependency configuration |
 | `sentinel/` | Sentinel Kubernetes resources and restricted Executor RBAC |
 | `kind/` | Local cluster configuration, including the separate Calico security lab |
-| `docker/` | Sentinel component, security inspector and packaged-demo Dockerfiles; repository-root build context |
+| `docker/` | Sentinel component, worker, security inspector and packaged-demo Dockerfiles; repository-root build context |
 | `workloads/` | Small demo workload Kubernetes manifests |
 | `chaos-mesh/` | Pinned lab installation values; see `docs/chaos.md` |
 

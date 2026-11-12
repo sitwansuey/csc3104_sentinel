@@ -16,6 +16,7 @@ from runtime.approval_http import ApprovalClient
 from runtime.coordinator_server import servers
 from runtime.remote_adapters import ExecutorAdapter, GuardAdapter, PlannerAdapter, VerifierAdapter
 from runtime.remote_worker import RemoteIngress, RemoteWorker, WorkerJournal
+from runtime.worker_health import PreflightFailed
 from runtime.worker_http import WorkerClient
 from runtime.worker_transport import ProtocolError, digest
 from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedger
@@ -66,10 +67,11 @@ class RemoteWorkerTests(unittest.TestCase):
     def approval_client(self, role):
         return ApprovalClient(self.approval_url, role, self.approval_services[role][1], timeout=2)
 
-    def worker(self, role, adapter, *, client=None):
+    def worker(self, role, adapter, *, client=None, before_claim=None):
         journal = WorkerJournal(self.f.path / (role + "-transport.db"))
         self.stack.callback(journal.close)
-        return RemoteWorker(client or self.client(role), journal, adapter, renewal_interval=0.1)
+        return RemoteWorker(client or self.client(role), journal, adapter, renewal_interval=0.1,
+                            before_claim=before_claim)
 
     def state(self):
         return self.f.store.incident(self.incident["incident_id"])["state"]
@@ -383,6 +385,76 @@ class RemoteWorkerTests(unittest.TestCase):
         self.assertEqual(restarted.once(), {"status": "accepted", "replay": True})
         self.assertEqual(self.provider.call_count, 1)
         self.assertEqual(self.state(), "VALIDATING")
+
+    def failing_prerequisite(self):
+        return Mock(side_effect=PreflightFailed("MODEL_UNAVAILABLE"))
+
+    def recording_client(self, role, operations):
+        client = self.client(role)
+        original = client.post
+
+        def post(operation, body):
+            operations.append(operation)
+            return original(operation, body)
+        client.post = post
+        return client
+
+    def test_a_failing_claim_prerequisite_claims_nothing(self):
+        RemoteIngress(self.client("observer"))(self.incident)
+        operations, prerequisite = [], self.failing_prerequisite()
+        worker = self.worker("planner", self.planner, client=self.recording_client("planner", operations),
+                             before_claim=prerequisite)
+        with self.assertRaises(PreflightFailed):
+            worker.once()
+        # A worker with no skew bound still measures its clock once before its first claim
+        # (a Coordinator with its own bound refuses a claim without an estimate); it never claims.
+        self.assertEqual((operations, prerequisite.call_count, self.provider.call_count), (["clock"], 1, 0))
+        self.assertEqual(self.client("replacement").post("claim", {})["delivery"]["topic"], "planner.request")
+
+    def test_a_failing_claim_prerequisite_never_holds_back_a_saved_result(self):
+        RemoteIngress(self.client("observer"))(self.incident)
+        client = self.client("planner")
+        original = client.post
+
+        def post(operation, body):
+            if operation == "result":
+                raise TimeoutError("the result request was lost before the Coordinator read it")
+            return original(operation, body)
+        client.post = post
+        with self.assertRaises(TimeoutError):
+            self.worker("planner", self.planner, client=client).once()
+        self.assertEqual(self.state(), "OPEN")
+        prerequisite = self.failing_prerequisite()
+        restarted = self.worker("planner", self.planner, before_claim=prerequisite)
+        self.assertEqual(restarted.once(), {"status": "accepted", "replay": False})
+        self.assertEqual((prerequisite.call_count, self.provider.call_count), (0, 1))
+        self.assertEqual(self.state(), "VALIDATING")
+
+    def test_a_released_saved_result_is_claimed_back_without_the_prerequisite(self):
+        RemoteIngress(self.client("observer"))(self.incident)
+        worker = self.worker("planner", self.planner)
+        with patch.object(worker, "_send", side_effect=TimeoutError("before result delivery")):
+            with self.assertRaises(TimeoutError):
+                worker.once()
+        time.sleep(3.1)  # The lease expires, so the saved result is released and its request claimed again.
+        prerequisite = self.failing_prerequisite()
+        self.assertEqual(self.worker("planner", self.planner, before_claim=prerequisite).once()["status"], "accepted")
+        self.assertEqual((prerequisite.call_count, self.provider.call_count), (0, 1))
+        self.assertEqual(self.state(), "VALIDATING")
+
+    def test_new_work_claimed_for_a_released_result_is_handed_back_when_the_prerequisite_fails(self):
+        RemoteIngress(self.client("observer"))(self.incident)
+        operations, prerequisite = [], self.failing_prerequisite()
+        worker = self.worker("planner", self.planner, client=self.recording_client("planner", operations),
+                             before_claim=prerequisite)
+        with patch.object(worker.journal, "held", return_value=True):  # Some other saved result waits.
+            with self.assertRaises(PreflightFailed):
+                worker.once()
+        self.assertEqual((operations, prerequisite.call_count, self.provider.call_count),
+                         (["clock", "claim", "retry"], 1, 0))
+        (row,) = worker.journal.db.execute("SELECT delivery, result FROM worker_deliveries").fetchall()
+        self.assertEqual(tuple(row), (None, None))
+        self.assertEqual(self.state(), "OPEN")
 
     def test_heartbeat_renews_a_long_provider_call_and_blocks_a_competing_claim(self):
         RemoteIngress(self.client("observer"))(self.incident)

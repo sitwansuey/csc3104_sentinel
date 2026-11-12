@@ -66,8 +66,9 @@ provide distributed leases or fencing. The optional [HTTP delivery layer](../run
 has role-scoped claims/leases and replay handling; those leases do not establish
 cross-host Kubernetes mutation ownership. Production deployment remains separate.
 The [distributed model](distributed-model.md) states the failure model, why the
-Coordinator is a single consistent (CP) leader, and how lifecycle checks depend
-on clocks today. The [threat model](threat-model.md) maps trust boundaries to
+Coordinator is a single consistent (CP) leader, how worker results are ordered
+by Coordinator sequence numbers rather than clocks, and where a measured clock
+skew bound still applies. The [threat model](threat-model.md) maps trust boundaries to
 controls and residual risks.
 
 ## Guard, approval and execution

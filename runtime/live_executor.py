@@ -66,13 +66,18 @@ class LiveGuardAuthorizer:
     Paths are reread for each validation. Reference metadata augments a copy of
     that same Deployment snapshot; there is no second independent state lookup.
     The standard Guard owns every policy, approval and evidence decision.
+    Each check reads clock (UTC) itself, after any slow evidence collection,
+    rather than the caller's earlier now; it is this host's clock, the same
+    one the Executor stamps its records with.
     """
 
     def __init__(self, *, policy, baseline, dependencies, approval, context,
-                 cluster_id, kubeconfig, server_dry_run=False, approval_reader=None, baselines=None):
+                 cluster_id, kubeconfig, server_dry_run=False, approval_reader=None, clock=None,
+                 baselines=None):
         self.paths = dict(policy=policy, baseline=baseline,
                           dependencies=dependencies, approval=approval)
         self.baselines = baselines
+        self.clock = clock or (lambda: _utc_now())
         self.context, self.cluster_id, self.kubeconfig = context, cluster_id, kubeconfig
         self.dependency_reader = lambda proposal: load_json(self.paths["dependencies"], "dependencies")
         self.server_dry_run = server_dry_run
@@ -102,7 +107,7 @@ class LiveGuardAuthorizer:
                 proposal["target"], references, context=self.context,
                 cluster_id=self.cluster_id, kubeconfig=self.kubeconfig,
             )
-        decision = evaluate(**inputs, now=_utc_now())
+        decision = evaluate(**inputs, now=self.clock())
         preview_only = (decision["verdict"] == "ESCALATE"
                         and set(decision["reason_codes"]) <= {"SERVER_DRY_RUN_REQUIRED"})
         if self.server_dry_run and (decision["verdict"] == "ALLOW" or preview_only):
@@ -111,14 +116,14 @@ class LiveGuardAuthorizer:
                 cluster_id=self.cluster_id, kubeconfig=self.kubeconfig,
             )
             # Remote admission latency consumes the evidence/approval validity window.
-            decision = evaluate(**inputs, now=_utc_now())
+            decision = evaluate(**inputs, now=self.clock())
         return GuardCheck(decision=decision, baseline=baseline, inputs=inputs)
 
     def assert_usable(self, check, *, now):
         current = deepcopy(self.approval_reader(deepcopy(check.inputs["proposal"])))
         if current != check.inputs["approval"]:
             raise GuardInputError("Authoritative approval changed; fresh validation is required")
-        return assert_decision_usable(check.decision, **check.inputs, now=_utc_now())
+        return assert_decision_usable(check.decision, **check.inputs, now=self.clock())
 
 
 def _same_file(first, second):
@@ -155,7 +160,7 @@ def _protect_outputs(ledger, locks, inputs, allowed_targets, directories=()):
 def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, locks,
                    policy=None, baseline=None, dependencies=None, approval=None,
                    server_dry_run=False, reconcile_only=False, runner=None, approval_reader=None,
-                   fence_after_seconds=None, baselines=None):
+                   fence_after_seconds=None, clock=None, baselines=None):
     """Build the standard team ExecutionAdapters using an explicit live client.
 
     allowed_targets is a trusted list of complete target identities or its JSON
@@ -165,11 +170,13 @@ def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, 
     replaces baseline; at most one of them is given. reconcile_only
     defers those files entirely because the core reconciliation path never
     writes the spec. fence_after_seconds comes from trusted configuration only;
-    None (the default) disables fencing.
+    None (the default) disables fencing. clock (UTC) is this host's one clock:
+    the snapshot, the Guard re-check and the ledger stamps all read it.
     The caller owns and must close adapters.ledger.
     """
     from services.executor.kubernetes_adapter import KubectlDeploymentAPI
 
+    clock = clock or _utc_now
     scope_path = allowed_targets if isinstance(allowed_targets, (str, Path)) else None
     targets = load_json(scope_path, "allowed_targets") if scope_path is not None else deepcopy(allowed_targets)
     if not isinstance(targets, list) or not 1 <= len(targets) <= 128:
@@ -186,17 +193,17 @@ def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, 
             raise AdapterError("ARGUMENT_ERROR", "command_line", "Execution requires trusted policy, baseline, dependencies and approval paths")
         validate_policy(load_json(policy, "policy"), require_live=True)
     options = dict(context=context, cluster_id=cluster_id, kubeconfig=kubeconfig,
-                   allowed_targets=targets, clock=_utc_now)
+                   allowed_targets=targets, clock=clock)
     if runner is not None:
         options["runner"] = runner
     cluster = KubectlDeploymentAPI(**options)
     authorizer = LiveGuardAuthorizer(**paths, context=context, cluster_id=cluster_id,
                                      kubeconfig=kubeconfig, server_dry_run=server_dry_run,
-                                     approval_reader=approval_reader, baselines=baselines)
+                                     approval_reader=approval_reader, clock=clock, baselines=baselines)
     coordination = LocalTargetCoordinator(locks)
     store = SQLiteExecutionLedger(ledger)
     return ExecutionAdapters(ledger=store, coordination=coordination, cluster=cluster,
-                             authorizer=authorizer, clock=_utc_now, fence_after_seconds=fence_after_seconds)
+                             authorizer=authorizer, clock=clock, fence_after_seconds=fence_after_seconds)
 
 
 def _fence_after(value):

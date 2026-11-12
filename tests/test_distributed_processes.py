@@ -6,7 +6,8 @@ checks invariants I1-I6 and X1-X4 from the durable records and logs. These
 are processes on one host, not separate machines.
 
 The plan's CI subset (S1b, S1c, S2, S4, S5) and S7 run by default, in about a
-minute and a half. Set SENTINEL_DISTRIBUTED_ALL=1 to run every scenario.
+minute and a half. Set SENTINEL_DISTRIBUTED_ALL=1 to run every scenario,
+including S7b.
 Known defects on this code base are asserted exactly (expected_failures), so a
 fix makes the test fail until the expectation is updated with the fix.
 """
@@ -58,9 +59,16 @@ class DistributedProcessTests(ScenarioMixin, unittest.TestCase):
         self.assertEqual(summary["notes"]["exit_code"], 73)
         self.assertEqual(summary["states"], ["RECOVERED"])
 
-    def test_s7_executor_clock_behind_wedges_the_action_before_p3_03(self):
+    def test_s7_executor_clocks_300_s_behind_end_failed_without_a_write_or_a_wedge(self):
         summary = self.run_scenario("S7")
-        self.assertEqual(summary["states"], ["READY"])  # The write landed; its result is refused for ever.
+        # Before P3.03 the result was refused with HTTP 400 for ever and the incident stayed READY. Now it is
+        # accepted; the Executors' own Guard re-check refuses the approval 300 s in their future, so no write.
+        self.assertEqual((summary["states"], summary["committed_writes"]), (["FAILED"], 0))
+        self.assertEqual(summary["notes"]["refusals_seen"], 0)
+        measured = summary["clock_offsets_measured"]
+        for name in ("executor-a", "executor-b"):  # theta = Coordinator - worker: 300 s for a clock 300 s behind.
+            self.assertAlmostEqual(measured[name]["theta_seconds"], 300, delta=1)  # Both measure before claiming.
+        self.assertLess(abs(measured["guard-1"]["theta_seconds"]), 1)
 
 
 @unittest.skipUnless(ALL, "set SENTINEL_DISTRIBUTED_ALL=1 to run every scenario")
@@ -80,6 +88,14 @@ class AllDistributedScenarioTests(ScenarioMixin, unittest.TestCase):
     def test_s6_every_worker_partitioned(self):
         summary = self.run_scenario("S6")
         self.assertEqual(summary["notes"]["during_partition"]["writes"], 0)
+
+    def test_s7b_an_executor_outside_the_skew_bound_fails_closed_and_its_peer_recovers(self):
+        summary = self.run_scenario("S7b")
+        self.assertEqual((summary["states"], summary["committed_writes"]), (["RECOVERED"], 1))
+        self.assertEqual(summary["notes"]["claims_by_skewed"], 0)
+        self.assertEqual(summary["notes"]["readyz"]["status"], 503)
+        self.assertTrue(summary["notes"]["readyz"]["clock_skew"])
+        self.assertAlmostEqual(summary["clock_offsets_measured"]["executor-a"]["theta_seconds"], 5, delta=1)
 
 
 if __name__ == "__main__":

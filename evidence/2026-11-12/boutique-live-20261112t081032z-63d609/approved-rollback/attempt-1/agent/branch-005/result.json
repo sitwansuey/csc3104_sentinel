@@ -1,0 +1,93 @@
+{
+  "state": "failure",
+  "outputs": [
+    {
+      "evidence_id": "branch-003",
+      "tool": "logs",
+      "result": {
+        "file": "logs.csv",
+        "rows_scanned": 10,
+        "rows_in_window": 9,
+        "rows_retained": 9,
+        "truncated": false,
+        "invalid_timestamps": 0,
+        "error_count": 5,
+        "components": {
+          "shippingservice": 5
+        },
+        "examples": [
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 08:11:46.476840309+00:00",
+            "untrusted": true,
+            "template": "{\"message\":\"<str>\",\"severity\":\"fatal\",\"timestamp\":\"<time>\"}",
+            "excerpt": "{\"message\":\"failed to listen: listen tcp: lookup tcp/invalid-port: unknown port\",\"severity\":\"fatal\",\"timestamp\":\"2026-11-12T08:11:46.476747219Z\"}",
+            "evidence_id": "branch-003.1"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 08:11:47+00:00",
+            "untrusted": true,
+            "template": "Back-off restarting failed container server in pod shippingservice-<hex>-4w87f_sentinel-boutique-connected(<uuid>)",
+            "excerpt": "Back-off restarting failed container server in pod shippingservice-85576d7678-4w87f_sentinel-boutique-connected(308cf53d-63fa-4030-aaac-3afa831049e3)",
+            "evidence_id": "branch-003.2"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 08:11:47+00:00",
+            "untrusted": true,
+            "template": "Readiness probe failed: timeout: failed to connect service \"<ip>:<num>\" within 1s: context deadline exceeded",
+            "excerpt": "Readiness probe failed: timeout: failed to connect service \"<private-ip>:50051\" within 1s: context deadline exceeded",
+            "evidence_id": "branch-003.3"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 08:11:48+00:00",
+            "untrusted": true,
+            "template": "Back-off restarting failed container server in pod shippingservice-<hex>-4w87f_sentinel-boutique-connected(<uuid>)",
+            "excerpt": "Back-off restarting failed container server in pod shippingservice-85576d7678-4w87f_sentinel-boutique-connected(308cf53d-63fa-4030-aaac-3afa831049e3)",
+            "evidence_id": "branch-003.4"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 08:11:50+00:00",
+            "untrusted": true,
+            "template": "Back-off restarting failed container server in pod shippingservice-<hex>-4w87f_sentinel-boutique-connected(<uuid>)",
+            "excerpt": "Back-off restarting failed container server in pod shippingservice-85576d7678-4w87f_sentinel-boutique-connected(308cf53d-63fa-4030-aaac-3afa831049e3)",
+            "evidence_id": "branch-003.5"
+          }
+        ],
+        "suspected_injection_lines": 0,
+        "untimed_errors": 0,
+        "events": [
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 08:11:00",
+            "error_count": 5,
+            "baseline_errors_per_minute": 0.016666666666666666,
+            "left_censored": true
+          }
+        ],
+        "burst_baseline_available": true
+      },
+      "cache_hit": true,
+      "reused_by": "branch-007"
+    },
+    {
+      "evidence_id": "branch-002",
+      "tool": "metrics",
+      "result": {
+        "file": "metrics.csv",
+        "rows_scanned": 21,
+        "rows_in_window": 21,
+        "rows_retained": 21,
+        "truncated": false,
+        "invalid_timestamps": 0,
+        "findings": [],
+        "total_findings": 0
+      },
+      "cache_hit": true,
+      "reused_by": "branch-008"
+    }
+  ]
+}

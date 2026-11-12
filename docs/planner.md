@@ -89,9 +89,12 @@ found` (role marker) or `helm upgrade failed; action=rollback triggered`
 against real logs. If an attempt on flagged telemetry fails in the model three
 times before its check runs, the incident ends in the `ATTEMPTS_EXHAUSTED`
 escalation and no finding is recorded. Templating could hide a decisive detail, so
-the cleaned excerpt is kept beside the template. No live run has exercised the
-gate yet; the planned check is an adversarial fault whose configuration value
-carries instruction text, plus three normal runs that must still recover.
+the cleaned excerpt is kept beside the template. Live, the gate has
+run on ordinary telemetry only: the eight agent runs at 870aa7d and dab3b3f,
+failures included, recorded no injection finding and no flagged log line, so it
+raised no false positive on those logs (C-INJECTION-GATE-BENIGN). The
+adversarial check, a fault whose configuration value carries instruction text,
+has not run live, and neither has the remote Planner worker's gate.
 
 ## Code-owned decision context
 
@@ -125,10 +128,15 @@ records the decision: `policy`, `enforced`, `eligible`, `codes`,
 
 Limits. These checks are tested offline with a scripted model
 (`tests/test_rca_vocabulary.py`, `tests/test_planner_change_evidence.py`,
-`tests/test_live_agent.py`); no live run has used them yet. Live verification
-pending: three standard PORT runs that must still reach RECOVERED with the
-component `shippingservice`, then a fault without a template change that must
-end in ESCALATE. The enum can push a confused model into a wrong but valid
+`tests/test_live_agent.py`). Live on one host, unscored while the catalog
+labels await sign-off (three R1 runs at 870aa7d; one run per scenario at
+dab3b3f, and R2 and N1 once at each revision): at 870aa7d three
+standard PORT runs reached RECOVERED with the component `shippingservice`,
+decided by the model (C-AGENT-R1-870AA7D), while R2 and N1 abstained on a
+citation-check defect fixed in ded3dcc; at dab3b3f N1, a fault without a
+template change, ended in ESCALATE decided by the rule
+(`TEMPLATE_ALREADY_BASELINE`) with zero writes, and R2 reached ROLLBACK and
+RECOVERED (C-SCENARIO-LIVE-UNSCORED). The enum can push a confused model into a wrong but valid
 name; `insufficient evidence` is in the list and is never rollback-eligible.
 Since both catalog targets are in the topology, a shipping diagnosis can name
 `cartservice` (and the reverse); the eligibility rule then refuses ROLLBACK as
@@ -143,9 +151,11 @@ time, so with an old baseline a genuine recent change is still refused
 (`CHANGE_NOT_RECENT`); the Deployment's own rollout facts are recorded but the
 rule does not use them. The Observer gives a container log line the reason
 `StartupError` when the line contains the word startup, so a log line can still
-supply the startup symptom through that reason. The remote Planner worker and
-provider mode do not use this context. The live harness checks the decision
-settings and the reviewed topology before any fault is injected.
+supply the startup symptom through that reason. Provider mode and the remote
+Planner worker's single-prompt mode do not use this context; the remote Planner
+worker's agent mode plans with the same `AgentPlanner`, so it does, offline only
+so far. The live harness checks the decision settings and the reviewed topology
+before any fault is injected.
 
 ## Telemetry volume and planning feedback
 
@@ -377,7 +387,18 @@ planning stopped" event. The budget applies per attempt, so one incident can
 use up to three budgets. A process that dies mid-attempt loses that attempt;
 after the lease expires the next pass starts a new one. These paths have
 offline tests with a scripted model (`tests/test_agent_journal.py`,
-`tests/test_live_agent.py`); no live run has used them yet.
+`tests/test_live_agent.py`). Live runs from 4139385 use the journal: each
+failed agent run ended in a delivered ESCALATE and NEEDS_REVIEW with zero
+writes (C-AGENT-AUTOLAB-4139385, C-AGENT-FORCED-ESCALATION). The retry after
+a failed model call also ran live in two passing runs: in
+`boutique-live-20261111t221204z-602449` (C-AGENT-AUTOLAB-4139385) the
+Analyzer's call in attempt 1 failed after about 45 s and 2048 output tokens
+(`ValueError` in `model-calls.json`, journal code `INVALID_MODEL_OUTPUT`) and
+attempt 2 recovered, and in `boutique-live-20261112t080756z-29fd09` (N1 at
+dab3b3f, C-SCENARIO-LIVE-UNSCORED) the Reporter's call in attempt 1 failed the
+same way and attempt 2 reached the expected rule escalation. Each
+`planning-status.json` records 2 attempts. A process
+that dies mid-attempt and a replayed delivery have not been exercised live.
 
 ## Acceptance and limits
 
@@ -399,8 +420,8 @@ their source revision:
 <!-- END GENERATED:claim-c-agent-recorded -->
 
 <!-- BEGIN GENERATED:claim-c-agent-all -->
-> **C-AGENT-ALL:** Across every recorded agent-mode attempt, 14/24 reached RECOVERED.
-> Scope: Includes deliberate negative tests (unreachable model server, missing model) and runs on older revisions. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 4 runs at 4afc879.
+> **C-AGENT-ALL:** Across every recorded agent-mode attempt, 24/39 reached RECOVERED.
+> Scope: Every committed agent bundle, failures included: deliberate negative tests (unreachable model server, missing model, a forced 1 s planning budget), runs on older revisions, and the 2026-11-12 catalog runs R2 and N1, which are unscored (labels pending). A run counts only when it passed expecting RECOVERED; the two runs that passed as an expected escalation (the forced budget run and N1 at dab3b3f) never recover and count as not recovered. Mostly one fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Lab approval pre-authorised before 4139385; from 4139385 automated auto-lab (automated-lab identity, no person), except the forced-budget run and both N1 runs, which asked for no approval (mode not-requested). One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 19 runs from 4afc879 onwards.
 <!-- END GENERATED:claim-c-agent-all -->
 
 Model calls and model time per run are in the agent and timings tables of
@@ -442,7 +463,9 @@ preflight stop for a missing model:
 
 The agent experiment is a local one-incident path. It plans through the durable
 journal inside the harness process; it is not a separately deployed Planner
-worker, and the remote Planner worker does not offer agent mode yet. An
+worker. The remote Planner worker also has an agent mode (`"mode": "agent"`,
+[remote workers](remote-workers.md#agent-mode)) with the same hooks, codes and
+journal, tested offline as its own process on one host; no live run has used it. An
 abstention ends in NEEDS_REVIEW before execution and leaves its artifacts; full
 production incident handling remains separate work.
 No general multi-service repair or Chaos Mesh repair policy is added here.

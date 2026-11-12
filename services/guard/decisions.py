@@ -14,6 +14,7 @@ from shared.contracts import validate_message
 
 
 _MAX_AGE_SECONDS = 366 * 24 * 60 * 60
+_MAX_CLOCK_SKEW_SECONDS = 60
 
 
 def _integer(policy, key, *, required=False, maximum=None):
@@ -36,6 +37,9 @@ def validate_policy(policy, *, require_live=False):
     for key in ("max_state_age_seconds", "max_dependency_age_seconds"):
         if key in policy and (type(policy[key]) is not int or not 0 <= policy[key] <= _MAX_AGE_SECONDS):
             raise GuardInputError(f"policy.{key}: expected a bounded nonnegative age")
+    if "max_clock_skew_seconds" in policy and (type(policy["max_clock_skew_seconds"]) is not int
+                                               or not 0 <= policy["max_clock_skew_seconds"] <= _MAX_CLOCK_SKEW_SECONDS):
+        raise GuardInputError("policy.max_clock_skew_seconds: expected a nonnegative bound of at most 60 seconds")
     if "require_server_dry_run" in policy and type(policy["require_server_dry_run"]) is not bool:
         raise GuardInputError("policy.require_server_dry_run: expected boolean")
     _integer(policy, "max_server_dry_run_age_seconds", required=policy.get("require_server_dry_run", False), maximum=300)
@@ -257,11 +261,14 @@ def _deadline(start, seconds):
 
 def _valid_until(policy, live_state, baseline, dependencies, approval, preview, checked_at):
     limits = [_deadline(checked_at, policy.get("decision_ttl_seconds", 30))]
-    for value, field, key in ((live_state, "captured_at", "max_state_age_seconds"),
-                              (dependencies, "checked_at", "max_dependency_age_seconds")):
+    # Findings and approvals carry another process's clock: their deadlines
+    # come forward by the skew bound, as in the core checks.
+    skew = policy.get("max_clock_skew_seconds", 0)
+    for value, field, key, margin in ((live_state, "captured_at", "max_state_age_seconds", 0),
+                                      (dependencies, "checked_at", "max_dependency_age_seconds", skew)):
         if value is not None and key in policy:
             try:
-                limits.append(_deadline(utc_timestamp(value[field], field), policy[key]))
+                limits.append(_deadline(utc_timestamp(value[field], field), policy[key] - margin))
             except (GuardInputError, KeyError, TypeError):
                 pass  # A failing check already prevents approval.
     if preview is not None:
@@ -279,7 +286,7 @@ def _valid_until(policy, live_state, baseline, dependencies, approval, preview, 
             pass
     if isinstance(approval, dict) and "expires_at" in approval:
         try:
-            limits.append(utc_timestamp(approval["expires_at"], "approval.expires_at"))
+            limits.append(_deadline(utc_timestamp(approval["expires_at"], "approval.expires_at"), -skew))
         except GuardInputError:
             pass
     return max(checked_at, min(limits))

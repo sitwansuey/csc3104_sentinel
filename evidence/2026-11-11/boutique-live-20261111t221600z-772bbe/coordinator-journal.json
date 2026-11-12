@@ -1,0 +1,93 @@
+{
+  "incidents": [
+    {
+      "sequence": 1,
+      "incident_id": "INC-DD9A2AFC5E95",
+      "target": {
+        "cluster_id": "sentinel-boutique-connected",
+        "kind": "Deployment",
+        "name": "shippingservice",
+        "namespace": "sentinel-boutique-connected",
+        "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+      },
+      "state": "NEEDS_REVIEW",
+      "active_action_id": "ACT-2b41ccd79ea333c2ff84afca"
+    }
+  ],
+  "actions": [
+    {
+      "sequence": 1,
+      "action_id": "ACT-2b41ccd79ea333c2ff84afca",
+      "incident_id": "INC-DD9A2AFC5E95",
+      "proposal": {
+        "action": "ESCALATE",
+        "action_id": "ACT-2b41ccd79ea333c2ff84afca",
+        "based_on_resource_version": "72137",
+        "evidence_refs": [
+          "E-4E404345EE29",
+          "E-882AD4FBB444",
+          "E-F5307ED6AD38",
+          "E-E4D9E2B9B24F",
+          "E-27C240970116",
+          "E-95475E96E744",
+          "E-E6526D0CD3FC",
+          "E-3B9B83B1ECBA",
+          "E-B217A21DD3B2"
+        ],
+        "incident_id": "INC-DD9A2AFC5E95",
+        "kind": "proposal",
+        "parameters": {},
+        "rationale": "Agent diagnosis does not identify the allowed recovery target. Operator review is required. No repair is authorized.",
+        "schema_version": "1.0",
+        "target": {
+          "cluster_id": "sentinel-boutique-connected",
+          "kind": "Deployment",
+          "name": "shippingservice",
+          "namespace": "sentinel-boutique-connected",
+          "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+        }
+      },
+      "state": "NEEDS_REVIEW",
+      "guard_result": null,
+      "execution_result": null
+    }
+  ],
+  "approvals": [],
+  "outbox": [
+    {
+      "id": 2,
+      "topic": "incident.review",
+      "action_id": "ACT-2b41ccd79ea333c2ff84afca",
+      "delivered": 0
+    },
+    {
+      "id": 1,
+      "topic": "planner.request",
+      "action_id": null,
+      "delivered": 1
+    }
+  ],
+  "reports": [],
+  "transitions": [
+    {
+      "seq": 2,
+      "incident_id": "INC-DD9A2AFC5E95",
+      "action_id": "ACT-2b41ccd79ea333c2ff84afca",
+      "from_state": "OPEN",
+      "to_state": "NEEDS_REVIEW",
+      "cause": "[\"proposal\",\"ACT-2b41ccd79ea333c2ff84afca\",\"\"]",
+      "outbox_high_water": 1,
+      "recorded_at": "2026-11-11T22:17:37.233290Z"
+    },
+    {
+      "seq": 1,
+      "incident_id": "INC-DD9A2AFC5E95",
+      "action_id": null,
+      "from_state": null,
+      "to_state": "OPEN",
+      "cause": "[\"incident\",\"INC-DD9A2AFC5E95\",\"\"]",
+      "outbox_high_water": null,
+      "recorded_at": "2026-11-11T22:17:18.938151Z"
+    }
+  ]
+}

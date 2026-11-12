@@ -56,6 +56,11 @@ class WorkerJournal:
         return [self.get(row[0]) for row in self.db.execute("""SELECT request_key FROM worker_deliveries
             WHERE result IS NOT NULL AND accepted=0 AND delivery IS NOT NULL ORDER BY rowid LIMIT 1000""")]
 
+    def held(self):
+        """True while a saved result waits, unaccepted, for its request to be delivered again."""
+        return self.db.execute("""SELECT 1 FROM worker_deliveries
+            WHERE result IS NOT NULL AND accepted=0 AND delivery IS NULL LIMIT 1""").fetchone() is not None
+
     def release(self, key):
         self.db.execute("UPDATE worker_deliveries SET delivery=NULL WHERE request_key=?", (key,))
 
@@ -63,14 +68,30 @@ class WorkerJournal:
         self.db.execute("UPDATE worker_deliveries SET accepted=1 WHERE request_key=?", (key,))
 
 
+def lease_duration(answer, clock=time.time):
+    """Seconds left on a lease, as measured by the Coordinator.
+
+    expires_in is a duration on the Coordinator's clock, so worker clock skew
+    cannot change it. A Coordinator older than expires_in sends only
+    expires_at, which is then compared with this worker's clock.
+    """
+    if isinstance(answer.get("expires_in"), (int, float)) and math.isfinite(answer["expires_in"]):
+        return answer["expires_in"]
+    return answer["expires_at"] - clock()
+
+
 class Lease:
-    """Renew network delivery during long inference/collection; fail closed on loss."""
-    def __init__(self, client, delivery, *, interval=5):
+    """Renew network delivery during long inference/collection; fail closed on loss.
+
+    Renews every interval seconds, or three times per lease when the lease is
+    shorter, measured from the delivery's expires_in.
+    """
+    def __init__(self, client, delivery, *, interval=5, clock=time.time):
         if not math.isfinite(interval) or interval <= 0:
             raise ValueError("Renewal interval must be positive and finite")
         self.client, self.delivery = client, delivery
         self.body = {key: delivery[key] for key in ("delivery_id", "lease_token")}
-        self.interval = min(interval, max(0.05, (delivery["expires_at"] - time.time()) / 3))
+        self.interval = min(interval, max(0.05, lease_duration(delivery, clock) / 3))
         self.stop = threading.Event()
         self.error = None
 
@@ -100,11 +121,78 @@ class Lease:
 
 
 class RemoteWorker:
-    def __init__(self, client, journal, adapter, *, renewal_interval=5):
+    """One polling pass at a time: re-send saved results, then claim and process new work.
+
+    before_claim, when given, is a prerequisite for new work only (the agent
+    Planner's model preflight). It runs just before a claim and raises to claim
+    nothing. A saved result needs no prerequisite, so it never waits for one:
+    pending results are re-sent first, and while a released saved result waits
+    for its request to come back the worker claims anyway, sends a saved result
+    if the claim matches one, and otherwise checks the prerequisite before any
+    processing and hands the request back with retry when it fails.
+
+    max_clock_skew (seconds), when set, is the skew bound: the worker claims
+    new work only while its measured offset from the Coordinator's clock plus
+    the measurement's uncertainty is within it. Saved results are still sent,
+    since their order is decided by Coordinator sequence, not by clocks.
+    The claim's own reply is measured too: a clock that stepped out of bound
+    since the previous exchange hands the claimed delivery back unprocessed.
+    A step while a claimed request is being processed is seen only at the
+    next exchange (a lease renewal or the result). The skew check runs before
+    before_claim, so an out-of-bound worker never runs its preflight.
+    """
+
+    def __init__(self, client, journal, adapter, *, renewal_interval=5, max_clock_skew=None,
+                 before_claim=None):
+        if max_clock_skew is not None and (not math.isfinite(max_clock_skew) or max_clock_skew <= 0):
+            raise ValueError("The clock skew bound must be positive and finite")
         self.client, self.journal, self.adapter = client, journal, adapter
         self.renewal_interval = renewal_interval
+        self.max_clock_skew = max_clock_skew
+        self.before_claim = before_claim
         # IDs of the delivery handled by the latest once(), for status log lines.
         self.current = {}
+
+    def clock_status(self):
+        """None when claiming is allowed, else a clock_skew status (fail closed)."""
+        estimator = getattr(self.client, "clock", None)
+        if self.max_clock_skew is None:
+            if estimator is not None and estimator.estimate() is None:
+                # Measure once first: a Coordinator with its own bound refuses a claim without an estimate.
+                self.client.post("clock", {})
+            return None
+        if estimator is None:
+            return {"status": "clock_skew", "offset": None, "uncertainty": None}
+        if not estimator.within(self.max_clock_skew):
+            # Measure again before the first claim and on every pass while out
+            # of bound, so a corrected clock recovers.
+            self.client.post("clock", {})
+        if estimator.within(self.max_clock_skew):
+            return None
+        self.client.post("clock", {})  # Report the refusing estimate, so the Coordinator records it.
+        return self._skew_status(estimator)
+
+    def clock_ready(self):
+        """For /readyz: False while a bound is set and the latest measurement is outside it."""
+        if self.max_clock_skew is None:
+            return True
+        estimator = getattr(self.client, "clock", None)
+        return estimator is not None and estimator.within(self.max_clock_skew)
+
+    @staticmethod
+    def _skew_status(estimator):
+        estimate = estimator.estimate()
+        return {"status": "clock_skew", "offset": estimate and round(estimate[0], 3),
+                "uncertainty": estimate and round(estimate[1], 3)}
+
+    def _skewed_since_claim(self, delivery):
+        """None, or a clock_skew status after handing back a delivery claimed on a clock that just stepped."""
+        estimator = getattr(self.client, "clock", None)
+        if self.max_clock_skew is None or estimator is None or estimator.within(self.max_clock_skew):
+            return None
+        if delivery is not None:
+            self.client.post("retry", {name: delivery[name] for name in ("delivery_id", "lease_token")})
+        return self._skew_status(estimator)
 
     def _send(self, row):
         delivery = row["delivery"]
@@ -141,7 +229,16 @@ class RemoteWorker:
                 # Retain the immutable result for a replacement delivery, but
                 # never keep retrying a lease that can no longer commit it.
                 self.journal.release(row["request_key"])
+        skewed = self.clock_status()
+        if skewed is not None:
+            return skewed
+        deferred = self.before_claim is not None and self.journal.held()
+        if self.before_claim is not None and not deferred:
+            self.before_claim()
         delivery = self.client.post("claim", {})["delivery"]
+        skewed = self._skewed_since_claim(delivery)
+        if skewed is not None:
+            return skewed
         if delivery is None:
             return {"status": "idle"}
         self.current = delivery_ids(delivery)
@@ -149,9 +246,23 @@ class RemoteWorker:
         row = self.journal.get(key)
         if row["result"] is not None:
             return self._send(row)
+        if deferred:
+            self._check_before_work(key, delivery)
         with log.bind(**self.current), tracing.start_span(
                 "worker.process", parent=tracing.parse_traceparent(delivery.get("traceparent"))):
             return self._process(key, delivery)
+
+    def _check_before_work(self, key, delivery):
+        """Run before_claim for a claimed request with no saved result; hand it back if it fails."""
+        try:
+            self.before_claim()
+        except Exception:
+            try:
+                self.client.post("retry", {name: delivery[name] for name in ("delivery_id", "lease_token")})
+            except Exception as error:  # noqa: BLE001 - lease expiry still makes the request claimable again
+                log.failure(LOG, "transport.retry.failed", error)
+            self.journal.release(key)
+            raise
 
     def _process(self, key, delivery):
         try:

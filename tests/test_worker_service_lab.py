@@ -133,6 +133,14 @@ class LabWorkerTests(unittest.TestCase):
                          "102")
         skew = (datetime.now(UTC) - adapters.clock()).total_seconds()
         self.assertAlmostEqual(skew, 300, delta=5)
+        # The whole host is behind, as under TimeChaos: the snapshot stamp and the Executor's
+        # local Guard re-check read the same offset clock as the ledger stamps.
+        captured = adapters.cluster.read(self.inputs["target"])["captured_at"]
+        for stamp in (datetime.fromisoformat(captured.replace("Z", "+00:00")), adapters.authorizer.clock()):
+            self.assertAlmostEqual((datetime.now(UTC) - stamp).total_seconds(), 300, delta=5)
+        with patch("runtime.approval_http.ApprovalClient"):
+            guard = self.adapter(self.config("guard"), **{fault_points.ENV_CLOCK_OFFSET: "-300"})
+        self.assertAlmostEqual((datetime.now(UTC) - guard.authorizer.clock()).total_seconds(), 300, delta=5)
 
     def test_lab_guard_and_verifier_read_the_file_cluster(self):
         with patch("runtime.approval_http.ApprovalClient"):
@@ -268,6 +276,24 @@ class HealthTests(unittest.TestCase):
                 self.assertEqual(worker_service.main(["--config", str(config), "--once", "--health-port", "0"]), 1)
             served.assert_called_once()
             self.assertEqual(json.loads(output.getvalue().splitlines()[-1])["status"], "retry")
+
+    def test_readiness_follows_the_clock_even_on_a_pass_that_only_sent_a_saved_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "planner.json"
+            config.write_text(json.dumps({"role": "planner", "url": "http://127.0.0.1:9", "identity": "planner-1",
+                                          "token_env": "TEST_LAB_TOKEN", "state_directory": str(Path(directory) / "s"),
+                                          "provider": "deterministic", "baselines": str(config),
+                                          "cluster_id": fixtures.CLUSTER_ID, "max_clock_skew_seconds": 2}),
+                              encoding="utf-8")
+            gate = {fault_points.ENV_DIRECTORY: directory, fault_points.ENV_CLUSTER: fixtures.CLUSTER_ID}
+            with patch.dict(os.environ, {"TEST_LAB_TOKEN": "t" * 40, **gate}), redirect_stdout(io.StringIO()), \
+                    redirect_stderr(io.StringIO()), patch("runtime.worker_service.RemoteWorker") as worker, \
+                    patch.object(WorkerHealth, "clock_checked") as checked:
+                worker.return_value.current = {}
+                worker.return_value.once.return_value = {"status": "accepted"}  # Returned before measuring.
+                worker.return_value.clock_ready.return_value = False
+                self.assertEqual(worker_service.main(["--config", str(config), "--once"]), 0)
+            checked.assert_called_once_with(False)
 
 
 if __name__ == "__main__":

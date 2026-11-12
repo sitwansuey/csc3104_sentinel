@@ -14,7 +14,9 @@
       "include": ["summary.json", "rbac-checks.json", "dashboard-validation.json", "images.json", "policy.json",
                   "primary-incident.json", "primary-storefront-impact.json",
                   "*/initial-guard.json", "*/execution.json", "*/outcome.json", "*/proposal.json",
-                  "*/model-proposal.json", "*/model-calls.json", "model-runtime.json", "scenario-result.json"]
+                  "*/model-proposal.json", "*/model-calls.json", "model-runtime.json", "scenario-result.json",
+                  "*/planning-status.json", "*/attempt-*/agent/report.json", "*/attempt-*/agent/rejected-report.json",
+                  "*/attempt-*/agent/branch-*/result.json"]
     },
     "guard-rejection": {
       "description": "Healthy service, unnecessary rollback proposed; Guard must refuse with zero Executor writes",
@@ -63,7 +65,8 @@
     },
     "executor-wedge": {
       "description": "Live Executor wedge harness: one scenario in a disposable namespace; the first action must resolve without a write, a second proposal is then admitted",
-      "include": ["rv-race.json", "delete-recreate.json", "manifests.json", "recreate.json"]
+      "include": ["rv-race.json", "delete-recreate.json", "admission-deny.json", "admission-policy.json",
+                  "manifests.json", "recreate.json"]
     },
     "guard-eval": {
       "description": "Offline Guard fixture evaluation (scripts/evaluate_guard.py)",

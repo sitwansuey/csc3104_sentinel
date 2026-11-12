@@ -1,0 +1,103 @@
+{
+  "checks": [
+    {
+      "name": "first action resolves as SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE",
+      "observed": [
+        "SUPERSEDED",
+        "ADVANCED_WITHOUT_EVIDENCE"
+      ],
+      "passed": true
+    },
+    {
+      "name": "ledger releases the workload",
+      "passed": true
+    },
+    {
+      "name": "a new proposal for the workload is admitted",
+      "passed": true
+    },
+    {
+      "name": "the new proposal is APPLIED",
+      "passed": true
+    },
+    {
+      "name": "the baseline template is restored",
+      "passed": true
+    }
+  ],
+  "context": "kind-sentinel-boutique-connected",
+  "finished_at": "2026-11-11T22:06:50.586468Z",
+  "ground_truth": [
+    {
+      "evidence_action_id": null,
+      "fence_action_id": null,
+      "field_managers": [],
+      "generation": 3,
+      "label": "after first action",
+      "resource_version": "70327",
+      "template_is_baseline": false,
+      "uid_is_original": true
+    },
+    {
+      "evidence_action_id": "ACT-WEDGE-second-bf51c641626c",
+      "fence_action_id": null,
+      "field_managers": [],
+      "generation": 4,
+      "label": "after second action",
+      "resource_version": "70333",
+      "template_is_baseline": true,
+      "uid_is_original": true
+    }
+  ],
+  "namespace": "sentinel-wedge-b6b10498",
+  "namespace_deleted": true,
+  "patch_processes_for_first_action": 1,
+  "private_credentials_removed": true,
+  "reconcile_pass_statuses": [
+    "SUPERSEDED",
+    "SUPERSEDED",
+    "SUPERSEDED",
+    "SUPERSEDED",
+    "SUPERSEDED"
+  ],
+  "results": [
+    {
+      "basis": "ADVANCED_WITHOUT_EVIDENCE",
+      "fence_attempts": 0,
+      "label": "execute",
+      "passes": 1,
+      "patch_processes": 1,
+      "status": "SUPERSEDED",
+      "successful_fences": 0,
+      "successful_writes": 0,
+      "write_attempts": 1
+    },
+    {
+      "basis": "ADVANCED_WITHOUT_EVIDENCE",
+      "fence_attempts": 0,
+      "label": "reconcile",
+      "passes": 5,
+      "patch_processes": 0,
+      "status": "SUPERSEDED",
+      "successful_fences": 0,
+      "successful_writes": 0,
+      "write_attempts": 0
+    },
+    {
+      "basis": "EVIDENCE_MATCH",
+      "fence_attempts": 0,
+      "label": "second execute",
+      "passes": 1,
+      "patch_processes": 1,
+      "status": "APPLIED",
+      "successful_fences": 0,
+      "successful_writes": 1,
+      "write_attempts": 1
+    }
+  ],
+  "scenario": "rv-race",
+  "scope": "one disposable namespace on a local kind cluster; containers on one host, not separate machines; Guard not under test",
+  "started_at": "2026-11-11T22:06:48.901423Z",
+  "status": "PASS",
+  "time_to_resolution_seconds": 0.425
+}

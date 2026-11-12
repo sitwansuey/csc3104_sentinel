@@ -28,7 +28,8 @@ The same gate allows a test clock offset (SENTINEL_TEST_CLOCK_OFFSET, in
 seconds) so a lab run can give one process a skewed clock. A bound worker
 reads its Guard, Executor and Verifier clocks through it, so the offset can
 change freshness and expiry decisions; that is what it is for, and why it
-applies only to a worker bound to a lab cluster.
+applies only to a worker bound to a lab cluster. The same offset shifts the
+wall clock its HTTP client uses to measure its offset from the Coordinator.
 """
 from datetime import datetime, timedelta
 import math
@@ -165,6 +166,17 @@ def offset_clock(clock):
 
     def shifted() -> datetime:
         return clock() + timedelta(seconds=offset)
+    return shifted
+
+
+def offset_seconds_clock(clock):
+    """Wrap a clock in epoch seconds (like time.time) with the gated test offset."""
+    offset = clock_offset()
+    if not offset:
+        return clock
+
+    def shifted() -> float:
+        return clock() + offset
     return shifted
 
 

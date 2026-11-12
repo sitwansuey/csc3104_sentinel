@@ -1,0 +1,18 @@
+{
+  "failures": [
+    {
+      "root cause component": "shippingservice",
+      "root cause reason": "faulty configuration rollout",
+      "evidence_ids": [
+        "branch-003",
+        "branch-002",
+        "branch-003",
+        "branch-002",
+        "branch-003",
+        "branch-002"
+      ]
+    }
+  ],
+  "explanation": "The incident is attributed to a 'faulty configuration rollout' for the 'shippingservice' component, as evidenced by the 'ErrImageNeverPull' error, which is corroborated across multiple evidence IDs. This error indicates that the container image required for the deployment is not available, and the pull policy is set to 'Never', preventing the container from starting. The evidence IDs 'branch-002' and 'branch-003' provide supporting telemetry data that align with this conclusion. There are no contradictions in the evidence, and the timestamps are consistent with the observed incident timeline. The analysis is based on the available telemetry and does not rely on untrusted or speculative data.",
+  "limitations": "The analysis is based on the provided telemetry data and does not include external factors that may have contributed to the incident. The evidence is limited to the logs and metrics collected during the incident window."
+}
