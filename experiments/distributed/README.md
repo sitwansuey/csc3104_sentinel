@@ -23,7 +23,9 @@ gated test offset; every worker measures its offset from the Coordinator
 `clock_offsets_measured`, but on one host that measures the simulated offset,
 not skew between machines. The file mode backs Kubernetes with a SQLite file, not
 an API server. The Planner is the deterministic provider, so every summary
-says `synthetic_planner: true`. The kind mode has not been run yet.
+says `synthetic_planner: true`. The kind mode ran only in one operator session
+with scratch versions of its tools ([below](#kind-mode)); no committed
+evidence rests on it.
 
 ## Run it
 
@@ -118,13 +120,13 @@ When a known failure is fixed, the matching test in
 `tests/test_distributed_processes.py` fails until the scenario's
 `expected_failures` is updated, so a fix cannot go unrecorded.
 
-## Kind mode (not yet run)
+## Kind mode
 
 `--mode kind` accepts only `--context kind-sentinel-boutique-connected` and
 refuses every other context, the original lab cluster included. It needs
-`--kind-bundle DIR` with `policy.json`, `baseline.json`,
-`allowed-targets.json`, a restricted `kubeconfig` and `verifier-inventory.json`
-for the target workload. Workers then use the real kubectl readers and the
+`--kind-bundle DIR` prepared by `kind_bundle.py` (below): `policy.json`,
+`baseline.json`, `allowed-targets.json`, a restricted `kubeconfig`,
+`verifier-inventory.json` and `lab.json` for the target workload. Workers then use the real kubectl readers and the
 restricted Executor adapter, the Observer is the real CLI, and template writes
 are counted from the Deployment itself, independently of Sentinel's records.
 The harness reads the Deployment at the start and then every
@@ -157,6 +159,89 @@ a full history: one commit that changes several parts lets one more commit go
 unflagged, and without a generation in both reads nothing is flagged. The time
 of a write is when it was first seen, up to `kind_poll_seconds` after it
 committed, so I2 can place a write that committed just before a revocation
-after it. The harness does not inject the workload fault or prepare the
-bundle; nothing else may write to the Deployment during a run. This mode has
-not been run against the cluster, so no claim rests on it.
+after it. Nothing else may write to the Deployment during a run: the fault is
+injected before the harness takes its first read and restored after its last.
+
+### A reproducible kind-mode run
+
+Prerequisites: the connected lab (`kind-sentinel-boutique-connected`) with
+Online Boutique deployed, the existing `sentinel-executor` ServiceAccount and
+Role (get and patch on the catalog targets only), the target healthy at a
+template pinned by digest, and your own kubeconfig with that context. Never
+point any of it at `sentinel-lab`: the tools refuse any context that names it.
+
+```powershell
+kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected port-forward service/frontend 18631:80
+python -m experiments.distributed.kind_bundle prepare --context kind-sentinel-boutique-connected --storefront http://127.0.0.1:18631
+python -m experiments.distributed.run_scenarios --mode kind --context kind-sentinel-boutique-connected --kind-bundle <bundle> --scenarios S1b,S1c,S2,S4,S5,S8 --repeat 2 --out runs/distributed-kind
+```
+
+Keep the port-forward running in its own terminal. `prepare`
+(`kind_bundle.py`) reads, with your kubeconfig and that context only, the
+target Deployment (R1's shippingservice by default; `--scenario` takes another
+catalog template fault allowed in that scope, such as C1 for cartservice) and
+`deployment/frontend`, checks a healthy window of 4 reads 10 s apart (same
+template, every replica ready and available, `/cart` answering 200), and reads
+the API server URL and CA from `kubectl config view` (your own client
+credentials are never written). It creates one thing on the cluster, a
+TokenRequest for `sentinel-executor` valid for `--token-duration` (2 h by
+default, at most 8 h), and writes the bundle into a new temporary directory
+outside the repository, which it prints. Only `kubeconfig` in it holds a
+credential (that token), readable by its owner only; it is deleted again if the
+`kubectl auth can-i` checks (get and patch the target, but not delete it, patch
+paymentservice, read secrets or list pods) do not match. The other files, and
+the printed summary, hold no credential. `policy.json` is the strict live
+profile that passed in the session below (`distributed-kind-lab-2`: 2 samples,
+a 10 s stable window, a 20 s sample gap, 60 s grace and a 90 s timeout).
+Delete the bundle directory when you finish; the token also expires by itself.
+
+Each run then goes: the operator side (`KindLab`, your kubeconfig) waits until
+the target is at its baseline template, Available and `/cart` answers 200;
+injects the catalog fault (R1: `PORT=invalid-port` on the `server` container)
+and waits until no replica is available and `/cart` fails; the harness starts,
+runs the scenario and stops; then, if Sentinel did not put the baseline back
+(S8 ends FAILED with no write), the operator side restores it with a JSON patch
+that tests the uid and resourceVersion it read, and waits again until the
+target is healthy. So `--repeat` and several scenarios in one invocation each
+get a fresh fault. A fault that does not show, a target that is not at its
+baseline, or a restore that does not end healthy stops the invocation with
+exit code 3, so no run starts on an unknown state.
+
+`summary.json` in kind mode adds `kind_lab` (the injection, whether the fault
+showed and after how long, and the restore with `operator_restore` true only
+when the operator side wrote; both are operator writes, never counted as
+Sentinel's), `deadline_seconds` with `deadline_source`, the Observer's
+`observer_failure_window_seconds`, and `duplicate_incidents`: incidents opened
+after the first one, with their states (the Guard should reject them).
+Kind-mode defaults that differ from file mode:
+
+- **Deadline.** `--deadline` (kind mode only, 30-1800 s) replaces the
+  scenario's own 60 s; the default is 180 s. The live Verifier takes one
+  sample per pass and the Coordinator's retry back-off spaces those passes,
+  so the strict health policy needs up to its 90 s timeout after the write.
+- **Observer failure window.** 15 s
+  (`topology.py::OBSERVER_FAILURE_SECONDS`), written to the run's own Observer
+  policy whatever the bundle says. With 2 s, the Recreate rollout after the
+  rollback was seen as a new failure and opened a second incident about 4 s
+  after the write; an operator restore took about 6.5 s to become Available
+  with `/cart` answering 200, so 15 s outlasts that rollout about twice over
+  and still detects the injected fault well within the deadline. A longer
+  rollout (a cold image pull) can still open a duplicate, which is then
+  counted, not hidden.
+
+**What has run.** One operator session on 12 Nov 2026 ran kind mode against
+`kind-sentinel-boutique-connected` with scratch versions of `kind_bundle.py`
+and of the per-run injection (a wrapper around one scenario per invocation):
+S1b, S1c, S2, S4, S5 and S8 twice each, 12 runs, every one matching its
+expectation once the health policy was relaxed to the profile above (the first
+attempt, with the stricter profile and the 60 s deadline, failed I3 with the
+action still VERIFYING). Two runs (S1b and S2) also opened a duplicate incident
+during the rollout, which the Guard rejected. Those raw outputs are not
+committed evidence bundles, and the committed `kind_bundle.py`, the in-harness
+injection and restore, the 180 s deadline and the 15 s Observer window have
+been tested offline only (`tests/test_kind_bundle.py`, with the fake lab
+Deployment of `tests/test_topology.py`); they have not run against the
+cluster. The session also left the fence annotations of its S8 runs
+(`sentinel.io/fence`, `sentinel.io/fence-epoch`) on the Deployment; the
+restore puts back the template only, and leaves those metadata annotations
+as they are.
