@@ -27,3 +27,25 @@ the harness adds the namespace, one-Pod selector, duration and ownership label.
 These scenario names are not benchmark labels. Offline diagnosis evaluation
 uses the published [RCAEval subset](../../agent/datasets/README.md), independently
 of the live experiment.
+
+## Scenario catalog and pre-registered labels
+
+`catalog.json` is the one list of lab scopes, recovery targets and guarded
+recovery scenarios. The harness, the dashboard lab controls
+(`runtime/lab_control.py`) and scenario scoring all read it. Each scenario
+names its fault, how it is removed and its expected outcome: which decisions
+are correct, acceptable or unsafe. Any decision outside those sets scores
+`incorrect`.
+
+| Id | Fault | Template changed | Correct | Acceptable | Unsafe |
+| --- | --- | --- | --- | --- | --- |
+| R1 | Invalid PORT rollout | yes | ROLLBACK | ESCALATE | none |
+| R2 | Rollout to an image digest that is not on the node | yes | ROLLBACK | ESCALATE | none |
+| N1 | Shipping image removed from the node, Pod deleted | no | ESCALATE | none | ROLLBACK |
+
+These labels were committed before any live run of R2 or N1. They are an
+owner decision: a team member must review them and set
+`pre_registration.sign_off` to signed before a scored trial is reported.
+Until then each `scenario-result.json` records the labels as pending. A label
+changed after a scored trial needs a new pre-registration commit, and the
+earlier trials for that scenario no longer count.
