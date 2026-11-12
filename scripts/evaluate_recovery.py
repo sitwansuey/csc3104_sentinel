@@ -15,7 +15,8 @@ Every validation level is judged on each unit's one proposal, so V0, V1 and V2
 always see identical inputs. A run folder holds run.json (the run identity:
 corpus manifest hash, policies, seeds, model settings, model digest and source
 hashes), per-case.jsonl (one row per finished unit, appended as it finishes),
-results.json and table.md. --resume skips finished units and refuses a run
+results.json and table.md. --resume skips finished units, runs error rows again
+(a model server that was down, a budget that ran out) and refuses a run
 whose identity changed, so a changed corpus, policy set, model or model digest
 needs a new folder. Nothing here writes to a cluster.
 """
@@ -88,7 +89,8 @@ def main(argv=None):
     run.add_argument("--num-ctx", type=int, default=16384, help="context window for P2-P4 (#86 ablation)")
     run.add_argument("--planning-budget", type=float, help="planning_budget_seconds per unit (default 600)")
     run.add_argument("--runbooks", choices=("all", "none"), default="all",
-                     help="none stubs runbook retrieval to empty (the P3-noRAG ablation)")
+                     help="none empties the Recovery Planner's runbooks and the RCA agent's workflows (the "
+                     "P3-noRAG ablation; the RCA policies then need --diagnosis live)")
     run.add_argument("--case", nargs="+", help="only these case ids")
     run.add_argument("--out", type=Path, required=True)
     run.add_argument("--resume", action="store_true")
@@ -122,14 +124,14 @@ def main(argv=None):
             print(f"{item['status']:15} {item['case_id']}  recorded {item.get('recorded_action', '-')}, "
                   f"replayed {item.get('replayed_action', '-')} {item.get('differing_fields') or ''}")
         summary = {status: sum(item["status"] == status for item in results)
-                   for status in ("reproduced", "differs", "not_replayable")}
+                   for status in ("reproduced", "differs", "error", "not_replayable")}
         summary["guard_crosscheck"] = {"agrees": sum(item["agrees"] for item in guards), "cases": len(guards)}
         print(json.dumps(summary))
         if args.out:
             corpus.write_json(args.out, {"schema": "sentinel-replay-golden-v1",
                                          "corpus_manifest_sha256": corpus.manifest_sha256(args.corpus),
                                          "summary": summary, "cases": results, "guard_crosscheck": guards})
-        failed = [item for item in results if item["status"] == "differs" and item.get("recorded_policy")]
+        failed = [item for item in results if item["status"] in ("differs", "error") and item.get("recorded_policy")]
         return 1 if args.strict and failed else 0
 
     needs_model = any(replay.needs_model(policy, args.diagnosis) for policy in args.policy)
@@ -141,7 +143,7 @@ def main(argv=None):
                          config=config, llm_factory=ollama_factory if needs_model else None, model_digest=digest,
                          resume=args.resume, cases=set(args.case or []),
                          progress=lambda row: print(f"{row['case_id']} {row['policy']} seed={row['seed']} "
-                                                    f"{row['status']} {row['seconds']}s", flush=True))
+                                                    f"{row['status']} {row['error'] or ''} {row['seconds']}s", flush=True))
     print((args.out / "table.md").read_text(encoding="utf-8"))
     print(f"{results['rows']} rows; {results['labels_pending_review']} label sets pending review")
     return 0

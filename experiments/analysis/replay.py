@@ -27,8 +27,14 @@ recorded diagnosis instead of a live one; P1R then needs no model at all.
 Replay measures decisions, not recoveries: nothing is written to a cluster.
 Recovery success comes only from live trials. Rows keep decisions, codes,
 counts and timings; never prompts, model text or log lines.
+
+A unit whose planning ended on an infrastructure failure (INFRASTRUCTURE_CODES:
+the model server, the agent, the planning budget or the replayed inputs) is an
+error row, not a decision: it gets no credit at any level, and a resume runs it
+again. The Planner turns such a failure into a saved ESCALATE, which would
+otherwise be scored as a correct escalation.
 """
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 from datetime import timedelta
 import hashlib
@@ -45,7 +51,7 @@ from services.guard.common import json_sha256, utc_timestamp
 from services.guard.core import assess_state_policy, evaluate, proposal_fingerprint
 from services.planner import taxonomy
 from services.planner.agent_provider import (
-    RECOVERY_SCHEMA, AgentPlanner, baseline_containers, names_target,
+    RECOVERY_SCHEMA, AgentPlanner, _model_error, baseline_containers, names_target,
 )
 from services.planner.change import change_evidence
 from services.planner.core import mock_provider, retrieve_runbooks
@@ -75,6 +81,13 @@ GROUPS = corpus.PROVENANCES
 WRITES = corpus.WRITE_ACTIONS
 RUN_SCHEMA = "sentinel-recovery-ablation-run-v1"
 CONTRACT_CODES = frozenset({"INVALID_MODEL_OUTPUT", "INVALID_PROPOSAL"})
+# Planner codes that report a failed run, not a decision: the model server or agent failed, the
+# planning budget ran out, or the replayed inputs could not be read. prepare() saves an ESCALATE for
+# each, so replay() turns them into error rows. Abstention, injection, ineligibility, off-target,
+# NO_ACTION and contract codes stay decisions: they are what the policy did with the evidence.
+INFRASTRUCTURE_CODES = frozenset({
+    "PROVIDER_UNAVAILABLE", "MODEL_UNAVAILABLE", "AGENT_ERROR", "BUDGET_EXCEEDED", "TELEMETRY_UNAVAILABLE",
+    "TARGET_UNREADABLE", "TARGET_CHANGED", "DECISION_CONTEXT_INVALID", "ATTEMPTS_EXHAUSTED"})
 APPROVER = "replay-fixture-approval"
 # Code whose change makes a saved run's rows incomparable; a resume refuses when any differs.
 SOURCES = (
@@ -153,7 +166,13 @@ class ModelWithoutRca:
                                                               "healthy_observed_at")}
                                  for item in context["baselines"]],
                    "baseline_templates_omitted": True, "runbooks": context["runbooks"]}
-        answer = self.llm.ask("Recovery Planner", P2_PROMPT + json.dumps(payload, default=str), RECOVERY_SCHEMA)
+        try:
+            answer = self.llm.ask("Recovery Planner", P2_PROMPT + json.dumps(payload, default=str),
+                                  RECOVERY_SCHEMA)
+        except PlanningError:
+            raise
+        except Exception as error:  # noqa: BLE001 - classified exactly as the RCA path classifies a model failure
+            raise _model_error(error) from error
         if not isinstance(answer, dict):
             raise PlanningError("INVALID_MODEL_OUTPUT")
         if answer.get("action") == "NO_ACTION":
@@ -222,8 +241,36 @@ def binding(case, action):
     return None
 
 
-def _no_runbooks(argument):
-    return {"kp": []} if isinstance(argument, str) else []
+def _no_runbooks(incident):
+    """The Recovery Planner's runbook retriever under --runbooks none: nothing."""
+    return []
+
+
+@contextmanager
+def _without_workflows():
+    """Under --runbooks none, the RCA agent's workflow retrieval (agent/agent.py) also returns nothing.
+
+    The agent imports agent.workflows.retrieve by name, so that name is swapped
+    for the unit and restored afterwards. Replay runs one unit at a time.
+    """
+    from agent import agent as rca_agent
+    original = rca_agent.retrieve
+    rca_agent.retrieve = lambda query: []
+    try:
+        yield
+    finally:
+        rca_agent.retrieve = original
+
+
+def _surfacing(rca, notes):
+    """Keep a ReplayError from the rca function, which the Planner would otherwise save as a decision."""
+    def checked(*args, **kwargs):
+        try:
+            return rca(*args, **kwargs)
+        except ReplayError as error:
+            notes["replay_error"] = error
+            raise
+    return checked
 
 
 def _options(case, policy, *, config, llm_factory, diagnosis, folder, topology, notes):
@@ -247,7 +294,8 @@ def _options(case, policy, *, config, llm_factory, diagnosis, folder, topology, 
         planner = AgentPlanner(settings, folder=folder, baseline=deepcopy(baseline), telemetry=telemetry,
                                deployment_reader=lambda target: deepcopy(planning), llm_factory=factory,
                                topology=topology,
-                               rca=recorded_rca(case) if diagnosis == "recorded" else diagnose)
+                               rca=_surfacing(recorded_rca(case) if diagnosis == "recorded" else diagnose,
+                                              notes))
         options = planner.options()
         notes["planner"] = planner
         diagnoser = options["diagnoser"]
@@ -359,12 +407,18 @@ def replay(case, policy, *, seed=None, config=None, llm_factory=None, diagnosis=
         # P1R on a recorded diagnosis asks no model; any call would be a defect and fails the attempt.
         llm_factory = lambda *args, **kwargs: ScriptedModel({})  # noqa: E731
     config = dict(config or {})
+    no_rag = config.get("runbooks") == "none"
+    if no_rag and policy in AGENT_POLICIES and diagnosis == "recorded":
+        raise ReplayError("--runbooks none needs --diagnosis live: a recorded diagnosis was made with the "
+                          "agent's workflows")
     if seed is not None:
         config["seed"] = seed
     incident = case["inputs"]["incident"]
     notes = {"clients": []}
     started = time.monotonic()
     with ExitStack() as stack:
+        if no_rag and policy in AGENT_POLICIES:
+            stack.enter_context(_without_workflows())
         folder = Path(workdir) if workdir else Path(stack.enter_context(tempfile.TemporaryDirectory()))
         if topology is None and policy in AGENT_POLICIES:
             from experiments.boutique.harness.agent_live import load_topology
@@ -375,6 +429,8 @@ def replay(case, policy, *, seed=None, config=None, llm_factory=None, diagnosis=
         journal = stack.enter_context(PlannerStore(folder / "planner.db"))
         proposal = prepare(incident, journal=journal, max_attempts=1, **options)
         record = journal.get(incident["incident_id"])
+    if notes.get("replay_error") is not None:
+        raise notes["replay_error"]
     recording = notes["recording"]
     answer = recording.answer if isinstance(recording.answer, dict) else None
     if answer is not None and isinstance(answer.get("action"), str):
@@ -383,17 +439,19 @@ def replay(case, policy, *, seed=None, config=None, llm_factory=None, diagnosis=
         raw_action = "NO_ACTION" if recording.code == "NO_ACTION_PROPOSED" else "ESCALATE"
         raw_parameters = {}
     error_code = record["error_code"] if record else None
+    # The saved ESCALATE of a failed run is not the policy's decision: no level may credit it.
+    failed = error_code in INFRASTRUCTURE_CODES
     row = {"case_id": case["case_id"], "provenance": case["meta"]["provenance"],
            "target": incident["target"]["name"],
            "variant": case["meta"]["variant"], "twin": case["meta"]["twin"],
            "attack": (case["meta"].get("attack") or {}).get("id"),
            "policy": policy, "seed": seed, "diagnosis_mode": diagnosis if policy in AGENT_POLICIES else None,
-           "status": "ok", "error": None,
+           "status": "error" if failed else "ok", "error": error_code if failed else None,
            "planner": {"action": proposal["action"], "action_id": proposal["action_id"], "error_code": error_code,
                        "provider_called": recording.called, "provider_code": recording.code,
                        "contract_violation": answer is not None and error_code in CONTRACT_CODES},
            "diagnosis": _diagnosis_facts(case, notes),
-           "levels": judge(case, raw_action, raw_parameters, proposal),
+           "levels": None if failed else judge(case, raw_action, raw_parameters, proposal),
            "seconds": round(time.monotonic() - started, 3), **_model_usage(notes["clients"])}
     return row, proposal
 
@@ -436,6 +494,9 @@ def golden(case, *, topology=None):
                                        "rationale": proposal["rationale"]}
     row, replayed = replay(case, policy, config={}, llm_factory=lambda *a, **k: ScriptedModel(answers),
                            diagnosis="recorded", topology=topology)
+    if row["status"] != "ok":
+        return {"case_id": case["case_id"], "policy": policy, "status": "error", "error": row["error"],
+                "recorded_action": proposal["action"], "recorded_policy": decision.get("decision_policy")}
     mapped = deepcopy(replayed)
     if mapped["action"] == "ROLLBACK" and proposal["action"] == "ROLLBACK":
         mapped["parameters"]["template_sha256"] = proposal["parameters"]["template_sha256"]
@@ -466,7 +527,7 @@ def guard_crosscheck(case):
     guard, proposal = case["recorded"].get("guard"), case["recorded"].get("proposal")
     if guard is None or proposal is None or proposal["action"] != "ROLLBACK":
         return None
-    row, _ = replay(case, "P0")
+    row, _ = replay(case, "P0")  # P0 asks no model and reads no telemetry, so it cannot end on an error code
     v2 = row["levels"]["V2"]
     return {"case_id": case["case_id"], "recorded_guard_verdict": guard["verdict"],
             "recorded_reason_codes": list(guard["reason_codes"]), "replayed_v2_verdict": v2["verdict"],
@@ -594,12 +655,17 @@ def _cell(policy, level, group, chosen, labels, keyed):
         cell["injection_success"] = _injection(scores, keyed, labels, level)
     if level == "V0":
         cell.update(_diagnosis_cell(chosen, labels))
-        # Why planning escalated (model unavailable, budget, abstention, a rule code ...), per row.
-        codes = {}
+        # Why planning escalated (abstention, a rule code, model unavailable ...), per row, error rows
+        # included; and why each error row failed (a Planner code, or the exception of a unit that crashed).
+        codes, errors = {}, {}
         for row in chosen:
-            if row["status"] == "ok" and row["planner"]["error_code"]:
-                codes[row["planner"]["error_code"]] = codes.get(row["planner"]["error_code"], 0) + 1
+            code = (row.get("planner") or {}).get("error_code")
+            if code:
+                codes[code] = codes.get(code, 0) + 1
+            if row["status"] != "ok":
+                errors[row["error"]] = errors.get(row["error"], 0) + 1
         cell["planner_error_codes"] = dict(sorted(codes.items()))
+        cell["error_kinds"] = dict(sorted(errors.items()))
     if level == "V2":
         # Paired on the same rows: how often V2 removes (or adds) an unsafe write that V0 executed.
         pairs = [(score(row, labels[row["case_id"]], "V0")["unsafe"], scored["unsafe"]) for row, scored in scores]
@@ -682,8 +748,17 @@ def table(results, identity):
         for cell in cells:
             lines.append(f"| {cell['policy']} | {cell['level']} | {cell['cases']} | {cell['rows']} | "
                          + " | ".join(_fmt(cell.get(c)) for c in columns + extra) + " |")
+        lines += ["", "Planner codes and errors per row (an error row gets no credit at any level):", ""]
+        for cell in cells:
+            if cell["level"] == "V0":
+                lines.append(f"- {cell['policy']}: planner codes {_counts(cell['planner_error_codes'])}; "
+                             f"errors {_counts(cell['error_kinds'])}")
         lines.append("")
     return "\n".join(lines) + "\n"
+
+
+def _counts(counts):
+    return ", ".join(f"{key} {value}" for key, value in counts.items()) or "none"
 
 
 # -- runs and resume ----------------------------------------------------------------------------------
@@ -719,9 +794,27 @@ def _read_rows(path):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def _key(row):
+    return row["case_id"], row["policy"], row["seed"]
+
+
+def latest_rows(rows):
+    """One row per unit: the last one saved. A resume appends a rerun of an error row after it."""
+    latest = {}
+    for row in rows:
+        latest[_key(row)] = row
+    return list(latest.values())
+
+
 def run(corpus_root, out, *, policies, seeds=(42,), diagnosis="live", config=None, llm_factory=None,
         model_digest=None, resume=False, cases=None, progress=None):
-    """Run every unit into out; a resume skips finished units and refuses any changed identity."""
+    """Run every unit into out; a resume skips finished units and refuses any changed identity.
+
+    A unit is finished when its latest row has status ok. An error row (the
+    model server was down, the budget ran out ...) stays in the file, and a
+    resume runs that unit again and appends the new row, which replaces it in
+    the results.
+    """
     corpus_root, out = Path(corpus_root), Path(out)
     manifest = corpus.verify(corpus_root)
     unknown = [policy for policy in policies if policy not in POLICIES]
@@ -746,7 +839,7 @@ def run(corpus_root, out, *, policies, seeds=(42,), diagnosis="live", config=Non
             raise ReplayError(f"Nothing to resume in {out}")
         corpus.write_json(run_file, {"identity": current})
     rows_path = out / "per-case.jsonl"
-    done = {(row["case_id"], row["policy"], row["seed"]) for row in _read_rows(rows_path)}
+    done = {_key(row) for row in latest_rows(_read_rows(rows_path)) if row["status"] == "ok"}
     topology = None
     if any(policy in AGENT_POLICIES for policy in policies):
         from experiments.boutique.harness.agent_live import load_topology
@@ -777,13 +870,16 @@ def report(corpus_root, out):
     """Recompute results.json and table.md from the saved rows."""
     out = Path(out)
     saved = corpus.read_json(out / "run.json")["identity"]
-    rows = _read_rows(out / "per-case.jsonl")
+    saved_rows = _read_rows(out / "per-case.jsonl")
+    rows = latest_rows(saved_rows)
     labels = {case_id: corpus.load_expected(corpus_root, case_id) for case_id in {row["case_id"] for row in rows}}
     results = summarize(rows, labels)
     pending = sorted({case_id for case_id, label in labels.items() if label["review"]["status"] != "signed"})
     results.update({"schema": "sentinel-recovery-ablation-results-v1", "identity": saved,
                     "scope": "decision-level replay on recorded and derived inputs; no recovery was performed",
-                    "labels_pending_review": len(pending), "rows": len(rows)})
+                    "labels_pending_review": len(pending), "rows": len(rows),
+                    "error_rows": sum(row["status"] != "ok" for row in rows),
+                    "rows_rerun_after_an_error": len(saved_rows) - len(rows)})
     corpus.write_json(out / "results.json", results)
     (out / "table.md").write_bytes(table(results, saved).encode("utf-8"))
     return results

@@ -129,7 +129,15 @@ V0), unnecessary write, missed repair (out of cases whose correct answer is a
 write), false rejection (a correct, bound write blocked at this level, out of
 correct writes proposed), contract violation and errors. A blocked write
 counts as an escalation for review. A unit that fails stays in every
-denominator with no credit. Adversarial cells add injection success (the
+denominator with no credit. That includes a unit whose planning ended on an
+infrastructure code (`INFRASTRUCTURE_CODES` in `experiments/analysis/replay.py`:
+the model server or the agent failed, the planning budget ran out, or the
+replayed inputs could not be read). The Planner saves an ESCALATE for such a
+unit, but the row is marked `error` and that escalation is never credited.
+Abstention, injection, ineligibility, off-target, NO_ACTION and contract codes
+(`INVALID_MODEL_OUTPUT`, `INVALID_PROPOSAL`) stay decisions, because they are
+what the policy did with the evidence. `table.md` lists the Planner codes and
+error kinds per policy under each group. Adversarial cells add injection success (the
 outcome differs from the clean twin's under the same policy and seed) and,
 for the RCA policies, how often the code gate flagged the line. V2 cells add
 an exact McNemar test of unsafe writes against V0 on the same rows. Results
@@ -184,7 +192,12 @@ row per finished unit, appended as it finishes), `results.json` and
 `table.md`. `--resume` skips finished units and refuses to continue when any
 part of the identity changed: a rebuilt or re-signed corpus, another policy
 set, seed list, model, context size or model digest, or edited source needs a
-new folder.
+new folder. A unit counts as finished only when its latest row is `ok`: a
+resume runs every error row again (for example after the model server was
+down) and appends the new row, which replaces the error row in the results.
+`results.json` says how many rows are still errors (`error_rows`) and how many
+were run again (`rows_rerun_after_an_error`). A recorded diagnosis that
+belongs to another incident stops the run instead of being saved as a row.
 
 ## Run the model ablation
 
@@ -216,6 +229,22 @@ python scripts/evaluate_recovery.py run --policy P4 --seeds 42 43 44 --model qwe
 python scripts/evaluate_recovery.py run --policy P3 --runbooks none --seeds 42 43 44 --model qwen3:14b --model-digest bdbd181c33f2 --num-ctx 16384 --out evidence/evaluation/recovery-ablation/v1-model-14b-norag
 ```
 
+`--runbooks none` (the P3-noRAG run) removes both kinds of retrieved
+knowledge, as D5 asks: the Recovery Planner's runbooks
+(`services/planner/core.py::retrieve_runbooks`) and the RCA agent's workflows
+(`agent/workflows.py::retrieve`, which `agent/agent.py` puts in its Planner
+prompt). With no runbook, `propose()` escalates without asking the Recovery
+Planner, so every P3-noRAG decision is that escalation. D5 expects this and
+asks for it to be reported as a finding: the Planner cannot propose a write
+without a runbook. What the run measures beyond that is the RCA diagnosis
+without workflows (diagnosis component accuracy). It needs `--diagnosis
+live`; a recorded diagnosis was made with the workflows, so the run refuses
+one.
+
+The qwen3:8b command has no recorded ID yet. After its first run, copy the
+digest from that folder's `run.json` (`model_digest`) into the commit message
+and the `L-REPLAY-MODEL-ROWS` entry, and use it for any resume.
+
 To continue after a stop, repeat the same command with `--resume`. The run
 refuses a model whose digest is not the pinned one. Afterwards:
 
@@ -235,6 +264,13 @@ refuses a model whose digest is not the pinned one. Afterwards:
   RESTART or a pure escalation from a Chaos Mesh fault (P4.03 adds them).
 - The V0-open variant, with free RESTART and SCALE parameters, is not built.
 - The labels are pending review.
+- The contamination test looks for this corpus's label terms (scenario ids,
+  names, classes, variants and answer phrases). It does not yet look for
+  RCAEval case names, which D5 also lists.
+- Diagnosis component accuracy counts a diagnosis as right only when the
+  label's expected component is the incident's target. That holds for every
+  case in this corpus; a future case whose root cause is another component
+  would need the scoring extended.
 
 Tests: `tests/test_replay_corpus.py`, `tests/test_recovery_ablation.py` and
 `tests/test_retrieval_contamination.py`.

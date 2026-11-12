@@ -65,6 +65,8 @@ class PolicyLevelTests(unittest.TestCase):
         self.assertTrue(replay.score(row, r_expected, "V2")["correct"])
         row, proposal = replay.replay(n_case, "P1R", diagnosis="recorded")
         self.assertEqual((proposal["action"], row["planner"]["error_code"]), ("ESCALATE", "TEMPLATE_ALREADY_BASELINE"))
+        # A rule escalation is the policy's decision, not a failed run.
+        self.assertEqual(row["status"], "ok")
         # Live, P1R runs the RCA agent, which needs a model.
         with self.assertRaisesRegex(replay.ReplayError, "model client factory"):
             replay.replay(r_case, "P1R")
@@ -120,6 +122,9 @@ class PolicyLevelTests(unittest.TestCase):
                 self.assertEqual(proposal["action"], "ESCALATE")
                 for level in ("V1", "V2"):
                     self.assertFalse(row["levels"][level]["executed"])
+                    # The Planner contract refused it and delivered an escalation; the Guard saw no write.
+                    self.assertEqual(row["levels"][level]["action"], "ESCALATE")
+                    self.assertEqual(row["levels"][level]["reason_codes"], [])
                     scored = replay.score(row, expected, level)
                     self.assertTrue(scored["contract_violation"])
                     self.assertFalse(scored["unsafe"])
@@ -199,6 +204,180 @@ class PolicyLevelTests(unittest.TestCase):
         for policy, kwargs in (("P9", {}), ("P2", {}), ("P0", {"diagnosis": "invented"})):
             with self.subTest(policy=policy), self.assertRaises(replay.ReplayError):
                 replay.replay(case, policy, **kwargs)
+
+
+class Unreachable(replay.ScriptedModel):
+    """A model client whose server is down: every call raises, as a dropped connection does."""
+
+    def __init__(self, error=None):
+        super().__init__({})
+        self.error = error or ConnectionError("model server unreachable")
+
+    def ask(self, role, prompt, schema):
+        self.calls.append({"role": role, "status": "failed"})
+        raise self.error
+
+
+def rca_model(answers):
+    """A scripted RCA agent run: one tool plan, an analysis, a cited startup report, then answers."""
+    from tests.support.vocabulary import STARTUP, cite_supporting
+
+    class RcaModel(replay.ScriptedModel):
+        def ask(self, role, prompt, schema):
+            if role == "Reporter":
+                self.prompts.append((role, prompt))
+                self.calls.append({"role": role, "status": "completed"})
+                return cite_supporting({"failures": [{"root cause component": "shippingservice",
+                                                      "root cause reason": STARTUP}],
+                                        "explanation": "startup failure in the logs",
+                                        "limitations": "scripted"}, prompt, schema)
+            return super().ask(role, prompt, schema)
+
+    return RcaModel({"Analyzer": {"summary": "startup failure", "complete": True, "confidence": 0.9,
+                                  "next_steps": ""},
+                     "Planner": {"plan": {"kind": "tool", "goal": "read logs", "tool": "logs",
+                                          "args": {"file": "logs.csv"}}},
+                     **answers})
+
+
+class InfrastructureFailureTests(unittest.TestCase):
+    """A failed model or agent is an error row with no credit, never a credited escalation."""
+
+    def assert_no_credit(self, row, expected):
+        self.assertEqual(row["status"], "error", row)
+        self.assertIsNone(row["levels"])
+        for level in replay.LEVELS:
+            scored = replay.score(row, expected, level)
+            self.assertTrue(scored["error"])
+            self.assertFalse(scored["correct"])
+            self.assertFalse(scored["acceptable"])
+            self.assertFalse(scored["unsafe"])
+
+    def test_an_unreachable_model_gives_error_rows_with_no_credit_at_any_level(self):
+        # Every unit here asks the model. (P4 on a recorded N1 diagnosis does not: the code gate
+        # escalates first, which is a decision, so that unit stays ok.)
+        units = [(case_id, policy, diagnosis, error) for case_id in (N1, R1)
+                 for policy, diagnosis, error in (("P2", "live", ConnectionError("down")),
+                                                  ("P2", "live", RuntimeError("HTTP 500")),
+                                                  ("P3", "recorded", ConnectionError("down")),
+                                                  ("P1R", "live", ConnectionError("down")),
+                                                  ("P4", "live", RuntimeError("HTTP 500")))]
+        units.append((R1, "P4", "recorded", RuntimeError("HTTP 500")))
+        for case_id, policy, diagnosis, error in units:
+            case, expected = load(case_id)
+            with self.subTest(case=case_id, policy=policy, diagnosis=diagnosis, error=type(error).__name__):
+                model = Unreachable(error)
+                row, proposal = replay.replay(case, policy, seed=42, llm_factory=lambda *a, model=model, **k: model,
+                                              diagnosis=diagnosis)
+                # The Planner still delivers its safe escalation; the row records why, and is an error.
+                self.assertEqual(proposal["action"], "ESCALATE")
+                self.assertIn(row["error"], replay.INFRASTRUCTURE_CODES)
+                self.assertEqual(row["planner"]["error_code"], row["error"])
+                self.assertTrue(model.calls)
+                self.assert_no_credit(row, expected)
+        case, _ = load(N1)
+        row, _ = replay.replay(case, "P4", llm_factory=lambda *a, **k: Unreachable(), diagnosis="recorded")
+        self.assertEqual((row["status"], row["planner"]["error_code"]), ("ok", "TEMPLATE_ALREADY_BASELINE"))
+
+    def test_a_spent_planning_budget_is_an_error_and_an_invalid_answer_is_a_decision(self):
+        from agent.llm import ModelOutputInvalid, PlanningBudgetExceeded
+        case, expected = load(R1)
+        row, _ = replay.replay(case, "P4", llm_factory=lambda *a, **k: Unreachable(PlanningBudgetExceeded("spent")),
+                               diagnosis="recorded")
+        self.assertEqual(row["error"], "BUDGET_EXCEEDED")
+        self.assert_no_credit(row, expected)
+        for policy, diagnosis in (("P2", "live"), ("P4", "recorded")):
+            with self.subTest(policy=policy):
+                row, _ = replay.replay(case, policy, diagnosis=diagnosis,
+                                       llm_factory=lambda *a, **k: Unreachable(ModelOutputInvalid("not JSON")))
+                # An unusable answer is the model's outcome, scored as the escalation it caused.
+                self.assertEqual((row["status"], row["planner"]["error_code"]), ("ok", "INVALID_MODEL_OUTPUT"))
+                self.assertTrue(replay.score(row, expected, "V2")["missed_repair"])
+
+    def test_error_rows_get_no_credit_in_the_summary(self):
+        case, expected = load(N1)
+        good, _ = replay.replay(case, "P1")
+        failed, _ = replay.replay(case, "P2", llm_factory=lambda *a, **k: Unreachable())
+        cells = replay.summarize([good, failed], {N1: expected})["cells"]
+        by_policy = {(cell["policy"], cell["level"]): cell for cell in cells}
+        for level in replay.LEVELS:
+            self.assertEqual(by_policy[("P1", level)]["correct"]["k"], 1)
+            self.assertEqual(by_policy[("P2", level)]["correct"]["k"], 0)
+            self.assertEqual(by_policy[("P2", level)]["errors"]["k"], 1)
+        self.assertEqual(by_policy[("P2", "V0")]["error_kinds"], {"AGENT_ERROR": 1})
+        self.assertEqual(by_policy[("P2", "V0")]["planner_error_codes"], {"AGENT_ERROR": 1})
+
+    def test_a_recorded_diagnosis_for_another_incident_stops_the_unit(self):
+        case, _ = load(R1)
+        wrong = deepcopy(case)
+        wrong["recorded"]["diagnosis"]["incident_id"] = "INC-another"
+        for policy in ("P1R", "P4"):
+            with self.subTest(policy=policy), self.assertRaisesRegex(replay.ReplayError, "another incident"):
+                replay.replay(wrong, policy, diagnosis="recorded",
+                              llm_factory=scripted({"Recovery Planner": {"action": "ESCALATE", "parameters": {},
+                                                                         "rationale": "x"}}))
+
+
+class NoRagTests(unittest.TestCase):
+    """--runbooks none removes the Recovery Planner's runbooks and the RCA agent's workflows."""
+
+    @staticmethod
+    def leading_json(prompt):
+        return json.JSONDecoder().raw_decode(prompt)[0]
+
+    def run_p3(self, config):
+        case, _ = load(R1)
+        model = rca_model({"Recovery Planner": {"action": "ROLLBACK", "rationale": "restore",
+                                                "parameters": replay.binding(case, "ROLLBACK")}})
+        # Without the bootstrap plan the agent's first round asks its Planner, whose prompt holds the workflows.
+        row, proposal = replay.replay(case, "P3", seed=42, llm_factory=lambda *a, **k: model,
+                                      config={"model": "scripted", "bootstrap_live_tools": False, **config})
+        self.assertEqual(row["status"], "ok", row)
+        prompts = {role: [prompt for name, prompt in model.prompts if name == role]
+                   for role in ("Planner", "Analyzer", "Reporter", "Recovery Planner")}
+        return row, proposal, prompts
+
+    def test_runbooks_none_empties_the_runbooks_and_the_agents_workflows(self):
+        from agent import agent as rca_agent
+        original = rca_agent.retrieve
+        row, proposal, full = self.run_p3({})
+        self.assertEqual(proposal["action"], "ROLLBACK")
+        self.assertIn('"id": "failed-rollout"', full["Recovery Planner"][0])
+        workflows = self.leading_json(full["Planner"][0])["workflows"]
+        steps = [step for workflow in workflows for step in workflow["steps"]]
+        self.assertTrue(steps)
+        row, proposal, empty = self.run_p3({"runbooks": "none"})
+        self.assertIs(rca_agent.retrieve, original)
+        self.assertEqual(self.leading_json(empty["Planner"][0])["workflows"], [])
+        for role in ("Planner", "Analyzer", "Reporter"):
+            self.assertTrue(empty[role], role)
+            for prompt in empty[role]:
+                for step in steps:
+                    self.assertNotIn(step, prompt, role)
+        # With no runbook, propose() escalates without asking the Recovery Planner (as D5 expects).
+        self.assertEqual(empty["Recovery Planner"], [])
+        self.assertFalse(row["planner"]["provider_called"])
+        self.assertEqual(proposal["action"], "ESCALATE")
+        self.assertEqual(row["diagnosis"]["components"], ["shippingservice"])
+
+    def test_runbooks_none_empties_the_p2_runbooks(self):
+        case, _ = load(R1)
+        calls = {}
+        for setting in ("all", "none"):
+            model = replay.ScriptedModel({"Recovery Planner": {"action": "ESCALATE", "parameters": {},
+                                                               "rationale": "x"}})
+            row, _ = replay.replay(case, "P2", llm_factory=lambda *a, model=model, **k: model,
+                                   config={"runbooks": setting})
+            calls[setting] = (row["planner"]["provider_called"], [prompt for _, prompt in model.prompts])
+        self.assertTrue(calls["all"][0])
+        self.assertIn('"id": "failed-rollout"', calls["all"][1][0])
+        self.assertEqual(calls["none"], (False, []))
+
+    def test_runbooks_none_refuses_a_recorded_diagnosis(self):
+        case, _ = load(R1)
+        with self.assertRaisesRegex(replay.ReplayError, "needs --diagnosis live"):
+            replay.replay(case, "P3", diagnosis="recorded", config={"runbooks": "none"},
+                          llm_factory=scripted({}))
 
 
 class ModelPinTests(unittest.TestCase):
@@ -331,6 +510,59 @@ class RunTests(unittest.TestCase):
         cell = next(cell for cell in results["cells"] if cell["level"] == "V2")
         self.assertEqual(cell["errors"]["k"], 1)
         self.assertEqual(cell["rows"], 2)
+
+    def test_a_failed_model_unit_is_an_error_row_and_a_resume_runs_it_again(self):
+        down = lambda *a, **k: Unreachable()  # noqa: E731
+        escalate = scripted({"Recovery Planner": {"action": "ESCALATE", "parameters": {}, "rationale": "x"}})
+        options = {"policies": ["P2"], "cases": {R1, N1}, "model_digest": "sha256:" + "a" * 64}
+        results = replay.run(self.corpus, self.out, llm_factory=down, **options)
+        self.assertEqual((results["rows"], results["error_rows"]), (2, 2))
+        for cell in results["cells"]:
+            self.assertEqual((cell["correct"]["k"], cell["errors"]["k"]), (0, cell["rows"]), cell)
+        table = (self.out / "table.md").read_text(encoding="utf-8")
+        self.assertIn("errors AGENT_ERROR 2", table)
+        results = replay.run(self.corpus, self.out, llm_factory=escalate, resume=True, **options)
+        rows = [json.loads(line) for line in (self.out / "per-case.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([row["status"] for row in rows], ["error", "error", "ok", "ok"])
+        self.assertEqual((results["rows"], results["error_rows"], results["rows_rerun_after_an_error"]), (2, 0, 2))
+        cell = next(cell for cell in results["cells"] if cell["level"] == "V2")
+        self.assertEqual((cell["correct"]["k"], cell["errors"]["k"]), (1, 0))
+        # Finished units are not run again.
+        replay.run(self.corpus, self.out, llm_factory=down, resume=True, **options)
+        self.assertEqual(len((self.out / "per-case.jsonl").read_text(encoding="utf-8").splitlines()), 4)
+
+    def test_a_wrong_recorded_diagnosis_stops_the_run(self):
+        original = corpus.load_case
+
+        def wrong(root, case_id):
+            case = original(root, case_id)
+            case["recorded"]["diagnosis"]["incident_id"] = "INC-another"
+            return case
+
+        corpus.load_case = wrong
+        self.addCleanup(setattr, corpus, "load_case", original)
+        with self.assertRaisesRegex(replay.ReplayError, "another incident"):
+            replay.run(self.corpus, self.out, policies=["P1R"], diagnosis="recorded", cases={R1})
+        self.assertFalse((self.out / "per-case.jsonl").exists())
+
+    def test_a_golden_unit_that_fails_is_an_error_and_fails_strict(self):
+        original = replay.replay
+
+        def failing(case, policy, **kwargs):
+            row, proposal = original(case, policy, **kwargs)
+            if policy == "P0":  # the Guard cross-check
+                return row, proposal
+            return {**row, "status": "error", "error": "MODEL_UNAVAILABLE", "levels": None}, proposal
+
+        replay.replay = failing
+        self.addCleanup(setattr, replay, "replay", original)
+        golden = self.out.parent / "golden.json"
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = evaluate_recovery.main(["golden", "--corpus", str(self.corpus), "--out", str(golden), "--strict"])
+        self.assertEqual(code, 1)
+        saved = corpus.read_json(golden)
+        self.assertEqual((saved["summary"]["error"], saved["summary"]["reproduced"]), (2, 0))
+        self.assertEqual({item["error"] for item in saved["cases"]}, {"MODEL_UNAVAILABLE"})
 
     def test_command_line_run_and_report(self):
         golden = self.out.parent / "golden.json"
