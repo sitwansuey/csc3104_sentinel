@@ -110,7 +110,7 @@ up the lost commits (below).
 
 **Recovery time (RTO): bounded worker back-off.** After failed passes in a
 row a worker waits a random time between 0 and its poll interval × 2^failures,
-at most 15 s (`runtime/worker_service.py:69::backoff_seconds::return random() * min(`).
+at most 15 s (`runtime/worker_service.py:70::backoff_seconds::return random() * min(`).
 So once a restarted Coordinator is ready, every worker reaches it within the
 attempt it may have had in flight, at most 15 s of waiting and one more
 request, and the workers do not retry in step. Before P3.06 the wait
@@ -348,9 +348,10 @@ The bound is enforced, and fails closed, only where it is configured:
   A claim prerequisite (the agent Planner's model preflight) runs only after
   this check passes, so an out-of-bound worker never runs it. A recorded
   store change (restore detection, above) is checked before both, from the
-  worker's journal alone. Its `/readyz` is 503 while any of the three fails,
-  and the body names each failing one with a true `store_changed`,
-  `clock_skew` or `prerequisites_failed`
+  worker's journal and the previous reply, with no request. Its `/readyz` is
+  503 while any of the three fails, and the body names each failing one with
+  a true `store_changed`, `clock_skew` or `prerequisites_failed` (the last
+  of these is the result of the last preflight that ran)
   (`runtime/remote_worker.py::RemoteWorker.once`,
   `runtime/worker_service.py::poll`).
 - A Coordinator started with `--max-clock-skew-seconds` refuses a claim, with

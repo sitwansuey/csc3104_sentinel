@@ -8,9 +8,11 @@ last preflight (if the component has one, such as the agent Planner's model
 check) passed, the Coordinator answered a polling pass within the readiness
 window, the worker's clock was within its configured skew bound at the
 latest pass, and no Coordinator store change (a replaced or rolled-back
-database) is waiting for an operator. A 503 body names each of those three
-failing conditions with a true boolean: clock_skew, store_changed and
-prerequisites_failed. Both bodies hold booleans and ages in seconds only,
+database) is waiting for an operator. A 503 body adds a true boolean for
+each of the preflight, clock and store conditions that fails:
+prerequisites_failed (the result of the last preflight that ran), clock_skew
+and store_changed. A stale Coordinator answer shows only in
+contact_age_seconds. Both bodies hold booleans and ages in seconds only,
 never configuration or credentials.
 """
 from contextlib import contextmanager

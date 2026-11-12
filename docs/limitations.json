@@ -227,7 +227,7 @@
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-11",
-      "impact": "No replica takes over if the Coordinator host or its volume is lost; work waits until it returns. Since P3.06 a worker waits at most 15 s, with full jitter, between failed passes, instead of up to 60 s on a fixed schedule. Measured in file mode (separate processes on one Windows host, loopback, a shared and busy machine; not a cluster): after a 75 s outage the slowest of five workers claimed again 8.1 s (median of 6 restarts) after the restarted Coordinator was ready, against 56.7 s before; after a 30 s outage it was 10.4 s against 5.6 s, because the old fixed schedule happened to line up. Every claim still replays the whole pending outbox in one transaction, so claims per second fall as the backlog grows (about 40 to 55 with 50 to 200 commands queued, 21 to 23 with 1,000).",
+      "impact": "No replica takes over if the Coordinator host or its volume is lost; work waits until it returns. Since P3.06 a worker waits at most 15 s, with full jitter, between failed passes, instead of up to 60 s on a fixed schedule. Measured in file mode (separate processes on one Windows host, loopback, a shared and busy machine; not a cluster): after a 75 s outage the slowest of five workers claimed again 8.1 s (median of 6 restarts) after the restarted Coordinator was ready, against 56.7 s before; after a 30 s outage it was 10.4 s against 5.6 s, because the old fixed schedule happened to line up. Every claim still replays the whole pending outbox in one transaction, so claims per second fall as the backlog grows (measured on one host, not a cluster: about 40 to 55 with 50 to 200 commands queued, 21 to 23 with 1,000).",
       "workaround": "Restart the Coordinator on the same volume; saved requests replay from SQLite.",
       "cites": [
         {"at": "deploy/sentinel/coordinator.yaml:62-64", "text": "type: Recreate"},
@@ -251,7 +251,7 @@
         {"at": "services/coordinator/store.py:127", "text": "lower(hex(randomblob(16)))"},
         {"at": "services/coordinator/store.py:377", "text": "UPDATE store_meta SET commit_counter=commit_counter+1"},
         {"at": "runtime/worker_http.py:409", "text": "elif floor is not None and compared < floor:"},
-        {"at": "runtime/remote_worker.py:273", "text": "\"status\": \"store_changed\""},
+        {"at": "runtime/remote_worker.py:274","text": "\"status\": \"store_changed\""},
         {"at": "scripts/coordinator_restore_check.py"},
         {"at": "tests/test_store_generation.py:374", "text": "def test_a_rolled_back_database_stops_claiming_keeps_saved_results_and_resumes_after_acceptance"},
         {"at": "tests/test_store_generation.py:440", "text": "def test_a_backup_missing_only_the_last_acknowledged_result_is_detected"}

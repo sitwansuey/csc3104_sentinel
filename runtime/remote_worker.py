@@ -213,8 +213,9 @@ class RemoteWorker:
     across restarts, until an operator runs worker_service --accept-store.
     Saved results are still sent and never dropped.
 
-    Each pass therefore runs, in order: re-send saved results; refuse new
-    work while a store change is recorded (a journal read, no request);
+    Each pass therefore runs, in order: re-send a saved result (a pass
+    whose re-send is accepted ends there); refuse new work while a store
+    change is recorded (the journal and the previous reply, no request);
     refuse it while the clock is outside the skew bound (at most a /clock
     exchange); then run before_claim. The cheap checks come first, so a
     worker that would refuse the claim anyway never runs its preflight.

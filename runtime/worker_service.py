@@ -58,8 +58,9 @@ def client(config, clock=time.time, store=None):
 def backoff_seconds(poll_seconds, failures, random=random.random):
     """Seconds to wait before the next polling pass.
 
-    After a pass that reached the Coordinator, poll_seconds. After failures
-    in a row, a wait drawn uniformly between 0 and
+    After a pass that completed, poll_seconds. After failed passes in a row
+    (including a failed preflight, or a request the Coordinator answered
+    with an error), a wait drawn uniformly between 0 and
     min(BACKOFF_CAP_SECONDS, poll_seconds * 2 ** min(failures, 5)) ("full
     jitter"): workers that lost the Coordinator together do not all retry
     at once, and none waits more than the cap once it is back.
