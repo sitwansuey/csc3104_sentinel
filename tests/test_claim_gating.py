@@ -1,6 +1,7 @@
 """The gates on new work, together: store change (P3.06), clock skew (P3.03), preflight (P3.07).
 
-Each polling pass re-sends saved results first. Only then may it claim, and
+Each polling pass re-sends a saved result first (and ends once one is
+accepted). Only a pass with nothing left to re-send may claim, and
 only when no Coordinator store change is recorded, the clock is within the
 skew bound, and the component's prerequisite (the agent Planner's model
 preflight) passes, checked in that order so the preflight never runs on a
@@ -172,6 +173,21 @@ class ClaimGatingTests(unittest.TestCase):
         self.assertEqual(self.readyz(), (200, []))
         self.assertGreater(self.prerequisite.call_count, calls)
         self.assertEqual(self.adapter.calls, 1)
+
+    def test_an_accepted_store_change_then_a_failing_preflight_names_only_the_preflight(self):
+        self.accepted_then_restored()
+        self.client.post("clock", {})  # A reply shows the restore; the clock is in bound.
+        status, operations = self.poll()
+        self.assertEqual(status["status"], "store_changed")
+        self.assertEqual(self.readyz(), (503, ["store_changed"]))
+
+        # An operator accepts the restore, and the next pass's preflight fails.
+        self.journal.accept_store()
+        self.prerequisite.side_effect = PreflightFailed("MODEL_UNAVAILABLE")
+        status, operations = self.poll()
+        self.assertEqual(status, {"status": "not_ready", "error_code": "MODEL_UNAVAILABLE"})
+        self.assertNotIn("claim", operations)
+        self.assertEqual(self.readyz(), (503, ["prerequisites_failed"]))  # The store change is cleared.
 
     def test_a_saved_result_is_resent_first_while_every_gate_fails(self):
         original = self.client.post
