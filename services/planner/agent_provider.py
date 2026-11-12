@@ -47,26 +47,53 @@ RECOVERY_PROMPT = (
     "Explain how the observed evidence supports the selected action.\n")
 
 
-def names_target(component, name):
-    """True only when a diagnosed component refers to the target and nothing else.
-
-    Accepts naming variants seen from real models, such as "shippingservice container",
-    "deployment/shippingservice" or one of its Pod names. Any other remaining word,
-    for example another service, means the diagnosis is not about the target.
-    """
-    if not isinstance(component, str) or not isinstance(name, str) or not name:
-        return False
-    words = [word.rsplit("/", 1)[-1] for word in component.lower().translate(_SEPARATORS).split()]
-    rest = [word for word in words if word and word not in _DESCRIPTORS]
-    if len(rest) != 1:
-        return False
-    word, name = rest[0], name.lower()
+def _is_target_word(word, name):
+    """The target name itself, or one of its Pod names: <name>-<ReplicaSet hash>-<Pod suffix>."""
     if word == name:
         return True
-    # A Pod of the target Deployment: <name>-<ReplicaSet hash>-<Pod suffix>.
     parts = word[len(name) + 1:].split("-") if word.startswith(name + "-") else []
     return (len(parts) == 2 and 6 <= len(parts[0]) <= 10 and len(parts[1]) == 5
             and all(part.isascii() and part.isalnum() for part in parts))
+
+
+def _strip_reference(word, name, containers):
+    """One word with any '/' reference reduced to the part that names something.
+
+    "<pod or target>/<container>" keeps the Pod part, but only when the container
+    belongs to the target's own reviewed template. Any other "a/b", such as
+    "deployment/<name>" or "<namespace>/<name>", keeps the last part as before.
+    """
+    if "/" not in word:
+        return word
+    head, _, tail = word.rpartition("/")
+    if "/" not in head and tail in containers and _is_target_word(head, name):
+        return head
+    return tail
+
+
+def names_target(component, name, containers=()):
+    """True only when a diagnosed component refers to the target and nothing else.
+
+    Accepts naming variants seen from real models, such as "shippingservice container",
+    "deployment/shippingservice", one of its Pod names, or "<pod>/<container>" when
+    the container is one of the target's own (containers, from the reviewed baseline
+    template). Any other remaining word, for example another service, means the
+    diagnosis is not about the target.
+    """
+    if not isinstance(component, str) or not isinstance(name, str) or not name:
+        return False
+    name = name.lower()
+    owned = frozenset(item.lower() for item in containers if isinstance(item, str) and item)
+    words = [_strip_reference(word, name, owned) for word in component.lower().translate(_SEPARATORS).split()]
+    rest = [word for word in words if word and word not in _DESCRIPTORS]
+    return len(rest) == 1 and _is_target_word(rest[0], name)
+
+
+def baseline_containers(baselines):
+    """Container names in the reviewed baseline Pod templates (code-owned, never from the model)."""
+    return sorted({container["name"] for baseline in baselines
+                   for container in (baseline.get("pod_template") or {}).get("spec", {}).get("containers", [])
+                   if isinstance(container, dict) and isinstance(container.get("name"), str)})
 
 
 def planning_budget(config):
@@ -187,8 +214,9 @@ class AgentPlanner:
     def __call__(self, context):
         """The Recovery Planner: an advisory decision for propose() to validate."""
         failures = context["diagnosis"]["prediction"].values()
-        if any(not names_target(failure.get("root cause component"), context["incident"]["target"]["name"])
-               for failure in failures):
+        containers = baseline_containers(context["baselines"])
+        if any(not names_target(failure.get("root cause component"), context["incident"]["target"]["name"],
+                                containers) for failure in failures):
             raise PlanningError("DIAGNOSIS_OFF_TARGET", terminal=True)
         prompt = RECOVERY_PROMPT + json.dumps({
             **context, "baselines": [{key: baseline[key] for key in (

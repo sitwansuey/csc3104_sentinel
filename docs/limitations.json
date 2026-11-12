@@ -102,7 +102,7 @@
         {"at": "tests/test_approval_session.py:527", "text": "def test_crash_restart_passes_the_executor_token_only_through_the_worker_environment"},
         {"at": "experiments/boutique/harness/agent_live.py:262", "text": "return self.request_approval(proposal, decision)"},
         {"at": "scripts/boutique_provider.py:30", "text": "approve=lab.request_approval"},
-        {"at": "tests/test_live_agent.py:440", "text": "def test_agent_success_approves_through_the_session_and_records_the_strategy"},
+        {"at": "tests/test_live_agent.py:460", "text": "def test_agent_success_approves_through_the_session_and_records_the_strategy"},
         {"claim": "C-CONNECTED-HARNESS"}
       ],
       "planned": ["P2.02", "P2.03"],
