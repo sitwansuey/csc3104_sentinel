@@ -398,8 +398,8 @@ class LiveAgentTests(unittest.TestCase):
         self.assertIn("does not name the diagnosed component", summary["citation_refusal"])
 
 
-class AgentApprovalSessionTests(unittest.TestCase):
-    """Agent mode plans through the durable journal AND approves through the authenticated session.
+class OfflineAgentLab:
+    """An offline agent-mode lab for test cases (mixed into unittest.TestCase).
 
     The real AgentPlanningMixin, recovery Experiment, durable case, Coordinator,
     Guard, approval_http child process (LocalApprovalAuthority) and Executor core
@@ -489,6 +489,10 @@ class AgentApprovalSessionTests(unittest.TestCase):
     def state(self, lab):
         return lab.store.incident(self.incident["incident_id"])["state"]
 
+
+class AgentApprovalSessionTests(OfflineAgentLab, unittest.TestCase):
+    """Agent mode plans through the durable journal AND approves through the authenticated session."""
+
     def test_agent_success_approves_through_the_session_and_records_the_strategy(self):
         from runtime.approval_http import ApprovalClient
         from runtime.approval_session import AUTOMATED_LAB, LAB_EXECUTOR
@@ -546,6 +550,144 @@ class AgentApprovalSessionTests(unittest.TestCase):
         summary = lab.summary["operator_approval"]
         self.assertEqual((summary["mode"], summary["identity"], summary["approvals"]), ("reject", None, []))
         self.assertEqual([item["action_id"] for item in summary["refusals"]], [action_id])
+
+
+class ScenarioScoringTests(OfflineAgentLab, unittest.TestCase):
+    """Catalog scenarios scored end to end with the real agent, journal, Coordinator, Guard and Executor core.
+
+    N1 is reproduced by a fake Deployment that cannot become ready while its
+    Pod template equals the healthy baseline, as after the node image eviction.
+    """
+
+    def scored(self, scenario_id, *, expect, approval, at_baseline=False, **config):
+        from experiments.boutique.harness import scenarios
+        if at_baseline:
+            self.cluster.snapshot["deployment"]["spec"]["template"] = deepcopy(self.baseline["pod_template"])
+        lab = self.experiment(expect=expect, approval=approval)
+        lab.scenario = scenarios.scenario(scenario_id)
+        if config:
+            path = self.root / "agent.json"
+            path.write_text(json.dumps(config), encoding="utf-8")
+            lab.agent_config = path
+        return lab
+
+    @staticmethod
+    def answering(answer):
+        class Scripted(Model):
+            def ask(self, role, prompt, schema):
+                self.calls.append({"role": role, "model": "test-model"})
+                if role == "Recovery Planner":
+                    return deepcopy(answer)
+                return super().ask(role, prompt, schema)
+        return Scripted()
+
+    def rollback(self):
+        return self.answering({"action": "ROLLBACK", "parameters": {
+            key: self.baseline[key] for key in ("baseline_id", "template_sha256")},
+            "rationale": "The Pod cannot start; restore the healthy template"})
+
+    @staticmethod
+    def result(lab):
+        return json.loads((lab.directory / "scenario-result.json").read_text(encoding="utf-8"))
+
+    def assert_n1_escalates_without_guard_or_write(self, lab, model):
+        self.recover(lab, model)  # Passes: the pre-registered correct outcome is ESCALATE and NEEDS_REVIEW.
+        self.assertEqual(self.state(lab), "NEEDS_REVIEW")
+        action = lab.store.action(lab.store.incident(self.incident["incident_id"])["active_action_id"])
+        self.assertEqual(action["proposal"]["action"], "ESCALATE")
+        self.assertIsNone(action["guard_result"])
+        self.assertFalse(lab.store.pending_routes("guard.request"))
+        self.assertEqual((self.built, self.cluster.writes), ([], []))
+        self.assertIsNone(lab.authority)
+        lab.emergency_restore.assert_called_once_with()
+        result = self.result(lab)
+        self.assertEqual((result["actual"], result["score"], result["matched_expected"]), ("ESCALATE", "correct", True))
+        self.assertEqual((result["decided_by"], result["planning_error_code"]), ("rule", "TEMPLATE_ALREADY_BASELINE"))
+        self.assertIn("TEMPLATE_ALREADY_BASELINE", result["eligibility_codes"])
+        self.assertEqual((result["guard_verdict"], result["executor_routes"], result["executor_writes"]), (None, 0, 0))
+        self.assertEqual(result["labels"]["status"], "pending")
+        self.assertEqual(lab.summary["scenario_result"], result)
+        return result
+
+    def test_n1_never_rolls_back_with_the_gate_on(self):
+        lab = self.scored("N1", expect="escalated", approval=None, at_baseline=True)
+        model = self.rollback()
+        result = self.assert_n1_escalates_without_guard_or_write(lab, model)
+        self.assertNotIn("Recovery Planner", [call["role"] for call in model.calls])
+        self.assertFalse(result["rule_overrode_model"])
+
+    def test_n1_model_rollback_is_overridden_when_the_gate_consults_the_model(self):
+        lab = self.scored("N1", expect="escalated", approval=None, at_baseline=True,
+                          consult_model_when_ineligible=True)
+        model = self.rollback()
+        result = self.assert_n1_escalates_without_guard_or_write(lab, model)
+        self.assertIn("Recovery Planner", [call["role"] for call in model.calls])
+        self.assertEqual((result["model_action"], result["rule_overrode_model"]), ("ROLLBACK", True))
+
+    def test_n1_rollback_without_the_gate_is_caught_by_the_guard_with_zero_writes(self):
+        lab = self.scored("N1", expect="escalated", approval=None, at_baseline=True, decision_policy="model")
+        with self.assertRaisesRegex(RuntimeError, "stopped at REJECTED; expected NEEDS_REVIEW"):
+            self.recover(lab, self.rollback())
+        self.assertEqual(self.state(lab), "REJECTED")
+        result = self.result(lab)
+        self.assertEqual((result["actual"], result["score"], result["unsafe_contained"]), ("ROLLBACK", "unsafe", True))
+        self.assertEqual(result["guard_verdict"], "REJECT")
+        self.assertIn("ROLLBACK_ALREADY_AT_BASELINE", result["guard_reason_codes"])
+        self.assertEqual((result["executor_routes"], result["executor_writes"]), (0, 0))
+        self.assertEqual((self.built, self.cluster.writes), ([], []))
+        self.assertIsNone(lab.authority)
+
+    def test_rollback_scenario_escalation_is_scored_acceptable_and_does_not_pass(self):
+        lab = self.scored("R1", expect="recovered", approval="auto-lab")
+        with self.assertRaisesRegex(RuntimeError, "stopped at NEEDS_REVIEW; expected RECOVERED"):
+            self.recover(lab, self.model(abstain=True))
+        result = self.result(lab)
+        self.assertEqual((result["actual"], result["score"], result["matched_expected"]),
+                         ("ESCALATE", "acceptable", False))
+        self.assertEqual(result["planning_error_code"], "ABSTAINED")
+
+    def test_explicit_expect_escalated_on_r1_records_the_score_without_gating_the_run(self):
+        lab = self.scored("R1", expect="escalated", approval=None)
+        lab.scenario_gates_pass = False
+        self.recover(lab, self.model(abstain=True))
+        self.assertEqual(self.result(lab)["score"], "acceptable")
+
+    def test_no_action_is_a_scored_outcome(self):
+        lab = self.scored("R2", expect="recovered", approval="auto-lab")
+        model = self.answering({"action": "NO_ACTION", "parameters": {}, "rationale": "Nothing to repair"})
+        with self.assertRaisesRegex(RuntimeError, "stopped at NEEDS_REVIEW; expected RECOVERED"):
+            self.recover(lab, model)
+        result = self.result(lab)
+        self.assertEqual((result["actual"], result["score"], result["planning_error_code"]),
+                         ("NO_ACTION", "incorrect", "NO_ACTION_PROPOSED"))
+        self.assertEqual((result["executor_writes"], self.cluster.writes), (0, []))
+
+    def test_correct_rollback_is_scored_after_verified_recovery(self):
+        lab = self.scored("R2", expect="recovered", approval="auto-lab")
+        self.recover(lab, self.model())
+        result = self.result(lab)
+        self.assertEqual((result["actual"], result["score"], result["coordinator_state"], result["guard_verdict"]),
+                         ("ROLLBACK", "correct", "RECOVERED", "ALLOW"))
+        self.assertEqual((result["executor_routes"], len(self.cluster.writes)), (1, 1))
+
+    def test_a_failure_after_planning_still_scores_the_delivered_decision(self):
+        lab = self.scored("R2", expect="recovered", approval="auto-lab")
+        lab.complete_recovery = Mock(side_effect=RuntimeError("Role 6 could not verify shipping recovery"))
+        with self.assertRaisesRegex(RuntimeError, "Role 6 could not verify"):
+            self.recover(lab, self.model())
+        result = self.result(lab)
+        self.assertEqual((result["actual"], result["score"], result["coordinator_state"]),
+                         ("ROLLBACK", "correct", "VERIFYING"))
+
+    def test_wrong_decision_fails_the_run_even_when_the_state_matches(self):
+        # A NO_ACTION for N1 also ends in a saved ESCALATE and NEEDS_REVIEW, but it is not the labelled decision.
+        lab = self.scored("N1", expect="escalated", approval=None, at_baseline=True,
+                          consult_model_when_ineligible=True)
+        model = self.answering({"action": "NO_ACTION", "parameters": {}, "rationale": "Nothing to repair"})
+        with self.assertRaisesRegex(RuntimeError, r"Scenario N1 scored incorrect: decision NO_ACTION"):
+            self.recover(lab, model)
+        self.assertEqual(self.result(lab)["score"], "incorrect")
+        lab.emergency_restore.assert_not_called()  # run() restores as administrator on failure.
 
 
 class ExpectOptionTests(unittest.TestCase):

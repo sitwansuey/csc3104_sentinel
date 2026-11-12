@@ -13,6 +13,7 @@ from services.guard.common import json_sha256
 from services.planner.agent_provider import AgentPlanner, names_target, planning_budget
 from services.planner.store import PlannerStore
 from services.planner.taxonomy import components, policy as decision_policy
+from experiments.boutique.harness import scenarios
 from experiments.boutique.harness.durable_case import run_durable_case
 from experiments.recovery.live import require, save
 
@@ -155,6 +156,9 @@ def export_telemetry(directory, target, destination, *, incident=None, lookback_
 class AgentPlanningMixin:
     agent_config = None
     expect = "recovered"
+    # Whether the scenario score decides the run's result. False only for an explicit
+    # --expect that differs from the scenario's label (the R1 planning-failure check).
+    scenario_gates_pass = True
 
     def load_agent_config(self):
         config = json.loads(DEFAULT_CONFIG.read_text(encoding="utf-8"))
@@ -214,7 +218,13 @@ class AgentPlanningMixin:
         ESCALATE that moves the incident to NEEDS_REVIEW; nothing falls back to
         a harness repair. A restart with the same run folder replays a saved
         proposal without another model call.
+
+        A catalog scenario run scores the delivered decision in
+        scenario-result.json before any pass or fail check, and also when a later
+        step (Guard, Executor or Verifier) fails.
         """
+        if incident is None:
+            return  # A scored NO_INCIDENT that the scenario's label allows; nothing to plan.
         config = self.load_agent_config()
         # The evidence summarizer reads this to keep an expected escalation out
         # of the RECOVERED column, since both end with status PASS.
@@ -246,6 +256,10 @@ class AgentPlanningMixin:
         try:
             state = run_durable_case(self, incident, folder=folder, planning=planner.options(),
                                      approve=self.approve_planned)
+        except Exception:
+            # A failure after planning still scores the decision that was delivered.
+            self.score_delivered(incident, folder, planner)
+            raise
         finally:
             save(folder / "model-calls.json", planner.calls)
             self.summary["agent_model_calls"] = len(planner.calls)
@@ -263,6 +277,7 @@ class AgentPlanningMixin:
             self.summary["planning_journal"] = {key: record[key] for key in ("attempts", "error_code", "delivered")}
         if proposal and proposal["action"] == "ESCALATE":
             self.planning_stopped(incident, record, planner, state, started)
+        graded = self.score_scenario(incident, state, proposal, record, folder, planner)
         # A refused approval leaves the incident AWAITING_APPROVAL with no Executor request.
         require(state != "AWAITING_APPROVAL" or self.expect == "escalated",
                 "Operator did not approve " + (proposal or {}).get("action_id", "the proposal")
@@ -270,11 +285,78 @@ class AgentPlanningMixin:
         expected = "NEEDS_REVIEW" if self.expect == "escalated" else "RECOVERED"
         require(state == expected and (state != "NEEDS_REVIEW" or proposal["action"] == "ESCALATE"),
                 f"Agent recovery stopped at {state}; expected {expected}")
+        if graded is not None and self.scenario_gates_pass:
+            require(graded["score"] == "correct",
+                    f"Scenario {graded['scenario']} scored {graded['score']}: decision {graded['actual']}; "
+                    f"pre-registered correct {graded['expected']['correct']}")
         if state == "NEEDS_REVIEW":
             # The expected escalation is not a repair: the administrator removes the fault.
             require(self.emergency_restore(), "Administrator restore after the expected escalation failed")
             self.check("agent planning failure ended in a saved ESCALATE and NEEDS_REVIEW",
                        error_code=record["error_code"], attempts=record["attempts"])
+
+    def scenario_facts(self, incident, state, action_id, folder):
+        """What happened after planning, read from the Coordinator and the Executor's own stats."""
+        action = self.store.action(action_id) if action_id else None
+        guard = (action or {}).get("guard_result")
+        routes = 0
+        if action_id:
+            routes = self.store.db.execute("SELECT COUNT(*) FROM outbox WHERE action_id=? AND topic='executor.request'",
+                                           (action_id,)).fetchone()[0]
+        stats = folder / "transport-stats.json"
+        # With no Executor route nothing could write; with a route, only the Executor's own stats count.
+        if stats.is_file():
+            writes = json.loads(stats.read_text(encoding="utf-8")).get("write_attempts")
+        else:
+            writes = 0 if routes == 0 else None
+        return {"incident_id": incident["incident_id"] if incident else None, "coordinator_state": state,
+                "guard_verdict": guard["verdict"] if guard else None,
+                "guard_reason_codes": list(guard["reason_codes"]) if guard else [],
+                "executor_routes": routes, "executor_writes": writes,
+                "fault_injected_at": self.summary.get("fault_injected_at"),
+                "incident_observed_at": incident["observed_at"] if incident else None}
+
+    def save_scenario_result(self, graded):
+        save(self.directory / "scenario-result.json", graded)
+        self.summary["scenario_result"] = graded
+        self.event(3, "status", f"Scenario {graded['scenario']}: decision {graded['actual']}, scored {graded['score']}",
+                   target=self.target)
+        return graded
+
+    def score_scenario(self, incident, state, proposal, record, folder, planner):
+        """Score the delivered decision against the scenario's pre-registered sets; None when unscored."""
+        item = getattr(self, "scenario", None)
+        if item is None:
+            return None
+        outcome = scenarios.decision(proposal, (record or {}).get("error_code"))
+        decision = planner.decision or {}
+        facts = self.scenario_facts(incident, state, proposal["action_id"], folder)
+        facts.update(planning_error_code=(record or {}).get("error_code"),
+                     decided_by=decision.get("decided_by"), model_action=decision.get("model_action"),
+                     rule_overrode_model=bool(decision.get("overridden")),
+                     eligibility_codes=list(decision.get("codes") or []))
+        return self.save_scenario_result(scenarios.result(item, outcome, **facts))
+
+    def score_delivered(self, incident, folder, planner):
+        """Score a delivered proposal when a later step failed; None when unscored or nothing was delivered."""
+        if getattr(self, "scenario", None) is None or not (folder / "planner.db").is_file():
+            return None
+        with PlannerStore(folder / "planner.db") as journal:
+            record = journal.get(incident["incident_id"])
+        current = self.store.incident(incident["incident_id"])
+        if not record or not record["delivered"] or not record["proposal"] or current is None:
+            return None
+        return self.score_scenario(incident, current["state"], record["proposal"], record, folder, planner)
+
+    def no_incident(self, label):
+        """Score NO_INCIDENT; the run continues only when the scenario's label allows no incident."""
+        item = getattr(self, "scenario", None)
+        if item is None:
+            return False
+        self.summary["expected_outcome"] = self.expect
+        graded = self.save_scenario_result(scenarios.result(
+            item, "NO_INCIDENT", **self.scenario_facts(None, None, None, self.directory)))
+        return item["expected"]["incident"] is not True and graded["score"] == "correct"
 
     def planning_stopped(self, incident, record, planner, state, started):
         """Record one visible stop: summary.json and the dashboard 'Agent planning stopped' event."""

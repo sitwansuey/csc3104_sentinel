@@ -7,8 +7,8 @@ fixed taxonomy below. Nothing here is read from telemetry or model output.
 
 rollback_eligibility() decides from code facts alone whether ROLLBACK may be
 proposed: the diagnosed reason is one a rollback can repair, the component is
-the target itself, the incident signals show a rollout, startup, crash or
-back-off symptom, the live Pod template differs from the healthy baseline
+the target itself, the incident signals show a rollout, startup, crash,
+back-off or image pull symptom, the live Pod template differs from the healthy baseline
 (services/planner/change.py), and that change is recent. The decision is
 recorded with decided_by "rule". A model may downgrade an eligible case to
 ESCALATE; it can never turn an ineligible case into ROLLBACK.
@@ -31,7 +31,11 @@ REASONS = (
 ROLLBACK_ELIGIBLE = frozenset({"faulty configuration rollout", "container startup failure"})
 # Words in an incident signal's reason that show a failed rollout or startup.
 # retrieve_runbooks() also accepts "unavailable"; unavailability alone is not a rollback symptom.
-SYMPTOM_WORDS = ("rollout", "startup", "crash", "backoff")
+# "errimage" and "imagepull" match kubelet's ErrImagePull, ErrImageNeverPull and
+# ImagePullBackOff: a Pod that cannot get its image, as after a rollout to a bad
+# image (scenario R2). The same symptom without a template change (N1) is still
+# refused by the template check.
+SYMPTOM_WORDS = ("rollout", "startup", "crash", "backoff", "errimage", "imagepull")
 # Why a ROLLBACK is not eligible, in the order they are checked. The first one
 # found is the saved escalation code (services/planner/worker.py).
 INELIGIBLE_CODES = ("INELIGIBLE_REASON", "COMPONENT_NOT_TARGET", "SYMPTOM_NOT_ROLLOUT",
