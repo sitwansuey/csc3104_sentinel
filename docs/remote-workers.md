@@ -458,8 +458,13 @@ own credentials, trusted configuration and persistent component volume. A
 provider-mode Planner needs no Kubernetes credential; an agent-mode Planner
 needs read-only `get` on its target Deployment. Keep Guard/Verifier Kubernetes access read-only;
 reuse `executor-rbac.yaml` and Executor packaging for writes. Coordinator's
-image/Service and optional Observer composition are provided, but the complete
-four-worker Kubernetes rollout, restricted identity evidence, multi-host
+image/Service and optional Observer composition are provided. The complete
+rollout, every worker as its own Deployment with its own Secret and PVC on a
+four-node kind lab, is written for P4.01 (`deploy/sentinel/sentinel-dist`,
+[distributed acceptance](distributed-acceptance.md)): the deterministic
+Planner there mounts no token, and the Guard and Executors run kubectl with
+an in-Pod kubeconfig that names their projected token file. It is tested
+offline only, so a live rollout, restricted identity evidence, multi-host
 ownership and owner release sign-off remain #62/#63 acceptance work.
 
 ## Worker image
@@ -527,4 +532,7 @@ cannot reach them), and its file mode needs `tests/support/file_cluster.py`,
 which the image does not contain. So the run needs a topology change first:
 a proxy address the container can reach, and kind mode with a read-only
 kubeconfig whose API server address the container can also reach.
-Containers on one Docker host are still not separate machines.
+Containers on one Docker host are still not separate machines. The P4.01
+manifests take the other route, every worker in its own Pod on the
+`sentinel-dist` lab ([distributed acceptance](distributed-acceptance.md)),
+with the deterministic Planner by default; no Pod from them has run.
