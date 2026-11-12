@@ -44,11 +44,14 @@ ENV_DIRECTORY = "SENTINEL_FAULT_POINTS"
 ENV_CLUSTER = "SENTINEL_FAULT_CLUSTER"
 ENV_CLOCK_OFFSET = "SENTINEL_TEST_CLOCK_OFFSET"
 ENV_PROCESS = "SENTINEL_FAULT_PROCESS"  # The harness's name for this process, recorded when a point fires.
-# Clusters a fault run may target: the file-backed fake and the connected kind
-# lab, each with the only Kubernetes contexts a bound worker may name for it.
+# Clusters a fault run may target: the file-backed fake, the connected kind
+# lab and the four-node sentinel-dist lab (P4.01, whose workers run in Pods and
+# name its context in their in-Pod kubeconfig), each with the only Kubernetes
+# contexts a bound worker may name for it.
 FILE_CLUSTER = "file-sentinel-distributed"
 LAB_CONTEXTS = {FILE_CLUSTER: frozenset({"file-cluster"}),
-                "sentinel-boutique-connected": frozenset({"kind-sentinel-boutique-connected"})}
+                "sentinel-boutique-connected": frozenset({"kind-sentinel-boutique-connected"}),
+                "sentinel-dist": frozenset({"kind-sentinel-dist"})}
 LAB_CLUSTERS = frozenset(LAB_CONTEXTS)
 # Never a fault target, as a cluster_id, a context or the gated cluster, whatever the environment says.
 REFUSED = frozenset({"sentinel-lab", "kind-sentinel-lab"})

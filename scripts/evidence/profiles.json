@@ -103,6 +103,11 @@
       "description": "One method on one split of the pre-registered RCAEval sample (scripts/evaluation/rcaeval_run.py); scores and predictions only, never telemetry or trajectories",
       "include": ["summary.json", "versions.json", "run.json", "predictions.jsonl", "scores/summary.json",
                   "scores/per-case.jsonl"]
+    },
+    "distributed-acceptance": {
+      "description": "Four-node kind lab sentinel-dist (experiments/distributed/kind_acceptance.py): per-run summaries, timelines, sanitised API server audit extracts, Coordinator records and versions; never databases, logs, keys or certificates",
+      "include": ["summary.json", "results.md", "lab.json", "inputs/*.json", "*/*/summary.json", "*/*/timeline.jsonl",
+                  "*/*/audit-extract.jsonl", "*/*/records.json", "*/*/versions.json"]
     }
   }
 }

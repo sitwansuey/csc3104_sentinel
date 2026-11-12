@@ -1,0 +1,31 @@
+# API server audit policy for the four-node sentinel-dist lab (P4.01).
+# deploy/kind/kind-dist.yaml mounts this file into the control plane and turns
+# on the log backend. experiments/distributed/audit.py reads the log and counts
+# Executor template writes independently of Sentinel's own records (I7).
+# The first rule that matches an event decides its level.
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages:
+  - RequestReceived
+rules:
+  # Secret and token traffic: who and what only, never a request or response body.
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["secrets", "serviceaccounts/token"]
+  # Every change to a Deployment or Lease in the two lab namespaces, with the
+  # patch body and the stored object, so a template write can be told from a
+  # fence or seal and tied to its action.
+  - level: RequestResponse
+    verbs: ["create", "update", "patch", "delete"]
+    namespaces: ["sentinel-dist", "sentinel-dist-workload"]
+    resources:
+      - group: apps
+        resources: ["deployments"]
+      - group: coordination.k8s.io
+        resources: ["leases"]
+  # Everything else a Sentinel ServiceAccount asks for, allowed or denied
+  # (reads, a refused Secret read, pods/exec, a patch of another Deployment).
+  - level: Metadata
+    userGroups: ["system:serviceaccounts:sentinel-dist"]
+  - level: None

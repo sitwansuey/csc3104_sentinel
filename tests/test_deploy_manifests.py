@@ -7,17 +7,31 @@ that each rule still names the fields it protects, and that every patch the
 production adapter sends stays inside what the policy allows. Whether the API
 server enforces it is for scripts/validation/test_executor_admission_live.py,
 which has run once against a kind API server (claim C-ADMISSION-POLICY-LIVE).
+
+The second half checks the four-node sentinel-dist lab (P4.01:
+deploy/kind/kind-dist.yaml, deploy/kind/audit-policy.yaml and
+deploy/sentinel/sentinel-dist): each worker has its own Secret and PVC, no worker
+mounts the Coordinator's data, the deterministic Planner has no Kubernetes
+token, the Executor may only get and patch the named target, the Coordinator
+and the two Executors are pinned to three different nodes, and the network
+policy allows exactly the listed edges. Each check is a function returning
+problems, so the negative tests feed it a mutated manifest. Whether kind,
+kubelets and kindnet honour these manifests is for the live run
+(docs/distributed-acceptance.md).
 """
 
 from contextlib import redirect_stderr, redirect_stdout
+from copy import deepcopy
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from experiments.validation.demo_guard import load_fixtures
 from scripts.validation import test_executor_admission_live as harness
@@ -86,6 +100,19 @@ class ManifestYamlReaderTests(unittest.TestCase):
             {"a": {"b": 1, "c": "x: y", "d": "it's", "e": ["p", "q"], "f": True},
              "list": [{"name": "one", "value": "first\nsecond"}, "plain"]},
             {"z": None}])
+
+    def test_reads_the_empty_flow_mapping_only(self):
+        self.assertEqual(load_all("podSelector: {}\nvolumes:\n- emptyDir: {}\n"),
+                         [{"podSelector": {}, "volumes": [{"emptyDir": {}}]}])
+        for text in ("a: {b: 1}\n", "a: { }\n", "a: {}x\n"):
+            with self.subTest(text=text), self.assertRaises(ManifestYamlError):
+                load_all(text)
+
+    def test_reads_a_literal_block_as_a_list_item(self):
+        self.assertEqual(load_all("patches:\n  - |\n    kind: X\n    a: 1\n  - plain\n"),
+                         [{"patches": ["kind: X\na: 1\n", "plain"]}])
+        with self.assertRaises(ManifestYamlError):
+            load_all("patches:\n  - |\n  - plain\n")
 
     def test_refuses_yaml_it_does_not_understand(self):
         for text in ("a:\n\tb: 1\n", "a: &anchor 1\n", "a: *alias\n", "a: !!str 1\n", "a: {b: 1}\n",
@@ -684,6 +711,404 @@ class AdmissionVerdictTests(unittest.TestCase):
         self.assertEqual(harness.classify(result(1, stdout="no\n"), "p"), harness.RBAC_DENIED)
         self.assertEqual(harness.classify(result(1, stderr="Unable to connect to the server"), "p"), harness.OTHER)
         self.assertEqual(harness.classify(result(0, stdout="yes\n"), "p"), harness.ALLOWED)
+
+
+# The sentinel-dist lab (P4.01) --------------------------------------------------------------------------------
+
+DIST = ROOT / "deploy/sentinel/sentinel-dist"
+KIND_DIST = ROOT / "deploy/kind/kind-dist.yaml"
+AUDIT_POLICY = ROOT / "deploy/kind/audit-policy.yaml"
+DIST_NAMESPACE, DIST_WORKLOAD = "sentinel-dist", "sentinel-dist-workload"
+COORDINATOR_DATA = "sentinel-dist-coordinator-data"
+# Deployment -> its Coordinator identity. Each has its own Secret sentinel-dist-<identity> and PVC <secret>-data.
+DIST_WORKERS = {"sentinel-planner-1": "planner-1", "sentinel-guard-1": "guard-1", "sentinel-executor-a": "executor-a",
+                "sentinel-executor-b": "executor-b", "sentinel-verifier-1": "verifier-1",
+                "sentinel-observer-1": "observer-1"}
+API = ("api-server", "TCP")
+BASE_EDGES = {("sentinel-coordinator", 8766, "TCP"), ("kube-dns", 53, "UDP"), ("kube-dns", 53, "TCP")}
+API_EDGES = {("api-server", 443, "TCP"), ("api-server", 6443, "TCP")}
+APPROVAL_EDGES = {("sentinel-coordinator", 8767, "TCP")}
+EXPECTED_EGRESS = {
+    "sentinel-coordinator": set(),
+    "sentinel-planner-1": BASE_EDGES,
+    "sentinel-guard-1": BASE_EDGES | APPROVAL_EDGES | API_EDGES,
+    "sentinel-executor-a": BASE_EDGES | APPROVAL_EDGES | API_EDGES,
+    "sentinel-executor-b": BASE_EDGES | APPROVAL_EDGES | API_EDGES,
+    "sentinel-verifier-1": BASE_EDGES | API_EDGES | {("demo-api", 8080, "TCP")},
+    "sentinel-observer-1": BASE_EDGES | API_EDGES}
+EXPECTED_COORDINATOR_INGRESS = ({(name, 8766, "TCP") for name in DIST_WORKERS}
+                                | {(name, 8767, "TCP") for name in ("sentinel-guard-1", "sentinel-executor-a",
+                                                                     "sentinel-executor-b")})
+
+
+def dist_documents():
+    """Every document of the default sentinel-dist overlay, in kustomization order."""
+    kustomization = load_all((DIST / "kustomization.yaml").read_text(encoding="utf-8"))[0]
+    found = []
+    for name in kustomization["resources"]:
+        found += load_all((DIST / name).read_text(encoding="utf-8"))
+    return found
+
+
+def of_kind(docs, kind):
+    return [doc for doc in docs if doc["kind"] == kind]
+
+
+def named(docs, kind, name):
+    [doc] = [doc for doc in of_kind(docs, kind) if doc["metadata"]["name"] == name]
+    return doc
+
+
+def pod_spec(deployment):
+    return deployment["spec"]["template"]["spec"]
+
+
+def secrets_read(deployment):
+    names = set()
+    spec = pod_spec(deployment)
+    for container in spec.get("containers", []) + spec.get("initContainers", []):
+        for item in container.get("env") or []:
+            reference = (item.get("valueFrom") or {}).get("secretKeyRef")
+            if reference:
+                names.add(reference["name"])
+        for item in container.get("envFrom") or []:
+            if item.get("secretRef"):
+                names.add(item["secretRef"]["name"])
+    for volume in spec.get("volumes") or []:
+        if volume.get("secret"):
+            names.add(volume["secret"]["secretName"])
+        for source in (volume.get("projected") or {}).get("sources") or []:
+            if source.get("secret"):
+                names.add(source["secret"]["name"])
+    return names
+
+
+def claims(deployment):
+    return {volume["persistentVolumeClaim"]["claimName"] for volume in pod_spec(deployment).get("volumes") or []
+            if volume.get("persistentVolumeClaim")}
+
+
+def worker_config(docs, deployment_name):
+    identity = DIST_WORKERS[deployment_name]
+    return json.loads(named(docs, "ConfigMap", f"sentinel-dist-{identity}-config")["data"]["worker.json"])
+
+
+def secret_and_volume_problems(docs):
+    """Own Secret and own PVC per worker; nothing but the Coordinator mounts its data; PVCs exist."""
+    problems, owners = [], {}
+    for name, identity in DIST_WORKERS.items():
+        deployment = named(docs, "Deployment", name)
+        own = f"sentinel-dist-{identity}"
+        if secrets_read(deployment) != {own}:
+            problems.append(f"{name} reads Secrets {sorted(secrets_read(deployment))}, not only {own}")
+        if claims(deployment) != {own + "-data"}:
+            problems.append(f"{name} mounts PVCs {sorted(claims(deployment))}, not only {own}-data")
+    for deployment in of_kind(docs, "Deployment"):
+        for claim in claims(deployment):
+            if claim in owners:
+                problems.append(f"{claim} is mounted by {owners[claim]} and {deployment['metadata']['name']}")
+            owners[claim] = deployment["metadata"]["name"]
+            if claim == COORDINATOR_DATA and deployment["metadata"]["name"] != "sentinel-coordinator":
+                problems.append(f"{deployment['metadata']['name']} mounts the Coordinator's data")
+    declared = {doc["metadata"]["name"] for doc in of_kind(docs, "PersistentVolumeClaim")}
+    problems += [f"{claim} is not declared" for claim in sorted(set(owners) - declared)]
+    if owners.get(COORDINATOR_DATA) != "sentinel-coordinator":
+        problems.append("The Coordinator does not mount its own data")
+    return problems
+
+
+def planner_token_problems(docs):
+    """The deterministic Planner has no Kubernetes token, binding or kubeconfig."""
+    planner = named(docs, "Deployment", "sentinel-planner-1")
+    spec, problems = pod_spec(planner), []
+    account = named(docs, "ServiceAccount", spec["serviceAccountName"])
+    if spec.get("automountServiceAccountToken") is not False or account.get("automountServiceAccountToken") is not False:
+        problems.append("The Planner's Pod or ServiceAccount mounts a token")
+    for volume in spec.get("volumes") or []:
+        sources = (volume.get("projected") or {}).get("sources") or []
+        if any("serviceAccountToken" in source for source in sources) or "kubeconfig" in volume["name"]:
+            problems.append(f"The Planner mounts {volume['name']}")
+    for binding in of_kind(docs, "RoleBinding") + of_kind(docs, "ClusterRoleBinding"):
+        if any(subject.get("name") == spec["serviceAccountName"] for subject in binding.get("subjects") or []):
+            problems.append(f"{binding['metadata']['name']} binds the Planner")
+    config = worker_config(docs, "sentinel-planner-1")
+    if config.get("provider") != "deterministic" or config.get("mode") == "agent" or \
+            {"kubeconfig", "context", "in_cluster"} & set(config):
+        problems.append("The default Planner is not the deterministic provider without cluster access")
+    return problems
+
+
+def rbac_problems(docs):
+    """Namespaced Roles only; the Executor gets and patches demo-api only; readers only get."""
+    problems = [f"{doc['kind']} {doc['metadata']['name']} is cluster-wide"
+                for doc in of_kind(docs, "ClusterRole") + of_kind(docs, "ClusterRoleBinding")]
+    roles = {doc["metadata"]["name"]: doc for doc in of_kind(docs, "Role")}
+    for role in roles.values():
+        if role["metadata"]["namespace"] != DIST_WORKLOAD:
+            problems.append(f"Role {role['metadata']['name']} grants in {role['metadata']['namespace']}")
+        for rule in role["rules"]:
+            if "*" in json.dumps(rule):
+                problems.append(f"Role {role['metadata']['name']} uses a wildcard")
+            if "deployments" in rule["resources"] and rule.get("resourceNames") != ["demo-api"]:
+                problems.append(f"Role {role['metadata']['name']} names Deployments other than demo-api")
+    bound = {}
+    for binding in of_kind(docs, "RoleBinding"):
+        for subject in binding["subjects"]:
+            bound.setdefault(subject["name"], []).append(roles.get(binding["roleRef"]["name"]))
+    executor = bound.get("sentinel-executor", [])
+    if [role["rules"] if role else None for role in executor] != [[{
+            "apiGroups": ["apps"], "resources": ["deployments"], "resourceNames": ["demo-api"],
+            "verbs": ["get", "patch"]}]]:
+        problems.append("The Executor's grant is not exactly get and patch on demo-api")
+    for reader in ("sentinel-guard", "sentinel-verifier", "sentinel-observer"):
+        verbs = {verb for role in bound.get(reader, []) for rule in (role or {}).get("rules", [])
+                 for verb in rule["verbs"]}
+        if not verbs or verbs - {"get", "list"}:
+            problems.append(f"{reader} may {sorted(verbs)}")
+    for name in ("sentinel-coordinator", "sentinel-planner"):
+        if name in bound:
+            problems.append(f"{name} has a binding")
+    return problems
+
+
+def pinning_problems(docs, kind_config):
+    """Coordinator on c, executor-a on a, executor-b on b: three different labelled kind workers."""
+    hosts = {node.get("labels", {}).get("sentinel.io/host") for node in kind_config["nodes"] if node["role"] == "worker"}
+    pinned = {name: (pod_spec(named(docs, "Deployment", name)).get("nodeSelector") or {}).get("sentinel.io/host")
+              for name in ("sentinel-coordinator", "sentinel-executor-a", "sentinel-executor-b")}
+    problems = [f"{name} is pinned to {host!r}, which no kind worker carries" for name, host in pinned.items()
+                if host not in hosts]
+    if len(set(pinned.values())) != 3:
+        problems.append(f"The Coordinator and Executors share a node: {pinned}")
+    if pinned != {"sentinel-coordinator": "c", "sentinel-executor-a": "a", "sentinel-executor-b": "b"}:
+        problems.append(f"Unexpected pinning {pinned}")
+    return problems
+
+
+def _selects(selector, labels):
+    if selector is None:
+        return False
+    for key, value in (selector.get("matchLabels") or {}).items():
+        if labels.get(key) != value:
+            return False
+    for expression in selector.get("matchExpressions") or []:
+        operator, values = expression["operator"], expression.get("values", [])
+        if operator == "In" and labels.get(expression["key"]) not in values:
+            return False
+        if operator == "Exists" and expression["key"] not in labels:
+            return False
+        if operator not in {"In", "Exists"}:
+            raise AssertionError("Unsupported selector operator " + operator)
+    return True
+
+
+def _peers(peer, pods):
+    if "ipBlock" in peer:
+        cidr = peer["ipBlock"]["cidr"]
+        return {"api-server"} if cidr in {"192.0.2.1/32", "192.0.2.2/32"} else {"ip:" + cidr}
+    if "namespaceSelector" in peer:
+        namespace = peer["namespaceSelector"].get("matchLabels", {}).get("kubernetes.io/metadata.name")
+        labels = peer.get("podSelector", {}).get("matchLabels", {})
+        if namespace == "kube-system" and labels == {"k8s-app": "kube-dns"}:
+            return {"kube-dns"}
+        if namespace == DIST_WORKLOAD and labels == {"app": "demo-api"}:
+            return {"demo-api"}
+        return {"namespace:" + str(namespace)}
+    return {name for name, labels in pods.items() if _selects(peer.get("podSelector"), labels)}
+
+
+def network_edges(docs):
+    """(egress per Deployment, ingress to the Coordinator) allowed by the sentinel-dist NetworkPolicies.
+
+    A Pod no Egress policy selects is unrestricted ({"*"}); a policy with
+    an empty podSelector selects every Pod in its namespace.
+    """
+    pods = {doc["metadata"]["name"]: doc["spec"]["template"]["metadata"]["labels"]
+            for doc in of_kind(docs, "Deployment") if doc["metadata"]["namespace"] == DIST_NAMESPACE}
+    policies = [doc for doc in of_kind(docs, "NetworkPolicy") if doc["metadata"]["namespace"] == DIST_NAMESPACE]
+    egress, ingress = {}, set()
+    for name, labels in pods.items():
+        selecting = [policy for policy in policies if _selects(policy["spec"]["podSelector"], labels)
+                     or policy["spec"]["podSelector"] == {}]
+        if not any("Egress" in policy["spec"].get("policyTypes", []) for policy in selecting):
+            egress[name] = {"*"}
+            continue
+        edges = set()
+        for policy in selecting:
+            for rule in policy["spec"].get("egress") or []:
+                for peer in rule.get("to") or [{"*": True}]:
+                    for target in (_peers(peer, pods) if "*" not in peer else {"*"}):
+                        for port in rule.get("ports") or [{"port": "*", "protocol": "*"}]:
+                            edges.add((target, port["port"], port.get("protocol", "TCP")))
+        egress[name] = edges
+        if name == "sentinel-coordinator":
+            for policy in selecting:
+                for rule in policy["spec"].get("ingress") or []:
+                    for peer in rule.get("from") or [{"*": True}]:
+                        for source in (_peers(peer, pods) if "*" not in peer else {"*"}):
+                            for port in rule.get("ports") or [{"port": "*", "protocol": "*"}]:
+                                ingress.add((source, port["port"], port.get("protocol", "TCP")))
+    return egress, ingress
+
+
+class DistManifestTests(unittest.TestCase):
+    def setUp(self):
+        self.docs = dist_documents()
+        self.kind = load_all(KIND_DIST.read_text(encoding="utf-8"))[0]
+
+    def test_every_listed_file_parses_names_only_the_lab_and_never_the_protected_cluster(self):
+        listed = load_all((DIST / "kustomization.yaml").read_text(encoding="utf-8"))[0]["resources"]
+        on_disk = {path.name for path in DIST.glob("*.yaml")} - {"kustomization.yaml", "planner-agent.yaml"}
+        self.assertEqual(set(listed), on_disk)
+        for path in [*DIST.glob("*.yaml"), KIND_DIST, AUDIT_POLICY]:
+            with self.subTest(path=path.name):
+                self.assertNotIn("sentinel-lab", path.read_text(encoding="utf-8"))
+        for doc in self.docs:
+            namespace = doc["metadata"].get("namespace", doc["metadata"]["name"])
+            self.assertIn(namespace, {DIST_NAMESPACE, DIST_WORKLOAD}, doc["metadata"]["name"])
+
+    def test_each_worker_has_its_own_secret_and_pvc_and_none_mounts_coordinator_data(self):
+        self.assertEqual(secret_and_volume_problems(self.docs), [])
+        coordinator = secrets_read(named(self.docs, "Deployment", "sentinel-coordinator"))
+        self.assertEqual(coordinator, {f"sentinel-dist-{identity}" for identity in DIST_WORKERS.values()}
+                         | {"sentinel-dist-operator-1", "sentinel-dist-coordinator-tls"})
+
+    def test_a_shared_secret_a_shared_pvc_or_a_worker_on_coordinator_data_is_caught(self):
+        cases = {
+            "mounts the Coordinator's data": ("sentinel-executor-a", lambda volume: volume.get(
+                "persistentVolumeClaim") and volume["persistentVolumeClaim"].update(claimName=COORDINATOR_DATA)),
+            "is mounted by": ("sentinel-guard-1", lambda volume: volume.get("persistentVolumeClaim") and volume[
+                "persistentVolumeClaim"].update(claimName="sentinel-dist-planner-1-data")),
+        }
+        for message, (name, change) in cases.items():
+            with self.subTest(message=message):
+                docs = deepcopy(self.docs)
+                for volume in pod_spec(named(docs, "Deployment", name))["volumes"]:
+                    change(volume)
+                self.assertTrue(any(message in problem for problem in secret_and_volume_problems(docs)))
+        docs = deepcopy(self.docs)
+        env = pod_spec(named(docs, "Deployment", "sentinel-executor-b"))["containers"][0]["env"]
+        [token] = [item for item in env if item["name"] == "SENTINEL_DELIVERY_TOKEN"]
+        token["valueFrom"]["secretKeyRef"]["name"] = "sentinel-dist-executor-a"
+        self.assertTrue(any("sentinel-executor-b reads Secrets" in problem
+                            for problem in secret_and_volume_problems(docs)))
+
+    def test_the_deterministic_planner_has_no_kubernetes_token(self):
+        self.assertEqual(planner_token_problems(self.docs), [])
+        for change in ("pod", "account", "binding", "config"):
+            with self.subTest(change=change):
+                docs = deepcopy(self.docs)
+                planner = named(docs, "Deployment", "sentinel-planner-1")
+                if change == "pod":
+                    pod_spec(planner)["automountServiceAccountToken"] = True
+                elif change == "account":
+                    named(docs, "ServiceAccount", "sentinel-planner")["automountServiceAccountToken"] = True
+                elif change == "binding":
+                    named(docs, "RoleBinding", "sentinel-dist-target-reader")["subjects"].append(
+                        {"kind": "ServiceAccount", "name": "sentinel-planner", "namespace": DIST_NAMESPACE})
+                else:
+                    config = named(docs, "ConfigMap", "sentinel-dist-planner-1-config")
+                    value = json.loads(config["data"]["worker.json"])
+                    config["data"]["worker.json"] = json.dumps(dict(value, in_cluster=True))
+                self.assertNotEqual(planner_token_problems(docs), [])
+
+    def test_the_optional_agent_planner_may_only_get_the_target(self):
+        agent = load_all((DIST / "planner-agent.yaml").read_text(encoding="utf-8"))
+        [role], [binding] = of_kind(agent, "Role"), of_kind(agent, "RoleBinding")
+        self.assertEqual(role["rules"], [{"apiGroups": ["apps"], "resources": ["deployments"],
+                                          "resourceNames": ["demo-api"], "verbs": ["get"]}])
+        self.assertEqual([subject["name"] for subject in binding["subjects"]], ["sentinel-planner-reader"])
+        self.assertEqual(rbac_problems(self.docs + agent), [])
+
+    def test_executor_rbac_is_get_and_patch_on_the_named_target_only(self):
+        self.assertEqual(rbac_problems(self.docs), [])
+        mutations = {
+            "update": lambda docs: named(docs, "Role", "sentinel-dist-executor")["rules"][0]["verbs"].append("update"),
+            "any name": lambda docs: named(docs, "Role", "sentinel-dist-executor")["rules"][0].pop("resourceNames"),
+            "wildcard": lambda docs: named(docs, "Role", "sentinel-dist-target-reader")["rules"][0].update(verbs=["*"]),
+            "cluster": lambda docs: docs.append({"kind": "ClusterRoleBinding", "metadata": {"name": "x"},
+                                                 "subjects": [], "roleRef": {"name": "admin"}}),
+            "guard patch": lambda docs: named(docs, "Role", "sentinel-dist-target-reader")["rules"][0][
+                "verbs"].append("patch")}
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                docs = deepcopy(self.docs)
+                mutate(docs)
+                self.assertNotEqual(rbac_problems(docs), [])
+
+    def test_the_coordinator_and_the_two_executors_are_pinned_to_three_different_nodes(self):
+        self.assertEqual(pinning_problems(self.docs, self.kind), [])
+        for name, host in (("sentinel-executor-b", "a"), ("sentinel-coordinator", "d")):
+            with self.subTest(name=name, host=host):
+                docs = deepcopy(self.docs)
+                pod_spec(named(docs, "Deployment", name))["nodeSelector"]["sentinel.io/host"] = host
+                self.assertNotEqual(pinning_problems(docs, self.kind), [])
+
+    def test_network_policy_allows_exactly_the_listed_edges(self):
+        egress, ingress = network_edges(self.docs)
+        self.assertEqual(egress, EXPECTED_EGRESS)
+        self.assertEqual(ingress, EXPECTED_COORDINATOR_INGRESS)
+
+    def test_network_policy_mistakes_change_the_edges(self):
+        without_deny = [doc for doc in self.docs if doc["metadata"]["name"] != "sentinel-dist-default-deny"]
+        egress, _ = network_edges(without_deny)
+        self.assertEqual(egress["sentinel-coordinator"], {"*"})
+        docs = deepcopy(self.docs)
+        named(docs, "Deployment", "sentinel-planner-1")["spec"]["template"]["metadata"]["labels"][
+            "sentinel.io/api-access"] = "true"
+        egress, _ = network_edges(docs)
+        self.assertIn(("api-server", 6443, "TCP"), egress["sentinel-planner-1"])
+
+    def test_workers_probe_readyz_and_healthz_and_use_their_own_configuration(self):
+        from runtime import fault_points
+        from runtime.worker_service import refuse_inline_secrets
+        for name, identity in DIST_WORKERS.items():
+            if name == "sentinel-observer-1":
+                continue
+            with self.subTest(name=name):
+                [container] = pod_spec(named(self.docs, "Deployment", name))["containers"]
+                self.assertIn("/readyz", container["readinessProbe"]["exec"]["command"][-1])
+                self.assertIn("/healthz", container["livenessProbe"]["exec"]["command"][-1])
+                self.assertIn("127.0.0.1:8080", container["readinessProbe"]["exec"]["command"][-1])
+                self.assertEqual(container["args"][container["args"].index("--health-port") + 1], "8080")
+                config = worker_config(self.docs, name)
+                refuse_inline_secrets(config)
+                self.assertEqual((config["identity"], config["cluster_id"]), (identity, "sentinel-dist"))
+                self.assertEqual(container["args"][container["args"].index("--role") + 1], config["role"])
+                env = {item["name"]: item for item in container["env"]}
+                self.assertEqual(env["SENTINEL_FAULT_CLUSTER"]["value"], "sentinel-dist")
+                self.assertIn(config["token_env"], env)
+                if "approvals" in config:
+                    self.assertIn(config["approvals"]["token_env"], env)
+                with tempfile.TemporaryDirectory() as faults, patch.dict(
+                        os.environ, {fault_points.ENV_DIRECTORY: faults, fault_points.ENV_CLUSTER: "sentinel-dist",
+                                     fault_points.ENV_CLOCK_OFFSET: ""}):
+                    self.assertTrue(fault_points.bind(config))
+
+    def test_the_kind_cluster_has_four_pinned_nodes_and_mounts_the_audit_policy(self):
+        from experiments.distributed.kind_acceptance import NODE_IMAGE
+        nodes = self.kind["nodes"]
+        self.assertEqual((self.kind["name"], [node["role"] for node in nodes]),
+                         ("sentinel-dist", ["control-plane", "worker", "worker", "worker"]))
+        self.assertEqual({node["image"] for node in nodes}, {NODE_IMAGE})
+        self.assertRegex(NODE_IMAGE, r"^kindest/node:v1\.37\.0@sha256:[0-9a-f]{64}$")
+        self.assertEqual([node.get("labels", {}).get("sentinel.io/host") for node in nodes], [None, "a", "b", "c"])
+        [mount] = nodes[0]["extraMounts"]
+        self.assertTrue((ROOT / mount["hostPath"]).is_file())
+        patch_text = nodes[0]["kubeadmConfigPatches"][0]
+        self.assertIn("audit-policy-file: " + mount["containerPath"], patch_text)
+        self.assertIn("audit-log-path: /var/log/kubernetes/kube-apiserver-audit.log", patch_text)
+
+    def test_the_audit_policy_keeps_deployment_bodies_and_never_secret_bodies(self):
+        policy = load_all(AUDIT_POLICY.read_text(encoding="utf-8"))[0]
+        rules = policy["rules"]
+        self.assertEqual(policy["omitStages"], ["RequestReceived"])
+        self.assertEqual((rules[0]["level"], rules[0]["resources"][0]["resources"]),
+                         ("Metadata", ["secrets", "serviceaccounts/token"]))
+        self.assertEqual((rules[1]["level"], rules[1]["namespaces"]), ("RequestResponse", [DIST_NAMESPACE, DIST_WORKLOAD]))
+        self.assertIn("patch", rules[1]["verbs"])
+        self.assertEqual(rules[1]["resources"][0], {"group": "apps", "resources": ["deployments"]})
+        self.assertEqual(rules[-1], {"level": "None"})
 
 
 if __name__ == "__main__":

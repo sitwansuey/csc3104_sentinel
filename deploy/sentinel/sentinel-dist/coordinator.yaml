@@ -1,0 +1,238 @@
+# The Coordinator of the sentinel-dist lab, pinned to node c with its own PVC.
+# No worker mounts sentinel-dist-coordinator-data. Its ServiceAccount has no
+# token and no RBAC grant. It checks every worker's credential, so it reads
+# each worker's Secret; a worker reads only its own. The Secrets, the TLS
+# Secret, the CA ConfigMap and the approval permissions bound to the target's
+# UID are created by experiments/distributed/kind_acceptance.py deploy, never
+# committed. The fault-point gate (runtime/fault_points.py) is on, so the
+# acceptance harness can stop the Coordinator between a commit and its reply.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sentinel-coordinator
+  namespace: sentinel-dist
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sentinel-dist-coordinator-data
+  namespace: sentinel-dist
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 256Mi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sentinel-dist-coordinator-config
+  namespace: sentinel-dist
+data:
+  identities.json: |
+    {
+      "observer-1": {"role": "observer", "token_env": "SENTINEL_DELIVERY_TOKEN_OBSERVER_1"},
+      "planner-1": {"role": "planner", "token_env": "SENTINEL_DELIVERY_TOKEN_PLANNER_1"},
+      "guard-1": {"role": "guard", "token_env": "SENTINEL_DELIVERY_TOKEN_GUARD_1"},
+      "executor-a": {"role": "executor", "token_env": "SENTINEL_DELIVERY_TOKEN_EXECUTOR_A"},
+      "executor-b": {"role": "executor", "token_env": "SENTINEL_DELIVERY_TOKEN_EXECUTOR_B"},
+      "verifier-1": {"role": "verifier", "token_env": "SENTINEL_DELIVERY_TOKEN_VERIFIER_1"}
+    }
+  approval-identities.json: |
+    {
+      "operator-1": {"role": "operator", "token_env": "SENTINEL_APPROVAL_TOKEN_OPERATOR_1"},
+      "guard-1": {"role": "guard", "token_env": "SENTINEL_APPROVAL_TOKEN_GUARD_1"},
+      "executor-a": {"role": "executor", "token_env": "SENTINEL_APPROVAL_TOKEN_EXECUTOR_A"},
+      "executor-b": {"role": "executor", "token_env": "SENTINEL_APPROVAL_TOKEN_EXECUTOR_B"}
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sentinel-coordinator
+  namespace: sentinel-dist
+spec:
+  selector:
+    app: sentinel-coordinator
+  ports:
+    - name: https
+      port: 8766
+      targetPort: https
+    - name: approvals
+      port: 8767
+      targetPort: approvals
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentinel-coordinator
+  namespace: sentinel-dist
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sentinel-coordinator
+  template:
+    metadata:
+      labels:
+        app: sentinel-coordinator
+        sentinel.io/component: coordinator
+    spec:
+      serviceAccountName: sentinel-coordinator
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
+      nodeSelector:
+        sentinel.io/host: c
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: coordinator
+          image: sentinel-coordinator:0.1.0
+          imagePullPolicy: Never
+          args:
+            - "--db=/data/coordinator.sqlite3"
+            - "--identities=/config/identities.json"
+            - "--approval-identities=/config/approval-identities.json"
+            - "--approval-permissions=/permissions/permissions.json"
+            - "--bind=0.0.0.0"
+            - "--port=8766"
+            - "--approval-port=8767"
+            - "--cert=/tls/tls.crt"
+            - "--key=/tls/tls.key"
+            - "--lease-seconds=15"
+            - "--retention-seconds=86400"
+            - "--request-timeout=15"
+          ports:
+            - name: https
+              containerPort: 8766
+            - name: approvals
+              containerPort: 8767
+          env:
+            - name: SENTINEL_FAULT_POINTS
+              value: /faults
+            - name: SENTINEL_FAULT_CLUSTER
+              value: sentinel-dist
+            - name: SENTINEL_FAULT_PROCESS
+              value: coordinator
+            - name: SENTINEL_DELIVERY_TOKEN_OBSERVER_1
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-dist-observer-1
+                  key: delivery-token
+            - name: SENTINEL_DELIVERY_TOKEN_PLANNER_1
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-dist-planner-1
+                  key: delivery-token
+            - name: SENTINEL_DELIVERY_TOKEN_GUARD_1
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-dist-guard-1
+                  key: delivery-token
+            - name: SENTINEL_DELIVERY_TOKEN_EXECUTOR_A
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-dist-executor-a
+                  key: delivery-token
+            - name: SENTINEL_DELIVERY_TOKEN_EXECUTOR_B
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-dist-executor-b
+                  key: delivery-token
+            - name: SENTINEL_DELIVERY_TOKEN_VERIFIER_1
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-dist-verifier-1
+                  key: delivery-token
+            - name: SENTINEL_APPROVAL_TOKEN_OPERATOR_1
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-dist-operator-1
+                  key: approval-token
+            - name: SENTINEL_APPROVAL_TOKEN_GUARD_1
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-dist-guard-1
+                  key: approval-token
+            - name: SENTINEL_APPROVAL_TOKEN_EXECUTOR_A
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-dist-executor-a
+                  key: approval-token
+            - name: SENTINEL_APPROVAL_TOKEN_EXECUTOR_B
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-dist-executor-b
+                  key: approval-token
+          startupProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /readyz
+              port: https
+            periodSeconds: 2
+            failureThreshold: 30
+            timeoutSeconds: 12
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /readyz
+              port: https
+            periodSeconds: 2
+            timeoutSeconds: 12
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: https
+            periodSeconds: 10
+            timeoutSeconds: 2
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: permissions
+              mountPath: /permissions
+              readOnly: true
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            - name: faults
+              mountPath: /faults
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: sentinel-dist-coordinator-data
+        - name: config
+          configMap:
+            name: sentinel-dist-coordinator-config
+        - name: permissions
+          configMap:
+            name: sentinel-dist-approval-permissions
+        - name: tls
+          secret:
+            secretName: sentinel-dist-coordinator-tls
+            defaultMode: 0440
+        - name: faults
+          emptyDir: {}
