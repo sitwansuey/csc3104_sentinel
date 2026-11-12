@@ -65,6 +65,15 @@ def writes_template(operations):
     return False
 
 
+def annotation_action_id(value):
+    """The action_id a Sentinel evidence or fence annotation names, or "unknown" when it is malformed."""
+    try:
+        found = json.loads(value).get("action_id")
+    except (TypeError, ValueError, AttributeError, RecursionError):
+        found = None
+    return found if isinstance(found, str) else "unknown"
+
+
 def patch_action(operations, *, template_changed=False):
     """(kind, marker, action_id) of one patch request, classified by its effect.
 
@@ -73,16 +82,14 @@ def patch_action(operations, *, template_changed=False):
     alone, and "other" otherwise. marker names the Sentinel annotation the
     patch carries ("write", "fence" or "none"); action_id comes from it,
     "unknown" when it is malformed and "unannotated" when there is none.
+    The kind mode of the multi-process harness classifies what it observes on
+    a live Deployment the same way (experiments/distributed/topology.py::observed_write).
     """
     marker, action_id = "none", "unannotated"
     for name, key in (("write", ACTION_ANNOTATION), ("fence", FENCE_ANNOTATION)):
         value = _annotation_value(operations, key)
         if isinstance(value, str):
-            try:
-                found = json.loads(value).get("action_id")
-            except (ValueError, AttributeError):
-                found = None
-            marker, action_id = name, found if isinstance(found, str) else "unknown"
+            marker, action_id = name, annotation_action_id(value)
             break
     if template_changed or writes_template(operations):
         return "write", marker, action_id

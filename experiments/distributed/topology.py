@@ -22,7 +22,9 @@ Coordinator (Cristian's algorithm, runtime/worker_http.py::ClockEstimator) and
 the Coordinator records it, but on one host the only skew it can find is the
 gated test offset. The file mode backs Kubernetes with tests/support/file_cluster.py; the
 kind mode targets only the connected kind lab (KIND_CONTEXTS) and refuses every
-other context.
+other context. Both modes count a template write by its effect on the pod
+template, never by metadata.generation, so a metadata-only Executor fence is
+not a write in either (observed_write, kind_writes).
 """
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
@@ -66,6 +68,69 @@ def check_kind_context(context):
     if context not in KIND_CONTEXTS:
         raise ValueError("Kind mode runs only against an allowlisted lab context; this context is refused")
     return context
+
+
+def observation(deployment):
+    """What a template-write count needs from one read of the Deployment.
+
+    template_sha256 fingerprints spec.template the way the Executor and the
+    file cluster do (services/executor/store.py::fingerprint); evidence and
+    fence are the raw sentinel.io/execution and sentinel.io/fence annotations.
+    """
+    from services.executor.core import ACTION_ANNOTATION
+    from services.executor.reconciliation import FENCE_ANNOTATION
+    from services.executor.store import fingerprint
+    metadata = deployment.get("metadata") or {}
+    annotations = metadata.get("annotations") or {}
+    template = (deployment.get("spec") or {}).get("template")
+    return {"template_sha256": fingerprint(template) if isinstance(template, dict) else None,
+            "evidence": annotations.get(ACTION_ANNOTATION), "fence": annotations.get(FENCE_ANNOTATION),
+            "resource_version": metadata.get("resourceVersion"), "observed_at": time.time()}
+
+
+def _evidence_template(value):
+    """The template_sha256 an evidence annotation names, or None when it is malformed."""
+    try:
+        found = json.loads(value).get("template_sha256")
+    except (TypeError, ValueError, AttributeError, RecursionError):
+        return None
+    return found if isinstance(found, str) else None
+
+
+def observed_write(previous, current):
+    """The template write between two successive observations, or None.
+
+    A write is counted by its effect, as the file cluster counts a patch
+    (tests/support/file_cluster.py::patch_action): the pod template's
+    fingerprint changed, or a new sentinel.io/execution evidence annotation
+    appeared whose template_sha256 is the template now in place (a Sentinel
+    write that put back the same template, so the fingerprint alone cannot
+    show it). Anything else changes metadata only and is not a write: an
+    Executor fence, a label, another annotation, or the Deployment
+    controller's own bookkeeping, even though the API server raises
+    metadata.generation for some of them. A counted write is then labelled by
+    the annotation it brought, as in file mode: new evidence names its action
+    ("unknown" when it is malformed or names another template), else a new
+    fence marker makes it a fence that changed the template, else it is
+    unannotated. I1 fails on every label but a valid evidence annotation.
+    """
+    from tests.support.file_cluster import annotation_action_id
+    template_changed = current["template_sha256"] != previous["template_sha256"]
+    evidence = current["evidence"] if current["evidence"] != previous["evidence"] else None
+    fence = current["fence"] if current["fence"] != previous["fence"] else None
+    matches = evidence is not None and _evidence_template(evidence) == current["template_sha256"]
+    if not template_changed and not matches:
+        return None
+    if evidence is not None:
+        marker, action_id = "write", annotation_action_id(evidence) if matches else "unknown"
+    elif fence is not None:
+        marker, action_id = "fence", annotation_action_id(fence)
+    else:
+        marker, action_id = "none", "unannotated"
+    return {"host": "unknown", "action_id": action_id, "kind": "write", "marker": marker,
+            "template_changed": int(template_changed), "state": "committed",
+            "resource_version": current["resource_version"], "template_sha256": current["template_sha256"],
+            "decided_at": current["observed_at"]}
 
 
 def free_port():
@@ -200,7 +265,7 @@ class Topology:
     def __init__(self, run_dir, *, mode="file", tls=True, lease_seconds=4, poll_seconds=0.2,
                  worker_timeout=3, fence_after_seconds=2, clock_offsets=None, auto_approve=True,
                  context=None, kind_bundle=None, python=None, bind=LOOPBACK, certificates=None,
-                 max_clock_skew=None):
+                 max_clock_skew=None, kind_poll_seconds=0.5):
         if mode not in {"file", "kind"}:
             raise ValueError("Mode must be file or kind")
         if bind != LOOPBACK:
@@ -225,9 +290,13 @@ class Topology:
         self.certificates = certificates
         self.inputs = None
         self.started_at = None
-        self.kind_start_generation = None
+        # Kind mode: the latest observation of the Deployment and the writes seen so far.
+        self.kind_poll_seconds = kind_poll_seconds
+        self.kind_last, self.kind_rows = None, []
+        self._kind_lock = threading.Lock()
+        self._kind_watcher = None
         self.approved = set()
-        self._operator_stop = threading.Event()
+        self._stopping = threading.Event()
         self._operator = None
 
     # Configuration -------------------------------------------------------
@@ -381,7 +450,9 @@ class Topology:
         self.started_at = time.time()
         self.prepare()
         if self.mode == "kind":
-            self.kind_start_generation = self.kind_deployment()["metadata"]["generation"]
+            self.kind_begin()
+            self._kind_watcher = threading.Thread(target=self._kind_watch, daemon=True)
+            self._kind_watcher.start()
         self.processes["coordinator"].start()
         self.wait_coordinator_ready(timeout)
         for name, _ in WORKERS:
@@ -445,28 +516,56 @@ class Topology:
             raise RuntimeError("The lab Deployment is not the bundle's target")
         return deployment
 
-    def kind_writes(self, runner=subprocess.run):
-        """Template writes counted independently of Sentinel's own records.
+    def kind_begin(self, runner=subprocess.run):
+        """Take the starting observation of the lab Deployment; writes are counted from here."""
+        first = observation(self.kind_deployment(runner))
+        with self._kind_lock:
+            self.kind_last, self.kind_rows = first, []
+        return first
 
-        Each spec change raises metadata.generation by one, so the delta since
-        start counts writes; the sentinel.io/execution annotation names the
-        action of the latest. A Deployment also raises it for an annotation-only
-        change, so an Executor fence is counted as a write too. Any other writer
-        to the Deployment during the run would be counted too, so nothing else
-        may change it.
+    def kind_observe(self, runner=subprocess.run):
+        """Read the Deployment once and record the template write since the last read, if any."""
+        with self._kind_lock:
+            if self.kind_last is None:
+                raise RuntimeError("Kind writes are counted only after kind_begin")
+            current = observation(self.kind_deployment(runner))
+            write = observed_write(self.kind_last, current)
+            self.kind_last = current
+            if write is not None:
+                self.kind_rows.append(write)
+            return write
+
+    def kind_writes(self, runner=subprocess.run):
+        """Committed template writes since the start, counted from the Deployment itself.
+
+        Independent of Sentinel's records: each read of the Deployment is
+        compared with the one before (observed_write), so a write is a change
+        of the pod template, or a new evidence annotation for the template in
+        place, and never a metadata-only change such as an Executor fence,
+        even though a real API server raises metadata.generation for that.
+        Rows have the shape file mode records, with host "unknown" (the
+        Deployment does not name the writer) and decided_at the time the write
+        was first seen. During a run a watcher reads every kind_poll_seconds.
+        Two writes between one read and the next are seen as at most one, so
+        the count is a lower bound when writes come faster than the poll; any
+        writer other than Sentinel is counted too, so nothing else may change
+        the template during a run.
         """
-        from services.executor.core import ACTION_ANNOTATION
-        deployment = self.kind_deployment(runner)
-        delta = deployment["metadata"]["generation"] - self.kind_start_generation
-        evidence = deployment["metadata"].get("annotations", {}).get(ACTION_ANNOTATION)
-        action = json.loads(evidence).get("action_id", "unknown") if evidence else "unannotated"
-        return [{"action_id": action, "host": "unknown", "decided_at": time.time(),
-                 "marker": "write" if evidence else "none"} for _ in range(max(0, delta))]
+        self.kind_observe(runner)
+        with self._kind_lock:
+            return [dict(row) for row in self.kind_rows]
+
+    def _kind_watch(self, runner=subprocess.run):
+        while not self._stopping.wait(self.kind_poll_seconds):
+            # A failed read is retried at the next poll; kind_writes raises it to the harness.
+            with suppress(OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError):
+                self.kind_observe(runner)
 
     def stop(self):
-        self._operator_stop.set()
-        if self._operator is not None:
-            self._operator.join(5)
+        self._stopping.set()
+        for thread in (self._operator, self._kind_watcher):
+            if thread is not None:
+                thread.join(5)
         for process in self.processes.values():
             process.kill()
         for link in self.links.values():
@@ -641,7 +740,7 @@ class Topology:
 
     def _operate(self):
         """Approve each action once when it waits for approval, like an attentive operator."""
-        while not self._operator_stop.wait(0.1):
+        while not self._stopping.wait(0.1):
             for row in self.incidents():
                 action_id = row["active_action_id"]
                 if row["state"] == "AWAITING_APPROVAL" and action_id and action_id not in self.approved:

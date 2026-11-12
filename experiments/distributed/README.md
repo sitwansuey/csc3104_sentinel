@@ -124,11 +124,20 @@ refuses every other context, the original lab cluster included. It needs
 `allowed-targets.json`, a restricted `kubeconfig` and `verifier-inventory.json`
 for the target workload. Workers then use the real kubectl readers and the
 restricted Executor adapter, the Observer is the real CLI, and template writes
-are counted from the Deployment's `metadata.generation` delta and its
-`sentinel.io/execution` annotation, independently of Sentinel's records. A
-Deployment also raises `metadata.generation` for an annotation-only change, as
-the live fence runs showed (`C-EXECUTOR-WEDGE-FENCE`), so an Executor fence
-(the harness sets `fence_after_seconds`) would be counted as a write here. The
-harness does not inject the workload fault or prepare the bundle; nothing else
-may write to the Deployment during a run. This mode has not been run against
-the cluster, so no claim rests on it.
+are counted from the Deployment itself, independently of Sentinel's records.
+The harness reads the Deployment at the start and then every
+`kind_poll_seconds` (0.5 s), and counts a write by its effect, as file mode
+does (`topology.py::observed_write`, mirroring
+`tests/support/file_cluster.py::patch_action`): the pod template's fingerprint
+changed since the last read, or a new `sentinel.io/execution` evidence
+annotation names the template now in place. The new evidence annotation names
+the action; a template change without one is unannotated and fails I1.
+`metadata.generation` is not used: a real API server also raises it for an
+annotation-only change, as the live fence runs showed
+(`C-EXECUTOR-WEDGE-FENCE`), so an Executor fence (the harness sets
+`fence_after_seconds`) or any other metadata change counts no write. Two
+writes between one read and the next are seen as one, so the count is a lower
+bound when writes come faster than the poll, and the time of a write is when
+it was first seen. The harness does not inject the workload fault or prepare
+the bundle; nothing else may write to the Deployment during a run. This mode
+has not been run against the cluster, so no claim rests on it.
