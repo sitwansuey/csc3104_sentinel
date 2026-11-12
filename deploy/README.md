@@ -13,7 +13,7 @@ host (`L-SINGLE-HOST-DISTRIBUTION` in [limitations](../docs/limitations.md)).
 | Directory | Contents |
 | --- | --- |
 | `boutique/` | Pinned upstream Boutique manifest, license and single-service dependency configuration |
-| `sentinel/` | Sentinel Kubernetes resources and restricted Executor RBAC |
+| `sentinel/` | Sentinel Kubernetes resources, restricted Executor RBAC and the Executor admission policy |
 | `kind/` | Local cluster configuration, including the separate Calico security lab |
 | `docker/` | Sentinel component, security inspector and packaged-demo Dockerfiles; repository-root build context |
 | `workloads/` | Small demo workload Kubernetes manifests |
@@ -26,3 +26,41 @@ docker build -f experiments/workloads/verifier-lab/Dockerfile -t sentinel-verifi
 ```
 
 The small `experiments/workloads/demo/` and `experiments/workloads/otel/` applications keep their own directories as build contexts. The security candidate Dockerfile and shipping protocol live in `experiments/workloads/security/`; `scripts/security/build_security_candidate.py` prepares its upstream build context.
+
+## Executor admission policy
+
+RBAC limits the Executor to get and patch on one named Deployment, but not to
+fields. `sentinel/executor-admission.yaml` is a ValidatingAdmissionPolicy and
+binding for any ServiceAccount named `sentinel-executor` in the `sentinel-demo`
+namespace. It lets that identity change the Pod template only together with new
+`sentinel.io/execution` evidence, change only the `sentinel.io/execution`,
+`sentinel.io/fence` and `sentinel.io/fence-epoch` annotations, and never lower
+the fence epoch. Replicas, labels, other annotations and every other spec field
+are denied. It cannot limit what the Pod template contains. It needs Kubernetes
+1.30 or later, and an administrator applies it after `executor-rbac.yaml`; no
+launcher installs it:
+
+```powershell
+kubectl --context <context> apply -f deploy/sentinel/executor-rbac.yaml
+kubectl --context <context> apply -f deploy/sentinel/executor-admission.yaml
+```
+
+To remove it, delete the binding first:
+`kubectl --context <context> delete validatingadmissionpolicybinding,validatingadmissionpolicy sentinel-executor-writes`.
+
+The policy has been checked structurally (`tests/test_deploy_manifests.py`) but
+not against an API server. The live check installs the same policy under a
+run-specific name, bound to one new namespace on
+`kind-sentinel-boutique-connected`, sends every denied and allowed request with
+the restricted Executor token, and removes the namespace, policy and binding on
+exit. It refuses any other context and anything naming `sentinel-lab`. It has
+not been run yet:
+
+```powershell
+python scripts/validation/test_executor_admission_live.py --context kind-sentinel-boutique-connected
+```
+
+It writes `admission.json` (exit code and server message per check, no token
+or server address) under `data/sentinel/runs/executor-admission-<time>/`. A
+passing run would be recorded as an evidence bundle under
+`evidence/distributed/<date>/admission/`.

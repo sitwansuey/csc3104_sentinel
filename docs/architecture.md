@@ -87,7 +87,12 @@ Revocation and a separate API write still require a future fencing design for
 strong cross-host guarantees.
 
 Actual repair uses a ServiceAccount restricted to the configured Deployment's
-get/patch operations. The trusted lab harness separately holds setup/injection
+get/patch operations. RBAC cannot limit fields, so a ValidatingAdmissionPolicy
+for that ServiceAccount (`deploy/sentinel/executor-admission.yaml`) allows only
+Pod template changes that carry new action evidence, only the sentinel.io
+execution and fence annotations, and no lower fence epoch. It is written and
+checked structurally, but has not been verified against an API server, and no
+launcher installs it. The trusted lab harness separately holds setup/injection
 privileges. The UI gate is not approval, and demo approval is not authenticated
 operator access. Hard constraints remain mandatory after any approval.
 The separate [approval authority](approvals.md) provides authenticated target

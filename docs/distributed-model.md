@@ -544,13 +544,18 @@ and a write that did commit is reported. No clock or cache takes part. This
 is the fencing token of Kleppmann's argument, with the check done by the
 store. The epoch is not needed for this argument: it orders seal results at
 the Coordinator, and it is written on the object so that an admission policy
-can later require it to grow (P3.05).
+can refuse a lower one. That policy is `deploy/sentinel/executor-admission.yaml`
+(P3.05): for the Executor identity it denies a fence-epoch annotation lower
+than the stored one, compared with the stored object inside the same update. It
+is written and checked structurally, not yet run against an API server.
 
 Limits:
 
 - It fences Pod-template writes only, the ones made through the conditional
-  patch. Any other change the Executor identity could make is not covered;
-  RBAC limits verbs and resources, not fields (P3.05).
+  patch. RBAC limits verbs and resources, not fields. The P3.05 admission
+  policy limits the Executor identity to Pod template changes with new
+  evidence and to the sentinel.io execution and fence annotations, but it has
+  not been verified against an API server and no launcher installs it.
 - It assumes one linearizable store behind the API server for the
   Deployment: one etcd cluster, updates to one key applied in one order, and
   resourceVersions that never repeat. An etcd restore without
@@ -691,7 +696,7 @@ mode on one Windows host; neither has run in kind mode.
 | P3.01 | Done in file mode (above). Left: a kind-mode run against the connected lab and committed evidence bundles |
 | P3.03 | Done in the code above. Left: S7 in kind mode, and a real clock offset per Pod (Chaos Mesh TimeChaos, P4.01) instead of the gated test offset. With operator approval required, an Executor whose clock is 5 min off cannot reach RECOVERED: its own Guard re-check refuses the Coordinator-stamped approval. So P4.01 should expect what S7 and S7b show (FAILED with no write without a bound; with a bound, that Executor stops claiming and an in-bound peer recovers the action), unless the owners change the re-check |
 | P3.04 | Done in the code above and in file mode on one host (ownership epochs, the seal, the ledger settle). Left: S8 in kind mode against a real API server, and the audit-log proof that the paused PATCH was refused (P4.01); the Executor owner's sign-off on the mechanism (#58) |
-| P3.05 | An admission policy limiting which fields the Executor identity may change |
+| P3.05 | Written and checked structurally: an admission policy limiting which fields the Executor identity may change, with a monotonic fence epoch (`deploy/sentinel/executor-admission.yaml`). Left: the live run in a disposable namespace (`scripts/validation/test_executor_admission_live.py`) |
 | P3.06 | Done in the code above and measured in file mode on one host. Left: the same measurements in a cluster (P4.02) |
 | P4.01, P4.02 | Multi-node kind run with partitions and restarts; measured RTO and RPO added here |
 | P5.01 | A replicated Coordinator on a replicated database |

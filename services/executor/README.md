@@ -403,6 +403,12 @@ The JSON Patch tests UID/resourceVersion and restores the exact saved template
 with matching action evidence. The trusted harness provisions a resourceNames-
 restricted Deployment get/patch ServiceAccount; setup/injection credentials stay
 separate. See `deploy/sentinel/executor-rbac.yaml` and `runtime/live_executor.py`.
+`deploy/sentinel/executor-admission.yaml` adds field limits for that identity
+(P3.05): only a Pod template change with new evidence, only the execution and
+fence annotations, and no lower `sentinel.io/fence-epoch`. Every patch this
+adapter sends stays inside it (`tests/test_deploy_manifests.py`). It has not
+been verified against an API server; `scripts/validation/test_executor_admission_live.py`
+is the live check.
 
 Use `python -m runtime.live_executor --help` to inspect file inputs, policy,
 baseline, approval, ledger, locks and reconciliation mode. Inputs must come from

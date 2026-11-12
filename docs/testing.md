@@ -391,8 +391,9 @@ normal presentation run:
 | Observer deployed runtime | `scripts/validation/validate_observer_runtime.py` | Existing `sentinel-lab` (see below) |
 | Verifier connected telemetry/read-only permissions | `scripts/validation/test_verifier_connected_live.py --setup` | Existing `sentinel-lab` (see below) |
 | Executor wedge (rv-race, delete-recreate) | `scripts/validation/test_executor_wedge_live.py --context <ctx> --scenario <name>` | Existing `kind-sentinel-boutique-connected` or `kind-sentinel-wedge`; own namespace, deleted on exit; never `sentinel-lab` |
+| Executor admission policy (P3.05; not yet run) | `scripts/validation/test_executor_admission_live.py --context kind-sentinel-boutique-connected` | Existing `kind-sentinel-boutique-connected` only; own namespace, policy and binding, deleted on exit; never `sentinel-lab` |
 
-The last two checks never create a cluster. They expect the `sentinel-lab` kind
+The Observer runtime and Verifier checks never create a cluster. They expect the `sentinel-lab` kind
 cluster with the `sentinel-demo` namespace, so run them before, not after,
 the Executor check with `-Cleanup`, or create the lab with
 `scripts\test-executor-live.ps1 -Setup` (without `-Cleanup`). The Observer

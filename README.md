@@ -147,6 +147,7 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-NO-LOGGING](docs/limitations.md#l-no-logging): Structured logs cover only the networked entrypoints, and no live run has collected them (defect, mitigated; planned P1.07, P3.02)
 - [L-ORPHANED-EXECUTOR-LEDGER](docs/limitations.md#l-orphaned-executor-ledger): A crashed Executor whose peer finished the action kept it in doubt and refused that workload (defect, mitigated; planned P3.04, P4.01)
 - [L-SINGLE-COORDINATOR](docs/limitations.md#l-single-coordinator): The Coordinator is one process with one SQLite file (limitation, open; planned P4.02, P5.01)
+- [L-EXECUTOR-FIELD-LIMITS](docs/limitations.md#l-executor-field-limits): The Executor's field limits are an admission policy not yet run against an API server (limitation, open; planned P3.05)
 - [L-SINGLE-HOST-DISTRIBUTION](docs/limitations.md#l-single-host-distribution): The networked worker layer has only run on one host (limitation, open; planned P3.01, P4.01)
 - [L-RESTART-BUDGET-LOCAL](docs/limitations.md#l-restart-budget-local): The restart budget is kept per Executor ledger, and only local wiring gives it to the Guard (limitation, open; planned P4.03)
 - [L-NO-DIAGNOSIS-ACCURACY](docs/limitations.md#l-no-diagnosis-accuracy): No diagnosis-accuracy evaluation (limitation, open; planned P2.07, P4.04)
