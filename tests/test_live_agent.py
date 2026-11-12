@@ -320,6 +320,19 @@ class LiveAgentTests(unittest.TestCase):
             with self.subTest(rejected=component):
                 self.assertFalse(names_target(component, "shippingservice"))
 
+    def test_pod_container_reference_names_the_target_only_for_its_own_containers(self):
+        # Seen live on 11 November 2026: "<pod>/<container>", with the target's container "server".
+        live = "shippingservice-85576d7678-5hb44/server"
+        for component in (live, "shippingservice/server", "the shippingservice-85576d7678-5hb44/server container"):
+            with self.subTest(accepted=component):
+                self.assertTrue(names_target(component, "shippingservice", ["server"]))
+        self.assertFalse(names_target(live, "shippingservice"))  # Unknown container: not trusted.
+        for component in ("shippingservice-85576d7678-5hb44/other", "frontend-6d94cdf884-gzh9t/server",
+                          "frontend/server", "a/shippingservice/server", "shippingservice-85576d7678/server",
+                          "shippingservice-85576d7678-5hb44/server and frontend"):
+            with self.subTest(rejected=component):
+                self.assertFalse(names_target(component, "shippingservice", ["server"]))
+
     def model_naming(self, component):
         base = self.model()
 
@@ -333,6 +346,13 @@ class LiveAgentTests(unittest.TestCase):
 
     def test_descriptive_component_name_still_reaches_the_recovery_planner(self):
         model = self.model_naming(self.incident["target"]["name"] + " container")
+        proposal = self.planned(self.harness(), model)
+        self.assertEqual(proposal["action"], "ROLLBACK")
+        self.assertIn("Recovery Planner", [c["role"] for c in model.calls])
+
+    def test_pod_container_reference_reaches_the_recovery_planner(self):
+        container = self.baseline["pod_template"]["spec"]["containers"][0]["name"]
+        model = self.model_naming(self.incident["target"]["name"] + "-85576d7678-5hb44/" + container)
         proposal = self.planned(self.harness(), model)
         self.assertEqual(proposal["action"], "ROLLBACK")
         self.assertIn("Recovery Planner", [c["role"] for c in model.calls])

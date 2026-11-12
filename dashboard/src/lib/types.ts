@@ -30,6 +30,7 @@ export interface Snapshot {
   security_events?: SecurityEvent[];
   boutique_history?: BoutiqueObservation[];
   lab?: LabSession;
+  approval_requests?: ApprovalRequest[];
   generated_at: string; mode: string; demo_step?: string; limit: number; sources: Record<string, Source>;
   incidents: Incident[]; actions: Action[]; messages: { sequence: number; message: WireMessage }[];
   approvals: { id: number; record: Approval }[]; outbox: { id: number; topic: string; action_id: string | null; delivered: number }[];
@@ -44,6 +45,17 @@ export interface LabSession {
   session_id: string; state: string; gate_id: string | null; active_scenario: string | null;
   can_inject: boolean; updated_at: string; planning: string;
   target: {cluster_id: string; namespace: string; name: string}; scenarios: LabScenario[];
+}
+/** One escalated action offered to the dashboard by a `--approval ui` harness. Carries no credential. */
+export interface ApprovalRequest {
+  action_id: string; incident_id: string;
+  status: "PENDING" | "DECIDING" | "APPROVED" | "REVOKING" | "REVOKED" | "EXPIRED" | "CLOSED";
+  mode: "ui"; operator_id: string; target: Target; action: string; baseline_id: string;
+  template_sha256_prefix: string; proposal_sha256: string; policy_version: string;
+  guard: {verdict: string; reason_codes: string[]};
+  rationale: string; rationale_truncated: boolean; requested_at: string; expires_at: string;
+  approval: {approval_id: number; operator_id: string; approved_at: string; expires_at: string} | null;
+  revocation: {operator_id: string; revoked_at: string} | null;
 }
 export interface BoutiqueService {
   name: string; desired: number | null; ready: number | null; available: number | null;

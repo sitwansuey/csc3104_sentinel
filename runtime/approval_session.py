@@ -14,6 +14,9 @@ the approval through the authenticated API:
 - auto-lab: explicit opt-in for unattended lab runs. The approval is recorded
   under the automated-lab identity and is never presented as a person's.
 - reject: refuses every approval, for negative tests.
+- ui: the lab dashboard shows the facts; an operator types the action ID and
+  clicks Approve. The dashboard server relays it with this run's operator
+  credential (runtime/approval_relay.py); the browser holds no approval token.
 """
 from datetime import UTC, datetime, timedelta
 from http.client import HTTPConnection
@@ -33,8 +36,9 @@ from services.coordinator.approvals import TARGET_FIELDS
 from services.coordinator.store import _digest
 
 ROOT = Path(__file__).resolve().parents[1]
-MODES = ("interactive", "auto-lab", "reject")
+MODES = ("interactive", "auto-lab", "reject", "ui")
 LAB_OPERATOR = "lab-operator"
+DASHBOARD_OPERATOR = "dashboard-operator"
 AUTOMATED_LAB = "automated-lab"
 LAB_GUARD = "lab-guard"
 LAB_EXECUTOR = "lab-executor"
@@ -247,7 +251,7 @@ class Approver:
 
     def describe(self):
         return {"mode": self.mode, "identity": self.identity, "via": "approval_http",
-                "human": self.mode == "interactive", "decided_by": self.decided_by,
+                "human": self.mode in {"interactive", "ui"}, "decided_by": self.decided_by,
                 "approvals": list(self.approvals), "refusals": list(self.refusals)}
 
     def refuse(self, proposal, reason):
@@ -331,6 +335,48 @@ class RejectingApprover(Approver):
         return self.refuse(proposal, "reject mode")
 
 
+class DashboardApprover(Approver):
+    """Waits for a decision made in the lab dashboard and relayed by its server.
+
+    The dashboard server calls approve_offer and revoke_offer on its HTTP
+    threads; both use this run's operator credential, which stays in memory.
+    """
+    mode = "ui"
+    decided_by = ("an operator typed the action ID and clicked Approve in the lab dashboard; the request "
+                  "carried the per-session lab token, which shows the click came through the dashboard, "
+                  "not which person made it")
+
+    def __init__(self, authority, *, relay, wait_seconds=600, **options):
+        if relay is None:
+            raise ValueError("Dashboard approval needs the dashboard's approval relay")
+        if not 0 < wait_seconds <= 3600:
+            raise ValueError("Dashboard approval wait must be positive and at most 1 hour")
+        super().__init__(authority, **options)
+        self.relay, self.wait_seconds = relay, wait_seconds
+        self.revocations = []
+
+    def describe(self):
+        return {**super().describe(), "revocations": list(self.revocations)}
+
+    def __call__(self, proposal, decision):
+        record = self.relay.offer(self, proposal, decision, wait_seconds=self.wait_seconds)
+        if record is None:
+            return self.refuse(proposal, "no dashboard approval before the request expired or the dashboard stopped")
+        return record
+
+    def approve_offer(self, proposal, decision):
+        record = self.create(proposal, decision)
+        return record, self.approvals[-1]["approval_id"]
+
+    def revoke_offer(self, proposal, approval_id, reason):
+        revocation = self.authority.operator_client().post("revoke", {
+            "action_id": proposal["action_id"], "proposal_sha256": _digest(proposal),
+            "approval_id": approval_id, "reason": reason})["revocation"]
+        self.revocations.append({"action_id": revocation["action_id"], "approval_id": revocation["approval_id"],
+                                 "operator_id": revocation["operator_id"], "revoked_at": revocation["revoked_at"]})
+        return revocation
+
+
 def operator_identity(mode, operator=None):
     """The operator identity the authority grants for this approval mode."""
     if mode not in MODES:
@@ -346,14 +392,18 @@ def operator_identity(mode, operator=None):
     if operator is not None and not (isinstance(operator, str) and IDENTITY_NAME.fullmatch(operator)):
         raise ValueError("An operator identity is 1 to 128 letters, digits, '.', '_' or '-', "
                          "starting with a letter or digit")
-    return operator or LAB_OPERATOR
+    return operator or (DASHBOARD_OPERATOR if mode == "ui" else LAB_OPERATOR)
 
 
-def approver_for(mode, authority, **options):
+def approver_for(mode, authority, *, relay=None, **options):
+    """The approver for a mode; relay is the dashboard's ApprovalRelay and is used only by ui."""
+    plain = {k: v for k, v in options.items() if k not in {"ask", "say"}}
     if mode == "interactive":
         return InteractiveApprover(authority, **options)
     if mode == "auto-lab":
-        return AutoLabApprover(authority, **{k: v for k, v in options.items() if k not in {"ask", "say"}})
+        return AutoLabApprover(authority, **plain)
     if mode == "reject":
-        return RejectingApprover(authority, **{k: v for k, v in options.items() if k not in {"ask", "say"}})
+        return RejectingApprover(authority, **plain)
+    if mode == "ui":
+        return DashboardApprover(authority, relay=relay, **plain)
     raise ValueError("Unknown approval mode")

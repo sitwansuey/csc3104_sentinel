@@ -228,8 +228,9 @@ decides with the table: APPLIED if our evidence is there, otherwise SUPERSEDED.
   still recognised as this host's own. A fence whose success response shows
   the marker is also recorded as committed, so R4 still holds if another owner
   later strips the annotation.
-- The fence changes no spec field, so `metadata.generation` stays the same and
-  no rollout starts. `KubectlDeploymentAPI.fence` refuses any operation outside
+- The fence changes no spec field, so no rollout starts. `metadata.generation`
+  still rises by one, because the Deployment strategy also counts annotation
+  changes; a live run on 11 November 2026 showed this. `KubectlDeploymentAPI.fence` refuses any operation outside
   `/metadata/`, and it needs only the get and patch verbs the Executor Role
   already grants (`deploy/sentinel/executor-rbac.yaml`). The Deployment
   controller may copy the annotation to the current ReplicaSet; that copy is

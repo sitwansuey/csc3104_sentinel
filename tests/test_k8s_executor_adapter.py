@@ -291,7 +291,6 @@ class KubernetesExecutorAdapterTests(unittest.TestCase):
 
     def test_fence_patch_is_two_tests_and_one_annotation_and_never_touches_spec(self):
         self.runner.deployment["metadata"]["annotations"] = {"example.org/owner": "team", ACTION_ANNOTATION: "older"}
-        generation = self.runner.deployment["metadata"].get("generation")
         fenced = self.fence()
         marker = canonical_json(fence_marker("ACT-LIVE-001", "c" * 32))
         self.assertEqual(self.runner.patches, [[
@@ -304,7 +303,8 @@ class KubernetesExecutorAdapterTests(unittest.TestCase):
         self.assertEqual(annotations, {"example.org/owner": "team", ACTION_ANNOTATION: "older",
                                        FENCE_ANNOTATION: marker})
         self.assertEqual(fenced["deployment"]["spec"]["template"], self.deployment["spec"]["template"])
-        self.assertEqual(fenced["deployment"]["metadata"].get("generation"), generation)
+        # No spec change, so no rollout (a real Deployment still bumps generation for the annotation).
+        self.assertEqual(fenced["deployment"]["spec"], self.deployment["spec"])
         command = self.runner.commands[-1][0]
         self.assertEqual(command[5:8], ["patch", "deployment", "demo-api"])
         self.assertIn("--type=json", command)

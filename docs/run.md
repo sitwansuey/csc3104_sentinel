@@ -38,10 +38,22 @@ that started the run shows the action's facts and waits: type the exact action
 ID to approve it, anything else refuses. The approval is created through the
 [authenticated approval API](approvals.md#live-harness-approval); it is a typed
 confirmation, not a login portal. A `-UIControls` run therefore still needs that
-terminal: there is no unattended UI-controls mode, and approving from the
-dashboard is not implemented. Human approval never bypasses hard Guard
+terminal, unless you approve from the dashboard instead (below); there is no
+unattended UI-controls mode. Human approval never bypasses hard Guard
 constraints. An APPLIED result leaves the incident VERIFYING until the
 independent outcome arrives.
+
+To approve in the dashboard, add `-Approval ui` to a `-Dashboard -UIControls`
+run. When the Guard asks for approval, an **Operator approval** card appears
+above every page. It lists the target, action, baseline, template and proposal
+hashes, the Guard's reasons and the request's expiry, with the model's
+rationale folded away and labelled untrusted. Type the exact action ID, then
+click **Approve**. Until the Executor runs, the card offers **Revoke approval**,
+which also needs the typed action ID. The browser sends only the lab session
+token; the dashboard server relays the decision with the run's own operator
+credential and records it as `dashboard-operator` (or `-Operator NAME`). See
+[Dashboard approval panel](approvals.md#dashboard-approval-panel) for the
+checks and what the record does and does not prove.
 
 For unattended execution and automatic cleanup, opt in to automated lab
 approval. `summary.json` records it as `auto-lab` under the `automated-lab`
@@ -93,7 +105,9 @@ host; their activity is visible through their journals, not six Kubernetes Pods.
 
 The dashboard's `GET /api/snapshot` is a bounded read projection. The default
 server has no mutation routes. Only `-UIControls` enables the separate guarded
-lab-gate routes. The browser receives no kubeconfig or database paths.
+lab-gate routes, and only `-Approval ui` with it adds the approve and revoke
+relay routes. The browser receives no kubeconfig, database paths or approval
+token.
 
 ## What code runs
 

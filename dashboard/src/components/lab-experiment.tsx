@@ -106,7 +106,7 @@ export function LabExperiment({lab, stale, paused, now, refresh, inspect}: {
             </article>
           })}
         </div>
-        <p className="flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground"><ShieldCheck className="mt-.5 size-4 shrink-0 text-warn"/>Harness-authored proposals and demo-recorded approval. Guard constraints still apply. APPLIED is execution evidence; only a passing Verifier outcome establishes recovery.</p>
+        <p className="flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground"><ShieldCheck className="mt-.5 size-4 shrink-0 text-warn"/>Harness-authored proposals. Approvals go through the run's authenticated approval API; summary.json records the approval mode and identity. Guard constraints still apply. APPLIED is execution evidence; only a passing Verifier outcome establishes recovery.</p>
       </div>
     </div>
   </section>

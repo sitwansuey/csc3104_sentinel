@@ -141,11 +141,11 @@ class SimAPIServerTests(unittest.TestCase):
                                                            self.server.deployment["metadata"].get("annotations")),
                                    kind="fence")
         self.assertEqual((self.server.in_flight("act"), self.server.in_flight("act", kind=None)), ([write], [write, fence]))
-        generation = self.server.deployment["metadata"].get("generation")
+        spec = json.loads(json.dumps(self.server.deployment["spec"]))
         self.assertTrue(self.server.deliver(fence))
         self.assertFalse(self.server.deliver(write))  # The fence moved the version past V0.
         self.assertEqual((self.server.committed("act"), self.server.committed("act", kind="fence")), ([], [fence]))
-        self.assertEqual(self.server.deployment["metadata"].get("generation"), generation)  # Metadata only.
+        self.assertEqual(self.server.deployment["spec"], spec)  # Metadata only, so no rollout.
         self.assertIn(FENCE_ANNOTATION, self.server.deployment["metadata"]["annotations"])
 
     def test_admission_can_deny_a_template_change_but_allow_a_fence(self):

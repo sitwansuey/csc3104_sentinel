@@ -191,7 +191,10 @@ class SimAPIServer:
             return False
         self.revision += 1
         metadata = candidate["metadata"]
-        if self.deployment is not None and candidate.get("spec") != self.deployment.get("spec"):
+        # Like the apps/v1 Deployment strategy: a spec or an annotation change bumps generation.
+        if self.deployment is not None and (
+                candidate.get("spec") != self.deployment.get("spec")
+                or metadata.get("annotations") != self.deployment["metadata"].get("annotations")):
             metadata["generation"] = metadata.get("generation", 1) + 1
         metadata["resourceVersion"] = str(self.revision)
         self.deployment = candidate
