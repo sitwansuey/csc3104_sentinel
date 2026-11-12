@@ -8,6 +8,7 @@ schema checks, the call budget, preflight, warm-up and runtime_info.
 import io
 import json
 import os
+from pathlib import Path
 import threading
 import time
 import unittest
@@ -21,6 +22,14 @@ from runtime.remote_adapters import OllamaProvider
 from tests.support.fake_ollama import DIGEST, FakeOllama, Reply, chat_reply
 
 OPEN = "agent.llm.urllib.request.OpenerDirector.open"
+
+
+def incident_context(number):
+    """A Planner context for one numbered copy of the sample incident."""
+    incident = json.loads((Path(__file__).resolve().parents[1] / "data/sentinel/samples/messages/incident.json")
+                          .read_text(encoding="utf-8"))
+    return {"incident": dict(incident, incident_id=f"INC-DEMO-{number:03d}"), "baselines": [], "runbooks": []}
+
 
 RECOVERY = {"type": "object", "properties": {
     "action": {"type": "string", "enum": ["ROLLBACK", "ESCALATE", "NO_ACTION"]},
@@ -405,7 +414,7 @@ class FakeServerTests(unittest.TestCase):
         provider = OllamaProvider({"base_url": self.server.url, "model": "fixture-model", "timeout": 5,
                                    "max_model_calls": 2})
         for incident in range(5):
-            self.assertEqual(provider({"incident": incident})["action"], "ESCALATE")
+            self.assertEqual(provider(incident_context(incident))["action"], "ESCALATE")
         self.assertEqual(len(self.chats()), 5)
 
     def test_long_lived_provider_still_bounds_each_incident(self):
@@ -415,7 +424,7 @@ class FakeServerTests(unittest.TestCase):
         with patch("agent.llm.time.sleep") as sleep:
             for incident in range(3):
                 with self.assertRaisesRegex(RuntimeError, "HTTP 500"):
-                    provider({"incident": incident})
+                    provider(incident_context(incident))
                 self.assertEqual(len(provider.usage["calls"]), 1)
         # One request per incident: the budget of one stops the retry each time.
         self.assertEqual(len(self.chats()), 3)
