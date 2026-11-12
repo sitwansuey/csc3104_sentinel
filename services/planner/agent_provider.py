@@ -215,11 +215,15 @@ class AgentPlanner:
     topology ({"nodes": [...]}, a reviewed dependency graph) supplies the
     component vocabulary next to the target. The config's decision_policy,
     max_change_age_seconds and consult_model_when_ineligible choose the
-    decision policy (services/planner/taxonomy.py::policy).
+    decision policy (services/planner/taxonomy.py::policy). rca is the
+    diagnosis function, services/rca/core.py::diagnose; the offline replay
+    (experiments/analysis/replay.py) passes one that returns a recorded
+    diagnosis, so everything after the diagnosis runs exactly as live.
     """
 
     def __init__(self, config, *, folder, baseline, telemetry, deployment_reader,
-                 llm_factory=_ollama, progress=None, clock=time.monotonic, lease_seconds=None, topology=None):
+                 llm_factory=_ollama, progress=None, clock=time.monotonic, lease_seconds=None, topology=None,
+                 rca=diagnose):
         budget = planning_budget(config)
         self.settings = taxonomy.policy(config)
         # Checks the reviewed names now; the target name joins them per incident.
@@ -231,7 +235,7 @@ class AgentPlanner:
                              f"{LEASE_MARGIN_SECONDS} s, so a live attempt cannot outlive its lease")
         self.config, self.folder, self.baseline = config, Path(folder), baseline
         self.telemetry, self.deployment_reader = telemetry, deployment_reader
-        self.llm_factory, self.progress, self.clock = llm_factory, progress, clock
+        self.llm_factory, self.progress, self.clock, self.rca = llm_factory, progress, clock, rca
         self.budget_seconds, self.lease_seconds = budget, lease
         self.clients = {}
         # Bounded cause text per failed attempt, for the operator's summary only.
@@ -317,7 +321,7 @@ class AgentPlanner:
         try:
             llm = self.clients[attempt] = self.llm_factory(self.config, progress=self._notify, deadline=deadline)
             self._notify({"stage": "diagnosis", "status": "started"})
-            diagnosis = diagnose(incident, workspace / "telemetry", workspace / "agent", config=self.config,
+            diagnosis = self.rca(incident, workspace / "telemetry", workspace / "agent", config=self.config,
                                  llm=llm, progress=self._notify, deadline=deadline, clock=self.clock,
                                  vocabulary=vocabulary)
         except PlanningError:

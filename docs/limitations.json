@@ -143,7 +143,7 @@
         {"at": "agent/untrusted.py", "text": "def suspicious(text):"},
         {"at": "agent/tools.py:205", "text": "**quote(r[message])"},
         {"at": "experiments/boutique/harness/agent_live.py:89", "text": "csv_cell(cleaned)"},
-        {"at": "services/planner/agent_provider.py:357", "text": "raise PlanningError(\"SUSPECTED_INJECTION\", terminal=True)"},
+        {"at": "services/planner/agent_provider.py:361", "text": "raise PlanningError(\"SUSPECTED_INJECTION\", terminal=True)"},
         {"at": "runtime/remote_adapters.py:288", "text": "raise PlanningError(\"SUSPECTED_INJECTION\", terminal=True)"},
         {"at": "runtime/remote_adapters.py", "text": "json.dumps(quoted)"},
         {"at": "tests/test_untrusted_telemetry.py:524", "text": "def test_every_attack_in_an_incident_signal_is_gated_and_never_reaches_a_prompt"},
