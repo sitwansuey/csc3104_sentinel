@@ -205,6 +205,18 @@ class PrepareTests(unittest.TestCase):
                                 sleep=Clock().sleep)
         self.assertFalse(inside.exists())
 
+    def test_the_default_bundle_directory_is_refused_when_the_temporary_directory_is_in_the_repository(self):
+        inside = ROOT / "runs" / "kind-bundle-tmp-test"
+        with patch.object(kind_bundle.tempfile, "gettempdir", return_value=str(inside)), \
+                patch.object(kind_bundle.tempfile, "mkdtemp") as made, self.assertRaises(LabError):
+            kind_bundle.bundle_directory(None)
+        made.assert_not_called()
+        self.assertFalse(inside.exists())
+        with patch.object(kind_bundle.tempfile, "gettempdir", return_value=str(self.directory)):
+            fresh = kind_bundle.bundle_directory(None)
+        self.assertEqual(fresh.parent, self.directory.resolve())
+        self.assertTrue(fresh.name.startswith("sentinel-kind-bundle-"))
+
     def test_an_unhealthy_unpinned_or_changing_baseline_writes_no_bundle(self):
         unpinned = json.loads(json.dumps(HEALTHY))
         unpinned["spec"]["containers"][0]["image"] = REPOSITORY + ":v0.10.0"
@@ -243,8 +255,9 @@ class KindLabTests(unittest.TestCase):
         self.clock = Clock()
 
     def lab(self, **options):
-        return KindLab.from_bundle(self.bundle, CONTEXT, runner=self.cluster.runner, status=self.cluster.status,
-                                   sleep=self.clock.sleep, monotonic=self.clock.monotonic, **options)
+        return KindLab.from_bundle(self.bundle, CONTEXT, **{
+            "runner": self.cluster.runner, "status": self.cluster.status, "sleep": self.clock.sleep,
+            "monotonic": self.clock.monotonic, **options})
 
     def test_inject_applies_the_catalog_fault_and_waits_until_it_shows(self):
         record = self.lab().inject()
@@ -302,6 +315,113 @@ class KindLabTests(unittest.TestCase):
             self.lab().inject()
         self.assertIn("did not show", str(stopped.exception))
         self.assertTrue(self.cluster.healthy())
+
+    def failing_gets(self, failures):
+        """Wrap the fake kubectl: once the fault was written, the next `failures` gets fail (rc 1)."""
+        original, failed = self.cluster.runner, []
+
+        def runner(command, **options):
+            if "get" in command and "inject" in self.cluster.writes and len(failed) < failures:
+                failed.append(command)
+                return subprocess.CompletedProcess(command, 1, "", "the server is currently unable to handle it")
+            return original(command, **options)
+        return runner
+
+    def test_an_applied_fault_that_never_shows_is_put_back_to_the_baseline(self):
+        self.cluster.storefront_up = True  # The template changes, but the page keeps answering 200.
+        with self.assertRaises(LabError) as stopped:
+            self.lab().inject()
+        self.assertEqual(self.cluster.writes, ["inject", "restore"])
+        self.assertTrue(self.cluster.healthy())
+        self.assertIn("did not show", str(stopped.exception))
+        self.assertIn("restored and verified healthy", str(stopped.exception))
+
+    def test_a_fault_that_never_shows_and_an_unhealthy_restore_is_not_reported_as_restored(self):
+        writes = self.cluster.writes
+        lab = self.lab()
+        lab.status = lambda _url: 200 if not writes else None  # After the write nothing answers at all.
+        with self.assertRaises(LabError) as stopped:
+            lab.inject()
+        message = str(stopped.exception)
+        self.assertEqual(writes, ["inject", "restore"])
+        self.assertNotIn("was restored", message)
+        self.assertIn("not at a verified healthy baseline", message)
+        self.assertIn(f"kind_bundle restore --context {CONTEXT}", message)
+
+    def test_a_read_that_fails_after_the_injection_still_restores_the_baseline(self):
+        lab = self.lab(runner=self.failing_gets(1))
+        with self.assertRaises(LabError) as stopped:
+            lab.inject()
+        self.assertEqual(self.cluster.writes, ["inject", "restore"])
+        self.assertTrue(self.cluster.healthy())
+        self.assertIn("kubectl get failed", str(stopped.exception))
+        self.assertIn("restored and verified healthy", str(stopped.exception))
+        self.assertNotIn("unable to handle", str(stopped.exception))  # kubectl's error text is never kept.
+
+    def test_a_restore_that_cannot_read_either_names_the_leftover_fault_and_the_restore_command(self):
+        lab = self.lab(runner=self.failing_gets(1000))
+        with self.assertRaises(LabError) as stopped:
+            lab.inject()
+        self.assertEqual(self.cluster.writes, ["inject"])
+        self.assertFalse(self.cluster.healthy())  # The fault is still in place, and the message says so.
+        self.assertIn("fault may still be in place", str(stopped.exception))
+        self.assertIn(f"kind_bundle restore --context {CONTEXT} --bundle", str(stopped.exception))
+
+    def test_a_write_that_times_out_after_applying_is_restored(self):
+        original = self.cluster.runner
+
+        def runner(command, **options):
+            result = original(command, **options)
+            if "env" in command:
+                raise subprocess.TimeoutExpired(command, 60)  # Applied, but kubectl never returned.
+            return result
+        with self.assertRaises(LabError) as stopped:
+            self.lab(runner=runner).inject()
+        self.assertEqual(self.cluster.writes, ["inject", "restore"])
+        self.assertTrue(self.cluster.healthy())
+        self.assertIn("kubectl set did not complete (TimeoutExpired)", str(stopped.exception))
+
+    def test_a_reply_that_is_not_a_deployment_is_a_lab_error(self):
+        lab = self.lab(runner=lambda command, **_: subprocess.CompletedProcess(command, 0, "not json", ""))
+        with self.assertRaises(LabError):
+            lab.deployment()
+        self.assertEqual(lab.restore_or_record(), {"operator_restore": None, "healthy": False,
+                                                   "error": "kubectl get returned no Deployment"})
+
+    def test_a_target_outside_the_allowlisted_lab_is_refused(self):
+        fault = kind_bundle.catalog_fault("R1", kind_bundle.lab_scope(CONTEXT))
+        sent = len(self.cluster.calls)
+        for target in (dict(TARGET, cluster_id="other"), dict(TARGET, namespace="default"),
+                       dict(TARGET, name="cartservice")):
+            with self.subTest(target=target), self.assertRaises(LabError):
+                KindLab(CONTEXT, target, HEALTHY, fault, STOREFRONT, runner=self.cluster.runner)
+        self.assertEqual(len(self.cluster.calls), sent)  # Refused before any command.
+
+    def test_the_restore_command_puts_a_leftover_fault_back_even_with_an_expired_token(self):
+        options = {"runner": self.cluster.runner, "status": self.cluster.status, "sleep": self.clock.sleep,
+                   "monotonic": self.clock.monotonic}
+        self.lab().inject()
+        lab_json = self.bundle / "lab.json"
+        lab_json.write_text(json.dumps(dict(json.loads(lab_json.read_text(encoding="utf-8")),
+                                            kubeconfig_expires_at="2026-01-01T00:00:00Z")), encoding="utf-8")
+        argv = ["restore", "--context", CONTEXT, "--bundle", str(self.bundle)]
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(kind_bundle.main(argv, lab_options=options), 0)
+        self.assertEqual(self.cluster.writes, ["inject", "restore"])
+        self.assertTrue(self.cluster.healthy())
+        printed = json.loads(output.getvalue())
+        self.assertEqual((printed["status"], printed["operator_restore"]), ("healthy", True))
+        self.assertNotIn(TOKEN, output.getvalue())
+        self.cluster.storefront_up = False  # A target that never gets healthy exits 1.
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(kind_bundle.main(argv, lab_options=options), 1)
+        with redirect_stdout(io.StringIO()):  # No bundle there: refused, nothing sent.
+            self.assertEqual(kind_bundle.main(["restore", "--context", CONTEXT, "--bundle",
+                                               str(self.directory / "none")], lab_options=options), 1)
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as refused:
+            kind_bundle.main(["restore", "--context", "kind-sentinel-lab", "--bundle", str(self.bundle)])
+        self.assertEqual(refused.exception.code, 2)
 
     def test_a_bundle_for_another_context_an_old_tool_or_an_expiring_token_is_refused(self):
         with self.assertRaises(LabError):
@@ -453,6 +573,64 @@ class KindRunTests(unittest.TestCase):
         self.assertEqual(FakeTopology.started, [])
         self.assertFalse(self.out.exists())
 
+    def break_reads_during_the_run(self):
+        """From the scenario on, every kubectl get fails: the restore after the run cannot read the target."""
+        original, broken = self.lab.runner, []
+
+        def runner(command, **options):
+            if broken and "get" in command:
+                return subprocess.CompletedProcess(command, 1, "", "")
+            return original(command, **options)
+        self.lab.runner = runner
+        return broken
+
+    def test_a_restore_that_raises_still_writes_the_summary_and_stops_naming_the_restore_command(self):
+        broken = self.break_reads_during_the_run()
+        seals = replace(scenarios.SCENARIOS["S8"], run=lambda _topology: broken.append(True))
+        with patch.dict(run_scenarios.SCENARIOS, {"S8": seals}):
+            code, lines = self.run_main("--scenarios", "S8,S1b", "--repeat", "2")
+        self.assertEqual(code, 3)
+        self.assertIn("did not return", lines[-1]["stopped"])
+        self.assertIn(f"kind_bundle restore --context {CONTEXT}", lines[-1]["stopped"])
+        self.assertEqual(self.cluster.writes, ["inject"])  # The fault is left, and said to be left.
+        (summary,) = self.summaries().values()
+        self.assertEqual(summary["kind_lab"]["restore"], {"operator_restore": None, "healthy": False,
+                                                          "error": "kubectl get failed"})
+        self.assertEqual(FakeTopology.stopped, 1)
+
+    def test_a_run_that_fails_and_a_restore_that_fails_stop_with_the_leftover_state(self):
+        broken = self.break_reads_during_the_run()
+
+        def crashes(_topology):
+            broken.append(True)
+            raise OSError("disk full")  # Not a harness_error: it ends the run.
+        seals = replace(scenarios.SCENARIOS["S8"], run=crashes)
+        with patch.dict(run_scenarios.SCENARIOS, {"S8": seals}):
+            code, lines = self.run_main("--scenarios", "S8")
+        self.assertEqual(code, 3)
+        self.assertIn("The run stopped (OSError)", lines[-1]["stopped"])
+        self.assertIn("fault may still be in place", lines[-1]["stopped"])
+        self.assertEqual(self.summaries(), {})
+        self.assertEqual(self.cluster.writes, ["inject"])
+        broken.clear()
+        self.assertTrue(self.lab.restore()["healthy"])  # The operator restores it, as the message says.
+
+        def fails(_topology):
+            raise OSError("disk full")
+        # With a working restore the run's own error comes through, on a restored baseline.
+        with patch.dict(run_scenarios.SCENARIOS, {"S8": replace(seals, run=fails)}), self.assertRaises(OSError):
+            self.run_main("--scenarios", "S8")
+        self.assertTrue(self.cluster.healthy())
+        self.assertEqual(self.cluster.writes, ["inject", "restore", "inject", "restore"])
+
+    def test_file_mode_is_unchanged(self):
+        summary = run_scenarios.run_once("S8", out=self.out)
+        self.assertEqual(summary["deadline_seconds"], scenarios.SCENARIOS["S8"].deadline_seconds)
+        for key in ("kind_lab", "duplicate_incidents", "deadline_source", "observer_failure_window_seconds"):
+            self.assertNotIn(key, summary)
+        self.assertLessEqual(FakeTopology.deadlines[0], scenarios.SCENARIOS["S8"].deadline_seconds)
+        self.assertEqual(self.cluster.writes, [])
+
     def test_no_credential_reaches_any_written_file(self):
         self.assertEqual(self.run_main("--scenarios", "S1b,S8")[0], 0)
         for path, text in files_text(self.out).items():
@@ -464,6 +642,18 @@ class KindRunTests(unittest.TestCase):
         with redirect_stderr(io.StringIO()) as errors, self.assertRaises(SystemExit):
             run_scenarios.main(["--mode", "kind", "--context", CONTEXT, "--kind-bundle", str(self.bundle)])
         self.assertIn("lab.json", errors.getvalue())
+
+
+class StorefrontStatusTests(unittest.TestCase):
+    def test_a_storefront_that_does_not_answer_http_is_no_status_never_an_error(self):
+        from http.client import BadStatusLine, RemoteDisconnected
+        from urllib.error import HTTPError, URLError
+        for raised, expected in ((BadStatusLine("garbage"), None), (RemoteDisconnected("closed"), None),
+                                 (URLError("refused"), None), (HTTPError(STOREFRONT, 503, "down", {}, None), 503)):
+            with self.subTest(raised=type(raised).__name__), \
+                    patch.object(kind_bundle, "build_opener") as opener:
+                opener.return_value.open.side_effect = raised
+                self.assertEqual(kind_bundle.http_status(STOREFRONT + "/cart"), expected)
 
 
 class ObserverWindowTests(unittest.TestCase):

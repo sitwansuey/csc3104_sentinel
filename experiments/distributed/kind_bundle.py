@@ -2,6 +2,7 @@
 
 python -m experiments.distributed.kind_bundle prepare --context kind-sentinel-boutique-connected \
     --storefront http://127.0.0.1:18631 [--scenario R1] [--bundle DIR] [--token-duration 2h]
+python -m experiments.distributed.kind_bundle restore --context kind-sentinel-boutique-connected --bundle DIR
 
 The operator runs prepare once per session, with a port-forward to the
 storefront (kubectl port-forward service/frontend 18631:80) already open, then
@@ -45,10 +46,22 @@ injection before a run, and after a run a JSON patch that puts the baseline
 template back (tests on uid and resourceVersion) when Sentinel did not. Each
 is recorded in the run's summary.json as an operator action, never as a
 Sentinel write, and it waits until the target is Available with the baseline
-template and the storefront answers 200 before the next run.
+template and the storefront answers 200 before the next run. Once the
+injection has been sent, any failure (a kubectl read or timeout, a target
+that changed identity, a fault that never shows, an interrupt) is followed
+by a restore, and the error says whether that restore reached a verified
+healthy baseline; when it did not, the fault may still be in place and the
+error names the restore command.
+
+restore reads lab.json and baseline.json from the bundle and does what
+KindLab.restore does after a run, with the operator's kubeconfig (the
+bundle's token is never used, so an expired bundle can still restore). It
+prints the record and exits 0 only when the target is back at a healthy
+baseline.
 """
 import argparse
 from datetime import UTC, datetime, timedelta
+from http.client import HTTPException
 import json
 from pathlib import Path
 import re
@@ -84,6 +97,8 @@ HEALTH_PATH = "/cart"  # Calls cartservice and shippingservice; the catalog's R1
 MAX_TOKEN_MINUTES = 480
 # A bundle whose token expires sooner than this is refused for a new run.
 MIN_TOKEN_LEFT = timedelta(minutes=10)
+RESTORE_HINT = ("restore it with python -m experiments.distributed.kind_bundle restore --context {context} "
+                "--bundle <the bundle directory>")
 RBAC_CHECKS = (("get", "deployment/{target}", "yes"), ("patch", "deployment/{target}", "yes"),
                ("delete", "deployment/{target}", "no"), ("patch", "deployment/paymentservice", "no"),
                ("get", "secrets", "no"), ("list", "pods", "no"))
@@ -136,7 +151,7 @@ def http_status(url, timeout=8):
             return response.status
     except HTTPError as error:
         return error.code
-    except (URLError, OSError):
+    except (URLError, OSError, HTTPException):  # HTTPException: a reply that is not HTTP (port-forward hiccup).
         return None
 
 
@@ -144,7 +159,10 @@ def kubectl(runner, scope, *args):
     """kubectl with the operator's kubeconfig, pinned to the lab's --context and namespace."""
     command = ["kubectl", "--context=" + scope["context"], "--namespace=" + scope["namespace"],
                "--request-timeout=30s", *args]
-    result = runner(command, capture_output=True, text=True, timeout=60, check=False)
+    try:
+        result = runner(command, capture_output=True, text=True, timeout=60, check=False)
+    except (subprocess.SubprocessError, OSError) as error:  # A timeout or a missing kubectl.
+        raise LabError(f"kubectl {args[0]} did not complete ({type(error).__name__})") from error
     if result.returncode:
         raise LabError(f"kubectl {args[0]} failed")  # Its error text may echo cluster details; not kept.
     return result
@@ -185,8 +203,12 @@ class KindLab:
         self.runner, self.status, self.sleep, self.monotonic = runner, status, sleep, monotonic
 
     @classmethod
-    def from_bundle(cls, bundle, context, *, now=utc_now, **options):
-        """The lab a prepared bundle names; LabError for another context, an old bundle or an expiring token."""
+    def from_bundle(cls, bundle, context, *, now=utc_now, check_token=True, **options):
+        """The lab a prepared bundle names; LabError for another context, an old bundle or an expiring token.
+
+        check_token False (the restore command) accepts an expiring token: the
+        operator side writes with the operator's kubeconfig, never with it.
+        """
         bundle = Path(bundle)
         lab_scope(context)
         try:
@@ -203,7 +225,7 @@ class KindLab:
             expires = datetime.fromisoformat(str(lab["kubeconfig_expires_at"]).replace("Z", "+00:00"))
         except (KeyError, ValueError) as error:
             raise LabError("The bundle does not record when its token expires") from error
-        if expires - now() < MIN_TOKEN_LEFT:
+        if check_token and expires - now() < MIN_TOKEN_LEFT:
             raise LabError("The bundle's Executor token expires within 10 minutes; prepare a new bundle")
         fault = catalog_fault(lab["fault_scenario"], lab_scope(context))
         return cls(context, lab["target"], baseline["pod_template"], fault, lab["storefront"], **options)
@@ -214,8 +236,12 @@ class KindLab:
         return kubectl(self.runner, self.scope, *args)
 
     def deployment(self):
-        item = json.loads(self.kubectl("get", "deployment", self.target["name"], "--output=json").stdout)
-        if item["metadata"]["uid"] != self.target["uid"]:
+        try:
+            item = json.loads(self.kubectl("get", "deployment", self.target["name"], "--output=json").stdout)
+            uid, _ = item["metadata"]["uid"], item["spec"]["template"]
+        except (ValueError, KeyError, TypeError) as error:
+            raise LabError("kubectl get returned no Deployment") from error
+        if uid != self.target["uid"]:
             raise LabError("The lab Deployment is not the bundle's target (deleted or recreated)")
         return item
 
@@ -248,11 +274,26 @@ class KindLab:
 
     # Operator writes --------------------------------------------------------
 
+    def off_baseline(self, what):
+        """The error for a target that may be left off its baseline: it says so and names the restore command."""
+        return LabError(f"{what}; the target is not at a verified healthy baseline and the fault may still be "
+                        "in place: " + RESTORE_HINT.format(context=self.scope["context"]))
+
+    def restore_or_record(self, **options):
+        """restore(), but a read or write that fails becomes a record with healthy False and the error."""
+        try:
+            return self.restore(**options)
+        except LabError as error:
+            return {"operator_restore": None, "healthy": False, "error": str(error)}
+
     def inject(self, *, healthy_timeout=120, visible_timeout=90):
         """Inject the catalog fault at a healthy baseline and wait until it shows; LabError otherwise.
 
-        A fault that does not show within visible_timeout is restored before
-        the error, so no run starts on a workload in an unknown state.
+        From the moment the injection is sent, a fault that does not show
+        within visible_timeout and any failure (a kubectl read or timeout,
+        another uid, an interrupt) are followed by a restore, so no run
+        starts on a workload in an unknown state. The error says whether the
+        restore reached a verified healthy baseline (off_baseline when not).
         """
         _, healthy = self._until(self._healthy, healthy_timeout)
         if not healthy:
@@ -267,7 +308,6 @@ class KindLab:
             argv = scenarios.set_image_argv(self.target["name"], injection["container"],
                                             scenarios.pinned_image(repository, injection["digest"]), repository)
         started, at = self.monotonic(), stamp(utc_now())
-        self.kubectl(*argv)
         record = {"scenario": self.fault["id"], "injection": dict(injection), "injected_at": at}
 
         def visible(item):
@@ -276,12 +316,25 @@ class KindLab:
             return (not state["template_is_baseline"] and state["available"] == 0
                     and (state["observed_generation"] or 0) >= (state["generation"] or 0)
                     and record["health_http_status"] not in (200, None))
-        item, shown = self._until(visible, visible_timeout, interval=1)
-        record.update(fault_visible=shown, visible_after_seconds=round(self.monotonic() - started, 1),
-                      state=self.state(item))
+        try:
+            self.kubectl(*argv)  # A timeout here may still have written: the restore below covers that too.
+            item, shown = self._until(visible, visible_timeout, interval=1)
+            record.update(fault_visible=shown, visible_after_seconds=round(self.monotonic() - started, 1),
+                          state=self.state(item))
+        except BaseException as caught:
+            cause = str(caught) if isinstance(caught, LabError) else type(caught).__name__
+            if self.restore_or_record()["healthy"]:
+                raise LabError(f"The fault injection stopped ({cause}); the baseline was restored and verified "
+                               "healthy") from caught
+            raise self.off_baseline(f"The fault injection stopped ({cause}) and the restore did not reach a "
+                                    "healthy baseline") from caught
         if not shown:
-            record["restore"] = self.restore()
-            raise LabError("The injected fault did not show within the timeout; the baseline was restored")
+            record["restore"] = self.restore_or_record()
+            if record["restore"]["healthy"]:
+                raise LabError("The injected fault did not show within the timeout; the baseline was restored and "
+                               "verified healthy")
+            raise self.off_baseline("The injected fault did not show within the timeout and the restore did not "
+                                    "reach a healthy baseline")
         return record
 
     def restore(self, *, timeout=240, attempts=3):
@@ -315,12 +368,16 @@ class KindLab:
 # Preparation --------------------------------------------------------------
 
 def bundle_directory(path):
-    """A new directory outside the repository: path, or a fresh temporary one."""
-    if path is None:
-        return Path(tempfile.mkdtemp(prefix="sentinel-kind-bundle-"))
-    path = Path(path).resolve()
+    """A new directory outside the repository: path, or a fresh one in the temporary directory.
+
+    The temporary directory is checked too: TMP or TEMP inside the checkout is refused.
+    """
+    fresh = path is None
+    path = Path(tempfile.gettempdir() if fresh else path).resolve()
     if path == ROOT or ROOT in path.parents:
         raise LabError("The bundle holds a credential; write it outside the repository")
+    if fresh:
+        return Path(tempfile.mkdtemp(prefix="sentinel-kind-bundle-", dir=path))
     path.mkdir(parents=True, exist_ok=False)
     return path
 
@@ -468,7 +525,20 @@ def prepare(context, storefront, *, scenario_id="R1", bundle=None, token_duratio
             "files": sorted([*files, "kubeconfig", "rbac-checks.json"])}
 
 
-def main(argv=None):
+def restore_command(args, lab_options):
+    """The restore subcommand: put the bundle's baseline back; 0 only when it is verified healthy."""
+    try:
+        lab = KindLab.from_bundle(args.bundle, args.context, check_token=False, **lab_options)
+    except LabError as error:
+        print(json.dumps({"status": "failed", "error": str(error)}), flush=True)
+        return 1
+    record = lab.restore_or_record()
+    print(json.dumps({"status": "healthy" if record["healthy"] else "not healthy", **record}, indent=1), flush=True)
+    return 0 if record["healthy"] else 1
+
+
+def main(argv=None, lab_options=None):
+    """lab_options: KindLab runner, status, sleep and monotonic for the restore command (tests only)."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
     make = commands.add_parser("prepare", help="Measure the baseline and write a bundle with a short-lived token")
@@ -477,13 +547,20 @@ def main(argv=None):
     make.add_argument("--scenario", default="R1", help="Catalog fault injected before each run (default R1)")
     make.add_argument("--bundle", type=Path, help="A new directory outside the repository (default: a temporary one)")
     make.add_argument("--token-duration", default="2h", help="Executor token lifetime, such as 90m or 2h (at most 8h)")
+    fix = commands.add_parser("restore", help="Put the bundle's baseline template back with your kubeconfig and "
+                                              "wait until the target is healthy")
+    fix.add_argument("--context", required=True, help="The bundle's allowlisted lab context")
+    fix.add_argument("--bundle", required=True, type=Path, help="The bundle directory prepare printed")
     args = parser.parse_args(argv)
     try:
         lab_scope(args.context)
-        storefront_origin(args.storefront)
-        token_minutes(args.token_duration)
+        if args.command == "prepare":
+            storefront_origin(args.storefront)
+            token_minutes(args.token_duration)
     except LabError as error:
         parser.error(str(error))
+    if args.command == "restore":
+        return restore_command(args, lab_options or {})
     try:
         summary = prepare(args.context, args.storefront, scenario_id=args.scenario, bundle=args.bundle,
                           token_duration=args.token_duration)

@@ -207,12 +207,34 @@ get a fresh fault. A fault that does not show, a target that is not at its
 baseline, or a restore that does not end healthy stops the invocation with
 exit code 3, so no run starts on an unknown state.
 
+Once the injection has been sent, any failure before the fault is seen (a
+`kubectl get` that fails or times out, a Deployment recreated with another
+uid, an interrupt) and a fault that never shows are followed by a restore
+attempt. The `stopped` line then says either that the baseline was restored
+and verified healthy, or that the target is not at a verified healthy
+baseline and the fault may still be in place, with the command to restore it.
+A restore after a run that cannot read or patch the target is recorded in
+that run's `summary.json` as `kind_lab.restore` with `healthy` false and the
+error (never kubectl's own error text), and stops the invocation the same
+way. To put the baseline back by hand:
+
+```powershell
+python -m experiments.distributed.kind_bundle restore --context kind-sentinel-boutique-connected --bundle <bundle>
+```
+
+It uses your kubeconfig, not the bundle's token (so an expired bundle still
+works), applies the same tested JSON patch only when the template differs from
+`baseline.json`, waits until the target is healthy, prints the record and exits
+0 only then.
+
 `summary.json` in kind mode adds `kind_lab` (the injection, whether the fault
 showed and after how long, and the restore with `operator_restore` true only
 when the operator side wrote; both are operator writes, never counted as
 Sentinel's), `deadline_seconds` with `deadline_source`, the Observer's
 `observer_failure_window_seconds`, and `duplicate_incidents`: incidents opened
-after the first one, with their states (the Guard should reject them).
+after the first one, with their states (the Guard should reject them). The
+count is a lower bound: the run stops once every incident is terminal (or at
+the deadline), so a duplicate the Observer would open after that is not seen.
 Kind-mode defaults that differ from file mode:
 
 - **Deadline.** `--deadline` (kind mode only, 30-1800 s) replaces the
@@ -244,4 +266,9 @@ Deployment of `tests/test_topology.py`); they have not run against the
 cluster. The session also left the fence annotations of its S8 runs
 (`sentinel.io/fence`, `sentinel.io/fence-epoch`) on the Deployment; the
 restore puts back the template only, and leaves those metadata annotations
-as they are.
+as they are. With the P3.05 admission policy installed, that matters: each run
+starts a fresh Coordinator store, and a seal whose epoch is below the stored
+`sentinel.io/fence-epoch` is denied
+([deploy/README.md](../../deploy/README.md)), so `--repeat` of S8 under the
+policy may not reproduce. Run S8 without the policy, or settle the fence
+epoch first (an owner decision listed under P3.05).

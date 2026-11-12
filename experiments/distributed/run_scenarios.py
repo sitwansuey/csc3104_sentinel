@@ -76,7 +76,10 @@ def duplicate_incidents(records):
 
     One fault on one target is injected per run, so each later incident is a
     duplicate (live, the Observer saw the rollout after the rollback as a new
-    failure). Their outcome stays visible: the Guard should reject them.
+    failure). Their outcome stays visible: the Guard should reject them. The
+    count is a lower bound: it covers incidents opened before the run stopped
+    (once every incident was terminal, or at the deadline), so one the
+    Observer would have opened later is not seen.
     """
     opened = [row["incident_id"] for row in records["transitions"] if row["from_state"] is None]
     states = {row["incident_id"]: row["state"] for row in records["incidents"]}
@@ -103,11 +106,12 @@ def run_once(name, *, mode="file", out=None, repeat=1, context=None, kind_bundle
     else:
         deadline, source = scenario.deadline_seconds, "scenario"
     stamp = datetime.now(UTC)
-    kind = {"fault": lab.inject()} if mode == "kind" else None  # LabError: nothing started, nothing to restore.
-    work = Path(tempfile.mkdtemp(prefix=f"sentinel-{name.lower()}-"))
+    # A LabError here: nothing started, and inject itself restored or said the target may be off-baseline.
+    kind = {"fault": lab.inject()} if mode == "kind" else None
     started = time.monotonic()
-    notes, error = {}, None
+    notes, error, failure = {}, None, None
     try:
+        work = Path(tempfile.mkdtemp(prefix=f"sentinel-{name.lower()}-"))
         topology = Topology(work / "run", mode=mode, context=context, kind_bundle=kind_bundle, **scenario.options)
         try:
             topology.start(observer=False)
@@ -121,9 +125,17 @@ def run_once(name, *, mode="file", out=None, repeat=1, context=None, kind_bundle
                                          cluster_writes=topology.kind_writes() if mode == "kind" else None)
         finally:
             topology.stop()
+    except BaseException as caught:
+        failure = caught
+        raise
     finally:
         if kind is not None:
-            kind["restore"] = lab.restore()  # After stop: the restore is never counted as a Sentinel write.
+            # After stop: the restore is never counted as a Sentinel write. A restore that cannot
+            # read or write is recorded unhealthy, never raised over the run, so summary.json is
+            # still written and main stops the invocation (exit 3) naming the restore command.
+            kind["restore"] = lab.restore_or_record()
+            if failure is not None and not kind["restore"]["healthy"]:
+                raise lab.off_baseline(f"The run stopped ({type(failure).__name__})") from failure
     results = invariants.check(records)
     failed = {item["id"] for item in results if not item["passed"]}
     summary = {
@@ -223,9 +235,8 @@ def main(argv=None, lab=None):
                               "matches_expectation": summary["matches_expectation"],
                               "seconds": summary["duration_seconds"], "error": summary["harness_error"]}), flush=True)
             if args.mode == "kind" and not summary["kind_lab"]["restore"]["healthy"]:
-                print(json.dumps({"scenario": name, "repeat": index,
-                                  "stopped": "The target did not return to its healthy baseline after the run"}),
-                      flush=True)
+                stopped = lab.off_baseline("The target did not return to its healthy baseline after the run")
+                print(json.dumps({"scenario": name, "repeat": index, "stopped": str(stopped)}), flush=True)
                 return 3
     return 0 if all(summary["matches_expectation"] for summary in summaries) else 1
 

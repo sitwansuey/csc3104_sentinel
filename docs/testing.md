@@ -135,7 +135,12 @@ fake lab Deployment: bundle preparation (the token only in the private
 kubeconfig, never in another file or the summary; every context but the
 allowlisted lab refused, `sentinel-lab` first; no bundle inside the
 repository), a fresh catalog fault and a verified baseline restore around every
-run of `--repeat` and of several scenarios, the 180 s kind-mode deadline and
+run of `--repeat` and of several scenarios, a restore attempt after any
+failure once the fault was written (a failed or timed-out `kubectl`, a fault
+that never shows) with an error that says whether the baseline is verified
+healthy or names the `kind_bundle restore` command, a restore that fails after
+a run still writing `summary.json` and stopping with exit 3, file mode
+unchanged, the 180 s kind-mode deadline and
 `--deadline`, duplicate incidents counted in `summary.json`, and the Observer's
 15 s failure window. None of it has run against the cluster; the
 [kind-mode recipe](../experiments/distributed/README.md#a-reproducible-kind-mode-run)
