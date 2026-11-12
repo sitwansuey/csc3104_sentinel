@@ -197,7 +197,7 @@
       "workaround": "For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json and print the traces with scripts/trace_view.py.",
       "cites": [
         {"at": "shared/log.py:237", "text": "def entrypoint(component: str)"},
-        {"at": "runtime/worker_http.py:518", "text": "@log.entrypoint(\"worker_http\")"},
+        {"at": "runtime/worker_http.py:527", "text": "@log.entrypoint(\"worker_http\")"},
         {"at": "shared/tracing.py:123", "text": "def start_span("},
         {"at": "services/executor/core.py:240-241", "text": "any read failure leaves the outcome unknown"},
         {"at": "docs/observability.md", "text": "only when their entrypoint configures logging"},
@@ -326,16 +326,35 @@
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-11",
-      "impact": "Since P3.01 the Coordinator and every worker run as separate processes on one host, with their own state, credentials and TCP connections, under injected network, process and timing faults (CI, file-backed test cluster). That is still one machine: one kernel clock, one disk and loopback networking. The delivery layer has not run in containers, on separate nodes or against the kind lab (the harness's kind mode has not been run), and containers or kind nodes on one Docker host would still not be separate machines. A worker image for every role (P3.07) has been built and scanned locally, but no container has run from it, and the topology cannot yet start a worker as a container.",
+      "impact": "Since P3.01 the Coordinator and every worker run as separate processes on one host, with their own state, credentials and TCP connections, under injected network, process and timing faults (CI, file-backed test cluster). That is still one machine: one kernel clock, one disk and loopback networking. The delivery layer has not run on separate nodes, and containers or kind nodes on one Docker host would still not be separate machines. Against the kind lab, the harness's kind mode ran only in one operator session on 12 Nov 2026, with scratch versions of the bundle preparation and the per-run fault injection: 12 runs (S1b, S1c, S2, S4, S5 and S8 twice each) matched their expectation once the health policy was relaxed, but none of it is committed evidence. The committed versions (experiments/distributed/kind_bundle.py and the injection and baseline restore around each kind-mode run) are tested offline only. A worker image for every role (P3.07) has been built and scanned locally; in the same session an agent-mode Planner ran from it as a container against a Coordinator on the host (no committed evidence), and the topology cannot yet start a worker as a container.",
       "workaround": "None; read the distributed design as untested beyond one host.",
       "cites": [
         {"at": "tests/test_worker_transport.py:163", "text": "('127.0.0.1', 0)"},
         {"at": "experiments/distributed/topology.py", "text": "class Topology:"},
+        {"at": "experiments/distributed/kind_bundle.py", "text": "class KindLab:"},
+        {"at": "experiments/distributed/README.md", "text": "have not run against the"},
         {"at": "deploy/sentinel/COORDINATOR.md", "text": "not recorded Kubernetes acceptance"},
         {"at": "docs/remote-workers.md", "text": "Live check needed (not done)."}
       ],
       "planned": ["P3.01", "P3.07", "P4.01"],
       "issues": [62, 63]
+    },
+    {
+      "id": "L-WORKER-READINESS-LONG-PASS",
+      "title": "A worker's /readyz turned 503 during a long pass while it was renewing its lease",
+      "kind": "defect",
+      "status": "mitigated",
+      "since": "2026-11-12",
+      "impact": "Found live on 12 Nov 2026: an agent-mode Planner container that was planning normally was reported unhealthy by Docker twice during one 128 s planning pass, because /readyz counted only the end of a polling pass as Coordinator contact and turned 503 once that was older than --ready-seconds (60), although the worker renewed its lease every few seconds. A liveness-style probe on /readyz would have killed a healthy Planner mid-inference. Fixed in code: every Coordinator request answered with 200 (a claim, each lease renewal, a result, a clock measurement) now counts as contact, a refused, failed or timed-out request never does, and --ready-seconds must be longer than the 5 s renewal interval; the preflight, clock and store conditions are unchanged. The trade-off: a worker whose own component fails on every pass (an Executor that cannot reach its cluster, a Planner whose model call crashes after its preflight passed) still has its claims and retries answered, so it now stays ready; that shows only in its retry and back-off log lines. It stays mitigated because the fix has run only in offline tests (loopback Coordinator, probe clock advanced by the test), not in a container.",
+      "workaround": "Before the fix: a --ready-seconds longer than the longest model call, or a container HEALTHCHECK that is not used to restart the worker.",
+      "cites": [
+        {"at": "runtime/worker_http.py:494", "text": "self.answered()"},
+        {"at": "runtime/worker_service.py", "text": "answered=health.contacted"},
+        {"at": "tests/test_remote_workers.py:488", "text": "def test_lease_renewals_keep_a_pass_longer_than_the_readiness_window_ready"},
+        {"at": "tests/test_remote_workers.py:499", "text": "def test_a_pass_whose_renewals_fail_turns_not_ready_after_the_readiness_window"}
+      ],
+      "planned": ["P3.07"],
+      "issues": []
     },
     {
       "id": "L-ORPHANED-EXECUTOR-LEDGER",

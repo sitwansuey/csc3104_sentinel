@@ -427,8 +427,14 @@ class WorkerClient:
     offset from the Coordinator's clock (ClockEstimator). store watches the
     Coordinator database's generation and commit counter (StoreWatch); pass
     one StoreWatch to every client of one worker so they share it.
+    answered, when given, is called with no arguments after every request
+    the Coordinator answered with 200 and a JSON object (a claim, a lease
+    renewal, a result, a clock measurement): the worker's /readyz counts it
+    as Coordinator contact (runtime/worker_health.py). A request that fails,
+    is refused, times out or gets an invalid reply never calls it.
     """
-    def __init__(self, url, identity, token, *, timeout=15, tls_context=None, clock=time.time, store=None):
+    def __init__(self, url, identity, token, *, timeout=15, tls_context=None, clock=time.time, store=None,
+                 answered=None):
         self.url = urlsplit(url)
         if (not self.url.hostname or self.url.username is not None or self.url.password is not None
                 or self.url.path not in {"", "/"} or self.url.query or self.url.fragment):
@@ -443,6 +449,7 @@ class WorkerClient:
         self.tls_context = tls_context
         self.clock = ClockEstimator(clock=clock)
         self.store = store if store is not None else StoreWatch()
+        self.answered = answered
 
     def post(self, operation, body):
         if operation not in {"claim", "ingest", "result", "retry", "renew", "dependencies", "clock"}:
@@ -483,6 +490,8 @@ class WorkerClient:
                 raise ProtocolError(502, "Coordinator returned a non-object response")
             if response.status != 200:
                 raise ProtocolError(response.status, value.get("error", "Request failed"))
+            if self.answered is not None:
+                self.answered()
             return value
         finally:
             connection.close()

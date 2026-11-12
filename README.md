@@ -150,6 +150,7 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-RAW-LOGS-PROMPT](docs/limitations.md#l-raw-logs-prompt): Sentinel's planning prompts carry log text only cleaned and quoted, and the injection gate is a pattern list no live adversarial run has exercised (defect, mitigated; planned P2.04, P2.05, P4.04)
 - [L-FREE-TEXT-DECISION](docs/limitations.md#l-free-text-decision): The live diagnosis was model free text and the rollback choice had no change evidence (defect, mitigated; planned P2.05, P4.04)
 - [L-NO-LOGGING](docs/limitations.md#l-no-logging): Structured logs cover only the networked entrypoints, and no live run has collected them (defect, mitigated; planned P1.07, P3.02)
+- [L-WORKER-READINESS-LONG-PASS](docs/limitations.md#l-worker-readiness-long-pass): A worker's /readyz turned 503 during a long pass while it was renewing its lease (defect, mitigated; planned P3.07)
 - [L-ORPHANED-EXECUTOR-LEDGER](docs/limitations.md#l-orphaned-executor-ledger): A crashed Executor whose peer finished the action kept it in doubt and refused that workload (defect, mitigated; planned P3.04, P4.01)
 - [L-SINGLE-COORDINATOR](docs/limitations.md#l-single-coordinator): The Coordinator is one process with one SQLite file (limitation, open; planned P4.02, P5.01)
 - [L-EXECUTOR-FIELD-LIMITS](docs/limitations.md#l-executor-field-limits): The Executor's field limits are an admission policy not yet run against an API server (limitation, open; planned P3.05)

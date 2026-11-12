@@ -52,6 +52,12 @@ ROOT = Path(__file__).resolve().parents[2]
 LOOPBACK = "127.0.0.1"
 KIND_CONTEXTS = frozenset({"kind-sentinel-boutique-connected"})
 KIND_CLUSTER_ID = "sentinel-boutique-connected"
+# Kind mode's Observer failure window. With 2 s, the live runs of 12 Nov 2026 opened a second
+# incident about 4 s after the rollback, while the Recreate rollout had no available replica
+# (the Guard rejected it). An operator restore took about 6.5 s from patch to Available with
+# the storefront answering 200, so 15 s outlasts such a rollout about twice over while adding
+# only 15 s to detection against the 180 s kind-mode deadline.
+OBSERVER_FAILURE_SECONDS = 15
 WORKERS = (("planner-1", "planner"), ("guard-1", "guard"), ("executor-a", "executor"),
            ("executor-b", "executor"), ("verifier-1", "verifier"))
 OBSERVER = ("observer-1", "observer")
@@ -310,7 +316,7 @@ class Topology:
     def __init__(self, run_dir, *, mode="file", tls=True, lease_seconds=4, poll_seconds=0.2,
                  worker_timeout=3, fence_after_seconds=2, clock_offsets=None, auto_approve=True,
                  context=None, kind_bundle=None, python=None, bind=LOOPBACK, certificates=None,
-                 max_clock_skew=None, kind_poll_seconds=0.5):
+                 max_clock_skew=None, kind_poll_seconds=0.5, observer_failure_seconds=OBSERVER_FAILURE_SECONDS):
         if mode not in {"file", "kind"}:
             raise ValueError("Mode must be file or kind")
         if bind != LOOPBACK:
@@ -337,6 +343,9 @@ class Topology:
         self.started_at = None
         # Kind mode: the latest observation of the Deployment and the writes seen so far.
         self.kind_poll_seconds = kind_poll_seconds
+        if type(observer_failure_seconds) is not int or not 1 <= observer_failure_seconds <= 300:
+            raise ValueError("The Observer failure window must be 1 to 300 whole seconds")
+        self.observer_failure_seconds = observer_failure_seconds  # Kind mode only; file mode feeds a fixed series.
         self.kind_last, self.kind_rows = None, []
         self._kind_lock = threading.Lock()
         self._kind_watcher = None
@@ -533,13 +542,24 @@ class Topology:
         command = [self.python, "-m", "experiments.distributed.observer_feed", "--config", str(path)]
         self.processes[name] = Process(name, command, self._env(name), self.paths["logs"]).start()
 
+    def observer_policy(self):
+        """The kind-mode Observer's policy: the bundle's detection block with this run's failure window.
+
+        Written to the run's configuration, so a bundle with a shorter window
+        (the 2 s one that opened duplicate incidents live) gets
+        observer_failure_seconds too. The Observer reads only detection.
+        """
+        bundle = json.loads((Path(self.kind_bundle) / "policy.json").read_text(encoding="utf-8"))
+        detection = dict(bundle.get("detection") or {}, failure_duration_seconds=self.observer_failure_seconds)
+        return self._write("observer-policy.json", {"detection": detection})
+
     def _kind_observer(self, name, link):
         """The real Observer CLI against the lab context, delivering over the same proxied HTTP(S)."""
-        target, bundle = self.inputs["target"], Path(self.kind_bundle)
+        target = self.inputs["target"]
         command = [self.python, "-m", "services.observer.cli", "run", "--context", check_kind_context(self.context),
                    "--cluster-id", self.cluster_id, "--namespace", target["namespace"], "--deployment", target["name"],
                    "--state", str(self.paths["state"] / name / "observer.sqlite3"),
-                   "--policy", str(bundle / "policy.json"),
+                   "--policy", str(self.observer_policy()),
                    "--coordinator-url", f"{self.scheme}://{LOOPBACK}:{link['delivery'].port}",
                    "--coordinator-identity", name,
                    "--coordinator-token-env", env_name("SENTINEL_DELIVERY_TOKEN_", name), "--interval-seconds", "2"]

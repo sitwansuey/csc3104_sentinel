@@ -123,6 +123,17 @@ class LabWorkerTests(unittest.TestCase):
         with patch.dict(os.environ, {**self.gate, **environment}):
             self.assertAlmostEqual((executor.clock() - datetime.now(UTC)).total_seconds(), 120, delta=5)
 
+    def test_the_guard_and_executor_dependency_clients_report_their_answers_as_contact(self):
+        answered = object()
+        for role in ("guard", "executor"):
+            with self.subTest(role=role), patch("runtime.approval_http.ApprovalClient"), \
+                    patch.dict(os.environ, self.gate), \
+                    patch("runtime.worker_service.client", wraps=worker_service.client) as made:
+                state = self.directory / (role + "-contact")
+                state.mkdir()
+                worker_service.adapter(self.config(role), state, self.stack, answered=answered)
+                self.assertIs(made.call_args.kwargs["answered"], answered)
+
     def test_lab_executor_uses_the_production_adapter_with_stop_points_and_the_test_clock(self):
         with patch("runtime.approval_http.ApprovalClient"):
             executor = self.adapter(self.config("executor"), **{fault_points.ENV_CLOCK_OFFSET: "-300"})
@@ -205,6 +216,17 @@ class DeterministicPlannerTests(unittest.TestCase):
 
 
 class HealthTests(unittest.TestCase):
+    def test_contact_never_clears_a_failing_preflight_clock_or_store_gate(self):
+        # Lease renewals call contacted() mid-pass; only the end of a pass may update the gates.
+        health = WorkerHealth(ready_seconds=30, clock=lambda: 5.0)
+        health.configured()
+        health.clock_checked(False)
+        health.store_checked(False)
+        health.prerequisites(False)
+        health.contacted()
+        self.assertEqual(health.ready(), (503, {"ready": False, "contact_age_seconds": 0.0, "clock_skew": True,
+                                                "store_changed": True, "prerequisites_failed": True}))
+
     def test_liveness_and_readiness_follow_the_loop_and_coordinator_contact(self):
         now = [100.0]
         health = WorkerHealth(ready_seconds=30, clock=lambda: now[0])
@@ -276,6 +298,32 @@ class HealthTests(unittest.TestCase):
                 self.assertEqual(worker_service.main(["--config", str(config), "--once", "--health-port", "0"]), 1)
             served.assert_called_once()
             self.assertEqual(json.loads(output.getvalue().splitlines()[-1])["status"], "retry")
+
+    def test_a_readiness_window_within_the_lease_renewal_interval_is_refused(self):
+        for window in (str(worker_service.RENEWAL_SECONDS), "1"):
+            with self.subTest(window=window), redirect_stderr(io.StringIO()) as errors, \
+                    self.assertRaises(SystemExit):
+                worker_service.main(["--config", "unused.json", "--ready-seconds", window])
+            self.assertIn("lease renewal interval", errors.getvalue())
+
+    def test_every_coordinator_client_of_the_service_reports_its_answers_as_contact(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "planner.json"
+            config.write_text(json.dumps({"role": "planner", "url": "http://127.0.0.1:9", "identity": "planner-1",
+                                          "token_env": "TEST_LAB_TOKEN", "state_directory": str(Path(directory) / "s"),
+                                          "provider": "deterministic", "baselines": str(config),
+                                          "cluster_id": fixtures.CLUSTER_ID}), encoding="utf-8")
+            gate = {fault_points.ENV_DIRECTORY: directory, fault_points.ENV_CLUSTER: fixtures.CLUSTER_ID}
+            health = WorkerHealth()
+            with patch.dict(os.environ, {"TEST_LAB_TOKEN": "t" * 40, **gate}), redirect_stdout(io.StringIO()), \
+                    redirect_stderr(io.StringIO()), patch("runtime.worker_service.WorkerHealth", return_value=health), \
+                    patch("runtime.worker_service.client", wraps=worker_service.client) as made, \
+                    patch("runtime.worker_service.RemoteWorker", wraps=worker_service.RemoteWorker) as worker:
+                self.assertEqual(worker_service.main(["--config", str(config), "--once"]), 1)
+            self.assertEqual(made.call_args.kwargs["answered"], health.contacted)
+            self.assertEqual(worker.call_args.kwargs["renewal_interval"], worker_service.RENEWAL_SECONDS)
+            # Nothing listens on port 9: a failed exchange is never contact.
+            self.assertEqual(health.ready()[1]["contact_age_seconds"], None)
 
     def test_readiness_follows_the_clock_even_on_a_pass_that_only_sent_a_saved_result(self):
         with tempfile.TemporaryDirectory() as directory:

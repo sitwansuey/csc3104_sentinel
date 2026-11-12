@@ -32,6 +32,9 @@ SECRET_KEY = re.compile(r"(?:^|[_-])(?:tokens?|secrets?|password|passwd|api_?key
 DNS_NAME = re.compile(r"[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?")
 # The longest wait between polling passes after failures (P3.06; it was 60 s).
 BACKOFF_CAP_SECONDS = 15
+# The longest gap between lease renewals while a claimed request is processed
+# (runtime/remote_worker.py::Lease renews at this interval or faster).
+RENEWAL_SECONDS = 5
 
 
 def read_json(path):
@@ -49,10 +52,12 @@ def reader(path):
     return lambda _message: read_json(path)
 
 
-def client(config, clock=time.time, store=None):
+def client(config, clock=time.time, store=None, answered=None):
+    """A Coordinator client; answered (WorkerHealth.contacted) runs after each successful exchange."""
     context = ssl.create_default_context(cafile=config["ca"]) if config.get("ca") else None
     return WorkerClient(config["url"], config["identity"], credential(config["token_env"]),
-                        timeout=config.get("timeout", 15), tls_context=context, clock=clock, store=store)
+                        timeout=config.get("timeout", 15), tls_context=context, clock=clock, store=store,
+                        answered=answered)
 
 
 def backoff_seconds(poll_seconds, failures, random=random.random):
@@ -229,7 +234,7 @@ def planner_provider(config, lab=False):
         json.dumps({"component": "planner", "event": "progress", **update}), flush=True)), 2 * timeout + 30
 
 
-def adapter(config, directory, stack, store=None):
+def adapter(config, directory, stack, store=None, answered=None):
     role = config["role"]
     refuse_inline_secrets(config)
     lab = fault_points.bind(config)  # Raises when lab variables are set for a worker aimed elsewhere.
@@ -287,12 +292,12 @@ def adapter(config, directory, stack, store=None):
             live = replace(live, ledger=fault_points.CheckpointLedger(live.ledger),
                            cluster=fault_points.CheckpointCluster(live.cluster))
         if config.get("remote_dependencies", True):
-            connection = client(config, store=store)
+            connection = client(config, store=store, answered=answered)
             live.authorizer.dependency_reader = lambda p: connection.post("dependencies", {"proposal": p})["dependencies"]
         return ExecutorAdapter(live)
     authorizer = LiveGuardAuthorizer(**options, approval=None, clock=clock)
     if config.get("remote_dependencies", True):
-        connection = client(config, store=store)
+        connection = client(config, store=store, answered=answered)
         authorizer.dependency_reader = lambda p: connection.post("dependencies", {"proposal": p})["dependencies"]
     state_reader = ((lambda p: cluster.snapshot(p["target"])) if cluster is not None else
                     lambda p: read_deployment(p["target"], context=config["context"],
@@ -374,7 +379,8 @@ def main(argv=None):
     parser.add_argument("--poll-seconds", type=float, default=2)
     parser.add_argument("--health-port", type=int, help="Serve /healthz and /readyz on 127.0.0.1 at this port")
     parser.add_argument("--ready-seconds", type=float, default=60,
-                        help="/readyz fails when the last Coordinator answer is older than this")
+                        help="/readyz fails when the last successful Coordinator exchange (a claim, lease "
+                             f"renewal, result or clock measurement) is older than this; above {RENEWAL_SECONDS}")
     parser.add_argument("--live-seconds", type=float, default=900,
                         help="/healthz fails when the loop started no pass for this long; set it above the longest pass")
     parser.add_argument("--accept-store", action="store_true",
@@ -387,6 +393,10 @@ def main(argv=None):
         parser.error("Health port must be from 0 to 65535")
     if not math.isfinite(args.ready_seconds) or not 0 < args.ready_seconds <= 3600:
         parser.error("Readiness window must be positive and at most one hour")
+    if args.ready_seconds <= RENEWAL_SECONDS:
+        # Every successful exchange counts as contact, and during a long pass the lease
+        # renewals are the exchanges, so a shorter window would flap between renewals.
+        parser.error(f"Readiness window must be longer than the {RENEWAL_SECONDS} s lease renewal interval")
     if not math.isfinite(args.live_seconds) or not 0 < args.live_seconds <= 86400:
         parser.error("Liveness window must be positive and at most one day")
     stopping = threading.Event()
@@ -403,13 +413,13 @@ def main(argv=None):
         # measured offset (Cristian's algorithm) sees the skew it simulates.
         wall = fault_points.offset_seconds_clock(time.time) if fault_points.bind(config) else time.time
         watch = StoreWatch()  # Shared by every client of this worker.
-        connection = client(config, wall, watch)
+        connection = client(config, wall, watch, answered=health.contacted)
         directory = Path(config["state_directory"])
         directory.mkdir(parents=True, exist_ok=True)
         with ExitStack() as stack:
             if args.health_port is not None:
                 stack.enter_context(serve_health(health, args.health_port, stopping))
-            component = adapter(config, directory, stack, store=watch)
+            component = adapter(config, directory, stack, store=watch, answered=health.contacted)
             journal = WorkerJournal(directory / "transport.db")
             stack.callback(journal.close)
             # A component with its own prerequisite (the agent Planner's model) checks it just
@@ -425,6 +435,7 @@ def main(argv=None):
                     raise
                 health.prerequisites(True)
             worker = RemoteWorker(connection, journal, component, max_clock_skew=bound,
+                                  renewal_interval=RENEWAL_SECONDS,
                                   before_claim=before_claim if preflight is not None else None)
             health.configured()
             if threading.current_thread() is threading.main_thread():

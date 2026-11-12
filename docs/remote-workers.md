@@ -366,14 +366,48 @@ pass within `--live-seconds` (900 by default), so a loop stuck inside one pass
 turns unhealthy; set it above the longest pass you expect, such as a Planner's
 model call. `/readyz` answers 200 once
 the configuration was accepted, the worker's preflight passed (only the agent
-Planner has one, see [Agent mode](#agent-mode)), the Coordinator answered a
-polling pass within `--ready-seconds` (60 by default), when a skew bound is
-set the latest pass found the clock within it, and no store change is waiting
-for an operator. A 503 body adds a true boolean for each of the preflight,
-the clock and the store condition that fails: `"prerequisites_failed"` (the
-result of the last preflight that ran), `"clock_skew"` and `"store_changed"`;
-a stale Coordinator answer shows only in `contact_age_seconds`.
-The bodies hold booleans and ages in seconds, nothing else.
+Planner has one, see [Agent mode](#agent-mode)), the worker had a successful
+exchange with the Coordinator within `--ready-seconds` (60 by default), when a
+skew bound is set the latest pass found the clock within it, and no store
+change is waiting for an operator. A 503 body adds a true boolean for each of
+the preflight, the clock and the store condition that fails:
+`"prerequisites_failed"` (the result of the last preflight that ran),
+`"clock_skew"` and `"store_changed"`; a stale Coordinator answer shows only in
+`contact_age_seconds`. The bodies hold booleans and ages in seconds, nothing
+else.
+
+Contact is every request the Coordinator answers with 200: a claim, a result,
+a clock measurement and each lease renewal, which the worker sends at least
+every 5 s while it processes a claimed request
+(`runtime/worker_http.py::WorkerClient` calls
+`runtime/worker_health.py::WorkerHealth.contacted`). A refused request (an
+error status such as a lost lease), a timeout or an unreachable Coordinator
+never counts. So a Planner inside a model call longer than `--ready-seconds`
+stays ready while its renewals succeed, and turns not ready one window after
+they stop. `--ready-seconds` must be longer than the 5 s renewal interval and
+should be longer than `--poll-seconds` plus the request timeout (15 s), or an
+idle worker turns not ready between passes. The preflight, clock and store
+conditions are unchanged, and are still updated at the end of each pass
+only: a renewal that reveals a rolled-back store or a stepped clock during a
+long pass is recorded by the client and gates the next claim, but `/readyz`
+shows it only when that pass ends.
+
+The trade-off: `/readyz` no longer reports a worker whose passes keep failing
+in its own component, such as an Executor that cannot reach its cluster or a
+Planner whose model call crashes after its preflight passed. Its claim and
+the retry it posts after the failure are successful exchanges, so it stays
+ready; before, a pass that raised recorded no contact and the worker turned
+not ready after `--ready-seconds`. Such a worker shows in its `retry` and
+back-off log lines, not in `/readyz` or `/healthz` (its loop keeps starting
+passes). A Coordinator that is down or refusing the worker still turns it
+not ready one window later.
+
+Before this, only the end of a polling pass counted:
+in a live run on 12 Nov 2026 an agent Planner container was reported unhealthy
+by Docker twice during one 128 s planning pass while it was renewing its lease
+normally (`tests/test_remote_workers.py::RemoteWorkerTests.test_lease_renewals_keep_a_pass_longer_than_the_readiness_window_ready`
+and `test_a_pass_whose_renewals_fail_turns_not_ready_after_the_readiness_window`
+cover both cases offline; the fix has not run in a container yet).
 
 A Planner configuration may set `"provider": "deterministic"` with an optional
 `"attempt_lease_seconds"`, but only in a lab fault run (below). It plans with

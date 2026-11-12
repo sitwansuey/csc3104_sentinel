@@ -16,7 +16,7 @@ from runtime.approval_http import ApprovalClient
 from runtime.coordinator_server import servers
 from runtime.remote_adapters import ExecutorAdapter, GuardAdapter, PlannerAdapter, VerifierAdapter
 from runtime.remote_worker import RemoteIngress, RemoteWorker, WorkerJournal
-from runtime.worker_health import PreflightFailed
+from runtime.worker_health import PreflightFailed, WorkerHealth
 from runtime.worker_http import WorkerClient
 from runtime.worker_transport import ProtocolError, digest
 from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedger
@@ -465,6 +465,87 @@ class RemoteWorkerTests(unittest.TestCase):
         self.provider.side_effect = long_call
         self.assertEqual(self.worker("planner", self.planner).once()["status"], "accepted")
         self.assertEqual(self.provider.call_count, 1)
+
+    def readiness_during_a_long_pass(self, client, steps):
+        """Run one planner pass whose model call advances the probe clock 20 s per step; return /readyz each step."""
+        RemoteIngress(self.client("observer"))(self.incident)
+        seen = []
+
+        def long_call(context):
+            for _ in range(steps):
+                self.now[0] += 20
+                time.sleep(0.6)  # Several 0.1 s lease renewals in real time.
+                seen.append(self.health.ready())
+            return mock_provider(context)
+        self.provider.side_effect = long_call
+        return self.worker("planner", self.planner, client=client), seen
+
+    def probe(self):
+        self.now = [1000.0]
+        self.health = WorkerHealth(ready_seconds=30, clock=lambda: self.now[0])
+        self.health.configured()
+
+    def test_lease_renewals_keep_a_pass_longer_than_the_readiness_window_ready(self):
+        # Live, a working agent Planner went Docker-unhealthy twice in one 128 s pass: only
+        # the end of a pass counted as contact. Each successful renewal now counts.
+        self.probe()
+        client = WorkerClient(self.url, "planner", self.services["planner"][1], timeout=2,
+                              answered=self.health.contacted)
+        worker, seen = self.readiness_during_a_long_pass(client, 4)  # 80 s of probe time, window 30 s.
+        self.assertEqual(worker.once()["status"], "accepted")
+        self.assertEqual([status for status, _ in seen], [200, 200, 200, 200])
+        self.assertTrue(all(body["contact_age_seconds"] < 30 for _, body in seen), seen)
+
+    def test_a_pass_whose_renewals_fail_turns_not_ready_after_the_readiness_window(self):
+        self.probe()
+
+        class RefusedRenewals(WorkerClient):
+            renewals = 0
+
+            def post(self, operation, body):
+                if operation == "renew":
+                    self.renewals += 1
+                    if self.renewals > 1:  # The first renewal, on entering the lease, succeeds.
+                        body = dict(body, lease_token="x" * 40)  # The Coordinator answers, but refuses it.
+                return super().post(operation, body)
+        client = RefusedRenewals(self.url, "planner", self.services["planner"][1], timeout=2,
+                                 answered=self.health.contacted)
+        worker, seen = self.readiness_during_a_long_pass(client, 2)
+        with self.assertRaises(ProtocolError):  # The lost lease fails the pass.
+            worker.once()
+        self.assertGreater(client.renewals, 1)
+        self.assertEqual(seen[0], (200, {"ready": True, "contact_age_seconds": 20.0}))
+        self.assertEqual(seen[1], (503, {"ready": False, "contact_age_seconds": 40.0}))
+
+    def test_only_a_coordinator_answer_of_200_counts_as_contact(self):
+        answered = Mock()
+        client = WorkerClient(self.url, "planner", self.services["planner"][1], timeout=2, answered=answered)
+        self.assertIsNone(client.post("claim", {})["delivery"])
+        self.assertEqual(answered.call_count, 1)
+        with self.assertRaises(ProtocolError) as refused:  # Refused: answered, but not a successful exchange.
+            client.post("renew", {"delivery_id": "d", "lease_token": "x" * 40})
+        self.assertNotEqual(refused.exception.status, 200)
+        with self.assertRaises(OSError):  # Unreachable: nothing answered.
+            WorkerClient("http://127.0.0.1:9", "planner", "p" * 40, timeout=2, answered=answered).post("claim", {})
+        self.assertEqual(answered.call_count, 1)
+
+    def test_a_reply_that_is_not_a_200_json_object_is_not_contact(self):
+        answered = Mock()
+        client = WorkerClient("http://127.0.0.1:9", "planner", "p" * 40, timeout=2, answered=answered)
+
+        def reply(status, raw):
+            response = Mock(spec=["status", "read"], status=status)  # No headers: a minimal stand-in.
+            response.read.return_value = raw
+            return Mock(**{"getresponse.return_value": response})
+        for status, raw in ((200, b"not json"), (200, b"[1]"), (200, b"\xff"), (500, b"Internal error"),
+                            (503, b'{"error": "Coordinator unavailable"}')):
+            with self.subTest(status=status, raw=raw), self.assertRaises(ProtocolError), \
+                    patch("runtime.worker_http.HTTPConnection", return_value=reply(status, raw)):
+                client.post("claim", {})
+        self.assertEqual(answered.call_count, 0)
+        with patch("runtime.worker_http.HTTPConnection", return_value=reply(200, b"{}")):
+            client.post("claim", {})
+        self.assertEqual(answered.call_count, 1)
 
     def test_expired_saved_result_is_rebound_without_recalling_the_provider(self):
         RemoteIngress(self.client("observer"))(self.incident)

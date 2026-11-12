@@ -130,6 +130,21 @@ cluster, and checks invariants from their records and logs. The default subset
 takes about 90 s; set `SENTINEL_DISTRIBUTED_ALL=1` for every scenario. These are
 processes on one host, not separate machines; see the
 [harness guide](../experiments/distributed/README.md).
+`tests/test_kind_bundle.py` covers the harness's kind mode offline, with a
+fake lab Deployment: bundle preparation (the token only in the private
+kubeconfig, never in another file or the summary; every context but the
+allowlisted lab refused, `sentinel-lab` first; no bundle inside the
+repository), a fresh catalog fault and a verified baseline restore around every
+run of `--repeat` and of several scenarios, a restore attempt after any
+failure once the fault was written (a failed or timed-out `kubectl`, a fault
+that never shows) with an error that says whether the baseline is verified
+healthy or names the `kind_bundle restore` command, a restore that fails after
+a run still writing `summary.json` and stopping with exit 3, file mode
+unchanged, the 180 s kind-mode deadline and
+`--deadline`, duplicate incidents counted in `summary.json`, and the Observer's
+15 s failure window. None of it has run against the cluster; the
+[kind-mode recipe](../experiments/distributed/README.md#a-reproducible-kind-mode-run)
+is the live check.
 
 `tests/test_fencing.py` covers target-ownership epochs and the seal (P3.04).
 It stops one Executor at the `executor.before_patch` fault point after its
@@ -470,6 +485,7 @@ normal presentation run:
 | Observer deployed runtime | `scripts/validation/validate_observer_runtime.py` | Existing `sentinel-lab` (see below) |
 | Verifier connected telemetry/read-only permissions | `scripts/validation/test_verifier_connected_live.py --setup` | Existing `sentinel-lab` (see below) |
 | Executor wedge (rv-race, delete-recreate) | `scripts/validation/test_executor_wedge_live.py --context <ctx> --scenario <name>` | Existing `kind-sentinel-boutique-connected` or `kind-sentinel-wedge`; own namespace, deleted on exit; never `sentinel-lab` |
+| Multi-process harness, kind mode (P3.01, P3.04; the committed tools not yet run live) | `python -m experiments.distributed.kind_bundle prepare --context kind-sentinel-boutique-connected --storefront <port-forward>`, then `experiments.distributed.run_scenarios --mode kind` ([recipe](../experiments/distributed/README.md#a-reproducible-kind-mode-run)) | Existing `kind-sentinel-boutique-connected` only; injects and restores the catalog fault on its target, mints one short-lived `sentinel-executor` token into a temporary bundle; never `sentinel-lab` |
 | Executor admission policy (P3.05; not yet run) | `scripts/validation/test_executor_admission_live.py --context kind-sentinel-boutique-connected` | Existing `kind-sentinel-boutique-connected` only; own namespace, policy and binding, deleted on exit; never `sentinel-lab` |
 
 The Observer runtime and Verifier checks never create a cluster. They expect the `sentinel-lab` kind
