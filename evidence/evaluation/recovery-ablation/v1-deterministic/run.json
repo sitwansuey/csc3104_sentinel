@@ -1,7 +1,7 @@
 {
   "identity": {
     "config": {},
-    "corpus_manifest_sha256": "48e3ef3e96b2f848754eddfcf85b677e0c021da6d500be6d20e08dd4c693f4f0",
+    "corpus_manifest_sha256": "9c624b0af67260e199bdde1975b0dae9446f73ea5af492a029bd3dd9501c6250",
     "diagnosis": "recorded",
     "levels": [
       "V0",
@@ -22,7 +22,7 @@
       "agent/agent.py": "e037b4ac4a030724f711ae056475c4162baf278890dbac2b13a869cffff9ab63",
       "agent/llm.py": "f9bb198ea7f93522b0dfbffb4a1f600636631f8d4e2b494bb1d998c4e9491a71",
       "agent/untrusted.py": "75c32669ba8179e61efd19692a19de48db9dccdc77078a62be154c379b941620",
-      "experiments/analysis/replay.py": "89f8d3305e7edcf6dced8863359c2e51f52e75b9e2c4767e4b271a12f1644d63",
+      "experiments/analysis/replay.py": "74da72cb02c212b5c5a6735bb696858ed773f3698b45da3f7002a68cdd69075e",
       "experiments/analysis/replay_corpus.py": "762e993460aed58816a13bf55b82eca37cee790c1cd37c501edacedd0a11f496",
       "services/guard/core.py": "14a71c052af80a5fdfd3ea352f60eee5ed8c739a4e7ec805894f9b8785d81265",
       "services/guard/decisions.py": "3321469d94dc5c17bffccce650034a26dc57c8653daeeaeab158471000e8c84b",

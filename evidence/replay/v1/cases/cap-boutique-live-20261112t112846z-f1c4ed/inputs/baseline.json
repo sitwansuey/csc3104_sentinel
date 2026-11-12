@@ -1,0 +1,83 @@
+{
+  "baseline_id": "BASE-LIVE-a3097e39fbd5",
+  "health_evidence": {
+    "evidence_id": "HEALTH-REPLAY-3e58e48a634d523f",
+    "source": "sentinel-boutique-connected-checkout",
+    "status": "HEALTHY",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "cartservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+    },
+    "template_sha256": "343725f2a90bfed5b4d55e63500bb4ba56d7d17a220cf14f06d8c79de072aea5",
+    "window_end": "2026-11-12T11:30:29.489618Z",
+    "window_start": "2026-11-12T11:30:09.489618Z"
+  },
+  "healthy_observed_at": "2026-11-12T11:30:29.489618Z",
+  "pod_template": {
+    "metadata": {
+      "labels": {
+        "app": "cartservice"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "env": [
+            {
+              "name": "REDIS_ADDR",
+              "value": "redis-cart:6379"
+            }
+          ],
+          "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e",
+          "imagePullPolicy": "Never",
+          "name": "server",
+          "ports": [
+            {
+              "containerPort": 7070,
+              "protocol": "TCP"
+            }
+          ],
+          "resources": {
+            "limits": {
+              "cpu": "500m",
+              "memory": "128Mi"
+            },
+            "requests": {
+              "cpu": "200m",
+              "memory": "64Mi"
+            }
+          },
+          "securityContext": {
+            "allowPrivilegeEscalation": false,
+            "capabilities": {
+              "drop": [
+                "ALL"
+              ]
+            },
+            "privileged": false,
+            "readOnlyRootFilesystem": true
+          }
+        }
+      ],
+      "securityContext": {
+        "fsGroup": 1000,
+        "runAsNonRoot": true,
+        "runAsUser": 1000
+      },
+      "serviceAccountName": "cartservice",
+      "terminationGracePeriodSeconds": 5
+    }
+  },
+  "reference_versions": [],
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "cartservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+  },
+  "template_sha256": "343725f2a90bfed5b4d55e63500bb4ba56d7d17a220cf14f06d8c79de072aea5"
+}

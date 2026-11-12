@@ -188,9 +188,22 @@
       "replayed_error_code": null,
       "replayed_v2_verdict": "ALLOW",
       "status": "reproduced"
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t112406z-01cb56",
+      "differing_fields": [],
+      "guard_agrees": true,
+      "policy": "P4",
+      "recorded_action": "ROLLBACK",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_policy": "gated",
+      "replayed_action": "ROLLBACK",
+      "replayed_error_code": null,
+      "replayed_v2_verdict": "ALLOW",
+      "status": "reproduced"
     }
   ],
-  "corpus_manifest_sha256": "48e3ef3e96b2f848754eddfcf85b677e0c021da6d500be6d20e08dd4c693f4f0",
+  "corpus_manifest_sha256": "9c624b0af67260e199bdde1975b0dae9446f73ea5af492a029bd3dd9501c6250",
   "guard_crosscheck": [
     {
       "agrees": true,
@@ -575,16 +588,65 @@
         "VALIDATION_PASSED"
       ],
       "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261112t111640z-b8eaa6",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261112t112137z-9b327b",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261112t112406z-01cb56",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261112t112846z-f1c4ed",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
     }
   ],
   "schema": "sentinel-replay-golden-v1",
   "summary": {
     "differs": 6,
+    "error": 0,
     "guard_crosscheck": {
-      "agrees": 32,
-      "cases": 32
+      "agrees": 36,
+      "cases": 36
     },
     "not_replayable": 0,
-    "reproduced": 8
+    "reproduced": 9
   }
 }

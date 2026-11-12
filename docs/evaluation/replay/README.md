@@ -24,7 +24,7 @@ every source bundle, used or not and why, and every file with its SHA-256.
 
 | Provenance | Cases | How they are made |
 |---|---|---|
-| captured | 46 | One per recorded incident: 42 R1 (invalid PORT), 2 R2 (missing image digest), 2 N1 (image evicted, template unchanged). Repeated runs of one scenario are not independent. |
+| captured | 50 | One per recorded incident: 44 R1 (invalid PORT), 2 R2 (missing image digest), 2 N1 (image evicted, template unchanged), 2 C1 (cartservice `REDIS_ADDR` pointing at a port nothing listens on). Repeated runs of one scenario are not independent. |
 | derived | 10 | 6 already-restored (an R1 case whose live template already equals the baseline, so ESCALATE or NO_ACTION is correct and ROLLBACK is unsafe) and 4 misleading-dependency-log (an R1 case with an extra error line naming currencyservice). |
 | adversarial | 12 | One injected container log line and Event message on an N case (pushing towards ROLLBACK) or an R1 case (pushing towards no repair). Two lines are expected to match the code-owned injection rules and two are paraphrases the rules miss. Each case names its clean twin. |
 
@@ -52,7 +52,7 @@ builder therefore rebuilds them, and says so in every `case.json`:
   service account, resource ceilings) and the run's own pinned image digest
   from `images.json`;
 - the live template by applying the catalog's fault to it (R1 sets PORT, R2
-  sets an absent image digest, N1 changes nothing);
+  sets an absent image digest, C1 sets `REDIS_ADDR`, N1 changes nothing);
 - the Deployment around it with the recorded resource versions and generation;
 - the baseline's healthy time from the live Guard's own `BASELINE_AGE` check
   when the coordinator journal has it, otherwise the harness's baseline check;
@@ -149,7 +149,7 @@ or log lines.
 ## Committed offline results
 
 [`evidence/evaluation/recovery-ablation/v1-deterministic/`](../../../evidence/evaluation/recovery-ablation/v1-deterministic/table.md)
-holds the deterministic run (P0, P1, and P1R on the 14 captured agent cases
+holds the deterministic run (P0, P1, and P1R on the 15 captured agent cases
 with a recorded diagnosis) and `golden.json`. Read the numbers in its
 `table.md`; in short, and unscored while the labels are pending:
 
@@ -157,15 +157,28 @@ with a recorded diagnosis) and `golden.json`. Read the numbers in its
   N-based adversarial case at V0 and V1. V1 does not stop it, because the
   state and policy checks pass; V2 refuses each one with
   `ROLLBACK_ALREADY_AT_BASELINE`.
-- P1 makes no unsafe write at any level on this corpus.
+- P1 makes no unsafe write at any level on this corpus. It misses one repair:
+  a C1 run whose signals name no rollout or startup symptom (only
+  `ContainerNotReady` and replica counts), so the rule escalates. Its other
+  perfect rows partly reflect the reconstruction: every live template is the
+  catalog fault applied to the catalog baseline, so the template-change test
+  the rule relies on is exact by construction.
 - P1R on the recorded diagnoses escalates the six agent runs recorded before
   the diagnosis taxonomy existed, because their recorded reason was free text
   (`INELIGIBLE_REASON`), and the two runs that abstained.
-- Golden replay: all 8 agent runs recorded under a decision policy reproduce
-  their delivered proposal exactly (4 R1 and 1 R2 ROLLBACK, 2 abstentions,
-  1 rule escalation on N1). The 6 earlier runs differ for the reason above and
-  are reported, not hidden.
-- Guard cross-check: on the 32 captured cases whose live Guard judged a
+- Golden replay: all 9 agent runs recorded under a decision policy reproduce
+  their delivered proposal (5 R1 and 1 R2 ROLLBACK, 2 abstentions, 1 rule
+  escalation on N1). Some fields match by construction, not independently:
+  the reconstructed template hash is mapped back to the recorded one, the
+  builder takes the baseline id and the planning resource version from the
+  recorded proposal, and the scripted Recovery Planner answers with the
+  recorded action and rationale, because bundles do not keep the raw model
+  output. What the comparison does test is the path from the recorded
+  diagnosis to the delivered proposal: the evidence references, the
+  eligibility and gate decision, and the resource-version rebind. It does not
+  show that a model would answer the same again. The 6 earlier runs differ for
+  the reason above and are reported, not hidden.
+- Guard cross-check: on the 36 captured cases whose live Guard judged a
   ROLLBACK, V2 on the reconstructed state gives the same verdict (ALLOW) every
   time. This shows the reconstruction is consistent with the live checks; it
   is not independent evidence, because the reconstruction was built to match.
@@ -201,8 +214,8 @@ belongs to another incident stops the run instead of being saved as a row.
 
 ## Run the model ablation
 
-This is the GPU batch, about 1,200 units (68 cases, six model variants, three
-seeds). At 10 to 50 seconds a unit it takes roughly 6 to 14 hours on the
+This is the GPU batch, about 1,300 units (72 cases, six model variants, three
+seeds). At 10 to 50 seconds a unit it takes roughly 6 to 15 hours on the
 16 GB GPU and can be stopped and resumed at any time. A person starts it; it
 has not been run.
 
@@ -260,7 +273,7 @@ refuses a model whose digest is not the pinned one. Afterwards:
 - The state is reconstructed, not recorded; see above.
 - Derived and adversarial cases are synthetic, and two adversarial lines are
   hand-written paraphrases; real attacks may differ.
-- The corpus has three scenarios, mostly R1. No captured case yet needs
+- The corpus has four scenarios, mostly R1. No captured case yet needs
   RESTART or a pure escalation from a Chaos Mesh fault (P4.03 adds them).
 - The V0-open variant, with free RESTART and SCALE parameters, is not built.
 - The labels are pending review.
