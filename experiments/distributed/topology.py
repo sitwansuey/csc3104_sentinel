@@ -450,8 +450,10 @@ class Topology:
 
         Each spec change raises metadata.generation by one, so the delta since
         start counts writes; the sentinel.io/execution annotation names the
-        action of the latest. Any other writer to the Deployment during the run
-        would be counted too, so nothing else may change it.
+        action of the latest. A Deployment also raises it for an annotation-only
+        change, so an Executor fence is counted as a write too. Any other writer
+        to the Deployment during the run would be counted too, so nothing else
+        may change it.
         """
         from services.executor.core import ACTION_ANNOTATION
         deployment = self.kind_deployment(runner)

@@ -148,9 +148,11 @@ time, so with an old baseline a genuine recent change is still refused
 (`CHANGE_NOT_RECENT`); the Deployment's own rollout facts are recorded but the
 rule does not use them. The Observer gives a container log line the reason
 `StartupError` when the line contains the word startup, so a log line can still
-supply the startup symptom through that reason. The remote Planner worker and
-provider mode do not use this context. The live harness checks the decision
-settings and the reviewed topology before any fault is injected.
+supply the startup symptom through that reason. Provider mode and the remote
+Planner worker's single-prompt mode do not use this context; the remote Planner
+worker's agent mode plans with the same `AgentPlanner`, so it does, offline only
+so far. The live harness checks the decision settings and the reviewed topology
+before any fault is injected.
 
 ## Telemetry volume and planning feedback
 

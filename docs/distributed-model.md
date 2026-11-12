@@ -421,7 +421,7 @@ mode on one Windows host; neither has run in kind mode.
 | --- | --- |
 | P2.06 | Done: the fenced abort ran live in the wedge harness `admission-deny` at 4139385 and 5409092 (`C-EXECUTOR-WEDGE-FENCE`); fencing stays off by default |
 | P3.02 | A trace of one incident from a live multi-process run; trace context across outbox rows, deliveries and worker requests, and the offline viewer, are in the code and tested offline ([traces](observability.md#traces)) |
-| P3.01 | Done in file mode (above). Left: a kind-mode run against the connected lab and committed evidence bundles |
+| P3.01 | Done in file mode (above). Left: a kind-mode run against the connected lab and committed evidence bundles. Kind mode counts template writes from the `metadata.generation` delta, which an Executor fence also raises (`C-EXECUTOR-WEDGE-FENCE`), so a scenario that fences would show an extra write until that count tells fences apart |
 | P3.03 | Done in the code above. Left: S7 in kind mode, and a real clock offset per Pod (Chaos Mesh TimeChaos, P4.01) instead of the gated test offset. With operator approval required, an Executor whose clock is 5 min off cannot reach RECOVERED: its own Guard re-check refuses the Coordinator-stamped approval. So P4.01 should expect what S7 and S7b show (FAILED with no write without a bound; with a bound, that Executor stops claiming and an in-bound peer recovers the action), unless the owners change the re-check |
 | P3.04 | Per-target ownership epochs and a seal command that fences abandoned Executor writes |
 | P3.05 | An admission policy limiting which fields the Executor identity may change |

@@ -125,7 +125,10 @@ refuses every other context, the original lab cluster included. It needs
 for the target workload. Workers then use the real kubectl readers and the
 restricted Executor adapter, the Observer is the real CLI, and template writes
 are counted from the Deployment's `metadata.generation` delta and its
-`sentinel.io/execution` annotation, independently of Sentinel's records. The
+`sentinel.io/execution` annotation, independently of Sentinel's records. A
+Deployment also raises `metadata.generation` for an annotation-only change, as
+the live fence runs showed (`C-EXECUTOR-WEDGE-FENCE`), so an Executor fence
+(the harness sets `fence_after_seconds`) would be counted as a write here. The
 harness does not inject the workload fault or prepare the bundle; nothing else
 may write to the Deployment during a run. This mode has not been run against
 the cluster, so no claim rests on it.
