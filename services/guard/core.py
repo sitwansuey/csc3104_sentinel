@@ -62,10 +62,17 @@ def _validate_policy(policy):
         raise GuardInputError("policy.require_operator_approval: expected a boolean")
     if policy.get("unknown_dependency_result") not in ("REJECT", "ESCALATE"):
         raise GuardInputError("policy.unknown_dependency_result: expected REJECT or ESCALATE")
-    for key in ("max_state_age_seconds", "max_dependency_age_seconds"):
+    for key in ("max_state_age_seconds", "max_dependency_age_seconds", "max_clock_skew_seconds"):
         if key in policy and (type(policy[key]) is not int or policy[key] < 0):
             raise GuardInputError(f"policy.{key}: expected a nonnegative integer")
     return None  # Extended/resource policy validation is owned by guard_decisions.
+
+
+def clock_skew(policy):
+    """The skew bound in seconds between this check's clock and the clock that
+    stamped evidence from another process (approvals, dependency findings).
+    0 (the default) compares the timestamps as they are."""
+    return timedelta(seconds=policy.get("max_clock_skew_seconds", 0))
 
 
 def _live_snapshot(live_state):
@@ -145,9 +152,13 @@ def _approval_reasons(proposal, policy, approval, checked_at):
         or approval["policy_version"] != policy["policy_version"]
     ):
         return [], ["APPROVAL_MISMATCH"]
-    if approved_at > checked_at:
+    # The Coordinator stamped the approval with its own clock. Within the skew
+    # bound it may look slightly future-dated; expiry is brought forward by the
+    # bound, so skew can only make an approval expire early, never late.
+    skew = clock_skew(policy)
+    if approved_at > checked_at + skew:
         return [], ["APPROVAL_FROM_FUTURE"]
-    if expires_at is not None and checked_at >= expires_at:
+    if expires_at is not None and checked_at + skew >= expires_at:
         return [], ["APPROVAL_EXPIRED"]
     if approval["decision"] == "REJECTED":
         return ["OPERATOR_REJECTED"], []
@@ -230,10 +241,15 @@ def _evaluate_core(proposal: dict, live_state: dict, policy: dict,
         rejected.append("DEPENDENCY_BLOCKED")
     if dependencies["status"] == "UNKNOWN" or dependencies["unknowns"]:
         dependency_unknowns.append("DEPENDENCY_UNKNOWN")
+    # The Verifier stamped the finding with its clock. Within the skew bound it
+    # may look slightly future-dated; its age counts the bound as well, so
+    # skew can only make evidence look older (fail-safe).
     dependency_at = _utc_timestamp(dependencies["checked_at"], "dependencies.checked_at")
-    if dependency_at > checked_at:
+    skew = clock_skew(policy)
+    if dependency_at > checked_at + skew:
         dependency_unknowns.append("DEPENDENCY_RESULT_FROM_FUTURE")
-    elif "max_dependency_age_seconds" in policy and (checked_at - dependency_at).total_seconds() > policy["max_dependency_age_seconds"]:
+    elif "max_dependency_age_seconds" in policy and (
+            checked_at + skew - dependency_at).total_seconds() > policy["max_dependency_age_seconds"]:
         dependency_unknowns.append("STALE_DEPENDENCY_RESULT")
     if policy["unknown_dependency_result"] == "REJECT":
         rejected.extend(dependency_unknowns)

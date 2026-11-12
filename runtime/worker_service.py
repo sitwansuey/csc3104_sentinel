@@ -9,6 +9,7 @@ from pathlib import Path
 import signal
 import ssl
 import threading
+import time
 
 from runtime import fault_points
 from runtime.remote_adapters import (
@@ -37,10 +38,20 @@ def reader(path):
     return lambda _message: read_json(path)
 
 
-def client(config):
+def client(config, clock=time.time):
     context = ssl.create_default_context(cafile=config["ca"]) if config.get("ca") else None
     return WorkerClient(config["url"], config["identity"], credential(config["token_env"]),
-                        timeout=config.get("timeout", 15), tls_context=context)
+                        timeout=config.get("timeout", 15), tls_context=context, clock=clock)
+
+
+def skew_bound(config):
+    """The configured clock skew bound in seconds, or None to measure without enforcing."""
+    value = config.get("max_clock_skew_seconds")
+    if value is None:
+        return None
+    if type(value) not in (int, float) or not math.isfinite(value) or not 0 < value <= 3600:
+        raise ValueError("The clock skew bound must be positive and at most one hour")
+    return value
 
 
 def lab_cluster(config, stack, lab):
@@ -133,17 +144,16 @@ def adapter(config, directory, stack):
         runner = {"runner": cluster.kubectl(config["identity"])} if cluster is not None else {}
         live = build_adapters(**options, allowed_targets=config["allowed_targets"],
                               ledger=directory / "executor.db", locks=directory / "locks",
-                              fence_after_seconds=config.get("fence_after_seconds"), **runner)
+                              fence_after_seconds=config.get("fence_after_seconds"), clock=clock, **runner)
         stack.callback(live.ledger.close)
-        if lab:  # Bound lab fault runs only: named stop points and the test clock offset.
-            live = replace(live, clock=fault_points.offset_clock(live.clock),
-                           ledger=fault_points.CheckpointLedger(live.ledger),
+        if lab:  # Bound lab fault runs only: named stop points. clock above carries the test offset.
+            live = replace(live, ledger=fault_points.CheckpointLedger(live.ledger),
                            cluster=fault_points.CheckpointCluster(live.cluster))
         if config.get("remote_dependencies", True):
             connection = client(config)
             live.authorizer.dependency_reader = lambda p: connection.post("dependencies", {"proposal": p})["dependencies"]
         return ExecutorAdapter(live)
-    authorizer = LiveGuardAuthorizer(**options, approval=None)
+    authorizer = LiveGuardAuthorizer(**options, approval=None, clock=clock)
     if config.get("remote_dependencies", True):
         connection = client(config)
         authorizer.dependency_reader = lambda p: connection.post("dependencies", {"proposal": p})["dependencies"]
@@ -188,7 +198,11 @@ def main(argv=None):
     previous = {}
     try:
         config = read_json(args.config)
-        connection = client(config)
+        bound = skew_bound(config)
+        # In a bound lab run the test offset shifts this wall clock too, so the
+        # measured offset (Cristian's algorithm) sees the skew it simulates.
+        wall = fault_points.offset_seconds_clock(time.time) if fault_points.bind(config) else time.time
+        connection = client(config, wall)
         directory = Path(config["state_directory"])
         directory.mkdir(parents=True, exist_ok=True)
         with ExitStack() as stack:
@@ -197,7 +211,7 @@ def main(argv=None):
             component = adapter(config, directory, stack)
             journal = WorkerJournal(directory / "transport.db")
             stack.callback(journal.close)
-            worker = RemoteWorker(connection, journal, component)
+            worker = RemoteWorker(connection, journal, component, max_clock_skew=bound)
             health.configured()
             if threading.current_thread() is threading.main_thread():
                 for sig in (signal.SIGINT, signal.SIGTERM):
@@ -210,6 +224,7 @@ def main(argv=None):
                 try:
                     status = worker.once()
                     health.contacted()  # once() returned, so the Coordinator answered this pass.
+                    health.clock_checked(worker.clock_ready())  # Out of bound: not ready, no claims.
                     failures = 0
                 except Exception as caught:  # noqa: BLE001 - a failed pass is retried with backoff; report() logs it
                     error = caught

@@ -244,6 +244,9 @@ def collect(topology, *, terminal_in_time, cluster_writes=None):
         "message_digests": [digest(json.loads(row["payload"]))
                             for row in _rows(coordinator, "SELECT payload FROM messages")],
         "revocations": [json.loads(row["record"]) for row in _rows(coordinator, "SELECT record FROM approval_revocations")],
+        # Each worker's offset from the Coordinator's clock as it measured and reported it.
+        "worker_clocks": _rows(coordinator, "SELECT identity, offset, uncertainty, max_abs_offset, reports "
+                                            "FROM worker_clocks ORDER BY identity"),
         "cluster_writes": cluster_writes if cluster_writes is not None else _rows(
             topology.run_dir / "cluster.db", "SELECT * FROM cluster_requests WHERE kind='write' AND state='committed'"),
         "executor_ledgers": {}, "worker_results": [], "observer_outbox": [],

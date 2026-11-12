@@ -24,11 +24,11 @@ the fix and regenerate.
 <!-- BEGIN GENERATED:limitations -->
 | Entry | Kind | Status | Title | Planned | Issues |
 | --- | --- | --- | --- | --- | --- |
-| [L-CLOCK-ORDERING](#l-clock-ordering) | defect | open | Lifecycle ordering compares wall-clock timestamps written by different components | P3.03 | #18, #63 |
 | [L-OBSERVER-ZERO-REPLICAS](#l-observer-zero-replicas) | defect | open | A Deployment scaled to zero replicas is treated as healthy | P5.07 | none |
 | [L-ORPHANED-EXECUTOR-LEDGER](#l-orphaned-executor-ledger) | defect | open | A crashed Executor whose peer finished the action keeps it in doubt and refuses that workload | P3.04 | #18, #58 |
 | [L-EXEC-WEDGE](#l-exec-wedge) | defect | mitigated | A write rejected with its resource version unchanged waits in NEEDS_RECONCILIATION unless fencing is on | P2.06, P5.08 | #61 |
 | [L-EXEC-REDELIVERY](#l-exec-redelivery) | defect | mitigated | A replacement Executor without the ledger row reported CONFLICT for a write that was applied | P3.01, P4.01 | #18, #58 |
+| [L-CLOCK-ORDERING](#l-clock-ordering) | defect | mitigated | Lifecycle ordering compared wall-clock timestamps written by different components | P3.03, P4.01 | #18, #63 |
 | [L-AGENT-JOURNAL](#l-agent-journal) | defect | mitigated | Agent mode bypasses the durable Planner journal | P2.01 | #14, #54 |
 | [L-AGENT-APPROVAL](#l-agent-approval) | defect | mitigated | No live run yet shows a person approving through the authenticated API | P2.02, P2.03 | #10 |
 | [L-RAW-LOGS-PROMPT](#l-raw-logs-prompt) | defect | mitigated | Sentinel's planning prompts carry log text only cleaned and quoted, and the injection gate is a pattern list no live run has exercised | P2.04, P2.05, P4.04 | #51, #56 |
@@ -59,14 +59,6 @@ the fix and regenerate.
 | [L-PACKAGED-UTF8](#l-packaged-utf8) | defect | fixed | The packaged runner failed on a UTF-8 console | none | none |
 | [L-KUBECTL-CONTEXT](#l-kubectl-context) | defect | fixed | Lab scripts left the user's kubectl context changed or unset | none | none |
 
-### L-CLOCK-ORDERING
-
-**Lifecycle ordering compares wall-clock timestamps written by different components.** Defect, open; recorded 2026-11-12. Planned: P3.03. Issues: #18, #63.
-
-- Impact: The Coordinator refuses a result whose timestamp is not later than the evidence it follows. If the Executor's clock is behind the Guard's, an applied execution result is refused with HTTP 400, and the remote worker retries it forever because it gives up only on 404 or 409. Lease renewal also mixes the Coordinator's and the worker's clocks. Reproduced across separate processes on one host by scenario S7 of the P3.01 harness, with both Executors on a gated test clock 300 s behind: the template write landed, its result was refused with HTTP 400 until the 18 s deadline, and the incident stayed READY. The CI test asserts this wedge, so it fails once P3.03 fixes it.
-- Workaround: Run every component on one host, so they share one clock. All committed runs did.
-- Evidence: `services/coordinator/core.py:154-155`; `services/coordinator/core.py:174-175`; `runtime/worker_http.py:180`; `tests/test_distributed_processes.py:61`; `runtime/remote_worker.py:139`; `runtime/remote_worker.py:73`.
-
 ### L-OBSERVER-ZERO-REPLICAS
 
 **A Deployment scaled to zero replicas is treated as healthy.** Defect, open; recorded 2026-11-12. Planned: P5.07. Issues: none.
@@ -81,7 +73,7 @@ the fix and regenerate.
 
 - Impact: Found by the P3.01 multi-process harness (S1b and S1c, separate processes on one host). An Executor killed after journalling its write intent, or after its patch, leaves the action WRITE_STARTED in its own ledger. When the other Executor takes the command and finishes the action, no command for it ever reaches the crashed host again, and the remote worker runs no restart scan of its ledger, so after a restart the row stays in doubt. From the code, not from a scenario, that host would then refuse every later action on the same workload with TargetBusy until someone reconciles the row (services/executor/store.py prepare(), cited below); no scenario runs a second action to show it. No extra write happens: each run kept one template write. When the crashed host is the only one to come back (S1e), it reconciles and fences its own write as designed.
 - Workaround: After an Executor crash, reconcile its in-doubt rows with runtime/live_executor.py --reconcile on that host, or run one Executor per workload.
-- Evidence: `services/executor/store.py:176`; `tests/test_distributed_processes.py:37`.
+- Evidence: `services/executor/store.py:176`; `tests/test_distributed_processes.py:38`.
 
 ### L-EXEC-WEDGE
 
@@ -97,7 +89,15 @@ the fix and regenerate.
 
 - Impact: Fixed in code; live verification is left to P3.01 and P4.01. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host given a reconcile command with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it never starts that write. An execute command on a fresh host can still write, and the resourceVersion test in the patch lets at most one write for the action commit. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. The P3.01 multi-process harness runs two Executor processes with separate ledgers and locks on one host: in S1c a peer adopted a write committed by a crashed Executor and in S2 a stalled Executor adopted its peer's write, each with one template write. That is still one machine and a file-backed test cluster; no live run has used two Executors.
 - Workaround: Run one Executor with one ledger directory, as every documented run does, until a multi-host run verifies this.
-- Evidence: `services/executor/core.py:420`; `services/executor/core.py:364`; `tests/test_executor_reconciliation_table.py:420`; `tests/test_executor_reconciliation_table.py:475`; `services/executor/store.py:3`; `tests/test_distributed_processes.py:42`.
+- Evidence: `services/executor/core.py:420`; `services/executor/core.py:364`; `tests/test_executor_reconciliation_table.py:420`; `tests/test_executor_reconciliation_table.py:475`; `services/executor/store.py:3`; `tests/test_distributed_processes.py:43`.
+
+### L-CLOCK-ORDERING
+
+**Lifecycle ordering compared wall-clock timestamps written by different components.** Defect, mitigated; recorded 2026-11-12. Planned: P3.03, P4.01. Issues: #18, #63.
+
+- Impact: Fixed in code (P3.03); not run across machines or in kind. Worker results are now ordered by the Coordinator request they answer, not by the producers' clocks, so the wedge is gone: an answer to a superseded request gets HTTP 409 and is released, never resent for ever. Scenario S7 (both Executors on a gated test clock 300 s behind, separate processes on one Windows host, file mode, operator approval required) showed the wedge before the change (result refused with HTTP 400, incident READY). After it the result is accepted, but the Executor's own Guard re-check, which reads the same shifted clock, sees the Coordinator-stamped approval 300 s in its future and refuses: the action ends FAILED with no write and every invariant holding in 3 of 3 runs, with each Executor measuring an offset of 300.005 to 300.012 s. An Executor host whose whole clock is off by more than the bound therefore cannot complete an approved action; an in-bound peer can (S7b, 3 of 3 runs). Lease renewal now uses the lease length the Coordinator returns. Clocks still matter for freshness and expiry: the Guard tolerates a configured bound (max_clock_skew_seconds, off by default) and counts it against age and expiry; the Executor's local re-check and the Verifier's start check still compare their clock with timestamps from other processes, so skew beyond the bound ends an action FAILED or, by reading the code (no test), delays verification instead of wedging it. Workers measure their offset from the Coordinator (Cristian's algorithm) and, with a bound set, stop claiming and turn unready outside it. After a clock step this holds from the first exchange after the step: a request already claimed runs with the stepped clock until its next exchange, and a step smaller than the measurement uncertainty can go unseen. The offset is self-reported, so this guards against honest misconfiguration, not a dishonest worker. Messages accepted before store migration 4 have no high-water mark, so for an action in flight at the upgrade only the newest-request rule orders its results. Skew has only been simulated on one host, never measured between machines or in kind.
+- Workaround: Keep host clocks synchronised (NTP), and set max_clock_skew_seconds for the workers and the Guard policy and --max-clock-skew-seconds for the Coordinator, so a host past the bound stops claiming work.
+- Evidence: `services/coordinator/core.py:118`; `services/coordinator/core.py:193`; `runtime/worker_transport.py:253`; `runtime/remote_worker.py:89`; `services/guard/core.py:159`; `runtime/worker_http.py:288`; `runtime/live_executor.py:107`; `services/verifier/store.py:78`; `tests/test_distributed_processes.py:62`; `tests/test_clock_skew.py:675`.
 
 ### L-AGENT-JOURNAL
 
@@ -137,7 +137,7 @@ the fix and regenerate.
 
 - Impact: Fixed in code for the networked processes: shared/log.py writes allowlisted JSON lines; the Coordinator server, worker HTTP, approval HTTP and worker service entrypoints configure it; every POST request gets one http.access line, or an auth.denied line for a 401 or 403, while GET /healthz, GET /readyz and GET requests for unknown paths (404) get none; lifecycle transitions are journalled; and every broad except handler re-raises or logs the error class, which CI enforces. Not covered: the live harnesses (the Executor wedge harness included), agent mode and the in-process pipelines that every recorded run used never configure logging, so their log events are dropped. Exception messages are never logged, only class names, by design. Since P3.02, W3C trace context follows an incident through outbox rows, claimed deliveries and worker HTTP requests, and spans are written as span.start and span.end log lines; approvals and the in-process pipelines add no spans of their own, there is no OpenTelemetry export, and no live run has produced a trace. No live run has collected logs yet.
 - Workaround: For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json and print the traces with scripts/trace_view.py.
-- Evidence: `shared/log.py:236`; `runtime/worker_http.py:294`; `shared/tracing.py:123`; `services/executor/core.py:240-241`; `docs/observability.md`; `tests/test_except_audit.py:39`.
+- Evidence: `shared/log.py:236`; `runtime/worker_http.py:391`; `shared/tracing.py:123`; `services/executor/core.py:240-241`; `docs/observability.md`; `tests/test_except_audit.py:39`.
 
 ### L-SINGLE-COORDINATOR
 
@@ -145,7 +145,7 @@ the fix and regenerate.
 
 - Impact: No replica takes over if the Coordinator host or its volume is lost; work waits until it returns. Workers back off for up to 60 s, which lengthens recovery after a restart.
 - Workaround: Restart the Coordinator on the same volume; saved requests replay from SQLite.
-- Evidence: `deploy/sentinel/coordinator.yaml:62-64`; `services/coordinator/store.py:139`; `runtime/worker_transport.py:104`.
+- Evidence: `deploy/sentinel/coordinator.yaml:62-64`; `services/coordinator/store.py:168`; `runtime/worker_transport.py:150`.
 
 ### L-HOST-LOCAL-EXECUTOR
 
@@ -241,7 +241,7 @@ the fix and regenerate.
 
 - Impact: Live verification pending. Every live recovery so far is an invalid shipping PORT where ROLLBACK is always right, so no result yet shows a choice between actions. The scenario catalog (experiments/boutique/catalog.json) now adds two agent-mode faults on the connected lab with pre-registered labels: R2, a rollout to an image digest that is not on the node (ROLLBACK correct), and N1, the same ErrImageNeverPull symptom from removing the image on the kind node while the template stays at the baseline (ESCALATE correct, ROLLBACK unsafe). ESCALATE, NO_ACTION and NO_INCIDENT are scored outcomes in scenario-result.json, and a run passes only on the labelled decision. A planning failure (abstention, an unavailable or invalid model, exhausted attempts) also ends in a saved ESCALATE, but it scores no_decision, never correct or acceptable, and a correct N1 also needs the eligibility rule to report the pre-registered TEMPLATE_ALREADY_BASELINE. This is tested offline only: no R2 or N1 run has been made, the labels still need owner sign-off, and whether a live N1 really shows ErrImageNeverPull (crictl rmi of an image a running container uses, then a new Pod) is unverified. RESTART is now implemented through the Planner, Guard, Executor and Verifier, but it has only run offline against a fake Deployment API; it has never run against a cluster. SCALE is in the contract and is still refused.
 - Workaround: Quote live results only for the PORT fault and ROLLBACK until scored R2 and N1 trials are committed. Run them with the commands in docs/testing.md, after the labels are signed off. Describe RESTART as tested offline only.
-- Evidence: `services/guard/core.py:165-166`; `services/executor/core.py:413`; `tests/test_restart_action.py`; claim `C-CONNECTED-HARNESS`; `experiments/boutique/catalog.json`; `experiments/boutique/harness/scenarios.py`; `experiments/boutique/harness/scenarios.py`; `tests/test_live_agent.py`; `experiments/boutique/harness/live.py`; `tests/test_live_agent.py`; `tests/test_live_agent.py`; `tests/test_recovery_scenarios.py`.
+- Evidence: `services/guard/core.py:176-177`; `services/executor/core.py:413`; `tests/test_restart_action.py`; claim `C-CONNECTED-HARNESS`; `experiments/boutique/catalog.json`; `experiments/boutique/harness/scenarios.py`; `experiments/boutique/harness/scenarios.py`; `tests/test_live_agent.py`; `experiments/boutique/harness/live.py`; `tests/test_live_agent.py`; `tests/test_live_agent.py`; `tests/test_recovery_scenarios.py`.
 
 ### L-MODEL-LATENCY
 

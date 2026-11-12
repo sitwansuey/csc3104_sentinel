@@ -24,6 +24,10 @@ class CoordinatorError(ValueError):
     """An event conflicts with stored identity or the incident lifecycle."""
 
 
+class SupersededResult(CoordinatorError):
+    """A worker result answers a request that is no longer the current one."""
+
+
 # Append only: never edit a released migration; add the next number instead.
 # Version 1 is the schema used before versioning. IF NOT EXISTS lets it adopt
 # databases created by that code, which all report user_version 0.
@@ -82,6 +86,31 @@ MIGRATIONS = (
         # that recorded an incident. Observability only; NULL on older rows.
         "ALTER TABLE outbox ADD COLUMN trace_context TEXT",
         "ALTER TABLE incidents ADD COLUMN trace_context TEXT",
+    )),
+    (4, (
+        # Ordering by Coordinator sequence (P3.03). seq numbers accepted
+        # messages in acceptance order; rows written before this version get
+        # their rowid, which was already their acceptance order. answers is
+        # the outbox id of the request a worker result answers (NULL for
+        # ingress and for single-clock handle() calls). high_water is
+        # max(outbox.id) just before the message was applied. producer is the
+        # authenticated identity that delivered it, when there was one.
+        "ALTER TABLE messages ADD COLUMN seq INTEGER",
+        "ALTER TABLE messages ADD COLUMN answers INTEGER",
+        "ALTER TABLE messages ADD COLUMN high_water INTEGER",
+        "ALTER TABLE messages ADD COLUMN producer TEXT",
+        "UPDATE messages SET seq=rowid WHERE seq IS NULL",
+        "CREATE UNIQUE INDEX IF NOT EXISTS messages_seq ON messages(seq)",
+        # The seq of the newest message accepted for the incident.
+        "ALTER TABLE incidents ADD COLUMN high_water INTEGER",
+        # Each worker's latest clock estimate against the Coordinator's clock
+        # (Cristian's algorithm, measured by the worker): offset is
+        # Coordinator time minus worker time, uncertainty is half the
+        # round-trip time. reported_at uses the Coordinator's clock.
+        """CREATE TABLE IF NOT EXISTS worker_clocks (
+            identity TEXT PRIMARY KEY, offset REAL NOT NULL, uncertainty REAL NOT NULL,
+            max_abs_offset REAL NOT NULL, reports INTEGER NOT NULL, reported_at REAL NOT NULL
+        )""",
     )),
 )
 SCHEMA_VERSION = MIGRATIONS[-1][0]
@@ -292,11 +321,43 @@ class SQLiteStore:
                     WHERE a.action_id=? ORDER BY a.id""", (action_id,))]
 
     def dependency_result(self, action_id):
-        """Return the newest accepted immutable finding for this action."""
-        findings = (json.loads(row[0]) for row in self.db.execute("SELECT payload FROM messages"))
-        return max((item for item in findings
-                    if item["kind"] == "dependency_result" and item["action_id"] == action_id),
-                   key=lambda item: _time(item["checked_at"]), default=None)
+        """Return the most recently accepted immutable finding for this action.
+
+        Acceptance order (seq), not the producer's timestamp. Single-clock
+        callers only accept strictly newer findings, so for them the two agree.
+        """
+        meta = self.accepted_meta("dependency_result", action_id)
+        return meta["message"] if meta else None
+
+    def accepted_meta(self, kind, action_id):
+        """The newest accepted message of kind for action_id with its ordering data, or None."""
+        rows = self.db.execute("SELECT payload,seq,answers,high_water,producer FROM messages ORDER BY seq DESC")
+        for row in rows:
+            message = json.loads(row[0])
+            if message["kind"] == kind and message.get("action_id") == action_id:
+                return {"message": message, "seq": row[1], "answers": row[2],
+                        "high_water": row[3], "producer": row[4]}
+        return None
+
+    def outbox_high_water(self):
+        return self.db.execute("SELECT coalesce(max(id),0) FROM outbox").fetchone()[0]
+
+    def newest_request(self, action_id, *topics):
+        """The id of the newest outbox request of topics for action_id, or None."""
+        placeholders = ",".join("?" for _ in topics)
+        return self.db.execute(f"SELECT max(id) FROM outbox WHERE action_id=? AND topic IN ({placeholders})",
+                               (action_id, *topics)).fetchone()[0]
+
+    def record_worker_clock(self, identity, offset, uncertainty, reported_at):
+        """Keep a worker's latest clock estimate and the largest offset it has reported."""
+        self.db.execute("""INSERT INTO worker_clocks(identity,offset,uncertainty,max_abs_offset,reports,reported_at)
+            VALUES(?,?,?,abs(?),1,?) ON CONFLICT(identity) DO UPDATE SET offset=excluded.offset,
+            uncertainty=excluded.uncertainty, max_abs_offset=max(max_abs_offset, excluded.max_abs_offset),
+            reports=reports+1, reported_at=excluded.reported_at""",
+            (identity, offset, uncertainty, offset, reported_at))
+
+    def worker_clocks(self):
+        return {row["identity"]: dict(row) for row in self.db.execute("SELECT * FROM worker_clocks ORDER BY identity")}
 
     def trace_context(self, *, incident_id=None, action_id=None):
         """The trace context stored with an incident, found by incident or action id.
@@ -393,8 +454,14 @@ class SQLiteStore:
         row = self.db.execute("SELECT payload FROM messages WHERE event_key=?", (event_key,)).fetchone()
         return row[0] if row else None
 
-    def add_message(self, event_key, payload):
-        self.db.execute("INSERT INTO messages VALUES(?,?)", (event_key, payload))
+    def add_message(self, event_key, payload, *, high_water, answers=None, producer=None, incident_id=None):
+        """Store an accepted message with the next Coordinator sequence number; return it."""
+        seq = self.db.execute("SELECT coalesce(max(seq),0)+1 FROM messages").fetchone()[0]
+        self.db.execute("""INSERT INTO messages(event_key,payload,seq,answers,high_water,producer)
+            VALUES(?,?,?,?,?,?)""", (event_key, payload, seq, answers, high_water, producer))
+        if incident_id is not None:
+            self.db.execute("UPDATE incidents SET high_water=? WHERE incident_id=?", (seq, incident_id))
+        return seq
 
     def add_approval(self, action_id, record, *, managed=False):
         cursor = self.db.execute("INSERT INTO approvals(action_id,record) VALUES(?,?)", (action_id, _json(record)))

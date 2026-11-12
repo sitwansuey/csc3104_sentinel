@@ -6,6 +6,7 @@ import time
 from uuid import uuid4
 
 from services.coordinator.core import LocalEventBus, acknowledge, dispatch_pending, record_message
+from services.coordinator.store import SupersededResult
 from shared.canonical import sha256_hex as digest
 from shared.contracts import validate_message
 from shared.tracing import parse_traceparent
@@ -32,14 +33,42 @@ def delivery_ids(delivery):
     return {key: value for key, value in ids.items() if value is not None}
 
 
+MAX_REPORTED_OFFSET = 10 ** 7  # Seconds; a larger reported clock estimate is malformed.
+
+
+def parse_clock_estimate(value):
+    """(offset, uncertainty) from a worker's "offset;uncertainty" report, or None when malformed."""
+    if not isinstance(value, str) or value.count(";") != 1:
+        return None
+    try:
+        offset, uncertainty = (float(part) for part in value.split(";"))
+    except ValueError:
+        return None
+    if (not math.isfinite(offset) or not math.isfinite(uncertainty) or abs(offset) > MAX_REPORTED_OFFSET
+            or not 0 <= uncertainty <= MAX_REPORTED_OFFSET):
+        return None
+    return offset, uncertainty
+
+
+def within_skew_bound(estimate, bound):
+    """True when the worst-case offset |offset| + uncertainty is at most the bound."""
+    return estimate is not None and abs(estimate[0]) + estimate[1] <= bound
+
+
 class Delivery:
+    """max_clock_skew (seconds), when set, refuses claims from a worker whose
+    latest reported clock estimate is missing or outside the bound."""
+
     def __init__(self, store, *, clock=time.time, lease_seconds=30, retention_seconds=86400,
-                 dependency_requests=False):
+                 dependency_requests=False, max_clock_skew=None):
         if any(not math.isfinite(value) or value <= 0 for value in (lease_seconds, retention_seconds)):
             raise ValueError("Lease and retention must be positive")
+        if max_clock_skew is not None and (not math.isfinite(max_clock_skew) or max_clock_skew <= 0):
+            raise ValueError("The clock skew bound must be positive and finite")
         self.store, self.clock = store, clock
         self.lease, self.retention = lease_seconds, retention_seconds
         self.dependency_requests = dependency_requests
+        self.max_clock_skew = max_clock_skew
         store.db.execute("""CREATE TABLE IF NOT EXISTS transport_receipts (
             event_id INTEGER PRIMARY KEY REFERENCES outbox(id),
             delivery_id TEXT UNIQUE NOT NULL, owner TEXT, lease_token TEXT,
@@ -79,44 +108,62 @@ class Delivery:
             raise
         self.store.run_after_commit()
 
-    def claim(self, identity, role):
+    def _record_clock(self, identity, estimate, now):
+        if estimate is not None:
+            self.store.record_worker_clock(identity, estimate[0], estimate[1], now)
+
+    def report_clock(self, identity, estimate):
+        """Store a worker's clock estimate; answer with nothing but the server time header."""
+        with self.transaction() as (_db, now):
+            self._record_clock(identity, estimate, now)
+            return {"recorded": estimate is not None}
+
+    def claim(self, identity, role, clock_estimate=None):
         topics = TOPICS.get(role)
         if not topics:
             raise ProtocolError(403, "Role cannot claim requests")
         with self.transaction() as (db, now):
-            placeholders = ",".join("?" for _ in topics)
-            candidates = db.execute(f"""SELECT o.* FROM outbox o LEFT JOIN transport_receipts r ON r.event_id=o.id
-                WHERE o.delivered=0 AND o.topic IN ({placeholders})
-                AND (o.topic!='guard.request' OR NOT EXISTS (
-                    SELECT 1 FROM outbox dep WHERE dep.topic='dependency.request'
-                    AND dep.action_id=o.action_id AND dep.delivered=0))
-                AND (r.event_id IS NULL OR r.available <= ?) ORDER BY o.id""",
-                (*topics, now)).fetchall()
-            row = next((candidate for candidate in candidates if candidate["topic"] != "planner.request"
-                        or self.store.planning_blocker(json.loads(candidate["payload"])["incident"]["incident_id"]) is None), None)
-            if row is None:
-                return {"delivery": None}
-            db.execute("INSERT OR IGNORE INTO transport_receipts(event_id,delivery_id) VALUES(?,?)",
-                       (row["id"], uuid4().hex))
-            receipt = db.execute("SELECT * FROM transport_receipts WHERE event_id=?", (row["id"],)).fetchone()
-            token = uuid4().hex
-            expires = now + self.lease
-            delay = min(60, 2 ** min(receipt["attempts"], 6))
-            db.execute("""UPDATE transport_receipts SET owner=?, lease_token=?, attempts=attempts+1,
-                expires=?, available=? WHERE event_id=?""", (identity, token, expires, expires + delay, row["id"]))
-            payload = json.loads(row["payload"])
-            if row["action_id"] and self.store.has_managed_approval(row["action_id"]) and "approval" in payload:
-                # Protected approvals are read through the authenticated,
-                # target-scoped approval service, not generic worker routing.
-                payload["approval"] = None
-            delivery = {"delivery_id": receipt["delivery_id"], "lease_token": token,
-                        "expires_at": expires, "attempt": receipt["attempts"] + 1, "topic": row["topic"],
-                        "event_id": row["id"], "payload": payload}
-            # The span that enqueued the command, so the worker continues its trace.
-            context = parse_traceparent(row["trace_context"])
-            if context is not None:
-                delivery["traceparent"] = context.traceparent
-            return {"delivery": delivery}
+            self._record_clock(identity, clock_estimate, now)
+            if self.max_clock_skew is None or within_skew_bound(clock_estimate, self.max_clock_skew):
+                return self._claim(db, now, identity, topics)
+        # Committed above, so the refused worker's estimate stays on record.
+        raise ProtocolError(409, "Worker clock skew exceeds the bound")
+
+    def _claim(self, db, now, identity, topics):
+        placeholders = ",".join("?" for _ in topics)
+        candidates = db.execute(f"""SELECT o.* FROM outbox o LEFT JOIN transport_receipts r ON r.event_id=o.id
+            WHERE o.delivered=0 AND o.topic IN ({placeholders})
+            AND (o.topic!='guard.request' OR NOT EXISTS (
+                SELECT 1 FROM outbox dep WHERE dep.topic='dependency.request'
+                AND dep.action_id=o.action_id AND dep.delivered=0))
+            AND (r.event_id IS NULL OR r.available <= ?) ORDER BY o.id""",
+            (*topics, now)).fetchall()
+        row = next((candidate for candidate in candidates if candidate["topic"] != "planner.request"
+                    or self.store.planning_blocker(json.loads(candidate["payload"])["incident"]["incident_id"]) is None), None)
+        if row is None:
+            return {"delivery": None}
+        db.execute("INSERT OR IGNORE INTO transport_receipts(event_id,delivery_id) VALUES(?,?)",
+                   (row["id"], uuid4().hex))
+        receipt = db.execute("SELECT * FROM transport_receipts WHERE event_id=?", (row["id"],)).fetchone()
+        token = uuid4().hex
+        expires = now + self.lease
+        delay = min(60, 2 ** min(receipt["attempts"], 6))
+        db.execute("""UPDATE transport_receipts SET owner=?, lease_token=?, attempts=attempts+1,
+            expires=?, available=? WHERE event_id=?""", (identity, token, expires, expires + delay, row["id"]))
+        payload = json.loads(row["payload"])
+        if row["action_id"] and self.store.has_managed_approval(row["action_id"]) and "approval" in payload:
+            # Protected approvals are read through the authenticated,
+            # target-scoped approval service, not generic worker routing.
+            payload["approval"] = None
+        delivery = {"delivery_id": receipt["delivery_id"], "lease_token": token,
+                    "expires_at": expires, "expires_in": self.lease, "attempt": receipt["attempts"] + 1,
+                    "topic": row["topic"],
+                    "event_id": row["id"], "payload": payload}
+        # The span that enqueued the command, so the worker continues its trace.
+        context = parse_traceparent(row["trace_context"])
+        if context is not None:
+            delivery["traceparent"] = context.traceparent
+        return {"delivery": delivery}
 
     def dependencies(self, role, proposal):
         if role not in {"guard", "executor"}:
@@ -147,10 +194,13 @@ class Delivery:
             delay = min(60, 2 ** min(row["attempts"] - 1, 6))
             db.execute("UPDATE transport_receipts SET expires=?,available=? WHERE event_id=?",
                        (expires, expires + delay, row["event_id"]))
-            return {"expires_at": expires}
+            # expires_in is a duration on the Coordinator's clock, so the worker
+            # never compares expires_at with its own clock.
+            return {"expires_at": expires, "expires_in": self.lease}
 
-    def finish(self, identity, role, delivery_id, token, result, *, retry=False, report=None):
+    def finish(self, identity, role, delivery_id, token, result, *, retry=False, report=None, clock_estimate=None):
         with self.transaction() as (db, now):
+            self._record_clock(identity, clock_estimate, now)
             row = db.execute("""SELECT r.*, o.topic, o.payload FROM transport_receipts r
                 JOIN outbox o ON o.id=r.event_id WHERE r.delivery_id=?""", (delivery_id,)).fetchone()
             if row is None:
@@ -195,16 +245,21 @@ class Delivery:
                 self.store.save_guard_report(source["action_id"], report)
             elif report is not None:
                 raise ProtocolError(403, "Only the Guard may submit an authorization report")
-            record_message(result, self.store)
+            try:
+                # The result answers this outbox row: ordering uses its sequence number.
+                record_message(result, self.store, answers=row["event_id"], producer=identity)
+            except SupersededResult as error:
+                # 409, so the worker releases the delivery instead of resending it.
+                raise ProtocolError(409, "Result answers a superseded request") from error
             acknowledge(self.store, row["event_id"])
             db.execute("UPDATE transport_receipts SET finished=?, result_digest=? WHERE event_id=?",
                        (now, result_digest, row["event_id"]))
             return {"accepted": True, "replay": False}
 
-    def ingest(self, role, message):
+    def ingest(self, role, message, identity=None):
         validate_message(message)
         if message["kind"] != INGRESS.get(role):
             raise ProtocolError(403, "Role cannot submit this message")
         with self.transaction():
-            changed = record_message(message, self.store)
+            changed = record_message(message, self.store, producer=identity)
         return {"accepted": True, "replay": not changed}

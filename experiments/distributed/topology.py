@@ -17,8 +17,10 @@ A throwaway CA and server certificate (openssl) give the Coordinator HTTPS on
 loopback when openssl is available; otherwise the run records tls false.
 
 These are processes on one host. They share one kernel, one clock and one disk.
-They are not separate machines, and nothing here measures clock skew between
-hosts. The file mode backs Kubernetes with tests/support/file_cluster.py; the
+They are not separate machines. Each worker measures its clock offset from the
+Coordinator (Cristian's algorithm, runtime/worker_http.py::ClockEstimator) and
+the Coordinator records it, but on one host the only skew it can find is the
+gated test offset. The file mode backs Kubernetes with tests/support/file_cluster.py; the
 kind mode targets only the connected kind lab (KIND_CONTEXTS) and refuses every
 other context.
 """
@@ -197,7 +199,8 @@ class Topology:
 
     def __init__(self, run_dir, *, mode="file", tls=True, lease_seconds=4, poll_seconds=0.2,
                  worker_timeout=3, fence_after_seconds=2, clock_offsets=None, auto_approve=True,
-                 context=None, kind_bundle=None, python=None, bind=LOOPBACK, certificates=None):
+                 context=None, kind_bundle=None, python=None, bind=LOOPBACK, certificates=None,
+                 max_clock_skew=None):
         if mode not in {"file", "kind"}:
             raise ValueError("Mode must be file or kind")
         if bind != LOOPBACK:
@@ -212,6 +215,8 @@ class Topology:
         self.tls_requested, self.lease_seconds, self.poll_seconds = tls, lease_seconds, poll_seconds
         self.worker_timeout, self.fence_after_seconds = worker_timeout, fence_after_seconds
         self.clock_offsets = dict(clock_offsets or {})
+        # The skew bound in seconds for every worker and the Coordinator; None measures without enforcing.
+        self.max_clock_skew = max_clock_skew
         self.auto_approve = auto_approve
         self.python = python or sys.executable
         self.paths = {name: self.run_dir / name for name in ("config", "state", "logs", "faults", "coordinator")}
@@ -268,6 +273,10 @@ class Topology:
         baseline = json.loads((bundle / "baseline.json").read_text(encoding="utf-8"))
         return {"target": baseline["target"], "baseline": baseline, "bundle": bundle, "source": "kind"}
 
+    def expects_clock_skew(self, name):
+        """True when this worker's simulated offset is beyond the skew bound, so it must stay unready."""
+        return self.max_clock_skew is not None and abs(self.clock_offsets.get(name, 0)) > self.max_clock_skew
+
     @property
     def tls(self):
         return self.certificates is not None
@@ -282,6 +291,8 @@ class Topology:
                   "state_directory": str(self.paths["state"] / name), "timeout": self.worker_timeout,
                   # Every worker names its cluster, so runtime/fault_points.py::bind can tie the lab gate to it.
                   "cluster_id": self.cluster_id}
+        if self.max_clock_skew is not None:
+            config["max_clock_skew_seconds"] = self.max_clock_skew
         if self.tls:
             config["ca"] = str(self.certificates["ca"])
         config_dir = self.paths["config"]
@@ -349,6 +360,8 @@ class Topology:
                    "--lease-seconds", str(self.lease_seconds), "--request-timeout", "5"]
         if self.tls:
             command += ["--cert", str(self.certificates["cert"]), "--key", str(self.certificates["key"])]
+        if self.max_clock_skew is not None:
+            command += ["--max-clock-skew-seconds", str(self.max_clock_skew)]
         self.processes["coordinator"] = Process("coordinator", command, self._env("coordinator", level="DEBUG"),
                                                 self.paths["logs"])
         for name, role in WORKERS:
@@ -374,7 +387,10 @@ class Topology:
         for name, _ in WORKERS:
             self.processes[name].start()
         for name, _ in WORKERS:
-            self.wait_worker_ready(name, timeout)
+            if self.expects_clock_skew(name):  # Fails closed by design: alive, never ready.
+                self._wait(lambda name=name: self.worker_probe(name, "/healthz")[0] == 200, timeout, name)
+            else:
+                self.wait_worker_ready(name, timeout)
         if self.auto_approve:
             self._operator = threading.Thread(target=self._operate, daemon=True)
             self._operator.start()

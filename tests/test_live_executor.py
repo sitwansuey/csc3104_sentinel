@@ -190,6 +190,21 @@ class LiveExecutorTests(unittest.TestCase):
         self.assertEqual(second.decision["verdict"], "REJECT")
         self.assertIn("OPERATOR_REJECTED", second.decision["reason_codes"])
 
+    def test_the_guard_re_check_reads_this_hosts_clock_not_the_callers_now(self):
+        # A host 300 s behind sees the approval and evidence stamped by others in its future,
+        # whatever now the caller passes; a host 300 s ahead sees them stale. Both refuse.
+        for offset in (0, -300, 300):
+            with self.subTest(offset=offset):
+                host = NOW + timedelta(seconds=offset)
+                snapshot = dict(self.snapshot, captured_at=host.isoformat().replace("+00:00", "Z"))
+                check = self.authorizer(clock=lambda host=host: host).validate(self.proposal, snapshot, now=NOW)
+                self.assertEqual(check.decision["verdict"] == "ALLOW", offset == 0, check.decision["reason_codes"])
+        adapters = self.build(clock=lambda: NOW - timedelta(seconds=300))
+        self.assertEqual(adapters.authorizer.clock(), NOW - timedelta(seconds=300))
+        self.assertEqual(adapters.clock(), NOW - timedelta(seconds=300))
+        result = execute(self.proposal, adapters)
+        self.assertEqual((result["status"], self.cluster.write_attempts), ("FAILED", []))
+
     def test_fresh_dependency_reader_overrides_previously_clear_file_before_mutation(self):
         adapters = self.build()
         dependencies = deepcopy(self.fixtures["dependencies"])

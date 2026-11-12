@@ -10,8 +10,12 @@ import json
 from shared import log, tracing
 from shared.contracts import validate_message
 from services.coordinator.store import (
-    CoordinatorError, LOG, SQLiteStore, _digest, _json, _require, _time,
+    CoordinatorError, LOG, SQLiteStore, SupersededResult, _digest, _json, _require, _time,
 )
+
+# The requests each worker result kind answers (runtime/worker_transport.py::TOPICS).
+ANSWERS = {"dependency_result": ("dependency.request",), "guard_result": ("guard.request",),
+           "execution_result": ("executor.request", "executor.reconcile"), "outcome": ("verifier.request",)}
 
 
 class LocalEventBus:
@@ -54,7 +58,31 @@ def _event_key(message):
     return _json([message["kind"], identity, stamp])
 
 
-def _apply(message, store):
+def _superseded_unless(condition, reason):
+    if not condition:
+        raise SupersededResult(reason)
+
+
+def _issued_after(store, answers, kind, action_id):
+    """True when request answers was issued after the newest accepted kind for the action was applied."""
+    meta = store.accepted_meta(kind, action_id)
+    return meta is None or answers > (meta["high_water"] or 0)
+
+
+def _answers_current_request(message, store, answers):
+    """Sequence mode: a result must answer the newest request of its kind for the
+    action, issued after the previous result of the same kind was accepted."""
+    kind, action_id = message["kind"], message["action_id"]
+    _superseded_unless(answers == store.newest_request(action_id, *ANSWERS[kind]),
+                       "Result answers a superseded request")
+    _superseded_unless(_issued_after(store, answers, kind, action_id),
+                       "Result answers a request issued before the stored result")
+
+
+def _apply(message, store, answers=None, producer=None):
+    """Apply one message. answers is the outbox id of the request a worker result
+    answers. With it, lifecycle order uses Coordinator sequence numbers only
+    (sequence mode); without it, the producers' timestamps (single-clock mode)."""
     kind, incident_id = message["kind"], message["incident_id"]
     if kind == "incident":
         store.add_incident(incident_id, message["target"], "OPEN")
@@ -85,11 +113,17 @@ def _apply(message, store):
     _require(action is not None and action["incident_id"] == incident_id
              and incident["active_action_id"] == action_id, "Result does not match active action")
     state = action["state"]
+    sequenced = answers is not None and kind in ANSWERS
+    if sequenced:
+        _answers_current_request(message, store, answers)
     if kind == "dependency_result":
         _require(state in {"VALIDATING", "AWAITING_APPROVAL", "READY"},
                  "Dependency result arrived out of order")
-        previous_finding = store.dependency_result(action_id)
-        if previous_finding:
+        previous = store.accepted_meta("dependency_result", action_id)
+        previous_finding = previous and previous["message"]
+        # Sequence mode was checked above. Otherwise timestamps are compared only
+        # from one producer (one clock); across producers, acceptance order decides.
+        if previous_finding and not sequenced and previous["producer"] == producer:
             _require(_time(message["checked_at"]) > _time(previous_finding["checked_at"]),
                 "Dependency result must be newer than stored evidence")
         if state == "READY":
@@ -106,16 +140,20 @@ def _apply(message, store):
         _require(state in {"VALIDATING", "AWAITING_APPROVAL", "READY"},
                  "Guard result arrived after action completion or rejection")
         previous = action["guard_result"]
-        if previous:
+        if previous and not sequenced:
             _require(_time(message["checked_at"]) > _time(previous["checked_at"]),
                      "Guard result must be newer than the stored decision")
         if message["verdict"] == "ALLOW":
             _require(message["validated_resource_version"] == action["proposal"]["based_on_resource_version"],
                      "Guard allowed a different resource version")
-            latest = store.dependency_result(action_id)
-            if latest:
-                _require(_time(message["checked_at"]) >= _time(latest["checked_at"]),
-                         "Guard ALLOW predates the latest dependency evidence")
+            if sequenced:
+                _superseded_unless(_issued_after(store, answers, "dependency_result", action_id),
+                                   "Guard ALLOW answers a request issued before the latest dependency evidence")
+            else:
+                latest = store.dependency_result(action_id)
+                if latest:
+                    _require(_time(message["checked_at"]) >= _time(latest["checked_at"]),
+                             "Guard ALLOW predates the latest dependency evidence")
             if message["schema_version"] == "2.0":
                 _require(message["proposal_sha256"] == _digest(action["proposal"]),
                          "Guard allowed a different proposal")
@@ -151,11 +189,15 @@ def _apply(message, store):
         _require(state in {"READY", "NEEDS_RECONCILIATION"}, "Execution requires an allowed active action")
         guard = action["guard_result"]
         _require(guard and guard["verdict"] == "ALLOW", "Execution requires Guard ALLOW")
-        _require(_time(message["recorded_at"]) >= _time(guard["checked_at"]),
-                 "Execution predates Guard validation")
-        if action["execution_result"]:
-            _require(_time(message["recorded_at"]) > _time(action["execution_result"]["recorded_at"]),
-                     "Execution result is older than the stored result")
+        if sequenced:
+            _superseded_unless(_issued_after(store, answers, "guard_result", action_id),
+                               "Execution answers a request issued before the current Guard decision")
+        else:
+            _require(_time(message["recorded_at"]) >= _time(guard["checked_at"]),
+                     "Execution predates Guard validation")
+            if action["execution_result"]:
+                _require(_time(message["recorded_at"]) > _time(action["execution_result"]["recorded_at"]),
+                         "Execution result is older than the stored result")
         status = message["status"]
         # SUPERSEDED: the write can no longer commit. Fail and replan from live state.
         next_state = {"APPLIED": "VERIFYING", "NOOP": "VERIFYING", "FAILED": "FAILED",
@@ -171,8 +213,12 @@ def _apply(message, store):
             store.enqueue("executor.reconcile", {"proposal": action["proposal"], "execution": message}, action_id)
     elif kind == "outcome":
         _require(state == "VERIFYING", "Outcome requires successful execution first")
-        _require(_time(message["window_start"]) >= _time(action["execution_result"]["recorded_at"]),
-                 "Health window predates execution")
+        if sequenced:
+            _superseded_unless(_issued_after(store, answers, "execution_result", action_id),
+                               "Outcome answers a request issued before the current execution")
+        else:
+            _require(_time(message["window_start"]) >= _time(action["execution_result"]["recorded_at"]),
+                     "Health window predates execution")
         recovered = message["status"] == "RECOVERED"
         _require(not recovered or all(check["passed"] for check in message["checks"]),
                  "Recovered outcome cannot contain failed health checks")
@@ -181,11 +227,14 @@ def _apply(message, store):
         store.enqueue("incident.outcome", {"outcome": message}, action_id)
 
 
-def record_message(message: dict, store: SQLiteStore) -> bool:
+def record_message(message: dict, store: SQLiteStore, *, answers=None, producer=None) -> bool:
     """Record within an existing transaction, without committing or publishing.
 
     Runtime adapters use this to commit a result and its input acknowledgment
-    together. Most callers should use handle instead.
+    together. Most callers should use handle instead. The worker transport
+    passes answers (the outbox id of the request answered) and producer (the
+    authenticated identity), so lifecycle order is checked by Coordinator
+    sequence numbers instead of the producers' clocks.
     """
     _require(store.in_transaction, "record_message requires an active transaction")
     validate_message(message)
@@ -201,10 +250,12 @@ def record_message(message: dict, store: SQLiteStore) -> bool:
     # start a new one for a new incident. Trace data never affects the decision.
     parent = None if tracing.current() or message["kind"] == "incident" else store.trace_context(
         incident_id=message["incident_id"])
+    high_water = store.outbox_high_water()  # Before _apply enqueues this message's own commands.
     with store.transition_cause(key, message["kind"]), tracing.start_span(
             "coordinator.record", parent=parent, defer=store.after_commit, **ids):
-        _apply(message, store)
-    store.add_message(key, payload)
+        _apply(message, store, answers, producer)
+    store.add_message(key, payload, high_water=high_water, answers=answers, producer=producer,
+                      incident_id=message["incident_id"])
     store.after_commit(lambda: log.emit(LOG, "coordinator.message.recorded", **ids))
     return True
 
@@ -253,7 +304,12 @@ def approve(action_id: str, operator_id: str, store: SQLiteStore, *, expires_at:
         _require(set(guard["reason_codes"]) <= {"OPERATOR_APPROVAL_REQUIRED", "APPROVAL_EXPIRED", "APPROVAL_MISMATCH"},
                  "Approval cannot override state, dependency or policy escalation")
         now = store.now()
-        _require(_time(now) >= _time(guard["checked_at"]), "Approval predates the Guard decision")
+        # AWAITING_APPROVAL already proves the Guard decision was accepted first.
+        # A sequenced decision carries the Guard's clock, so it is not compared
+        # with the Coordinator's; a single-clock one still is.
+        meta = store.accepted_meta("guard_result", action_id)
+        if meta is None or meta["answers"] is None:
+            _require(_time(now) >= _time(guard["checked_at"]), "Approval predates the Guard decision")
         if expires_at is not None:
             try:
                 valid_expiry = isinstance(expires_at, str) and _time(expires_at) > _time(now)

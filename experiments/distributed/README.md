@@ -17,9 +17,11 @@ database file.
 
 **What it does not show.** These are processes on one host. They share one
 kernel, one wall clock, one disk and loopback networking. They are not
-separate machines or containers, and nothing here measures clock skew between
-hosts: S7 shifts one process's clock with a gated test offset instead
-(P3.03 measures skew). The file mode backs Kubernetes with a SQLite file, not
+separate machines or containers. S7 and S7b shift one process's clock with a
+gated test offset; every worker measures its offset from the Coordinator
+(Cristian's algorithm) and `summary.json` records it under
+`clock_offsets_measured`, but on one host that measures the simulated offset,
+not skew between machines. The file mode backs Kubernetes with a SQLite file, not
 an API server. The Planner is the deterministic provider, so every summary
 says `synthetic_planner: true`. The kind mode has not been run yet.
 
@@ -34,7 +36,7 @@ python -m unittest tests.test_distributed_processes -v
 ```
 
 The first line runs the plan's CI subset (S1b, S1c, S2, S4, S5). `--all` adds
-S0, S1a, S1d, S1e, S3, S6 and S7. Each run prints one JSON line and, with
+S0, S1a, S1d, S1e, S3, S6, S7 and S7b. Each run prints one JSON line and, with
 `--out`, writes `<date>-<scenario>[-rN]/` with `summary.json`, `timeline.jsonl`
 (every process's log lines and the transitions journal, in time order) and
 `coordinator-records.json`. These files hold identifiers, states and counts
@@ -54,7 +56,7 @@ in the unit tests too (the default subset takes about 75 s).
 | Observer feed | `observer_feed.py` | The real Observer state machine and outbox over a synthetic observation series, delivered with the real HTTP ingress. |
 | Inputs | `fixtures.py` | The committed samples, moved to the current time and renamed to the file cluster, with a strict live-profile policy and a short health window. |
 | Invariants | `invariants.py` | I1-I6 and X1-X4, below. |
-| Scenarios | `scenarios.py`, `run_scenarios.py` | S0-S7, below. |
+| Scenarios | `scenarios.py`, `run_scenarios.py` | S0-S7b, below. |
 
 Process faults: kill uses `Popen.kill()` (SIGKILL on POSIX, TerminateProcess on
 Windows). Suspend uses SIGSTOP and SIGCONT on POSIX. psutil is not in the lock
@@ -101,7 +103,8 @@ run on Linux yet.
 | S4 | Response to the Executor's result dropped | RECOVERED; the resent saved body got a replay receipt, all hold |
 | S5 | Coordinator killed after committing a result, before the reply; restarted, and restarted again later | RECOVERED, 1 write, all hold |
 | S6 | Every worker link blackholed for 12 s while an approval was created | no write and no progress during the partition, then RECOVERED, all hold |
-| S7 | Both Executors' clocks 300 s behind (gated offset) | The write landed but its result was refused with HTTP 400 for the whole run; the incident stays READY. **I3 and I5 fail**: the clock-skew wedge (defect (a), P3.03) |
+| S7 | Both Executors' clocks 300 s behind (gated offset on the whole Executor clock, including its local Guard re-check), no skew bound, operator approval required | Before P3.03 the write landed but its result was refused with HTTP 400 for the whole run and the incident stayed READY (I3 and I5 failed). Since P3.03 orders results by Coordinator sequence, the result is accepted; the Executor's own Guard re-check sees the Coordinator-stamped approval 300 s in its future and refuses: FAILED, 0 writes, no HTTP 400, all hold, with θ ≈ 300 s measured for both Executors (3 of 3 runs on this branch). It does not recover, because no Executor is within a bound |
+| S7b | executor-a's clock 5 s behind, a 2 s skew bound on every worker and the Coordinator | executor-a measures θ ≈ 5 s, stays unready (`clock_skew`) and never claims; executor-b does the work: RECOVERED, 1 write, all hold (3 of 3 runs on this branch) |
 
 S1b and S1c keep the crashed Executor down until the incident ends so that
 the peer takes the command every time. In earlier runs that restarted it at
