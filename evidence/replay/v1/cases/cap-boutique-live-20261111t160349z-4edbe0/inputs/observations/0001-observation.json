@@ -1,0 +1,141 @@
+{
+  "captured_at": "2026-11-11T16:05:13.543041Z",
+  "cluster_id": "sentinel-boutique-connected",
+  "deployment": {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "annotations": {
+        "deployment.kubernetes.io/revision": "2"
+      },
+      "generation": 54,
+      "labels": {
+        "app": "shippingservice"
+      },
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "resourceVersion": "37237",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    },
+    "spec": {
+      "minReadySeconds": 2,
+      "replicas": 1,
+      "selector": {
+        "matchLabels": {
+          "app": "shippingservice"
+        }
+      },
+      "strategy": {
+        "type": "Recreate"
+      },
+      "template": {
+        "metadata": {
+          "labels": {
+            "app": "shippingservice"
+          }
+        },
+        "spec": {
+          "containers": [
+            {
+              "env": [
+                {
+                  "name": "PORT",
+                  "value": "invalid-port"
+                }
+              ],
+              "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4",
+              "imagePullPolicy": "Never",
+              "name": "server",
+              "ports": [
+                {
+                  "containerPort": 50051,
+                  "protocol": "TCP"
+                }
+              ],
+              "resources": {
+                "limits": {
+                  "cpu": "500m",
+                  "memory": "128Mi"
+                },
+                "requests": {
+                  "cpu": "100m",
+                  "memory": "64Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "privileged": false,
+                "readOnlyRootFilesystem": true
+              }
+            }
+          ],
+          "securityContext": {
+            "fsGroup": 1000,
+            "runAsNonRoot": true,
+            "runAsUser": 1000
+          },
+          "serviceAccountName": "shippingservice",
+          "terminationGracePeriodSeconds": 5
+        }
+      }
+    },
+    "status": {
+      "availableReplicas": 0,
+      "observedGeneration": 54,
+      "readyReplicas": 0,
+      "replicas": 1,
+      "unavailableReplicas": 1,
+      "updatedReplicas": 1
+    }
+  },
+  "events": [
+    {
+      "lastTimestamp": "2026-11-11T16:05:06Z",
+      "message": "Deployment does not have minimum availability.",
+      "reason": "MinimumReplicasUnavailable",
+      "type": "Warning",
+      "uid": "replay-e-c6ced238f6c8"
+    },
+    {
+      "lastTimestamp": "2026-11-11T16:05:07Z",
+      "message": "Readiness probe failed: timeout: failed to connect service \"10.244.0.66:50051\" within 1s: context deadline exceeded",
+      "reason": "Unhealthy",
+      "type": "Warning",
+      "uid": "replay-e-78c37f6bfdb0"
+    },
+    {
+      "lastTimestamp": "2026-11-11T16:05:08Z",
+      "message": "Back-off restarting failed container server in pod shippingservice-85576d7678-znvxf_sentinel-boutique-connected(a57f098e-e188-4026-bc91-5a4af53a6b4a)",
+      "reason": "BackOff",
+      "type": "Warning",
+      "uid": "replay-e-8593a9e3ef9c"
+    },
+    {
+      "lastTimestamp": "2026-11-11T16:05:08Z",
+      "message": "Readiness probe failed: timeout: failed to connect service \"10.244.0.66:50051\" within 1s: context deadline exceeded",
+      "reason": "Unhealthy",
+      "type": "Warning",
+      "uid": "replay-e-c1fffc7683dd"
+    },
+    {
+      "lastTimestamp": "2026-11-11T16:05:11Z",
+      "message": "Back-off restarting failed container server in pod shippingservice-85576d7678-znvxf_sentinel-boutique-connected(a57f098e-e188-4026-bc91-5a4af53a6b4a)",
+      "reason": "BackOff",
+      "type": "Warning",
+      "uid": "replay-e-c9359749df44"
+    }
+  ],
+  "logs": [
+    {
+      "container": "server",
+      "pod": "shippingservice-85576d7678-znvxf",
+      "pod_uid": "a57f098e-e188-4026-bc91-5a4af53a6b4a",
+      "text": "2026-11-11T16:05:07.452058161Z {\"message\":\"Tracing disabled.\",\"severity\":\"info\",\"timestamp\":\"2026-11-11T16:05:07.451862709Z\"}\n2026-11-11T16:05:07.452078882Z {\"message\":\"Profiling disabled.\",\"severity\":\"info\",\"timestamp\":\"2026-11-11T16:05:07.451962995Z\"}\n2026-11-11T16:05:07.452497454Z {\"message\":\"failed to listen: listen tcp: lookup tcp/invalid-port: unknown port\",\"severity\":\"fatal\",\"timestamp\":\"2026-11-11T16:05:07.452397683Z\"}"
+    }
+  ]
+}

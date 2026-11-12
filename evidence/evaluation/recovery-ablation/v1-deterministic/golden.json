@@ -1,0 +1,590 @@
+{
+  "cases": [
+    {
+      "case_id": "cap-boutique-live-20261111t221204z-602449",
+      "differing_fields": [
+        "action",
+        "action_id",
+        "parameters",
+        "rationale"
+      ],
+      "note": "recorded before decision policies existed; replayed under the current default",
+      "policy": "P4",
+      "recorded_action": "ROLLBACK",
+      "recorded_policy": null,
+      "replayed_action": "ESCALATE",
+      "replayed_error_code": "INELIGIBLE_REASON",
+      "status": "differs"
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t221600z-772bbe",
+      "differing_fields": [
+        "action_id",
+        "rationale"
+      ],
+      "note": "recorded before decision policies existed; replayed under the current default",
+      "policy": "P4",
+      "recorded_action": "ESCALATE",
+      "recorded_policy": null,
+      "replayed_action": "ESCALATE",
+      "replayed_error_code": "INELIGIBLE_REASON",
+      "status": "differs"
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t221737z-2b9319",
+      "differing_fields": [
+        "action",
+        "action_id",
+        "parameters",
+        "rationale"
+      ],
+      "note": "recorded before decision policies existed; replayed under the current default",
+      "policy": "P4",
+      "recorded_action": "ROLLBACK",
+      "recorded_policy": null,
+      "replayed_action": "ESCALATE",
+      "replayed_error_code": "INELIGIBLE_REASON",
+      "status": "differs"
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t050930z-ba0f81",
+      "differing_fields": [
+        "action",
+        "action_id",
+        "parameters",
+        "rationale"
+      ],
+      "note": "recorded before decision policies existed; replayed under the current default",
+      "policy": "P4",
+      "recorded_action": "ROLLBACK",
+      "recorded_policy": null,
+      "replayed_action": "ESCALATE",
+      "replayed_error_code": "INELIGIBLE_REASON",
+      "status": "differs"
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t051156z-009b69",
+      "differing_fields": [
+        "action",
+        "action_id",
+        "parameters",
+        "rationale"
+      ],
+      "note": "recorded before decision policies existed; replayed under the current default",
+      "policy": "P4",
+      "recorded_action": "ROLLBACK",
+      "recorded_policy": null,
+      "replayed_action": "ESCALATE",
+      "replayed_error_code": "INELIGIBLE_REASON",
+      "status": "differs"
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t051406z-ef3fbb",
+      "differing_fields": [
+        "action",
+        "action_id",
+        "parameters",
+        "rationale"
+      ],
+      "note": "recorded before decision policies existed; replayed under the current default",
+      "policy": "P4",
+      "recorded_action": "ROLLBACK",
+      "recorded_policy": null,
+      "replayed_action": "ESCALATE",
+      "replayed_error_code": "INELIGIBLE_REASON",
+      "status": "differs"
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t074450z-38278f",
+      "differing_fields": [],
+      "guard_agrees": true,
+      "policy": "P4",
+      "recorded_action": "ROLLBACK",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_policy": "gated",
+      "replayed_action": "ROLLBACK",
+      "replayed_error_code": null,
+      "replayed_v2_verdict": "ALLOW",
+      "status": "reproduced"
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t074810z-311065",
+      "differing_fields": [],
+      "guard_agrees": true,
+      "policy": "P4",
+      "recorded_action": "ROLLBACK",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_policy": "gated",
+      "replayed_action": "ROLLBACK",
+      "replayed_error_code": null,
+      "replayed_v2_verdict": "ALLOW",
+      "status": "reproduced"
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t075130z-fb6439",
+      "differing_fields": [],
+      "guard_agrees": true,
+      "policy": "P4",
+      "recorded_action": "ROLLBACK",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_policy": "gated",
+      "replayed_action": "ROLLBACK",
+      "replayed_error_code": null,
+      "replayed_v2_verdict": "ALLOW",
+      "status": "reproduced"
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t075413z-3d1324",
+      "differing_fields": [],
+      "policy": "P4",
+      "recorded_action": "ESCALATE",
+      "recorded_policy": "gated",
+      "replayed_action": "ESCALATE",
+      "replayed_error_code": "ABSTAINED",
+      "status": "reproduced"
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t075550z-26a26a",
+      "differing_fields": [],
+      "policy": "P4",
+      "recorded_action": "ESCALATE",
+      "recorded_policy": "gated",
+      "replayed_action": "ESCALATE",
+      "replayed_error_code": "ABSTAINED",
+      "status": "reproduced"
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t080534z-160519",
+      "differing_fields": [],
+      "guard_agrees": true,
+      "policy": "P4",
+      "recorded_action": "ROLLBACK",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_policy": "gated",
+      "replayed_action": "ROLLBACK",
+      "replayed_error_code": null,
+      "replayed_v2_verdict": "ALLOW",
+      "status": "reproduced"
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t080756z-29fd09",
+      "differing_fields": [],
+      "policy": "P4",
+      "recorded_action": "ESCALATE",
+      "recorded_policy": "gated",
+      "replayed_action": "ESCALATE",
+      "replayed_error_code": "TEMPLATE_ALREADY_BASELINE",
+      "status": "reproduced"
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t081032z-63d609",
+      "differing_fields": [],
+      "guard_agrees": true,
+      "policy": "P4",
+      "recorded_action": "ROLLBACK",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_policy": "gated",
+      "replayed_action": "ROLLBACK",
+      "replayed_error_code": null,
+      "replayed_v2_verdict": "ALLOW",
+      "status": "reproduced"
+    }
+  ],
+  "corpus_manifest_sha256": "48e3ef3e96b2f848754eddfcf85b677e0c021da6d500be6d20e08dd4c693f4f0",
+  "guard_crosscheck": [
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261110t170340z-924ad0",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261110t171150z-44469c",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261110t171528z-3f8ebc",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261110t184654z-638872",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261110t185103z-e3d521",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261110t185411z-484196",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261110t185646z-275eb5",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261110t192806z-88c2d9",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261110t193604z-2aad1c",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261110t193859z-7f29f5",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261111t144432z-5fb1d8",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261111t145525z-4aa779",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261111t160943z-f1193b",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261111t161243z-d4cba2",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261111t165457z-da6e95",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261111t165802z-914d8d",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261111t170034z-1cc9bc",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261111t202419z-cedc47",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261111t202847z-3e370f",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261111t203130z-728cc5",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261111t203342z-c264c5",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261111t220652z-f42864",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261111t221204z-602449",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261111t221737z-2b9319",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261112t050930z-ba0f81",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261112t051156z-009b69",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261112t051406z-ef3fbb",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261112t074450z-38278f",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261112t074810z-311065",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261112t075130z-fb6439",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261112t080534z-160519",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-boutique-live-20261112t081032z-63d609",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    }
+  ],
+  "schema": "sentinel-replay-golden-v1",
+  "summary": {
+    "differs": 6,
+    "guard_crosscheck": {
+      "agrees": 32,
+      "cases": 32
+    },
+    "not_replayable": 0,
+    "reproduced": 8
+  }
+}

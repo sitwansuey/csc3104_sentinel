@@ -1,0 +1,31 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-9f2a1ebda5f70bded448b38a",
+  "based_on_resource_version": "61609",
+  "evidence_refs": [
+    "E-CA4F4A63C443",
+    "E-87A573860E30",
+    "E-FFEA38ED54A7",
+    "E-CA18BD721722",
+    "E-C3CA5C114AE1",
+    "E-2F23D77FA2A9",
+    "E-2A27C9B71CFB",
+    "E-2111F2B4EDF7",
+    "E-C5FEF1040396"
+  ],
+  "incident_id": "INC-F23B46A68E3F",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-6a629fa491c8",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence indicates that the 'shippingservice' container is failing due to an attempt to listen on an invalid port, as shown by the fatal error in the container logs (evidence_id: E-C5FEF1040396). This failure is directly linked to the readiness probe failure (evidence_id: E-C3CA5C114AE1) and the pod being in a 'CrashLoopBackOff' state (evidence_id: E-CA18BD721722). The deployment is unavailable (evidence_id: E-FFEA38ED54A7), and the root cause is a configuration issue in the container. The observed healthy baseline (baseline_id: BASE-LIVE-6a629fa491c8) represents a known good state before the failure occurred. Rolling back to this baseline will restore the correct configuration and resolve the issue.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

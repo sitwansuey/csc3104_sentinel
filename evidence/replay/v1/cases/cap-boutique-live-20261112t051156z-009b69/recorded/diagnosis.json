@@ -1,0 +1,23 @@
+{
+  "attempt": 1,
+  "citations": {},
+  "incident_id": "INC-7E167394B82D",
+  "prediction": {
+    "1": {
+      "root cause component": "shippingservice",
+      "root cause reason": "unknown port"
+    }
+  },
+  "tools": [
+    {
+      "evidence_id": "branch-002",
+      "success": true,
+      "tool": "metrics"
+    },
+    {
+      "evidence_id": "branch-003",
+      "success": true,
+      "tool": "logs"
+    }
+  ]
+}

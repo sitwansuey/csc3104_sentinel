@@ -1,0 +1,18 @@
+{
+  "attempt": 1,
+  "citations": {},
+  "incident_id": "INC-8FC61A784B80",
+  "prediction": {},
+  "tools": [
+    {
+      "evidence_id": "branch-002",
+      "success": true,
+      "tool": "metrics"
+    },
+    {
+      "evidence_id": "branch-003",
+      "success": true,
+      "tool": "logs"
+    }
+  ]
+}

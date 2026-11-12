@@ -1,0 +1,96 @@
+{
+  "captured_at": "2026-11-12T07:55:53.759529Z",
+  "cluster_id": "sentinel-boutique-connected",
+  "deployment": {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "annotations": {
+        "deployment.kubernetes.io/revision": "2"
+      },
+      "generation": 112,
+      "labels": {
+        "app": "shippingservice"
+      },
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "resourceVersion": "95090",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    },
+    "spec": {
+      "minReadySeconds": 2,
+      "replicas": 1,
+      "selector": {
+        "matchLabels": {
+          "app": "shippingservice"
+        }
+      },
+      "strategy": {
+        "type": "Recreate"
+      },
+      "template": {
+        "metadata": {
+          "labels": {
+            "app": "shippingservice"
+          }
+        },
+        "spec": {
+          "containers": [
+            {
+              "env": [
+                {
+                  "name": "PORT",
+                  "value": "50051"
+                }
+              ],
+              "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:a79b632a6d063c20bd30595829ad968fad5e3ba188c9d6b9335381e059d5019f",
+              "imagePullPolicy": "Never",
+              "name": "server",
+              "ports": [
+                {
+                  "containerPort": 50051,
+                  "protocol": "TCP"
+                }
+              ],
+              "resources": {
+                "limits": {
+                  "cpu": "500m",
+                  "memory": "128Mi"
+                },
+                "requests": {
+                  "cpu": "100m",
+                  "memory": "64Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "privileged": false,
+                "readOnlyRootFilesystem": true
+              }
+            }
+          ],
+          "securityContext": {
+            "fsGroup": 1000,
+            "runAsNonRoot": true,
+            "runAsUser": 1000
+          },
+          "serviceAccountName": "shippingservice",
+          "terminationGracePeriodSeconds": 5
+        }
+      }
+    },
+    "status": {
+      "availableReplicas": 0,
+      "observedGeneration": 112,
+      "readyReplicas": 0,
+      "replicas": 1,
+      "unavailableReplicas": 1,
+      "updatedReplicas": 1
+    }
+  }
+}

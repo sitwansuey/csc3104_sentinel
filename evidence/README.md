@@ -23,6 +23,13 @@ are generated from it, so every quoted number points back to a bundle here.
   reads only the folder whose name sorts last, so a second ledger on the same
   date takes a suffix that sorts after the first (`2026-11-12b` after
   `2026-11-12`).
+- `replay/v1/`: the incident replay corpus, generated from the bundles by
+  `scripts/build_replay_corpus.py` (never edited by hand). It is not a bundle:
+  its `corpus-manifest.json` lists every file's SHA-256, and part of each case
+  is reconstructed, as the [replay guide](../docs/evaluation/replay/README.md)
+  explains. `evaluation/recovery-ablation/<run>/` holds replay runs of it
+  (`scripts/evaluate_recovery.py`): decision-level results only, never a
+  recovery.
 
 Files here are stored byte for byte (`-text` in `.gitattributes`), so the
 MANIFEST hashes also hold on Windows checkouts.

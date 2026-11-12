@@ -1,0 +1,33 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-6ab989b2d8d9363e6e7c881c",
+  "based_on_resource_version": "16386",
+  "evidence_refs": [
+    "E-BE7D07E85D77",
+    "E-57D6DA79DEE9",
+    "E-ADCF1F101F07",
+    "E-BC97F042133C",
+    "E-0AD4070B1C9D",
+    "E-8EEE12A8BFFC",
+    "E-A80993F27869",
+    "E-3D7B2F13AC88",
+    "E-733B32D9D398",
+    "E-96DCCFA91B41",
+    "E-419F2286E83B"
+  ],
+  "incident_id": "INC-748DA70F30E7",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-de0ab22551f3",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence clearly indicates that the 'shippingservice' container is failing to start due to an 'unknown port' error, as shown in the container logs (E-419F2286E83B). This error is corroborated by the pod status (E-3D7B2F13AC88), which shows the container is not ready and is in a CrashLoopBackOff state. The readiness probe failures (E-BC97F042133C, E-733B32D9D398) are downstream effects of the container failing to bind to the specified port. The deployment status (E-BE7D07E85D77, E-A80993F27869) and events (E-ADCF1F101F07, E-0AD4070B1C9D, E-96DCCFA91B41) further confirm the lack of availability and the ongoing restart attempts. The diagnosis identifies the root cause as a configuration error related to the port, which is not present in the healthy baseline. Therefore, restoring the baseline configuration is appropriate to resolve the issue.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

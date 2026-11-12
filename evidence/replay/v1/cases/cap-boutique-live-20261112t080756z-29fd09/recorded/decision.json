@@ -1,0 +1,10 @@
+{
+  "agent_model_calls": 4,
+  "attempts": 2,
+  "decided_by": "rule",
+  "decision_policy": "gated",
+  "model": "qwen3:14b",
+  "model_action": null,
+  "planning_error_code": "TEMPLATE_ALREADY_BASELINE",
+  "source_revision": "dab3b3fc7ddb3df0223897b3f2a7d005df3d1bd8"
+}

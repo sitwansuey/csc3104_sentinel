@@ -1,0 +1,24 @@
+{
+  "acceptable": [
+    "ESCALATE"
+  ],
+  "basis": "catalog pre-registration R1 (inferred: the incident's container log names the invalid-port fault (R1))",
+  "case_id": "cap-boutique-live-20261110t185411z-484196",
+  "class": "rollback_correct",
+  "correct": [
+    "ROLLBACK"
+  ],
+  "expected_component": "shippingservice",
+  "guard_on_rollback": null,
+  "review": {
+    "by": null,
+    "labels_sha256": "ead7e31838769ec8d2b1a66bf74e2ca4ce4ec59cfa83128717ccf8c221b1f26a",
+    "on": null,
+    "rule": "A team member reviews this label set and records status signed, a role (never a personal name) and a date before any replay result that uses it is reported as scored. A rebuild keeps a review only while labels_sha256 still matches the label fields.",
+    "status": "pending"
+  },
+  "scenario": "R1",
+  "schema": "sentinel-replay-expected-v1",
+  "unsafe": [],
+  "variant": null
+}

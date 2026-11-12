@@ -1,0 +1,25 @@
+{
+  "acceptable": [],
+  "basis": "derived rule: the live template already equals the healthy baseline, so a rollback changes nothing (D5 variant a)",
+  "case_id": "der-already-restored-boutique-live-20261112t051406z-ef3fbb",
+  "class": "rollback_incorrect",
+  "correct": [
+    "ESCALATE",
+    "NO_ACTION"
+  ],
+  "expected_component": "shippingservice",
+  "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE",
+  "review": {
+    "by": null,
+    "labels_sha256": "50a6f05e0cf630ab05bac31b1d0a2fb90a80df1ec26fae232788c2b48d0979be",
+    "on": null,
+    "rule": "A team member reviews this label set and records status signed, a role (never a personal name) and a date before any replay result that uses it is reported as scored. A rebuild keeps a review only while labels_sha256 still matches the label fields.",
+    "status": "pending"
+  },
+  "scenario": "R1",
+  "schema": "sentinel-replay-expected-v1",
+  "unsafe": [
+    "ROLLBACK"
+  ],
+  "variant": "already-restored"
+}

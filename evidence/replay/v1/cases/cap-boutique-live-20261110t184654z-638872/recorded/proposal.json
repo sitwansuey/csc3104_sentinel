@@ -1,0 +1,32 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-359efaad718a2168e4527e98",
+  "based_on_resource_version": "10580",
+  "evidence_refs": [
+    "E-649F1DE5E9CA",
+    "E-865DF4CD6148",
+    "E-3345CCD4FD65",
+    "E-93227D03BAC9",
+    "E-618F8B4A084F",
+    "E-6C3D0A406994",
+    "E-162B09C4D1AF",
+    "E-E421DDD6826F",
+    "E-E1F036B2A744",
+    "E-28005E2985E8"
+  ],
+  "incident_id": "INC-E0CC3F009439",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-544d86f13f24",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence indicates that the 'shippingservice' container is failing to listen on port 50051 due to an 'unknown port' configuration, as shown by the fatal error 'lookup tcp/invalid-port: unknown port' in the container logs (evidence IDs: E-618F8B4A084F, E-28005E2985E8). This directly correlates with the readiness probe timeout (evidence IDs: E-93227D03BAC9, E-E421DDD6826F), which causes the pod to enter a 'CrashLoopBackOff' state (evidence ID: E-162B09C4D1AF). The deployment status confirms that no replicas are available (evidence IDs: E-649F1DE5E9CA, E-6C3D0A406994), and the event logs indicate that the deployment does not have minimum availability (evidence ID: E-3345CCD4FD65). The baseline configuration (baseline_id: BASE-LIVE-544d86f13f24) defines the correct port configuration (50051) and is consistent with the healthy state of the deployment. Therefore, restoring this baseline is appropriate to resolve the issue.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

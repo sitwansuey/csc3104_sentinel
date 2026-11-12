@@ -1,0 +1,23 @@
+{
+  "attempt": 1,
+  "citations": {},
+  "incident_id": "INC-DDD01AABDD22",
+  "prediction": {
+    "1": {
+      "root cause component": "shippingservice",
+      "root cause reason": "failed to listen: listen tcp: lookup tcp/invalid-port: unknown port"
+    }
+  },
+  "tools": [
+    {
+      "evidence_id": "branch-002",
+      "success": true,
+      "tool": "metrics"
+    },
+    {
+      "evidence_id": "branch-003",
+      "success": true,
+      "tool": "logs"
+    }
+  ]
+}

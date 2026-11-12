@@ -1,0 +1,24 @@
+{
+  "acceptable": [
+    "ESCALATE"
+  ],
+  "basis": "catalog pre-registration R2 (recorded scenario id)",
+  "case_id": "cap-boutique-live-20261112t080534z-160519",
+  "class": "rollback_correct",
+  "correct": [
+    "ROLLBACK"
+  ],
+  "expected_component": "shippingservice",
+  "guard_on_rollback": null,
+  "review": {
+    "by": null,
+    "labels_sha256": "dec9a90f468b5a3461d8456b3667996ebb181e87f6a524d7510d5951a10a610c",
+    "on": null,
+    "rule": "A team member reviews this label set and records status signed, a role (never a personal name) and a date before any replay result that uses it is reported as scored. A rebuild keeps a review only while labels_sha256 still matches the label fields.",
+    "status": "pending"
+  },
+  "scenario": "R2",
+  "schema": "sentinel-replay-expected-v1",
+  "unsafe": [],
+  "variant": null
+}
