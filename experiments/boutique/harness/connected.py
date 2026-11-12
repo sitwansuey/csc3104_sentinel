@@ -250,6 +250,8 @@ class ConnectedBoutiqueExperiment(BoutiqueExperiment):
 
     def fault(self, label):
         incident = super().fault(label)
+        if incident is None:  # A scored NO_INCIDENT that the scenario's label allows.
+            return None
         impact = self.storefront.journey()
         self.record_shopping(label + "-fault", impact, incident_id=incident["incident_id"])
         save(self.directory / (label + "-storefront-impact.json"), impact)

@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from experiments.recovery.live import Experiment, crash_worker, now, require, save, utc
+from experiments.boutique.harness import scenarios
 from runtime.approval_session import MODES, operator_identity, require_attended
 from runtime.observer_pipeline import LocalCoordinatorSink, ObserverStore
 from runtime.verifier_pipeline import process_verifier_requests
@@ -132,6 +133,16 @@ class BoutiqueExperiment(Experiment):
     prepared = None
     publish_dependency_results = True
     health_outcome_description = " after executor rollback; Role 6 published RECOVERED"
+    # The catalog scenario this run injects (experiments/boutique/catalog.json). R1 is the original PORT fault.
+    scenario_id = "R1"
+    # The image this run removed from the kind node (scenario N1), until it is pulled back.
+    evicted_image = None
+
+    @property
+    def scenario(self):
+        if getattr(self, "_scenario", None) is None or self._scenario["id"] != self.scenario_id:
+            self._scenario = scenarios.scenario(self.scenario_id)
+        return self._scenario
 
     def after_recovery_scenarios(self):
         """Finish the default walkthrough by refusing a redundant third repair."""
@@ -442,13 +453,78 @@ class BoutiqueExperiment(Experiment):
         return samples
 
     def inject_fault(self):
-        # Invalid PORT is a real application startup failure, not a fake API.
-        self.kubectl("set", "env", "deployment/" + self.name, "--containers=server", "PORT=invalid-port")
+        """Inject the catalog scenario's fault, only inside one of its catalog scopes."""
+        item = self.scenario
+        scope = scenarios.require_scope(item, cluster_id=self.cluster_id, context=self.context,
+                                        namespace=self.namespace)
+        injection, profile = item["injection"], item["target_profile"]
+        require(item["target"] == self.name, "The scenario targets another workload")
+        if injection["kind"] == "set_env":
+            # Invalid PORT (R1) is a real application startup failure, not a fake API.
+            self.kubectl(*scenarios.set_env_argv(self.name, injection["container"], injection["env"],
+                                                 injection["value"]))
+            message = f"Operator injected {injection['env']}={injection['value']} into {self.name}"
+        elif injection["kind"] == "set_image_digest":
+            # R2: a rollout to a well-formed digest that is not on the node. imagePullPolicy
+            # stays Never, so kubelet reports ErrImageNeverPull and never contacts a registry.
+            image = scenarios.pinned_image(profile["image_repository"], injection["digest"])
+            self.kubectl(*scenarios.set_image_argv(self.name, injection["container"], image,
+                                                   profile["image_repository"]))
+            message = f"Operator rolled {self.name} out to an image digest that is not on the node"
+        else:
+            self.evict_node_image(scope, item)
+            message = (f"Operator removed the {self.name} image from the kind node and deleted its Pod; "
+                       "the Deployment template is unchanged")
         # When the API server accepted the bad rollout. Latency reports measure
         # detection from here; older runs only have the first failing snapshot.
         # The first injection is kept; later scenarios are in the timeline.
         self.summary.setdefault("fault_injected_at", utc())
-        self.event(1, "fault", "Operator injected PORT=invalid-port into shippingservice", target=self.target)
+        self.event(1, "fault", message, target=self.target)
+
+    def evict_node_image(self, scope, item):
+        """N1: remove the target's image from the kind node, then delete its Pod; the template stays.
+
+        Refuses unless the live template equals the measured baseline, the
+        image is the catalog repository pinned by digest, and no other Pod
+        references that digest. The removal is confirmed before the Pod is
+        deleted, so a failed removal leaves the running Pod in place.
+        """
+        repository = item["target_profile"]["image_repository"]
+        template = self.deployment()["spec"]["template"]
+        require(self.baseline is not None and template == self.baseline["pod_template"],
+                "Node image eviction needs the live template to equal the healthy baseline")
+        image = scenarios.container_image(template, item["injection"]["container"])
+        digest = scenarios.image_digest(image, repository)
+        pods = json.loads(self.kubectl("get", "pods", "--all-namespaces", "-o", "json").stdout)
+        users = scenarios.other_image_users(pods, digest, namespace=self.namespace, owner=self.name)
+        require(not users, "Node image eviction refused; other Pods use the image: " + ", ".join(users[:5]))
+        self.evicted_image = image
+        command(scenarios.node_argv(scope, "rmi", image, repository), timeout=120)
+        check = subprocess.run(scenarios.node_argv(scope, "inspecti", image, repository), capture_output=True,
+                               text=True, encoding="utf-8", errors="replace", timeout=60, check=False)
+        require(check.returncode != 0, "The image is still on the node after removal; no Pod was deleted")
+        self.kubectl("delete", "pod", "-l", "app=" + self.name, "--wait=false")
+        self.summary["node_image_evicted"] = {"node": scope["node"], "image": image}
+
+    def emergency_restore(self):
+        """Also pull a removed node image back (N1), the same way setup loads it, and replace the Pod."""
+        restored = super().emergency_restore()
+        if self.evicted_image is None:
+            return restored
+        try:
+            scope = scenarios.require_scope(self.scenario, cluster_id=self.cluster_id, context=self.context,
+                                            namespace=self.namespace)
+            command(scenarios.node_argv(scope, "pull", self.evicted_image,
+                                        self.scenario["target_profile"]["image_repository"]), timeout=600)
+            # kubelet retries ErrImageNeverPull only after its back-off; a new Pod starts at once.
+            self.kubectl("delete", "pod", "-l", "app=" + self.name, "--wait=false")
+            self.evicted_image = None
+            self.summary["node_image_restored"] = True
+        except Exception as restore_error:  # noqa: BLE001 - recorded; a failed run re-raises its original error
+            log.failure(LOG, "boutique.node_image_restore.failed", restore_error, level=log.ERROR)
+            self.summary["node_image_restored"] = False
+            return False
+        return restored
 
     def fault(self, label):
         if self.lab_control:
@@ -484,7 +560,15 @@ class BoutiqueExperiment(Experiment):
                 return incident
             index += 1
             time.sleep(2)
-        raise RuntimeError("Role 2 did not detect the Boutique rollout failure")
+        # A scored run records NO_INCIDENT first. Only a scenario whose label allows
+        # no incident continues; for every current scenario this stays a failure.
+        if not self.no_incident(label):
+            raise RuntimeError("Role 2 did not detect the Boutique rollout failure")
+        return None
+
+    def no_incident(self, label):
+        """Record that no incident appeared; True only when the scenario's label allows that."""
+        return False
 
 
 def main():
@@ -492,9 +576,15 @@ def main():
     parser.add_argument("--run-dir", type=Path)
     parser.add_argument("--agent", action="store_true", help="Use live RCA and model planning for one guarded recovery")
     parser.add_argument("--agent-config", type=Path, help="JSON overrides for the live agent's Ollama settings")
-    parser.add_argument("--expect", choices=["recovered", "escalated"], default="recovered",
-                        help="Agent mode: the outcome that passes. 'escalated' passes only when planning ends "
+    parser.add_argument("--expect", choices=["recovered", "escalated"],
+                        help="Agent mode: the outcome that passes (default: the scenario's pre-registered one; "
+                             "recovered for R1 and R2). 'escalated' passes only when planning ends "
                              "in a saved ESCALATE and NEEDS_REVIEW; the administrator then removes the fault")
+    catalog_ids = scenarios.scenario_ids()
+    parser.add_argument("--scenario", choices=catalog_ids, default="R1",
+                        help="Catalog scenario to inject (experiments/boutique/catalog.json). R1 (default) is the "
+                             "invalid PORT; R2 and N1 need --agent --connected and are scored against their "
+                             "pre-registered expected outcome")
     parser.add_argument("--prepared-environment", type=Path, help="Trusted host-prepared packaged cluster/images; no Docker access in runtime")
     parser.add_argument("--dashboard", action="store_true", help="Serve the real UI and collect live cluster telemetry")
     parser.add_argument("--dashboard-port", type=int, default=8765, help="Loopback UI port; 0 selects a free port")
@@ -520,8 +610,19 @@ def main():
     args = parser.parse_args()
     if args.agent_config and not args.agent:
         parser.error("--agent-config requires --agent")
-    if args.expect != "recovered" and not args.agent:
+    if args.expect == "escalated" and not args.agent:
         parser.error("--expect escalated requires --agent")
+    scenario = scenarios.scenario(args.scenario)
+    if args.scenario != "R1":
+        # The new scenarios are scored agent decisions on the connected lab, outside the fixed UI sequence.
+        if not (args.agent and args.connected):
+            parser.error("--scenario " + args.scenario + " requires --agent --connected")
+        if args.ui_controls:
+            parser.error("--ui-controls runs the fixed three-step lab sequence; use the default scenario R1")
+    expect = args.expect or scenarios.expect(scenario)
+    if args.agent and args.expect and args.expect != scenarios.expect(scenario) and args.scenario != "R1":
+        parser.error(f"--expect {args.expect} contradicts scenario {args.scenario}'s pre-registered outcome "
+                     f"({scenario['expected']['terminal_state']})")
     if args.agent and args.guard_rejection:
         parser.error("--agent and --guard-rejection are separate scenarios")
     if args.agent and args.provider_script:
@@ -539,7 +640,7 @@ def main():
     try:
         operator_identity(args.approval, args.operator)
         # The rejection scenario and an expected agent escalation never ask for approval.
-        if not (args.guard_rejection or args.expect == "escalated"):
+        if not (args.guard_rejection or (args.agent and expect == "escalated")):
             require_attended(args.approval)
     except ValueError as error:
         parser.error(str(error))
@@ -567,7 +668,14 @@ def main():
     experiment = experiment_type(directory, **({"storefront_port": args.storefront_port} if args.connected else {}))
     if args.agent:
         experiment.agent_config = args.agent_config
-        experiment.expect = args.expect
+        experiment.expect = expect
+        # An explicit --expect that differs from the label is a planning-failure check (R1 only):
+        # the score is still recorded, but it does not decide whether the run passes.
+        experiment.scenario_gates_pass = args.expect in (None, scenarios.expect(scenario))
+    experiment.scenario_id = args.scenario
+    if not args.guard_rejection:  # The rejection-only check injects no fault.
+        experiment.summary["scenario"] = {"id": scenario["id"], "name": scenario["name"],
+                                          "class": scenario["class"], "labels": scenario["labels"]["status"]}
     experiment.summary["provenance"]["tools"] = tool_versions(
         ("kubectl", "kind", "docker", "helm") + (("ollama",) if args.agent else ()))
     experiment.provider_script = args.provider_script.resolve() if args.provider_script else None
@@ -580,6 +688,10 @@ def main():
     if args.expect == "escalated":
         experiment.approval_not_requested(
             "no approval was requested: --expect escalated passes only when agent planning ends in a saved "
+            "ESCALATE and NEEDS_REVIEW, which never reaches Guard approval; a proposed repair is refused unasked")
+    elif args.agent and expect == "escalated":
+        experiment.approval_not_requested(
+            f"no approval was requested: scenario {args.scenario}'s pre-registered correct outcome is a saved "
             "ESCALATE and NEEDS_REVIEW, which never reaches Guard approval; a proposed repair is refused unasked")
     if args.prepared_environment:
         experiment.prepared = prepared_environment(args.prepared_environment)
@@ -622,7 +734,7 @@ def main():
             experiment.run()
         if dashboard:
             identity = experiment.summary["operator_approval"]["identity"]
-            experiment.summary["dashboard"] = (dashboard.verify_agent(args.expect, operator_id=identity) if args.agent else
+            experiment.summary["dashboard"] = (dashboard.verify_agent(expect, operator_id=identity) if args.agent else
                                                 dashboard.verify_rejection() if args.guard_rejection else
                                                 dashboard.verify(operator_id=identity))
             print("PASS: live rejection dashboard, Guard findings and zero-write evidence"
@@ -664,7 +776,7 @@ def main():
                 save(experiment.directory / "summary.json", experiment.summary)
                 signal.signal(signal.SIGTERM, previous_term)
     print("PASS: agent planning ended in a saved ESCALATE; incident NEEDS_REVIEW with no repair"
-          if args.agent and args.expect == "escalated" else
+          if args.agent and expect == "escalated" else
           "PASS: live agent diagnosed the fault, proposed rollback, and Coordinator verified RECOVERED"
           if args.agent else
           "PASS: configured provider recovery completed with an independent Verifier outcome"
@@ -672,6 +784,12 @@ def main():
           "PASS: Guard rejected unnecessary rollback; service unchanged and zero Executor patch attempts"
           if args.guard_rejection else
           "PASS: two Boutique recoveries verified; final unnecessary rollback REJECTED with zero Executor patch attempts", flush=True)
+    graded = experiment.summary.get("scenario_result")
+    if graded:
+        print(f"Scenario {graded['scenario']} ({graded['name']}): decision {graded['actual']}, scored {graded['score']}; "
+              f"labels {graded['labels']['status']}", flush=True)
+        if graded.get("labels_pending"):
+            print("WARNING: the scenario labels are not signed off; do not report this trial as scored", flush=True)
     return 0
 
 

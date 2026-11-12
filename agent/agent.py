@@ -7,6 +7,7 @@ from .tools import CATALOG
 from .workflows import retrieve
 from .evidence import compact_evidence, corroborated_onsets, timestamp_rejection
 from .progress import notify
+from .untrusted import UNTRUSTED_KEY
 
 
 def obj(properties, required=None):
@@ -83,6 +84,45 @@ def validate_report(final, required_fields, failure_count, allow_abstention, val
     return prediction
 
 
+def cite(final, evidence):
+    """Check and strip each failure's evidence_ids; return (report without them, {number: ids}).
+
+    Each failure must cite 1 to 10 ids of tool results this agent actually
+    collected (evidence maps id to result). A missing or unknown id is invalid.
+    """
+    failures = final.get("failures") if isinstance(final, dict) else None
+    if not isinstance(failures, list):
+        raise ValueError("Reporter returned invalid failures")
+    stripped, cited = [], {}
+    for number, failure in enumerate(failures, 1):
+        ids = failure.get("evidence_ids") if isinstance(failure, dict) else None
+        if not isinstance(ids, list) or not 1 <= len(ids) <= 10 or any(not isinstance(i, str) for i in ids):
+            raise ValueError("Each failure must cite 1 to 10 evidence_ids of collected tool results")
+        unknown = set(ids) - set(evidence)
+        if unknown:
+            raise ValueError(f"Failure {number} cites {len(unknown)} evidence id(s) that no tool result has")
+        stripped.append({key: value for key, value in failure.items() if key != "evidence_ids"})
+        cited[str(number)] = sorted(set(ids))
+    return {**final, "failures": stripped}, cited
+
+
+def mentions(result, component):
+    """True when a tool result's findings, events, examples, latency or components name the component."""
+    names = set((result.get("components") or {}) if isinstance(result.get("components"), dict) else ())
+    for key in ("findings", "events", "examples", "latency"):
+        names.update(item.get("component") for item in result.get(key) or () if isinstance(item, dict))
+    return component.casefold() in {name.casefold() for name in names if isinstance(name, str)}
+
+
+def unsupported_citation(prediction, cited, evidence):
+    """Why the cited results do not support the diagnosis, or None when every one names its component."""
+    for number, failure in prediction.items():
+        component = failure.get(FIELDS[1])
+        if component is not None and not all(mentions(evidence[i], component) for i in cited[number]):
+            return f"A result cited for failure {number} does not name the diagnosed component."
+    return None
+
+
 class Agent:
     def __init__(self, llm, telemetry, config, workspace, *, progress=None, deadline=None, clock=time.monotonic):
         """deadline: optional clock() value; no new round or report starts after it."""
@@ -97,6 +137,8 @@ class Agent:
         self.cache = {}
         self.cache_hits = 0
         self.call_history = []
+        # Evidence ids each reported failure cites, when run(cite_evidence=True).
+        self.citations = {}
         self.round_ceiling = self.config.get("max_steps", 16)
         self.progress = progress
 
@@ -195,6 +237,9 @@ class Agent:
                                        "evidence_id": branch})
                 try:
                     result = self.telemetry.run(node["tool"], args)
+                    # Each quoted log line gets its own evidence id inside this branch.
+                    for number, example in enumerate(result.get("examples", []), 1):
+                        example["evidence_id"] = f"{branch}.{number}"
                     outputs = [{"evidence_id": branch, "tool": node["tool"], "result": result}]
                     success = not result.get("truncated", False)
                     if node["tool"] == "metrics":
@@ -227,7 +272,15 @@ class Agent:
         save(directory / "result.json", {"state": "success" if success else "failure", "outputs": outputs})
         return success, outputs
 
-    def run(self, instruction, context="", required_fields=None, failure_count=None, initial_plan=None):
+    def run(self, instruction, context="", required_fields=None, failure_count=None, initial_plan=None,
+            cite_evidence=False):
+        """Investigate and report; return the validated prediction ({} for an abstention).
+
+        cite_evidence (the live planning path): each reported failure must also
+        cite the evidence ids of collected tool results that name its component.
+        A report still invalid after its one correction, or one whose cited
+        results do not name the component, becomes an abstention.
+        """
         allow_abstention = self.config.get("allow_abstention", False)
         inventory = self.telemetry.inventory()
         # Exact inventory is persisted; a bounded subset is exposed and explicitly labelled.
@@ -243,7 +296,7 @@ class Agent:
             self.round_ceiling = min(self.config.get("max_steps", 16), self.steps + 6)
             prompt = json.dumps({**base, "prior_analysis": bounded(self.summaries, 6000),
                                 "completed_calls": self.call_history,
-                                "evidence": bounded(compact_evidence(self.evidence), 10000),
+                                UNTRUSTED_KEY: bounded(compact_evidence(self.evidence), 10000),
                                 "remaining_tools": self.config.get("max_steps", 16)-self.steps})
             plan = initial_plan if round_id == 0 and initial_plan is not None else self.llm.ask("Planner", prompt + "\n" + CATALOG +
                 "\nProduce a bounded behavior tree. NEVER repeat a completed call; cached results provide no new evidence. Follow up on unexamined modalities, changed windows or columns. Distinguish sustained episodes from isolated spikes and boundary-censored runs. Do not select the earliest anomaly as root cause. Use sequence for dependencies, selector for fallback, parallel for independent analyses. A metrics/logs leaf with no findings fails its diagnostic condition; truncated results also fail. Use parallel when all modalities should be inspected even if one is empty. Plan only relevant dates. No more than 6 tool leaves per round.", PLAN)
@@ -254,7 +307,7 @@ class Agent:
             candidates = corroborated_onsets(self.evidence)
             analysis = self.llm.ask("Analyzer", json.dumps({"task": instruction,
                 "system_context": context,
-                "outputs": bounded(compact_evidence(self.evidence)), "corroborated_onsets": candidates,
+                UNTRUSTED_KEY: bounded(compact_evidence(self.evidence)), "corroborated_onsets": candidates,
                 "previous": bounded(self.summaries, 6000)}) + "\nAssess evidence sufficiency and contradictions. Earliest anomaly does not imply root cause. Require persistent onset and independently corroborating signals, with temporal order consistent with propagation. Corroborated onsets are hypotheses, not proven causes. Name evidence IDs. State exact NEW tool/column/window corrections when needed. Do not equate successful tools with a solved diagnosis.", ANALYSIS)
             confidence = analysis.get("confidence", 0)
             if not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
@@ -291,6 +344,13 @@ class Agent:
             if valid_components:
                 final_schema["properties"]["failures"]["items"]["properties"][FIELDS[1]] = {
                     "type": "string", "enum": valid_components}
+        # Ids of the tool results collected so far: the only evidence a report may cite.
+        results = {item["evidence_id"]: item["result"] for item in self.evidence if "result" in item}
+        if cite_evidence and results:
+            items = final_schema["properties"]["failures"]["items"]
+            items["properties"]["evidence_ids"] = {"type": "array", "minItems": 1, "maxItems": 10,
+                                                   "items": {"type": "string", "enum": sorted(results)}}
+            items["required"] = [*items["required"], "evidence_ids"]
         candidates = corroborated_onsets(self.evidence)
         if not allow_abstention:
             final_schema["properties"]["failures"]["minItems"] = failure_count or 1
@@ -302,7 +362,7 @@ class Agent:
         report_context = json.dumps({"task": instruction, "system_context": context,
             "required_fields": required_fields, "number_of_failures": failure_count,
             "analysis": bounded(self.summaries, 6000), "corroborated_onsets": candidates,
-            "evidence": bounded(compact_evidence(self.evidence))})
+            UNTRUSTED_KEY: bounded(compact_evidence(self.evidence))})
         report_instructions = (
             "\nReport failures chronologically. Use exact component/reason vocabulary from the task or system context. "
             "Datetimes must be YYYY-MM-DD HH:MM:SS in UTC+8. Choose a causally plausible initiating event, "
@@ -324,14 +384,49 @@ class Agent:
                 "when estimating a timestamp. Low confidence does not block an answer. Clearly state uncertainty "
                 "and missing evidence in explanation/limitations; do not present estimates as proven facts."
             )
-        final = self.llm.ask("Reporter", report_context + report_instructions, final_schema)
-        try:
-            prediction = validate_report(final, required_fields, failure_count, allow_abstention, valid_reasons, valid_components)
-        except ValueError as exc:
-            save(self.workspace / "invalid-report.json", final)
-            final = self.llm.ask("Reporter", report_context + report_instructions +
-                "\nCorrect the invalid response: " + str(exc) + "\nPrevious response: " + json.dumps(final), final_schema)
-            prediction = validate_report(final, required_fields, failure_count, allow_abstention, valid_reasons, valid_components)
+        if cite_evidence:
+            report_instructions += (
+                " Each failure MUST list evidence_ids: the IDs of the collected tool results that show this "
+                "component and reason. Every cited result must name the component.")
+
+        def check(answer):
+            stripped, cited = cite(answer, results) if cite_evidence else (answer, {})
+            return validate_report(stripped, required_fields, failure_count, allow_abstention,
+                                   valid_reasons, valid_components), cited
+
+        refusal = None  # cite_evidence only: why the report is replaced by an abstention
+        if cite_evidence and not results:
+            final, prediction, cited = {"failures": []}, {}, {}
+            refusal = "No tool result was collected, so no diagnosis can cite evidence."
+        else:
+            final = self.llm.ask("Reporter", report_context + report_instructions, final_schema)
+            try:
+                prediction, cited = check(final)
+            except ValueError as exc:
+                save(self.workspace / "invalid-report.json", final)
+                final = self.llm.ask("Reporter", report_context + report_instructions +
+                    "\nCorrect the invalid response: " + str(exc) + "\nPrevious response: " + json.dumps(final), final_schema)
+                try:
+                    prediction, cited = check(final)
+                except ValueError as again:
+                    if not cite_evidence:
+                        raise
+                    # One correction only: a report still outside the code-owned vocabulary abstains.
+                    save(self.workspace / "invalid-correction.json", final)
+                    final, prediction, cited = {"failures": []}, {}, {}
+                    refusal = "The corrected report was still invalid: " + str(again)
+            if refusal is None and cite_evidence and prediction:
+                refusal = unsupported_citation(prediction, cited, results)
+        if refusal is not None:
+            if not allow_abstention:
+                raise ValueError(refusal)
+            if final.get("failures"):
+                save(self.workspace / "rejected-report.json", final)
+            final = {"failures": [], "explanation": "Abstained: " + refusal,
+                     "limitations": "A diagnosis must use the code-owned vocabulary and cite collected "
+                                    "evidence that names its component."}
+            prediction, cited = {}, {}
+        self.citations = cited
         failures = final["failures"]
         rejection = timestamp_rejection(failures, candidates, self.summaries[-1] if self.summaries else {},
                                         self.config.get("confidence_threshold", .8))
@@ -349,5 +444,6 @@ class Agent:
             "cache_hits": self.cache_hits, "corroborated_candidates": len(candidates),
             "allow_abstention": allow_abstention, "timestamp_evidence_warning": rejection,
             "abstained": not bool(prediction),
+            **({"citations": self.citations, "citation_refusal": refusal} if cite_evidence else {}),
             "modalities": sorted({e["tool"] for e in self.evidence if "result" in e})})
         return prediction

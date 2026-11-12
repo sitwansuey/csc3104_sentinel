@@ -18,9 +18,12 @@ successful model or repeating an Executor effect. A renewal cannot revive
 retired authorization. Guard reports and result acknowledgment commit together
 at Coordinator. Failed inference consumes a persisted Planner attempt; after
 the configured limit an ESCALATE proposal records NEEDS_REVIEW with no repair.
-The real-model provider receives the actual incident, eligible observed healthy
-baselines and retrieved runbooks using recovery prompt v1. It has no fixture
-fallback. This is retrieval-backed planning, separate from the richer RCA
+The real-model provider receives the incident's trusted fields with its signals
+quoted as untrusted data, eligible observed healthy baselines and retrieved
+runbooks, using recovery prompt v2. Code checks the raw signals for
+instruction-like text first; a flagged incident ends in the fixed
+`SUSPECTED_INJECTION` escalation without a model call (see
+[Untrusted inputs](planner.md#untrusted-inputs)). It has no fixture fallback. This is retrieval-backed planning, separate from the richer RCA
 experiment's internal Planner/Analyzer/Reporter workflow.
 The Planner journal also retains each model attempt's exact incident, eligible
 baselines and retrieved runbook context. The real-model adapter records the
