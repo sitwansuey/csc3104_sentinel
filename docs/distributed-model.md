@@ -565,7 +565,23 @@ Limits:
 - A seal moves the version, so a revoked proposal has to be planned again.
   The cost is paid only when an Executor had claimed the command.
 - A claim made before migration 6 has no ownership row, so its result is
-  refused with HTTP 409 once and the command is claimed again.
+  refused with HTTP 409 once and the command is claimed again. Until that
+  old lease ends, exclusivity does not see it either: a second Executor
+  could claim a command for the same workload. The resourceVersion test
+  still lets at most one of their writes commit.
+- A seal is not checked by Guard and needs no approval: `ExecutorAdapter.process`
+  calls `seal()` directly (`runtime/remote_adapters.py::ExecutorAdapter.process`).
+  It only ever sends `fence()`, which changes metadata under the UID and
+  resourceVersion tests, never the Pod template, and is refused for a
+  workload outside the Executor's allowlist.
+- `seal()` takes the host's local workload lock. If the paused writer runs on
+  the same host with the same lock directory, the seal gets TargetBusy and
+  stays pending until the writer lets go; by then its write has landed, so
+  the seal reports APPLIED and the action goes to review. That is safe, but
+  no fence is placed. An Executor on another host fences as described above.
+- A write that landed legitimately, but whose claimed command was withdrawn
+  (for example by new dependency evidence) before its result reached the
+  Coordinator, also goes to NEEDS_REVIEW rather than VERIFYING.
 - Executor writes do not yet carry the epoch in their evidence annotation;
   only seals write sentinel.io/fence-epoch.
 
@@ -573,11 +589,20 @@ Tests: `tests/test_fencing.py::PausedWriterHazardTests.test_the_seal_stops_the_p
 pauses Executor A at the real fault point `executor.before_patch` after its
 last lease and approval checks, revokes through the approval API, lets
 Executor B claim and perform the seal, and then A's patch raises
-ConditionalWriteConflict with zero template writes. The same script without
-the seal shows one write after the revocation
+ConditionalWriteConflict with zero template writes. In that test the
+ConditionalWriteConflict comes from the adapter's own read inside
+`conditional_restore`, which runs after the fault point and sees the version
+the seal moved; it is not proof that the server enforced the fence. The same
+script without the seal shows one write after the revocation
 (`tests/test_fencing.py::PausedWriterHazardTests.test_without_a_seal_the_same_paused_write_lands_after_the_revocation`).
+`tests/test_fencing.py::PausedWriterHazardTests.test_a_revocation_after_the_paused_holders_lease_expired_still_seals`
+lets A's lease run out while A is paused and only then revokes: the seal is
+still queued, B performs it, and A writes nothing.
 `tests/test_fencing.py::SealOutcomeTests.test_a_seal_landing_between_the_pre_read_and_the_patch_is_enforced_by_the_server`
-shows the file cluster refusing A's patch by its resourceVersion test.
+shows the storage-enforced refusal: the seal lands after A's own read, the
+file cluster refuses A's patch by its resourceVersion test, A cannot tell the
+refusal from a lost response (WriteOutcomeUnknown), and its reconcile read
+then reports SUPERSEDED.
 Scenario S8 runs the hazard with separate processes on one host. All of this
 uses the file-backed test cluster; no seal has been sent to a real API server.
 
