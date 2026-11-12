@@ -302,6 +302,21 @@ class RemoteWorker:
             self.client.post("retry", {name: delivery[name] for name in ("delivery_id", "lease_token")})
         return self._skew_status(estimator)
 
+    def _sweep(self):
+        """Let the component settle its own in-doubt state before claiming (the Executor's ledger rows).
+
+        No command for a row may ever come back to this host once a peer
+        finished it, so this runs on every pass, on the first pass after a
+        restart included; the component backs off rows it cannot decide.
+        """
+        sweep = getattr(self.adapter, "sweep", None)
+        if sweep is None:
+            return
+        try:
+            sweep()
+        except Exception as error:  # noqa: BLE001 - a failed sweep must not stop claiming; the next pass retries
+            log.failure(LOG, "worker.sweep.failed", error)
+
     def _send(self, row):
         delivery = row["delivery"]
         self.current = delivery_ids(delivery)
@@ -346,6 +361,7 @@ class RemoteWorker:
         skewed = self.clock_status()
         if skewed is not None:
             return skewed
+        self._sweep()
         delivery = self.client.post("claim", {})["delivery"]
         changed = self._store_changed_since_claim(delivery)
         if changed is not None:

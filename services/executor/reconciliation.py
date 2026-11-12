@@ -38,6 +38,9 @@ ACTION_ANNOTATION = "sentinel.io/execution"
 # One annotation family for fences. The marker carries action_id, a nonce and an
 # optional ownership epoch, which later Coordinator-commanded fences may set.
 FENCE_ANNOTATION = "sentinel.io/fence"
+# A Coordinator-commanded seal (P3.04) also writes its ownership epoch here, as decimal text, so an
+# admission policy can require it to grow (P3.05). An Executor's own fence carries no epoch.
+FENCE_EPOCH_ANNOTATION = "sentinel.io/fence-epoch"
 _EVIDENCE_FIELDS = frozenset({"action_id", "proposal_sha256", "target_uid", "template_sha256", "attempt_id"})
 # Actions whose evidence names the action. A ROLLBACK keeps the five-field form
 # written before other actions existed, so the absence of "action" means ROLLBACK.

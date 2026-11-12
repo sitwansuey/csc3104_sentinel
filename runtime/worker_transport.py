@@ -15,8 +15,12 @@ from runtime.service_identity import ProtocolError
 
 TOPICS = {"planner": {"planner.request": "proposal"},
           "guard": {"guard.request": "guard_result"},
-          "executor": {"executor.request": "execution_result", "executor.reconcile": "execution_result"},
+          "executor": {"executor.request": "execution_result", "executor.reconcile": "execution_result",
+                       "executor.seal": "fence_result"},
           "verifier": {"verifier.request": "outcome", "dependency.request": "dependency_result"}}
+# Executor commands are claimed under per-target ownership (P3.04): one live claim per workload, and
+# each claim gets the workload's next epoch, returned to the Executor as fence_epoch.
+EXECUTOR_TOPICS = frozenset(TOPICS["executor"])
 INGRESS = {"observer": "incident", "verifier": "dependency_result"}
 
 
@@ -98,6 +102,7 @@ class Delivery:
                             "guard_event_id": request["id"]}, request["action_id"])
                         dependency_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
                         db.execute("INSERT INTO transport_dependencies VALUES(?,?)", (request["id"], dependency_id))
+            self._seal_abandoned(db)
             db.execute("""UPDATE transport_receipts SET finished=?
                 WHERE finished IS NULL AND event_id IN (SELECT id FROM outbox WHERE delivered=1)""", (now,))
             db.execute("DELETE FROM transport_receipts WHERE finished < ?", (now - self.retention,))
@@ -109,6 +114,57 @@ class Delivery:
             self.store.discard_after_commit()  # Rolled-back transitions are never logged.
             raise
         self.store.run_after_commit()
+
+    def _seal_abandoned(self, db):
+        """Require a seal for each executor.request withdrawn while claimed (P3.04).
+
+        dispatch_pending has just acknowledged commands whose action changed
+        (an approval revoked, new dependency evidence, a new Guard decision).
+        A claimed, unfinished receipt for one means some Executor may still be
+        inside its conditional write, whose lease check is check-then-act, so
+        the workload is sealed before anything else runs on it. A command that
+        was never claimed has no receipt and needs no seal.
+        """
+        for row in db.execute("""SELECT o.action_id FROM transport_receipts r JOIN outbox o ON o.id=r.event_id
+                WHERE r.finished IS NULL AND r.attempts > 0 AND o.delivered=1
+                AND o.topic='executor.request' ORDER BY o.id""").fetchall():
+            action = self.store.action(row["action_id"])
+            if action is not None:
+                self.store.require_seal(action)
+
+    def _target_free(self, db, now, candidate):
+        """False while another Executor claim on the candidate's workload is live, or a seal is still due.
+
+        Only the seal itself may be claimed while its workload waits for it:
+        the abandoned holder may be paused or partitioned for any time, so the
+        seal never waits for that holder's lease.
+        """
+        target = json.loads(candidate["payload"])["proposal"]["target"]
+        owner = self.store.target_ownership(target)
+        if owner is None:
+            return True
+        if owner["seal_required"] and candidate["topic"] != "executor.seal":
+            return False
+        if owner["event_id"] is None or owner["event_id"] == candidate["id"]:
+            return True
+        held = db.execute("SELECT finished, expires FROM transport_receipts WHERE event_id=?",
+                          (owner["event_id"],)).fetchone()
+        return held is None or held["finished"] is not None or held["expires"] <= now
+
+    def _claimable(self, db, now, candidate):
+        if candidate["topic"] == "planner.request":
+            incident_id = json.loads(candidate["payload"])["incident"]["incident_id"]
+            return self.store.planning_blocker(incident_id) is None
+        if candidate["topic"] in EXECUTOR_TOPICS:
+            return self._target_free(db, now, candidate)
+        return True
+
+    def _owner_epoch(self, row, identity):
+        """The ownership epoch of this claim, or None when a later claim took the workload."""
+        owner = self.store.target_ownership(json.loads(row["payload"])["proposal"]["target"])
+        if owner is None or owner["event_id"] != row["event_id"] or owner["holder"] != identity:
+            return None
+        return owner["epoch"]
 
     def _record_clock(self, identity, estimate, now):
         if estimate is not None:
@@ -140,8 +196,7 @@ class Delivery:
                 AND dep.action_id=o.action_id AND dep.delivered=0))
             AND (r.event_id IS NULL OR r.available <= ?) ORDER BY o.id""",
             (*topics, now)).fetchall()
-        row = next((candidate for candidate in candidates if candidate["topic"] != "planner.request"
-                    or self.store.planning_blocker(json.loads(candidate["payload"])["incident"]["incident_id"]) is None), None)
+        row = next((candidate for candidate in candidates if self._claimable(db, now, candidate)), None)
         if row is None:
             return {"delivery": None}
         db.execute("INSERT OR IGNORE INTO transport_receipts(event_id,delivery_id) VALUES(?,?)",
@@ -161,6 +216,9 @@ class Delivery:
                     "expires_at": expires, "expires_in": self.lease, "attempt": receipt["attempts"] + 1,
                     "topic": row["topic"],
                     "event_id": row["id"], "payload": payload}
+        if row["topic"] in EXECUTOR_TOPICS:
+            delivery["fence_epoch"] = self.store.claim_target(payload["proposal"]["target"], identity,
+                                                              receipt["delivery_id"], row["id"])
         # The span that enqueued the command, so the worker continues its trace.
         context = parse_traceparent(row["trace_context"])
         if context is not None:
@@ -230,6 +288,11 @@ class Delivery:
             if (result["kind"] != TOPICS[role][row["topic"]] or
                     any(result.get(key) != source[key] for key in ("incident_id", "target", "action_id") if key in source)):
                 raise ProtocolError(409, "Result does not correspond to claimed request")
+            if row["topic"] in EXECUTOR_TOPICS:
+                # Only the workload's current owner reports, and a seal reports the epoch it was given.
+                epoch = self._owner_epoch(row, identity)
+                if epoch is None or result["kind"] == "fence_result" and result["epoch"] != epoch:
+                    raise ProtocolError(409, "Stale ownership epoch")
             if role == "guard":
                 # Guard decisions and their exact evidence report are one
                 # durable handoff. This is required after dependency revocation.
@@ -253,6 +316,11 @@ class Delivery:
             except SupersededResult as error:
                 # 409, so the worker releases the delivery instead of resending it.
                 raise ProtocolError(409, "Result answers a superseded request") from error
+            if row["topic"] == "executor.request" and result["status"] == "FAILED" and row["attempts"] > 1:
+                # FAILED means this holder wrote nothing, with the version maybe unchanged, while an earlier
+                # holder of this command may still be inside its write: seal before anything else runs.
+                # CONFLICT and SUPERSEDED need no seal: the version already moved, so no such write can commit.
+                self.store.require_seal(self.store.action(source["action_id"]))
             acknowledge(self.store, row["event_id"])
             db.execute("UPDATE transport_receipts SET finished=?, result_digest=? WHERE event_id=?",
                        (now, result_digest, row["event_id"]))

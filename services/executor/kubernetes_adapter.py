@@ -3,7 +3,7 @@
 One JSON Patch tests UID/resourceVersion, writes the exact Pod template chosen
 by the action handler and writes action evidence together. A RESTART uses this
 same patch; its template differs from the baseline only by the restart token. A fence is the same tests plus one metadata
-annotation and nothing else. This module does not decide authorization.
+annotation and nothing else; a Coordinator seal adds a second, its epoch. This module does not decide authorization.
 The caller must inject fresh Guard validation and a restricted kubeconfig.
 """
 
@@ -18,7 +18,9 @@ import tempfile
 from services.executor.core import (
     ACTION_ANNOTATION, ConditionalWriteConflict, ReadUnavailable, TargetAbsent, encode_evidence,
 )
-from services.executor.reconciliation import FENCE_ANNOTATION, evidence_fields_valid, valid_fence_marker
+from services.executor.reconciliation import (
+    FENCE_ANNOTATION, FENCE_EPOCH_ANNOTATION, evidence_fields_valid, valid_fence_marker,
+)
 from services.executor.store import canonical_json, fingerprint
 from services.guard.adapters import AdapterError, _DNS_LABEL, _DNS_SUBDOMAIN, _parse_json
 from services.guard.preview import _private_file
@@ -206,15 +208,18 @@ class KubectlDeploymentAPI:
         metadata = snapshot["deployment"]["metadata"]
         if _identity(snapshot["deployment"], self.cluster_id) != target or metadata["resourceVersion"] != version:
             raise ConditionalWriteConflict("Deployment UID or resource version changed before the fence")
-        annotation = canonical_json(marker)
+        values = {FENCE_ANNOTATION: canonical_json(marker)}
+        if "epoch" in marker:  # A Coordinator seal (P3.04) also records its ownership epoch.
+            values[FENCE_EPOCH_ANNOTATION] = str(marker["epoch"])
         patch = [{"op": "test", "path": "/metadata/uid", "value": target["uid"]},
                  {"op": "test", "path": "/metadata/resourceVersion", "value": version},
-                 _annotation_operation(metadata, FENCE_ANNOTATION, annotation)]
+                 *_annotation_operations(metadata, values)]
         if any(not operation["path"].startswith("/metadata/") for operation in patch):
             raise LiveAdapterError("A fence may change metadata only")
 
         def confirms(admitted):
-            return admitted["metadata"].get("annotations", {}).get(FENCE_ANNOTATION) == annotation
+            annotations = admitted["metadata"].get("annotations", {})
+            return all(annotations.get(key) == value for key, value in values.items())
         fenced = self._submit(target, version, patch, confirms, prefix="sentinel-fence-", counter="fence_attempts")
         self.stats["successful_fences"] += 1
         return fenced
@@ -267,3 +272,10 @@ def _annotation_operation(metadata, key, value):
     if not isinstance(annotations, dict):
         raise LiveAdapterError("Deployment annotations are invalid")
     return {"op": "add", "path": "/metadata/annotations/" + key.replace("~", "~0").replace("/", "~1"), "value": value}
+
+
+def _annotation_operations(metadata, values):
+    """Add several annotations in one patch, keeping every other annotation on the object."""
+    if metadata.get("annotations") is None:
+        return [{"op": "add", "path": "/metadata/annotations", "value": dict(values)}]
+    return [_annotation_operation(metadata, key, value) for key, value in values.items()]

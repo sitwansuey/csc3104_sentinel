@@ -12,10 +12,12 @@ from shared.contracts import validate_message
 from services.coordinator.store import (
     CoordinatorError, LOG, SQLiteStore, SupersededResult, _digest, _json, _require, _time,
 )
+from services.executor.delivery_store import _ensure_reviews, _record_review
 
 # The requests each worker result kind answers (runtime/worker_transport.py::TOPICS).
 ANSWERS = {"dependency_result": ("dependency.request",), "guard_result": ("guard.request",),
-           "execution_result": ("executor.request", "executor.reconcile"), "outcome": ("verifier.request",)}
+           "execution_result": ("executor.request", "executor.reconcile"), "outcome": ("verifier.request",),
+           "fence_result": ("executor.seal",)}
 
 
 class LocalEventBus:
@@ -79,6 +81,43 @@ def _answers_current_request(message, store, answers):
                        "Result answers a request issued before the stored result")
 
 
+SEAL_REVIEW_REASONS = {
+    "APPLIED": "The seal found this action's write on the target: it landed after the action was abandoned",
+    "UNSEALED": "The seal could not fence the target within its bounded attempts; the workload stays blocked",
+}
+
+
+def _apply_fence_result(message, store, answers):
+    """Apply an Executor's answer to executor.seal (P3.04).
+
+    SEALED: no write of the action can commit any more, so the workload is
+    released; an action that had not finished becomes FAILED, because the
+    resource version it was planned on is gone. APPLIED: the abandoned write
+    landed, so it is saved for review and the incident moves to NEEDS_REVIEW,
+    never hidden. UNSEALED: the same review, and the workload stays blocked.
+    A result whose epoch is not the workload's current one is refused.
+    """
+    incident_id, action_id = message["incident_id"], message["action_id"]
+    action = store.action(action_id)
+    _require(action is not None and action["incident_id"] == incident_id, "Seal result does not match an action")
+    if answers is not None:
+        _answers_current_request(message, store, answers)
+    owner = store.target_ownership(message["target"])
+    _require(owner is not None and owner["seal_required"] and owner["seal_action_id"] == action_id,
+             "No seal is outstanding for this action")
+    _superseded_unless(message["epoch"] == owner["epoch"], "Seal result carries a stale ownership epoch")
+    outcome = message["outcome"]
+    store.finish_seal(message["target"], message["epoch"], release=outcome != "UNSEALED")
+    if outcome == "SEALED":
+        if action["state"] in {"VALIDATING", "AWAITING_APPROVAL", "READY"}:
+            store.set_state(incident_id, action_id, "FAILED")
+        return
+    _ensure_reviews(store)
+    _record_review(store, answers or 0, message, SEAL_REVIEW_REASONS[outcome])
+    store.set_state(incident_id, action_id, "NEEDS_REVIEW")
+    store.enqueue("incident.review", {"fence": message}, action_id)
+
+
 def _apply(message, store, answers=None, producer=None):
     """Apply one message. answers is the outbox id of the request a worker result
     answers. With it, lifecycle order uses Coordinator sequence numbers only
@@ -92,6 +131,9 @@ def _apply(message, store, answers=None, producer=None):
     _require(incident is not None, "Incident must be recorded first")
     _require(incident["target"] == message["target"], "Incident target mismatch")
     action_id = message["action_id"]
+    if kind == "fence_result":
+        _apply_fence_result(message, store, answers)
+        return
     if kind == "proposal":
         _require(incident["state"] in {"OPEN", "REJECTED", "FAILED"},
                  "Only one active action is permitted; recovered incidents cannot reopen")
@@ -327,6 +369,21 @@ def approve(action_id: str, operator_id: str, store: SQLiteStore, *, expires_at:
     return record
 
 
+def reseal(action_id: str, store: SQLiteStore) -> bool:
+    """Queue another executor.seal for a workload still blocked by this action's seal.
+
+    For an operator after an UNSEALED result, once the API server accepts
+    writes again; the workload stays blocked until a seal reports. Like
+    approve(), a trusted local interface. Return True when a seal was queued.
+    """
+    with store.transaction():
+        action = store.action(action_id)
+        owner = store.target_ownership(action["proposal"]["target"]) if action else None
+        _require(owner is not None and owner["seal_required"] and owner["seal_action_id"] == action_id,
+                 "No seal is outstanding for this action")
+        return store.require_seal(action)
+
+
 def dispatch_pending(store: SQLiteStore, event_bus) -> int:
     """Replay pending envelopes; acknowledge only after consumer success.
 
@@ -358,6 +415,10 @@ def dispatch_pending(store: SQLiteStore, event_bus) -> int:
                 newest = store.db.execute("SELECT max(id) FROM outbox WHERE topic='guard.request' AND action_id=?",
                                           (row["action_id"],)).fetchone()[0]
                 obsolete = obsolete or payload.get("guard_event_id") != newest
+            elif row["topic"] == "executor.seal":
+                # A seal stays wanted, whatever the action's state, until its workload is released.
+                owner = store.target_ownership(payload["proposal"]["target"])
+                obsolete = not (owner and owner["seal_required"] and owner["seal_action_id"] == row["action_id"])
         elif row["topic"] == "planner.request":
             incident = store.incident(json.loads(row["payload"])["incident"]["incident_id"])
             obsolete = incident["state"] != "OPEN"

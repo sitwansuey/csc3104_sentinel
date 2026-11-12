@@ -834,7 +834,7 @@ class RestartAdapterAndSampleTests(unittest.TestCase):
             with patch.object(module, "ROOT", root), contextlib.redirect_stdout(io.StringIO()) as out:
                 module.main()
             return out.getvalue()
-        self.assertIn("Validated 7 example messages", run())
+        self.assertIn("Validated 8 example messages", run())
         path = samples / "messages/restart-proposal.json"
         sample = json.loads(path.read_text(encoding="utf-8"))
         sample["parameters"]["restart_token"] = restart_token("INC-OTHER", sample["parameters"]["baseline_id"])

@@ -173,9 +173,18 @@ class SequenceOrderingTests(unittest.TestCase):
         with self.assertRaises(ProtocolError) as refused:
             self.finish("executor", old, late, identity="executor-a")
         self.assertEqual(refused.exception.status, 409)
+        # P3.04: the old request was withdrawn while executor-a held it, so the workload is sealed before
+        # the current request may run. The seal answers in sequence mode with an earlier stamp too.
         current = self.claim("executor", "executor-b")
-        self.finish("executor", current, shifted(sample("execution-result"), -3600), identity="executor-b")
-        self.assertEqual(self.state(), "VERIFYING")
+        self.assertEqual(current["topic"], "executor.seal")
+        sealed = {"schema_version": "1.0", "kind": "fence_result", "incident_id": self.proposal["incident_id"],
+                  "action_id": self.proposal["action_id"], "target": self.proposal["target"],
+                  "epoch": current["fence_epoch"], "outcome": "SEALED", "resource_version": "2001",
+                  "recorded_at": "2026-10-10T11:00:00Z"}
+        self.finish("executor", current, sealed, identity="executor-b")
+        # The seal moved the resource version the proposal was planned on, so it can never run: FAILED.
+        self.assertEqual(self.state(), "FAILED")
+        self.assertIsNone(self.delivery.claim("executor-b", "executor")["delivery"])
 
     def test_a_superseded_result_is_answered_with_409_so_the_worker_releases_it(self):
         # dispatch_pending usually retires a superseded request first; this is the

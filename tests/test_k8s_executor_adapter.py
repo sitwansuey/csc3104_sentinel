@@ -58,12 +58,14 @@ class Runner:
         for operation in self.patches[-1]:
             if operation["path"] == "/spec/template":
                 candidate["spec"]["template"] = deepcopy(operation["value"])
-        annotation_operation = self.patches[-1][-1]
-        if annotation_operation["path"] == "/metadata/annotations":
-            candidate["metadata"]["annotations"] = annotation_operation["value"]
-        else:
-            key = annotation_operation["path"].rsplit("/", 1)[1].replace("~1", "/").replace("~0", "~")
-            candidate["metadata"].setdefault("annotations", {})[key] = annotation_operation["value"]
+        for annotation_operation in self.patches[-1]:
+            if not annotation_operation["path"].startswith("/metadata/annotations"):
+                continue
+            if annotation_operation["path"] == "/metadata/annotations":
+                candidate["metadata"]["annotations"] = annotation_operation["value"]
+            else:
+                key = annotation_operation["path"].rsplit("/", 1)[1].replace("~1", "/").replace("~0", "~")
+                candidate["metadata"].setdefault("annotations", {})[key] = annotation_operation["value"]
         candidate["metadata"]["resourceVersion"] = "server-write-1"
         if self.response_change:
             self.response_change(candidate)
@@ -318,7 +320,28 @@ class KubernetesExecutorAdapterTests(unittest.TestCase):
         self.fence(marker=fence_marker("ACT-LIVE-001", "c" * 32, epoch=3))
         self.assertEqual(self.runner.patches[0][-1], {
             "op": "add", "path": "/metadata/annotations",
-            "value": {FENCE_ANNOTATION: '{"action_id":"ACT-LIVE-001","epoch":3,"nonce":"' + "c" * 32 + '"}'}})
+            "value": {FENCE_ANNOTATION: '{"action_id":"ACT-LIVE-001","epoch":3,"nonce":"' + "c" * 32 + '"}',
+                      "sentinel.io/fence-epoch": "3"}})
+
+    def test_a_seal_patch_is_the_uid_and_version_tests_plus_its_marker_and_epoch_only(self):
+        # P3.04: a Coordinator seal is fence() with an epoch; it adds sentinel.io/fence-epoch and touches no spec.
+        self.runner.deployment["metadata"]["annotations"] = {"example.org/owner": "team"}
+        marker = fence_marker("ACT-LIVE-001", "d" * 32, epoch=7)
+        fenced = self.fence(marker=marker)
+        self.assertEqual(self.runner.patches, [[
+            {"op": "test", "path": "/metadata/uid", "value": self.target["uid"]},
+            {"op": "test", "path": "/metadata/resourceVersion", "value": self.version},
+            {"op": "add", "path": "/metadata/annotations/sentinel.io~1fence", "value": canonical_json(marker)},
+            {"op": "add", "path": "/metadata/annotations/sentinel.io~1fence-epoch", "value": "7"},
+        ]])
+        self.assertEqual(fenced["deployment"]["metadata"]["annotations"]["sentinel.io/fence-epoch"], "7")
+        self.assertEqual(fenced["deployment"]["spec"], self.deployment["spec"])
+
+    def test_a_seal_outside_the_allowlist_is_refused_before_any_command(self):
+        outside = dict(self.target, name="other-api")
+        with self.assertRaises(LiveAdapterError):
+            self.adapter.fence(target=outside, version=self.version, marker=fence_marker("ACT-LIVE-001", "d" * 32, 2))
+        self.assertEqual(self.runner.commands, [])
 
     def test_fence_uses_only_the_get_and_patch_verbs_the_executor_role_grants(self):
         self.fence()
