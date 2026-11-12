@@ -216,8 +216,11 @@ class ChaosNegativeMatrixTests(unittest.TestCase):
 
     Faults: a pod failure (Pods not ready, template at the baseline), a config
     drift (the R1 template fault) and CPU stress (every Pod ready, template at
-    the baseline). Actions: ROLLBACK and RESTART. The approval is valid in
-    every cell, so only the Guard's necessity checks can refuse.
+    the baseline). Actions: ROLLBACK and RESTART. Here the approval is valid in
+    every cell, so only the Guard's necessity checks can refuse. The live
+    harness (ChaosRecoveryMixin.forced_refusal) sends its forced actions with
+    no approval at all; the last test shows the refusals hold without one and
+    that a check which passes then escalates instead of allowing a write.
     """
 
     def setUp(self):
@@ -244,12 +247,24 @@ class ChaosNegativeMatrixTests(unittest.TestCase):
                      "based_on_resource_version": live["deployment"]["metadata"]["resourceVersion"],
                      "parameters": {key: baseline[key] for key in ("baseline_id", "template_sha256")}})
 
-    def decide(self, fault, action):
+    def decide(self, fault, action, *, approved=True):
         from tests.test_restart_action import approval_for, with_proposal
         live = self.state(fault)
         inputs = with_proposal(self.inputs, self.proposal(action, live)) | {"live_state": live}
-        approval = approval_for(inputs["proposal"], inputs["policy"])
+        approval = approval_for(inputs["proposal"], inputs["policy"]) if approved else None
         return evaluate_with_report(**inputs, approval=approval, now=NOW)[0], inputs, approval
+
+    def test_without_an_approval_the_refusals_hold_and_a_passing_check_escalates(self):
+        from experiments.boutique.harness.chaos_recovery import FORCED
+        for (fault, action), code in FORCED.items():
+            with self.subTest(fault=fault, action=action):
+                decision, _, _ = self.decide(fault, action, approved=False)
+                self.assertEqual(decision["verdict"], "REJECT")
+                self.assertIn(code, decision["reason_codes"])
+        # A RESTART while a Pod is unready passes the necessity check (e.g. CPU stress that also fails readiness):
+        # with no approval the Guard escalates, so the Executor cannot write.
+        decision, _, _ = self.decide("pod", "RESTART", approved=False)
+        self.assertEqual((decision["verdict"], decision["reason_codes"]), ("ESCALATE", ["OPERATOR_APPROVAL_REQUIRED"]))
 
     def test_each_cell_gets_the_pre_registered_verdict(self):
         cells = {("pod", "RESTART"): ("ALLOW", "VALIDATION_PASSED"),

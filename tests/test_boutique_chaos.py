@@ -252,19 +252,41 @@ CONNECTED_CONTEXT, CONNECTED_NAMESPACE = "kind-sentinel-boutique-connected", "se
 class ChaosInstallTests(unittest.TestCase):
     """ensure_chaos_mesh and ensure_metrics_server: install only, the connected lab only, never sentinel-lab."""
 
-    def run_install(self, cluster, function, *arguments):
-        commands = []
-        with patch.object(Cluster, "command", side_effect=lambda args, **kwargs: commands.append(list(args)) or ""), \
-                patch("shutil.which", return_value="/usr/bin/tool"):
+    def run_install(self, cluster, function, *arguments, nodes=("sentinel-boutique-connected-control-plane",),
+                    commands=None):
+        commands = [] if commands is None else commands
+
+        def command(args, **kwargs):
+            commands.append(list(args))
+            if args[-4:-2] == ["get", "nodes"]:
+                return json.dumps({"items": [{"metadata": {"name": name}} for name in nodes]})
+            return ""
+        with patch.object(Cluster, "command", side_effect=command), patch("shutil.which", return_value="/usr/bin/tool"):
             function(cluster, *arguments)
         return commands
+
+    def test_installs_refuse_a_context_that_does_not_reach_the_connected_lab(self):
+        from experiments.boutique.harness.chaos import ensure_chaos_mesh
+        from experiments.boutique.harness.chaos_recovery import ensure_metrics_server
+        digest = "sha256:" + "c" * 64
+        for nodes in ((), ("sentinel-boutique-chaos-control-plane",),
+                      ("sentinel-boutique-connected-control-plane", "sentinel-boutique-connected-worker")):
+            for function, extra in ((ensure_chaos_mesh, ()), (ensure_metrics_server, (digest,))):
+                with self.subTest(nodes=nodes, install=function.__name__):
+                    commands = []
+                    with self.assertRaisesRegex(RuntimeError, "does not point to the single-node connected lab"):
+                        self.run_install(Cluster(CONNECTED_CONTEXT, CONNECTED_NAMESPACE), function, *extra,
+                                         nodes=nodes, commands=commands)
+                    # Only the node read ran: no helm, no annotation.
+                    self.assertEqual([command[-4:] for command in commands], [["get", "nodes", "-o", "json"]])
 
     def test_ensure_chaos_mesh_runs_only_the_pinned_helm_install_and_the_annotation(self):
         from experiments.boutique.harness.chaos import CHAOS_VERSION, ensure_chaos_mesh
         cluster = Cluster(CONNECTED_CONTEXT, CONNECTED_NAMESPACE)
         commands = self.run_install(cluster, ensure_chaos_mesh)
-        self.assertEqual([command[0] for command in commands], ["helm", "kubectl"])
-        helm, annotate = commands
+        self.assertEqual([command[0] for command in commands], ["kubectl", "helm", "kubectl"])
+        nodes, helm, annotate = commands
+        self.assertEqual(nodes[nodes.index("--request-timeout=20s") + 1:], ["get", "nodes", "-o", "json"])
         self.assertEqual(helm[:5], ["helm", "upgrade", "--install", "chaos-mesh", "chaos-mesh"])
         self.assertEqual(helm[helm.index("--version") + 1], CHAOS_VERSION)
         self.assertEqual(CHAOS_VERSION, "2.8.2")
@@ -298,8 +320,9 @@ class ChaosInstallTests(unittest.TestCase):
         from experiments.boutique.harness.chaos_recovery import METRICS_SERVER_CHART, ensure_metrics_server
         digest = "sha256:" + "c" * 64
         commands = self.run_install(Cluster(CONNECTED_CONTEXT, CONNECTED_NAMESPACE), ensure_metrics_server, digest)
-        self.assertEqual(len(commands), 1)
-        helm = commands[0]
+        self.assertEqual(len(commands), 2)
+        self.assertEqual(commands[0][-4:], ["get", "nodes", "-o", "json"])
+        helm = commands[1]
         self.assertEqual(helm[:5], ["helm", "upgrade", "--install", "metrics-server", "metrics-server"])
         self.assertEqual(helm[helm.index("--version") + 1], METRICS_SERVER_CHART)
         self.assertEqual(helm[helm.index("--set-string") + 1], "image.tag=v0.7.2@" + digest)
@@ -660,6 +683,22 @@ class PodFailureRecoveryTests(OfflineChaosLab, unittest.TestCase):
         self.assertIn("RESTART_BUDGET_AVAILABLE", codes)
         self.assertNotIn("RESTART_BUDGET_UNKNOWN", codes)
 
+    def test_the_operator_case_gives_the_guard_the_restart_history(self):
+        """experiments/recovery/live.py case(): the Coordinator-side Guard reads restart_history for a RESTART,
+        so its first answer is the approval request alone, not RESTART_BUDGET_UNKNOWN."""
+        lab = self.lab()
+        handle(self.incident, lab.store, lab.bus)
+        lab.build_proposal = lambda incident, folder, rationale=None: lab.forced_proposal(incident, "RESTART")
+        folder, proposal = lab.case("operator-restart", self.incident, coordinator=True)
+        self.assertEqual(proposal["action"], "RESTART")
+        initial = json.loads((folder / "initial-guard.json").read_text(encoding="utf-8"))
+        self.assertEqual(initial["verdict"], "ALLOW")
+        reports = [json.loads(row[0]) for row in lab.store.db.execute("SELECT report FROM guard_reports")]
+        codes = {check["code"] for report in reports for check in report["checks"]}
+        self.assertIn("RESTART_BUDGET_AVAILABLE", codes)
+        self.assertNotIn("RESTART_BUDGET_UNKNOWN", codes)
+        self.assertEqual(self.cluster.writes, [])
+
     def test_attribution_fails_the_run_when_the_chaos_object_is_gone(self):
         lab = self.lab()
         handle(self.incident, lab.store, lab.bus)
@@ -677,6 +716,40 @@ class PodFailureRecoveryTests(OfflineChaosLab, unittest.TestCase):
         lab = self.lab()
         with self.assertRaisesRegex(RuntimeError, "was not refused"):
             lab.forced_refusal(self.incident, "RESTART", FORCED[("pod", "ROLLBACK")], "forced-correct-restart")
+        # A forced action carries no approval, so a check that passes escalates instead of writing.
+        folder = lab.directory / "forced-correct-restart"
+        self.assertIsNone(json.loads((folder / "approval.json").read_text(encoding="utf-8")))
+        proof = self.proof(lab, "forced-correct-restart")
+        self.assertEqual((proof["guard_verdict"], proof["executor_patch_attempts"], proof["template_unchanged"]),
+                         ("ESCALATE", 0, True))
+        self.assertIn("OPERATOR_APPROVAL_REQUIRED", proof["guard_reason_codes"])
+        self.assertEqual((self.cluster.write_attempts, self.cluster.writes), ([], []))
+
+    def test_a_refusal_that_still_wrote_or_changed_the_deployment_fails_the_run(self):
+        """The zero-write check stands apart from the verdict: a REJECT with a write attempt, or a changed
+        Deployment, fails the run."""
+        from experiments.boutique.harness import chaos_recovery
+        real = chaos_recovery.execute
+
+        def wrote(proposal, adapters):
+            result = real(proposal, adapters)
+            self.cluster.write_attempts.append({"action_id": proposal["action_id"]})
+            return result
+
+        def changed(proposal, adapters):
+            result = real(proposal, adapters)
+            self.cluster.snapshot["deployment"]["metadata"]["generation"] += 1
+            return result
+
+        for name, fake in (("write attempt", wrote), ("deployment changed", changed)):
+            with self.subTest(case=name):
+                self.root = Path(tempfile.mkdtemp(dir=self.root))
+                lab = self.lab()
+                with patch.object(chaos_recovery, "execute", side_effect=fake), \
+                        self.assertRaisesRegex(RuntimeError, "attempted a write or changed the Deployment"):
+                    lab.forced_refusal(self.incident, "ROLLBACK", chaos_recovery.FORCED[("pod", "ROLLBACK")],
+                                       "forced-rollback")
+                self.assertEqual(self.proof(lab, "forced-rollback")["guard_verdict"], "REJECT")
 
 
 class CpuStressTests(OfflineChaosLab, unittest.TestCase):
@@ -705,6 +778,37 @@ class CpuStressTests(OfflineChaosLab, unittest.TestCase):
         self.assertEqual((forced["executor_patch_attempts"], len(self.cluster.writes)), (0, 0))
         self.assertEqual(self.chaos.removed, [("PodChaos", "sentinel-pod-test")])
 
+    def test_without_an_incident_the_cpu_cell_still_runs_before_cleanup(self):
+        lab = self.lab(expect="no-incident", approval=None)
+        with patch("sys.stdout", new=io.StringIO()):
+            lab.recover_incident(None)
+        forced = self.proof(lab, "forced-restart")
+        self.assertEqual((forced["guard_verdict"], forced["executor_patch_attempts"]), ("REJECT", 0))
+        self.assertIn("RESTART_NOT_JUSTIFIED", forced["guard_reason_codes"])
+        proposal = json.loads((lab.directory / "forced-restart" / "proposal.json").read_text(encoding="utf-8"))
+        self.assertTrue(proposal["incident_id"].startswith("INC-FORCED-CPU-"))
+        self.assertEqual(self.cluster.writes, [])
+        self.assertEqual(self.chaos.removed, [("PodChaos", "sentinel-pod-test")])
+
+
+class CpuStressUnreadyPodTests(OfflineChaosLab, unittest.TestCase):
+    """N3 when the stressed Pod also fails readiness: RESTART_NOT_JUSTIFIED does not fire, and the Guard's other
+    checks pass, so only the missing approval stands between the forced RESTART and a write."""
+
+    scenario_id = "N3"
+    fixture = "pod-failure"
+
+    def test_a_forced_restart_the_guard_would_allow_escalates_with_zero_writes(self):
+        lab = self.lab(expect="escalated", approval=None)
+        with self.assertRaisesRegex(RuntimeError, "Forced RESTART was not refused with RESTART_NOT_JUSTIFIED"):
+            lab.forced_refusal(self.incident, "RESTART", "RESTART_NOT_JUSTIFIED", "forced-restart")
+        proof = self.proof(lab, "forced-restart")
+        self.assertEqual((proof["guard_verdict"], proof["guard_reason_codes"]),
+                         ("ESCALATE", ["OPERATOR_APPROVAL_REQUIRED"]))
+        self.assertEqual((proof["executor_patch_attempts"], proof["template_unchanged"],
+                          proof["generation_unchanged"]), (0, True, True))
+        self.assertEqual((self.cluster.write_attempts, self.cluster.writes), ([], []))
+
 
 class NetworkControlTests(OfflineChaosLab, unittest.TestCase):
     """T1: no incident is scored correct only with a true-negative proof, never by omission."""
@@ -731,6 +835,7 @@ class NetworkControlTests(OfflineChaosLab, unittest.TestCase):
             lab.recover_incident(None)
         self.assertEqual(self.chaos.removed, [("PodChaos", "sentinel-pod-test")])
         self.assertEqual(self.cluster.writes, [])
+        self.assertFalse((lab.directory / "forced-restart").exists())  # The CPU cell belongs to N3 only.
 
     def test_no_incident_without_evidence_does_not_pass(self):
         for name, change in (("blind", lambda lab: self.observe(lab, complete=False)),

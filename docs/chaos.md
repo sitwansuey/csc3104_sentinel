@@ -109,6 +109,9 @@ What the harness (`experiments/boutique/harness/chaos_recovery.py`) does:
   metrics-server chart 3.12.2 (`deploy/metrics-server/values.yaml`) with an
   image you must pin by digest. It creates no cluster. Any other context, and
   any name containing `sentinel-lab`, is refused before a command runs.
+  Before either Helm install it reads the node list and refuses a context
+  whose only node is not `sentinel-boutique-connected-control-plane`, so a
+  context of the right name that points elsewhere gets nothing.
   `preflight` only reads: CRDs, ready chaos-mesh Pods, the namespace
   annotation, no chaos object left from an earlier run, and an answering
   Metrics API.
@@ -141,16 +144,22 @@ What the harness (`experiments/boutique/harness/chaos_recovery.py`) does:
   fault expires (420 s after the harness created it), and the same chaos
   object was still present with `desiredPhase: Run` after the outcome. The
   proof is `attribution.json`; a failed check fails the run.
-- **The 2x2 negative matrix.** With a valid approval, the restricted
-  Executor's own Guard check must refuse a forced wrong action with zero
-  write attempts: ROLLBACK during the pod failure
-  (`ROLLBACK_ALREADY_AT_BASELINE`, before planning), RESTART during a
-  configuration drift (`RESTART_TEMPLATE_DRIFT`; after N2's recovery the
-  harness sets R1's invalid PORT, refuses the RESTART, then restores the
-  baseline as the administrator) and RESTART during CPU stress
-  (`RESTART_NOT_JUSTIFIED`). The correct diagonal is RESTART for the pod
-  failure (N2) and ROLLBACK for the configuration fault (R1). Each refusal is
-  in `<label>/proof.json`.
+- **The 2x2 negative matrix.** A forced wrong action goes to the restricted
+  Executor with no approval (`approval.json` is null): nobody approves it,
+  and the harness never writes an approval for it. The Executor's own Guard
+  check must refuse it with the expected code and zero write attempts:
+  ROLLBACK during the pod failure (`ROLLBACK_ALREADY_AT_BASELINE`, before
+  planning), RESTART during a configuration drift (`RESTART_TEMPLATE_DRIFT`;
+  after N2's recovery the harness sets R1's invalid PORT, refuses the
+  RESTART, then restores the baseline as the administrator) and RESTART
+  during CPU stress (`RESTART_NOT_JUSTIFIED`; in N3 this cell runs even when
+  no incident opens, against a harness-made incident id, after NO_INCIDENT is
+  scored). A Guard rejection outranks the missing approval. If the live state
+  lets a forced action pass every check (for example a stressed Pod that also
+  fails readiness), the Guard escalates for approval instead, nothing is
+  written, and the run fails as "not refused". The correct diagonal is
+  RESTART for the pod failure (N2) and ROLLBACK for the configuration fault
+  (R1). Each refusal is in `<label>/proof.json`.
 - **True negative (T1).** No incident passes only with a proof in
   `true-negative.json`: the fault confirmed injected, Observer samples
   spanning the detection window, at least one reading with complete metric
@@ -194,7 +203,14 @@ first scored trial (step 4 onwards).
    ```
 
    Copy the `Digest:` line of the last command into the run notes; it is the
-   pin for the next step.
+   pin for the next step. After the spikes, commit that digest (with any
+   threshold change) in the pre-registration commit, so the pin can be
+   reviewed in the repository before the scored trials.
+
+   **Owner gate.** Step 2 installs a privileged chaos-daemon on the kind node
+   and a metrics-server that skips kubelet TLS verification
+   (`--kubelet-insecure-tls`; see B1 in the [threat model](threat-model.md)).
+   Do not continue until the project owner has approved both for this lab.
 
 2. **Install and preflight.**
 
@@ -209,8 +225,7 @@ first scored trial (step 4 onwards).
 3. **Spikes first (about 30 minutes each).** Re-selection and record format:
 
    ```powershell
-   python -c "import json; from experiments.boutique.harness.chaos import scenario; print(json.dumps(scenario('pod', 'sentinel-boutique-connected', 'spike-pod', 420, 'shippingservice')))" > spike-pod.json
-   kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected create -f spike-pod.json
+   python -c "import json; from experiments.boutique.harness.chaos import scenario; print(json.dumps(scenario('pod', 'sentinel-boutique-connected', 'spike-pod', 420, 'shippingservice')))" | kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected create -f -
    kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected get podchaos spike-pod -o jsonpath="{.status.experiment}"
    kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected delete pod -l app=shippingservice --wait=false
    kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected get pods -l app=shippingservice -w
@@ -225,8 +240,7 @@ first scored trial (step 4 onwards).
    Then CPU stress, watching usage and readiness for five minutes:
 
    ```powershell
-   python -c "import json; from experiments.boutique.harness.chaos import scenario; print(json.dumps(scenario('cpu', 'sentinel-boutique-connected', 'spike-cpu', 300, 'shippingservice')))" > spike-cpu.json
-   kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected create -f spike-cpu.json
+   python -c "import json; from experiments.boutique.harness.chaos import scenario; print(json.dumps(scenario('cpu', 'sentinel-boutique-connected', 'spike-cpu', 300, 'shippingservice')))" | kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected create -f -
    kubectl --context kind-sentinel-boutique-connected get --raw /apis/metrics.k8s.io/v1beta1/namespaces/sentinel-boutique-connected/pods
    kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected get pods -l app=shippingservice -w
    kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected delete stresschaos spike-cpu --wait=true
@@ -255,6 +269,14 @@ first scored trial (step 4 onwards).
    `chaos_cleanup_confirmed` true. Use `-Approval interactive` for one run to
    show a person approving.
 
+   The timing is tight. RECOVERED must come at least 60 s before the fault
+   expires, so about 360 s after the harness created the chaos object, and
+   that time covers detection (up to about 130 s), the forced ROLLBACK
+   refusal, planning, approval and the Verifier's window (up to 150 s of
+   convergence grace). An operator who takes long to approve in the
+   interactive run can make attribution fail although the RESTART was
+   right. Report such a run as an attribution failure; do not re-score it.
+
 5. **CPU stress (N3) and the network control (T1).**
 
    ```powershell
@@ -264,7 +286,11 @@ first scored trial (step 4 onwards).
 
    Expected: N3 ends NEEDS_REVIEW with ESCALATE decided by the metric-only
    rule, zero writes, and `forced-restart/proof.json` REJECT
-   `RESTART_NOT_JUSTIFIED`; T1 records NO_INCIDENT with a passing
+   `RESTART_NOT_JUSTIFIED` (also when N3 records NO_INCIDENT, which is
+   acceptable; the cell then runs after the true-negative proof is saved). If
+   the stressed Pod fails readiness, that proof shows ESCALATE
+   `OPERATOR_APPROVAL_REQUIRED`, zero writes and a failed run: record it as
+   the measured result. T1 records NO_INCIDENT with a passing
    `true-negative.json`, zero writes and the storefront latency in
    `primary-storefront-impact.json`. Neither asks for approval.
 

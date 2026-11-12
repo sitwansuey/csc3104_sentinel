@@ -26,6 +26,8 @@ CHAOS_REPOSITORY = "https://charts.chaos-mesh.org"
 # The connected Boutique lab, where Chaos Mesh faults drive guarded recovery (P4.03).
 CONNECTED_CONTEXT = "kind-sentinel-boutique-connected"
 CONNECTED_NAMESPACE = "sentinel-boutique-connected"
+# The connected lab is one kind node; a context of the right name pointing anywhere else is refused.
+CONNECTED_NODE = "sentinel-boutique-connected-control-plane"
 # Chaos Mesh only injects into namespaces that opt in with this annotation (enableFilterNamespace).
 INJECT_ANNOTATION = "chaos-mesh.org/inject=enabled"
 FORBIDDEN = "sentinel-lab"
@@ -176,17 +178,28 @@ def require_connected(context, namespace):
         raise ValueError(f"Chaos recovery is limited to {CONNECTED_CONTEXT} and namespace {CONNECTED_NAMESPACE}")
 
 
+def require_connected_nodes(cluster):
+    """A read-only check that the context really reaches the connected lab: its single kind node, by name."""
+    names = [node["metadata"]["name"] for node in cluster.get("nodes")["items"]]
+    if names != [CONNECTED_NODE]:
+        raise RuntimeError(f"Context {cluster.context} does not point to the single-node connected lab "
+                           f"({CONNECTED_NODE}); nodes: {', '.join(names[:5]) or 'none'}")
+
+
 def ensure_chaos_mesh(cluster, helm="helm"):
     """Install only: the pinned Helm chart, then the connected namespace's opt-in annotation.
 
-    It creates no cluster, deploys no workload and writes nothing else: the
-    commands are one helm upgrade --install (chart 2.8.2, namespace filtering
-    on) and one kubectl annotate of the connected namespace. Any other
-    context, and any name containing sentinel-lab, is refused before a command runs.
+    It creates no cluster, deploys no workload and writes nothing else: after
+    one read of the node list, the commands are one helm upgrade --install
+    (chart 2.8.2, namespace filtering on) and one kubectl annotate of the
+    connected namespace. Any other context, and any name containing
+    sentinel-lab, is refused before a command runs; a context of the right
+    name whose nodes are not the connected lab's is refused before helm.
     """
     require_connected(cluster.context, cluster.namespace)
     if not shutil.which(helm):
         raise RuntimeError(f"Missing {helm}; install it or supply its executable path")
+    require_connected_nodes(cluster)
     cluster.command(helm_install_argv(cluster, helm), timeout=660)
     cluster.call("annotate", "namespace", cluster.namespace, INJECT_ANNOTATION, "--overwrite")
 

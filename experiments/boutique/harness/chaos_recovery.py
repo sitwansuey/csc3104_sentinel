@@ -8,7 +8,9 @@ always refused.
 
 - Setup is install only. chaos.ensure_chaos_mesh runs the pinned Helm chart and
   the namespace annotation; ensure_metrics_server runs one pinned Helm chart
-  whose image must be pinned by digest. preflight() only reads.
+  whose image must be pinned by digest. Both first read the node list and
+  refuse a context that does not reach the connected lab's single node.
+  preflight() only reads.
 - Detection. In every chaos run the Observer collector is wrapped with the
   metrics-server bridge (runtime/metrics_bridge.py) and the scenario's metric
   thresholds, so the control uses the same detection rules as the stress case.
@@ -24,8 +26,12 @@ always refused.
   outcome. Otherwise the fault's own expiry could have healed the target.
 - Forced refusals (forced_refusal()). A harness-forced ROLLBACK during the pod
   failure, a forced RESTART during CPU stress and a forced RESTART during a
-  template drift go to the restricted Executor with a valid file approval. Its
-  fresh Guard check must REJECT with the expected code, with zero write attempts.
+  template drift go to the restricted Executor with no approval: nobody approves
+  a wrong action, and the harness never writes one for itself. Its fresh Guard
+  check must REJECT with the expected code, with zero write attempts. When the
+  live state makes the forced action pass the Guard's checks (for example a
+  stressed Pod that also fails readiness), the missing approval makes the Guard
+  ESCALATE, the Executor writes nothing, and the run fails as not refused.
 - True negative (true_negative_proof()). No incident passes only with the fault
   confirmed injected, Observer samples spanning the detection window, at least
   one complete metric-threshold reading, no Coordinator action, no Executor
@@ -45,11 +51,10 @@ from experiments.boutique.harness.chaos_demo import OWNER, owned_remove
 from experiments.boutique.harness.durable_case import run_durable_case
 from experiments.boutique.harness.live import BoutiqueExperiment
 from experiments.boutique.harness.scoring import ScenarioScoringMixin
-from experiments.recovery.live import now, require, save, utc
+from experiments.recovery.live import require, save, utc
 from runtime.metrics_bridge import MetricsBridgeCollector
 from services.executor.core import execute
 from services.executor.store import SQLiteExecutionLedger, fingerprint
-from services.guard.core import proposal_fingerprint
 from services.observer.kubernetes import KubectlReader
 from services.observer.telemetry import CorrelatedEvidenceCollector, TelemetryStore
 from services.planner.core import mock_provider, retrieve_runbooks
@@ -109,6 +114,7 @@ def ensure_metrics_server(cluster, image_digest, helm="helm"):
     argv = metrics_server_argv(cluster, image_digest, helm)
     if not shutil.which(helm):
         raise RuntimeError(f"Missing {helm}; install it or supply its executable path")
+    chaos.require_connected_nodes(cluster)
     cluster.command(argv, timeout=360)
 
 
@@ -407,6 +413,11 @@ class ChaosRecoveryMixin(ScenarioScoringMixin):
                     self.rule_recovery(incident)
                 if self.chaos_fault == "cpu":
                     self.forced_refusal(incident, "RESTART", FORCED[("cpu", "RESTART")], "forced-restart")
+            elif self.chaos_fault == "cpu":
+                # N3 scored NO_INCIDENT (true-negative proof already saved): the CPU cell still runs under the
+                # stress, against a harness-made incident id as in the drift cell.
+                synthetic = {"incident_id": "INC-FORCED-CPU-" + uuid4().hex[:12].upper()}
+                self.forced_refusal(synthetic, "RESTART", FORCED[("cpu", "RESTART")], "forced-restart")
         finally:
             self.remove_chaos()
         self.check("Chaos Mesh object deleted and its cleanup confirmed", chaos=self.chaos_record and
@@ -498,20 +509,21 @@ class ChaosRecoveryMixin(ScenarioScoringMixin):
                 "evidence_refs": [incident_id, *([health] if health else [])]}
 
     def forced_refusal(self, incident, action, expected_code, label, *, incident_id=None):
-        """The restricted Executor, with a valid file approval, must refuse a forced wrong action with 0 writes.
+        """The restricted Executor must refuse a forced wrong action with 0 writes.
 
-        No Coordinator route is made: the real incident's state is untouched.
+        The action carries no approval (approval.json is null): only the Guard's
+        own check can refuse it, and a check that unexpectedly passes escalates
+        for an operator instead of writing. No Coordinator route is made: the
+        real incident's state is untouched.
         """
         folder = self.directory / label
         folder.mkdir()
         proposal = self.forced_proposal(incident, action, incident_id)
         before = self.deployment()
         dependencies = self.dependency_result(proposal)
-        approval = {"action_id": proposal["action_id"], "proposal_sha256": proposal_fingerprint(proposal),
-                    "policy_version": self.policy["policy_version"], "operator_id": "authorized-live-lab-operator",
-                    "decision": "APPROVED", "approved_at": utc(), "expires_at": utc(now() + timedelta(seconds=180))}
+        # No approval for a wrong action: a REJECT still outranks the missing approval, and anything else escalates.
         for name, value in (("proposal.json", proposal), ("dependencies.json", dependencies),
-                            ("approval.json", approval)):
+                            ("approval.json", None)):
             save(folder / name, value)
         adapters = self.adapters(folder)
         try:
@@ -532,12 +544,13 @@ class ChaosRecoveryMixin(ScenarioScoringMixin):
                  "generation_unchanged": before["metadata"]["generation"] == after["metadata"]["generation"]}
         save(folder / "proof.json", proof)
         self.summary.setdefault("forced_refusals", []).append(proof)
-        require(result["status"] == "FAILED" and proof["guard_verdict"] == "REJECT"
-                and expected_code in proof["guard_reason_codes"],
-                f"Forced {action} was not refused with {expected_code}: {proof['guard_reason_codes']}")
         require(proof["executor_patch_attempts"] == 0 and proof["executor_journal_attempts"] == 0
                 and proof["template_unchanged"] and proof["generation_unchanged"],
                 f"Forced {action} attempted a write or changed the Deployment")
+        require(result["status"] == "FAILED" and proof["guard_verdict"] == "REJECT"
+                and expected_code in proof["guard_reason_codes"],
+                f"Forced {action} was not refused with {expected_code}: {proof['guard_verdict']} "
+                f"{proof['guard_reason_codes']}")
         self.check(f"Forced {action} refused by the Guard with {expected_code}; zero Executor writes",
                    action_id=proposal["action_id"])
         return proof
