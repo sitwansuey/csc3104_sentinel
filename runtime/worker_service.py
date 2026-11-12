@@ -1,6 +1,7 @@
 """Run an HTTP-bound component: python -m runtime.worker_service --help."""
 import argparse
 from contextlib import ExitStack
+from dataclasses import replace
 import json
 import math
 import os
@@ -9,8 +10,12 @@ import signal
 import ssl
 import threading
 
-from runtime.remote_adapters import ExecutorAdapter, GuardAdapter, OllamaProvider, PlannerAdapter, VerifierAdapter
+from runtime import fault_points
+from runtime.remote_adapters import (
+    DeterministicProvider, ExecutorAdapter, GuardAdapter, OllamaProvider, PlannerAdapter, VerifierAdapter, utc_now,
+)
 from runtime.remote_worker import RemoteWorker, WorkerJournal
+from runtime.worker_health import WorkerHealth, serve_health
 from runtime.worker_http import WorkerClient
 from shared import log
 
@@ -38,35 +43,70 @@ def client(config):
                         timeout=config.get("timeout", 15), tls_context=context)
 
 
+def lab_cluster(config, stack):
+    """The file-backed lab cluster named by config["cluster"], or None for a real one.
+
+    Only a lab fault run may use it (runtime/fault_points.py), so a production
+    worker can never be pointed at a fake by its configuration alone.
+    """
+    name = config.get("cluster")
+    if name is None:
+        return None
+    if not isinstance(name, str) or not name.startswith("file:") or not fault_points.enabled():
+        raise ValueError("A file cluster is accepted only in a lab fault run")
+    from tests.support.file_cluster import FileCluster
+    cluster = FileCluster(name.removeprefix("file:"))
+    stack.callback(cluster.close)
+    return cluster
+
+
+def planner_provider(config):
+    """(provider, attempt lease seconds). Ollama is the default; deterministic is labelled synthetic."""
+    name = config.get("provider", "ollama")
+    if name == "deterministic":
+        lease = config.get("attempt_lease_seconds", 30)
+        if type(lease) not in (int, float) or not math.isfinite(lease) or not 0 < lease <= 3600:
+            raise ValueError("Attempt lease must be positive, finite and at most one hour")
+        return DeterministicProvider(checkpoint=lambda: fault_points.checkpoint("planner.mid_inference")), lease
+    if name != "ollama":
+        raise ValueError("Planner provider must be ollama or deterministic")
+    model = read_json(config["model_config"])
+    timeout = model.get("timeout", 300)
+    if type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 < timeout <= 3600:
+        raise ValueError("Model timeout must be positive, finite and at most one hour")
+    return OllamaProvider(model, progress=lambda update: print(
+        json.dumps({"component": "planner", "event": "progress", **update}), flush=True)), 2 * timeout + 30
+
+
 def adapter(config, directory, stack):
     role = config["role"]
+    cluster = lab_cluster(config, stack)
+    clock = fault_points.offset_clock(utc_now)
     if role == "planner":
         from services.planner.store import PlannerStore
         journal = PlannerStore(directory / "planner.db")
         stack.callback(journal.close)
-        model = read_json(config["model_config"])
-        timeout = model.get("timeout", 300)
-        if type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 < timeout <= 3600:
-            raise ValueError("Model timeout must be positive, finite and at most one hour")
+        provider, lease_seconds = planner_provider(config)
         baselines = reader(config["baselines"])
         def baseline_list(incident):
             value = baselines(incident)
             return value if isinstance(value, list) else [value]
-        return PlannerAdapter(journal, baseline_reader=baseline_list,
-            provider=OllamaProvider(model, progress=lambda update: print(
-                json.dumps({"component": "planner", "event": "progress", **update}), flush=True)),
-            lease_seconds=2 * timeout + 30,
+        return PlannerAdapter(journal, baseline_reader=baseline_list, provider=provider, lease_seconds=lease_seconds,
             max_attempts=config.get("max_attempts", 3), retry_seconds=config.get("retry_seconds", 5))
     if role == "verifier":
-        from services.observer.kubernetes import InClusterReader, KubectlReader
-        from services.verifier.live import LiveEvidenceCollector
         from services.verifier.store import VerificationStore
         journal = VerificationStore(directory / "verifier.db")
         stack.callback(journal.close)
-        kubernetes = InClusterReader() if config.get("in_cluster") else KubectlReader(config["context"])
-        collector = LiveEvidenceCollector(read_json(config["evidence"]), kubernetes)
-        return VerifierAdapter(journal, policy_reader=reader(config["policy"]), sample_reader=collector.samples,
-                               dependency_reader=collector.dependencies)
+        if cluster is not None:
+            samples, dependencies = cluster.verifier_readers(config, clock=clock)
+        else:
+            from services.observer.kubernetes import InClusterReader, KubectlReader
+            from services.verifier.live import LiveEvidenceCollector
+            kubernetes = InClusterReader() if config.get("in_cluster") else KubectlReader(config["context"])
+            collector = LiveEvidenceCollector(read_json(config["evidence"]), kubernetes)
+            samples, dependencies = collector.samples, collector.dependencies
+        return VerifierAdapter(journal, policy_reader=reader(config["policy"]), sample_reader=samples,
+                               dependency_reader=dependencies, clock=clock)
     if role not in {"guard", "executor"}:
         raise ValueError("Worker role must be planner, guard, executor or verifier")
     from runtime.approval_http import ApprovalClient
@@ -80,10 +120,15 @@ def adapter(config, directory, stack):
     options["dependencies"] = config.get("dependencies", directory / "remote-dependencies.json")
     options.update(approval_reader=approval, server_dry_run=config.get("server_dry_run", False))
     if role == "executor":
+        lab = {"runner": cluster.kubectl(config["identity"])} if cluster is not None else {}
         live = build_adapters(**options, allowed_targets=config["allowed_targets"],
                               ledger=directory / "executor.db", locks=directory / "locks",
-                              fence_after_seconds=config.get("fence_after_seconds"))
+                              fence_after_seconds=config.get("fence_after_seconds"), **lab)
         stack.callback(live.ledger.close)
+        if fault_points.enabled():  # Lab fault runs only: named stop points and the test clock offset.
+            live = replace(live, clock=fault_points.offset_clock(live.clock),
+                           ledger=fault_points.CheckpointLedger(live.ledger),
+                           cluster=fault_points.CheckpointCluster(live.cluster))
         if config.get("remote_dependencies", True):
             connection = client(config)
             live.authorizer.dependency_reader = lambda p: connection.post("dependencies", {"proposal": p})["dependencies"]
@@ -92,10 +137,12 @@ def adapter(config, directory, stack):
     if config.get("remote_dependencies", True):
         connection = client(config)
         authorizer.dependency_reader = lambda p: connection.post("dependencies", {"proposal": p})["dependencies"]
-    return GuardAdapter(state_reader=lambda p: read_deployment(p["target"], context=config["context"],
-        cluster_id=config["cluster_id"], kubeconfig=config["kubeconfig"]),
+    state_reader = ((lambda p: cluster.snapshot(p["target"])) if cluster is not None else
+                    lambda p: read_deployment(p["target"], context=config["context"],
+                                              cluster_id=config["cluster_id"], kubeconfig=config["kubeconfig"]))
+    return GuardAdapter(state_reader=state_reader,
         policy_reader=reader(config["policy"]), baseline_reader=reader(config["baseline"]),
-        dependency_reader=authorizer.dependency_reader, approval_reader=approval, authorizer=authorizer)
+        dependency_reader=authorizer.dependency_reader, approval_reader=approval, authorizer=authorizer, clock=clock)
 
 
 def report(status, error=None):
@@ -112,10 +159,18 @@ def main(argv=None):
     parser.add_argument("--config", required=True, type=Path, help="Trusted JSON; secret values stay in environment")
     parser.add_argument("--once", action="store_true", help="One bounded polling pass")
     parser.add_argument("--poll-seconds", type=float, default=2)
+    parser.add_argument("--health-port", type=int, help="Serve /healthz and /readyz on 127.0.0.1 at this port")
+    parser.add_argument("--ready-seconds", type=float, default=60,
+                        help="/readyz fails when the last Coordinator answer is older than this")
     args = parser.parse_args(argv)
     if not math.isfinite(args.poll_seconds) or not 0 < args.poll_seconds <= 60:
         parser.error("Poll interval must be positive and at most 60 seconds")
+    if args.health_port is not None and not 0 <= args.health_port <= 65535:
+        parser.error("Health port must be from 0 to 65535")
+    if not math.isfinite(args.ready_seconds) or not 0 < args.ready_seconds <= 3600:
+        parser.error("Readiness window must be positive and at most one hour")
     stopping = threading.Event()
+    health = WorkerHealth(ready_seconds=args.ready_seconds)
     previous = {}
     try:
         config = read_json(args.config)
@@ -123,10 +178,13 @@ def main(argv=None):
         directory = Path(config["state_directory"])
         directory.mkdir(parents=True, exist_ok=True)
         with ExitStack() as stack:
+            if args.health_port is not None:
+                stack.enter_context(serve_health(health, args.health_port, stopping))
             component = adapter(config, directory, stack)
             journal = WorkerJournal(directory / "transport.db")
             stack.callback(journal.close)
             worker = RemoteWorker(connection, journal, component)
+            health.configured()
             if threading.current_thread() is threading.main_thread():
                 for sig in (signal.SIGINT, signal.SIGTERM):
                     previous[sig] = signal.signal(sig, lambda *_: stopping.set())
@@ -134,8 +192,10 @@ def main(argv=None):
             stack.enter_context(log.bind(identity=config.get("identity"), role=config.get("role")))
             while not stopping.is_set():
                 error = None
+                health.heartbeat()
                 try:
                     status = worker.once()
+                    health.contacted()  # once() returned, so the Coordinator answered this pass.
                     failures = 0
                 except Exception as caught:  # noqa: BLE001 - a failed pass is retried with backoff; report() logs it
                     error = caught

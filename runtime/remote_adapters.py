@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from services.executor.core import execute, reconcile, unchanged_uncertainty
 from services.guard.core import assert_decision_usable, evaluate_with_report
-from services.planner.core import retrieve_runbooks
+from services.planner.core import mock_provider, retrieve_runbooks
 from services.planner.worker import prepare
 
 
@@ -131,6 +131,27 @@ class VerifierAdapter:
     def acknowledge(self, outcome):
         if outcome["kind"] == "outcome":
             self.journal.acknowledge_outcome(outcome)
+
+
+class DeterministicProvider:
+    """Offline stand-in for a model, for lab runs and CI: the mock provider, labelled synthetic.
+
+    Its output is not model output. Each call sets usage, which the Planner
+    journal stores with the attempt, to a record with synthetic_planner true,
+    so a saved proposal from this provider always carries the label.
+    checkpoint() runs mid-call, so a lab run can stop the Planner there.
+    """
+    LABEL = {"provider": "deterministic", "synthetic_planner": True, "model": None}
+
+    def __init__(self, *, checkpoint=None):
+        self.checkpoint = checkpoint
+        self.usage = dict(self.LABEL, calls=[])
+
+    def __call__(self, context):
+        self.usage = dict(self.LABEL, calls=[])
+        if self.checkpoint is not None:
+            self.checkpoint()
+        return mock_provider(context)
 
 
 class OllamaProvider:

@@ -13,6 +13,7 @@ from http.client import HTTPConnection, HTTPSConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
+from runtime import fault_points
 from runtime.service_identity import authenticate, load_identities
 from runtime.worker_transport import Delivery, INGRESS, ProtocolError, TOPICS, delivery_ids
 from services.coordinator.core import SQLiteStore
@@ -76,6 +77,11 @@ def access_log(logger, operation, status, started, *, outcome=None, reason=None,
 def _message_ids(message):
     return ({"incident_id": message.get("incident_id"), "action_id": message.get("action_id")}
             if isinstance(message, dict) else {})
+
+
+def _result_kind(body):
+    result = body.get("result") if isinstance(body, dict) else None
+    return result.get("kind") if isinstance(result, dict) and isinstance(result.get("kind"), str) else None
 
 
 def handler(database, services, lease_seconds=30, retention_seconds=86400,
@@ -165,6 +171,9 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
             # Log before replying, so the line exists once the client sees the answer.
             access_log(LOG, operation, status, started, outcome=outcome, reason=reason,
                        error_type=error_type, **ids)
+            if status == 200 and operation == "result":
+                # Inert outside lab fault runs (runtime/fault_points.py): committed, not yet answered.
+                fault_points.checkpoint("coordinator.after_commit_before_reply", qualifier=_result_kind(body))
             self.reply(status, response)
 
         def reply(self, status, value):
