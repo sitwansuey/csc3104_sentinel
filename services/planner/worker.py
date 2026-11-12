@@ -22,9 +22,23 @@ TERMINAL_RATIONALES = {
                           "Operator review is required. No repair is authorized.",
     "SUSPECTED_INJECTION": "Untrusted telemetry contained instruction-like text; operator review required. "
                            "Decided by a code rule, not the model. No repair is authorized.",
+    # The rollback eligibility rule (services/planner/taxonomy.py::rollback_eligibility).
+    "INELIGIBLE_REASON": "The diagnosed reason is not one a rollback can repair. Decided by a code rule, "
+                         "not the model. Operator review is required. No repair is authorized.",
+    "COMPONENT_NOT_TARGET": "The diagnosed component is not exactly the recovery target. Decided by a code "
+                            "rule, not the model. Operator review is required. No repair is authorized.",
+    "SYMPTOM_NOT_ROLLOUT": "The incident signals show no rollout, startup, crash or back-off symptom. Decided "
+                           "by a code rule, not the model. Operator review is required. No repair is authorized.",
+    "TEMPLATE_ALREADY_BASELINE": "The live Pod template already matches the healthy baseline, so a rollback "
+                                 "would change nothing. Decided by a code rule, not the model. "
+                                 "Operator review is required. No repair is authorized.",
+    "CHANGE_NOT_RECENT": "The template change cannot be shown to be recent. Decided by a code rule, not the "
+                         "model. Operator review is required. No repair is authorized.",
 }
 # What the journal keeps of an injection finding: rule ids and counts, never the text.
 INJECTION_FIELDS = ("decided_by", "rules", "suspicious_lines", "sources")
+# Diagnosis keys the journal keeps as they are: built in code, with no raw log line or model free text.
+DECISION_FIELDS = ("citations", "change_evidence", "eligibility")
 # Proposal fields that finalize() may change: the live version it binds to, and the
 # identity that version is part of. Everything else stays as propose() validated it.
 REBINDABLE = {"based_on_resource_version", "action_id"}
@@ -70,6 +84,12 @@ def diagnosis_summary(diagnosis):
                          for item in tools if isinstance(item, dict)] if isinstance(tools, list) else []}
     if isinstance(injection, dict):
         summary["injection"] = {key: deepcopy(injection.get(key)) for key in INJECTION_FIELDS}
+    # Code-computed decision context (agent mode): cited evidence ids, the bounded and
+    # redacted change evidence, and the rollback eligibility rule's result.
+    for key in DECISION_FIELDS:
+        value = diagnosis.get(key) if isinstance(diagnosis, dict) else None
+        if isinstance(value, dict):
+            summary[key] = deepcopy(value)
     return summary
 
 

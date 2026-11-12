@@ -3,6 +3,7 @@ import csv
 import json
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 import pandas as pd
 
 from agent.llm import Ollama
@@ -11,6 +12,7 @@ from services.rca.core import DEFAULT_CONFIG
 from services.guard.common import json_sha256
 from services.planner.agent_provider import AgentPlanner, names_target, planning_budget
 from services.planner.store import PlannerStore
+from services.planner.taxonomy import policy as decision_policy
 from experiments.boutique.harness.durable_case import run_durable_case
 from experiments.recovery.live import require, save
 
@@ -20,6 +22,8 @@ LIVE_KEEP_ALIVE = "30m"
 PLANNING_FOLDER = "approved-rollback"
 # Longest cleaned log message kept in logs.csv; the raw line stays in the observation.
 MESSAGE_LIMIT = 2000
+# The reviewed Boutique topology: its nodes are the diagnosis's component vocabulary.
+TOPOLOGY = Path(__file__).resolve().parents[3] / "deploy/boutique/dependencies.json"
 
 
 def csv_cell(text):
@@ -152,6 +156,7 @@ class AgentPlanningMixin:
         config["allow_abstention"] = True
         # Record the planning mode up front so a failed run is still identifiable.
         self.summary.update(planning="Live RCA agent and Ollama Recovery Planner", model=config["model"],
+                            decision_policy=config.get("decision_policy", "gated"),
                             scope="Online Boutique shippingservice; real Observer/Coordinator/Agent/Guard/Executor/Verifier")
         return config
 
@@ -167,8 +172,9 @@ class AgentPlanningMixin:
         started = time.monotonic()
         try:
             config = self.load_agent_config()
-            # The Planner would refuse a bad budget only after the fault is injected.
+            # The Planner would refuse a bad budget or decision policy only after the fault is injected.
             planning_budget(config)
+            decision_policy(config)
             llm = Ollama(config)
             llm.preflight()
             stage = "warm_up"
@@ -222,7 +228,8 @@ class AgentPlanningMixin:
         planner = AgentPlanner(config, folder=folder, baseline=self.baseline,
                                telemetry=lambda destination, current: export_telemetry(
                                    self.directory, self.target, destination, incident=current),
-                               deployment_reader=lambda target: self.deployment(), progress=progress)
+                               deployment_reader=lambda target: self.deployment(), progress=progress,
+                               topology=json.loads(TOPOLOGY.read_text(encoding="utf-8")))
         self.event(3, "status", "Agent is diagnosing live Observer telemetry", target=self.target)
         started = time.monotonic()
         try:
@@ -234,6 +241,9 @@ class AgentPlanningMixin:
             if planner.finding:
                 # Rule ids and counts from the code-owned injection gate, never the flagged text.
                 self.summary["injection_finding"] = planner.finding
+            if planner.decision:
+                # Policy, eligibility codes and whether a code rule or the model decided.
+                self.summary["planning_decision"] = planner.decision
         with PlannerStore(folder / "planner.db") as journal:
             record = journal.get(incident["incident_id"])
         proposal = record["proposal"] if record else None

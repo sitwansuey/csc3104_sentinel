@@ -7,6 +7,7 @@ from unittest.mock import Mock
 from services.planner.core import propose, retrieve_runbooks
 from services.rca.core import diagnose, propose_from_telemetry
 from shared.contracts import validate_message
+from tests.support.vocabulary import STARTUP, cite_supporting
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,9 +25,10 @@ class Model:
         if role == "Analyzer":
             return {"summary": "Startup configuration error", "complete": True,
                     "confidence": 0.9, "next_steps": ""}
-        return {"failures": [] if self.abstain else [{"root cause component": "demo-api",
-                    "root cause reason": "Invalid startup configuration"}],
-                "explanation": "Startup error in log evidence", "limitations": "Synthetic test"}
+        return cite_supporting({"failures": [] if self.abstain else [{"root cause component": "demo-api",
+                                "root cause reason": STARTUP}],
+                                "explanation": "Startup error in log evidence", "limitations": "Synthetic test"},
+                               prompt, schema)
 
 
 class RCAIntegrationTests(unittest.TestCase):

@@ -20,12 +20,17 @@ def propose_from_telemetry(incident, baselines, telemetry, workspace, provider, 
                    provider, diagnosis=diagnosis)
 
 
-def diagnose(incident, telemetry, workspace, *, config=None, llm=None, progress=None, deadline=None, clock=None):
+def diagnose(incident, telemetry, workspace, *, config=None, llm=None, progress=None, deadline=None, clock=None,
+             vocabulary=None):
     """Analyze exported CSV telemetry and persist the full evidence trail.
 
     The output directory must be new. No cluster actions are performed here.
     deadline (a clock() value, time.monotonic by default) stops the agent
     before a new round or report once the planning budget is used up.
+    vocabulary ({"components": [...], "reasons": [...]}, built in code by
+    services/planner/taxonomy.py, never from telemetry) restricts the reported
+    component and reason to those names and requires each failure to cite the
+    evidence ids it rests on; the cited ids are returned as "citations".
     """
     validate_message(incident)
     if incident["kind"] != "incident":
@@ -34,6 +39,7 @@ def diagnose(incident, telemetry, workspace, *, config=None, llm=None, progress=
     from agent.llm import Ollama
     from agent.tools import Telemetry
     from agent.untrusted import prompt_incident
+    from services.planner.taxonomy import vocabulary_context
 
     settings = json.loads(DEFAULT_CONFIG.read_text(encoding="utf-8"))
     settings["allow_abstention"] = True
@@ -68,9 +74,14 @@ def diagnose(incident, telemetry, workspace, *, config=None, llm=None, progress=
             initial_plan = {"plan": {"kind": "parallel", "goal": "Inspect live incident telemetry", "children": leaves}}
     # Signal details quote workload log lines, so the model sees them only as
     # quoted, untrusted data (agent/untrusted.py), never as raw text.
-    prediction = agent.run(instruction, context=json.dumps(prompt_incident(incident)),
-                           required_fields=FIELDS[1:], initial_plan=initial_plan)
-    return {"incident_id": incident["incident_id"], "prediction": prediction,
+    context = json.dumps(prompt_incident(incident))
+    if vocabulary is not None:
+        # The candidate sections are built from code-owned names only. The incident
+        # JSON above is a single line, so a quoted signal cannot add a "- " entry.
+        context += "\n" + vocabulary_context(vocabulary)
+    prediction = agent.run(instruction, context=context, required_fields=FIELDS[1:], initial_plan=initial_plan,
+                           cite_evidence=vocabulary is not None)
+    return {"incident_id": incident["incident_id"], "prediction": prediction, "citations": agent.citations,
             "report": json.loads((Path(workspace) / "report.json").read_text(encoding="utf-8")),
             "workspace": str(Path(workspace).resolve()),
             # Tool names and evidence IDs only: no arguments, file paths or results.

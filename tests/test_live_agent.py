@@ -333,37 +333,64 @@ class LiveAgentTests(unittest.TestCase):
             with self.subTest(rejected=component):
                 self.assertFalse(names_target(component, "shippingservice", ["server"]))
 
-    def model_naming(self, component):
+    def model_naming(self, component, times=None):
+        """A model whose Reporter names component, in its first `times` answers (all if None)."""
         base = self.model()
 
         class NamingModel(type(base)):
+            reports = 0
+
             def ask(self, role, prompt, schema):
                 answer = super().ask(role, prompt, schema)
                 if role not in ("Planner", "Analyzer", "Recovery Planner") and answer.get("failures"):
-                    answer["failures"][0]["root cause component"] = component
+                    self.reports += 1
+                    if times is None or self.reports <= times:
+                        answer["failures"][0]["root cause component"] = component
                 return answer
         return NamingModel()
 
+    def reporter_calls(self, model):
+        return [c["role"] for c in model.calls].count("Reporter")
+
     def test_descriptive_component_name_still_reaches_the_recovery_planner(self):
-        model = self.model_naming(self.incident["target"]["name"] + " container")
+        # The code-owned vocabulary rejects the variant once; the corrected exact name proceeds.
+        model = self.model_naming(self.incident["target"]["name"] + " container", times=1)
         proposal = self.planned(self.harness(), model)
         self.assertEqual(proposal["action"], "ROLLBACK")
+        self.assertEqual(self.reporter_calls(model), 2)
         self.assertIn("Recovery Planner", [c["role"] for c in model.calls])
 
     def test_pod_container_reference_reaches_the_recovery_planner(self):
         container = self.baseline["pod_template"]["spec"]["containers"][0]["name"]
-        model = self.model_naming(self.incident["target"]["name"] + "-85576d7678-5hb44/" + container)
+        model = self.model_naming(self.incident["target"]["name"] + "-85576d7678-5hb44/" + container, times=1)
         proposal = self.planned(self.harness(), model)
         self.assertEqual(proposal["action"], "ROLLBACK")
+        self.assertEqual(self.reporter_calls(model), 2)
         self.assertIn("Recovery Planner", [c["role"] for c in model.calls])
 
+    def test_off_vocabulary_component_is_corrected_once_then_abstains(self):
+        model = self.model_naming(self.incident["target"]["name"] + " container")
+        harness = self.harness()
+        with self.assertRaisesRegex(RuntimeError, "NEEDS_REVIEW"):
+            self.recover(harness, model)
+        self.assertEqual(self.reporter_calls(model), 2)
+        self.assertNotIn("Recovery Planner", [c["role"] for c in model.calls])
+        self.assertEqual(self.journal(harness)["error_code"], "ABSTAINED")
+        agent = self.root / "approved-rollback/attempt-1/agent"
+        self.assertTrue((agent / "invalid-report.json").is_file())
+        self.assertTrue((agent / "invalid-correction.json").is_file())
+
     def test_diagnosis_naming_another_component_still_escalates(self):
-        model = self.model_naming("frontend calling " + self.incident["target"]["name"])
+        # A vocabulary name (the reviewed Boutique topology) that is not the target. Live
+        # telemetry names only the target, so no cited result supports it: the agent abstains.
+        model = self.model_naming("shippingservice")
         harness = self.harness()
         with self.assertRaisesRegex(RuntimeError, "NEEDS_REVIEW"):
             self.recover(harness, model)
         self.assertNotIn("Recovery Planner", [c["role"] for c in model.calls])
-        self.assertEqual(self.journal(harness)["error_code"], "DIAGNOSIS_OFF_TARGET")
+        self.assertEqual(self.journal(harness)["error_code"], "ABSTAINED")
+        summary = json.loads((self.root / "approved-rollback/attempt-1/agent/execution-summary.json").read_text())
+        self.assertIn("does not name the diagnosed component", summary["citation_refusal"])
 
 
 class AgentApprovalSessionTests(unittest.TestCase):
@@ -625,6 +652,17 @@ class ModelPreflightTests(unittest.TestCase):
                 self.root.mkdir()
                 self.assert_stopped_before_injection("preflight", "planning_budget_seconds",
                                                      planning_budget_seconds=budget)
+                self.assertEqual(self.server.paths(), [])
+
+    def test_invalid_decision_policy_stops_before_inject_fault_without_a_model_call(self):
+        base = self.root
+        for number, config in enumerate(({"decision_policy": "always-rollback"}, {"max_change_age_seconds": 0},
+                                         {"consult_model_when_ineligible": "yes"})):
+            with self.subTest(config=config):
+                self.root = base / ("policy-" + str(number))
+                self.root.mkdir()
+                self.assert_stopped_before_injection("preflight", "decision_policy|max_change_age_seconds|"
+                                                     "consult_model_when_ineligible", **config)
                 self.assertEqual(self.server.paths(), [])
 
     def test_ready_model_records_runtime_before_cluster_preparation(self):

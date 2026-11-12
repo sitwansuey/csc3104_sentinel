@@ -14,6 +14,16 @@ holds instruction-like text (agent/untrusted.py rules), the attempt records an
 injection finding and ends in the fixed SUSPECTED_INJECTION escalation without
 asking the Recovery Planner. The Recovery Planner never reads the Reporter's
 free text, only structured diagnosis fields and quoted signals.
+
+The decision context is code-owned (services/planner/taxonomy.py). The
+diagnosis may name only a component from the reviewed topology or the target
+and a reason from the fixed taxonomy, and must cite the evidence ids it rests
+on. Change evidence (services/planner/change.py) is computed from the live and
+baseline templates. Under the default "gated" decision policy a code rule
+decides whether ROLLBACK is eligible, before and after the Recovery Planner: an
+ineligible case ends in a fixed escalation without a model call, and a model
+ROLLBACK for an ineligible case is overridden. The model may only downgrade an
+eligible case to ESCALATE. The attempt's usage records who decided.
 """
 from copy import deepcopy
 import csv
@@ -26,6 +36,8 @@ from agent.llm import ModelOutputInvalid, Ollama, PlanningBudgetExceeded
 from agent.progress import notify
 from agent.untrusted import LABEL_LIMIT, RULES, clean, prompt_incident, suspicious
 from services.guard.common import json_sha256
+from services.planner import taxonomy
+from services.planner.change import change_evidence
 from services.planner.core import retrieve_runbooks
 from services.planner.worker import PlanningError
 from services.rca.core import diagnose
@@ -55,6 +67,15 @@ RECOVERY_PROMPT = (
     "another action. NO_ACTION if no repair is warranted. Never invent identifiers. "
     "For ROLLBACK copy baseline_id and template_sha256 exactly; otherwise use empty parameters. "
     "Explain how the observed evidence supports the selected action.\n")
+# Added under the "gated" decision policy, which also adds change_evidence to the context.
+CHANGE_NOTE = (
+    "change_evidence is computed by Sentinel from the live and baseline Pod templates, not by a model. "
+    "A ROLLBACK when rollback_would_change_template is false, or for a case the code eligibility rule "
+    "rejects, will be refused.\n")
+RULE_RATIONALE = (
+    "Code rule: the diagnosed reason is one a rollback can repair, the diagnosed component is the target, "
+    "the signals show a rollout or startup symptom, and the live template differs from the healthy baseline "
+    "after a recent change. Decided by a code rule, not the model.")
 
 
 def _is_target_word(word, name):
@@ -165,7 +186,8 @@ def recovery_context(context):
                           "prediction": {str(number): {field: clean(value, LABEL_LIMIT)
                                                        for field, value in failure.items()}
                                          for number, failure in diagnosis["prediction"].items()},
-                          "evidence_ids": [item["evidence_id"] for item in diagnosis.get("tools", [])]}}
+                          "evidence_ids": [item["evidence_id"] for item in diagnosis.get("tools", [])],
+                          "cited_evidence_ids": deepcopy(diagnosis.get("citations") or {})}}
 
 
 def _model_error(error):
@@ -190,11 +212,19 @@ class AgentPlanner:
     new directory. deployment_reader(target) returns the live Deployment.
     llm_factory(config, progress=..., deadline=...) makes one model client per
     attempt, so max_model_calls and the deadline bound each attempt.
+    topology ({"nodes": [...]}, a reviewed dependency graph) supplies the
+    component vocabulary next to the target. The config's decision_policy,
+    max_change_age_seconds and consult_model_when_ineligible choose the
+    decision policy (services/planner/taxonomy.py::policy).
     """
 
     def __init__(self, config, *, folder, baseline, telemetry, deployment_reader,
-                 llm_factory=_ollama, progress=None, clock=time.monotonic, lease_seconds=None):
+                 llm_factory=_ollama, progress=None, clock=time.monotonic, lease_seconds=None, topology=None):
         budget = planning_budget(config)
+        self.settings = taxonomy.policy(config)
+        # Checks the reviewed names now; the target name joins them per incident.
+        taxonomy.components("target", topology)
+        self.topology = deepcopy(topology)
         lease = budget + LEASE_MARGIN_SECONDS if lease_seconds is None else lease_seconds
         if type(lease) not in (int, float) or not lease >= budget + LEASE_MARGIN_SECONDS:
             raise ValueError(f"lease_seconds must exceed planning_budget_seconds by at least "
@@ -210,6 +240,8 @@ class AgentPlanner:
         self.attempt = self.incident = self.before = self.started = None
         # The current attempt's injection finding; None when its telemetry is clean.
         self.finding = None
+        # The current attempt's code-computed change evidence and eligibility, and who decided.
+        self.change = self.eligibility = self.decision = None
 
     def options(self):
         """Keyword arguments for prepare() and process_planner_requests()."""
@@ -230,11 +262,14 @@ class AgentPlanner:
         if self.attempt is None:
             return None
         calls = self.clients[self.attempt].calls if self.attempt in self.clients else []
-        return {"planning_attempt": self.attempt, "model_calls": len(calls),
-                "model_calls_completed": sum(call.get("status") == "completed" for call in calls),
-                "model_seconds": round(sum(call.get("seconds", 0) for call in calls), 3),
-                "seconds": round(self.clock() - self.started, 3),
-                "budget_seconds": self.budget_seconds}
+        usage = {"planning_attempt": self.attempt, "model_calls": len(calls),
+                 "model_calls_completed": sum(call.get("status") == "completed" for call in calls),
+                 "model_seconds": round(sum(call.get("seconds", 0) for call in calls), 3),
+                 "seconds": round(self.clock() - self.started, 3),
+                 "budget_seconds": self.budget_seconds}
+        if self.decision is not None:
+            usage["decision"] = deepcopy(self.decision)
+        return usage
 
     def _failed(self, planning_error, cause):
         self.failures.append({"attempt": self.attempt, "code": planning_error.code,
@@ -248,18 +283,19 @@ class AgentPlanner:
         try:
             deployment = self.deployment_reader(deepcopy(target))
             return deployment["metadata"]["uid"], deployment["metadata"]["resourceVersion"], \
-                deployment["spec"]["template"]
+                deployment["spec"]["template"], deployment
         except Exception as error:  # noqa: BLE001 - any read failure is a retryable, classified attempt failure
             raise self._failed(PlanningError("TARGET_UNREADABLE"), error) from error
 
     def diagnose(self, incident, *, attempt):
         """Diagnose in attempt-<n>/: a new telemetry export and a new agent workspace.
 
-        The returned diagnosis carries the attempt's injection finding, so the
-        journal records it even when the attempt then ends for another reason.
+        The returned diagnosis carries the attempt's injection finding, change
+        evidence and rollback eligibility, so the journal records them even when
+        the attempt then ends for another reason.
         """
         self.attempt, self.incident, self.before = attempt, deepcopy(incident), None
-        self.finding = None
+        self.finding = self.change = self.eligibility = self.decision = None
         self.started = self.clock()
         deadline = self.started + self.budget_seconds
         workspace = self.folder / f"attempt-{attempt}"
@@ -268,6 +304,12 @@ class AgentPlanner:
             raise PlanningError("TARGET_CHANGED", terminal=True)
         self.before = before
         try:
+            # Computed in code from the live Deployment and the trusted baseline, never by the model.
+            self.change = change_evidence(self.baseline, before[3], incident)
+            vocabulary = taxonomy.vocabulary(incident["target"]["name"], self.topology)
+        except (ValueError, KeyError, TypeError, AttributeError) as error:
+            raise self._failed(PlanningError("TARGET_UNREADABLE"), error) from error
+        try:
             self.telemetry(workspace / "telemetry", deepcopy(incident))
         except Exception as error:  # noqa: BLE001 - a failed export is a retryable, classified attempt failure
             raise self._failed(PlanningError("TELEMETRY_UNAVAILABLE"), error) from error
@@ -275,7 +317,8 @@ class AgentPlanner:
             llm = self.clients[attempt] = self.llm_factory(self.config, progress=self._notify, deadline=deadline)
             self._notify({"stage": "diagnosis", "status": "started"})
             diagnosis = diagnose(incident, workspace / "telemetry", workspace / "agent", config=self.config,
-                                 llm=llm, progress=self._notify, deadline=deadline, clock=self.clock)
+                                 llm=llm, progress=self._notify, deadline=deadline, clock=self.clock,
+                                 vocabulary=vocabulary)
         except PlanningError:
             raise
         except Exception as error:  # noqa: BLE001 - model and agent failures are classified for the journal
@@ -288,7 +331,12 @@ class AgentPlanner:
             # Rule ids and counts only; the flagged text stays in the raw evidence on disk.
             (workspace / "injection-finding.json").write_text(json.dumps(self.finding, indent=2), encoding="utf-8")
             self._notify({"stage": "injection_gate", "status": "flagged"})
-        return {**diagnosis, "injection": self.finding}
+        if diagnosis.get("prediction"):
+            self.eligibility = taxonomy.rollback_eligibility(
+                incident, diagnosis["prediction"], self.change,
+                max_change_age_seconds=self.settings["max_change_age_seconds"])
+        return {**diagnosis, "injection": self.finding, "change_evidence": self.change,
+                "eligibility": self.eligibility}
 
     def __call__(self, context):
         """The Recovery Planner: an advisory decision for propose() to validate.
@@ -297,6 +345,12 @@ class AgentPlanner:
         attempt in the fixed SUSPECTED_INJECTION escalation without a model call.
         It reads the finding carried on this attempt's own diagnosis, and also
         fails closed on the planner's current finding.
+
+        The rollback eligibility rule then applies by decision policy, from the
+        code-held eligibility of this attempt (never from the context): "rule"
+        decides alone; "gated" ends an ineligible case without a model call
+        (unless consult_model_when_ineligible) and overrides a model ROLLBACK
+        for one; "model" records eligibility without enforcing it.
         """
         if context["diagnosis"].get("injection") or self.finding:
             raise PlanningError("SUSPECTED_INJECTION", terminal=True)
@@ -305,13 +359,46 @@ class AgentPlanner:
         if any(not names_target(failure.get("root cause component"), context["incident"]["target"]["name"],
                                 containers) for failure in failures):
             raise PlanningError("DIAGNOSIS_OFF_TARGET", terminal=True)
-        prompt = RECOVERY_PROMPT + json.dumps(recovery_context(context), default=str)
+        name = self.settings["policy"]
+        eligibility = self.eligibility
+        if eligibility is None or self.change is None:
+            raise PlanningError("AGENT_ERROR")  # diagnose() always sets both before a prediction reaches here
+        self.decision = {"policy": name, "enforced": name != "model", "eligible": eligibility["eligible"],
+                         "codes": list(eligibility["codes"]), "decided_by": None, "model_action": None,
+                         "overridden": False}
+
+        def ruled():
+            self.decision["decided_by"] = "rule"
+            return PlanningError(eligibility["codes"][0], terminal=True)
+
+        if name == "rule":
+            if not eligibility["eligible"]:
+                raise ruled()
+            self.decision["decided_by"] = "rule"
+            return {"action": "ROLLBACK", "parameters": {
+                key: self.baseline[key] for key in ("baseline_id", "template_sha256")},
+                "rationale": RULE_RATIONALE}
+        if name == "gated" and not eligibility["eligible"] and not self.settings["consult_model_when_ineligible"]:
+            raise ruled()
+        payload = recovery_context(context)
+        prompt = RECOVERY_PROMPT
+        if name == "gated":
+            payload["change_evidence"] = deepcopy(self.change)
+            prompt += CHANGE_NOTE
         try:
-            answer = self.clients[self.attempt].ask("Recovery Planner", prompt, RECOVERY_SCHEMA)
+            answer = self.clients[self.attempt].ask("Recovery Planner", prompt + json.dumps(payload, default=str),
+                                                    RECOVERY_SCHEMA)
         except Exception as error:  # noqa: BLE001 - model failures are classified for the journal
             raise self._failed(_model_error(error), error) from error
         if not isinstance(answer, dict):
             raise PlanningError("INVALID_MODEL_OUTPUT")
+        self.decision["model_action"] = answer.get("action") if answer.get("action") in (
+            "ROLLBACK", "ESCALATE", "NO_ACTION") else None
+        if name == "gated" and answer.get("action") == "ROLLBACK" and not eligibility["eligible"]:
+            # The model may only downgrade; it never turns an ineligible case into a repair.
+            self.decision["overridden"] = True
+            raise ruled()
+        self.decision["decided_by"] = "model"
         if answer.get("action") == "NO_ACTION":
             raise PlanningError("NO_ACTION_PROPOSED", terminal=True)
         return answer
@@ -323,7 +410,7 @@ class AgentPlanner:
         expected and gives a new deterministic action identity. A changed UID or
         Pod template means the diagnosis no longer describes the target.
         """
-        uid, version, template = self._read(proposal["target"])
+        uid, version, template, _ = self._read(proposal["target"])
         if self.before is None or (uid, template) != (self.before[0], self.before[2]):
             raise PlanningError("TARGET_CHANGED", terminal=True)
         if (proposal["target"] != self.incident["target"] or proposal["parameters"] != {
