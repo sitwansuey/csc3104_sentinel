@@ -30,6 +30,7 @@ from services.planner.store import PlannerStore
 from services.planner.worker import PlanningError, escalation, prepare
 from services.verifier.core import inspect_dependencies
 from tests.support.fake_ollama import FakeOllama, Reply, chat_reply
+from tests.support.vocabulary import STARTUP, cite_supporting
 
 LOG_MARKER = "RAW-LOG-MARKER-7f3a"
 EXPLANATION_MARKER = "REPORTER-EXPLANATION-MARKER-91c2"
@@ -54,7 +55,7 @@ class ScriptedClient:
             call["status"] = "failed"
             raise answer
         call["status"] = "completed"
-        return deepcopy(answer)
+        return cite_supporting(deepcopy(answer), prompt, schema) if role == "Reporter" else deepcopy(answer)
 
 
 class Script:
@@ -77,7 +78,7 @@ class Script:
             "Analyzer": {"summary": "Startup configuration error", "complete": True,
                          "confidence": 0.9, "next_steps": ""},
             "Reporter": {"failures": [{"root cause component": "demo-api",
-                                       "root cause reason": "Invalid startup configuration"}],
+                                       "root cause reason": STARTUP}],
                          "explanation": EXPLANATION_MARKER, "limitations": "Synthetic test"},
             "Recovery Planner": {"action": "ROLLBACK", "parameters": {
                 key: self.baseline[key] for key in ("baseline_id", "template_sha256")},
@@ -99,6 +100,7 @@ class AgentJournalTests(unittest.TestCase):
         self.script = Script(self.f.baseline)
         self.reads = []  # Deployment overrides, consumed one per read
         self.exports = 0
+        self.extra_logs = []  # further logs.csv rows for one test
         self.readings = []
         self.mono = [1000.0]
         self.agent = self.planner()
@@ -107,10 +109,10 @@ class AgentJournalTests(unittest.TestCase):
         self.journal.close()
         self.f.close()
 
-    def planner(self, **config):
+    def planner(self, topology=None, **config):
         agent = AgentPlanner({"planning_budget_seconds": 600, **config}, folder=self.root / "agent",
                              baseline=self.f.baseline, telemetry=self.export, deployment_reader=self.read,
-                             llm_factory=self.script.client, clock=lambda: self.mono[0])
+                             llm_factory=self.script.client, clock=lambda: self.mono[0], topology=topology)
         self.script.planner = agent
         return agent
 
@@ -119,8 +121,8 @@ class AgentJournalTests(unittest.TestCase):
         destination.mkdir(parents=True, exist_ok=False)
         (destination / "logs.csv").write_text(
             "timestamp,cmdb_id,message\n"
-            "2026-10-10T12:00:30Z,demo-api,Error invalid startup configuration " + LOG_MARKER + "\n",
-            encoding="utf-8")
+            "2026-10-10T12:00:30Z,demo-api,Error invalid startup configuration " + LOG_MARKER + "\n"
+            + "".join(self.extra_logs), encoding="utf-8")
 
     def read(self, target):
         if self.reads:
@@ -230,8 +232,11 @@ class AgentJournalTests(unittest.TestCase):
         self.assertTrue(self.journal.attempts(self.incident["incident_id"])[0]["context"]["diagnosis"]["abstained"])
 
     def test_diagnosis_naming_another_component_is_terminal(self):
+        # "frontend" is in the vocabulary (the reviewed topology) but is not the target.
+        self.agent = self.planner(topology={"nodes": ["frontend", "demo-api"]})
+        self.extra_logs.append("2026-10-10T12:00:30Z,frontend,Error calling demo-api: connection refused\n")
         self.script.overrides["Reporter"] = lambda attempt: {"failures": [{
-            "root cause component": "frontend calling demo-api", "root cause reason": "Timeout"}],
+            "root cause component": "frontend", "root cause reason": "dependency failure"}],
             "explanation": "x", "limitations": "x"}
         self.assertEqual(self.step(), "NEEDS_REVIEW")
         self.assert_escalated("DIAGNOSIS_OFF_TARGET", 1)

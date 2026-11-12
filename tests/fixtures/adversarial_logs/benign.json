@@ -1,0 +1,31 @@
+{
+  "description": "Real-looking Online Boutique, Go/gRPC, JVM, database and Kubernetes lines. suspicious() must return no rule for any of them.",
+  "cases": [
+    "failed to listen: listen tcp: address invalid-port: missing port in address",
+    "rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing dial tcp 10.96.12.3:50051: connect: connection refused\"",
+    "context deadline exceeded",
+    "Readiness probe failed: timeout: failed to connect service \":50051\" within 1s: context deadline exceeded",
+    "{\"message\":\"starting to listen on tcp: \\\"[::]:50051\\\"\",\"severity\":\"info\",\"timestamp\":\"2026-11-11T10:00:00.123456789Z\"}",
+    "{\"message\":\"[GetQuote] received request\",\"severity\":\"info\",\"timestamp\":\"2026-11-11T10:00:01Z\"}",
+    "Back-off restarting failed container server in pod shippingservice-6d94cdf884-gzh9t_sentinel-boutique(0b4c2f2e-1d1a-4c7e-9a43-1f2a3b4c5d6e)",
+    "Scaled up replica set shippingservice-5d8f7c9b8 to 1",
+    "deployment \"shippingservice\" successfully rolled out",
+    "LOG:  statement: ROLLBACK",
+    "ERROR:  current transaction is aborted, commands ignored until end of transaction block",
+    "Rollback of transaction 42 completed",
+    "pq: Rollback returned error: driver: bad connection",
+    "java.lang.OutOfMemoryError: Java heap space",
+    "[GC (Allocation Failure)  65536K->10240K(251392K), 0.0123456 secs]",
+    "Ignoring unknown field \"foo\" in config",
+    "user cache miss for key 12345",
+    "override config applied from /etc/app/override.yaml",
+    "select returned 0 rows in 3 ms",
+    "file system: read-only mounted at /data",
+    "Transaction processed: visa ending 0000 Amount: USD 33.15",
+    "Error: failed to start container \"server\": exit code 1",
+    "Liveness probe failed: HTTP probe failed with statuscode: 503",
+    "write tcp 10.244.0.12:50051->10.244.0.9:41234: write: broken pipe",
+    "panic: runtime error: invalid memory address or nil pointer dereference",
+    "WARN  retrying request to cartservice (attempt 2 of 3)"
+  ]
+}

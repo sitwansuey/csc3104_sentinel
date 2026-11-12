@@ -14,7 +14,7 @@
       "include": ["summary.json", "rbac-checks.json", "dashboard-validation.json", "images.json", "policy.json",
                   "primary-incident.json", "primary-storefront-impact.json",
                   "*/initial-guard.json", "*/execution.json", "*/outcome.json", "*/proposal.json",
-                  "*/model-proposal.json", "*/model-calls.json", "model-runtime.json"]
+                  "*/model-proposal.json", "*/model-calls.json", "model-runtime.json", "scenario-result.json"]
     },
     "guard-rejection": {
       "description": "Healthy service, unnecessary rollback proposed; Guard must refuse with zero Executor writes",

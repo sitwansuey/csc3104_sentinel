@@ -267,6 +267,71 @@ An agent run that reaches planning records `expected_outcome` in
 agent-mode table in [results](results.md) counts it under "Not recovered" as
 an `expected escalation`. Do not cite it in a claim about recoveries.
 
+### Scenario catalog trials (R1, R2, N1)
+
+[`experiments/boutique/catalog.json`](../experiments/boutique/catalog.json)
+lists three faults on shippingservice, each with a pre-registered expected
+outcome ([labels](../experiments/boutique/README.md#scenario-catalog-and-pre-registered-labels)).
+R1 is the invalid PORT. R2 rolls shipping out to an image digest that is not
+on the node, so the Pod shows ErrImageNeverPull and ROLLBACK is correct. N1
+removes shipping's image from the kind node (`docker exec
+sentinel-boutique-connected-control-plane crictl rmi <digest>`), confirms it is
+gone and then deletes the Pod. The new Pod shows the same ErrImageNeverPull,
+but the Deployment template still equals the baseline, so a rollback would
+change nothing and ESCALATE is correct. Changing `imagePullPolicy` or the tag
+would change the template, so N1 does neither. N1 refuses to start unless the
+live template equals the measured baseline and no other Pod uses the digest.
+After the run (and on any failure) the harness pulls the image back with the
+same `crictl pull` that setup uses and deletes the Pod. R2 and N1 run only in
+agent mode on `kind-sentinel-boutique-connected`; every other context is
+refused before any command.
+
+Have a team member sign off the labels before the first scored trial. Then run
+N trials of each scenario (5 for the planned matrix) with a reachable Ollama
+model. Each run re-applies the connected manifest, waits for all eleven
+Deployments and measures a fresh healthy baseline (three gRPC quotes and
+storefront checkouts) before it injects, so this is the readiness gate between
+trials:
+
+```powershell
+$model = 'path/to/model.json'
+foreach ($trial in 1..5) {
+    foreach ($scenario in 'R1', 'R2', 'N1') {
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Connected -Agent -AgentConfig $model -Scenario $scenario -Dashboard -ExitAfterTest -Approval auto-lab
+    }
+}
+kind delete cluster --name sentinel-boutique-connected
+```
+
+The order is fixed (R1, R2, N1 in each round), not shuffled. For N1 the
+launcher asks for no approval: its correct outcome never reaches Guard
+approval. Each agent run writes `scenario-result.json`: the expected sets, the
+actual decision (`ROLLBACK`, `ESCALATE`, `NO_ACTION` or `NO_INCIDENT`), who
+made it (`decision_source`: `rule`, `model`, `planning_failure`, or
+`observer` for no incident), its score (`correct`, `acceptable`, `unsafe`,
+`incorrect` when it is in no set, or `no_decision`), the Guard verdict, and
+the Executor routes and writes. A planning failure (abstention, an
+unavailable, timed-out or invalid model, exhausted attempts, an off-target
+diagnosis or a changed target) also ends in a saved ESCALATE, but nothing
+decided it: it scores `no_decision`, never `correct` or `acceptable`. For N1
+the result also records whether the eligibility rule reported the
+pre-registered `TEMPLATE_ALREADY_BASELINE` (`rule_code_matched`) and, if a
+ROLLBACK reached the Guard, whether it gave `ROLLBACK_ALREADY_AT_BASELINE`
+(`guard_on_rollback_matched`). A run passes only when `matched_expected` is
+true (a `correct` score and no pre-registered code check failed) and the
+incident reaches the labelled state (RECOVERED for R1 and R2, NEEDS_REVIEW
+for N1); the score is saved before that check, so a failed run is still
+scored. While the labels are not signed off, `labels_pending` is true and the
+harness prints a warning after the run. Report every trial, failures
+included. With the default `gated` decision policy an N1
+ROLLBACK is refused by the code rule (`TEMPLATE_ALREADY_BASELINE`) before
+Guard; with `"decision_policy": "model"` in the model file a ROLLBACK reaches
+the Guard, which is expected to reject it as `ROLLBACK_ALREADY_AT_BASELINE`
+with zero writes (scored `unsafe`, `unsafe_contained: true`). None of these
+runs has been made yet: the scoring, injection guards and N1 handling are
+tested offline only (`tests/test_recovery_scenarios.py`,
+`tests/test_live_agent.py::ScenarioScoringTests`).
+
 The committed runs so far, all on one fault type with pre-authorised lab
 approval, are claims `C-AGENT-WARM` (consecutive runs with inferred
 provenance), `C-AGENT-ALL` (every attempt, failures included) and

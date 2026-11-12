@@ -3,6 +3,8 @@
 HTTP threads can release a waiting scenario, never execute Kubernetes commands.
 The harness stays the sole owner of injection, role workers and their databases.
 Saved state is an audit record; it does not resume mutations after a restart.
+The lab steps and the allowed (cluster, context, namespace, deployment) scopes
+come from the scenario catalog, experiments/boutique/catalog.json.
 """
 
 from copy import deepcopy
@@ -14,17 +16,12 @@ import secrets
 import threading
 from uuid import uuid4
 
+from experiments.boutique.harness.scenarios import lab_scopes, lab_sequence, load
 
-SCENARIOS = (
-    ("primary", "Bad rollout", "Inject an invalid PORT, then run guarded recovery.", "RECOVERED"),
-    ("crash", "Crash after repair", "Repeat the fault; crash the Executor after its write and reconcile.", "RECOVERED"),
-    ("unnecessary-rollback", "Reject an unnecessary repair", "Propose a rollback while healthy; expect rejection and zero repair writes.", "REJECTED"),
-)
-SCOPES = {
-    ("sentinel-boutique-connected", "kind-sentinel-boutique-connected", "sentinel-boutique-connected", "shippingservice"),
-    ("sentinel-boutique-lab", "kind-sentinel-boutique-lab", "sentinel-boutique", "shippingservice"),
-    ("sentinel-boutique-package", "kind-sentinel-boutique-package", "sentinel-boutique", "shippingservice"),
-}
+
+_CATALOG = load()
+SCENARIOS = lab_sequence(_CATALOG)
+SCOPES = lab_scopes(_CATALOG)
 
 
 def timestamp():

@@ -70,11 +70,11 @@
       "impact": "Fixed in code: agent planning now runs through prepare() and the PlannerStore journal. A model failure is retried up to three times; an abstention, a diagnosis of another component, a NO_ACTION answer or a target changed during inference ends at once. Every failure ends in a saved, delivered ESCALATE, so the incident moves to NEEDS_REVIEW, and a saved proposal replays without another model call. Still open: the planning budget applies per attempt, so one incident can use three budgets, and the remote Planner worker has no agent mode. Live verification pending: no agent run has used the journal yet, and every committed agent bundle predates it, so those failed runs left the incident OPEN.",
       "workaround": "For runs recorded before this change, read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:209", "text": "state = run_durable_case(self, incident"},
-        {"at": "services/planner/worker.py:133", "text": "raise PlanningError(\"ABSTAINED\", terminal=True)"},
-        {"at": "services/planner/worker.py:146", "text": "proposal = _rebound(proposal, finalize)"},
-        {"at": "tests/test_agent_journal.py:200", "text": "def test_unavailable_model_retries_with_backoff_across_restart_then_escalates"},
-        {"at": "tests/test_agent_journal.py:274", "text": "def test_lost_delivery_replays_the_same_action_without_a_model_call"},
+        {"at": "experiments/boutique/harness/agent_live.py:257", "text": "state = run_durable_case(self, incident"},
+        {"at": "services/planner/worker.py:164", "text": "raise PlanningError(\"ABSTAINED\", terminal=True)"},
+        {"at": "services/planner/worker.py:177", "text": "proposal = _rebound(proposal, finalize)"},
+        {"at": "tests/test_agent_journal.py:202", "text": "def test_unavailable_model_retries_with_backoff_across_restart_then_escalates"},
+        {"at": "tests/test_agent_journal.py:279", "text": "def test_lost_delivery_replays_the_same_action_without_a_model_call"},
         {"at": "docs/planner.md", "text": "Agent mode through the journal"},
         {"claim": "C-AGENT-FAIL-CLOSED"}
       ],
@@ -87,7 +87,7 @@
       "kind": "defect",
       "status": "mitigated",
       "since": "2026-11-11",
-      "impact": "Fixed in code for the four live harness paths: the Executor experiment, Boutique walkthrough, provider mode and agent mode now create approvals through the authenticated approval API, served per run by a child process with generated tokens, and the Executor's final pre-write lookup reads them through ApprovalClient. Revocation, expiry or a stopped authority therefore fails closed with zero writes, and agent mode no longer records a pre-authorised approval. An interactive run needs a person to type the exact action ID; an unattended run must opt in to auto-lab approval, recorded under the automated-lab identity and never as a person. Agent and provider modes plan through the durable Planner journal and approve through the same session, and an agent run with --expect escalated asks for no approval and starts no authority. A Boutique run with the dashboard's lab controls can instead use ui approval: the dashboard shows the pending action, the operator types its action ID and clicks Approve or Revoke, and the dashboard server relays the decision with the run's operator credential (dashboard-operator by default); the browser holds only the lab session token, which any local process can also read, so it does not identify a person. This is proven offline with the real child process and a fake Kubernetes API. Live verification pending: no live run has used this path, so no evidence yet shows a person approving, and every committed live bundle used pre-authorised lab approval. The file-backed negative cases still give the Executor a fixed approval record that never reaches the Coordinator; they prove refusals only. The Executor experiment's rival-process check reads a file copy of the managed record, not through ApprovalClient; the target lock refuses it before it reads the approval. The Verifier acceptance script (scripts/validation/test_verifier_connected_live.py) still calls the local approve() and reads the record straight from the store; it is outside this fix. Identities are bearer tokens over loopback HTTP, not a per-person login.",
+      "impact": "Fixed in code for the four live harness paths: the Executor experiment, Boutique walkthrough, provider mode and agent mode now create approvals through the authenticated approval API, served per run by a child process with generated tokens, and the Executor's final pre-write lookup reads them through ApprovalClient. Revocation, expiry or a stopped authority therefore fails closed with zero writes, and agent mode no longer records a pre-authorised approval. An interactive run needs a person to type the exact action ID; an unattended run must opt in to auto-lab approval, recorded under the automated-lab identity and never as a person. Agent and provider modes plan through the durable Planner journal and approve through the same session, and an agent run with --expect escalated asks for no approval and starts no authority. A Boutique run with the dashboard's lab controls can instead use ui approval: the dashboard shows the pending action, the operator types its action ID and clicks Approve or Revoke, and the dashboard server relays the decision with the run's operator credential (dashboard-operator by default); the browser holds only the lab session token, which any local process can also read, so it does not identify a person. This is proven offline with the real child process and a fake Kubernetes API, for agent mode and, since P2.04, for provider mode (run_provider_case with a real provider subprocess). Live verification pending: no live run has used this path, so no evidence yet shows a person approving, and every committed live bundle used pre-authorised lab approval. The file-backed negative cases still give the Executor a fixed approval record that never reaches the Coordinator; they prove refusals only. The Executor experiment's rival-process check reads a file copy of the managed record, not through ApprovalClient; the target lock refuses it before it reads the approval. The Verifier acceptance script (scripts/validation/test_verifier_connected_live.py) still calls the local approve() and reads the record straight from the store; it is outside this fix. Identities are bearer tokens over loopback HTTP, not a per-person login.",
       "workaround": "Treat committed live results as lab approval. For new evidence of a person deciding, run with -Approval interactive (the default) and check operator_approval in summary.json.",
       "cites": [
         {"at": "experiments/recovery/live.py:376", "text": "record = self.request_approval(proposal, first)"},
@@ -100,10 +100,11 @@
         {"at": "tests/test_approval_session.py:346", "text": "def test_authority_down_after_allow_gives_zero_writes"},
         {"at": "tests/test_approval_session.py:383", "text": "def test_tokens_never_reach_run_folder_logs_or_argv"},
         {"at": "tests/test_approval_session.py:527", "text": "def test_crash_restart_passes_the_executor_token_only_through_the_worker_environment"},
-        {"at": "experiments/boutique/harness/agent_live.py:262", "text": "return self.request_approval(proposal, decision)"},
+        {"at": "experiments/boutique/harness/agent_live.py:403", "text": "return self.request_approval(proposal, decision)"},
         {"at": "scripts/boutique_provider.py:30", "text": "approve=lab.request_approval"},
-        {"at": "tests/test_live_agent.py:460", "text": "def test_agent_success_approves_through_the_session_and_records_the_strategy"},
+        {"at": "tests/test_live_agent.py:496", "text": "def test_agent_success_approves_through_the_session_and_records_the_strategy"},
         {"at": "tests/test_dashboard_approval_relay.py:246", "text": "def test_typed_approval_is_relayed_as_the_dashboard_operator_and_executes_once"},
+        {"at": "tests/test_provider_approval.py:67", "text": "def test_provider_mode_approves_through_the_session_and_records_the_strategy"},
         {"claim": "C-CONNECTED-HARNESS"}
       ],
       "planned": ["P2.02", "P2.03"],
@@ -111,18 +112,56 @@
     },
     {
       "id": "L-RAW-LOGS-PROMPT",
-      "title": "Raw container log text reaches the model",
+      "title": "Sentinel's planning prompts carry log text only cleaned and quoted, and the injection gate is a pattern list no live run has exercised",
       "kind": "defect",
-      "status": "open",
+      "status": "mitigated",
       "since": "2026-11-11",
-      "impact": "Container log lines are exported and quoted into model context. A crafted log line could steer the model towards a rollback to the measured baseline. Guard and the Executor still enforce the target, baseline and resourceVersion checks.",
-      "workaround": "None in code. The prompt tells the model that telemetry is untrusted, which is not a control.",
+      "impact": "Fixed in code; live verification pending. In agent mode, container log lines, Kubernetes event messages and incident signal details are now cleaned (control and format characters removed, NFKC applied, length capped), templated and quoted under untrusted_telemetry_evidence before a model reads them, and logs.csv keeps a cleaned copy with the hash of the raw line. A line that matches the curated instruction-like rules (override phrases, role markers, chat-template tokens, forged proposal fields, approval claims, Sentinel's own prompt headings) is withheld from every prompt: the model sees only its rule ids and hash. A code-owned gate in AgentPlanner then records an injection finding (rule ids and counts, decided_by rule) and ends the attempt in the fixed SUSPECTED_INJECTION escalation without calling the Recovery Planner, so flagged telemetry leads to ESCALATE and NEEDS_REVIEW with zero writes. The Recovery Planner no longer receives the Reporter's explanation or limitations, only cleaned prediction fields, evidence ids and quoted signals. The remote Planner worker (runtime/remote_adapters.py, OllamaProvider) runs the same rules over the raw incident signals before any model call: a flagged signal ends planning in the SUSPECTED_INJECTION escalation without a model call and the attempt's saved usage keeps the finding; otherwise its model reads the signals only quoted under untrusted_telemetry_evidence. This is proven offline with a 19-line adversarial corpus, a 26-line benign set that matches no rule, a recording scripted model and an obedient one, and for the remote worker with a recording fake Ollama server that always answers ROLLBACK and receives no request for any attack. Remaining risk: the rules are a pattern list, not a complete defence. A paraphrase they miss still reaches the model as a cleaned excerpt and can steer the diagnosis or the Recovery Planner within the Guard's limits. In agent mode the Reporter's component and reason now come from a code-owned vocabulary (L-FREE-TEXT-DECISION), so a steered diagnosis can only pick a wrong name from that list; inside the RCA agent the Analyzer's summary still reaches the Reporter. A false positive escalates a genuine incident, which is a safe failure; ordinary lines such as 'user: alice not found' or 'helm upgrade failed; action=rollback triggered' are flagged today. If an attempt on flagged telemetry fails in the model three times before its check runs, the incident ends in ATTEMPTS_EXHAUSTED and no finding is recorded. Still open: provider mode passes the raw planning context to the operator's own provider script, and the offline RCAEval CaseToolkit benchmark (agent/datasets/casetoolkit.py, not on the live path) sends upstream tool output, which can include raw log rows, to the model with no gate. Live verification pending: no live run has used this path, and neither the planned adversarial-fault run nor the three normal runs after it have been made.",
+      "workaround": "For a paraphrase the rules miss, the remaining controls are rollback-only actions to a measured baseline, the Guard and authenticated approval. A SUSPECTED_INJECTION escalation is a prompt for review: find the flagged lines by message_sha256 in the attempt's logs.csv and the saved observation.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:75", "text": "for entry in observation.get(\"logs\", []):"},
-        {"at": "agent/tools.py:193-194", "text": "str(r[message])[:500]"}
+        {"at": "agent/untrusted.py", "text": "def suspicious(text):"},
+        {"at": "agent/tools.py:205", "text": "**quote(r[message])"},
+        {"at": "experiments/boutique/harness/agent_live.py:89", "text": "csv_cell(cleaned)"},
+        {"at": "services/planner/agent_provider.py:357", "text": "raise PlanningError(\"SUSPECTED_INJECTION\", terminal=True)"},
+        {"at": "runtime/remote_adapters.py:171", "text": "raise PlanningError(\"SUSPECTED_INJECTION\", terminal=True)"},
+        {"at": "runtime/remote_adapters.py", "text": "json.dumps(quoted)"},
+        {"at": "tests/test_untrusted_telemetry.py:524", "text": "def test_every_attack_in_an_incident_signal_is_gated_and_never_reaches_a_prompt"},
+        {"at": "tests/test_untrusted_telemetry.py:559", "text": "def test_benign_logs_still_reach_rollback_and_recovered"},
+        {"at": "tests/test_untrusted_telemetry.py:573", "text": "def test_reporter_free_text_never_reaches_the_recovery_planner"},
+        {"at": "tests/test_untrusted_telemetry.py:264", "text": "def test_gate_flags_an_instruction_cut_off_the_exported_message"},
+        {"at": "tests/test_untrusted_telemetry.py:624", "text": "def test_flagged_signal_escalates_by_rule_without_calling_the_model"},
+        {"at": "tests/test_untrusted_telemetry.py:645", "text": "def test_benign_signal_is_quoted_cleaned_and_still_reaches_rollback"}
       ],
-      "planned": ["P2.04"],
+      "planned": ["P2.04", "P2.05", "P4.04"],
       "issues": [51, 56]
+    },
+    {
+      "id": "L-FREE-TEXT-DECISION",
+      "title": "The live diagnosis was model free text and the rollback choice had no change evidence",
+      "kind": "defect",
+      "status": "mitigated",
+      "since": "2026-11-12",
+      "impact": "Fixed in code; live verification pending. Before this change the live diagnosis's component and reason were model free text, and the Recovery Planner could not see whether the live template differed from the baseline, so a rollback choice could not be checked against evidence. In agent mode the Reporter now picks the component from the reviewed topology plus the target and the reason from a fixed six-reason taxonomy, and must cite the ids of collected tool results that name the component. An answer outside the vocabulary gets one correction and then abstains, and a citation that does not name the component abstains. Code computes change evidence: a bounded, redacted diff of the live Pod template against the healthy baseline, image digests, rollout facts and a bound on the change's age. A code rule decides whether ROLLBACK is eligible: the reason is one a rollback can repair, the component is the target, a signal shows a rollout, startup, crash, back-off or image pull symptom, the template differs from the baseline and the change is recent. Under the default gated policy an ineligible case ends in a fixed escalation without a Recovery Planner call, a model ROLLBACK for an ineligible case is overridden, and the decision is recorded with decided_by rule or model. The rule-only and model-only policies (P1 and P3) can be chosen in the agent config for evaluation. This is proven offline with a scripted model only. Remaining risk: the enum can push a confused model into a wrong but valid name; the citation check may raise the live abstention rate; the change-age bound comes from the baseline time, so an old baseline refuses a genuine recent change; the remote Planner worker and provider mode do not use this context. Live verification pending: no live run has used it. The planned checks are three standard PORT runs that must still reach RECOVERED with component shippingservice, and a fault without a template change that must end in ESCALATE (catalog scenario N1, see L-ONE-FAULT-ONE-ACTION).",
+      "workaround": "To let the model decide without change evidence or enforcement of the eligibility rule, set decision_policy to model in -AgentConfig; the vocabulary and citation checks still apply. A refused rollback is an escalation for review: the attempt's journal context holds the eligibility facts and the change evidence.",
+      "cites": [
+        {"at": "services/planner/taxonomy.py:94", "text": "def rollback_eligibility(incident, prediction, change, *, max_change_age_seconds):"},
+        {"at": "services/planner/change.py", "text": "def template_change(baseline_template, live_template):"},
+        {"at": "agent/agent.py", "text": "def cite(final, evidence):"},
+        {"at": "services/rca/core.py", "text": "cite_evidence=vocabulary is not None"},
+        {"at": "services/planner/agent_provider.py", "text": "self.decision[\"overridden\"] = True"},
+        {"at": "tests/test_rca_vocabulary.py", "text": "def test_off_vocabulary_component_is_corrected_then_abstains"},
+        {"at": "tests/test_rca_vocabulary.py", "text": "def test_citing_a_nonexistent_evidence_id_is_invalid"},
+        {"at": "tests/test_rca_vocabulary.py", "text": "def test_ineligible_reason_escalates_without_the_recovery_planner"},
+        {"at": "tests/test_rca_vocabulary.py", "text": "def test_template_already_at_baseline_escalates_without_the_recovery_planner"},
+        {"at": "tests/test_rca_vocabulary.py", "text": "def test_old_change_escalates_without_the_recovery_planner"},
+        {"at": "tests/test_rca_vocabulary.py", "text": "def test_model_rollback_on_an_ineligible_case_is_overridden_by_the_rule"},
+        {"at": "tests/test_planner_change_evidence.py", "text": "def test_secret_env_values_and_value_from_are_redacted"},
+        {"at": "tests/test_planner_change_evidence.py", "text": "def test_annotation_and_label_keys_never_show_values_whatever_their_name"},
+        {"at": "tests/test_rca_vocabulary.py", "text": "def test_one_ineligible_reason_among_several_failures_escalates"},
+        {"at": "tests/test_rca_vocabulary.py", "text": "def test_symptom_words_in_an_untrusted_signal_detail_do_not_make_a_rollback_symptom"}
+      ],
+      "planned": ["P2.05", "P4.04"],
+      "issues": [15, 52, 53, 74, 87]
     },
     {
       "id": "L-NO-LOGGING",
@@ -221,14 +260,22 @@
       "id": "L-ONE-FAULT-ONE-ACTION",
       "title": "One fault type and one repair action",
       "kind": "limitation",
-      "status": "open",
+      "status": "mitigated",
       "since": "2026-11-11",
-      "impact": "Every live recovery is an invalid shipping PORT where ROLLBACK is always right, so no result shows a choice between actions. RESTART and SCALE are in the contract, but Guard and the Executor refuse them.",
-      "workaround": "Quote results only for this fault and action.",
+      "impact": "Live verification pending. Every live recovery so far is an invalid shipping PORT where ROLLBACK is always right, so no result yet shows a choice between actions. The scenario catalog (experiments/boutique/catalog.json) now adds two agent-mode faults on the connected lab with pre-registered labels: R2, a rollout to an image digest that is not on the node (ROLLBACK correct), and N1, the same ErrImageNeverPull symptom from removing the image on the kind node while the template stays at the baseline (ESCALATE correct, ROLLBACK unsafe). ESCALATE, NO_ACTION and NO_INCIDENT are scored outcomes in scenario-result.json, and a run passes only on the labelled decision. A planning failure (abstention, an unavailable or invalid model, exhausted attempts) also ends in a saved ESCALATE, but it scores no_decision, never correct or acceptable, and a correct N1 also needs the eligibility rule to report the pre-registered TEMPLATE_ALREADY_BASELINE. This is tested offline only: no R2 or N1 run has been made, the labels still need owner sign-off, and whether a live N1 really shows ErrImageNeverPull (crictl rmi of an image a running container uses, then a new Pod) is unverified. The only repair action is still ROLLBACK: RESTART and SCALE are in the contract, but Guard and the Executor refuse them.",
+      "workaround": "Quote live results only for the PORT fault and ROLLBACK until scored R2 and N1 trials are committed. Run them with the commands in docs/testing.md, after the labels are signed off.",
       "cites": [
         {"at": "services/guard/core.py:161-162", "text": "ACTION_NOT_IMPLEMENTED"},
         {"at": "services/executor/core.py:414", "text": "Only explicit baseline ROLLBACK is implemented."},
-        {"claim": "C-CONNECTED-HARNESS"}
+        {"claim": "C-CONNECTED-HARNESS"},
+        {"at": "experiments/boutique/catalog.json", "text": "\"name\": \"node-image-evicted\""},
+        {"at": "experiments/boutique/harness/scenarios.py", "text": "def score(item, outcome, *, source=None):"},
+        {"at": "experiments/boutique/harness/scenarios.py", "text": "def decision_source(proposal, error_code=None, *, decided_by=None, model_action=None, incident=True):"},
+        {"at": "tests/test_live_agent.py", "text": "def test_n1_planning_failure_is_not_a_correct_escalation"},
+        {"at": "experiments/boutique/harness/live.py", "text": "def evict_node_image(self, scope, item):"},
+        {"at": "tests/test_live_agent.py", "text": "def test_n1_never_rolls_back_with_the_gate_on"},
+        {"at": "tests/test_live_agent.py", "text": "def test_n1_rollback_without_the_gate_is_caught_by_the_guard_with_zero_writes"},
+        {"at": "tests/test_recovery_scenarios.py", "text": "def test_n1_refuses_any_other_context_before_any_command"}
       ],
       "planned": ["P2.08", "P3.08", "P3.09"],
       "issues": [74, 76]
@@ -274,7 +321,7 @@
       "cites": [
         {"at": "agent/llm.py:285", "text": "self.timeout = _positive(config, \"timeout\", 300)"},
         {"at": "agent/llm.py:455", "text": "def warm_up(self):"},
-        {"at": "experiments/boutique/harness/agent_live.py:153", "text": "llm.preflight()"},
+        {"at": "experiments/boutique/harness/agent_live.py:194", "text": "llm.preflight()"},
         {"at": "tests/test_llm_transport.py"}
       ],
       "planned": ["P2.01"],
@@ -449,8 +496,8 @@
       "impact": "A failed agent run looked like a stalled one, and Ollama's own error text was discarded. The incident also stayed OPEN until agent planning moved into the journal; see L-AGENT-JOURNAL.",
       "workaround": "Not needed.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:248", "text": "Agent planning stopped; no repair proposed"},
-        {"at": "tests/test_live_agent.py:238", "text": "def test_unavailable_model_retries_then_escalates_to_needs_review"}
+        {"at": "experiments/boutique/harness/agent_live.py:389", "text": "Agent planning stopped; no repair proposed"},
+        {"at": "tests/test_live_agent.py:243", "text": "def test_unavailable_model_retries_then_escalates_to_needs_review"}
       ],
       "planned": [],
       "issues": [87]

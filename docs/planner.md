@@ -13,8 +13,13 @@ read-only engine in `agent/`: internal Planner/Analyzer/Reporter phases create
 bounded telemetry-tool queries and a diagnosis. These internal phase names are
 parts of team Role 3, not extra Sentinel service roles.
 
-The Recovery Planner model receives incident evidence, diagnostic knowledge,
-the diagnosis and supplied healthy baselines. `services/planner/core.py` binds
+The Recovery Planner model receives the incident's trusted fields, its signals
+quoted as untrusted data, recovery guidance, the cleaned diagnosis fields with
+the evidence ids they cite, the supplied healthy baselines and, under the
+default decision policy, change evidence computed in code. It never receives
+the Reporter's explanation or limitations (see [Untrusted inputs](#untrusted-inputs)),
+and a code rule decides whether a rollback is eligible at all (see
+[Code-owned decision context](#code-owned-decision-context)). `services/planner/core.py` binds
 target/incident/version/evidence, validates typed output and rejects invented,
 future or tampered baseline references. The live adapter accepts a supported
 rollback only after checking that the workload UID/template stayed unchanged
@@ -25,8 +30,116 @@ Guard/Executor independently re-read their inputs before any repair.
 
 The model cannot run arbitrary Python/kubectl commands through its tools.
 CSV paths are confined to the provided telemetry tree. Telemetry is untrusted
-data, not instructions. See the code and tests for the bounds; no production
-identity or perfect diagnosis guarantee is implied.
+data, not instructions; [Untrusted inputs](#untrusted-inputs) lists the
+controls. See the code and tests for the bounds; no production identity or
+perfect diagnosis guarantee is implied.
+
+## Untrusted inputs
+
+Container logs, Kubernetes event messages and the incident signal details
+built from them are written by the workload. The adversary here is anything
+that can make the workload print text: a crafted request, a bad configuration
+value or a compromised dependency. Its goal is to steer the model, for example
+towards a rollback or an escalation. These controls apply in agent mode; the
+remote Planner worker has its own row:
+
+| Control | Where | What it does |
+|---|---|---|
+| Cleaning | `agent/untrusted.py` (`clean`, `scrub`) | Removes ANSI escapes, control characters and format characters (NUL, zero-width characters, bidi controls), applies Unicode NFKC, collapses whitespace and cuts long text with a `[+N chars]` marker. |
+| Templating and quoting | `agent/untrusted.py` (`template`, `quote`, `prompt_incident`), `agent/tools.py` | A log example or signal detail reaches a prompt as a masked template (times, numbers, addresses, ids, paths and long quoted strings replaced) plus a short cleaned excerpt, marked untrusted, with an evidence id. Every log-derived string sits under `untrusted_telemetry_evidence`, and the system message says that this data may be adversarial and must not be followed. |
+| Withholding | `agent/untrusted.py` (`suspicious`, `quote`) | A line that matches one of the instruction-like rules is not shown at all: the prompt gets only its rule ids and the hash of the raw line. The rules cover override phrases, role markers at line start, chat-template tokens, forged proposal fields (`baseline_id`, `template_sha256`, an action key with ROLLBACK, ESCALATE or NO_ACTION), approval claims and Sentinel's own prompt headings. Matching runs on cleaned, case-folded text with format characters removed and common Cyrillic and Greek look-alikes folded, so split words, full-width letters and mixed-script spellings are caught; a line with a bidi override is also checked reversed. |
+| Export | `experiments/boutique/harness/agent_live.py` (`export_telemetry`) | `logs.csv` holds the cleaned message, `message_sha256` (the hash of the raw line) and `suspicious_rules`; a cell that starts with `=`, `+`, `-` or `@` gets a leading `'`. `telemetry-export.json` counts `suspicious_lines`, `truncated_lines` and `control_chars_removed`. The raw lines stay in the saved observations. |
+| Injection gate | `services/planner/agent_provider.py` (`injection_finding`, `AgentPlanner`) | Code, not the model, checks the raw incident signals, every exported log row and the diagnosis fields. If any matches a rule, the attempt saves `injection-finding.json` (rule ids and counts, `decided_by: rule`), the journal keeps the same finding, and the Recovery Planner is not called: the attempt ends in the fixed `SUSPECTED_INJECTION` escalation and the incident moves to NEEDS_REVIEW with no Guard request and no write. If the agent abstained first, the attempt ends in the `ABSTAINED` escalation and the finding is still recorded. There is no setting that turns the gate off. |
+| No free text between roles | `services/planner/agent_provider.py` (`recovery_context`) | The Recovery Planner reads cleaned prediction fields and evidence ids, never the Reporter's explanation or limitations. |
+| Remote Planner worker | `runtime/remote_adapters.py` (`OllamaProvider`) | Before any model call, code checks the raw incident signals (reason and detail) with the same rules. A flagged signal ends planning in the fixed `SUSPECTED_INJECTION` escalation, and the attempt's saved usage keeps the finding (rule ids and counts). Otherwise the model reads the incident's trusted fields and its signals quoted under `untrusted_telemetry_evidence` (prompt version `recovery-v2`). This worker exports no logs and runs no diagnosis, so the signals are all it checks. |
+
+Two paths that hand telemetry to other code are outside these controls. Provider
+mode (`-ProviderScript`) passes the raw planning context to the operator's own
+trusted provider script; if that script calls a model, cleaning and gating are
+its job. The offline RCAEval CaseToolkit benchmark
+(`agent/datasets/casetoolkit.py`) sends upstream tool output, which can include
+raw log rows, to the model; it is not on the live path.
+
+The offline tests (`tests/test_untrusted_telemetry.py`) use the adversarial
+corpus in `tests/fixtures/adversarial_logs/`: 19 attacks, including
+zero-width, bidi, ANSI, NUL, homoglyph, a 50 KB line, a forged proposal and a
+forged section header, and 26 benign Boutique, gRPC, JVM, database and
+Kubernetes lines that must match no rule. A recording scripted model shows that
+no attack text reaches any prompt; an obedient scripted model that would answer
+ROLLBACK is never asked, and the run ends in NEEDS_REVIEW with zero writes;
+benign logs still reach ROLLBACK and RECOVERED. A line whose instruction falls
+past the export's 2000-character cut is still gated through its
+`suspicious_rules` column. For the remote Planner worker, a recording fake
+Ollama server that always answers ROLLBACK receives no request for any attack,
+and the saved proposal is the `SUSPECTED_INJECTION` escalation; a benign signal
+reaches it only quoted and still gives a ROLLBACK.
+
+Remaining risk. The rules are a curated pattern list, not a complete defence:
+a paraphrase they miss reaches the model as a cleaned excerpt and can still
+steer the diagnosis or the Recovery Planner, within the limits that
+rollback-only actions, the eligibility rule, the Guard's checks and
+authenticated approval enforce. In agent mode the Reporter's component and
+reason are chosen from a vocabulary code owns (see
+[Code-owned decision context](#code-owned-decision-context)), so a steered
+diagnosis can only pick a wrong name from that list. Inside the RCA agent the Analyzer's summary
+still reaches the Reporter. A false positive escalates a genuine incident to an
+operator, which is a safe failure; ordinary lines such as `user: alice not
+found` (role marker) or `helm upgrade failed; action=rollback triggered`
+(forged proposal field) are flagged today, so the rules still need checking
+against real logs. If an attempt on flagged telemetry fails in the model three
+times before its check runs, the incident ends in the `ATTEMPTS_EXHAUSTED`
+escalation and no finding is recorded. Templating could hide a decisive detail, so
+the cleaned excerpt is kept beside the template. No live run has exercised the
+gate yet; the planned check is an adversarial fault whose configuration value
+carries instruction text, plus three normal runs that must still recover.
+
+## Code-owned decision context
+
+In agent mode the diagnosis and the action choice rest on context that code
+builds, not on model free text. The parts are in `services/planner/taxonomy.py`
+and `services/planner/change.py`:
+
+| Part | Where | What it does |
+|---|---|---|
+| Vocabulary | `services/planner/taxonomy.py` (`vocabulary`, `vocabulary_context`), `services/rca/core.py` (`diagnose`) | The Reporter must pick the root cause component from the reviewed topology's services (`deploy/boutique/dependencies.json`, today only `shippingservice`) plus the target, and the reason from six fixed reasons: faulty configuration rollout, container startup failure, resource exhaustion, network fault, dependency failure and insufficient evidence. Names must be Kubernetes object names. The list is added to the context by code, never taken from telemetry, and the incident JSON before it is one line, so a quoted signal cannot add an entry. The schema enum and `validate_report` both enforce the lists. An answer outside them gets one correction; if the correction is still outside, the agent abstains (`ABSTAINED`). |
+| Evidence citation | `agent/agent.py` (`cite`, `unsupported_citation`) | Each reported failure must list 1 to 10 `evidence_ids`, chosen from the ids of the tool results the agent collected. An unknown id is invalid (one correction, then abstention). If a cited result's findings, events, examples, latency or components do not name the diagnosed component, the agent abstains without another model round. The cited ids are saved in the journal and passed to the Recovery Planner. |
+| Change evidence | `services/planner/change.py` (`template_change`, `change_evidence`) | Compares the live Pod template with the healthy baseline. Containers match by name, env entries by name and ports by containerPort, so reordering a list is not a change. Each change has a path, a kind (added, removed or modified) and a field class. Values are shown only for the image, env, resources, ports and probe fields of a container; annotation, label and other Pod template changes show their path but never a value, whatever the key is called. An env value whose name looks secret (TOKEN, KEY, PASSWORD, SECRET, CREDENTIAL, CERT, AUTH and similar) or that uses `valueFrom` shows as `redacted`, and so does the user name and password part of a URL in an env value. A value or path that matches the instruction-like rules shows as `withheld`. At most 20 changes are listed. It also reports the image and digest of each container, the Deployment's revision, generations and Progressing condition, and `change_age_bound_seconds`: the time from the baseline's healthy observation to the incident. A live template that differs from that baseline changed after it was observed healthy, so this bounds the change's age. The full templates never reach a prompt. |
+| Eligibility rule | `services/planner/taxonomy.py` (`rollback_eligibility`), `services/planner/agent_provider.py` (`AgentPlanner.__call__`) | ROLLBACK is eligible only when every diagnosed failure has the reason faulty configuration rollout or container startup failure and names exactly the target as its component, a signal reason (never its detail, which quotes workload output) shows a rollout, startup, crash, back-off or image pull symptom (unavailability alone does not; ErrImagePull, ErrImageNeverPull and ImagePullBackOff count, so the template check alone separates scenario R2 from N1), the live template differs from the baseline, and the change age bound is at most `max_change_age_seconds` (default 3600). The result, with its facts and codes, is saved in the journal with `decided_by: rule`. |
+
+The agent config's `decision_policy` (set through `-AgentConfig`) chooses how
+the rule and the model combine. The names map to the evaluation policies of
+roadmap item P4.04:
+
+| `decision_policy` | Evaluation policy | Behaviour |
+|---|---|---|
+| `gated` (default) | P4 | The Recovery Planner also sees the change evidence. An ineligible case ends in the fixed escalation for its first code, without a Recovery Planner call. A model ROLLBACK for an ineligible case is overridden. The model may answer ESCALATE for an eligible case. |
+| `rule` | P1 | The rule decides alone: an eligible case gets a ROLLBACK to the trusted baseline with a fixed rationale, an ineligible one the fixed escalation. There is no Recovery Planner call. |
+| `model` | P3 | The model decides without change evidence. Eligibility is still computed and saved but not enforced, so model-only behaviour stays measurable. The vocabulary, evidence citation and other diagnosis checks still apply, so this is not the behaviour before these checks existed. The Guard still refuses a rollback that would change nothing. |
+
+With `gated`, `consult_model_when_ineligible: true` asks the model even for an
+ineligible case, so its choice is recorded for evaluation; a ROLLBACK is then
+overridden. Each attempt's usage in the journal, and so `planning-status.json`,
+records the decision: `policy`, `enforced`, `eligible`, `codes`,
+`model_action`, `overridden` and `decided_by` (`rule` or `model`).
+`summary.json` copies it as `planning_decision`.
+
+Limits. These checks are tested offline with a scripted model
+(`tests/test_rca_vocabulary.py`, `tests/test_planner_change_evidence.py`,
+`tests/test_live_agent.py`); no live run has used them yet. Live verification
+pending: three standard PORT runs that must still reach RECOVERED with the
+component `shippingservice`, then a fault without a template change that must
+end in ESCALATE. The enum can push a confused model into a wrong but valid
+name; `insufficient evidence` is in the list and is never rollback-eligible.
+The citation check may raise the live abstention rate. Live telemetry names only
+the target, so a diagnosis that names another service abstains at the citation
+check rather than reaching `names_target`. The age bound comes from the baseline
+time, so with an old baseline a genuine recent change is still refused
+(`CHANGE_NOT_RECENT`); the Deployment's own rollout facts are recorded but the
+rule does not use them. The Observer gives a container log line the reason
+`StartupError` when the line contains the word startup, so a log line can still
+supply the startup symptom through that reason. The remote Planner worker and
+provider mode do not use this context. The live harness checks the decision
+settings and the reviewed topology before any fault is injected.
 
 ## Telemetry volume and planning feedback
 
@@ -45,9 +158,10 @@ Known live CSV schemas get a deterministic first tool plan over metrics/logs.
 This avoids a model call for column/window discovery; further investigation
 still uses the model when the Analyzer requests it. Set `bootstrap_live_tools`
 to `false` to retain model-generated discovery. Recovery selection receives
-failed-rollout recovery guidance and baseline identifiers/hashes; full saved
-templates stay in the trusted Guard/Executor path instead of being repeated in
-the model prompt.
+failed-rollout recovery guidance, baseline identifiers/hashes and, under the
+default decision policy, the bounded change evidence; full saved templates stay
+in the trusted Guard/Executor path instead of being repeated in the model
+prompt.
 
 The Planner / RCA dashboard shows the current phase, attempt, elapsed request
 time and completed-call token counts before a proposal exists. Pending model
@@ -108,6 +222,9 @@ true` on a trusted network (for example a worker container). Optional settings:
 | `keep_alive` | not sent | How long Ollama keeps the model loaded, as seconds or a duration such as `"30m"`. |
 | `warm_up_timeout_seconds` | `timeout` | Limit for the warm-up request. |
 | `planning_budget_seconds` | 600 | Agent mode: wall-clock limit for one planning attempt (diagnosis and Recovery Planner). No new agent round or model call starts after it, and no call starts with less than 5 s left. The attempt's journal lease is this plus 60 s. The live harness rejects an invalid value before any fault is injected. |
+| `decision_policy` | `gated` | Agent mode: how the rollback eligibility rule and the Recovery Planner combine: `gated`, `rule` or `model` (see [Code-owned decision context](#code-owned-decision-context)). |
+| `max_change_age_seconds` | 3600 | Agent mode: the largest change age bound the eligibility rule accepts (at most seven days). |
+| `consult_model_when_ineligible` | `false` | Agent mode, `gated` only: ask the Recovery Planner even for an ineligible case and record its choice; a ROLLBACK is still overridden. |
 
 Replies must be `application/json`. The model's answer must be a JSON object of
 at most 256 KiB that matches the requested schema; the schema is checked again
@@ -186,8 +303,11 @@ optional hooks, `diagnoser` and `finalize`. One journaled attempt:
 1. reads the target and stops if its UID is not the incident's;
 2. exports the incident's telemetry to `approved-rollback/attempt-<n>/telemetry`
    and runs the RCA agent in `attempt-<n>/agent`, so every attempt starts clean;
-3. saves a diagnosis summary in the journal, then asks the Recovery Planner,
-   unless the agent abstained or named another component (`names_target`);
+3. saves a diagnosis summary in the journal (with the cited evidence ids, the
+   change evidence and the eligibility result), then asks the Recovery Planner,
+   unless the agent abstained, named another component (`names_target`) or the
+   eligibility rule refused a rollback (see
+   [Code-owned decision context](#code-owned-decision-context));
 4. re-reads the target and binds a ROLLBACK to its current `resourceVersion`.
    The UID and Pod template must be unchanged. The rebound proposal has a new
    deterministic action ID, and it is the one saved, delivered and replayed.
@@ -212,7 +332,10 @@ cannot outlive its lease. Each failure is saved by code:
 | `ABSTAINED` | no | The agent found no supported diagnosis. |
 | `DIAGNOSIS_OFF_TARGET` | no | The diagnosis names a component other than the target. |
 | `NO_ACTION_PROPOSED` | no | The Recovery Planner proposed no repair for an observed incident. |
+| `SUSPECTED_INJECTION` | no | The injection gate found instruction-like text in the telemetry or the diagnosis (see [Untrusted inputs](#untrusted-inputs)); decided by a code rule, without a Recovery Planner call. |
 | `TARGET_CHANGED` | no | The target was recreated, or its Pod template changed during the attempt. |
+| `DECISION_CONTEXT_INVALID` | no | Code could not compute the change evidence or the diagnosis vocabulary, for example because the baseline has no healthy observation time; a retry would fail the same way. No model is called. |
+| `INELIGIBLE_REASON`, `COMPONENT_NOT_TARGET`, `SYMPTOM_NOT_ROLLOUT`, `TEMPLATE_ALREADY_BASELINE`, `CHANGE_NOT_RECENT` | no | The eligibility rule refused a rollback (see [Code-owned decision context](#code-owned-decision-context)); decided by a code rule. The first failed check gives the code. |
 
 A retried code still failing after the third attempt ends in the saved
 exhausted-attempts `ESCALATE`. A terminal code ends at once in an `ESCALATE`
@@ -221,7 +344,9 @@ incident to NEEDS_REVIEW and nothing reaches Guard or the Executor. A model
 that answers `ESCALATE` itself is saved as its own answer, with no error code.
 
 The journal keeps codes, the diagnosis summary (prediction, abstained flag,
-tool names and evidence IDs) and per-attempt usage (model calls and seconds).
+tool names and evidence IDs, cited evidence IDs, change evidence, the
+eligibility result, and any injection finding's rule ids and counts) and
+per-attempt usage (model calls, seconds and the decision record).
 It never keeps exception text, the workspace path, raw log lines or the
 Reporter's explanation. `planning-status.json` copies the row and per-attempt
 usage. The last attempt's cause text, such as Ollama's own reason and host,

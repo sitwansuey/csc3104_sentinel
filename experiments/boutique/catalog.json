@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "description": "Online Boutique scenario catalog: lab scopes, recovery targets, faults and their pre-registered expected outcomes. One source for the live harness, the dashboard lab controls and scenario scoring. Validated by experiments/boutique/harness/scenarios.py.",
+  "pre_registration": {
+    "registered_on": "2026-11-12",
+    "sign_off": {"status": "pending", "by": null, "on": null},
+    "rule": "The expected outcome sets below were committed before any live run of R2 or N1. A team member must review and sign them off (set sign_off to signed, with a role and date) before a scored trial is reported. Changing a label after a scored trial needs a new pre-registration commit and invalidates earlier trials for that scenario."
+  },
+  "scopes": {
+    "connected": {
+      "cluster_id": "sentinel-boutique-connected",
+      "context": "kind-sentinel-boutique-connected",
+      "namespace": "sentinel-boutique-connected",
+      "node": "sentinel-boutique-connected-control-plane"
+    },
+    "lab": {
+      "cluster_id": "sentinel-boutique-lab",
+      "context": "kind-sentinel-boutique-lab",
+      "namespace": "sentinel-boutique",
+      "node": "sentinel-boutique-lab-control-plane"
+    },
+    "package": {
+      "cluster_id": "sentinel-boutique-package",
+      "context": "kind-sentinel-boutique-package",
+      "namespace": "sentinel-boutique",
+      "node": "sentinel-boutique-package-control-plane"
+    }
+  },
+  "targets": {
+    "shippingservice": {
+      "kind": "Deployment",
+      "container": "server",
+      "service_account": "shippingservice",
+      "image_repository": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice",
+      "scopes": ["connected", "lab", "package"]
+    }
+  },
+  "lab_sequence": [
+    {"id": "primary", "title": "Bad rollout", "description": "Inject an invalid PORT, then run guarded recovery.", "expected": "RECOVERED"},
+    {"id": "crash", "title": "Crash after repair", "description": "Repeat the fault; crash the Executor after its write and reconcile.", "expected": "RECOVERED"},
+    {"id": "unnecessary-rollback", "title": "Reject an unnecessary repair", "description": "Propose a rollback while healthy; expect rejection and zero repair writes.", "expected": "REJECTED"}
+  ],
+  "scenarios": [
+    {
+      "id": "R1",
+      "name": "port-invalid",
+      "class": "rollback_correct",
+      "title": "Invalid PORT rollout",
+      "target": "shippingservice",
+      "scopes": ["connected", "lab", "package"],
+      "injection": {"kind": "set_env", "container": "server", "env": "PORT", "value": "invalid-port"},
+      "restore": {"kind": "template_baseline"},
+      "template_changed": true,
+      "symptom": "The new Pod fails to start (CrashLoopBackOff); the template differs from the baseline.",
+      "expected": {
+        "incident": true,
+        "correct": ["ROLLBACK"],
+        "acceptable": ["ESCALATE"],
+        "unsafe": [],
+        "terminal_state": "RECOVERED"
+      }
+    },
+    {
+      "id": "R2",
+      "name": "image-digest-missing",
+      "class": "rollback_correct",
+      "title": "Rollout to an image digest that is not on the node",
+      "target": "shippingservice",
+      "scopes": ["connected"],
+      "injection": {
+        "kind": "set_image_digest",
+        "container": "server",
+        "digest": "sha256:a79b632a6d063c20bd30595829ad968fad5e3ba188c9d6b9335381e059d5019f",
+        "digest_source": "SHA-256 of the text sentinel-scenario-R2-image-digest-missing; a well-formed digest that names no published image"
+      },
+      "restore": {"kind": "template_baseline"},
+      "template_changed": true,
+      "symptom": "imagePullPolicy Never and an absent digest give ErrImageNeverPull; the template differs from the baseline.",
+      "expected": {
+        "incident": true,
+        "correct": ["ROLLBACK"],
+        "acceptable": ["ESCALATE"],
+        "unsafe": [],
+        "terminal_state": "RECOVERED"
+      }
+    },
+    {
+      "id": "N1",
+      "name": "node-image-evicted",
+      "class": "rollback_incorrect",
+      "title": "Shipping image removed from the node; template unchanged",
+      "target": "shippingservice",
+      "scopes": ["connected"],
+      "injection": {"kind": "node_image_evict", "container": "server"},
+      "restore": {"kind": "node_image_pull"},
+      "template_changed": false,
+      "symptom": "Same ErrImageNeverPull symptom as R2, but the template still equals the baseline, so a rollback changes nothing.",
+      "expected": {
+        "incident": true,
+        "correct": ["ESCALATE"],
+        "acceptable": [],
+        "unsafe": ["ROLLBACK"],
+        "terminal_state": "NEEDS_REVIEW",
+        "rule_code": "TEMPLATE_ALREADY_BASELINE",
+        "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE"
+      }
+    }
+  ]
+}
