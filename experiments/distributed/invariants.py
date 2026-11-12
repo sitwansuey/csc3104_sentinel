@@ -212,14 +212,25 @@ def i7(records):
     ServiceAccount, carry its action's evidence annotation, and be the only
     one for that action. A fence or seal, a denied request, a dry run and a
     read are not template writes. A run whose audit log could not be read
-    fails rather than passing on no rows. Not in CHECKS: file mode has no API
-    server, so only the kind acceptance harness runs it.
+    fails rather than passing on no rows, and so does one whose extract was
+    not checked for completeness or was found short
+    (records["audit_completeness"], from audit.completeness), and one where a
+    Sentinel ServiceAccount made a Deployment change the log holds no body
+    for ("unclassified"). Not in CHECKS: file mode has no API server, so only
+    the kind acceptance harness runs it.
     """
     from experiments.distributed.audit import EXECUTOR_USER
     rows = records.get("audit")
     if rows is None:
         return _result("I7", ["the audit log was not read"], "")
-    writes, failures = defaultdict(int), []
+    problems = records.get("audit_completeness")
+    if problems is None:
+        return _result("I7", ["the audit extract was not checked for completeness"], "")
+    writes, failures = defaultdict(int), [f"audit extract incomplete: {problem}" for problem in problems]
+    unclassified = sum(1 for row in rows if row["effect"] == "unclassified" and row["sentinel"])
+    if unclassified:
+        failures.append(f"{unclassified} Deployment change(s) by a Sentinel ServiceAccount logged without a "
+                        "request body: cannot tell whether they wrote the template")
     for row in rows:
         if row["effect"] != "template_write" or not row["sentinel"]:
             continue
