@@ -58,11 +58,12 @@ What is not claimed:
 - Every live run uses one fault type, an invalid shipping `PORT`, where rolling
   back is always the right repair. The model's choice between different repairs
   is not tested.
-- The committed live runs used pre-authorised lab approval, not an
-  authenticated person. New runs create every approval through the
-  authenticated approval API: a person types the action ID at the terminal, or
-  an unattended run opts in to automated lab approval, recorded as such. No
-  live run has used this path yet (limitation `L-AGENT-APPROVAL`).
+- No committed live run shows an authenticated person approving. Runs before
+  4139385 used pre-authorised lab approval. Runs from 4139385 create every
+  approval through the authenticated approval API and, being unattended, opt
+  in to automated lab approval, recorded as such; a person can instead type
+  the action ID at the terminal, but no live run has done so (limitation
+  `L-AGENT-APPROVAL`).
 - Everything ran on one Windows/amd64 host with Docker Desktop. The Linux
   launcher has no recorded live run.
 - Section 13 lists every known limitation and open defect.

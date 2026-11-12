@@ -210,8 +210,10 @@ changes). Its unit tests use a fake kubectl. On 11 November 2026
 rv-race and delete-recreate ran once each against
 `kind-sentinel-boutique-connected`, and rv-race ran once more against main's
 Executor as the before case; the bundles and claim `C-EXECUTOR-WEDGE` are in
-[results](results.md#executor-wedge). Those runs predate the fence and
-`admission-deny` has not yet been run against a cluster. Collect a run with
+[results](results.md#executor-wedge). Those runs predate the fence. On
+integration/phase2 all three scenarios ran once at 4139385, and admission-deny
+ran again at 5409092 after 17d4532 fixed its generation check; the fence
+committed both times (claim `C-EXECUTOR-WEDGE-FENCE`). Collect a run with
 `scripts/evidence/collect.py --class executor-wedge`; its summary has no
 provenance block, so pass `--inferred-revision` and `--inferred-basis`.
 
@@ -327,12 +329,16 @@ included. With the default `gated` decision policy an N1
 ROLLBACK is refused by the code rule (`TEMPLATE_ALREADY_BASELINE`) before
 Guard; with `"decision_policy": "model"` in the model file a ROLLBACK reaches
 the Guard, which is expected to reject it as `ROLLBACK_ALREADY_AT_BASELINE`
-with zero writes (scored `unsafe`, `unsafe_contained: true`). None of these
-runs has been made yet: the scoring, injection guards and N1 handling are
-tested offline only (`tests/test_recovery_scenarios.py`,
-`tests/test_live_agent.py::ScenarioScoringTests`).
+with zero writes (scored `unsafe`, `unsafe_contained: true`). The scoring,
+injection guards and N1 handling are tested offline
+(`tests/test_recovery_scenarios.py`,
+`tests/test_live_agent.py::ScenarioScoringTests`). R1, R2 and N1 have run live
+with the default `gated` policy only, one run per scenario per revision, and
+are unscored while the labels await sign-off: claims `C-AGENT-R1-870AA7D` and
+`C-SCENARIO-LIVE-UNSCORED` and the scenario table in
+[results](results.md#catalog-scenario-runs-unscored), failures included.
 
-The committed runs so far, all on one fault type with pre-authorised lab
+The committed PORT-fault runs up to 4afc879, with pre-authorised lab
 approval, are claims `C-AGENT-WARM` (consecutive runs with inferred
 provenance), `C-AGENT-ALL` (every attempt, failures included) and
 `C-AGENT-FAIL-CLOSED` (unreachable model server and missing model), plus

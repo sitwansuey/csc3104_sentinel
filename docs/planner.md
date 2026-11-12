@@ -125,10 +125,14 @@ records the decision: `policy`, `enforced`, `eligible`, `codes`,
 
 Limits. These checks are tested offline with a scripted model
 (`tests/test_rca_vocabulary.py`, `tests/test_planner_change_evidence.py`,
-`tests/test_live_agent.py`); no live run has used them yet. Live verification
-pending: three standard PORT runs that must still reach RECOVERED with the
-component `shippingservice`, then a fault without a template change that must
-end in ESCALATE. The enum can push a confused model into a wrong but valid
+`tests/test_live_agent.py`). Live on one host, one run per scenario per
+revision and unscored while the catalog labels await sign-off: at 870aa7d three
+standard PORT runs reached RECOVERED with the component `shippingservice`,
+decided by the model (C-AGENT-R1-870AA7D), while R2 and N1 abstained on a
+citation-check defect fixed in ded3dcc; at dab3b3f N1, a fault without a
+template change, ended in ESCALATE decided by the rule
+(`TEMPLATE_ALREADY_BASELINE`) with zero writes, and R2 reached ROLLBACK and
+RECOVERED (C-SCENARIO-LIVE-UNSCORED). The enum can push a confused model into a wrong but valid
 name; `insufficient evidence` is in the list and is never rollback-eligible.
 The citation check may raise the live abstention rate. The first live R2 and N1
 runs (scenario catalog) abstained at it: the metrics scan of a container that
@@ -358,7 +362,10 @@ planning stopped" event. The budget applies per attempt, so one incident can
 use up to three budgets. A process that dies mid-attempt loses that attempt;
 after the lease expires the next pass starts a new one. These paths have
 offline tests with a scripted model (`tests/test_agent_journal.py`,
-`tests/test_live_agent.py`); no live run has used them yet.
+`tests/test_live_agent.py`). Live runs from 4139385 use the journal: each
+failed agent run ended in a delivered ESCALATE and NEEDS_REVIEW with zero
+writes (C-AGENT-AUTOLAB-4139385, C-AGENT-FORCED-ESCALATION). A process that
+dies mid-attempt and a replayed delivery have not been exercised live.
 
 ## Acceptance and limits
 
@@ -380,8 +387,8 @@ their source revision:
 <!-- END GENERATED:claim-c-agent-recorded -->
 
 <!-- BEGIN GENERATED:claim-c-agent-all -->
-> **C-AGENT-ALL:** Across every recorded agent-mode attempt, 14/24 reached RECOVERED.
-> Scope: Includes deliberate negative tests (unreachable model server, missing model) and runs on older revisions. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 4 runs at 4afc879.
+> **C-AGENT-ALL:** Across every recorded agent-mode attempt, 24/39 reached RECOVERED.
+> Scope: Every committed agent bundle, failures included: deliberate negative tests (unreachable model server, missing model, a forced 1 s planning budget), runs on older revisions, and the 2026-11-12 catalog runs R2 and N1, which are unscored (labels pending). A run counts only when it passed expecting RECOVERED; the two runs that passed as an expected escalation (the forced budget run and N1 at dab3b3f) never recover and count as not recovered. Mostly one fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Lab approval pre-authorised before 4139385 and automated auto-lab (automated-lab identity, no person) from 4139385. One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 19 runs from 4afc879 onwards.
 <!-- END GENERATED:claim-c-agent-all -->
 
 Model calls and model time per run are in the agent and timings tables of
