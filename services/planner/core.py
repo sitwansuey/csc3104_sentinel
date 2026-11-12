@@ -5,20 +5,40 @@ import json
 from pathlib import Path
 
 from services.guard.common import json_sha256, utc_timestamp
+from shared.actions import config_fingerprint, restart_parameters
 from shared.contracts import ContractError, validate_message
+
+# Signal sources that show Pods themselves failing (not ready, crashing, killed).
+_POD_FAILURE_SOURCES = frozenset({"pod_status"})
 
 
 def retrieve_runbooks(incident):
-    """Retrieve trusted local failed-rollout guidance; no external model call."""
+    """Retrieve trusted local recovery guidance by signal keywords; no external model call."""
     reasons = " ".join(signal["reason"] for signal in incident["signals"]).lower()
-    if not any(word in reasons for word in ("crash", "startup", "rollout", "backoff", "unavailable")):
-        return []
-    path = Path(__file__).resolve().parents[2] / "runbooks/failed-rollout.md"
-    return [{"id": "failed-rollout", "content": path.read_text(encoding="utf-8")}]
+    folder = Path(__file__).resolve().parents[2] / "runbooks"
+    selected = []
+    if any(word in reasons for word in ("crash", "startup", "rollout", "backoff", "unavailable")):
+        selected.append("failed-rollout")
+    if any(word in reasons for word in ("notready", "unhealthy", "oomkilled")):
+        selected.append("pod-failure")
+    return [{"id": name, "content": (folder / (name + ".md")).read_text(encoding="utf-8")} for name in selected]
 
 
 def mock_provider(context):
-    """Deterministic offline provider; does not claim LLM or RCA capability."""
+    """Deterministic offline provider; does not claim LLM or RCA capability.
+
+    It proposes RESTART only when the Planner's trusted read shows the live
+    configuration unchanged from a reviewed baseline and the incident has
+    Pod-level failure evidence: then a ROLLBACK would change nothing, and new
+    Pods are the remaining repair. It leaves RESTART parameters empty; the
+    Planner binds them. Otherwise it proposes the saved-template ROLLBACK.
+    """
+    if context.get("template_unchanged") and any(
+            signal["source"] in _POD_FAILURE_SOURCES for signal in context["incident"]["signals"]):
+        return {"action": "RESTART", "parameters": {},
+                "rationale": ("Pods are failing while the live configuration equals the reviewed healthy "
+                              "baseline, so a rollback would change nothing; restart the Pods from that template."),
+                "evidence_refs": [item["evidence_id"] for item in context["incident"]["signals"]]}
     baseline = context["baselines"][0]
     return {"action": "ROLLBACK",
             "parameters": {key: baseline[key] for key in ("baseline_id", "template_sha256")},
@@ -70,12 +90,38 @@ def _retrieve(incident, retriever, diagnosis):
     return runbooks if templates else []
 
 
-def propose(incident: dict, baselines: list[dict], retriever, provider, *, diagnosis=None) -> dict:
+def _unchanged_baselines(suitable, live_template):
+    """Suitable baselines whose configuration equals the trusted live template's."""
+    if live_template is None:
+        return []
+    try:
+        live = config_fingerprint(live_template)
+        return [item for item in suitable if config_fingerprint(item["pod_template"]) == live]
+    except (TypeError, ValueError, RecursionError) as error:
+        raise ContractError("Trusted live template is not a valid Pod template") from error
+
+
+def _bind_restart(answer, incident, unchanged):
+    """A provider names RESTART with empty parameters; only the Planner binds them."""
+    if answer.get("action") != "RESTART":
+        return answer
+    if answer.get("parameters") != {}:
+        raise ContractError("RESTART parameters are bound by the Planner; the provider must leave them empty")
+    if not unchanged:
+        raise ContractError("RESTART requires a trusted live template whose configuration equals a reviewed baseline")
+    return {**answer, "parameters": restart_parameters(incident["incident_id"], unchanged[0])}
+
+
+def propose(incident: dict, baselines: list[dict], retriever, provider, *, diagnosis=None,
+            live_template=None) -> dict:
     """Return a bound action, preserving offline and diagnosis-based providers.
 
     Offline providers return action, parameters, rationale and evidence_refs.
     RCA providers return action, parameters and rationale; incident evidence is
     bound by the planner and diagnosis remains advisory to the provider.
+    live_template, when given, is a trusted read of the target's current Pod
+    template. The context then says whether its configuration is unchanged from
+    a suitable baseline, and only then may a provider choose RESTART.
     """
     validate_message(incident)
     if incident["kind"] != "incident" or not isinstance(baselines, list):
@@ -85,6 +131,7 @@ def propose(incident: dict, baselines: list[dict], retriever, provider, *, diagn
         raise ContractError("Diagnosis belongs to a different incident")
     incident = deepcopy(incident)
     suitable = _eligible_baselines(incident, baselines)
+    unchanged = _unchanged_baselines(suitable, live_template)
     evidence = [item["evidence_id"] for item in incident["signals"]]
     runbooks = _retrieve(incident, retriever, diagnosis) if suitable and (
         diagnosis is None or diagnosis.get("prediction")) else None
@@ -94,6 +141,8 @@ def propose(incident: dict, baselines: list[dict], retriever, provider, *, diagn
                   "evidence_refs": evidence}
     else:
         context = {"incident": incident, "baselines": suitable, "runbooks": runbooks}
+        if live_template is not None:
+            context["template_unchanged"] = bool(unchanged)
         if diagnosis is not None:
             context["diagnosis"] = diagnosis
         answer = provider(deepcopy(context))
@@ -102,7 +151,7 @@ def propose(incident: dict, baselines: list[dict], retriever, provider, *, diagn
             fields.add("evidence_refs")
         if not isinstance(answer, dict) or set(answer) != fields:
             raise ContractError("Provider response must contain only typed proposal fields")
-        answer = deepcopy(answer)
+        answer = _bind_restart(deepcopy(answer), incident, unchanged)
         if diagnosis is not None:
             answer["evidence_refs"] = evidence
     message = {"schema_version": "1.0", "kind": "proposal",
@@ -110,8 +159,8 @@ def propose(incident: dict, baselines: list[dict], retriever, provider, *, diagn
                "based_on_resource_version": incident["observed_resource_version"], **deepcopy(answer)}
     message["action_id"] = "ACT-" + json_sha256(message)[:24]
     validate_message(message)
-    if diagnosis is None and message["action"] not in {"ROLLBACK", "ESCALATE"}:
-        raise ContractError("Offline Planner supports only saved-template rollback or escalation")
+    if diagnosis is None and message["action"] not in {"ROLLBACK", "RESTART", "ESCALATE"}:
+        raise ContractError("Offline Planner supports only saved-template rollback, restart or escalation")
     if message["action"] == "ROLLBACK" and not any(
             message["parameters"] == {key: item[key] for key in ("baseline_id", "template_sha256")}
             for item in suitable):

@@ -35,8 +35,8 @@ def advance(store, incident_id, *, plan, assess, guard, approve, execute, verify
         if state() == "VALIDATING":
             guard()
         return state()
-    if proposal["action"] != "ROLLBACK":
-        raise ValueError("Recovery requires a supported rollback proposal")
+    if proposal["action"] not in ("ROLLBACK", "RESTART"):
+        raise ValueError("Recovery requires a supported rollback or restart proposal")
 
     if state() == "VALIDATING":
         assess(proposal)

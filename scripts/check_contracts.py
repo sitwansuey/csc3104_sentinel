@@ -6,6 +6,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from shared.actions import restart_parameters
 from shared.canonical import sha256_hex
 from shared.contracts import validate_message
 
@@ -18,6 +19,9 @@ def main():
     for path, message in zip(paths, messages):
         validate_message(message)
         print(f"PASS {path.relative_to(ROOT)}")
+    # RESTART samples belong to their own incident; the rest form one ROLLBACK chain.
+    restarts = [m for m in messages if m["kind"] == "proposal" and m["action"] == "RESTART"]
+    messages = [m for m in messages if m not in restarts]
     incident = next(m for m in messages if m["kind"] == "incident")
     proposal = next(m for m in messages if m["kind"] == "proposal")
     for message in messages:
@@ -35,7 +39,12 @@ def main():
         raise ValueError("Proposal does not reference the exact saved baseline template")
     if baseline["baseline_id"] != proposal["parameters"]["baseline_id"] or baseline["target"] != proposal["target"]:
         raise ValueError("Baseline identity does not match the proposal")
-    print(f"Validated {len(messages)} example messages and shared references.")
+    for restart in restarts:
+        # Planner-bound: token from incident and baseline, hash of baseline plus token.
+        if restart["target"] != baseline["target"] or restart["parameters"] != restart_parameters(
+                restart["incident_id"], baseline):
+            raise ValueError("RESTART sample is not bound to its incident and the saved baseline")
+    print(f"Validated {len(messages) + len(restarts)} example messages and shared references.")
     print("These are fixture checks; no recovery action was executed.")
 
 

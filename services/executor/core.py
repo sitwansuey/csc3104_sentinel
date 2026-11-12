@@ -1,9 +1,11 @@
-"""Restricted ROLLBACK with a durable journal and table-driven reconciliation.
+"""Restricted typed actions (ROLLBACK, RESTART) with a durable journal and table-driven reconciliation.
 
 Adapters provide trusted authorization and a conditional Deployment API. Runtime
 wiring lives outside this service; there is no shell or relative revision undo.
-APPLIED confirms a write, never sustained health or incident recovery.
-Reconciliation decisions come from the pure table in reconciliation.py.
+Each implemented action writes one exact Pod template chosen by its handler in
+actions.py, through the same conditional write. APPLIED confirms a write, never
+sustained health or incident recovery. Reconciliation decisions come from the
+pure table in reconciliation.py, for every action alike.
 """
 
 from copy import deepcopy
@@ -11,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+from services.executor.actions import candidate_template, evidence as action_evidence, implemented
 from services.executor.reconciliation import (
     ABSENT, ACTION_ANNOTATION, Basis, classify, fence_marker, fence_nonce, observe,
 )
@@ -86,6 +89,7 @@ class ExecutionAdapters:
     commit only the marker annotation under the same UID/version tests.
     ledger follows SQLiteExecutionLedger, including record_fence, confirm_fence
     and fences; classifying a journaled action calls fences() even with fencing off.
+    A RESTART also calls restart_history(target), the persisted restart budget input.
     """
 
     ledger: object
@@ -315,20 +319,15 @@ def _adopted_write(proposal, adapters, snapshot=None):
     return _finish(proposal, adapters, "APPLIED", decision.version, _details(decision))
 
 
-def _template(proposal, baseline):
-    if not isinstance(baseline, dict):
-        raise ContractError("Stored baseline is unavailable")
-    try:
-        template = deepcopy(baseline["pod_template"])
-        digest = fingerprint(template)
-        valid = (baseline["target"] == proposal["target"]
-                 and baseline["baseline_id"] == proposal["parameters"]["baseline_id"]
-                 and baseline["template_sha256"] == digest == proposal["parameters"]["template_sha256"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise ContractError("Stored baseline identity or hash is invalid") from exc
-    if not valid or not isinstance(template, dict):
-        raise ContractError("Stored baseline identity or hash does not match the proposal")
-    return template
+def _restart_history(proposal, adapters, snapshot):
+    """Give the Guard this host's persisted RESTART writes for the target.
+
+    Only a RESTART needs it, so ROLLBACK inputs are unchanged. The ledger is read
+    under the target lock, so another local RESTART cannot start in between.
+    """
+    if proposal["action"] == "RESTART":
+        snapshot["restart_history"] = adapters.ledger.restart_history(proposal["target"])
+    return snapshot
 
 
 def _check_adapters(adapters):
@@ -410,8 +409,8 @@ def execute(proposal: dict, adapters: ExecutionAdapters) -> dict:
             return row["result"]
         if row["phase"] in {"WRITE_STARTED", "UNCERTAIN"}:
             return _reconcile(proposal, adapters)
-        if proposal["action"] != "ROLLBACK":
-            return _finish(proposal, adapters, "FAILED", None, "Only explicit baseline ROLLBACK is implemented.")
+        if not implemented(proposal):
+            return _finish(proposal, adapters, "FAILED", None, "Only explicit baseline ROLLBACK and RESTART are implemented.")
 
         version = None
         try:
@@ -424,22 +423,21 @@ def execute(proposal: dict, adapters: ExecutionAdapters) -> dict:
                     return adopted
                 return _finish(proposal, adapters, "CONFLICT", version,
                                "Target identity or resource version changed; obtain a new proposal and validation.")
-            check = adapters.authorizer.validate(deepcopy(proposal), snapshot, now=_now(adapters))
+            check = adapters.authorizer.validate(deepcopy(proposal), _restart_history(proposal, adapters, snapshot),
+                                                 now=_now(adapters))
             validate_message(check.decision)
             adapters.ledger.record_validation(proposal["action_id"], check.decision)
             if check.decision["verdict"] != "ALLOW":
                 return _finish(proposal, adapters, "FAILED", version,
                                "Fresh Guard validation refused execution: " + ", ".join(check.decision["reason_codes"]))
-            template = _template(proposal, check.baseline)
+            template = candidate_template(proposal, snapshot["deployment"]["spec"]["template"], check.baseline)
             adapters.authorizer.assert_usable(check, now=_now(adapters))
         except Exception as error:  # noqa: BLE001 - fail closed: any pre-write error refuses the write
             log.failure(LOG, "executor.prewrite.refused", error, action_id=_action_id(proposal))
             return _finish(proposal, adapters, "FAILED", version,
                            "Required state, baseline or fresh authorization is unavailable or invalid; no write was attempted.")
 
-        evidence = {"action_id": proposal["action_id"], "proposal_sha256": row["fingerprint"],
-                    "target_uid": proposal["target"]["uid"],
-                    "template_sha256": proposal["parameters"]["template_sha256"], "attempt_id": uuid4().hex}
+        evidence = action_evidence(proposal, row["fingerprint"], uuid4().hex)
         adapters.ledger.start_write(proposal["action_id"], version, evidence, check.decision, _now(adapters))
         # Journal persistence can take time. Recheck expiry/injected authority at
         # the last local point before the external mutation.

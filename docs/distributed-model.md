@@ -67,7 +67,7 @@ What is single-host today:
 The Coordinator is the authorisation state machine. It decides which proposal
 is active for a workload, when an action is READY, and which command a worker
 may claim. Every change runs inside `BEGIN IMMEDIATE`, so SQLite admits one
-writer at a time (`services/coordinator/store.py:331-343::SQLiteStore.transaction::@contextmanager`).
+writer at a time (`services/coordinator/store.py:336-348::SQLiteStore.transaction::@contextmanager`).
 Each claim, renew and result also replays the outbox revocation rules inside
 the same transaction (`runtime/worker_transport.py:53-80::Delivery.transaction::@contextmanager`).
 
@@ -116,21 +116,21 @@ processes. Each timestamp comes from the producer's own wall clock.
 
 | Check | Compares | Effect of skew |
 | --- | --- | --- |
-| `services/coordinator/core.py:149::_apply::guard["checked_at"]` execution after Guard ALLOW | Executor clock vs Guard clock | Executor behind by more than the real gap: its result (APPLIED, SUPERSEDED, or FAILED from its local re-check) is rejected and the worker wedges (below) |
-| `services/coordinator/core.py:152::_apply::> _time(action["execution_result"]` execution newer than stored | Executor vs Executor | Same wedge if a second Executor host, or a clock stepped back, reports a follow-up result |
-| `services/coordinator/core.py:105::_apply::previous["checked_at"]` Guard result newer than stored | Guard vs Guard | A valid re-evaluation from another Guard host is rejected, with the same wedge |
-| `services/coordinator/core.py:88::_apply::previous_finding["checked_at"]` dependency finding newer than stored | Verifier vs Verifier | A newer finding from another Verifier host is rejected, with the same wedge |
-| `services/coordinator/core.py:112::_apply::latest["checked_at"]` Guard ALLOW not older than latest finding | Guard vs Verifier | Skew alone does not trip it: a Guard that sees a finding from its future escalates instead of allowing (row below). It still catches a finding that arrived after the Guard read its inputs |
-| `services/coordinator/core.py:169::_apply::window_start` health window after the write | Verifier vs Executor | The built-in Verifier never trips this check: it marks samples stamped before the write invalid (`services/verifier/core.py:205-206::_assess::at < executed_at`). A Verifier clock behind the Executor's therefore ends the job UNKNOWN at its deadline, and the incident goes to NEEDS_REVIEW instead of RECOVERED |
-| `services/coordinator/core.py:251::approve::guard["checked_at"]` approval not before Guard decision | Coordinator vs Guard | Coordinator behind: the approval is refused until its clock passes the decision time |
-| `services/guard/core.py:144::_approval_reasons::approved_at > checked_at` approval not from the future | Coordinator vs Guard or Executor | Guard behind: a fresh approval escalates as APPROVAL_FROM_FUTURE, and `approve()` cannot override that reason (`services/coordinator/core.py:248-249::approve::guard["reason_codes"]`). Revoking (`services/coordinator/approvals.py:94::ApprovalAccess.call::"approval": None`) and approving again stamps a new approval with the Coordinator's clock, which passes only if the Guard's next evaluation comes more than the skew after it. While the skew lasts it usually fails the same way, so the clocks must be fixed first. Executor behind: its local re-check refuses (see below the table) |
-| `services/guard/core.py:146::_approval_reasons::checked_at >= expires_at` approval expiry | Coordinator or operator vs Guard or Executor | Guard or Executor behind: an approval stays usable for up to the skew longer than intended. Executor ahead: its local re-check sees the approval as expired and refuses (below the table) |
-| `services/guard/core.py:230::_evaluate_core::dependency_at > checked_at` finding not from the future | Verifier vs Guard or Executor | Verifier ahead of the Guard: the finding is UNKNOWN, so the Guard escalates or rejects (by policy). Executor behind the Verifier: its local re-check refuses (below the table) |
-| `services/guard/core.py:232-233::_evaluate_core::max_dependency_age_seconds` finding not too old | Verifier vs Guard or Executor | Verifier ahead: old evidence is accepted for up to the skew longer. Verifier behind, or Executor ahead: fresh evidence looks stale, and the Guard escalates or rejects, or the Executor's re-check refuses |
+| `services/coordinator/core.py:154::_apply::guard["checked_at"]` execution after Guard ALLOW | Executor clock vs Guard clock | Executor behind by more than the real gap: its result (APPLIED, SUPERSEDED, or FAILED from its local re-check) is rejected and the worker wedges (below) |
+| `services/coordinator/core.py:157::_apply::> _time(action["execution_result"]` execution newer than stored | Executor vs Executor | Same wedge if a second Executor host, or a clock stepped back, reports a follow-up result |
+| `services/coordinator/core.py:110::_apply::previous["checked_at"]` Guard result newer than stored | Guard vs Guard | A valid re-evaluation from another Guard host is rejected, with the same wedge |
+| `services/coordinator/core.py:93::_apply::previous_finding["checked_at"]` dependency finding newer than stored | Verifier vs Verifier | A newer finding from another Verifier host is rejected, with the same wedge |
+| `services/coordinator/core.py:117::_apply::latest["checked_at"]` Guard ALLOW not older than latest finding | Guard vs Verifier | Skew alone does not trip it: a Guard that sees a finding from its future escalates instead of allowing (row below). It still catches a finding that arrived after the Guard read its inputs |
+| `services/coordinator/core.py:174::_apply::window_start` health window after the write | Verifier vs Executor | The built-in Verifier never trips this check: it marks samples stamped before the write invalid (`services/verifier/core.py:205-206::_assess::at < executed_at`). A Verifier clock behind the Executor's therefore ends the job UNKNOWN at its deadline, and the incident goes to NEEDS_REVIEW instead of RECOVERED |
+| `services/coordinator/core.py:256::approve::guard["checked_at"]` approval not before Guard decision | Coordinator vs Guard | Coordinator behind: the approval is refused until its clock passes the decision time |
+| `services/guard/core.py:148::_approval_reasons::approved_at > checked_at` approval not from the future | Coordinator vs Guard or Executor | Guard behind: a fresh approval escalates as APPROVAL_FROM_FUTURE, and `approve()` cannot override that reason (`services/coordinator/core.py:253-254::approve::guard["reason_codes"]`). Revoking (`services/coordinator/approvals.py:94::ApprovalAccess.call::"approval": None`) and approving again stamps a new approval with the Coordinator's clock, which passes only if the Guard's next evaluation comes more than the skew after it. While the skew lasts it usually fails the same way, so the clocks must be fixed first. Executor behind: its local re-check refuses (see below the table) |
+| `services/guard/core.py:150::_approval_reasons::checked_at >= expires_at` approval expiry | Coordinator or operator vs Guard or Executor | Guard or Executor behind: an approval stays usable for up to the skew longer than intended. Executor ahead: its local re-check sees the approval as expired and refuses (below the table) |
+| `services/guard/core.py:234::_evaluate_core::dependency_at > checked_at` finding not from the future | Verifier vs Guard or Executor | Verifier ahead of the Guard: the finding is UNKNOWN, so the Guard escalates or rejects (by policy). Executor behind the Verifier: its local re-check refuses (below the table) |
+| `services/guard/core.py:236-237::_evaluate_core::max_dependency_age_seconds` finding not too old | Verifier vs Guard or Executor | Verifier ahead: old evidence is accepted for up to the skew longer. Verifier behind, or Executor ahead: fresh evidence looks stale, and the Guard escalates or rejects, or the Executor's re-check refuses |
 
 **The Executor's local re-check.** Before writing, the Executor ignores the
 delivered decision and runs the Guard again with its own clock
-(`services/executor/core.py:427::execute::authorizer.validate`). If that
+(`services/executor/core.py:426::execute::authorizer.validate`). If that
 verdict is not ALLOW, it makes no Kubernetes write and reports FAILED
 (`services/executor/core.py:430-432::execute::check.decision["verdict"] != "ALLOW"`).
 That FAILED result still has to pass the first row of the table:
@@ -197,7 +197,7 @@ it is kept in the Planner's own store and read only with its own clock
 | A worker result and its acknowledgment commit together; a resend is a replay | Result digest stored on the receipt | `runtime/worker_transport.py::Delivery.finish` |
 | A worker never redoes finished work after a lost response | Result saved before it is sent | `runtime/remote_worker.py::RemoteWorker.once` |
 | Only the current lease holder can renew or report | Owner, role and lease token must match; renewal cannot revive finished or expired work | `runtime/worker_transport.py::Delivery.renew` |
-| The Kubernetes write happens at most once per action on one ledger | Write intent is journalled before the call; an unclear outcome is reconciled by reading, never by writing again, through a pure decision table | `services/executor/core.py:443-456::execute::start_write`, `services/executor/reconciliation.py::classify` |
+| The Kubernetes write happens at most once per action on one ledger | Write intent is journalled before the call; an unclear outcome is reconciled by reading, never by writing again, through a pure decision table | `services/executor/core.py:441-454::execute::start_write`, `services/executor/reconciliation.py::classify` |
 
 Tests: `tests/test_coordinator.py::CoordinatorTests.test_changed_payload_under_stable_id_is_rejected`,
 `tests/test_worker_transport.py::TransportTests.test_lost_result_response_recovers_exact_receipt_after_restart`,
@@ -214,7 +214,7 @@ Delivery to workers is at least once, and receivers deduplicate by action id.
 - A lease is a work-distribution hint held at the Coordinator. It is not a
   fence at Kubernetes: a worker whose lease has expired can still be inside its
   kubectl call, which may take up to 15 s
-  (`services/executor/kubernetes_adapter.py:30::PROCESS_TIMEOUT_SECONDS::= 15`).
+  (`services/executor/kubernetes_adapter.py:31::PROCESS_TIMEOUT_SECONDS::= 15`).
 - The only check enforced by storage is the UID and resourceVersion test in
   the patch (`services/executor/kubernetes_adapter.py:177-179::KubectlDeploymentAPI.conditional_restore::/metadata/uid`).
   It stops a write based on a stale read. It does not stop a writer whose read
@@ -225,7 +225,7 @@ Delivery to workers is at least once, and receivers deduplicate by action id.
   the second can claim the same request; the resourceVersion test lets only one
   write land. The loser finds this action's evidence annotation on the
   Deployment and reports APPLIED without writing
-  (`services/executor/core.py:421::execute::Another host may already have committed`).
+  (`services/executor/core.py:420::execute::Another host may already have committed`).
   The multi-process scenarios S1c and S2 run two Executor processes with
   separate ledgers and locks on one host and show this adoption; no run has
   used two Executors on separate machines.
@@ -234,7 +234,7 @@ Delivery to workers is at least once, and receivers deduplicate by action id.
   the patch can never commit, so the result is SUPERSEDED and the Coordinator
   records the action FAILED. While the UID and resourceVersion are unchanged
   the request could still commit, so the action stays NEEDS_RECONCILIATION
-  (`services/executor/reconciliation.py:213::classify::Basis.UNCHANGED_IN_DOUBT`),
+  (`services/executor/reconciliation.py:230::classify::Basis.UNCHANGED_IN_DOUBT`),
   even when the API server in fact rejected it. The argument assumes
   resourceVersions never return to an earlier value, so an etcd restore must
   use `--bump-revision`.

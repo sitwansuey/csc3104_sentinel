@@ -5,8 +5,11 @@ Digests bind inputs; they do not authenticate a caller or replace execution lock
 
 from datetime import datetime, timedelta, timezone
 
-from services.guard import eligibility as guard_eligibility, resources as guard_resources
+from services.guard import (
+    eligibility as guard_eligibility, resources as guard_resources, restart as guard_restart,
+)
 from services.guard.common import GuardInputError, finding, json_sha256, mapping, utc_timestamp
+from shared.actions import TEMPLATE_ACTIONS, config_fingerprint
 from shared.contracts import validate_message
 
 
@@ -38,6 +41,7 @@ def validate_policy(policy, *, require_live=False):
     _integer(policy, "max_server_dry_run_age_seconds", required=policy.get("require_server_dry_run", False), maximum=300)
     guard_eligibility.validate_policy(policy)
     guard_resources.validate_policy(policy)
+    guard_restart.validate_policy(policy)
     for key in ("max_age_seconds", "min_healthy_duration_seconds"):
         if key in policy.get("baseline_constraints", {}) and policy["baseline_constraints"][key] > _MAX_AGE_SECONDS:
             raise GuardInputError(f"policy.baseline_constraints.{key}: duration exceeds supported bound")
@@ -128,7 +132,9 @@ def _preview_checks(proposal, live_state, baseline, policy, preview, checked_at)
         if not isinstance(preview["details_code"], str) or not preview["details_code"].strip():
             raise GuardInputError("preview: missing status detail")
         version = live_state["deployment"]["metadata"]["resourceVersion"]
-        template_hash = json_sha256(baseline["pod_template"])
+        # A RESTART previews its bound candidate (baseline plus token); restart.py binds that hash.
+        template_hash = (proposal["parameters"]["template_sha256"] if proposal["action"] == "RESTART"
+                         else json_sha256(baseline["pod_template"]))
         linked = (
             preview["proposal_sha256"] == json_sha256(proposal)
             and preview["target"] == proposal["target"]
@@ -158,8 +164,11 @@ def _rollback_change_checks(proposal, live_state, baseline, policy, trace):
 
     Replica unavailability alone does not make rewriting an identical template
     useful. Kubernetes can replace a failed Pod without a Deployment rollback.
-    This compares hashes only after the core has validated baseline identity and
-    content, and never includes template contents in the audit report.
+    This compares configuration fingerprints (the restart token is ignored) only
+    after the core has validated baseline identity and content, so a template
+    that differs from the baseline only by a restart token is already at the
+    baseline: ROLLBACK is never a disguised restart. The audit report never
+    includes template contents.
     """
     if proposal["action"] != "ROLLBACK" or any(
             code == "INVALID_BASELINE" or code.startswith("BASELINE_")
@@ -176,13 +185,13 @@ def _rollback_change_checks(proposal, live_state, baseline, policy, trace):
                 not isinstance(container, dict) for container in containers):
             raise GuardInputError("Live template requires container specifications")
         current_hash = json_sha256(template)
-    except GuardInputError:
+        unchanged = config_fingerprint(template) == config_fingerprint(baseline["pod_template"])
+    except (GuardInputError, TypeError, ValueError, RecursionError):
         return [finding("ROLLBACK_CHANGE_UNKNOWN", path, None,
                         "a valid current pod template",
                         "The current template is unavailable; a useful rollback cannot be established.",
                         "UNKNOWN" if policy.get("profile") == "live" else "SKIP")]
     baseline_hash = baseline["template_sha256"]
-    unchanged = current_hash == baseline_hash
     return [finding("ROLLBACK_ALREADY_AT_BASELINE" if unchanged else "ROLLBACK_CHANGES_TEMPLATE",
                     path, {"template_sha256": current_hash},
                     {"different_from_baseline_sha256": baseline_hash},
@@ -226,7 +235,7 @@ def _core_findings(core_result, proposal, live_state, policy, trace):
     )
     for code, errors, path in families:
         if not set(codes).intersection(errors):
-            skipped = code == "BASELINE_IDENTITY_HASH" and proposal["action"] != "ROLLBACK"
+            skipped = code == "BASELINE_IDENTITY_HASH" and proposal["action"] not in TEMPLATE_ACTIONS
             result.append(finding(code, path, "not applicable" if skipped else "validated", "matching reviewed input", "Core check completed.", "SKIP" if skipped else "PASS"))
     approval_problem = any("APPROVAL" in code or code == "OPERATOR_REJECTED" for code in codes)
     # Specific approval findings above already explain failures/uncertainty.
@@ -284,6 +293,8 @@ def evaluate_with_report(core, proposal, live_state, policy, baseline, dependenc
     original = core(proposal, live_state, policy, baseline, dependencies, approval, now=checked_at, _trace=trace)
     checks = _core_findings(original, proposal, live_state, policy, trace)
     checks += _rollback_change_checks(proposal, live_state, baseline, policy, trace)
+    checks += guard_restart.assess(proposal, live_state, baseline, policy, checked_at, not any(
+        code == "INVALID_BASELINE" or code.startswith("BASELINE_") for code in trace["rejected"]))
     checks += guard_eligibility.assess(proposal, live_state, baseline, policy, checked_at)
     checks += guard_resources.assess(proposal, live_state, baseline, policy, checked_at)
     checks += _approval_checks(policy, approval, checked_at)

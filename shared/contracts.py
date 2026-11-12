@@ -64,6 +64,30 @@ def _target(target):
     _enum(target["kind"], {"Deployment"}, "target.kind")
 
 
+def _sha256(value, path):
+    if not isinstance(value, str) or not re.fullmatch(r"[a-f0-9]{64}", value):
+        raise ContractError(f"{path}: expected a lowercase SHA-256 digest")
+
+
+def _restart_token(value, path):
+    # Planner-bound: "RST-" plus 16 hex characters of a hash, never free text.
+    if not isinstance(value, str) or not re.fullmatch(r"RST-[a-f0-9]{16}", value):
+        raise ContractError(f"{path}: expected a planner-bound restart token")
+
+
+# The action registry: every action and its closed parameter schema. No action
+# takes a free-form field. ROLLBACK and RESTART both name the exact Pod template
+# they write (template_sha256) and the reviewed baseline it comes from.
+ACTION_PARAMETERS = {
+    "ROLLBACK": {"baseline_id": _string, "template_sha256": _sha256},
+    "RESTART": {"baseline_id": _string, "restart_token": _restart_token, "template_sha256": _sha256},
+    "SCALE": {"desired_replicas": _integer},
+    "NO_ACTION": {},
+    "ESCALATE": {},
+}
+assert set(ACTION_PARAMETERS) == ACTION_TYPES
+
+
 FIELDS = {
     "incident": {"incident_id", "observed_at", "observed_resource_version", "observed_generation", "signals"},
     "proposal": {"incident_id", "action_id", "action", "parameters", "based_on_resource_version", "rationale", "evidence_refs"},
@@ -111,19 +135,10 @@ def validate_message(message):
         _string(message["rationale"], "rationale")
         _strings(message["evidence_refs"], "evidence_refs", 1)
         params = message["parameters"]
-        if action == "ROLLBACK":
-            _object(params, {"baseline_id", "template_sha256"}, path="parameters")
-            _string(params["baseline_id"], "parameters.baseline_id")
-            if not isinstance(params["template_sha256"], str) or not re.fullmatch(r"[a-f0-9]{64}", params["template_sha256"]):
-                raise ContractError("parameters.template_sha256: expected a lowercase SHA-256 digest")
-        elif action == "SCALE":
-            _object(params, {"desired_replicas"}, path="parameters")
-            _integer(params["desired_replicas"], "parameters.desired_replicas")
-        elif action == "RESTART":
-            _object(params, {"restart_token"}, path="parameters")
-            _string(params["restart_token"], "parameters.restart_token")
-        else:
-            _object(params, set(), path="parameters")
+        schema = ACTION_PARAMETERS[action]
+        _object(params, set(schema), path="parameters")
+        for key, check in schema.items():
+            check(params[key], f"parameters.{key}")
 
     elif kind == "guard_result":
         _enum(message["verdict"], {"ALLOW", "REJECT", "ESCALATE"}, "verdict")

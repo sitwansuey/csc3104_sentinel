@@ -3,6 +3,10 @@
 Planning goes through the durable Planner journal (PlannerStore) rather than the
 legacy non-journalled path. Crash replay and bounded retries are proven by
 tests/test_planner_pipeline.py; this demo shows the journalled happy path.
+
+Two scenarios run: 'failed-rollout' (a bad template change, repaired by
+ROLLBACK) and 'pod-failure' (Pods not ready while the template still equals the
+reviewed baseline, repaired by RESTART under a restart-enabled policy).
 """
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -32,16 +36,28 @@ def fixture(name):
     return json.loads((ROOT / 'data/sentinel/samples' / name).read_text(encoding='utf-8'))
 
 
+def restart_policy(policy, *, max_restarts=1, window_seconds=3600):
+    """The sample policy with RESTART allowed for its target, under a restart budget."""
+    policy = deepcopy(policy)
+    policy['allowed_actions'] = [*policy['allowed_actions'], 'RESTART']
+    policy['restart_constraints'] = {'targets': deepcopy(policy['targets']),
+                                     'max_restarts': max_restarts, 'window_seconds': window_seconds}
+    return policy
+
+
 class OfflineFlow:
-    def __init__(self, directory):
+    def __init__(self, directory, scenario='failed-rollout'):
         self.path = Path(directory)
+        self.scenario = scenario
         self.now = datetime(2026, 10, 10, 12, 0, 35, tzinfo=timezone.utc)
         self.bus = LocalEventBus()
         self.store = SQLiteStore(self.path / 'coordinator.db', clock=lambda: self.now)
         self.ledger = SQLiteExecutionLedger(self.path / 'executor.db')
         self.verification = VerificationStore(self.path / 'verifier.db')
         self.policy, self.baseline, self.graph = fixture('policy.json'), fixture('baseline.json'), fixture('dependencies.json')
-        self.cluster = FakeDeploymentAPI(fixture('observations.json')['failed-rollout'][-1], clock=lambda: self.now)
+        if scenario == 'pod-failure':
+            self.policy = restart_policy(self.policy)
+        self.cluster = FakeDeploymentAPI(fixture('observations.json')[scenario][-1], clock=lambda: self.now)
         self.authorizer = GuardAuthorizer(policy_reader=lambda p: self.policy, baseline_reader=lambda p: self.baseline,
             dependency_reader=lambda p: inspect_dependencies(p, self.graph, self.cluster.read(p['target']), now=self.now),
             approval_reader=lambda p: self.store.approval(p['action_id']))
@@ -59,7 +75,8 @@ class OfflineFlow:
         if self.planner is None:
             self.planner = PlannerStore(self.path / 'planner-journal.db', clock=lambda: self.now)
         return process_planner_requests(self.store, self.bus, baseline_reader=lambda incident: [self.baseline],
-            retriever=retrieve_runbooks, provider=self.provider, journal=self.planner)
+            retriever=retrieve_runbooks, provider=self.provider, journal=self.planner,
+            template_reader=lambda incident: self.cluster.read(incident['target'])['deployment']['spec']['template'])
 
     def close(self):
         if self.planner is not None:
@@ -78,14 +95,21 @@ class OfflineFlow:
             self.planner.close()
             self.planner = PlannerStore(self.path / 'planner-journal.db', clock=lambda: self.now)
 
+    def live_state(self, proposal):
+        """The Guard's trusted read; a RESTART also gets the Executor ledger's restart history."""
+        state = self.cluster.read(proposal['target'])
+        if proposal['action'] == 'RESTART':
+            state['restart_history'] = self.ledger.restart_history(proposal['target'])
+        return state
+
     def prepare(self):
-        self.incident = detect(fixture('observations.json')['failed-rollout'], self.policy)
+        self.incident = detect(fixture('observations.json')[self.scenario], self.policy)
         handle(self.incident, self.store, self.bus)
         self.proposal = self.plan()[0]
         handle(inspect_dependencies(self.proposal, self.graph, self.cluster.read(self.proposal['target']), now=self.now), self.store, self.bus)
 
     def guard(self):
-        return process_guard_requests(self.store, self.bus, state_reader=lambda p: self.cluster.read(p['target']),
+        return process_guard_requests(self.store, self.bus, state_reader=self.live_state,
             policy_reader=lambda p: self.policy, baseline_reader=lambda p: self.baseline,
             dependency_reader=lambda p: inspect_dependencies(p, self.graph, self.cluster.read(p['target']), now=self.now),
             clock=lambda: self.now)
@@ -108,6 +132,32 @@ class OfflineFlow:
 
     def state(self):
         return self.store.incident(self.incident['incident_id'])['state']
+
+
+def demonstrate_restart():
+    """RESTART end to end: Pods fail while the template equals the reviewed baseline."""
+    with tempfile.TemporaryDirectory() as directory:
+        flow = OfflineFlow(directory, scenario='pod-failure')
+        try:
+            flow.prepare()
+            assert flow.proposal['action'] == 'RESTART', flow.proposal
+            flow.authorize()
+            assert flow.state() == 'READY', flow.state()
+            flow.execute()
+            assert flow.state() == 'VERIFYING'
+            written = flow.cluster.writes[-1]['deployment']
+            flow.now = datetime(2026, 10, 10, 12, 1, 10, tzinfo=timezone.utc)
+            flow.verify(fixture('health.json')['stable'])
+            assert flow.state() == 'RECOVERED'
+            assert len(flow.cluster.writes) == 1
+            token = written['spec']['template']['metadata']['annotations']['sentinel.io/restart-token']
+            assert token == flow.proposal['parameters']['restart_token']
+            assert json.loads(written['metadata']['annotations']['sentinel.io/execution'])['action'] == 'RESTART'
+            print(json.dumps({'mode': 'offline_fake_infrastructure_mock_provider', 'scenario': 'pod-failure',
+                'action': flow.proposal['action'], 'status': flow.state(), 'writes': len(flow.cluster.writes),
+                'restart_history': len(flow.ledger.restart_history(flow.proposal['target']))}))
+        finally:
+            flow.close()
 
 
 def demonstrate():
@@ -142,3 +192,4 @@ def demonstrate():
 
 if __name__ == '__main__':
     demonstrate()
+    demonstrate_restart()

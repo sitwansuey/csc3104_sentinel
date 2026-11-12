@@ -4,14 +4,33 @@
 checks. Supporting modules separate eligibility, resource budgets, configuration
 metadata/admission preview and decision/report binding. `cli.py` is the JSON
 file/live-read runner. Guard returns ALLOW, REJECT or ESCALATE and never repairs
-the cluster. Only the implemented saved-template ROLLBACK path is executable.
+the cluster. Only the implemented saved-template ROLLBACK and RESTART paths are
+executable; SCALE is refused as ACTION_NOT_IMPLEMENTED.
 
 Checks cover exact target UID/version and state freshness, action/target policy,
 trusted baseline identity/hash/health/age, configuration references, Pod security,
 replica/surge resource bounds, current dependencies, approval and required
 admission preview. Missing evidence can escalate/reject by policy. Hard
 constraints take precedence over approval. Rewriting the current baseline
-template is refused as ROLLBACK_ALREADY_AT_BASELINE.
+template is refused as ROLLBACK_ALREADY_AT_BASELINE; that comparison ignores the
+restart token, so a ROLLBACK is never a disguised restart.
+
+`restart.py` holds the RESTART checks. The policy block `restart_constraints`
+lists the targets allowed to restart and a budget (`max_restarts` per
+`window_seconds`); a live policy that allows RESTART must have one. A RESTART is
+refused with RESTART_TARGET_NOT_ALLOWED when its target is not listed,
+RESTART_TEMPLATE_DRIFT when the live configuration differs from the reviewed
+baseline (use ROLLBACK), RESTART_BINDING_MISMATCH when the token or resulting
+hash is not the planner-bound value, RESTART_TOKEN_REUSED when the live template
+already carries the token, RESTART_NOT_JUSTIFIED when the Deployment status shows
+every desired Pod ready and available, and RESTART_BUDGET_EXHAUSTED when the
+target's restart history (`live_state.restart_history`, supplied by the Executor
+ledger) already holds the maximum within the window. A missing or malformed
+history, or a Deployment whose latest generation is not yet observed, escalates
+(RESTART_BUDGET_UNKNOWN, RESTART_JUSTIFICATION_UNKNOWN). The eligibility,
+security and resource checks run for RESTART too, against the same template.
+Any Guard worker that should allow a RESTART must supply `restart_history`; the
+offline demonstration reads it from the Executor ledger.
 
 V2 decisions bind proposal/input fingerprints, policy/version, validated live
 version, evaluation time and expiry. The report records evidence fingerprints

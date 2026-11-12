@@ -1,7 +1,8 @@
-"""Restricted Deployment transport for the live rollback executor.
+"""Restricted Deployment transport for the live executor (ROLLBACK and RESTART).
 
-One JSON Patch tests UID/resourceVersion, restores the exact Pod template and
-writes action evidence together. A fence is the same tests plus one metadata
+One JSON Patch tests UID/resourceVersion, writes the exact Pod template chosen
+by the action handler and writes action evidence together. A RESTART uses this
+same patch; its template differs from the baseline only by the restart token. A fence is the same tests plus one metadata
 annotation and nothing else. This module does not decide authorization.
 The caller must inject fresh Guard validation and a restricted kubeconfig.
 """
@@ -17,7 +18,7 @@ import tempfile
 from services.executor.core import (
     ACTION_ANNOTATION, ConditionalWriteConflict, ReadUnavailable, TargetAbsent, encode_evidence,
 )
-from services.executor.reconciliation import FENCE_ANNOTATION, valid_fence_marker
+from services.executor.reconciliation import FENCE_ANNOTATION, evidence_fields_valid, valid_fence_marker
 from services.executor.store import canonical_json, fingerprint
 from services.guard.adapters import AdapterError, _DNS_LABEL, _DNS_SUBDOMAIN, _parse_json
 from services.guard.preview import _private_file
@@ -135,12 +136,11 @@ class KubectlDeploymentAPI:
         return self._snapshot(deployment, target)
 
     def _evidence(self, target, version, template, evidence):
-        required = {"action_id", "proposal_sha256", "target_uid", "template_sha256", "attempt_id"}
         try:
             valid = (
                 _text(version) and isinstance(template, dict) and isinstance(template.get("spec"), dict)
                 and isinstance(template["spec"].get("containers"), list) and bool(template["spec"]["containers"])
-                and isinstance(evidence, dict) and set(evidence) == required
+                and evidence_fields_valid(evidence)
                 and _text(evidence["action_id"])
                 and isinstance(evidence["proposal_sha256"], str) and _DIGEST.fullmatch(evidence["proposal_sha256"])
                 and evidence["target_uid"] == target["uid"]
@@ -150,10 +150,10 @@ class KubectlDeploymentAPI:
         except (KeyError, TypeError, ValueError, RecursionError):
             valid = False
         if not valid:
-            raise LiveAdapterError("Rollback template, preconditions or action evidence are invalid")
+            raise LiveAdapterError("Template, preconditions or action evidence are invalid")
 
     def conditional_restore(self, *, target, version, template, evidence):
-        """Commit only the baseline template and atomic evidence under UID/RV tests.
+        """Commit only the handler's template and atomic evidence under UID/RV tests.
 
         A local precondition mismatch is definitely a zero-write conflict. A
         kubectl error after PATCH submission stays unknown because its textual

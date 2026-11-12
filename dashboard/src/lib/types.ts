@@ -1,3 +1,5 @@
+/** The typed actions of the wire contract (shared/contracts.py ACTION_PARAMETERS). */
+export type RecoveryAction = "ROLLBACK" | "RESTART" | "SCALE" | "NO_ACTION" | "ESCALATE"
 export interface Target { cluster_id: string; namespace: string; kind: string; name: string; uid: string }
 export interface Source { connected?: boolean; status?: string; error_code?: string; partial?: boolean; detail?: string }
 export interface WireMessage {

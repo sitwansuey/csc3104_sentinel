@@ -117,6 +117,13 @@ python -m unittest tests.test_planner_pipeline tests.test_recovery_runner -v
 python -m unittest tests.test_remote_workers tests.test_worker_transport tests.test_approval_access -v
 ```
 
+`demo_offline_flow.py` runs two scenarios: a failed rollout repaired by
+ROLLBACK, and Pods failing under an unchanged template repaired by RESTART.
+`tests/test_restart_action.py` covers RESTART: the allowed path, each Guard
+refusal, the restart budget across an Executor restart, reconciliation and the
+fence for an in-doubt RESTART, and the model checker run with a RESTART. All of it
+uses a fake Deployment API; RESTART has not run against a cluster.
+
 `tests/test_distributed_processes.py` runs fault scenarios with the Coordinator
 and every worker as separate processes on one host, against a file-backed test
 cluster, and checks invariants from their records and logs. The default subset

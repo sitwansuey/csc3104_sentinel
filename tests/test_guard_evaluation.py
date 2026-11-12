@@ -192,7 +192,7 @@ class GuardEvaluationTests(unittest.TestCase):
         provenance = evaluation.provenance(evaluation.DEFAULT_CASES)
         for path in (evaluation.DEFAULT_CASES, evaluation.ROOT / "scripts/evaluate_guard.py",
                      evaluation.ROOT / "services/guard/core.py", evaluation.ROOT / "shared/contracts.py",
-                     evaluation.ROOT / "shared/canonical.py"):
+                     evaluation.ROOT / "shared/canonical.py", evaluation.ROOT / "shared/actions.py"):
             self.assertEqual(provenance["source_sha256"][path.relative_to(evaluation.ROOT).as_posix()],
                              hashlib.sha256(path.read_bytes()).hexdigest())
         self.assertRegex(provenance["revision"], r"^[0-9a-f]{40}$")

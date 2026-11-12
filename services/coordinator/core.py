@@ -70,6 +70,11 @@ def _apply(message, store):
         _require(store.action(action_id) is None, "Action ID already belongs to a proposal")
         _require(store.planning_blocker(incident_id) is None,
                  "Another incident is recovering this workload; proposal must wait")
+        # One RESTART per incident: after a REJECTED or FAILED restart, restarting
+        # again would loop. The Guard's per-target budget covers other incidents.
+        _require(message["action"] != "RESTART" or not any(
+                     action["proposal"]["action"] == "RESTART" for action in store.actions_for_incident(incident_id)),
+                 "Restart budget for this incident is exhausted; ESCALATE instead")
         next_state = "NEEDS_REVIEW" if message["action"] == "ESCALATE" else "VALIDATING"
         store.add_action(action_id, incident_id, message, next_state)
         store.activate_action(incident_id, action_id, next_state)
