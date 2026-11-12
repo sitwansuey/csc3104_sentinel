@@ -14,7 +14,7 @@ from runtime.planner_pipeline import process_planner_requests
 from runtime.recovery_runner import advance
 from services.coordinator.core import handle
 from services.planner.store import PlannerStore
-from experiments.recovery.live import save, utc
+from experiments.recovery.live import save
 
 MAX_ATTEMPTS = 3
 RETRY_SECONDS = 5
@@ -66,9 +66,8 @@ def run_durable_case(lab, incident, *, folder, planning, approve):
         handle(finding, lab.store, lab.bus)
 
     def guard():
-        decisions = process_guard_requests(lab.store, lab.bus,
-            state_reader=lambda p: {"cluster_id": lab.cluster_id, "captured_at": utc(),
-                                    "deployment": lab.deployment()},
+        # guard_state adds the Executor ledger's restart history for a RESTART (the restart budget).
+        decisions = process_guard_requests(lab.store, lab.bus, state_reader=lab.guard_state,
             baseline_reader=lambda p: lab.baseline, policy_reader=lambda p: lab.policy,
             dependency_reader=lab.dependency_result)
         for decision in decisions:

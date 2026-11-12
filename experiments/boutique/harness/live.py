@@ -717,8 +717,9 @@ def main():
                         help="Catalog scenario to inject (experiments/boutique/catalog.json). The default is the "
                              "target's primary scenario: R1, the invalid PORT, for shippingservice and C1 for "
                              "cartservice. A target's fallback scenario (C2) also runs the operator sequence; "
-                             "any other scenario (R2, N1) needs --agent --connected and is scored against its "
-                             "pre-registered expected outcome")
+                             "R2 and N1 need --agent --connected; the Chaos Mesh scenarios (N2, N3, T1) need "
+                             "--connected and plan with the code rule provider unless --agent is given. Every "
+                             "one is scored against its pre-registered expected outcome")
     parser.add_argument("--prepared-environment", type=Path, help="Trusted host-prepared packaged cluster/images; no Docker access in runtime")
     parser.add_argument("--dashboard", action="store_true", help="Serve the real UI and collect live cluster telemetry")
     parser.add_argument("--dashboard-port", type=int, default=8765, help="Loopback UI port; 0 selects a free port")
@@ -755,16 +756,27 @@ def main():
     if mode_scope not in profile.scopes:
         parser.error(f"--target {args.target} is offered only in the " + ", ".join(profile.scopes)
                      + " scope; add --connected")
+    chaos_scenario = scenario["injection"]["kind"] == "chaos"
     if args.scenario not in profile.operator_scenarios:
-        # The other scenarios are scored agent decisions on the connected lab, outside the fixed UI sequence.
-        if not (args.agent and args.connected):
+        # The other scenarios are scored decisions on the connected lab, outside the fixed UI sequence.
+        if chaos_scenario and not args.connected:
+            parser.error("--scenario " + args.scenario + " (Chaos Mesh) requires --connected")
+        if not chaos_scenario and not (args.agent and args.connected):
             parser.error("--scenario " + args.scenario + " requires --agent --connected")
+    if chaos_scenario and (args.guard_rejection or args.provider_script or args.dashboard):
+        # The dashboard's end-of-run check verifies the operator walkthrough or an agent case, not a chaos run.
+        parser.error("A Chaos Mesh scenario runs its own planning, refusals and checks; drop --guard-rejection, "
+                     "--provider-script and --dashboard")
     if args.ui_controls and (args.scenario != profile.primary_scenario or args.target != targets.default_target()):
         # The dashboard's fixed lab buttons name the default target's primary fault (an invalid PORT).
         parser.error("--ui-controls runs the fixed three-step lab sequence; use the default target and scenario R1")
     expect = args.expect or scenarios.expect(scenario)
+    # A Chaos Mesh agent variant may expect an escalation that its label accepts (N2: RESTART correct,
+    # ESCALATE acceptable); the score is still recorded but does not decide the run.
+    accepted_escalation = (chaos_scenario and args.expect == "escalated"
+                           and "ESCALATE" in scenario["expected"]["acceptable"])
     if (args.agent and args.expect and args.expect != scenarios.expect(scenario)
-            and args.scenario != profile.primary_scenario):
+            and args.scenario != profile.primary_scenario and not accepted_escalation):
         parser.error(f"--expect {args.expect} contradicts scenario {args.scenario}'s pre-registered outcome "
                      f"({scenario['expected']['terminal_state']})")
     if args.agent and args.guard_rejection:
@@ -783,8 +795,9 @@ def main():
         return crash_worker(args.crash_worker)
     try:
         operator_identity(args.approval, args.operator)
-        # The rejection scenario and an expected agent escalation never ask for approval.
-        if not (args.guard_rejection or (args.agent and expect == "escalated")):
+        # The rejection scenario, an expected agent escalation and an expected chaos no-repair never ask.
+        no_repair = expect in ("escalated", "no-incident") and (args.agent or chaos_scenario)
+        if not (args.guard_rejection or no_repair):
             require_attended(args.approval)
     except ValueError as error:
         parser.error(str(error))
@@ -809,8 +822,14 @@ def main():
     if args.agent:
         from experiments.boutique.harness.agent_live import AgentPlanningMixin
         experiment_type = type("AgentBoutiqueExperiment", (AgentPlanningMixin, experiment_type), {})
+    if chaos_scenario:
+        from experiments.boutique.harness.chaos_recovery import ChaosRecoveryMixin
+        experiment_type = type("ChaosBoutiqueExperiment", (ChaosRecoveryMixin, experiment_type), {})
     experiment = experiment_type(directory, **({"storefront_port": args.storefront_port} if args.connected else {}))
     experiment.select_target(args.target)
+    if chaos_scenario:
+        experiment.agent_mode = args.agent
+        experiment.expect = expect
     if args.agent:
         experiment.agent_config = args.agent_config
         experiment.expect = expect
@@ -838,6 +857,11 @@ def main():
         experiment.approval_not_requested(
             f"no approval was requested: scenario {args.scenario}'s pre-registered correct outcome is a saved "
             "ESCALATE and NEEDS_REVIEW, which never reaches Guard approval; a proposed repair is refused unasked")
+    elif no_repair:
+        experiment.approval_not_requested(
+            f"no approval was requested: scenario {args.scenario}'s pre-registered correct outcome is "
+            + ("a saved ESCALATE and NEEDS_REVIEW" if expect == "escalated" else "no incident")
+            + "; a proposed repair is refused unasked")
     if args.prepared_environment:
         experiment.prepared = prepared_environment(args.prepared_environment)
         experiment.cluster_id = experiment.prepared["cluster_id"]
@@ -921,7 +945,10 @@ def main():
                 experiment.credentials.unlink(missing_ok=True)
                 save(experiment.directory / "summary.json", experiment.summary)
                 signal.signal(signal.SIGTERM, previous_term)
-    print("PASS: agent planning ended in a saved ESCALATE; incident NEEDS_REVIEW with no repair"
+    print(f"PASS: Chaos Mesh scenario {args.scenario} reached its expected outcome ({expect}); forced wrong "
+          "actions refused with zero writes; chaos cleanup confirmed"
+          if chaos_scenario else
+          "PASS: agent planning ended in a saved ESCALATE; incident NEEDS_REVIEW with no repair"
           if args.agent and expect == "escalated" else
           "PASS: live agent diagnosed the fault, proposed rollback, and Coordinator verified RECOVERED"
           if args.agent else

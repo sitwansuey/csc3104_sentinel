@@ -195,6 +195,20 @@ class Experiment:
     def deployment(self):
         return json.loads(self.kubectl("get", "deployment", self.name, "-o", "json").stdout)
 
+    def guard_state(self, proposal):
+        """The Guard's trusted live state: the Deployment, and for a RESTART the restart history.
+
+        The history comes from this run's Executor ledger (executor.sqlite), the
+        same source the Executor's own Guard check reads under its target lock.
+        Without it the Guard cannot check the restart budget and escalates the
+        RESTART as RESTART_BUDGET_UNKNOWN.
+        """
+        state = {"cluster_id": self.cluster_id, "captured_at": utc(), "deployment": self.deployment()}
+        if proposal.get("action") == "RESTART":
+            with SQLiteExecutionLedger(self.directory / "executor.sqlite") as ledger:
+                state["restart_history"] = ledger.restart_history(proposal["target"])
+        return state
+
     def phase(self, name, scenario=None):
         """Record a lifecycle step so evidence timings are measured, not typed."""
         self.summary.setdefault("timeline", []).append({"phase": name, "at": utc(), "scenario": scenario})
@@ -401,8 +415,7 @@ class Experiment:
             handle(proposal, self.store, self.bus)
             if self.publish_dependency_results:
                 handle(dependencies, self.store, self.bus)
-            state_reader = lambda p: {"cluster_id": self.cluster_id, "captured_at": utc(), "deployment": self.deployment()}
-            readers = dict(state_reader=state_reader, policy_reader=lambda p: self.policy,
+            readers = dict(state_reader=self.guard_state, policy_reader=lambda p: self.policy,
                            baseline_reader=lambda p: self.baseline, dependency_reader=lambda p: dependencies)
             first = process_guard_requests(self.store, self.bus, **readers)[0]
             require(first["verdict"] == "ESCALATE" and first["reason_codes"] == ["OPERATOR_APPROVAL_REQUIRED"],

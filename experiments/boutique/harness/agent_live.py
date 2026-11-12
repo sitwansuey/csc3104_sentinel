@@ -15,6 +15,7 @@ from services.planner.store import PlannerStore
 from services.planner.taxonomy import components, policy as decision_policy
 from experiments.boutique.harness import scenarios, targets
 from experiments.boutique.harness.durable_case import run_durable_case
+from experiments.boutique.harness.scoring import ScenarioScoringMixin
 from experiments.recovery.live import require, save
 
 __all__ = ["AgentPlanningMixin", "export_telemetry", "names_target"]
@@ -153,7 +154,7 @@ def export_telemetry(directory, target, destination, *, incident=None, lookback_
         "window_end": end.isoformat() if end else None, "traces_available": False})
 
 
-class AgentPlanningMixin:
+class AgentPlanningMixin(ScenarioScoringMixin):
     agent_config = None
     expect = "recovered"
     # Whether the scenario score decides the run's result. False only for an explicit
@@ -300,35 +301,6 @@ class AgentPlanningMixin:
                     if source in ("rule", "model") else
                     "agent planning failure ended in a saved ESCALATE and NEEDS_REVIEW")
             self.check(name, error_code=record["error_code"], attempts=record["attempts"])
-
-    def scenario_facts(self, incident, state, action_id, folder):
-        """What happened after planning, read from the Coordinator and the Executor's own stats."""
-        action = self.store.action(action_id) if action_id else None
-        guard = (action or {}).get("guard_result")
-        routes = 0
-        if action_id:
-            routes = self.store.db.execute("SELECT COUNT(*) FROM outbox WHERE action_id=? AND topic='executor.request'",
-                                           (action_id,)).fetchone()[0]
-        stats = folder / "transport-stats.json"
-        # With no Executor route nothing could write; with a route, only the Executor's own stats count.
-        if stats.is_file():
-            writes = json.loads(stats.read_text(encoding="utf-8")).get("write_attempts")
-        else:
-            writes = 0 if routes == 0 else None
-        return {"incident_id": incident["incident_id"] if incident else None, "coordinator_state": state,
-                "guard_verdict": guard["verdict"] if guard else None,
-                "guard_reason_codes": list(guard["reason_codes"]) if guard else [],
-                "executor_routes": routes, "executor_writes": writes,
-                "fault_injected_at": self.summary.get("fault_injected_at"),
-                "incident_observed_at": incident["observed_at"] if incident else None}
-
-    def save_scenario_result(self, graded):
-        save(self.directory / "scenario-result.json", graded)
-        self.summary["scenario_result"] = graded
-        self.event(3, "status", f"Scenario {graded['scenario']}: decision {graded['actual']} "
-                   f"from {graded['decision_source']}, scored {graded['score']}",
-                   target=self.target)
-        return graded
 
     def score_scenario(self, incident, state, proposal, record, folder, planner):
         """Score the delivered decision against the scenario's pre-registered sets; None when unscored."""

@@ -53,6 +53,15 @@ cannot pass N1 or count as an acceptable R1 or R2 result.
 | N1 | Shipping image removed from the node, Pod deleted | no | ESCALATE | none | ROLLBACK |
 | C1 | Cart rollout with `REDIS_ADDR=redis-cart:6390`, a port nothing listens on | yes | ROLLBACK | ESCALATE | none |
 | C2 | Cart rollout to an image digest that is not on the node (fallback for C1) | yes | ROLLBACK | ESCALATE | none |
+| N2 | Chaos Mesh pod failure on shipping for 420 s | no | RESTART | ESCALATE | ROLLBACK |
+| N3 | Chaos Mesh CPU stress on shipping for 300 s | no | ESCALATE | no incident, NO_ACTION | ROLLBACK, RESTART |
+| T1 | Chaos Mesh 200 ms network delay on shipping for 300 s (true-negative control) | no | no incident | none | ROLLBACK, RESTART |
+
+N2, N3 and T1 run only in the connected lab and are described in
+[Chaos Mesh in guarded recovery](../../docs/chaos.md#chaos-mesh-in-guarded-recovery).
+N2 is labelled RESTART correct and ESCALATE acceptable from its first
+registration, as the remediation plan requires. A RESTART, like a ROLLBACK,
+is always a decision; the Planner's metric-only escalation is a rule decision.
 
 N1 also pre-registers two codes. `rule_code` is `TEMPLATE_ALREADY_BASELINE`:
 the rollback eligibility rule must report it, so a correct N1 shows that the
@@ -63,7 +72,8 @@ records `rule_code_matched` and `guard_on_rollback_matched` (null when the
 check does not apply). `matched_expected` is true only for a correct score
 with no check that failed.
 
-These labels were committed before any live run of R2, N1, C1 or C2. They are an
+These labels were committed before any live run of R2, N1, C1 or C2, and N2,
+N3 and T1 before any of their runs. They are an
 owner decision: a team member must review them and set
 `pre_registration.sign_off` to signed before a scored trial is reported.
 Until then each `scenario-result.json` records the labels as pending. A label

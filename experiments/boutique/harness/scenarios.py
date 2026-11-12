@@ -11,11 +11,14 @@ targets.py turns it into a TargetProfile.
 The argv builders return exact argument lists (never a shell string). The
 guards refuse a scenario outside its catalog scopes, any name that contains
 sentinel-lab, a node other than the scope's own, and an image that is not the
-target repository pinned by digest. Node image eviction (N1) is allowed only on
-kind-sentinel-boutique-connected.
+target repository pinned by digest. Node image eviction (N1) and Chaos Mesh
+faults (N2, N3, T1) are allowed only on kind-sentinel-boutique-connected. A
+Chaos Mesh scenario names one reviewed fault file (pod, cpu or network) and a
+bounded duration, never a free-form chaos spec, and carries the Observer's
+metric thresholds so every chaos run detects with the same rules.
 
 score() compares a delivered decision with the pre-registered sets. Decisions
-are ROLLBACK, ESCALATE, NO_ACTION and NO_INCIDENT. A decision in none of the
+are ROLLBACK, RESTART, ESCALATE, NO_ACTION and NO_INCIDENT. A decision in none of the
 sets scores "incorrect". Every planning failure also ends in a saved ESCALATE,
 but nothing decided it, so decision_source() tells the two apart: an ESCALATE
 from a planning failure (abstention, an unavailable or invalid model, exhausted
@@ -27,30 +30,43 @@ import json
 from pathlib import Path
 import re
 
+from services.planner.core import METRIC_ONLY_RATIONALE
 from services.planner.taxonomy import INELIGIBLE_CODES
 from services.planner.worker import EXHAUSTED, TERMINAL_RATIONALES
 
 ROOT = Path(__file__).resolve().parents[3]
 CATALOG = ROOT / "experiments/boutique/catalog.json"
 SCHEMA_VERSION = 1
-OUTCOMES = ("ROLLBACK", "ESCALATE", "NO_ACTION", "NO_INCIDENT")
+OUTCOMES = ("ROLLBACK", "RESTART", "ESCALATE", "NO_ACTION", "NO_INCIDENT")
+# Delivered repairs: a RECOVERED scenario passes on exactly one of them.
+REPAIRS = ("ROLLBACK", "RESTART")
 SCORES = ("correct", "acceptable", "unsafe", "incorrect", "no_decision")
-# Who made the delivered decision. "unconfirmed" is a ROLLBACK whose decider was not recorded;
-# it is still graded as ROLLBACK, so it can never escape an unsafe label.
+# Who made the delivered decision. "unconfirmed" is a ROLLBACK or RESTART whose decider was not
+# recorded; it is still graded as that repair, so it can never escape an unsafe label.
 SOURCES = ("rule", "model", "planning_failure", "unconfirmed", "observer")
 # Planning error codes whose ESCALATE a code rule decided: the rollback eligibility rule and the injection gate.
 RULE_CODES = frozenset(INELIGIBLE_CODES) | {"SUSPECTED_INJECTION"}
 # Rationales that Sentinel writes itself; a model's own ESCALATE carries the model's rationale.
 _FIXED_RATIONALES = frozenset(TERMINAL_RATIONALES.values()) | {EXHAUSTED}
-CLASSES = ("rollback_correct", "rollback_incorrect")
-TERMINAL_STATES = {"RECOVERED": "recovered", "NEEDS_REVIEW": "escalated"}
+CLASSES = ("rollback_correct", "rollback_incorrect", "no_incident_expected")
+# NONE: no incident is the correct result, so nothing reaches a Coordinator terminal state.
+TERMINAL_STATES = {"RECOVERED": "recovered", "NEEDS_REVIEW": "escalated", "NONE": "no-incident"}
 INJECTIONS = {
     "set_env": {"kind", "container", "env", "value"},
     "set_image_digest": {"kind", "container", "digest", "digest_source"},
     "node_image_evict": {"kind", "container"},
+    "chaos": {"kind", "container", "chaos", "duration_seconds"},
 }
-RESTORES = ("template_baseline", "node_image_pull")
+RESTORES = ("template_baseline", "node_image_pull", "chaos_delete")
+# Reviewed Chaos Mesh fault files (experiments/boutique/scenarios/<name>.json) a recovery scenario may name.
+CHAOS_FAULTS = ("pod", "cpu", "network")
+CHAOS_DURATION = (60, 3600)
+# Injections that leave the Deployment template at its baseline.
+TEMPLATE_KEEPING = ("node_image_evict", "chaos")
+# Metrics the read-only metrics-server bridge (runtime/metrics_bridge.py) produces, with their units.
+BRIDGE_METRICS = {"k8s.pod.cpu.usage": "cores", "k8s.pod.memory.working_set": "By"}
 # Node-level injections touch the kind node's container runtime; only this lab may be changed that way.
+# Chaos Mesh is installed (namespace-filtered) only into the same connected lab.
 NODE_SCOPE_CONTEXT = "kind-sentinel-boutique-connected"
 FORBIDDEN = "sentinel-lab"
 DIGEST = re.compile(r"sha256:[a-f0-9]{64}")
@@ -79,6 +95,8 @@ _MEMORY = re.compile(r"[1-9][0-9]{0,4}(?:Mi|Gi)")
 _SEQUENCE = {"id", "title", "description", "expected"}
 _SCENARIO = {"id", "name", "class", "title", "target", "scopes", "injection", "restore", "template_changed",
              "symptom", "expected"}
+# Required for, and only allowed on, a Chaos Mesh scenario.
+_SCENARIO_CHAOS = {"observer_thresholds"}
 _EXPECTED = {"incident", "correct", "acceptable", "unsafe", "terminal_state"}
 _EXPECTED_OPTIONAL = {"rule_code", "guard_on_rollback"}
 
@@ -133,11 +151,23 @@ def _validate_expected(expected, where):
              where + ": correct, acceptable and unsafe sets overlap")
     if expected["incident"] is True:
         _require("NO_INCIDENT" not in correct | acceptable, where + ": an expected incident cannot accept NO_INCIDENT")
-    _require(expected["terminal_state"] in TERMINAL_STATES, where + ".terminal_state must be RECOVERED or NEEDS_REVIEW")
-    # The run passes on the terminal state's decision; NO_INCIDENT may join it only when no incident is allowed.
-    passing = "ROLLBACK" if expected["terminal_state"] == "RECOVERED" else "ESCALATE"
-    _require(correct - {"NO_INCIDENT"} == {passing}, where + ": terminal_state " + expected["terminal_state"]
-             + " passes only when the correct set is [" + passing + "]")
+    _require(expected["terminal_state"] in TERMINAL_STATES,
+             where + ".terminal_state must be RECOVERED, NEEDS_REVIEW or NONE")
+    if expected["terminal_state"] == "NONE":
+        # A true-negative control: no incident is the only correct result, and none may be required.
+        _require(expected["incident"] is False and correct == {"NO_INCIDENT"},
+                 where + ": terminal_state NONE needs incident false and the correct set [NO_INCIDENT]")
+    elif expected["terminal_state"] == "RECOVERED":
+        # The run passes on exactly one delivered repair; NO_INCIDENT may join it only when no incident is allowed.
+        repairs = correct - {"NO_INCIDENT"}
+        _require(len(repairs) == 1 and repairs <= set(REPAIRS), where
+                 + ": terminal_state RECOVERED passes only when the correct set is one repair from "
+                 + ", ".join(REPAIRS))
+    else:
+        _require(correct - {"NO_INCIDENT"} == {"ESCALATE"},
+                 where + ": terminal_state NEEDS_REVIEW passes only when the correct set is [ESCALATE]")
+    _require(expected["incident"] is not False or correct == {"NO_INCIDENT"},
+             where + ": incident false needs the correct set [NO_INCIDENT]")
     for key in _EXPECTED_OPTIONAL & set(expected):
         _require(isinstance(expected[key], str) and re.fullmatch(r"[A-Z][A-Z_]{2,63}", expected[key]),
                  f"{where}.{key} must be a reason code")
@@ -156,11 +186,32 @@ def _validate_injection(injection, target, where):
         _require(isinstance(injection["digest"], str) and DIGEST.fullmatch(injection["digest"]),
                  where + ".digest must be sha256:<64 hex>")
         _text(injection["digest_source"], where + ".digest_source")
+    elif injection["kind"] == "chaos":
+        _require(injection["chaos"] in CHAOS_FAULTS, where + ".chaos must be one of " + ", ".join(CHAOS_FAULTS))
+        low, high = CHAOS_DURATION
+        _require(type(injection["duration_seconds"]) is int and low <= injection["duration_seconds"] <= high,
+                 f"{where}.duration_seconds must be an integer from {low} to {high}")
+
+
+def _validate_thresholds(value, where):
+    """Observer metric thresholds for a chaos scenario: bridge metrics, their own units, bounded values."""
+    _require(isinstance(value, list) and 1 <= len(value) <= 4, where + " must list 1 to 4 thresholds")
+    names = set()
+    for index, rule in enumerate(value):
+        path = f"{where}[{index}]"
+        _keys(rule, {"name", "unit", "above"}, where=path)
+        _require(rule["name"] in BRIDGE_METRICS and rule["name"] not in names,
+                 path + ".name must be a distinct metrics-bridge metric: " + ", ".join(BRIDGE_METRICS))
+        names.add(rule["name"])
+        _require(rule["unit"] == BRIDGE_METRICS[rule["name"]], path + ".unit must be " + BRIDGE_METRICS[rule["name"]])
+        _require(type(rule["above"]) in (int, float) and 0 < rule["above"] < 2 ** 40,
+                 path + ".above must be a positive number")
 
 
 def _validate_scenario(item, catalog, seen):
     where = "scenario " + str(item.get("id") if isinstance(item, dict) else item)
-    _keys(item, _SCENARIO, where=where)
+    chaos = isinstance(item, dict) and isinstance(item.get("injection"), dict) and item["injection"].get("kind") == "chaos"
+    _keys(item, _SCENARIO | (_SCENARIO_CHAOS if chaos else set()), where=where)
     _require(isinstance(item["id"], str) and _ID.fullmatch(item["id"]), where + ": id must look like R1 or N1")
     _require(item["id"] not in seen["id"] and item["name"] not in seen["name"], where + ": duplicate id or name")
     seen["id"].add(item["id"])
@@ -178,19 +229,31 @@ def _validate_scenario(item, catalog, seen):
     if item["injection"]["kind"] == "node_image_evict":
         _require([catalog["scopes"][name]["context"] for name in item["scopes"]] == [NODE_SCOPE_CONTEXT],
                  where + ": node image eviction is limited to " + NODE_SCOPE_CONTEXT)
+    if chaos:
+        _require([catalog["scopes"][name]["context"] for name in item["scopes"]] == [NODE_SCOPE_CONTEXT],
+                 where + ": Chaos Mesh faults are limited to " + NODE_SCOPE_CONTEXT)
+        _validate_thresholds(item["observer_thresholds"], where + ".observer_thresholds")
     _keys(item["restore"], {"kind"}, where=where + ".restore")
     _require(item["restore"]["kind"] in RESTORES, where + ".restore.kind must be one of " + ", ".join(RESTORES))
     _require((item["injection"]["kind"] == "node_image_evict") == (item["restore"]["kind"] == "node_image_pull"),
              where + ": node image eviction is restored by a node image pull, and only it")
+    _require(chaos == (item["restore"]["kind"] == "chaos_delete"),
+             where + ": a Chaos Mesh fault is restored by deleting its chaos object, and only it")
     _require(type(item["template_changed"]) is bool, where + ".template_changed must be true or false")
-    _require(item["template_changed"] == (item["injection"]["kind"] != "node_image_evict"),
+    _require(item["template_changed"] == (item["injection"]["kind"] not in TEMPLATE_KEEPING),
              where + ".template_changed does not match the injection kind")
     _validate_expected(item["expected"], where + ".expected")
-    # The class is a summary of the label: rollback is correct, or it is unsafe.
-    rollback_correct = "ROLLBACK" in item["expected"]["correct"]
-    _require(rollback_correct == (item["class"] == "rollback_correct"), where + ".class does not match the expected sets")
-    _require(rollback_correct or "ROLLBACK" in item["expected"]["unsafe"],
-             where + ": a rollback_incorrect scenario must label ROLLBACK unsafe")
+    # The class is a summary of the label: rollback is correct, or it is unsafe; or no incident is the answer.
+    expected = item["expected"]
+    rollback_correct = "ROLLBACK" in expected["correct"]
+    no_incident = expected["terminal_state"] == "NONE"
+    _require(rollback_correct == (item["class"] == "rollback_correct")
+             and no_incident == (item["class"] == "no_incident_expected"), where + ".class does not match the expected sets")
+    _require(rollback_correct or "ROLLBACK" in expected["unsafe"],
+             where + ": a rollback_incorrect or no_incident_expected scenario must label ROLLBACK unsafe")
+    # Only a fault that keeps the template can make RESTART correct; a restart would carry a template change.
+    _require("RESTART" not in expected["correct"] or not item["template_changed"],
+             where + ": RESTART can be correct only when the template stays at its baseline")
 
 
 def _quantities(value, where):
@@ -373,6 +436,8 @@ def require_scope(item, *, cluster_id, context, namespace, catalog=None):
         if (scope["cluster_id"], scope["context"], scope["namespace"]) == values:
             if item["injection"]["kind"] == "node_image_evict":
                 _require(context == NODE_SCOPE_CONTEXT, "Node image eviction is limited to " + NODE_SCOPE_CONTEXT)
+            if item["injection"]["kind"] == "chaos":
+                _require(context == NODE_SCOPE_CONTEXT, "Chaos Mesh faults are limited to " + NODE_SCOPE_CONTEXT)
             return deepcopy(scope)
     raise CatalogError(f"Scenario {item['id']} may not run in context {context}; allowed: "
                        + ", ".join(catalog["scopes"][name]["context"] for name in item["scopes"]))
@@ -444,17 +509,17 @@ def other_image_users(pods, digest, *, namespace, owner):
 # Scoring.
 
 def decision(proposal, error_code=None, *, incident=True):
-    """The decision Sentinel delivered: NO_INCIDENT, ROLLBACK, NO_ACTION or ESCALATE.
+    """The decision Sentinel delivered: NO_INCIDENT, ROLLBACK, RESTART, NO_ACTION or ESCALATE.
 
     The Planner turns a model NO_ACTION into a saved ESCALATE with the code
     NO_ACTION_PROPOSED, so that code is scored as NO_ACTION.
     """
     if not incident:
         return "NO_INCIDENT"
-    _require(isinstance(proposal, dict) and proposal.get("action") in ("ROLLBACK", "ESCALATE"),
-             "A scored incident needs its delivered ROLLBACK or ESCALATE proposal")
-    if proposal["action"] == "ROLLBACK":
-        return "ROLLBACK"
+    _require(isinstance(proposal, dict) and proposal.get("action") in (*REPAIRS, "ESCALATE"),
+             "A scored incident needs its delivered ROLLBACK, RESTART or ESCALATE proposal")
+    if proposal["action"] in REPAIRS:
+        return proposal["action"]
     return "NO_ACTION" if error_code == "NO_ACTION_PROPOSED" else "ESCALATE"
 
 
@@ -462,8 +527,8 @@ def decision_source(proposal, error_code=None, *, decided_by=None, model_action=
     """Who made the delivered decision: one of SOURCES.
 
     decided_by and model_action are the planner's record of the last attempt.
-    A ROLLBACK is always a decision ("rule", "model", or "unconfirmed" when the
-    record is missing). An ESCALATE counts as decided only when a code rule
+    A ROLLBACK or RESTART is always a decision ("rule", "model", or "unconfirmed"
+    when the record is missing). An ESCALATE counts as decided only when a code rule
     ended planning with its own code and fixed rationale, or when the model
     itself answered ESCALATE and the delivered proposal carries its rationale.
     Any other ESCALATE is a planning failure: no decision was made.
@@ -473,9 +538,11 @@ def decision_source(proposal, error_code=None, *, decided_by=None, model_action=
         return "observer"
     if outcome == "NO_ACTION":
         return "model"  # The Planner saves only a model NO_ACTION with this code.
-    if outcome == "ROLLBACK":
+    if outcome in REPAIRS:
         return decided_by if decided_by in ("rule", "model") else "unconfirmed"
     rationale = proposal.get("rationale")
+    if rationale == METRIC_ONLY_RATIONALE:
+        return "rule"  # The Planner's metric-only rule escalates before any provider or model call.
     if rationale in _FIXED_RATIONALES:
         if error_code in RULE_CODES and rationale == TERMINAL_RATIONALES[error_code]:
             return "rule"

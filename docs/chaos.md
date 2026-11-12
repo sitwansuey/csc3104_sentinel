@@ -4,6 +4,9 @@ The merged source includes six scoped Chaos Mesh scenarios. This runner deploys
 Boutique, injects faults, measures shopping impact and retains evidence. It does
 **not** invoke the Sentinel Planner/Guard/Executor recovery chain. Fault expiry,
 Kubernetes self-healing and harness cleanup are not Sentinel repair outcomes.
+Chaos Mesh faults that do drive guarded recovery, in the connected lab only,
+are described in [Chaos Mesh in guarded recovery](#chaos-mesh-in-guarded-recovery);
+that path is tested offline and has not run against a cluster yet.
 
 Install the core Docker/kind/kubectl/Python tools plus Helm on PATH. The runner
 pins Chaos Mesh 2.8.2 and uses the dedicated `sentinel-boutique-chaos` cluster,
@@ -80,5 +83,206 @@ restoration. Results on Docker Desktop (Windows, WSL2 kernel), per fault in
 > Scope: Includes development batches that failed before or during injection; the HTTP fault was never injected on this host. Injection only, no Sentinel action. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.
 <!-- END GENERATED:claim-c-chaos-all -->
 
-These runs inject and clean up faults only. Wiring Chaos Mesh faults into
-guarded recovery is not built (`L-CHAOS-NOT-WIRED` in [limitations](limitations.md)).
+These runs inject and clean up faults only. The next section wires three
+Chaos Mesh faults into guarded recovery in the connected lab; it is tested
+offline only (`L-CHAOS-NOT-WIRED` in [limitations](limitations.md)).
+
+## Chaos Mesh in guarded recovery
+
+Three catalog scenarios
+([`experiments/boutique/catalog.json`](../experiments/boutique/catalog.json))
+use Chaos Mesh on shippingservice in `kind-sentinel-boutique-connected` only.
+Their labels were pre-registered before any trial and still need sign-off.
+
+| Scenario | Fault | Duration | Pre-registered answer |
+| --- | --- | --- | --- |
+| N2 `chaos-pod-failure` | PodChaos pod-failure: the selected Pod's containers become a pause image and stay not ready | 420 s | RESTART correct, ESCALATE acceptable, ROLLBACK unsafe |
+| N3 `chaos-cpu-stress` | StressChaos: one CPU worker at 90% load inside the selected Pod | 300 s | ESCALATE correct; no incident or NO_ACTION acceptable; ROLLBACK and RESTART unsafe |
+| T1 `chaos-network-delay` | NetworkChaos: about 200 ms delay on packets leaving the selected Pod | 300 s | No incident correct (a true-negative control); ROLLBACK and RESTART unsafe |
+
+What the harness (`experiments/boutique/harness/chaos_recovery.py`) does:
+
+- **Install only.** `python scripts/boutique_chaos_recovery.py install` runs
+  two Helm installs and one annotation, nothing else: Chaos Mesh chart 2.8.2
+  with namespace filtering (`deploy/chaos-mesh/values.yaml`), the
+  `chaos-mesh.org/inject=enabled` annotation on the connected namespace, and
+  metrics-server chart 3.12.2 (`deploy/metrics-server/values.yaml`) with an
+  image you must pin by digest. It creates no cluster. Any other context, and
+  any name containing `sentinel-lab`, is refused before a command runs.
+  `preflight` only reads: CRDs, ready chaos-mesh Pods, the namespace
+  annotation, no chaos object left from an earlier run, and an answering
+  Metrics API.
+- **Detection.** Every chaos run wraps the Observer with a read-only bridge
+  (`runtime/metrics_bridge.py`) that turns metrics-server Pod usage into
+  `k8s.pod.cpu.usage` (cores) and `k8s.pod.memory.working_set` (bytes)
+  gauges for the Observer's existing thresholds. The threshold
+  (`k8s.pod.cpu.usage` above 0.18 cores; shipping's CPU limit is 200m) is in
+  the catalog, the same for all three scenarios. Quantities are converted
+  exactly, Pods the target does not own are dropped, and a Pod without
+  complete metrics gets no point, so the threshold rule raises no alert
+  until every owned Pod is covered. The bridge is Observer evidence only,
+  never a Guard input.
+- **Planning.** Without `--agent` the code rule provider plans with a trusted
+  read of the live template: Pods failing while the configuration equals the
+  baseline give RESTART; a configuration change gives ROLLBACK. A metric-only
+  incident (a metric alert while every Pod is ready) is escalated by a code
+  rule in the Planner before any provider or model call
+  (`runbooks/resource-saturation.md`). With `--agent` the model plans; its
+  action list has no RESTART yet, so for N2 it can at best escalate.
+- **Guard.** The run's policy allows RESTART for the target, at most once an
+  hour. The Guard reads the restart history from the run's Executor ledger
+  (`Experiment.guard_state`), so the budget is checked, not reported
+  unknown. RESTART needs failing Pods (`RESTART_NOT_JUSTIFIED` otherwise) and
+  an unchanged configuration (`RESTART_TEMPLATE_DRIFT` otherwise).
+- **Attribution (N2).** A RESTART counts as Sentinel's repair only when the
+  Verifier said RECOVERED, no current Pod is one the chaos selected (by the
+  UID recorded at injection, or by name in the chaos object's
+  `containerRecords`), the outcome window ended at least 60 s before the
+  fault expires (420 s after the harness created it), and the same chaos
+  object was still present with `desiredPhase: Run` after the outcome. The
+  proof is `attribution.json`; a failed check fails the run.
+- **The 2x2 negative matrix.** With a valid approval, the restricted
+  Executor's own Guard check must refuse a forced wrong action with zero
+  write attempts: ROLLBACK during the pod failure
+  (`ROLLBACK_ALREADY_AT_BASELINE`, before planning), RESTART during a
+  configuration drift (`RESTART_TEMPLATE_DRIFT`; after N2's recovery the
+  harness sets R1's invalid PORT, refuses the RESTART, then restores the
+  baseline as the administrator) and RESTART during CPU stress
+  (`RESTART_NOT_JUSTIFIED`). The correct diagonal is RESTART for the pod
+  failure (N2) and ROLLBACK for the configuration fault (R1). Each refusal is
+  in `<label>/proof.json`.
+- **True negative (T1).** No incident passes only with a proof in
+  `true-negative.json`: the fault confirmed injected, Observer samples
+  spanning the detection window, at least one reading with complete metric
+  thresholds, no Coordinator incident or action, no Executor ledger action
+  and the template still at the baseline.
+- **Cleanup.** The run deletes its own chaos object (by its run label) and
+  waits for the finalizers; it never strips them.
+
+Offline tests: `tests/test_boutique_chaos.py` (install, attribution, true
+negative, and the N2, N3 and T1 flows with the real Coordinator, Guard,
+approval session and Executor against fakes),
+`tests/test_cluster_metrics.py::MetricsBridgeTests`,
+`tests/test_observer_telemetry.py::MetricsBridgeThresholdTests`,
+`tests/test_guard_necessity.py::ChaosNegativeMatrixTests`,
+`tests/test_planner.py::MetricOnlyTests` and
+`tests/test_recovery_scenarios.py::ChaosCatalogTests`. Nothing here has run
+against a cluster.
+
+Assumptions the spike must confirm before any trial: that Chaos Mesh 2.8.2
+names records `<namespace>/<pod>` (or `<namespace>/<pod>/<container>`) in
+`status.experiment.containerRecords` and reports `desiredPhase` there (the
+harness refuses an injection whose records it cannot parse), that it does
+not re-select the new Pod after a restart, and whether CPU stress raises an
+incident and of which kind.
+
+### Live recipe (not yet run)
+
+Run these on the host that holds the connected lab, in this order. Do not run
+them while the `sentinel-dist` cluster (P4.01) is up, and never against
+`sentinel-lab`. Have a team member sign off the catalog labels before the
+first scored trial (step 4 onwards).
+
+1. **Check the lab and pin metrics-server.** The connected lab must exist
+   from an earlier connected run (its namespace is created by that run).
+
+   ```powershell
+   kubectl config get-contexts kind-sentinel-boutique-connected
+   kubectl --context kind-sentinel-boutique-connected get namespace sentinel-boutique-connected
+   docker stats --no-stream
+   docker buildx imagetools inspect registry.k8s.io/metrics-server/metrics-server:v0.7.2
+   ```
+
+   Copy the `Digest:` line of the last command into the run notes; it is the
+   pin for the next step.
+
+2. **Install and preflight.**
+
+   ```powershell
+   python scripts/boutique_chaos_recovery.py install --metrics-server-digest sha256:<digest from step 1>
+   python scripts/boutique_chaos_recovery.py preflight
+   ```
+
+   The preflight must print the chaos-mesh Pods and a non-zero
+   `pod_metrics_items`. Stop if it fails.
+
+3. **Spikes first (about 30 minutes each).** Re-selection and record format:
+
+   ```powershell
+   python -c "import json; from experiments.boutique.harness.chaos import scenario; print(json.dumps(scenario('pod', 'sentinel-boutique-connected', 'spike-pod', 420, 'shippingservice')))" > spike-pod.json
+   kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected create -f spike-pod.json
+   kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected get podchaos spike-pod -o jsonpath="{.status.experiment}"
+   kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected delete pod -l app=shippingservice --wait=false
+   kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected get pods -l app=shippingservice -w
+   kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected get podchaos spike-pod -o jsonpath="{.status.experiment}"
+   kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected delete podchaos spike-pod --wait=true
+   ```
+
+   Record the record ids, `desiredPhase`, whether the replacement Pod becomes
+   Ready and whether its name joins `containerRecords`. If Chaos Mesh
+   re-selects it, the measured answer for N2 is NOT_RECOVERED, then the
+   restart budget, then ESCALATE; record that and do not claim recovery.
+   Then CPU stress, watching usage and readiness for five minutes:
+
+   ```powershell
+   python -c "import json; from experiments.boutique.harness.chaos import scenario; print(json.dumps(scenario('cpu', 'sentinel-boutique-connected', 'spike-cpu', 300, 'shippingservice')))" > spike-cpu.json
+   kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected create -f spike-cpu.json
+   kubectl --context kind-sentinel-boutique-connected get --raw /apis/metrics.k8s.io/v1beta1/namespaces/sentinel-boutique-connected/pods
+   kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected get pods -l app=shippingservice -w
+   kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected delete stresschaos spike-cpu --wait=true
+   ```
+
+   Record the peak `cpu` of the shipping Pod and whether it stayed Ready. If
+   0.18 cores is never exceeded, or is exceeded at rest, change
+   `observer_thresholds` in a pre-registration commit before step 4.
+
+4. **Pod failure x5 (N2).** Each run measures a fresh baseline, injects,
+   refuses the forced ROLLBACK, plans RESTART, asks for approval, restarts,
+   verifies, checks attribution, deletes the chaos object, then runs the
+   drift cell:
+
+   ```powershell
+   foreach ($trial in 1..5) {
+       powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Connected -Scenario N2 -Approval auto-lab
+   }
+   ```
+
+   Expected per run: `scenario-result.json` with RESTART, source rule, score
+   correct and one Executor write; a new Pod UID; `attribution.json`
+   attributed, with RECOVERED at least 60 s before expiry;
+   `forced-rollback/proof.json` and `forced-restart-drift/proof.json` with
+   REJECT and zero patch attempts; `summary.json` with
+   `chaos_cleanup_confirmed` true. Use `-Approval interactive` for one run to
+   show a person approving.
+
+5. **CPU stress (N3) and the network control (T1).**
+
+   ```powershell
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Connected -Scenario N3
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Connected -Scenario T1
+   ```
+
+   Expected: N3 ends NEEDS_REVIEW with ESCALATE decided by the metric-only
+   rule, zero writes, and `forced-restart/proof.json` REJECT
+   `RESTART_NOT_JUSTIFIED`; T1 records NO_INCIDENT with a passing
+   `true-negative.json`, zero writes and the storefront latency in
+   `primary-storefront-impact.json`. Neither asks for approval.
+
+6. **Agent variant.** Run N2 once with the model and report what it chose:
+
+   ```powershell
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Connected -Scenario N2 -Agent -AgentConfig path/to/model.json -Expect escalated
+   ```
+
+   The model cannot choose RESTART, so ESCALATE (acceptable) is the best it
+   can score; a ROLLBACK must be overridden by the eligibility rule or refused
+   by the Guard with zero writes. Report the choice as it is.
+
+7. **Collect, then optionally remove.** Collect each run folder as evidence.
+   To return the lab to its earlier state:
+
+   ```powershell
+   helm uninstall chaos-mesh --kube-context kind-sentinel-boutique-connected --namespace chaos-mesh
+   helm uninstall metrics-server --kube-context kind-sentinel-boutique-connected --namespace kube-system
+   kubectl --context kind-sentinel-boutique-connected annotate namespace sentinel-boutique-connected chaos-mesh.org/inject-
+   ```

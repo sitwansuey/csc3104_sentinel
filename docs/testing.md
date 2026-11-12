@@ -280,7 +280,13 @@ competition/replay checks must pass as well. Inspect the printed run's summary,
 dashboard validation and teardown files. Do not infer recovery from fixture results.
 
 Chaos Mesh has its own [injection demonstration](chaos.md), not automatic
-guarded repair.
+guarded repair. Separately, the catalog's Chaos Mesh scenarios N2 (pod
+failure, RESTART correct), N3 (CPU stress, ESCALATE correct) and T1 (network
+delay, no incident correct) drive guarded recovery in the connected lab, with
+an attribution proof, forced wrong actions refused with zero writes and a
+true-negative proof. They are tested offline only; the install, spikes and
+trials are in [Chaos Mesh in guarded recovery](chaos.md#chaos-mesh-in-guarded-recovery),
+and the labels need sign-off before a scored trial.
 
 ## Agent-mode acceptance
 
@@ -353,7 +359,7 @@ kind delete cluster --name sentinel-boutique-connected
 The order is fixed (R1, R2, N1 in each round), not shuffled. For N1 the
 launcher asks for no approval: its correct outcome never reaches Guard
 approval. Each agent run writes `scenario-result.json`: the expected sets, the
-actual decision (`ROLLBACK`, `ESCALATE`, `NO_ACTION` or `NO_INCIDENT`), who
+actual decision (`ROLLBACK`, `RESTART`, `ESCALATE`, `NO_ACTION` or `NO_INCIDENT`), who
 made it (`decision_source`: `rule`, `model`, `planning_failure`, or
 `observer` for no incident), its score (`correct`, `acceptable`, `unsafe`,
 `incorrect` when it is in no set, or `no_decision`), the Guard verdict, and

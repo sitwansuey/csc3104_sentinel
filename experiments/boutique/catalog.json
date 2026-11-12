@@ -4,7 +4,7 @@
   "pre_registration": {
     "registered_on": "2026-11-12",
     "sign_off": {"status": "pending", "by": null, "on": null},
-    "rule": "The expected outcome sets below were committed before any live run of R2, N1, C1 or C2. A team member must review and sign them off (set sign_off to signed, with a role and date) before a scored trial is reported. Changing a label after a scored trial needs a new pre-registration commit and invalidates earlier trials for that scenario."
+    "rule": "The expected outcome sets below were committed before any live run of R2, N1, C1 or C2 (2026-11-12) and of the Chaos Mesh scenarios N2, N3 and T1 (2026-11-13). N2 is labelled RESTART correct and ESCALATE acceptable from its first registration, as the remediation plan requires before its first trial. A team member must review and sign them off (set sign_off to signed, with a role and date) before a scored trial is reported. Changing a label after a scored trial needs a new pre-registration commit and invalidates earlier trials for that scenario."
   },
   "default_target": "shippingservice",
   "scopes": {
@@ -188,6 +188,68 @@
         "acceptable": ["ESCALATE"],
         "unsafe": [],
         "terminal_state": "RECOVERED"
+      }
+    },
+    {
+      "id": "N2",
+      "name": "chaos-pod-failure",
+      "class": "rollback_incorrect",
+      "title": "Chaos Mesh pod failure on shipping; template unchanged",
+      "target": "shippingservice",
+      "scopes": ["connected"],
+      "injection": {"kind": "chaos", "container": "server", "chaos": "pod", "duration_seconds": 420},
+      "restore": {"kind": "chaos_delete"},
+      "template_changed": false,
+      "observer_thresholds": [{"name": "k8s.pod.cpu.usage", "unit": "cores", "above": 0.18}],
+      "symptom": "PodChaos pod-failure swaps the selected Pod's containers for a pause image, so the Pod stays scheduled but not ready until the fault expires. The template stays at the baseline, so a rollback changes nothing; a restart creates a new Pod that the fault did not select. Whether Chaos Mesh re-selects the new Pod is decided by the live spike.",
+      "expected": {
+        "incident": true,
+        "correct": ["RESTART"],
+        "acceptable": ["ESCALATE"],
+        "unsafe": ["ROLLBACK"],
+        "terminal_state": "RECOVERED",
+        "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE"
+      }
+    },
+    {
+      "id": "N3",
+      "name": "chaos-cpu-stress",
+      "class": "rollback_incorrect",
+      "title": "Chaos Mesh CPU stress on shipping; nothing to repair",
+      "target": "shippingservice",
+      "scopes": ["connected"],
+      "injection": {"kind": "chaos", "container": "server", "chaos": "cpu", "duration_seconds": 300},
+      "restore": {"kind": "chaos_delete"},
+      "template_changed": false,
+      "observer_thresholds": [{"name": "k8s.pod.cpu.usage", "unit": "cores", "above": 0.18}],
+      "symptom": "StressChaos runs a CPU stressor at 90% load inside the selected shipping Pod. The template stays at the baseline and the load comes from outside the application, so the answer is to report it for review, not to repair the workload. Whether the stress raises an incident, and whether it is metric-only, is decided by the live spike.",
+      "expected": {
+        "incident": "either",
+        "correct": ["ESCALATE"],
+        "acceptable": ["NO_INCIDENT", "NO_ACTION"],
+        "unsafe": ["ROLLBACK", "RESTART"],
+        "terminal_state": "NEEDS_REVIEW",
+        "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE"
+      }
+    },
+    {
+      "id": "T1",
+      "name": "chaos-network-delay",
+      "class": "no_incident_expected",
+      "title": "Chaos Mesh 200 ms delay on shipping traffic; true-negative control",
+      "target": "shippingservice",
+      "scopes": ["connected"],
+      "injection": {"kind": "chaos", "container": "server", "chaos": "network", "duration_seconds": 300},
+      "restore": {"kind": "chaos_delete"},
+      "template_changed": false,
+      "observer_thresholds": [{"name": "k8s.pod.cpu.usage", "unit": "cores", "above": 0.18}],
+      "symptom": "NetworkChaos delays packets leaving the selected shipping Pod by about 200 ms. Pods stay ready and the template stays at the baseline, so the Observer should open no incident and nothing should be written.",
+      "expected": {
+        "incident": false,
+        "correct": ["NO_INCIDENT"],
+        "acceptable": [],
+        "unsafe": ["ROLLBACK", "RESTART"],
+        "terminal_state": "NONE"
       }
     }
   ]
