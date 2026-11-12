@@ -31,8 +31,10 @@ The small `experiments/workloads/demo/` and `experiments/workloads/otel/` applic
 
 ## Executor admission policy
 
-RBAC limits the Executor to get and patch on one named Deployment, but not to
-fields. `sentinel/executor-admission.yaml` is a ValidatingAdmissionPolicy and
+RBAC limits the Executor to get and patch on the Deployments its Role names
+(one in `sentinel/executor-rbac.yaml`; the Boutique lab harness generates the
+Role from that file for each lab's own namespace and its enabled targets), but
+not to fields. `sentinel/executor-admission.yaml` is a ValidatingAdmissionPolicy and
 its binding. The policy matches requests from any ServiceAccount named
 `sentinel-executor`, in any namespace; the binding applies it only to
 Deployments in the `sentinel-demo` namespace. It is meant to let that identity
