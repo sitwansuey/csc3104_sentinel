@@ -57,8 +57,8 @@
         {"at": "services/coordinator/core.py:174-175", "text": "Health window predates execution"},
         {"at": "runtime/worker_http.py:180", "text": "except (ValueError, KeyError, TypeError) as exc:"},
         {"at": "tests/test_distributed_processes.py:61", "text": "def test_s7_executor_clock_behind_wedges_the_action_before_p3_03"},
-        {"at": "runtime/remote_worker.py:139", "text": "if error.status not in {404, 409}:"},
-        {"at": "runtime/remote_worker.py:73", "text": "time.time()) / 3"}
+        {"at": "runtime/remote_worker.py:156", "text": "if error.status not in {404, 409}:"},
+        {"at": "runtime/remote_worker.py:78", "text": "time.time()) / 3"}
       ],
       "planned": ["P3.03"],
       "issues": [18, 63]
@@ -69,7 +69,7 @@
       "kind": "defect",
       "status": "mitigated",
       "since": "2026-11-11",
-      "impact": "Fixed in code: agent planning now runs through prepare() and the PlannerStore journal. A model failure is retried up to three times; an abstention, a diagnosis of another component, a NO_ACTION answer or a target changed during inference ends at once. Every failure ends in a saved, delivered ESCALATE, so the incident moves to NEEDS_REVIEW, and a saved proposal replays without another model call. Still open: the planning budget applies per attempt, so one incident can use three budgets. The remote Planner worker now has an agent mode with the same hooks and journal (P3.07), tested offline only, as one OS process on one host with a fake model server. Live verification pending: no agent run has used the journal yet, and every committed agent bundle predates it, so those failed runs left the incident OPEN.",
+      "impact": "Fixed in code: agent planning now runs through prepare() and the PlannerStore journal. A model failure is retried up to three times; an abstention, a diagnosis of another component, a NO_ACTION answer or a target changed during inference ends at once. Every failure ends in a saved, delivered ESCALATE, so the incident moves to NEEDS_REVIEW, and a saved proposal replays without another model call. Still open: the planning budget applies per attempt, so one incident can use three budgets. The remote Planner worker now has an agent mode with the same hooks and journal (P3.07), tested offline only, as one OS process on one host with a fake model server. That ESCALATE guarantee covers only failures after a passed model preflight. In remote agent mode a model that is unreachable when the worker is about to claim never starts an attempt: there is no retry and no exhausted ESCALATE, and the incident stays OPEN (not NEEDS_REVIEW), its request unclaimed, until a ready agent Planner claims it. An outage that starts inside a cached preflight window (30 s by default) may use up attempts and escalate, or leave the incident OPEN once the cached check expires; which one happens depends on timing. Saved results are still re-sent while the model is down, except a proposal saved only in the Planner journal before the worker stopped, which waits for the next passed preflight. No bounded escalation for a long model outage exists (for example a Coordinator-side planning timeout); adding one is an owner decision. Live verification pending: no agent run has used the journal yet, and every committed agent bundle predates it, so those failed runs left the incident OPEN.",
       "workaround": "For runs recorded before this change, read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.",
       "cites": [
         {"at": "experiments/boutique/harness/agent_live.py:209", "text": "state = run_durable_case(self, incident"},
@@ -80,6 +80,9 @@
         {"at": "docs/planner.md", "text": "Agent mode through the journal"},
         {"at": "runtime/remote_adapters.py", "text": "class AgentPlannerAdapter(PlannerAdapter):"},
         {"at": "tests/test_remote_agent_planner.py", "text": "def test_a_separate_planner_process_plans_through_its_own_journal_and_replays"},
+        {"at": "tests/test_remote_agent_planner.py", "text": "def test_a_failed_preflight_keeps_the_worker_not_ready_and_claims_nothing"},
+        {"at": "tests/test_remote_agent_planner.py", "text": "def test_a_saved_result_is_resent_while_the_model_is_down"},
+        {"at": "docs/remote-workers.md", "text": "A model that stays down does not escalate."},
         {"claim": "C-AGENT-FAIL-CLOSED"}
       ],
       "planned": ["P2.01", "P3.07"],

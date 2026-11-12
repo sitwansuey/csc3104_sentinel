@@ -197,17 +197,41 @@ a model failure never becomes a deterministic or fixture proposal.
   the environment variables those `*_env` keys name. The Ollama client sends no
   credential.
 
-**Preflight.** Before each claim the worker checks that the model endpoint
-answers `/api/tags` and lists every configured model. A passed check is reused
-for `preflight_seconds` (30 by default); a failed one is never reused. While it
-fails, the worker claims nothing, prints
+**Preflight.** Just before each claim the worker checks that the model
+endpoint answers `/api/tags` and lists every configured model. A passed check
+is reused for `preflight_seconds` (30 by default); a failed one is never
+reused. While it fails, the worker claims no new work, prints
 `{"status": "not_ready", "error_code": "MODEL_UNAVAILABLE"}`, logs
 `worker.status` with that reason and the cause's class name only, backs off,
-and `/readyz` answers 503. Saved results waiting to be re-sent wait too. A
-model that fails after a passed preflight is an attempt failure
-(`MODEL_UNAVAILABLE`), retried and then escalated as above. One pass can last
-the whole planning budget, so keep `--live-seconds` above
-`planning_budget_seconds` plus 60 (the 900 s default covers the 600 s budget).
+and `/readyz` answers 503. Saved results are not held back: sending one needs
+no model, so a saved proposal or ESCALATE whose first delivery failed is
+re-sent before the check runs. If the Coordinator refused that re-send because
+its lease had expired, the worker still claims while not ready; a claim that
+matches the saved result sends it, and any other request is handed straight
+back with `retry` before any processing. That lasts while any released saved
+result is unaccepted, including one whose request another worker has since
+finished, so such a worker keeps claiming and handing back while not ready.
+One case still waits for the model:
+a proposal saved in the Planner journal whose worker stopped before recording
+it for transport is replayed, without a model call, only by the first claim
+after a preflight passes. A model that fails after a passed
+preflight is an attempt failure (`MODEL_UNAVAILABLE`), retried and then
+escalated as above. One pass can last the whole planning budget, so keep
+`--live-seconds` above `planning_budget_seconds` plus 60 (the 900 s default
+covers the 600 s budget).
+
+**A model that stays down does not escalate.** Only failures after a passed
+preflight use up planning attempts. A model that is unreachable when the worker
+is about to claim never starts an attempt, so there is no retry, no
+`ATTEMPTS_EXHAUSTED` ESCALATE and no move to NEEDS_REVIEW: the incident stays
+OPEN and its request stays unclaimed until a ready agent Planner claims it. An
+outage that starts inside a cached preflight window can go either way, depending
+on timing: attempts that fail inside the window are retried (5 s, then 10 s by
+default) and may run out into a saved ESCALATE, but once the cached check
+expires the worker stops claiming and the incident waits, OPEN, with the
+attempts it has used so far. No bounded escalation for a long model outage
+exists yet (for example a Coordinator-side planning timeout); see
+`L-AGENT-JOURNAL` in [limitations](limitations.md).
 
 **Fallback.** If no model endpoint can be reached (for example,
 `host.docker.internal` does not resolve), the fallback is a deployment choice,
