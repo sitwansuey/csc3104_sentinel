@@ -611,7 +611,8 @@
       "cites": [
         {"claim": "C-AGENT-ALL"},
         {"at": "agent/datasets/README.md"},
-        {"at": "docs/evaluation/rcaeval/PROTOCOL.md", "text": "**Status: prepared, not run.**"}
+        {"at": "docs/evaluation/rcaeval/PROTOCOL.md", "text": "**Status: prepared, not run.**"},
+        {"at": "docs/evaluation.md", "text": "_Not yet run._ No RCAEval report is committed under `evidence/evaluation/rcaeval/`."}
       ],
       "planned": ["P2.07", "P4.04"],
       "issues": [17, 75]
@@ -631,10 +632,28 @@
         {"at": "scripts/build_replay_corpus.py", "text": "Evidence bundles do not keep the baseline Pod template, the live Deployment or"},
         {"at": "tests/test_replay_corpus.py", "text": "def test_replay_of_a_recorded_live_case_reproduces_its_proposal"},
         {"at": "tests/test_recovery_ablation.py", "text": "def test_resume_refuses_a_changed_corpus_manifest"},
-        {"at": "tests/test_retrieval_contamination.py", "text": "def test_no_model_context_built_from_case_inputs_holds_a_label"}
+        {"at": "tests/test_retrieval_contamination.py", "text": "def test_no_model_context_built_from_case_inputs_holds_a_label"},
+        {"at": "docs/evaluation.md", "text": "| v1-model-14b-16k | P2, P3, P4 | qwen3:14b, context 16384, seeds 42 43 44 | not yet run |"}
       ],
       "planned": ["P4.04", "P4.07"],
       "issues": [17, 75, 85, 87]
+    },
+    {
+      "id": "L-EVALUATION-UNINTERPRETED",
+      "title": "The evaluation report is generated but unscored, partly not yet run and not yet interpreted",
+      "kind": "limitation",
+      "status": "open",
+      "since": "2026-11-13",
+      "impact": "docs/evaluation.md folds the committed evidence into one page (setup and versions, RCAEval, the Guard ablation, the replay ablation, the live scenario matrix, the distributed runs, the security lab and latency) and a threats-to-validity list counted from the evidence. scripts/evidence/summarize.py generates it and --check fails when a number on the page or in the evidence it reads changes without a regeneration. It is offline only and adds no run: RCAEval and the replay model rows show 'not yet run' until their evidence is committed, and a section or threat line whose evidence is missing says so instead of showing a zero. The four-node sentinel-dist acceptance has run live with one S0 run passed and no matrix yet, and nothing from it is bundled, so the page counts no sentinel-dist run and points to docs/distributed-acceptance.md for the attempts. No row is a scored result while the catalog, pair and replay labels await sign-off and the Guard fixture evaluation is preliminary. No committed run records a second machine, though many live runs record no provenance block at all; many used the code-rule or synthetic planner rather than a model, and no run records a person approving. The generator does not say which configuration does better: the interpretation section is empty until the team writes it after reading the threats to validity. Files that are not bundles (the replay results, the RCAEval report and the latency ledger) carry no MANIFEST hash, so an edit to them is caught as a stale page, not as a tampered file.",
+      "workaround": "Read the threats to validity before quoting the page. Quote a number by its claim id from evidence/claims.json with its scope caveat, never from the page alone, and call every row unscored until its labels are signed.",
+      "cites": [
+        {"at": "docs/evaluation.md", "text": "Not written yet. The team writes this section by hand"},
+        {"at": "scripts/evidence/summarize.py", "text": "def evaluation_threats(root, bundles):"},
+        {"at": "tests/test_evaluation_docs.py", "text": "def test_missing_evidence_renders_not_yet_run_never_zero(self):"},
+        {"at": "tests/test_evaluation_docs.py", "text": "def test_an_edited_number_in_the_evidence_fails_check(self):"}
+      ],
+      "planned": ["P4.07"],
+      "issues": [17, 75, 87]
     },
     {
       "id": "L-OVERLAPPING-FAULTS",

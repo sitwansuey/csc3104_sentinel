@@ -13,8 +13,9 @@ the full suite also exercises the optional native RCAEval adapter:
 .\.venv\Scripts\python.exe scripts/check_doc_citations.py
 ```
 
-The last four fail when a generated table or claim quote is stale or
-hand-edited, a claim lacks evidence, a known-stale status phrase has no claim
+The last four fail when a generated table (in [results](results.md), the
+[evaluation report](evaluation.md), the limitations page or the README) or a
+claim quote is stale or hand-edited, a claim lacks evidence, a known-stale status phrase has no claim
 id beside it, a [limitations](limitations.md) citation no longer resolves, a
 Markdown link or anchor is dead, or a code citation in the threat or
 distributed model no longer resolves.
@@ -764,7 +765,7 @@ normal presentation run:
 | Verifier connected telemetry/read-only permissions | `scripts/validation/test_verifier_connected_live.py --setup` | Existing `sentinel-lab` (see below) |
 | Executor wedge (rv-race, delete-recreate) | `scripts/validation/test_executor_wedge_live.py --context <ctx> --scenario <name> [--transport rest]` | Existing `kind-sentinel-boutique-connected` or `kind-sentinel-wedge`; own namespace, deleted on exit; never `sentinel-lab` |
 | Multi-process harness, kind mode (P3.01, P3.04; ran on 12 Nov 2026, `C-DISTRIBUTED-KIND-BE6E636`, `C-SEAL-LIVE`) | `python -m experiments.distributed.kind_bundle prepare --context kind-sentinel-boutique-connected --storefront <port-forward>`, then `experiments.distributed.run_scenarios --mode kind` ([recipe](../experiments/distributed/README.md#a-reproducible-kind-mode-run)) | Existing `kind-sentinel-boutique-connected` only; injects and restores the catalog fault on its target, mints one short-lived `sentinel-executor` token into a temporary bundle; never `sentinel-lab` |
-| Four-node distributed acceptance (P4.01; not yet run) | `python -m experiments.distributed.kind_acceptance preflight --context kind-sentinel-dist`, then `deploy` and `run --scenarios all --repeat 5` ([recipe](distributed-acceptance.md#live-recipe)) | Its own `kind-sentinel-dist` cluster, created from `deploy/kind/kind-dist.yaml` with Chaos Mesh 2.8.2; refused while the P4.03 lab runs; never `sentinel-lab` |
+| Four-node distributed acceptance (P4.01; one S0 run passed live on 13 Nov 2026, no matrix yet) | `python -m experiments.distributed.kind_acceptance preflight --context kind-sentinel-dist`, then `deploy` and `run --scenarios all --repeat 5` ([recipe](distributed-acceptance.md#live-recipe)) | Its own `kind-sentinel-dist` cluster, created from `deploy/kind/kind-dist.yaml` with Chaos Mesh 2.8.2; refused while the P4.03 lab runs; never `sentinel-lab` |
 | Executor admission policy (P3.05; ran once on 12 Nov 2026, `C-ADMISSION-POLICY-LIVE`) | `scripts/validation/test_executor_admission_live.py --context kind-sentinel-boutique-connected` | Existing `kind-sentinel-boutique-connected` only; own namespace, policy and binding, deleted on exit; never `sentinel-lab` |
 
 The Observer runtime and Verifier checks never create a cluster. They expect the `sentinel-lab` kind

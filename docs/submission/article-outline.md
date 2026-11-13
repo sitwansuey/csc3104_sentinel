@@ -64,13 +64,16 @@ networked worker layer has only run on one host (`L-SINGLE-HOST-DISTRIBUTION`).
 ### V. Evaluation (about 700 words)
 
 **TODO (authors).** Tables T1-T4 below. Every number is a macro or a value from
-a generated table in [results](../results.md); no number is typed by hand.
-Figure 2 (incident timeline) comes from a committed bundle's timeline.
+a generated table in [results](../results.md) or the
+[evaluation report](../evaluation.md); no number is typed by hand. The report
+gives the numbers; which configuration does better, and why, is the authors'
+argument. Figure 2 (incident timeline) comes from a committed bundle's timeline.
 
 ### VI. Limitations and threats to validity (about 250 words)
 
-**TODO (authors).** Draw on the [limitations register](../limitations.md), at
-least: `L-ONE-FAULT-ONE-ACTION`, `L-AGENT-APPROVAL`, `L-NO-DIAGNOSIS-ACCURACY`,
+**TODO (authors).** Start from the generated
+[threats to validity](../evaluation.md#threats-to-validity), and draw on the
+[limitations register](../limitations.md), at least: `L-ONE-FAULT-ONE-ACTION`, `L-AGENT-APPROVAL`, `L-NO-DIAGNOSIS-ACCURACY`,
 `L-EVIDENCE-INFERRED`, `L-SINGLE-HOST-DISTRIBUTION`, `L-CHAOS-NOT-WIRED` and
 the preliminary status of the Guard fixture evaluation.
 

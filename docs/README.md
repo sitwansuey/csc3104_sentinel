@@ -8,9 +8,11 @@ Read these in order:
    The [threat model](threat-model.md) and [distributed model](distributed-model.md)
    state trust boundaries, failure and timing assumptions, and known weaknesses.
 4. [Testing](testing.md): offline regressions, live acceptance and specialised checks.
-   The [four-node distributed acceptance](distributed-acceptance.md) (written,
-   not yet run) has its own recipe and results table.
+   The [four-node distributed acceptance](distributed-acceptance.md) (one S0
+   run passed live, no matrix yet) has its own recipe and results table.
 5. [Results](results.md): tables generated from the committed evidence bundles.
+   The [evaluation report](evaluation.md) folds them, the replay ablation, RCAEval
+   and latency into one generated page with its threats to validity.
 6. [Limitations](limitations.md): known limitations and open defects, each with checked citations.
 
 Use [Planner mode](planner.md), [authenticated approvals](approvals.md), [Chaos Mesh](chaos.md),

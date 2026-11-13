@@ -4,6 +4,10 @@ Tables are written between '<!-- BEGIN GENERATED:<name> -->' and
 '<!-- END GENERATED:<name> -->' markers in docs/results.md and evidence/README.md.
 The latency tables come from the newest ledger under evidence/evaluation/latency/
 (scripts/latency_report.py); --check recomputes its bundle-sourced values.
+The evaluation report (docs/evaluation.md) folds RCAEval, the Guard and replay
+ablations, the live scenario matrix, the distributed runs, the security lab,
+latency and the threats to validity into one page; evidence that is not
+committed renders as 'not yet run', never as zero.
 The limitations register (docs/limitations.json) is rendered into
 docs/limitations.md and the README. A 'claim-<id>' block in the README, docs/
 (and one folder below it) or deploy/ Markdown quotes that claim with its current value and scope caveat.
@@ -30,7 +34,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from experiments.analysis import timeline  # noqa: E402
+from experiments.distributed import kind_acceptance  # noqa: E402
 from scripts import trace_view  # noqa: E402
+from scripts.evaluation import rcaeval_report  # noqa: E402
 from scripts.evidence import collect, limitations  # noqa: E402
 
 TARGETS = {
@@ -38,6 +44,9 @@ TARGETS = {
                         "executor-wedge", "timings", "latency", "model-calls", "chaos", "chaos-recovery",
                         "pair-runs", "security-lab", "observer", "distributed-runs", "kind-lab-sessions",
                         "executor-admission", "worker-container", "claims"),
+    "docs/evaluation.md": ("evaluation-setup", "evaluation-rcaeval", "evaluation-guard", "evaluation-replay",
+                           "evaluation-live", "evaluation-distributed", "evaluation-security", "evaluation-latency",
+                           "evaluation-threats"),
     "evidence/README.md": ("index", "exclusions"),
     "docs/limitations.md": ("limitations",),
     "README.md": ("limitations-summary",),
@@ -220,6 +229,11 @@ def outcome(bundle):
         return container_record(bundle)["outcome"]
     if bundle.run_class == "kind-lab-session":
         return lab_session_record(bundle)["outcome"]
+    if bundle.run_class == "distributed-acceptance":
+        runs = acceptance_runs(bundle)
+        if not runs:
+            return "INCOMPLETE"
+        return "PASS" if all(run.get("passed") is True for run in runs) else "FAILED"
     summary = bundle.json("summary.json") or bundle.json("data/evidence/summary.json") or {}
     status = summary.get("status")
     return status if status in OUTCOMES else "INCOMPLETE"
@@ -1386,6 +1400,557 @@ def stale_statements(root, claims):
     return problems
 
 
+# ----- evaluation report (docs/evaluation.md, roadmap item P4.07) -----
+#
+# Each block folds one kind of committed evidence into docs/evaluation.md.
+# Evidence that is not committed renders as "not yet run", never as a zero
+# count. The interpretation is written by people, outside the blocks.
+
+NOT_RUN = "_Not yet run._"
+RCAEVAL_DIR = "evidence/evaluation/rcaeval"
+RCAEVAL_DOCS = "docs/evaluation/rcaeval"
+ABLATION_DIR = "evidence/evaluation/recovery-ablation"
+REPLAY_MANIFEST = "evidence/replay/v1/corpus-manifest.json"
+CATALOG = "experiments/boutique/catalog.json"
+# The replay runs docs/evaluation/replay/README.md pre-registers, in its order; other committed folders follow.
+ABLATION_RUNS = (
+    ("v1-deterministic", "P0, P1, P1R", "recorded diagnosis, no model"),
+    ("v1-model-14b-16k", "P2, P3, P4", "qwen3:14b, context 16384, seeds 42 43 44"),
+    ("v1-model-14b-8k", "P4", "qwen3:14b, context 8192, seeds 42 43 44"),
+    ("v1-model-8b-16k", "P4", "qwen3:8b, context 16384, seeds 42 43 44"),
+    ("v1-model-14b-norag", "P3", "qwen3:14b, no runbooks, seeds 42 43 44"),
+)
+ABLATION_GROUPS = ("captured", "derived", "adversarial")
+LIVE_CLASSES = ("connected-harness", "agent", "chaos-recovery", "scenario-pair", "guard-rejection", "shipping-lab",
+                "packaged", "provider-recovery")
+# Classes with their own section on the page; any other current class is named under the live table.
+ELSEWHERE_CLASSES = ("chaos-batch", "guard-eval", "distributed-scenario", "distributed-acceptance", "security-lab",
+                     "rcaeval")
+SENTINEL_DIST_NONE = ("No distributed-acceptance bundle is committed, so no sentinel-dist run is counted here; "
+                      "the first live attempts are described, not bundled, in "
+                      "[distributed acceptance](distributed-acceptance.md#first-live-attempts)")
+# Per-run summaries inside a distributed-acceptance bundle: <date>/<scenario>-r<n>-<time>z/summary.json.
+ACCEPTANCE_RUN = re.compile(r"^[^/]+/[^/]+/summary\.json$")
+
+
+def read_optional(root, relative):
+    """Parsed JSON of a committed file outside the bundles, or None when it is not committed."""
+    path = Path(root) / relative
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as error:
+        raise EvidenceError(f"{relative} is not valid JSON: {error}") from error
+
+
+def tally(values):
+    """'value xN' per distinct value, sorted; 'none' when there is no value."""
+    counts = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return ", ".join(f"{name} x{count}" for name, count in sorted(counts.items(), key=lambda item: str(item[0]))) \
+        or "none"
+
+
+def wilson_cell(cell):
+    """'k/n [low, high]' of one replay metric; 'n/a' when the row does not report it."""
+    if not isinstance(cell, dict) or not isinstance(cell.get("n"), int):
+        return "n/a"
+    interval = cell.get("wilson95")
+    bounds = f" [{interval[0]:.2f}, {interval[1]:.2f}]" if isinstance(interval, list) and len(interval) == 2 else ""
+    return f"{cell.get('k')}/{cell['n']}{bounds}"
+
+
+def current_runs(bundles, classes):
+    """Bundles of these classes, each run once (a superseded bundle gives way to its replacement), oldest first."""
+    return sorted((b for b in bundles if b.run_class in classes and not superseded(b)),
+                  key=lambda b: (b.entry.get("captured_at") or "", b.bundle_id))
+
+
+def planner_kind(bundle):
+    """Who chose the action in a live run: a named model, the code rule, an operator's proposal, or not recorded."""
+    summary = summary_of(bundle)
+    planning = str(summary.get("planning") or "").lower()
+    if summary.get("model"):
+        return f"model {summary['model']}"
+    if "code rule" in planning:
+        return "code rule, no model"
+    if "operator-authored" in planning:
+        return "operator-authored proposal, no model"
+    return "not recorded"
+
+
+def approval_kind(bundle):
+    """How a live run's actions were approved, as its summary records it."""
+    approval = summary_of(bundle).get("operator_approval")
+    if isinstance(approval, dict):
+        mode = approval.get("mode") or "mode not recorded"
+        return f"a person ({mode})" if approval.get("human") is True else mode
+    if isinstance(approval, str) and approval.strip():
+        return "pre-authorised"
+    return "not recorded"
+
+
+def acceptance_runs(bundle):
+    """The per-run summaries of a sentinel-dist (distributed-acceptance) bundle, in path order.
+
+    A summary that is not an object (a run that crashed while writing it) is
+    kept as {}: it has no 'passed', so it counts as a run that did not pass
+    instead of vanishing.
+    """
+    runs = []
+    for item in sorted(bundle.manifest.get("files", []), key=lambda item: item["path"]):
+        if ACCEPTANCE_RUN.match(item["path"]):
+            value = bundle.json(item["path"])
+            runs.append(value if isinstance(value, dict) else {})
+    return runs
+
+
+def batch_versions(bundles, name):
+    """The version of one component ('chaos_mesh', 'kubernetes') each chaos-batch attempt's manifest.json records."""
+    found = []
+    for bundle in bundles:
+        if bundle.run_class != "chaos-batch":
+            continue
+        for item in bundle.manifest.get("files", []):
+            if item["path"] == "manifest.json" or item["path"].endswith("/manifest.json"):
+                versions = (bundle.json(item["path"]) or {}).get("versions")
+                version = versions.get(name) if isinstance(versions, dict) else None
+                if version:
+                    found.append(str(version))
+    return found
+
+
+def model_loads(bundle):
+    """'tag digest quantization on Ollama version' for each model a run's model-runtime.json records."""
+    found = []
+    for item in bundle.manifest.get("files", []):
+        if item["path"] == "model-runtime.json" or item["path"].endswith("/model-runtime.json"):
+            runtime = bundle.json(item["path"]) or {}
+            for tag, model in sorted((runtime.get("models") or {}).items()):
+                model = model if isinstance(model, dict) else {}
+                found.append(f"{tag} {str(model.get('digest') or 'no digest')[:12]} "
+                             f"{model.get('quantization_level') or ''} on Ollama "
+                             f"{runtime.get('server_version') or 'unknown'}".replace("  ", " "))
+    return found
+
+
+def evaluation_setup(bundles):
+    """Where and with what the committed evidence was produced; a value no bundle records says so."""
+    current = [b for b in bundles if not superseded(b)]
+    if not current:
+        return NOT_RUN + " No evidence bundle is committed."
+    recorded = [b for b in current if b.entry.get("provenance") == "recorded"]
+    dates = sorted(str(b.entry.get("captured_at") or "")[:10] for b in current if b.entry.get("captured_at"))
+    provenance = [p for p in (summary_of(b).get("provenance") for b in current) if isinstance(p, dict)]
+    tools = {}
+    for record in provenance:
+        for name, version in (record.get("tools") or {}).items():
+            tools.setdefault(name, set()).add(str(version))
+    models = [load for b in current for load in model_loads(b)]
+    pythons = [str(p["python"]) for p in provenance if p.get("python")]
+    chaos_mesh, kubernetes = batch_versions(current, "chaos_mesh"), batch_versions(current, "kubernetes")
+    revisions = lambda members: len({short(b.entry.get("source_revision")) for b in members})
+    rows = [
+        ["Bundles", f"{len(current)} current: {len(recorded)} with recorded provenance, "
+                    f"{len(current) - len(recorded)} inferred (superseded and withdrawn bundles left out)"],
+        ["Captured", f"{dates[0]} to {dates[-1]}" if dates else "not recorded"],
+        ["Source revisions", f"{revisions(recorded)} distinct in recorded bundles, "
+                             f"{revisions([b for b in current if b not in recorded])} in inferred ones"],
+        ["Host class", (tally(str(p.get("host_class") or "not recorded") for p in provenance)
+                        + f"; {len(current) - len(provenance)} bundles record no provenance block")
+         if provenance else "not recorded"],
+        ["Tools", "; ".join(f"{name} {', '.join(sorted(versions))}" for name, versions in sorted(tools.items()))
+         or "not recorded"],
+        ["Python", tally(pythons) if pythons else "not recorded"],
+        ["Chaos Mesh (chaos-batch attempts)", tally(chaos_mesh) if chaos_mesh else "not recorded"],
+        ["Kubernetes server (chaos-batch attempts)", tally(kubernetes) if kubernetes else "not recorded"],
+        ["Models loaded (runs)", tally(models) if models else "not recorded"],
+    ]
+    return table(["Item", "Recorded in the evidence"], rows)
+
+
+def evaluation_rcaeval(root, bundles):
+    """Every committed RCAEval report, or 'not yet run' with the state of its pre-registration."""
+    reports = sorted((Path(root) / RCAEVAL_DIR).glob("*/report.json")) if (Path(root) / RCAEVAL_DIR).is_dir() else []
+    collected = len(current_runs(bundles, ("rcaeval",)))
+    committed = lambda name: "committed" if (Path(root) / RCAEVAL_DOCS / name).is_file() else "not committed"
+    status = (f"Pre-registration: sample manifest {committed('sample-ob-v1.json')}, freeze file "
+              f"{committed('freeze.json')}; "
+              + (f"{collected} rcaeval bundles collected." if collected else "no rcaeval bundle collected."))
+    if not reports:
+        return f"{NOT_RUN} No RCAEval report is committed under `{RCAEVAL_DIR}/`. {status}"
+    parts = [status]
+    for path in reports:
+        relative = path.relative_to(root).as_posix()
+        report = read_optional(root, relative) or {}
+        methods = report.get("methods") or {}
+        # A method that returns one service (rcaeval_report.TOP1_METHODS) has AC@3, AC@5 and Avg@5 equal to AC@1
+        # by construction; the report says so and the page must too, cell by cell and beside every pairing.
+        top1 = sorted(label for label, metrics in methods.items() if (metrics or {}).get("top1_only") is True)
+        rows = []
+        for label, metrics in sorted(methods.items()):
+            rate_count = lambda key, metrics=metrics: str((metrics.get(key) or {}).get("count", "n/a"))
+            mark = " (equals AC@1)" if label in top1 else ""
+            rows.append([label, str(metrics.get("n", "n/a")), rcaeval_report.with_ci(metrics.get("AC@1") or {})]
+                        + [rcaeval_report.with_ci(metrics.get(key) or {}) + mark for key in ("AC@3", "AC@5", "Avg@5")]
+                        + [str(metrics.get("missing", "n/a")), rate_count("abstention_rate"), rate_count("error_rate")])
+        paired = []
+        for item in report.get("paired") or []:
+            narrow = [name for name in (item.get("a"), item.get("b")) if name in top1]
+            paired.append([item.get("a"), item.get("b"), str(item.get("n")), str(item.get("only_a_correct")),
+                           str(item.get("only_b_correct")), rcaeval_report.number(item.get("mcnemar_p_holm")),
+                           rcaeval_report.with_ci(item.get("delta_Avg@5") or {})
+                           + (f" ({' and '.join(narrow)} {'is' if len(narrow) == 1 else 'are'} top-1 only)"
+                              if narrow else "")])
+        notes = ["Missing rows count as misses in AC@k and Avg@5."]
+        if top1:
+            notes.append(f"{', '.join(top1)} returns one service, so AC@3, AC@5 and Avg@5 equal AC@1 by construction; "
+                         "an Avg@5 difference against it credits the ranked method for ranks 2-5 that a single "
+                         "answer cannot earn.")
+        deviations = report.get("deviations") or []
+        parts += [f"**`{relative}`**: split {report.get('split', 'unknown')}, sample {report.get('sample', 'unknown')}, "
+                  f"{report.get('level', 'unknown')} level, 95% intervals.",
+                  table(["Method", "n", "AC@1", "AC@3", "AC@5", "Avg@5", "Missing", "Abstained", "Errors"], rows,
+                        "_The report lists no method._"),
+                  table(["A", "B", "n", "Only A correct", "Only B correct", "Holm McNemar p", "Avg@5 difference"],
+                        paired, "_No paired comparison in the report._"),
+                  " ".join(notes),
+                  "Deviations: " + ("; ".join(map(str, deviations)) if deviations else "none found in the result files")
+                  + "."]
+    return "\n\n".join(parts)
+
+
+def evaluation_guard(bundles):
+    """The offline Guard ablation by configuration, and the live refusals beside it."""
+    rows = [row[:9] for row in guard_evaluation(bundles)]
+    live = current_runs(bundles, ("guard-rejection",))
+    refusals = (f"Live Guard rejection runs: {zero_write_rejections(live)}." if live
+                else "Live Guard rejection runs: not yet run.")
+    return table(["Bundle", "Status", "Configuration", "Basis", "Unsafe ALLOW", "Unsafe REJECT", "Unsafe ESCALATE",
+                  "Safe ALLOW", "False REJECT"], rows,
+                 NOT_RUN + " No guard-eval bundle is committed.") + "\n\n" + refusals
+
+
+def ablation_rows(results):
+    rows = []
+    for group in ABLATION_GROUPS:
+        for cell in sorted((c for c in results.get("cells") or [] if c.get("group") == group),
+                           key=lambda c: (str(c.get("policy")), str(c.get("level")))):
+            rows.append([group, cell.get("policy"), cell.get("level"), str(cell.get("cases", "n/a"))]
+                        + [wilson_cell(cell.get(key)) for key in ("correct", "unsafe", "missed_repair",
+                                                                   "false_rejection", "errors", "injection_success")])
+    return rows
+
+
+def evaluation_replay(root):
+    """The replay corpus, every pre-registered ablation run (committed or not yet run) and each run's cells."""
+    corpus = read_optional(root, REPLAY_MANIFEST)
+    if corpus is None:
+        head = f"Corpus: not built (`{REPLAY_MANIFEST}` is not committed)."
+    else:
+        counts, labels = corpus.get("counts") or {}, corpus.get("labels") or {}
+        head = (f"Corpus `{REPLAY_MANIFEST}`: {len(corpus.get('cases') or [])} cases ("
+                + ", ".join(f"{counts[name]} {name}" for name in ABLATION_GROUPS if name in counts)
+                + f"); label sets signed {labels.get('signed', 'n/a')}/{labels.get('cases', 'n/a')}.")
+    folder = Path(root) / ABLATION_DIR
+    known = [name for name, _, _ in ABLATION_RUNS]
+    extra = sorted(path.parent.name for path in folder.glob("*/results.json") if path.parent.name not in known) \
+        if folder.is_dir() else []
+    status, parts = [], []
+    for name, policies, settings in list(ABLATION_RUNS) + [(name, "see run.json", "not pre-registered")
+                                                           for name in extra]:
+        relative = f"{ABLATION_DIR}/{name}/results.json"
+        results = read_optional(root, relative)
+        if results is None:
+            status.append([name, policies, settings, "not yet run", "-", "-", "-"])
+            continue
+        identity = results.get("identity") or {}
+        status.append([name, ", ".join(identity.get("policies") or []) or policies, settings, "committed",
+                       str(results.get("rows", "n/a")), str(results.get("error_rows", "n/a")),
+                       str(results.get("labels_pending_review", "n/a"))])
+        parts += [f"**`{name}`** ({results.get('scope') or 'scope not recorded'}). Each cell is k/n "
+                  "[Wilson 95%]; n/a where the metric does not apply.",
+                  table(["Group", "Policy", "Level", "Cases", "Correct", "Unsafe", "Missed repair", "False rejection",
+                         "Errors", "Injection success"], ablation_rows(results), "_The run has no cells._")]
+    return "\n\n".join([head, table(["Run", "Policies", "Settings", "Status", "Rows", "Error rows",
+                                     "Labels pending review"], status)] + parts)
+
+
+def live_class_rows(bundles):
+    rows = []
+    for run_class in LIVE_CLASSES:
+        members = current_runs(bundles, (run_class,))
+        if not members:
+            continue
+        outcomes = [outcome(b) for b in members]
+        rows.append([run_class, str(len(members)), ratio(outcomes.count("PASS"), len(members)),
+                     tally(result for result in outcomes if result != "PASS"),
+                     str(sum(expected_escalation(b) for b in members)),
+                     str(len({short(b.entry.get("source_revision")) for b in members})),
+                     tally(planner_kind(b) for b in members), tally(approval_kind(b) for b in members)])
+    return rows
+
+
+def scenario_matrix(bundles):
+    """Catalog scenario runs grouped by scenario, class and planner; every run stays in its denominator."""
+    groups = {}
+    for bundle in current_runs(bundles, SCENARIO_CLASSES):
+        if scenario_result(bundle):
+            parts = scenario_parts(bundle)
+            groups.setdefault((parts[0], bundle.run_class, planner_kind(bundle)), []).append(parts)
+    rows = []
+    for (scenario, run_class, planner), members in sorted(groups.items()):
+        writes = [parts[5] for parts in members]
+        measured = [int(value) for value in writes if value.isdigit()]
+        unmeasured = len(writes) - len(measured)
+        rows.append([scenario, run_class, planner, str(len(members)),
+                     ratio(sum(parts[2] == "PASS" for parts in members), len(members)),
+                     tally(parts[3] for parts in members),
+                     ratio(sum(parts[7] == "yes" for parts in members), len(members)),
+                     str(sum(measured)) + (f" ({unmeasured} unmeasured)" if unmeasured else ""),
+                     tally(parts[6] for parts in members), tally(parts[8] for parts in members)])
+    return rows
+
+
+def pair_matrix(bundles):
+    groups = {}
+    for bundle in current_runs(bundles, ("scenario-pair",)):
+        kill = (summary_of(bundle).get("pair") or {}).get("executor_kill") or "none"
+        row = pair_row(bundle)
+        groups.setdefault((row[1], kill), []).append(row)
+    return [[pair, kill, str(len(rows)), ratio(sum(row[3] == "PASS" for row in rows), len(rows)),
+             tally(row[4] for row in rows), tally(row[5] for row in rows), tally(row[6] for row in rows),
+             tally(row[8] for row in rows), tally(row[9] for row in rows)]
+            for (pair, kill), rows in sorted(groups.items())]
+
+
+def forced_actions(bundles):
+    """What happened to every forced wrong action in the catalog runs."""
+    items = [item for b in current_runs(bundles, SCENARIO_CLASSES) for item in summary_of(b).get("forced_refusals") or []
+             if isinstance(item, dict)]
+    if not items:
+        return "not yet run"
+    writes = [item.get("executor_patch_attempts") for item in items]
+    refused = sum(item.get("guard_verdict") == "REJECT" and write == 0 for item, write in zip(items, writes))
+    other = sum(item.get("guard_verdict") != "REJECT" and write == 0 for item, write in zip(items, writes))
+    return (f"{ratio(refused, len(items))} refused by the Guard with no Executor write, {other} stopped without a "
+            f"Guard refusal and with no write, {sum(isinstance(w, int) and w > 0 for w in writes)} with an Executor "
+            f"write, {sum(not isinstance(w, int) for w in writes)} unmeasured")
+
+
+def evaluation_live(bundles):
+    """The live scenario matrix: runs by class, catalog scenarios, scenario pairs and forced wrong actions."""
+    classes = live_class_rows(bundles)
+    if not classes:
+        return NOT_RUN + " No live recovery bundle is committed."
+    batches = current_runs(bundles, ("chaos-batch",))
+    others = [b.run_class for b in bundles if not superseded(b)
+              and b.run_class not in LIVE_CLASSES + ELSEWHERE_CLASSES]
+    return "\n\n".join([
+        "**Live recovery runs by class.** PASS means the run's own checks passed; an expected escalation passes "
+        "without a repair. Only these classes are counted here and in the live-run lines of the threats to "
+        "validity; current bundles of other classes, counted in [runs by class](results.md#runs-by-class) only: "
+        + (tally(others) if others else "none") + ".",
+        table(["Class", "Runs", "PASS", "Other outcomes", "Passed as an expected escalation", "Revisions", "Planner",
+               "Approval"], classes),
+        "**Catalog scenarios.** Matched means the run matched its pre-registered expected outcome (decision, "
+        "Guard and rule checks) and passed; it is provisional while the labels are pending.",
+        table(["Scenario", "Class", "Planner", "Runs", "PASS", "Decisions", "Matched", "Executor writes",
+               "Coordinator state", "Labels"], scenario_matrix(bundles), NOT_RUN),
+        "**Two simultaneous faults (scenario pairs).**",
+        table(["Pair", "Executor kill", "Runs", "PASS", "Pair result", "ShopOutcome", "Executor writes",
+               "Ordered recovery shown", "Labels"], pair_matrix(bundles), NOT_RUN),
+        f"- Forced wrong actions in catalog runs: {forced_actions(bundles)}.\n"
+        f"- Chaos Mesh injection-only batches: {chaos_injection(batches) if batches else 'not yet run'}."])
+
+
+def distributed_matrix(bundles):
+    groups = {}
+    for bundle in current_runs(bundles, ("distributed-scenario",)):
+        summary = distributed_summary(bundle)
+        groups.setdefault((summary.get("mode") or "unknown", summary.get("scenario") or "unknown"), []).append(
+            (bundle, summary))
+    rows = []
+    for (mode, scenario), members in sorted(groups.items()):
+        writes = sorted(s["committed_writes"] for _, s in members if isinstance(s.get("committed_writes"), int))
+        flag = lambda value, yes, no: {True: yes, False: no}.get(value, "not recorded")
+        rows.append([mode, scenario, str(len(members)), ratio(sum(outcome(b) == "PASS" for b, _ in members),
+                                                              len(members)),
+                     ratio(sum(bool(s.get("invariants")) and not failed_invariants(s) for _, s in members),
+                           len(members)),
+                     (f"{writes[0]}" if writes[0] == writes[-1] else f"{writes[0]}-{writes[-1]}") if writes else "n/a",
+                     str(sum(int(s.get("unobserved_windows") or 0) for _, s in members)),
+                     tally(flag(s.get("single_host"), "one host", "several hosts") for _, s in members),
+                     tally(flag(s.get("synthetic_planner"), "synthetic", "real") for _, s in members),
+                     str(len({short(b.entry.get("source_revision")) for b, _ in members}))])
+    return rows
+
+
+def evaluation_distributed(bundles):
+    """File and kind mode scenario runs, then the four-node sentinel-dist acceptance (or 'not yet run')."""
+    members = current_runs(bundles, ("distributed-acceptance",))
+    accepted = [(bundle, run) for bundle in members for run in acceptance_runs(bundle)]
+    readable = [run for _, run in accepted if run.get("scenario")]
+    if accepted:
+        try:
+            matrix = kind_acceptance.results_table(readable).rstrip("\n")
+        except (KeyError, TypeError) as error:
+            raise EvidenceError(f"a distributed-acceptance run summary lacks a field the results table needs: "
+                                f"{error}") from error
+        limits = sorted({str(run.get("limits")) for _, run in accepted if run.get("limits")})
+        unreadable = len(accepted) - len(readable)
+        dist = (f"**sentinel-dist (four kind nodes, P4.01).** {len(accepted)} runs from "
+                f"{len({bundle.bundle_id for bundle, _ in accepted})} bundles; planner: "
+                f"{tally({True: 'synthetic', False: 'real'}.get(run.get('synthetic_planner'), 'not recorded') for _, run in accepted)}."
+                + (f" {unreadable} run summaries name no scenario: they are left out of the table and count as "
+                   "not passed." if unreadable else "")
+                + (" Limits the harness records: " + " ".join(limits) if limits else "") + "\n\n" + matrix)
+    elif members:
+        dist = (f"**sentinel-dist (four kind nodes, P4.01).** {len(members)} distributed-acceptance bundles are "
+                "committed with no per-run summary; no run is counted.")
+    else:
+        dist = f"**sentinel-dist (four kind nodes, P4.01).** {SENTINEL_DIST_NONE}."
+    return "\n\n".join([
+        "**File and kind modes (P3.01, P3.06).** Matched means the run met its scenario's expectation.",
+        table(["Mode", "Scenario", "Runs", "Matched", "Every invariant held", "Committed writes", "Unobserved windows",
+               "Hosts", "Planner", "Revisions"], distributed_matrix(bundles), NOT_RUN), dist])
+
+
+def evaluation_security(bundles):
+    rows = []
+    for bundle in current_runs(bundles, ("security-lab",)):
+        _, result, quote_ok, blocked, restored = security_lab([bundle])[0]
+        matrix = (bundle.json("validation.json") or {}).get("network_matrix")
+        if isinstance(matrix, dict):
+            allowed, forbidden = matrix.get("allowed") or {}, matrix.get("forbidden") or {}
+            text = (f"{matrix.get('status') or 'unknown'}: {allowed.get('open', 'n/a')}/{allowed.get('cells', 'n/a')} "
+                    f"allowed paths open, {forbidden.get('closed', 'n/a')}/{forbidden.get('cells', 'n/a')} forbidden "
+                    f"paths closed, {matrix.get('untested', 'n/a')} untested")
+        else:
+            text = "not run"
+        rows.append([bundle.bundle_id, short(bundle.entry.get("source_revision")), bundle.entry.get("provenance"),
+                     result, quote_ok, blocked, restored, text])
+    return table(["Bundle", "Revision", "Provenance", "Outcome", "Valid mTLS quote", "Blocked probes",
+                  "Shopping after restore", "NetworkPolicy matrix"], rows,
+                 NOT_RUN + " No security-lab bundle is committed.")
+
+
+def evaluation_latency(root, bundles):
+    relative, ledger = load_latency(root)
+    if ledger is None:
+        return f"{NOT_RUN} No latency ledger is committed under `{LATENCY_DIR}/`."
+    stages, model = latency_tables(ledger, bundles)
+    if stages == NO_LEDGER:
+        return f"{NOT_RUN} The newest ledger, `{relative}`, has no row for a current bundle."
+    return f"From `{relative}`. A stage with no data shows n/a.\n\n{stages}\n\n{model}"
+
+
+def evaluation_threats(root, bundles):
+    """The caveats every number on the page carries, each counted from the evidence."""
+    catalog = read_optional(root, CATALOG) or {}
+    sign_off = ((catalog.get("pre_registration") or {}).get("sign_off") or {}).get("status") or "not recorded"
+    corpus = read_optional(root, REPLAY_MANIFEST)
+    labels, counts = (corpus or {}).get("labels") or {}, (corpus or {}).get("counts") or {}
+    catalog_runs = [bundle for bundle in current_runs(bundles, SCENARIO_CLASSES) if scenario_result(bundle)]
+    guard = sorted({row[1] for row in guard_evaluation(bundles)})
+    freeze = "committed" if (Path(root) / RCAEVAL_DOCS / "freeze.json").is_file() else "not committed"
+    live = current_runs(bundles, LIVE_CLASSES)
+    provenance = [p for p in (summary_of(b).get("provenance") for b in live) if isinstance(p, dict)]
+    dist = [distributed_summary(b) for b in current_runs(bundles, ("distributed-scenario",))]
+    accepted = [run for bundle in current_runs(bundles, ("distributed-acceptance",)) for run in acceptance_runs(bundle)]
+    current = [b for b in bundles if not superseded(b)]
+    inferred = sum(b.entry.get("provenance") != "recorded" for b in current)
+    per_scenario = {}
+    for bundle in catalog_runs:
+        name = scenario_parts(bundle)[0]
+        per_scenario[name] = per_scenario.get(name, 0) + 1
+    committed = [name for name, _, _ in ABLATION_RUNS if (Path(root) / ABLATION_DIR / name / "results.json").is_file()]
+    reports = sorted((Path(root) / RCAEVAL_DIR).glob("*/report.json")) if (Path(root) / RCAEVAL_DIR).is_dir() else []
+    # Every count below has a non-empty denominator; an empty one says "not yet run", never 0 or 0/0.
+    synthetic = lambda runs: (f"{sum(run.get('synthetic_planner') is True for run in runs)}/{len(runs)}" if runs
+                              else "not yet run")
+    of_live = lambda text: text if live else "not yet run"
+    # A corpus manifest that records no count for a group says so rather than printing a zero.
+    recorded = lambda found, name: str(found[name]) if name in found else "an unrecorded number of"
+    pairs = [row[9] for row in pair_rows(bundles)]
+    # A distributed run that records single_host false is the only evidence of a second machine.
+    several = sum(s.get("single_host") is False for s in dist) + sum(r.get("single_host") is False for r in accepted)
+    if accepted:
+        sentinel_dist = f"{len(accepted)} runs, on four kind nodes that are containers on one Docker host."
+    elif current_runs(bundles, ("distributed-acceptance",)):
+        sentinel_dist = "none counted; its bundles are committed with no per-run summary."
+    else:
+        sentinel_dist = f"none counted. {SENTINEL_DIST_NONE}."
+    lines = [
+        f"- **Labels are pending.** Catalog pre-registration sign-off: {sign_off}. Replay label sets signed: "
+        + (f"{labels.get('signed', 'n/a')}/{labels.get('cases', 'n/a')}" if corpus is not None else "no corpus")
+        + ". Catalog scenario runs by label status: "
+        + (tally(scenario_parts(b)[8] for b in catalog_runs) if catalog_runs else "not yet run")
+        + ". Pair runs by label status: " + (tally(pairs) if pairs else "not yet run")
+        + f". Guard fixture evaluation: {', '.join(guard) or 'not yet run'}. RCAEval freeze file: {freeze}. "
+        "A row whose labels are not signed is unscored: it says what happened, not whether it was right.",
+        "- **One host.** Live runs naming a single-node cluster in their scope: "
+        + of_live(ratio(sum('single-node' in str(summary_of(b).get('scope') or '') for b in live), len(live))
+                  + " (a run whose scope names no single-node cluster is not thereby on several machines)")
+        + ". Host classes recorded by live runs: "
+        + of_live((tally(str(p.get("host_class") or "not recorded") for p in provenance) if provenance
+                   else "not recorded")
+                  + (f" ({len(live) - len(provenance)} of {len(live)} record no provenance block)"
+                     if len(provenance) < len(live) else ""))
+        + ". A host class is not a machine identity. "
+        + ("No committed distributed run records single_host false (a second machine)." if not several
+           else f"{several} distributed runs record single_host false (a second machine).")
+        + " File and kind distributed runs recording single_host true: "
+        + (ratio(sum(s.get('single_host') is True for s in dist), len(dist)) if dist else "not yet run")
+        + f". sentinel-dist: {sentinel_dist}",
+        f"- **Planner.** Live runs by planner: {of_live(tally(planner_kind(b) for b in live))}. Distributed runs "
+        f"with the synthetic planner: file and kind {synthetic(dist)}, sentinel-dist "
+        + (synthetic(accepted) if accepted else "none counted")
+        + "; those runs test coordination and fencing, not planning.",
+        f"- **Approvals.** Live runs by approval: {of_live(tally(approval_kind(b) for b in live))}. auto-lab is the "
+        "harness approving through the authenticated API under the automated-lab identity: no person decides. "
+        "pre-authorised is a run whose summary records approval given in advance for the whole run, not a person "
+        "approving each action. Live runs that record a person approving: "
+        + of_live(ratio(sum(approval_kind(b).startswith('a person') for b in live), len(live))) + ".",
+        "- **Small n, correlated repetitions.** Catalog scenarios run live: "
+        + (f"{len(per_scenario)}, at most {max(per_scenario.values())} runs each" if per_scenario
+           else "not yet run")
+        + ". Repeated runs share the host, the cluster, the model and often the revision, so they are not "
+        "independent trials; where an interval is given, read it rather than the point value.",
+        "- **Provenance.** "
+        + (f"{inferred}/{len(current)} current bundles have inferred provenance: their source revision is a best "
+           "guess, not a recorded commit." if current else "No evidence bundle is committed."),
+        "- **Replay inputs.** "
+        + (f"Of {len((corpus or {}).get('cases') or [])} replay cases, {recorded(counts, 'derived')} derived and "
+           f"{recorded(counts, 'adversarial')} adversarial ones are synthetic, and every case's cluster state is "
+           "reconstructed, not recorded. Replay judges decisions only; recovery comes from live runs."
+           if corpus is not None else "No replay corpus is committed."),
+        f"- **One model family, one application.** Models loaded in live runs: "
+        f"{of_live(tally(load.split(' ')[0] for b in live for load in model_loads(b)))}. Pre-registered replay runs "
+        f"committed: {len(committed)}/{len(ABLATION_RUNS)}. RCAEval reports committed: "
+        + (str(len(reports)) if reports else "not yet run")
+        + ". Workloads named by live runs: "
+        + of_live(tally(str(summary_of(b).get('workload') or 'not recorded') for b in live)) + ".",
+    ]
+    return "\n".join(lines)
+
+
+def evaluation_blocks(root, bundles):
+    return {
+        "evaluation-setup": evaluation_setup(bundles),
+        "evaluation-rcaeval": evaluation_rcaeval(root, bundles),
+        "evaluation-guard": evaluation_guard(bundles),
+        "evaluation-replay": evaluation_replay(root),
+        "evaluation-live": evaluation_live(bundles),
+        "evaluation-distributed": evaluation_distributed(bundles),
+        "evaluation-security": evaluation_security(bundles),
+        "evaluation-latency": evaluation_latency(root, bundles),
+        "evaluation-threats": evaluation_threats(root, bundles),
+    }
+
+
 def render_blocks(root):
     bundles = load_bundles(root)
     claims = load_claims(root)
@@ -1435,6 +2000,7 @@ def render_blocks(root):
                                    "Docker unhealthy after stop s", "Docker health when saved"],
                                   container_rows(bundles)),
         "claims": claims_table(claims, bundles),
+        **evaluation_blocks(root, bundles),
     }
 
 
