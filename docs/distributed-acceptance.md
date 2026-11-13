@@ -10,13 +10,16 @@ inside a Pod, Pod deletion and RBAC, admission and network policy denials).
 Template writes are counted from the API server's audit log, which Sentinel
 does not write, as invariant I7.
 
-**Status: deployed once, no run passed yet.** The manifests, the cluster
-configuration, the audit policy and the harness are checked by unit tests.
-The `sentinel-dist` cluster was created and deployed on 13 Nov 2026, and its
-first S0 runs repaired nothing: the Guard refused every proposal as stale and
-the restore after them failed ([first live attempts](#first-live-attempts)).
-Both are fixed in code and not yet run live. The results table below is
-empty; a later live run fills it.
+**Status: deployed twice, one S0 run passed, no matrix yet.** The
+manifests, the cluster configuration, the audit policy and the harness are
+checked by unit tests. The `sentinel-dist` cluster was created and deployed
+on 13 Nov 2026, and its first S0 runs repaired nothing: the Guard refused
+every proposal as stale and the restore after them failed. After those
+fixes a second deployment's first S0 run passed, and the five S0 runs after
+it in the same deployment each ended in about 15 s with no incident, because
+the harness counted the first run's RECOVERED incident as theirs
+([first live attempts](#first-live-attempts)). That is fixed in code and not
+yet run live. The results table below is empty; a later live run fills it.
 
 These are four containers on one Docker host. Each node has its own network
 namespace and kubelet, but they share one kernel, one clock and one disk.
@@ -314,6 +317,58 @@ After each run the operator puts the target's baseline template back when
 Sentinel did not, under uid and resourceVersion tests, and records it as an
 operator write.
 
+The Coordinator, the Observer and the five workers are long-lived
+Deployments with PVCs, so every run of a deployment shares their stores, as
+it shares the target. What each run does about that:
+
+- Before it injects, `Lab.begin_run` refuses to start
+  (`experiments/distributed/kind_acceptance.py::run_unsettled`) while an
+  earlier incident is not terminal (the Coordinator's `planning_blocker`
+  would hold this run's incident behind it, and this run's operator could
+  approve it), while the Observer's outbox holds an incident it has not
+  delivered yet (it would reach the Coordinator during this run and count
+  as this run's), while a seal is still required on the target, while the
+  target is not healthy at its baseline template, or when the baseline's
+  health evidence would pass the policy's `max_age_seconds` (4 h) before the
+  run could end, so the Guard would refuse it part way through a matrix.
+  Each refusal stops `run` (exit 2); the remedy is to let the incident end
+  or to deploy again into a new run directory, which starts every store
+  afresh. The Coordinator's and the Observer's stores must be readable for
+  this check; a store that cannot be read is not taken to be empty.
+- It remembers the incidents the store already holds. Waiting for a state
+  or for every incident to end, approving, and the records the invariants
+  and the expectation read cover only the incidents opened after that
+  (`Lab.incidents`, `scope_records`). S8 waits for a seal newer than the
+  ones earlier runs left in `target_ownership`.
+- After the restore it waits, with the operator still approving, until the
+  target has stayed healthy at its baseline for 20 s, every incident it
+  opened has ended and the Observer has delivered every incident it opened
+  (`Lab.settle`, up to 240 s), and only then copies the
+  records out. A restore, or Sentinel's own rollback, rolls `demo-api` out
+  with `Recreate`, and a Pod-less window longer than the Observer's 15 s
+  failure window opens an incident of its own a little after the rollout;
+  settling keeps that incident in the run that caused it. Each summary
+  lists the run's incidents with their opening times, the number of
+  earlier incidents left out, the settle result and every approval the
+  operator gave (`operator_actions`). A run that does not settle does not
+  pass.
+
+What stays across runs and is left alone: the fence epochs in
+`target_ownership` (they must keep growing, or the admission policy would
+deny later seals: the `sentinel.io/fence-epoch` annotation stays on the
+Deployment), the evidence and fence annotations on `demo-api` (the restore
+puts back the template only; the next write carries its own evidence), the
+Observer's episode checkpoint (a new generation, which every injection
+makes, starts a new failure episode, so a new fault opens a new incident),
+the Planner's journal and the approvals (both keyed by incident or action),
+and the Guard's restart history (the lab policy allows only ROLLBACK). The
+Executor ledgers, the transport receipts and worker results, and the
+Observer's outbox are read whole, so I4, I5, I6 and X3 check the
+deployment's whole history: an earlier run's write left in doubt fails I6
+in every later run until it is resolved, which is stricter, not looser. X3
+compares the Observer's acknowledged incidents with every incident the
+Coordinator recorded, earlier runs' included.
+
 Things a first live run must confirm rather than assume: that the node image
 pulls (its digest in `kind-dist.yaml` matches the one the kind v0.33.0
 release notes list for `kindest/node:v1.37.0`, compared with the published
@@ -454,6 +509,73 @@ and the Executor's patch (for example the progress-deadline write) still
 makes the patch fail its resourceVersion test: the action ends FAILED and
 is not re-planned, so S0 can still end without a repair.
 
+### Second deployment: one pass, then runs that waited for nothing
+
+Later on 13 Nov 2026 the lab was deployed again into a new run directory
+(12:53-12:55 UTC) with the harness at 2ef594a, and S0 was run once, then
+five times in a second `run` invocation against the same deployment. The
+run summaries, the Coordinator's journal and messages, the Observer's poll
+log and the target's managed fields, events and ReplicaSets, all read
+without writing, show:
+
+| Run (start, UTC) | Duration | Incidents in scope | Sentinel template writes | Operator restore | Result |
+| --- | --- | --- | --- | --- | --- |
+| S0 r1 (13:01:15) | 57.8 s | 1, RECOVERED | 1 | no | passed: every invariant, expectation met |
+| S0 r1-r5 of the second invocation (13:02:36-13:03:35) | 12.6-16.1 s each | none | 0 | yes | failed I3 (no incident) and X3 |
+
+The first run did what S0 is for. The Observer opened `INC-082C30CA9DF1`
+at 13:01:32, 16 s after the injection (the injected template's `Recreate`
+rollout left no Pod from 13:01:16), the operator approved it at 13:01:41,
+the Guard allowed it, executor-a rolled the template back at 13:01:44 and
+the Verifier found the target healthy: RECOVERED at 13:02:05, one template
+PATCH in the audit log. No stale refusal happened.
+
+Each later run restored the target 11 to 15 s after its injection. The
+harness's wait asked whether every incident in the Coordinator's store was
+terminal, and the store, which outlives runs on its PVC, still held the
+first run's RECOVERED incident, so the answer was yes at once
+(`Lab.terminal` at 2ef594a). The harness then copied the records, restored
+the target before the Observer's 15 s failure window could fill, and found
+no incident of its own. The Observer's poll log agrees: in each run it read
+no Pod of the target for only about 8 to 12 s, its incident count stayed 1
+through all five runs, and it delivered nothing. In the runs whose events
+were still listed when they were read (from 13:03:19), the restore came
+while the old Pod was still terminating, so no Pod of the injected template
+started. X3 failed as well, falsely: the
+Observer's outbox, read whole, holds the first run's delivered incident,
+which the Coordinator did record, but X3 compared it only with the run's
+own (empty) set of incidents.
+
+After the fifth run's restore (13:03:50) the target's managed fields show a
+further write by `kubectl set` (the manager the harness's injection uses) at
+13:03:51 and a `kubectl patch` putting the template back at 13:04:13, with no
+evidence folder for either; managed fields keep only each manager's latest
+write, so who made them is not recorded. In the 21 s between
+them the target had no Pod, and the Observer opened `INC-ECED0043B19F`
+at 13:04:08 for that generation (15), after the first incident had
+RECOVERED: a new fault on the same target opens a new incident, as the
+Observer's episode per generation intends
+(`services/observer/core.py::Observer.observe`). It was planned, and the
+Guard escalated it for approval at 13:04:10, before the patch. With no
+operator left it is still `AWAITING_APPROVAL`, with the target healthy at
+its baseline (generation 16). Through the Coordinator's `planning_blocker`
+it holds every later incident on `demo-api`, so any further run in this
+deployment would have opened an incident that could never be planned.
+
+What changed (offline, `tests/test_kind_acceptance_repeats.py`): each run
+starts only on a settled lab (no earlier incident open or undelivered),
+remembers the incidents already in the store,
+waits for, approves and checks only the ones it opens, and settles after its
+restore before it copies anything, as described under
+[live recipe](#live-recipe); S8 waits for a seal newer than earlier runs'.
+X3 compares the Observer's acknowledged incidents with every incident the
+Coordinator recorded. The symptom test, a store holding an earlier RECOVERED
+incident, gives states `[]` at 2ef594a and `RECOVERED` now. Under the new
+harness the deployment above would be refused before injecting, because of
+`INC-ECED0043B19F`; it was left as it is, read only. The next live attempt
+deploys again into a new run directory (or lets an operator decide that
+incident first) and runs S0 several times in one deployment.
+
 ## Results
 
 Generated by `python -m experiments.distributed.kind_acceptance table`;
@@ -501,6 +623,28 @@ quoted. P4.02 adds the measured RTO and RPO table to the
   the window moved onto the cluster's clock; `run` refusing a target with
   another UID; and `teardown` deleting nothing through a context that names
   another cluster.
+- `tests/test_kind_acceptance_repeats.py`: repeated runs in one deployment,
+  with the real `Lab` waiting, approving, settling and scoping over local
+  Coordinator and Observer databases that a scripted Observer and
+  Coordinator change as virtual time passes. The 13 Nov 2026 symptom: with an earlier RECOVERED
+  incident (delivered by the Observer) in the store, S0 waits for its own
+  incident and recovers it, and X3 holds; at 2ef594a the same test gives no
+  incident. Also: a run with no incident of its own times out instead of
+  passing on the earlier one; waiting for a state (S3, S4, S5) ignores
+  earlier incidents; an incident opened by the rollback's own rollout ends
+  inside its run, and the next run counts neither; an incident escalated
+  before the restore is decided by the operator while settling, and the
+  approval is recorded; a run that leaves an incident waiting does not pass
+  and the next run is refused; an incident the Observer has not delivered
+  holds the settle and refuses the next run until it is delivered and ends;
+  each condition `run_unsettled` refuses (earlier incident open or
+  undelivered, seal required, target off its baseline or not ready, baseline
+  too old for the run), and an unreadable Coordinator or Observer store
+  refuses rather than reading as empty; X3 still reports an incident no one
+  recorded; S8's seal must be newer than earlier runs'; and the Observer
+  opens a new incident for a new fault after an earlier one recovered (with
+  or without a healthy sample between), but none for a fault put back
+  within its failure window, as runs 2-5 were.
 - `tests/test_stale_replan.py`: the live symptom over loopback HTTP, with the
   real Planner, Guard and Executor workers and a fake API server whose
   resourceVersion moves after planning (before the Guard's first pass, and

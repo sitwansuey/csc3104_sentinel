@@ -838,9 +838,10 @@ injection must be in it, every generation the target gained must have a
 write in it, and the log must reach back to the run's start
 (`experiments/distributed/audit.py::completeness`). Each scenario's expected
 outcome is checked too (`experiments/distributed/kind_acceptance.py::expectation`).
-One Coordinator store serves every run of a deployment, so the other
-invariants are narrowed to the incidents each run opened
-(`experiments/distributed/kind_acceptance.py::scope_records`). The recipe,
+One Coordinator store serves every run of a deployment, so a run starts only
+on a settled lab (`experiments/distributed/kind_acceptance.py::run_unsettled`),
+and its waiting, approvals and other invariants are narrowed to the incidents
+it opened (`experiments/distributed/kind_acceptance.py::scope_records`). The recipe,
 the scenario matrix and the empty results table are in
 [distributed acceptance](distributed-acceptance.md). None of it has run:
 no claim here rests on it, and when it runs its nodes are still containers

@@ -6,8 +6,9 @@ kind_acceptance.Shell, so the context is always kind-sentinel-dist and the
 offline tests can drive it with a fake kubectl, docker and helm. The scenario
 functions follow experiments/distributed/scenarios.py, with Chaos Mesh, docker
 pause and fault points armed inside the Pods in place of local processes,
-proxies and signals. deploy and the first S0 runs have run against the lab
-once (13 Nov 2026); no run has passed yet.
+proxies and signals. deploy and S0 runs have run against the lab twice (13 Nov
+2026); one S0 run has passed, and the runs after it in the same deployment
+are why each run is now scoped to its own incidents (run_one).
 """
 import base64
 from contextlib import suppress
@@ -444,16 +445,24 @@ def s7(run):
     run.remove(skew)
 
 
+def newer_seal(ownership, before):
+    """The target_ownership row whose seal finished at an epoch above before (S8), or None."""
+    return next((item for item in ownership
+                 if item["sealed_epoch"] > before and not item["seal_required"]), None)
+
+
 def s8(run):
     stem = "executor.before_patch"
     holder = _holder(run, stem)
     row = run.lab.wait_state({"READY"}, 60)
+    # target_ownership outlives the run, so an earlier S8's seal is already there: wait for a newer one.
+    before = max((item["sealed_epoch"] for item in run.lab.ownership(strict=True)), default=0)
     run.mark()
     run.lab.revoke(row["active_action_id"])
-    sealed = run.lab.wait(lambda: run.lab.query("SELECT epoch, sealed_epoch FROM target_ownership WHERE "
-                                                "sealed_epoch > 0 AND seal_required = 0"), 120,
+    sealed = run.lab.wait(lambda: newer_seal(run.lab.ownership(), before), 120,
                           "the other Executor did not seal the target", interval=2)
-    run.notes["seal"] = sealed[0]
+    run.notes["seal"] = {"epoch": sealed["epoch"], "sealed_epoch": sealed["sealed_epoch"],
+                         "sealed_epoch_before": before}
     # As in the A4 design: the stale holder's patch reaches the API server 8 s late, after the seal.
     slow = run.create(delay_to_api_server(run.name("slow"), _app(holder), run.api_endpoint, 120))
     _release(run, holder, stem)
@@ -583,17 +592,35 @@ def _generation(document):
     return value if type(value) is int else None
 
 
-def run_one(lab, scenario, index, deployed, baseline, tokens, out):
-    """One scenario run: inject, fault, wait, collect, check, restore, and write its evidence folder.
+def opened_incidents(records):
+    """This run's incidents with the time the Coordinator's journal opened each, oldest first."""
+    opened = {row["incident_id"]: row["recorded_at"] for row in records.get("transitions", [])
+              if row.get("from_state") is None}
+    return sorted(({"incident_id": row["incident_id"], "state": row["state"],
+                    "opened_at": opened.get(row["incident_id"])} for row in records.get("incidents", [])),
+                  key=lambda item: (item["opened_at"] or "", item["incident_id"]))
 
-    Around the run it measures the control-plane clock against the harness's
-    (at the start and the end, Lab.clock_offset), so the audit window, the
-    log reads and the latencies are taken on the cluster's clock, and reads
-    the target's generation before the injection, before the restore and
-    after it, so audit.completeness can tell a short audit extract from a
-    quiet run. The run passes only when the invariants hold, the scenario's
-    expectation (kind_acceptance.expectation) is met, the extract is
-    complete and the harness raised nothing.
+
+def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
+    """One scenario run: inject, fault, wait, restore, settle, collect, check, and write its evidence folder.
+
+    The Coordinator, Observer and workers keep their stores across the runs
+    of a deployment, so the run first checks that the lab is settled and
+    remembers the incidents the store already holds (Lab.begin_run, which
+    refuses with AcceptanceError otherwise; policy is the deployed
+    policy.json, for the baseline's age). Waiting, approving, terminal
+    detection and the records then cover only the incidents this run opened.
+    After the restore it waits for the lab to settle (Lab.settle) with the
+    operator still approving, so an incident the restore's own rollout opens
+    ends in this run rather than in the next, and only then copies the
+    records out. Around the run it measures the control-plane clock against
+    the harness's (at the start and the end, Lab.clock_offset), so the audit
+    window, the log reads and the latencies are taken on the cluster's
+    clock, and reads the target's generation before the injection, before
+    the restore and after the settle, so audit.completeness can tell a short
+    audit extract from a quiet run. The run passes only when the invariants
+    hold, the scenario's expectation (kind_acceptance.expectation) is met,
+    the extract is complete, the lab settled and the harness raised nothing.
     """
     from experiments.distributed.run_scenarios import timeline
     run = Run(lab, scenario, index, deployed["policy_version"])
@@ -605,6 +632,8 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out):
     run.since = control_plane_window(since, None, offsets)[0]  # For kubectl logs, which the cluster's clock stamps.
     policy_version = deployed["policy_version"]
     run.api_endpoint = deployed.get("api_server", {}).get("endpoint")
+    prior = lab.begin_run(baseline, policy)  # Before the injection: nothing of this run is in the store yet.
+    approvals_before = len(lab.approvals)
     operator_actions, error = [], None
     stopping = threading.Event()
     approver = None
@@ -628,22 +657,24 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out):
         # The scenario approved by hand during its fault; from here the operator also approves what
         # waits for approval afterwards, such as a re-plan after a stale refusal (--stale-replans).
         approver = start_approver()
+    settled = None
     try:
         remaining = max(10.0, DEADLINE_SECONDS - (lab.monotonic() - started))
         terminal = True if scenario.name == "S9" else lab.wait_terminal(remaining)
+        generation_at_end = _generation(lab.target())
     finally:
-        stopping.set()
-        if approver is not None:
-            approver.join(5)
+        try:  # The target goes back to its baseline even when waiting failed.
+            if scenario.name != "S9":
+                operator_actions.append(lab.restore(baseline))
+                settled = lab.settle(baseline)
+        finally:
+            stopping.set()
+            if approver is not None:
+                approver.join(5)
+    operator_actions += [{"operator_action": "approve", **item} for item in lab.approvals[approvals_before:]]
     work = out / "copied" / f"{scenario.name}-r{index}"
     view = RunView(work, tokens)
-    generation_at_end = None
-    try:
-        collect(lab, view, run.since, run.saved_logs)
-        generation_at_end = _generation(lab.target())
-    finally:  # The target goes back to its baseline even when collecting failed.
-        if scenario.name != "S9":
-            operator_actions.append(lab.restore(baseline))
+    collect(lab, view, run.since, run.saved_logs)
     generations = (generation_start, _generation(lab.target()))
     offsets.append(lab.clock_offset())
     until = stamp(lab.clock() + timedelta(seconds=1))
@@ -653,7 +684,8 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out):
     problems = audit.completeness(rows, injected=scenario.name != "S9", generations=generations,
                                   first_at=log["first_at"], window_start=window[0])
     records = scope_records(invariants.collect(view, terminal_in_time=terminal,
-                                               cluster_writes=audit.template_writes(rows, problems)), window[0])
+                                               cluster_writes=audit.template_writes(rows, problems)), window[0],
+                            prior)
     records["audit"], records["audit_completeness"] = rows, problems
     results = [item for item in [*invariants.check(records), invariants.i7(records)] if item["id"] in scenario.checks]
     access = records["access"]
@@ -668,14 +700,17 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out):
     failures = expectation(scenario.name, incidents=records["incidents"], rows=rows, notes=run.notes,
                            stalled=run.stalled, takeover=takeover, recovery=recovery,
                            generation_at_end=generation_at_end)
-    passed = invariants_passed and not failures and not problems and error is None
+    unsettled = settled is not None and not settled["settled"]
+    passed = invariants_passed and not failures and not problems and error is None and not unsettled
     summary = {"schema": "sentinel-dist-acceptance-run-v1", "scenario": scenario.name, "title": scenario.title,
                "fault": scenario.fault, "file_mode_counterpart": scenario.catalogue, "expect": scenario.expect,
                "repeat_index": index, "context": CONTEXT, "date": started_at.date().isoformat(),
                "started_at": stamp(started_at), "ended_at": until,
                "duration_seconds": round(lab.monotonic() - started, 1), "fault_at": run.fault_at,
                "notes": run.notes, "harness_error": error, "terminal_in_time": terminal,
-               "states": sorted({row["state"] for row in records["incidents"]}), "invariants": results,
+               "states": sorted({row["state"] for row in records["incidents"]}),
+               "incidents": opened_incidents(records), "earlier_incidents": len(prior), "settle": settled,
+               "invariants": results,
                "invariants_passed": invariants_passed,
                "expectation": {"expect": scenario.expect, "met": not failures, "failures": failures},
                "passed": passed, "audit": audit.summary(rows), "audit_lines_skipped": skipped,
@@ -726,6 +761,8 @@ def run(shell, run_dir, names, *, repeat, min_free_gib, lock, lab=None):
         raise AcceptanceError("Run deploy first: <run-dir>/lab.json is missing")
     deployed = json.loads(state.read_text(encoding="utf-8"))
     baseline = json.loads((run_dir / "inputs" / "baseline.json").read_text(encoding="utf-8"))
+    policy_file = run_dir / "inputs" / "policy.json"
+    policy = json.loads(policy_file.read_text(encoding="utf-8")) if policy_file.is_file() else None
     preflight(shell, min_free_gib=min_free_gib, lock=lock)
     lab = lab or Lab(shell, run_dir)
     check_target(lab, baseline)
@@ -735,7 +772,8 @@ def run(shell, run_dir, names, *, repeat, min_free_gib, lock, lab=None):
     try:
         for name in names:
             for index in range(1, repeat + 1):
-                summaries.append(run_one(lab, SCENARIOS[name], index, deployed, baseline, tokens, run_dir))
+                summaries.append(run_one(lab, SCENARIOS[name], index, deployed, baseline, tokens, run_dir,
+                                         policy=policy))
                 write_overview(run_dir, deployed, tokens)
     finally:
         lab.close()
