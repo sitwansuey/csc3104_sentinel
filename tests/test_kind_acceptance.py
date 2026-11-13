@@ -264,6 +264,18 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(command[-2:], ["create", "--filename=-"])
         self.assertFalse(any(token in " ".join(command) for token in tokens))
 
+    def test_a_raw_proxy_read_carries_no_request_timeout_query(self):
+        """Found live (P4.01 deploy): --request-timeout made the readyz proxy path /readyz?timeout=30s, which the
+        demo API answers 404, so the baseline window could never pass. Other calls keep the request timeout."""
+        runner = FakeRunner()
+        shell = acceptance.Shell("kind-sentinel-dist", runner=runner)
+        shell.kubectl("get", "--raw", "/api/v1/namespaces/w/services/demo-api:8080/proxy/readyz", check=False)
+        raw = runner.calls[-1]
+        self.assertEqual(raw[:2], ["kubectl", "--context=kind-sentinel-dist"])
+        self.assertFalse(any(part.startswith("--request-timeout") for part in raw))
+        shell.kubectl("get", "deployment", "demo-api", namespace="w", check=False)
+        self.assertIn("--request-timeout=30s", runner.calls[-1])
+
     def test_the_certificate_names_the_coordinator_service_and_loopback(self):
         names = acceptance.certificate_names()
         self.assertIn("DNS:sentinel-coordinator.sentinel-dist.svc", names)
