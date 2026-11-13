@@ -10,7 +10,7 @@ inside a Pod, Pod deletion and RBAC, admission and network policy denials).
 Template writes are counted from the API server's audit log, which Sentinel
 does not write, as invariant I7.
 
-**Status: deployed twice, one S0 run passed, no matrix yet.** The
+**Status: deployed several times; the first matrix stopped in S1a, no results yet.** The
 manifests, the cluster configuration, the audit policy and the harness are
 checked by unit tests. The `sentinel-dist` cluster was created and deployed
 on 13 Nov 2026, and its first S0 runs repaired nothing: the Guard refused
@@ -18,8 +18,13 @@ every proposal as stale and the restore after them failed. After those
 fixes a second deployment's first S0 run passed, and the five S0 runs after
 it in the same deployment each ended in about 15 s with no incident, because
 the harness counted the first run's RECOVERED incident as theirs
-([first live attempts](#first-live-attempts)). That is fixed in code and not
-yet run live. The results table below is empty; a later live run fills it.
+([first live attempts](#first-live-attempts)). The first matrix, at
+1adcfe3, passed 4 of 5 S0 runs and stopped in S1a r1, because the harness
+deleted its PodChaos before Chaos Mesh had acted on it, so the Planner was
+never killed
+([first matrix](#first-matrix-1adcfe3-a-chaos-object-removed-before-chaos-mesh-acted)).
+Both are fixed in code and not yet run live. The results table below is
+empty; a later live run fills it.
 
 These are four containers on one Docker host. Each node has its own network
 namespace and kubelet, but they share one kernel, one clock and one disk.
@@ -761,6 +766,135 @@ Still to run live: rebuild the Coordinator and worker images, deploy into a
 new run directory and run S0 several times in one deployment, then the
 other scenarios.
 
+### First matrix (1adcfe3): a chaos object removed before Chaos Mesh acted
+
+On 13 Nov 2026 the lab was deployed again (its Pods created at 20:48 UTC)
+and the whole matrix was started at 1adcfe3 (`--scenarios all --repeat 5`).
+S0 passed 4 of 5; the fifth ended with a kubectl write in doubt that was
+resolved as SUPERSEDED, a known limit of the kubectl transport. The matrix
+stopped in S1a r1. The Planner's log and fault directory, its Pod, the
+namespace's events and Chaos Mesh's controller log, all read without
+writing at 21:10 UTC, show:
+
+| Time (UTC) | What happened | Read from |
+| --- | --- | --- |
+| 20:59:02.146 | the Planner reached `planner.mid_inference` (block) | Planner log `fault_point.reached`, `/faults/planner.mid_inference.reached` |
+| 20:59:15.024 | Chaos Mesh validated the create of PodChaos `s1a-r1-planner` | controller log |
+| 20:59:15.668 | the controller's `initFinalizers`: "unable to get chaos ... not found", then "fail to update" at 15.742 | controller log, event `Failed to update finalizer` |
+| 21:09:02.093 | the Planner went on only when the fault point's own limit (`MAX_BLOCK_SECONDS`, 600 s) ran out, with no `.release` written | Planner log `fault_point.released` |
+
+The Planner's Pod kept its UID and had 0 restarts: it was never killed.
+Its incident stayed OPEN past the deadline (562 s), the settle failed, and
+the next run was refused, correctly (the earlier incident OPEN, as
+`planning_blocker`).
+
+Why: at 1adcfe3 `s1a` created the PodChaos (`kubectl apply`), dropped its
+hold on the Planner (`run.held.clear()`), and ran `kubectl rollout status`
+on the Planner's Deployment, which returned at once because nothing had
+happened to it yet. `s1a` then returned, and `run_one`'s `finally:
+run.cleanup()` deleted every chaos object still listed, about 0.6 s after
+it was created and before the controller had set its finalizer. With the
+hold already dropped, the cleanup did not release the Planner either.
+Nothing in the harness checked that a fault was in effect, so every chaos
+scenario had the same gap even where the timing hid it: S1b and S1c waited
+for the incident under a pod-failure that might not have been injected
+yet, S3 and S4 released the holder before their partition, S6 approved
+before its partition, S7 waited under a skew not yet applied, S8 released
+the holder before its delay, and S2 trusted `docker pause`'s exit status.
+
+What changed (offline, `experiments/distributed/kind_acceptance_live.py::Run`
+and `experiments/distributed/kind_acceptance.py::chaos_effect`):
+
+- **Selection is read before creation** (`Lab.chaos_targets`). Every
+  selector must name `sentinel-dist`, which must carry
+  `chaos-mesh.org/inject=enabled` (Chaos Mesh runs with
+  `enableFilterNamespace`, so without it nothing is injected), every app it
+  names must have a running Pod, a mode-one fault must have exactly one
+  candidate, and a fault aimed at the holder of a fault point must select
+  that holder's Pod (by UID).
+- **A fault is confirmed in effect from the cluster before the scenario goes
+  on** (`Run.create`, `Lab.confirm_chaos`, polling every second for up to
+  `CHAOS_CONFIRM_SECONDS`, 60 s). For pod-kill: no Pod it selected is still
+  running (its UID gone or being deleted). For pod-failure, partition,
+  delay and TimeChaos: `desiredPhase` Run and a record Injected for every
+  Pod it selected (both ends of a partition, selector keys `.` and
+  `.Target`; each named container for TimeChaos), and for pod-failure the
+  container that was running in the selected Pod no longer is. A record for
+  a Pod the harness did not select, in another namespace or for another
+  container is an error at once. When confirmation does not come in time
+  the run stops with a harness error naming what was missing, and does not
+  pass. `docker pause` and `unpause` are confirmed by the node's
+  `State.Paused`.
+- **A hold ends only on evidence.** S1a drops its hold on the Planner only
+  when the confirmation shows the holder's Pod UID killed, and S1b and S1c
+  only when it shows the holder's container replaced (`Run.fault_ended`).
+  S1a then waits up to 180 s for the replacement Pod to be Ready before it
+  removes the object.
+- **A fault is removed only after its window.** Waits under a duration
+  fault are bounded by what is left of its duration (`Run.window_left`).
+  Removal reads the object again first, deletes it with `--wait` and checks
+  that it is gone; a fault that Chaos Mesh had already ended (its duration
+  ran out) is a harness error, since it did not cover the scenario's
+  window.
+- **Nothing is left behind silently.** `Run` tracks every fault point it
+  armed and every process it holds. `cleanup`, in `run_one`'s `finally`,
+  unpauses nodes, removes chaos objects, releases held processes (or
+  records that their Pod or container went), disarms points no process
+  took and releases any process that took one without being held. Each
+  step is an operator action in `operator_actions`; a step that fails is a
+  cleanup problem, added to the harness error. `Lab.settle` also reads the
+  cluster again for what the run's faults left (`Run.leftovers`: a chaos
+  object still there, a node still paused, a point still held or armed)
+  and does not settle while there is any; the summary reports it under
+  `settle.leftovers` and `cleanup`. `run` refuses to start while a chaos
+  object with the harness's label is in `sentinel-dist`.
+- **The evidence is in each summary**: under `notes.chaos`, the Pods each
+  selector matched, the confirmation (records and their phases,
+  `desiredPhase`, the killed Pods or replaced containers, when it was
+  confirmed and how long it took), the replacement Pod, when the object
+  was removed and whether it was still in effect then; under `notes.pause`
+  the confirmed pause and unpause; under `notes.fault_point_ended` the
+  holds a confirmed fault ended.
+
+Selectors and the namespace annotation were checked: every chaos object
+selects Pods only in `sentinel-dist`, by their `app` label, which is the
+Deployment's name and its Pod template's label in the manifests and on the
+live Pods. `sentinel-dist` carries `chaos-mesh.org/inject=enabled`;
+`sentinel-dist-workload` does not, and no chaos aims at it, so that is
+right (S8's delay reaches the API server by `externalTargets`, an address,
+not a Pod selector). The harness makes no StressChaos (`chaos` refuses it);
+`teardown` and the leftover check still look for one.
+
+To confirm live, not assumed: that Chaos Mesh 2.8.2 records both ends of a
+partition (keys `.` and `.Target`, from its NetworkChaos selector specs;
+the P4.03 runs saw only source-side records, for a delay without a
+target). If it records only the source, every S3, S4 and S6 run stops with
+"not confirmed in effect" naming the target Pods rather than passing. Also
+that pod-failure shows as a new container ID (or a stopped container) in
+the Pod's status, and that a pod-kill's replacement is Ready within 180 s.
+If the harness process itself is killed, its cleanup does not run: a chaos
+object may stay (the next `run` refuses to start until it is removed), a
+node may stay paused, and a fault point stays blocked until its own 600 s
+limit.
+
+Tests: `tests/test_kind_chaos_confirmation.py`, with a fake cluster whose
+Chaos Mesh selects after half its delay and injects after all of it, as the
+live controller does. For each fault kind (pod-kill in S1a, pod-failure in
+S1b and S1c, partition in S3, S4 and S6, delay in S8, TimeChaos in S7,
+`docker pause` in S2): the scenario goes on only once the fault is in
+effect, and a fault that never takes effect stops the run with a harness
+error and leaves nothing behind. Also: a fault that ended before its
+removal is an error; an unannotated namespace, a selector with no running
+Pod or one that would not select the holder is refused before anything is
+created; a record for a Pod the harness did not select is an error, not a
+wait; the selectors match the manifests' Pod labels and only
+`sentinel-dist` is annotated; a chaos object that cannot be removed is a
+cleanup problem and keeps the lab from settling; a point no process reached
+is disarmed, and a second process that took it is released; and `run_one`
+records the failed confirmation and every cleanup step. At 1adcfe3 every one
+of these tests fails, the S1a one because the PodChaos is deleted before the
+fake controller injects it and the Planner is left blocked.
+
 ## Results
 
 Generated by `python -m experiments.distributed.kind_acceptance table`;
@@ -852,6 +986,10 @@ quoted. P4.02 adds the measured RTO and RPO table to the
   third deployment's CONFLICTs (r2, r3) and its Pod-less first reading (r1),
   as listed under
   [third deployment](#third-deployment-recreate-and-conflicts).
+- `tests/test_kind_chaos_confirmation.py`: every fault confirmed in effect
+  before a scenario goes on, a fault that never takes effect a harness
+  error, and nothing left behind, as listed under
+  [first matrix](#first-matrix-1adcfe3-a-chaos-object-removed-before-chaos-mesh-acted).
 - `tests/test_kind_acceptance.py` also checks that S6 starts its operator
   only after its runner returns, while S0 approves from the start, and that
   `deploy` applies Sentinel without the workload and stops when the target's

@@ -904,9 +904,9 @@ class FakeLab:
         self.steps.append("begin")
         return frozenset({"INC-EARLIER"})
 
-    def settle(self, baseline):
+    def settle(self, baseline, *, leftovers=None):
         self.steps.append("settle")
-        return {"settled": True, "seconds": 20.0, "target": [], "open": []}
+        return {"settled": True, "seconds": 20.0, "target": [], "open": [], "leftovers": leftovers()}
 
     def clock_offset(self):
         self.steps.append("offset")
