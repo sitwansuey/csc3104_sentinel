@@ -18,6 +18,8 @@ The main files separate execution decisions from persistence:
   workload locks.
 - `services/executor/kubernetes_adapter.py`: restricted Kubernetes reads and conditional
   template writes.
+- `services/executor/rest_adapter.py`: the optional structured REST transport
+  (P5.08): the same patches over HTTPS, with definite rejections decided at once.
 - `runtime/executor_pipeline.py`: Coordinator eligibility, delivery and restart
   orchestration.
 - `services/executor/delivery_store.py`: SQL for delivery-conflict audit records;
@@ -178,7 +180,9 @@ questions: did this action's write commit, and can it still commit?
 | R3 | This action's evidence, version still V0 (impossible) | NEEDS_RECONCILIATION | INCONSISTENT |
 | R4 | This action's fence marker with a nonce this host journaled, or a fence this host saw commit; version moved | CONFLICT | FENCED |
 | R4 | The same, version still V0 (impossible) | NEEDS_RECONCILIATION | INCONSISTENT |
+| R5 | Version moved, no evidence for this action, and this attempt definitely rejected (REST transport) | CONFLICT | DEFINITE_REJECTION |
 | R5 | Version moved, no evidence for this action | SUPERSEDED | ADVANCED_WITHOUT_EVIDENCE |
+| R6 | Same UID, version still V0, and this attempt definitely rejected (REST transport) | FAILED | DEFINITE_REJECTION |
 | R6 | Same UID, version still V0 | NEEDS_RECONCILIATION | UNCHANGED_IN_DOUBT |
 
 "This action's evidence" is checked at action level: the annotation must be the
@@ -188,8 +192,11 @@ nonce need not be this host's, so a peer host's committed write of the same
 action is adopted as APPLIED with no second write. Seeing the desired template
 is never enough: another actor might have installed it. A copied marker for
 another action, or one with a forged or stale proposal hash, is not adopted.
-Rows for a definite API rejection (R5 CONFLICT, R6 FAILED) are reserved for a
-later rejection classifier; nothing produces them yet.
+The rows for a definite rejection (R5 CONFLICT, R6 FAILED) apply only to the
+attempt's own first check after the optional REST transport reported that
+its one request did not commit
+([below](#structured-rest-transport-p508-optional)); the kubectl transport
+never produces them.
 
 The table relies on three Kubernetes assumptions:
 
@@ -368,6 +375,74 @@ retries. A confirmed conditional-write conflict is reported without retrying the
 write. A timeout or other unknown write outcome triggers reconciliation. It
 never starts another spec mutation to find out whether the first succeeded; the
 only write reconciliation may send is the metadata-only fence above.
+
+### Structured REST transport (P5.08, optional)
+
+kubectl folds every HTTP outcome into an exit code and free text, so the
+kubectl adapter reports every failed write as `WriteOutcomeUnknown`, and a
+write the API server plainly refused (an admission denial, a failed
+resourceVersion test) waits in doubt for the fence. The optional REST
+transport, `rest_adapter.py`, reads the HTTP status as data instead.
+`KubernetesRESTDeploymentAPI` inherits the kubectl adapter's allowlist,
+snapshot checks and exact patches (`conditional_restore`,
+`conditional_scale`, `fence`), so both transports send the same JSON Patch;
+it replaces only the reads and the one-request submit with a small
+standard-library HTTPS client. Each request uses a new connection and is
+never resent.
+
+| Answer to the one PATCH | Adapter raises | Executor result |
+| --- | --- | --- |
+| 200 showing exactly the requested change | (returns the snapshot) | APPLIED after the usual evidence check |
+| 400, 401, 403, 404, 409, 422 or 429 | `WriteRejected(status, reason)` | one fresh read, then the table with the rejection: this action's evidence still wins (APPLIED), a deleted or replaced target is SUPERSEDED, a moved version is CONFLICT and an unchanged one FAILED, both with basis DEFINITE_REJECTION; no fence, no settle delay |
+| TCP or TLS connect failed, so no byte was sent | `WriteRejected("not_sent")` | the same as a 4xx |
+| 408, any 5xx, another status, a timeout or reset after sending, a 200 that does not show the change | `WriteOutcomeUnknown` | the table and the fence, exactly as with kubectl |
+
+A SCALE's autoscaler read lists `autoscaling/v2` HorizontalPodAutoscalers in
+the target's namespace; a failed list is `ReadUnavailable`, so no write is
+sent. A read's 404 means the Deployment is absent only when the body is the
+API server's own NotFound Status for this Deployment; a bare 404 is
+`ReadUnavailable`.
+
+- **Selection.** Trusted configuration only: `"transport": "rest"` in the
+  Executor worker configuration, `--transport rest` with
+  `runtime/live_executor.py` or the wedge harness. The default is `kubectl`.
+  A worker bound to the lab file cluster refuses `rest`.
+- **Credentials.** `from_kubeconfig` runs one read-only
+  `kubectl config view --raw --minify --flatten --output=json` for the
+  selected context and parses it in memory; kubectl is never run again by
+  the adapter. Supported: a bearer token, a token file (read again for every
+  request, so a projected ServiceAccount token can rotate) and a client
+  certificate. Exec plugins, auth providers, basic auth, impersonation,
+  proxies, `tls-server-name` and `insecure-skip-tls-verify` are refused with
+  a configuration error. A client certificate and key pass through private
+  temporary files that are deleted as soon as TLS has loaded them, also on
+  error.
+- **TLS.** Verification is always on: the CA from the kubeconfig, or the
+  system store; hostname checks; TLS 1.2 or newer. Plain http is accepted
+  only to a loopback IP address, which only the tests use.
+- **No echo.** Only the HTTP status and a metav1 StatusReason word from an
+  allowlist reach an exception or a log line (`executor.rest.rejected`; the
+  Executor then logs `executor.write.rejected` with the class name only).
+  The server's Status.message, response bodies and the token never do.
+- **Still kubectl.** The Guard's optional reference reads and server dry run,
+  and the credential view above, still run kubectl, so this does not yet
+  remove kubectl from the Executor image.
+
+The safety argument is in the
+[distributed model](../../docs/distributed-model.md#fencing-limits).
+`tests/test_rest_executor_adapter.py` runs the REST adapter against a real
+HTTP server on loopback (`tests/support/fake_apiserver.py`) that fronts the
+same simulated Deployment the kubectl stand-in drives, and
+`TransportParityMixin` runs one set of Executor scenarios over both
+transports, and `RESTExecutorSuiteTests` reruns `tests/test_executor.py`'s
+`ExecutorTests` with the REST transport as the default cluster. This is
+offline only; no REST write has reached an API server
+(`L-REST-TRANSPORT-OFFLINE`). The live comparison is written in
+[testing](../../docs/testing.md#rest-transport-live-recipe-p508) and has not
+run. Owner sign-off is pending on: the set of statuses treated as definite
+rejections; a failed connect counted as not sent; FAILED (version unchanged)
+and CONFLICT (version moved) for a rejected write; and the rejection not
+being journaled, so a failed read after it leaves the action in doubt.
 
 ## Coordinator and Verifier integration
 

@@ -153,6 +153,12 @@ An Executor may also set `"fence_after_seconds": 30`. A write still in doubt
 with the same UID and resourceVersion after that long is then settled by a
 metadata-only fence ([Executor guide](../services/executor/README.md#fenced-abort-for-a-write-still-in-doubt)).
 Leave it out to keep fencing off, the default.
+An Executor may also set `"transport": "rest"` to read and write the
+Deployment with its own HTTPS client instead of kubectl, so a definite
+rejection is decided at once
+([Executor guide](../services/executor/README.md#structured-rest-transport-p508-optional)).
+It is tested offline only (`L-REST-TRANSPORT-OFFLINE`); leave it out to keep
+kubectl, the default. A worker bound to the lab file cluster refuses it.
 
 Any worker may set `"max_clock_skew_seconds": 2` (up to 3600). It then claims
 new work only while its measured offset from the Coordinator's clock plus the

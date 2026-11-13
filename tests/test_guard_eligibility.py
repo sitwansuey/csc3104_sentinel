@@ -85,9 +85,18 @@ class EligibilityTests(unittest.TestCase):
         self.policy = {}
         self.assertEqual([result["status"] for result in self.run_checks()], ["SKIP"])
 
-    def test_nonrollback_actions_skip_checks(self):
+    def test_actions_that_start_no_pods_skip_checks(self):
+        for action in ("NO_ACTION", "ESCALATE"):
+            with self.subTest(action=action):
+                self.proposal["action"] = action
+                self.assertEqual([result["status"] for result in self.run_checks()], ["SKIP"])
+
+    def test_scale_runs_the_same_checks_as_a_rollback(self):
+        # P5.07: a SCALE starts new Pods from the live template, whose configuration is the baseline's.
+        rollback = [(item["code"], item["status"]) for item in self.run_checks()]
         self.proposal["action"] = "SCALE"
-        self.assertEqual([result["status"] for result in self.run_checks()], ["SKIP"])
+        self.assertEqual([(item["code"], item["status"]) for item in self.run_checks()], rollback)
+        self.assertNotIn("SKIP", {status for _, status in rollback})
 
     def test_malformed_policies_reject_instead_of_silently_ignoring_rules(self):
         for block, key, value in (

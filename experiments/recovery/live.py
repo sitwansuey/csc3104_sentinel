@@ -33,6 +33,7 @@ from services.executor.core import ACTION_ANNOTATION, execute, reconcile
 from services.executor.store import ActionConflict, SQLiteExecutionLedger, fingerprint
 from services.guard.core import proposal_fingerprint
 from services.guard.preview import _private_file
+from services.guard.scale import autoscalers_for
 from services.executor.kubernetes_adapter import KubectlDeploymentAPI, WriteOutcomeUnknown
 from services.observer.kubernetes_adapter import deployment_to_observation
 from services.observer.core import Observer
@@ -207,6 +208,10 @@ class Experiment:
         if proposal.get("action") == "RESTART":
             with SQLiteExecutionLedger(self.directory / "executor.sqlite") as ledger:
                 state["restart_history"] = ledger.restart_history(proposal["target"])
+        if proposal.get("action") == "SCALE":
+            # P5.07: the HorizontalPodAutoscalers that scale this Deployment, read like the Executor's own check.
+            listing = json.loads(self.kubectl("get", "horizontalpodautoscalers.autoscaling", "-o", "json").stdout)
+            state["autoscalers"] = autoscalers_for(listing, self.name)
         return state
 
     def phase(self, name, scenario=None):

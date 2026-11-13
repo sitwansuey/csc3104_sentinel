@@ -63,11 +63,16 @@ PINNED_VARIABLES = {
     "newEpoch": "3d02a087e5f46e181aa15f04b4d650c782ce334d055b15e0ab75843ffdb257f1",
     "oldFence": "8188d014d748873f4c0b353520aff7f479f5616b3e3420eb62225d1a6beb58c6",
     "newFence": "1f4c8cabe8836b9c08d95c343aa580d95ad29a9c73146ab9c5e554ed82b0874b",
-    "templateChanged": "754b7e8252e2e59b9cf528d221e6f85c3a3f558156d2ae878f4206a238af6ee2"}
+    "templateChanged": "754b7e8252e2e59b9cf528d221e6f85c3a3f558156d2ae878f4206a238af6ee2",
+    # P5.07: re-pinned offline for the SCALE exception; the live harness has not been run against this text.
+    "oldExecution": "592f8e366847e4121f1c8742e722aedbfe79760e71a735de46197bfae0561ac5",
+    "newExecution": "fc0157933f0b269c821cc869c741058ea405da57d776749b09751a19770d5407"}
 PINNED_VALIDATIONS = {
-    "The Sentinel Executor may not change spec.replicas":
-        "8cacfd79faeab567e5497ae3ec0c2145e9aec23340213a55a2cc0c2057df2b95",
-    "The Sentinel Executor may change no spec field other than spec.template":
+    "The Sentinel Executor may not change spec.replicas except as a reviewed SCALE (up, to at most 10, with new "
+    "SCALE evidence naming that count and no template or fence change)":
+        "58572ad4fd696796d19e748e940d7c5ca27c8c4632d87dd717ef9a9ab002c4df",
+    "The Sentinel Executor may change no spec field other than spec.template "
+    "(spec.replicas only as the SCALE rule allows)":
         "fa76c39f0763c89d4f944576913247a83a6a6a894a57e02175031712a58d4359",
     "The Sentinel Executor may not change metadata.labels":
         "990771f33819df0386827ca9ba0893cfb79ca6b0290273991bb9800ff4a9ecee",
@@ -224,6 +229,32 @@ class ExecutorAdmissionPolicyTests(unittest.TestCase):
                              "variables.newEpoch == variables.oldEpoch")
         self.assertEqual(len(self.rules), 9)
 
+    def test_the_replicas_rule_allows_only_the_reviewed_scale_shape(self):
+        # P5.07: structure only; whether the API server evaluates it so is for the live recipe (not run).
+        rule = self.rule_with_message("may not change spec.replicas except as a reviewed SCALE")
+        for clause in ("object.spec.replicas == oldObject.spec.replicas", "!variables.templateChanged",
+                       "object.spec.replicas > oldObject.spec.replicas", "object.spec.replicas <= 10",
+                       "variables.newFence == variables.oldFence", "variables.newEpoch == variables.oldEpoch",
+                       "variables.newExecution != variables.oldExecution",
+                       """variables.newExecution.contains('"action":"SCALE"')""",
+                       """'"replicas":' + string(object.spec.replicas) + ',"target_uid":'"""):
+            with self.subTest(clause=clause):
+                self.assertIn(clause, rule)
+        # Every SCALE clause is joined by && inside the one exception, so no clause alone lets a change through.
+        exception = rule[rule.index("(!variables.templateChanged"):]
+        self.assertNotIn("||", exception)
+        for name, key in (("oldExecution", ACTION_ANNOTATION), ("newExecution", ACTION_ANNOTATION)):
+            self.assertIn(f"['{key}']", self.variables[name])
+
+    def test_the_scale_evidence_text_the_rule_matches_is_what_the_executor_writes(self):
+        from services.executor.actions import evidence as action_evidence
+        from shared.canonical import canonical_json
+        proposal = {"action_id": "ACT-1", "action": "SCALE", "target": {"uid": "u"},
+                    "parameters": {"baseline_id": "B", "desired_replicas": 3, "template_sha256": "a" * 64}}
+        text = canonical_json(action_evidence(proposal, "b" * 64, "c" * 32))
+        self.assertIn('"action":"SCALE"', text)
+        self.assertIn('"replicas":3,"target_uid":', text)
+
     def test_each_epoch_rule_holds_the_strict_pattern_itself(self):
         # The order rule also holds the pattern, so finding it anywhere would let a loose format rule pass:
         # with no stored epoch the order rule is skipped, and only the format rule refuses a first "06".
@@ -280,7 +311,7 @@ class ExecutorAdmissionPolicyTests(unittest.TestCase):
 class AdapterStaysInsidePolicyTests(unittest.TestCase):
     """Every JSON Patch path the production adapter sends is one the policy lets the Executor change."""
 
-    ALLOWED_PATHS = {"/metadata/uid", "/metadata/resourceVersion", "/spec/template"} | {
+    ALLOWED_PATHS = {"/metadata/uid", "/metadata/resourceVersion", "/spec/template", "/spec/replicas"} | {
         "/metadata/annotations/" + key.replace("/", "~1")
         for key in (ACTION_ANNOTATION, FENCE_ANNOTATION, FENCE_EPOCH_ANNOTATION)}
 
@@ -303,10 +334,10 @@ class AdapterStaysInsidePolicyTests(unittest.TestCase):
         send(api, deployment["metadata"]["resourceVersion"])
         return runner.patches
 
-    def evidence(self, template, action=None):
+    def evidence(self, template, action=None, **extra):
         evidence = {"action_id": "ACT-LIVE-001", "proposal_sha256": "a" * 64, "target_uid": self.target["uid"],
                     "template_sha256": fingerprint(template), "attempt_id": "b" * 32}
-        return dict(evidence, action=action) if action else evidence
+        return dict(evidence, action=action, **extra) if action else evidence
 
     def sends(self):
         restarted = restart_template(self.template, "RST-0123456789abcdef")
@@ -316,6 +347,9 @@ class AdapterStaysInsidePolicyTests(unittest.TestCase):
             "restart": lambda api, version: api.conditional_restore(
                 target=self.target, version=version, template=restarted,
                 evidence=self.evidence(restarted, "RESTART")),
+            "scale": lambda api, version: api.conditional_scale(
+                target=self.target, version=version, replicas=2,
+                evidence=self.evidence(self.deployment["spec"]["template"], "SCALE", replicas=2)),
             "fence": lambda api, version: api.fence(target=self.target, version=version,
                                                     marker=fence_marker("ACT-LIVE-001", "c" * 32)),
             "seal": lambda api, version: api.fence(target=self.target, version=version,
@@ -347,7 +381,9 @@ class AdapterStaysInsidePolicyTests(unittest.TestCase):
                 paths = {operation["path"] for operation in patch}
                 writes_template = "/spec/template" in paths
                 self.assertEqual(writes_template, name in ("rollback", "restart"))
-                if writes_template:
+                # Only a SCALE writes replicas, and never together with the template (P5.07).
+                self.assertEqual("/spec/replicas" in paths, name == "scale")
+                if writes_template or name == "scale":
                     self.assertIn("/metadata/annotations/" + ACTION_ANNOTATION.replace("/", "~1"), paths)
                 epoch = "/metadata/annotations/" + FENCE_EPOCH_ANNOTATION.replace("/", "~1")
                 self.assertEqual(epoch in paths, name == "seal")

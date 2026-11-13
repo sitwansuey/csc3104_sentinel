@@ -133,7 +133,7 @@ class ApprovalRelay:
         rationale = proposal.get("rationale", "")
         rationale = rationale if isinstance(rationale, str) else repr(rationale)
         record = entry["record"]
-        return {
+        public = {
             "action_id": _text(proposal["action_id"], TEXT_LIMIT),
             "incident_id": _text(proposal.get("incident_id", ""), TEXT_LIMIT),
             "status": entry["status"], "mode": MODE,
@@ -154,6 +154,11 @@ class ApprovalRelay:
                 "approved_at": record["approved_at"], "expires_at": record["expires_at"]},
             "revocation": entry["revocation"],
         }
+        if proposal.get("action") == "SCALE":
+            # P5.07: the replica count a SCALE would write (null if malformed); other actions omit the key.
+            replicas = parameters.get("desired_replicas")
+            public["desired_replicas"] = replicas if type(replicas) is int else None
+        return public
 
     @staticmethod
     def _fields(payload, expected):

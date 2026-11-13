@@ -23,6 +23,11 @@ ROOT = Path(__file__).resolve().parents[3]
 EXECUTOR_RBAC = ROOT / "deploy/sentinel/executor-rbac.yaml"
 _RBAC_NAMESPACE = "sentinel-demo"
 _RBAC_NAMES = 'resourceNames: ["demo-api"]'
+_RBAC_VERBS = '    verbs: ["get", "patch"]\n'
+# P5.07: a SCALE run's Executor lists the HorizontalPodAutoscalers in its namespace, read only, so the Guard can
+# escalate a SCALE that an autoscaler would fight. Other runs' Roles do not get it.
+AUTOSCALER_READ_RULE = ('  - apiGroups: ["autoscaling"]\n    resources: ["horizontalpodautoscalers"]\n'
+                        '    verbs: ["list"]\n')
 
 
 @dataclass(frozen=True)
@@ -45,6 +50,8 @@ class TargetProfile:
     fault_storefront_impact: dict
     ceilings: dict
     pair_only: bool = False
+    # The reviewed minimum replica count (P5.07); None for a target with no scale fault.
+    min_replicas: int | None = None
 
     @property
     def registry(self):
@@ -113,12 +120,13 @@ def apply_spec_overrides(spec, target):
     return result
 
 
-def executor_rbac(namespace, names, template=None):
+def executor_rbac(namespace, names, template=None, *, autoscaler_read=False):
     """The executor ServiceAccount, Role and RoleBinding for namespace, limited to exactly names.
 
     The Role grants get and patch on Deployments by resourceNames only. The
     template must contain its one placeholder resourceNames line, so a changed
-    template cannot silently widen or drop the scope.
+    template cannot silently widen or drop the scope. autoscaler_read (a SCALE
+    run only) adds list on horizontalpodautoscalers in the namespace, read only.
     """
     names = sorted(set(names))
     if not names or not all(isinstance(name, str) and scenarios._NAME.fullmatch(name) for name in names):
@@ -128,6 +136,10 @@ def executor_rbac(namespace, names, template=None):
     text = EXECUTOR_RBAC.read_text(encoding="utf-8") if template is None else template
     if text.count(_RBAC_NAMES) != 1 or text.count("resourceNames") != 1:
         raise CatalogError("The executor RBAC template must name its Deployments in exactly one resourceNames line")
+    if autoscaler_read:
+        if text.count(_RBAC_VERBS) != 1:
+            raise CatalogError("The executor RBAC template must have exactly one Deployment verbs line")
+        text = text.replace(_RBAC_VERBS, _RBAC_VERBS + AUTOSCALER_READ_RULE)
     return (text.replace(_RBAC_NAMES, "resourceNames: " + json.dumps(names))
                 .replace(_RBAC_NAMESPACE, namespace))
 

@@ -242,8 +242,9 @@ class GuardPreviewTests(unittest.TestCase):
         self.assertEqual(result["details_code"], "BASELINE_PRECONDITION_FAILED")
         self.assertEqual(result["template_sha256"], "b" * 64)
 
-    def test_scale_is_not_previewed_and_never_makes_request(self):
-        self.proposal.update(action="SCALE", parameters={"desired_replicas": 2})
+    def test_an_action_without_a_write_is_not_previewed_and_never_makes_request(self):
+        # SCALE has its own preview since P5.07 (tests/test_scale_action.py); NO_ACTION writes nothing.
+        self.proposal.update(action="NO_ACTION", parameters={})
         with patch("services.guard.preview.subprocess.run") as run:
             result = self.preview()
         run.assert_not_called()

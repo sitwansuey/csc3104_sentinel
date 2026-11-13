@@ -210,3 +210,10 @@ class CheckpointCluster:
         applied = self._cluster.conditional_restore(**kwargs)
         checkpoint("executor.after_patch_before_save")
         return applied
+
+    def conditional_scale(self, **kwargs):
+        # A SCALE (P5.07) is the Executor's other action write; it stops at the same two points.
+        checkpoint("executor.before_patch")
+        applied = self._cluster.conditional_scale(**kwargs)
+        checkpoint("executor.after_patch_before_save")
+        return applied

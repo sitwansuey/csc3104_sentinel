@@ -75,13 +75,23 @@ def _restart_token(value, path):
         raise ContractError(f"{path}: expected a planner-bound restart token")
 
 
+def _replicas(value, path):
+    # SCALE restores a reviewed count (P5.07): scaling to zero is never a repair, and
+    # shared/actions.py SCALE_MAX_REPLICAS (10) bounds every count.
+    if type(value) is not int or not 1 <= value <= 10:
+        raise ContractError(f"{path}: expected an integer from 1 to 10")
+
+
 # The action registry: every action and its closed parameter schema. No action
 # takes a free-form field. ROLLBACK and RESTART both name the exact Pod template
-# they write (template_sha256) and the reviewed baseline it comes from.
+# they write (template_sha256) and the reviewed baseline it comes from. SCALE
+# names the baseline whose replica count it restores and the exact live template
+# it leaves in place (P5.07; before it, SCALE carried desired_replicas alone and
+# was never executed).
 ACTION_PARAMETERS = {
     "ROLLBACK": {"baseline_id": _string, "template_sha256": _sha256},
     "RESTART": {"baseline_id": _string, "restart_token": _restart_token, "template_sha256": _sha256},
-    "SCALE": {"desired_replicas": _integer},
+    "SCALE": {"baseline_id": _string, "desired_replicas": _replicas, "template_sha256": _sha256},
     "NO_ACTION": {},
     "ESCALATE": {},
 }

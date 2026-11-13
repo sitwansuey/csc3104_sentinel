@@ -5,7 +5,7 @@ import type { RecoveryAction } from "./types"
 const EFFECTS: Record<RecoveryAction, string> = {
   ROLLBACK: "Writes the reviewed baseline Pod template back to the Deployment.",
   RESTART: "Writes the unchanged reviewed template plus a restart token, so Kubernetes replaces every Pod. No configuration change.",
-  SCALE: "Not implemented; the Guard and the Executor refuse it.",
+  SCALE: "Restores the replica count recorded with the reviewed baseline. Changes spec.replicas only; no configuration change.",
   NO_ACTION: "No repair.",
   ESCALATE: "No repair; an operator reviews the incident.",
 }

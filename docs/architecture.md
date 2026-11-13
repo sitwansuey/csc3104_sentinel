@@ -29,7 +29,7 @@ flowchart TD
 Each role owns its decisions. The Planner chooses an advisory action, the Guard
 authorizes exact inputs, the Executor records what happened, and the Verifier
 decides health. Actions are typed: each has a closed parameter schema in
-`shared/contracts.py`, its own Guard checks and an Executor handler. Two are
+`shared/contracts.py`, its own Guard checks and an Executor handler. Three are
 implemented. ROLLBACK writes a specific saved healthy Pod template, not a
 repeated undo of the latest revision. RESTART writes that same reviewed template
 plus a planner-bound restart token, so Kubernetes replaces every Pod without any
@@ -40,9 +40,17 @@ RESTART recovery has run live for one fault, the Chaos Mesh pod failure N2 on
 shippingservice in the connected lab, with code rule planning and labels
 pending, so unscored (`C-CHAOS-RECOVERY-C9A44CA`, `C-CHAOS-RECOVERY-29E41F8`);
 before that the production adapter's RESTART patch was accepted once by an API
-server on a disposable Deployment (`C-ADMISSION-POLICY-LIVE`). SCALE is in the
-contract but refused. Workload-specific limits belong in policy/topology/baseline
-configuration.
+server on a disposable Deployment (`C-ADMISSION-POLICY-LIVE`). SCALE (P5.07)
+restores the replica count recorded with the reviewed baseline after something
+scaled the workload below it: it writes spec.replicas only, through a
+conditional patch with the same UID and resourceVersion tests and evidence, so
+the same reconciliation table applies. The Guard allows it only to the
+baseline's own count, upwards, within the policy's replica ceiling, when the
+live configuration equals the baseline and no HorizontalPodAutoscaler targets
+the Deployment; the Observer raises ReplicasBelowReviewedMinimum only for a
+target with a reviewed minimum. SCALE is tested offline only; it has not run
+against a cluster (`L-SCALE-OFFLINE-ONLY`). Workload-specific limits belong in
+policy/topology/baseline configuration.
 
 ## Persistence and concurrency
 
@@ -119,6 +127,94 @@ permissions, expiry and persisted revocation. Its current approval reader must
 be wired into deployed Guard/Executor workers; the local demonstration does not
 acquire these guarantees automatically. Planner `ESCALATE` proposals are stored
 as NEEDS_REVIEW without an approval or execution request.
+
+### SCALE safety argument (P5.07, owner sign-off pending)
+
+SCALE is the first action that writes something other than a Pod template, so
+its safety rests on these points, each tested offline in
+`tests/test_scale_action.py` and none yet shown against a cluster
+(`L-SCALE-OFFLINE-ONLY`):
+
+1. It can only restore a reviewed count. The Planner, not a provider, binds
+   `desired_replicas` to the count recorded with the reviewed baseline, and the
+   Guard rejects any other count (SCALE_NOT_BASELINE), a count above the
+   policy's `workload_constraints.max_replicas` (WORKLOAD_REPLICAS_EXCEED_POLICY)
+   and a target not listed in `scale_constraints`; it escalates when the
+   baseline records no count or no ceiling is configured. The contract caps
+   every count at 10 and refuses 0.
+2. It only adds capacity back. The Guard rejects a count equal to the live one
+   (SCALE_NO_CHANGE) or below it (SCALE_WOULD_REDUCE), and the Executor's own
+   handler refuses the same cases again after the fresh Guard check.
+3. New Pods run only reviewed configuration. The live template's configuration
+   must equal the baseline's (SCALE_TEMPLATE_DRIFT otherwise: roll back first),
+   and the proposal names the exact live template hash, which the adapter checks
+   against the read it patches. The eligibility, security and resource checks
+   run for SCALE, priced at the requested count.
+4. It does not fight another controller. A HorizontalPodAutoscaler that targets
+   the Deployment, or an autoscaler list that cannot be read, makes the Guard
+   escalate (SCALE_AUTOSCALER_PRESENT, SCALE_AUTOSCALER_UNKNOWN). Other scalers
+   (for example KEDA) are not detected.
+5. It is written at most once. The patch carries the same UID and
+   resourceVersion tests and fresh evidence as a ROLLBACK, goes through the same
+   write-intent journal, and is settled by the same reconciliation table, which
+   for a SCALE also requires the count it wrote; a lost reply is reconciled from
+   a read, never by writing again.
+6. Its permissions do not grow. It patches spec.replicas through the main
+   deployments resource with the patch verb the Role already has; the
+   deployments/scale subresource is never granted. Only a SCALE scenario run's
+   Role adds a read-only list on HorizontalPodAutoscalers. The admission policy's
+   one exception (a scale-up to at most 10 with matching SCALE evidence) bounds
+   the shape of the write, not who wrote the evidence.
+7. Its recovery is judged on the count it restored. The Verifier's
+   replica_target check needs every reading to keep that count. A reading
+   whose desired count is present and different, 0 included (the fault put
+   back), makes the outcome NOT_RECOVERED and the incident FAILED, which
+   starts no automatic re-plan, and the Coordinator refuses a second SCALE for
+   that incident. A missing or malformed count stays UNKNOWN (NEEDS_REVIEW).
+   ROLLBACK and RESTART keep the older rule that a desired count of 0 is
+   missing data.
+
+### REST transport safety argument (P5.08, owner sign-off pending)
+
+The optional REST transport changes how a failed write is classified, never
+what is written. Each point is tested offline in
+`tests/test_rest_executor_adapter.py`, and none has been shown against a
+cluster (`L-REST-TRANSPORT-OFFLINE`); kubectl stays the default.
+
+1. The same write. The REST adapter inherits the kubectl adapter's
+   allowlist, pre-read and exact JSON Patches for ROLLBACK, RESTART, SCALE
+   and the fence, so the UID and resourceVersion tests and the evidence are
+   unchanged, and the parity tests run one set of Executor scenarios over
+   both transports.
+2. One request, one answer. Each write is one PATCH on a new connection and
+   is never resent, so the answer to that request is the answer for the
+   attempt.
+3. Only a definite "not persisted" is a rejection: 400, 401, 403, 404, 409,
+   422 or 429 from the API server, or a connect (TCP and TLS) that failed
+   before any byte was sent. Everything else, 408 and 5xx included, stays
+   unknown and is settled by the decision table and the fence as before.
+4. State still wins. After a rejection the Executor reads the target once:
+   this action's evidence means APPLIED, a deleted or replaced target is
+   SUPERSEDED, and only then does the rejection give CONFLICT (version moved)
+   or FAILED (version unchanged), with no fence. If that read fails, the
+   action stays in doubt; the rejection is never used to release it later.
+   A peer host's committed attempt of the same action followed by our own
+   422 is APPLIED, not rejected
+   (`tests/test_rest_executor_adapter.py::DefiniteRejectionTableTests.test_row_r3_evidence_beats_a_rejection`,
+   `tests/test_rest_executor_adapter.py::RESTExecutorTests.test_a_peer_commit_of_this_action_before_our_422_is_applied_not_rejected`).
+   FAILED releases the workload because this attempt never committed; an
+   earlier holder's write that may still be in flight is covered separately
+   by the Coordinator, which seals before it reassigns the workload when a
+   later holder reports FAILED
+   (`runtime/worker_transport.py::Delivery._seal_abandoned`, see
+   [when a seal is required](distributed-model.md#target-ownership-epochs-and-the-seal-p304)). The owner signs
+   off on that dependency together with this argument.
+5. Nothing new leaks or weakens. TLS verification is always on, plain http
+   is refused except to a loopback address, unsupported credential types and
+   proxies fail closed, and only the status and an allowlisted reason word
+   reach exceptions and logs. The written argument is in the
+   [distributed model](distributed-model.md#fencing-limits).
+
 
 ## Observation and outcome
 

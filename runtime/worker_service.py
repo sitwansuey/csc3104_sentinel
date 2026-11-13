@@ -287,9 +287,14 @@ def adapter(config, directory, stack, store=None, answered=None, stopping=None):
     options.update(approval_reader=approval, server_dry_run=config.get("server_dry_run", False))
     if role == "executor":
         runner = {"runner": cluster.kubectl(config["identity"])} if cluster is not None else {}
+        # P5.08: "transport": "rest" swaps the Executor's Deployment client; kubectl stays the default.
+        transport = config.get("transport", "kubectl")
+        if cluster is not None and transport != "kubectl":
+            raise ValueError("A lab file cluster is driven only through the kubectl transport")
         live = build_adapters(**options, allowed_targets=config["allowed_targets"],
                               ledger=directory / "executor.db", locks=directory / "locks",
-                              fence_after_seconds=config.get("fence_after_seconds"), clock=clock, **runner)
+                              fence_after_seconds=config.get("fence_after_seconds"), clock=clock,
+                              transport=transport, **runner)
         stack.callback(live.ledger.close)
         if lab:  # Bound lab fault runs only: named stop points. clock above carries the test offset.
             live = replace(live, ledger=fault_points.CheckpointLedger(live.ledger),

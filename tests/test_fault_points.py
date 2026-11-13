@@ -141,6 +141,15 @@ class FaultPointTests(unittest.TestCase):
                                  "executor.after_patch_before_save"])
         self.assertEqual(fault_points.CheckpointLedger(ledger).other, "kept")
 
+    def test_a_scale_write_stops_at_the_same_patch_points(self):
+        # P5.07: without its own wrapper a SCALE would pass through __getattr__ and skip both points.
+        order = []
+        cluster = Mock(conditional_scale=Mock(side_effect=lambda **k: order.append("scale") or "applied"))
+        with patch.object(fault_points, "checkpoint", side_effect=order.append):
+            self.assertEqual(fault_points.CheckpointCluster(cluster).conditional_scale(replicas=1), "applied")
+        self.assertEqual(order, ["executor.before_patch", "scale", "executor.after_patch_before_save"])
+        cluster.conditional_scale.assert_called_once_with(replicas=1)
+
 
 class CoordinatorFaultPointTests(unittest.TestCase):
     """The Coordinator stops between the commit of a result and its reply, nowhere else."""

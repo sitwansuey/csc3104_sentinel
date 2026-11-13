@@ -243,6 +243,15 @@ class ApproverTests(AuthorityCase):
         self.assertNotIn("\x1b", untrusted)
         self.assertTrue(untrusted.endswith("[truncated]"))
         self.assertLess(len(untrusted), 560)
+        self.assertFalse(any("desired_replicas" in line for line in self.said))  # Only a SCALE prints it.
+
+    def test_interactive_shows_the_replica_count_a_scale_would_write(self):
+        # P5.07: the operator approving a SCALE sees the count, beside the template it leaves in place.
+        self.proposal.update(action="SCALE", parameters={"baseline_id": "BASE-DEMO-001", "desired_replicas": 3,
+                                                         "template_sha256": "c" * 64})
+        approver = self.interactive(["no"])
+        approver(self.proposal, {"reason_codes": ["OPERATOR_APPROVAL_REQUIRED"], "policy_version": "v"})
+        self.assertIn("  desired_replicas: 3", self.said)
 
     def test_interactive_prints_every_proposal_field_without_control_characters(self):
         self.proposal["parameters"]["baseline_id"] = "BASE\x1b]0;approved\x07" + "b" * 400

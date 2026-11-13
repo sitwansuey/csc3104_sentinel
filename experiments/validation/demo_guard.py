@@ -10,6 +10,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from services.guard.core import evaluate, proposal_fingerprint
+from shared.canonical import sha256_hex
 
 
 DEFAULT_NOW = "2026-10-10T12:00:40Z"
@@ -49,6 +50,18 @@ def load_fixtures() -> dict:
     }
 
 
+def scale_proposal(fixtures: dict) -> dict:
+    """A well-formed SCALE (P5.07 shape) for an action the demo policy does not allow."""
+    proposal = deepcopy(fixtures["proposal"])
+    proposal["action"] = "SCALE"
+    proposal["parameters"] = {
+        "baseline_id": fixtures["proposal"]["parameters"]["baseline_id"],
+        "desired_replicas": 2,
+        "template_sha256": sha256_hex(fixtures["live_state"]["deployment"]["spec"]["template"]),
+    }
+    return proposal
+
+
 def run_scenario(name: str, fixtures: dict, now: datetime) -> dict:
     """Modify only copies; every approval is a fabricated development record."""
     inputs = deepcopy(fixtures)
@@ -59,8 +72,7 @@ def run_scenario(name: str, fixtures: dict, now: datetime) -> dict:
         policy["targets"][0]["name"] = "other-deployment"
         policy["policy_version"] = "demo-policy-forbidden-target-v1"
     elif name == "forbidden-action":
-        proposal["action"] = "SCALE"
-        proposal["parameters"] = {"desired_replicas": 2}
+        proposal = inputs["proposal"] = scale_proposal(inputs)
     elif name == "stale-state":
         inputs["live_state"]["deployment"]["metadata"]["resourceVersion"] = "103"
     elif name == "tampered-baseline":

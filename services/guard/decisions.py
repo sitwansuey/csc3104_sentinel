@@ -7,9 +7,10 @@ from datetime import datetime, timedelta, timezone
 
 from services.guard import (
     eligibility as guard_eligibility, resources as guard_resources, restart as guard_restart,
+    scale as guard_scale,
 )
 from services.guard.common import GuardInputError, finding, json_sha256, mapping, utc_timestamp
-from shared.actions import STALE_READ_SPEC, TEMPLATE_ACTIONS, config_fingerprint
+from shared.actions import BASELINE_ACTIONS, STALE_READ_SPEC, config_fingerprint
 from shared.contracts import validate_message
 
 
@@ -63,6 +64,7 @@ def validate_policy(policy, *, require_live=False):
     guard_eligibility.validate_policy(policy)
     guard_resources.validate_policy(policy)
     guard_restart.validate_policy(policy)
+    guard_scale.validate_policy(policy)
     for key in ("max_age_seconds", "min_healthy_duration_seconds"):
         if key in policy.get("baseline_constraints", {}) and policy["baseline_constraints"][key] > _MAX_AGE_SECONDS:
             raise GuardInputError(f"policy.baseline_constraints.{key}: duration exceeds supported bound")
@@ -154,7 +156,8 @@ def _preview_checks(proposal, live_state, baseline, policy, preview, checked_at)
             raise GuardInputError("preview: missing status detail")
         version = live_state["deployment"]["metadata"]["resourceVersion"]
         # A RESTART previews its bound candidate (baseline plus token); restart.py binds that hash.
-        template_hash = (proposal["parameters"]["template_sha256"] if proposal["action"] == "RESTART"
+        # A SCALE previews its replica change on the bound live template; scale.py binds that hash.
+        template_hash = (proposal["parameters"]["template_sha256"] if proposal["action"] in ("RESTART", "SCALE")
                          else json_sha256(baseline["pod_template"]))
         linked = (
             preview["proposal_sha256"] == json_sha256(proposal)
@@ -264,7 +267,7 @@ def _core_findings(core_result, proposal, live_state, policy, trace):
     )
     for code, errors, path in families:
         if not set(codes).intersection(errors):
-            skipped = code == "BASELINE_IDENTITY_HASH" and proposal["action"] not in TEMPLATE_ACTIONS
+            skipped = code == "BASELINE_IDENTITY_HASH" and proposal["action"] not in BASELINE_ACTIONS
             result.append(finding(code, path, "not applicable" if skipped else "validated", "matching reviewed input", "Core check completed.", "SKIP" if skipped else "PASS"))
     approval_problem = any("APPROVAL" in code or code == "OPERATOR_REJECTED" for code in codes)
     # Specific approval findings above already explain failures/uncertainty.
@@ -325,8 +328,9 @@ def evaluate_with_report(core, proposal, live_state, policy, baseline, dependenc
     original = core(proposal, live_state, policy, baseline, dependencies, approval, now=checked_at, _trace=trace)
     checks = _core_findings(original, proposal, live_state, policy, trace)
     checks += _rollback_change_checks(proposal, live_state, baseline, policy, trace)
-    checks += guard_restart.assess(proposal, live_state, baseline, policy, checked_at, not any(
-        code == "INVALID_BASELINE" or code.startswith("BASELINE_") for code in trace["rejected"]))
+    baseline_valid = not any(code == "INVALID_BASELINE" or code.startswith("BASELINE_") for code in trace["rejected"])
+    checks += guard_restart.assess(proposal, live_state, baseline, policy, checked_at, baseline_valid)
+    checks += guard_scale.assess(proposal, live_state, baseline, policy, baseline_valid)
     checks += guard_eligibility.assess(proposal, live_state, baseline, policy, checked_at)
     checks += guard_resources.assess(proposal, live_state, baseline, policy, checked_at)
     checks += _approval_checks(policy, approval, checked_at)

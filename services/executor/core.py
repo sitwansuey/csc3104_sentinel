@@ -1,11 +1,13 @@
-"""Restricted typed actions (ROLLBACK, RESTART) with a durable journal and table-driven reconciliation.
+"""Restricted typed actions (ROLLBACK, RESTART, SCALE) with a durable journal and table-driven reconciliation.
 
 Adapters provide trusted authorization and a conditional Deployment API. Runtime
 wiring lives outside this service; there is no shell or relative revision undo.
-Each implemented action writes one exact Pod template chosen by its handler in
-actions.py, through the same conditional write. APPLIED confirms a write, never
-sustained health or incident recovery. Reconciliation decisions come from the
-pure table in reconciliation.py, for every action alike.
+ROLLBACK and RESTART write one exact Pod template chosen by their handler in
+actions.py, through the same conditional write. SCALE writes the reviewed
+replica count through a conditional scale write with the same UID and
+resourceVersion tests and evidence. APPLIED confirms a write, never sustained
+health or incident recovery. Reconciliation decisions come from the pure table
+in reconciliation.py, for every action alike.
 """
 
 from copy import deepcopy
@@ -13,7 +15,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from services.executor.actions import candidate_template, evidence as action_evidence, implemented
+from services.executor.actions import (
+    candidate_template, evidence as action_evidence, implemented, scale_replicas,
+)
 from services.executor.reconciliation import (
     ABSENT, ACTION_ANNOTATION, Basis, classify, fence_marker, fence_nonce, observe,
 )
@@ -43,7 +47,8 @@ _SENTENCES = {
     Basis.FENCED: ("A metadata-only fence conditioned on the same resource version committed first, so this "
                    "write never committed and never can. No write was repeated; obtain a new proposal from "
                    "current state."),
-    Basis.DEFINITE_REJECTION: "The API server definitely rejected this write. No write was repeated.",
+    Basis.DEFINITE_REJECTION: ("The API server definitely rejected this write, or the request was never sent. "
+                               "No write was repeated."),
     Basis.UNCHANGED_IN_DOUBT: ("Live state does not confirm this attempt and the resource version is unchanged, "
                                "so a request in flight could still commit. Retain workload exclusion; "
                                "no write was repeated."),
@@ -63,6 +68,28 @@ class ReadUnavailable(OSError):
 
 class TargetAbsent(LookupError):
     """The API definitely reports that the named target does not exist."""
+
+
+class WriteRejected(RuntimeError):
+    """This one write request definitely did not commit, and it is never resent (P5.08).
+
+    Only a structured transport raises it (services/executor/rest_adapter.py):
+    the API server answered this exact request with a definite 4xx rejection,
+    or the connection failed before any byte of the request was sent. status
+    is the HTTP status code, or "not_sent"; reason is a short metav1
+    StatusReason word, or "Unknown". The server's message is never kept. The
+    kubectl transport never raises it, because kubectl's exit code and text
+    cannot tell a rejection from a lost response.
+    """
+
+    def __init__(self, status, reason="Unknown"):
+        # Anything else is a transport bug; the ValueError then makes the write's outcome unknown.
+        if status != "not_sent" and not (type(status) is int and 400 <= status <= 499):
+            raise ValueError("A definite rejection is a 4xx status or 'not_sent'")
+        if not (isinstance(reason, str) and reason.isascii() and reason.isalpha() and len(reason) <= 64):
+            reason = "Unknown"
+        super().__init__(f"Write definitely not committed (status {status}, reason {reason})")
+        self.status, self.reason = status, reason
 
 
 def encode_evidence(evidence):
@@ -90,6 +117,14 @@ class ExecutionAdapters:
     ledger follows SQLiteExecutionLedger, including record_fence, confirm_fence
     and fences; classifying a journaled action calls fences() even with fencing off.
     A RESTART also calls restart_history(target), the persisted restart budget input.
+    A SCALE calls cluster.autoscalers(target), a read-only list of the
+    HorizontalPodAutoscalers that target the Deployment (the Guard escalates when
+    it is missing), and cluster.conditional_scale(target, version, replicas,
+    evidence), which must commit spec.replicas and evidence together under the
+    same UID/version tests, or explicitly refuse the precondition.
+    Any write (restore, scale or fence) may raise WriteRejected when the
+    transport knows the request definitely did not commit; reconciliation
+    still reads state first and state evidence wins.
     """
 
     ledger: object
@@ -208,6 +243,8 @@ def _matches_write(proposal, row, snapshot):
             and _version(snapshot) != row["expected_version"]
             and annotations.get(ACTION_ANNOTATION) == encode_evidence(row["evidence"])
             and fingerprint(snapshot["deployment"]["spec"]["template"]) == proposal["parameters"]["template_sha256"]
+            and (proposal["action"] != "SCALE"
+                 or snapshot["deployment"]["spec"]["replicas"] == proposal["parameters"]["desired_replicas"])
         )
     except (AttributeError, KeyError, TypeError, ValueError, RecursionError):
         return False
@@ -283,10 +320,14 @@ def _observation(proposal, adapters, snapshot=None):
         return None
 
 
-def _classify(row, proposal, observation, adapters):
-    """Apply the table with the fence nonces this host journaled for the action."""
+def _classify(row, proposal, observation, adapters, rejection=None):
+    """Apply the table with the fence nonces this host journaled for the action.
+
+    rejection is a WriteRejected from this attempt's own write, or None.
+    """
     fences = adapters.ledger.fences(proposal["action_id"]) if row is not None else []
-    return classify(row, proposal, observation, fence_nonces=frozenset(fence["nonce"] for fence in fences),
+    return classify(row, proposal, observation, rejection,
+                    fence_nonces=frozenset(fence["nonce"] for fence in fences),
                     fence_confirmed=any(fence["committed_version"] is not None for fence in fences))
 
 
@@ -320,7 +361,7 @@ def _fence(proposal, adapters):
     try:
         fenced = adapters.cluster.fence(target=deepcopy(target), version=version,
                                         marker=fence_marker(action_id, nonce))
-    except ConditionalWriteConflict:
+    except (ConditionalWriteConflict, WriteRejected):
         log.emit(LOG, "executor.fence.refused", action_id=action_id)
     except Exception as error:  # noqa: BLE001 - an unknown fence outcome may have committed; a fresh read decides
         log.failure(LOG, "executor.fence.indeterminate", error, action_id=action_id)
@@ -335,16 +376,17 @@ def _fence(proposal, adapters):
     return _classify(row, proposal, _observation(proposal, adapters, snapshot), adapters)
 
 
-def _reconcile(proposal, adapters, snapshot=None, *, schedule=True):
+def _reconcile(proposal, adapters, snapshot=None, *, schedule=True, rejection=None):
     """No spec mutation, even if state is unchanged: an old request may still commit.
 
     The only write is a precondition-guarded metadata fence, when fencing is
     enabled and the write has stayed in doubt past the settle delay. schedule=False
     is for the attempt's own first check, which must not delay the first later
-    reconcile pass and never fences.
+    reconcile pass and never fences. rejection (the attempt's own WriteRejected)
+    is not journaled: if this read fails, later passes decide without it.
     """
     row = adapters.ledger.get(proposal["action_id"])
-    decision = _classify(row, proposal, _observation(proposal, adapters, snapshot), adapters)
+    decision = _classify(row, proposal, _observation(proposal, adapters, snapshot), adapters, rejection)
     if schedule and _fence_due(decision, row, adapters, _now(adapters)):
         decision = _fence(proposal, adapters)
         row = adapters.ledger.get(proposal["action_id"])
@@ -368,6 +410,18 @@ def _restart_history(proposal, adapters, snapshot):
     """
     if proposal["action"] == "RESTART":
         snapshot["restart_history"] = adapters.ledger.restart_history(proposal["target"])
+    return snapshot
+
+
+def _autoscalers(proposal, adapters, snapshot):
+    """Give the Guard the HorizontalPodAutoscalers that target a SCALE's Deployment.
+
+    Only a SCALE needs it, so other inputs are unchanged. An adapter without the
+    read leaves it out, and the Guard escalates (SCALE_AUTOSCALER_UNKNOWN).
+    """
+    reader = getattr(adapters.cluster, "autoscalers", None)
+    if proposal["action"] == "SCALE" and reader is not None:
+        snapshot["autoscalers"] = deepcopy(reader(deepcopy(proposal["target"])))
     return snapshot
 
 
@@ -514,7 +568,7 @@ def seal(proposal: dict, epoch: int, adapters: ExecutionAdapters, *, check=None)
             try:
                 adapters.cluster.fence(target=deepcopy(target), version=base,
                                        marker=fence_marker(action_id, nonce, epoch))
-            except ConditionalWriteConflict:
+            except (ConditionalWriteConflict, WriteRejected):
                 log.emit(LOG, "executor.seal.refused", action_id=action_id, fence_epoch=epoch)
             except Exception as error:  # noqa: BLE001 - an unknown fence outcome may have committed; the next read decides
                 log.failure(LOG, "executor.seal.indeterminate", error, action_id=action_id, fence_epoch=epoch)
@@ -562,7 +616,8 @@ def execute(proposal: dict, adapters: ExecutionAdapters) -> dict:
         if row["phase"] in {"WRITE_STARTED", "UNCERTAIN"}:
             return _reconcile(proposal, adapters)
         if not implemented(proposal):
-            return _finish(proposal, adapters, "FAILED", None, "Only explicit baseline ROLLBACK and RESTART are implemented.")
+            return _finish(proposal, adapters, "FAILED", None,
+                           "Only explicit baseline ROLLBACK, RESTART and SCALE are implemented.")
 
         version = None
         try:
@@ -576,14 +631,18 @@ def execute(proposal: dict, adapters: ExecutionAdapters) -> dict:
                 return _finish(proposal, adapters, "CONFLICT", version,
                                "Target identity or resource version changed; obtain a new proposal and validation.",
                                conflict=_conflict("NOT_SENT", proposal, adapters, snapshot))
-            check = adapters.authorizer.validate(deepcopy(proposal), _restart_history(proposal, adapters, snapshot),
-                                                 now=_now(adapters))
+            live_state = _autoscalers(proposal, adapters, _restart_history(proposal, adapters, snapshot))
+            check = adapters.authorizer.validate(deepcopy(proposal), live_state, now=_now(adapters))
             validate_message(check.decision)
             adapters.ledger.record_validation(proposal["action_id"], check.decision)
             if check.decision["verdict"] != "ALLOW":
                 return _finish(proposal, adapters, "FAILED", version,
                                "Fresh Guard validation refused execution: " + ", ".join(check.decision["reason_codes"]))
-            template = candidate_template(proposal, snapshot["deployment"]["spec"]["template"], check.baseline)
+            if proposal["action"] == "SCALE":
+                template, replicas = None, scale_replicas(proposal, snapshot["deployment"], check.baseline)
+            else:
+                template, replicas = candidate_template(
+                    proposal, snapshot["deployment"]["spec"]["template"], check.baseline), None
             adapters.authorizer.assert_usable(check, now=_now(adapters))
         except Exception as error:  # noqa: BLE001 - fail closed: any pre-write error refuses the write
             log.failure(LOG, "executor.prewrite.refused", error, action_id=_action_id(proposal))
@@ -601,10 +660,16 @@ def execute(proposal: dict, adapters: ExecutionAdapters) -> dict:
             return _finish(proposal, adapters, "FAILED", version,
                            "Authorization expired or was withdrawn before the API call; no write was attempted.")
         try:
-            applied = adapters.cluster.conditional_restore(
-                target=deepcopy(proposal["target"]), version=version,
-                template=template, evidence=deepcopy(evidence),
-            )
+            if replicas is not None:
+                applied = adapters.cluster.conditional_scale(
+                    target=deepcopy(proposal["target"]), version=version,
+                    replicas=replicas, evidence=deepcopy(evidence),
+                )
+            else:
+                applied = adapters.cluster.conditional_restore(
+                    target=deepcopy(proposal["target"]), version=version,
+                    template=template, evidence=deepcopy(evidence),
+                )
         except ConditionalWriteConflict:
             # Ours did not commit; another attempt of this same action still may have.
             current = _current(proposal, adapters)
@@ -614,6 +679,13 @@ def execute(proposal: dict, adapters: ExecutionAdapters) -> dict:
             return _finish(proposal, adapters, "CONFLICT", version,
                            "Conditional write was refused without committing; refresh state and create a new proposal.",
                            conflict=_conflict("REFUSED", proposal, adapters, current))
+        except WriteRejected as rejection:
+            # This one request definitely did not commit and is never resent. One fresh read still
+            # decides: a peer's committed write of this action is APPLIED, a moved version is CONFLICT
+            # and an unchanged one FAILED (rows R3, R5 and R6), with no fence and no settle delay.
+            # The transport already logged the status and reason (executor.rest.rejected); only the class here.
+            log.failure(LOG, "executor.write.rejected", rejection, action_id=_action_id(proposal))
+            return _reconcile(proposal, adapters, schedule=False, rejection=rejection)
         except Exception as error:  # noqa: BLE001 - an unknown write error may have committed; reconcile
             # Timeouts/transport errors cannot distinguish rejection from commit.
             log.failure(LOG, "executor.write.indeterminate", error, action_id=_action_id(proposal))

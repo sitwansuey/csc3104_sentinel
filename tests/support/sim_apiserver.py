@@ -159,6 +159,8 @@ class SimAPIServer:
     last: dict | None = None
     # admission(old, new) returns False to deny a patch that applied cleanly.
     admission: object = None
+    # HorizontalPodAutoscaler objects in the namespace, for a SCALE's read-only list.
+    autoscalers: list = field(default_factory=list)
 
     @classmethod
     def from_snapshot(cls, snapshot):
@@ -453,7 +455,8 @@ def _bump(value):
 class SimKubectl:
     """A subprocess.run stand-in that answers kubectl commands from a SimAPIServer.
 
-    Supported: get/patch/annotate/delete deployment, and apply/create/delete for
+    Supported: get/patch/annotate/delete deployment, get
+    horizontalpodautoscalers.autoscaling, and apply/create/delete for
     whole-namespace bookkeeping. before(verb, arguments) runs first and may
     raise, return a CompletedProcess to short-circuit, or return None.
     Every call is recorded in calls.
@@ -493,6 +496,10 @@ class SimKubectl:
                     return self._reply(command)
                 return self._reply(command, 1, stderr=b"Error from server (NotFound)")
             return self._reply(command, stdout=json.dumps(self.server.deployment).encode("utf-8"))
+        if verb == "get" and words[1:2] == ["horizontalpodautoscalers.autoscaling"]:
+            listing = {"apiVersion": "autoscaling/v2", "kind": "HorizontalPodAutoscalerList",
+                       "items": deepcopy(self.server.autoscalers)}
+            return self._reply(command, stdout=json.dumps(listing).encode("utf-8"))
         if verb == "patch" and words[1:2] == ["deployment"] and options.get("type") == "json":
             path = words[words.index("--patch-file") + 1]
             operations = json.loads(Path(path).read_text(encoding="utf-8"))

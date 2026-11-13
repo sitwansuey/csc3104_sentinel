@@ -58,6 +58,8 @@ class Runner:
         for operation in self.patches[-1]:
             if operation["path"] == "/spec/template":
                 candidate["spec"]["template"] = deepcopy(operation["value"])
+            if operation["path"] == "/spec/replicas":  # A SCALE (P5.07).
+                candidate["spec"]["replicas"] = operation["value"]
         for annotation_operation in self.patches[-1]:
             if not annotation_operation["path"].startswith("/metadata/annotations"):
                 continue

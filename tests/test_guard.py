@@ -98,13 +98,15 @@ class GuardDecisionTests(unittest.TestCase):
 
     def test_scale_is_forbidden_under_current_policy(self):
         self.proposal["action"] = "SCALE"
-        self.proposal["parameters"] = {"desired_replicas": 3}
+        self.proposal["parameters"] = {"baseline_id": self.proposal["parameters"]["baseline_id"],
+                                       "desired_replicas": 3, "template_sha256": "a" * 64}
         self.assert_decision(self.run_guard(self.approval()), "REJECT", "ACTION_NOT_ALLOWED")
 
     def test_allowlisting_an_unimplemented_action_does_not_grant_permission(self):
-        self.proposal["action"] = "SCALE"
-        self.proposal["parameters"] = {"desired_replicas": 3}
-        self.policy["allowed_actions"].append("SCALE")
+        # SCALE is implemented since P5.07; NO_ACTION is a typed action with no Executor handler.
+        self.proposal["action"] = "NO_ACTION"
+        self.proposal["parameters"] = {}
+        self.policy["allowed_actions"].append("NO_ACTION")
         self.assert_decision(self.run_guard(self.approval()), "REJECT", "ACTION_NOT_IMPLEMENTED")
 
     def test_live_target_identity_mismatch_rejects(self):

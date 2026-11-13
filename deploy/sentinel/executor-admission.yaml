@@ -6,9 +6,16 @@
 # Deployments its Role names. This policy limits what such a patch may change. It applies to
 # every Deployment UPDATE (a PATCH is an UPDATE here) made by a ServiceAccount
 # named sentinel-executor, in the namespaces the binding selects:
-#   - spec: only spec.template may change, and only together with a new
+#   - spec: apart from spec.replicas under the SCALE rule below, only
+#     spec.template may change, and only together with a new
 #     sentinel.io/execution evidence annotation, as a ROLLBACK or RESTART
 #     writes it (a RESTART's token is a Pod template annotation);
+#   - spec.replicas may change only as a reviewed SCALE writes it (P5.07): up,
+#     to at most 10, with the Pod template, fence and epoch unchanged and new
+#     sentinel.io/execution evidence whose canonical JSON names the SCALE
+#     action and that replica count. CEL has no JSON parser here, so the
+#     evidence is matched as text: this bounds the write's shape, it does not
+#     prove who wrote the evidence (the Guard and the Executor's journal do);
 #   - metadata: labels, finalizers and ownerReferences stay as they are, no
 #     annotation is removed, and only sentinel.io/execution, sentinel.io/fence
 #     and sentinel.io/fence-epoch may be added or changed;
@@ -33,6 +40,8 @@
 # once by an API server (Kubernetes 1.37 on kind, 12 Nov 2026: 24 of 24 probes,
 # claim C-ADMISSION-POLICY-LIVE) by
 # scripts/validation/test_executor_admission_live.py, in a disposable namespace.
+# The SCALE exception to the replicas rule (P5.07) was added after that run and
+# has only been checked offline; the live recipe is in docs/testing.md.
 # Nothing installs it in the Boutique lab namespaces.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
@@ -80,11 +89,25 @@ spec:
     - name: templateChanged
       expression: |-
         object.spec.template != oldObject.spec.template
+    - name: oldExecution
+      expression: |-
+        'sentinel.io/execution' in variables.oldAnnotations ?
+        variables.oldAnnotations['sentinel.io/execution'] : ''
+    - name: newExecution
+      expression: |-
+        'sentinel.io/execution' in variables.newAnnotations ?
+        variables.newAnnotations['sentinel.io/execution'] : ''
   validations:
     - expression: |-
         has(object.spec.replicas) == has(oldObject.spec.replicas) &&
-        (!has(object.spec.replicas) || object.spec.replicas == oldObject.spec.replicas)
-      message: The Sentinel Executor may not change spec.replicas
+        (!has(object.spec.replicas) || object.spec.replicas == oldObject.spec.replicas ||
+         (!variables.templateChanged &&
+          object.spec.replicas > oldObject.spec.replicas && object.spec.replicas <= 10 &&
+          variables.newFence == variables.oldFence && variables.newEpoch == variables.oldEpoch &&
+          variables.newExecution != '' && variables.newExecution != variables.oldExecution &&
+          variables.newExecution.contains('"action":"SCALE"') &&
+          variables.newExecution.contains('"replicas":' + string(object.spec.replicas) + ',"target_uid":')))
+      message: The Sentinel Executor may not change spec.replicas except as a reviewed SCALE (up, to at most 10, with new SCALE evidence naming that count and no template or fence change)
       reason: Forbidden
     - expression: |-
         object.spec.selector == oldObject.spec.selector &&
@@ -98,7 +121,7 @@ spec:
         (!has(object.spec.progressDeadlineSeconds) || object.spec.progressDeadlineSeconds == oldObject.spec.progressDeadlineSeconds) &&
         has(object.spec.paused) == has(oldObject.spec.paused) &&
         (!has(object.spec.paused) || object.spec.paused == oldObject.spec.paused)
-      message: The Sentinel Executor may change no spec field other than spec.template
+      message: The Sentinel Executor may change no spec field other than spec.template (spec.replicas only as the SCALE rule allows)
       reason: Forbidden
     - expression: |-
         has(object.metadata.labels) == has(oldObject.metadata.labels) &&

@@ -13,7 +13,8 @@ or starts a spec mutation. --baselines DIR replaces --baseline with one
 measured baseline per target, DIR/<target name>.json; a file whose target is
 not the proposal's target refuses execution. With --fence-after SECONDS it may send one
 metadata-only fence for a write still in doubt after that long (0 fences at
-once). Exit codes: 0 APPLIED/NOOP, 2 FAILED, 3 CONFLICT,
+once). --transport rest (P5.08) reads and writes the Deployment over HTTPS
+instead of kubectl; kubectl stays the default. Exit codes: 0 APPLIED/NOOP, 2 FAILED, 3 CONFLICT,
 4 NEEDS_RECONCILIATION, 5 SUPERSEDED, 1 no result.
 """
 
@@ -41,6 +42,8 @@ from shared.contracts import ContractError, validate_message
 
 LOG = log.get_logger("executor")
 EXIT_CODES = {"APPLIED": 0, "NOOP": 0, "FAILED": 2, "CONFLICT": 3, "NEEDS_RECONCILIATION": 4, "SUPERSEDED": 5}
+# The Executor's Deployment transport: kubectl (default) or the structured REST client (P5.08).
+TRANSPORTS = ("kubectl", "rest")
 # A baseline file name is the target's Kubernetes name, so it can never leave the directory.
 _TARGET_NAME = re.compile(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?")
 
@@ -160,7 +163,7 @@ def _protect_outputs(ledger, locks, inputs, allowed_targets, directories=()):
 def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, locks,
                    policy=None, baseline=None, dependencies=None, approval=None,
                    server_dry_run=False, reconcile_only=False, runner=None, approval_reader=None,
-                   fence_after_seconds=None, clock=None, baselines=None):
+                   fence_after_seconds=None, clock=None, baselines=None, transport="kubectl"):
     """Build the standard team ExecutionAdapters using an explicit live client.
 
     allowed_targets is a trusted list of complete target identities or its JSON
@@ -172,10 +175,16 @@ def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, 
     writes the spec. fence_after_seconds comes from trusted configuration only;
     None (the default) disables fencing. clock (UTC) is this host's one clock:
     the snapshot, the Guard re-check and the ledger stamps all read it.
-    The caller owns and must close adapters.ledger.
+    transport, also trusted configuration only, picks the Executor's
+    Deployment client: "kubectl" (the default) or "rest", which runs one
+    read-only kubectl config view for the credentials and then speaks HTTPS
+    itself. The Guard's optional reference reads and server dry run still
+    use kubectl either way. The caller owns and must close adapters.ledger.
     """
     from services.executor.kubernetes_adapter import KubectlDeploymentAPI
 
+    if transport not in TRANSPORTS:
+        raise AdapterError("ARGUMENT_ERROR", "transport", "The Executor transport must be kubectl or rest")
     clock = clock or _utc_now
     scope_path = allowed_targets if isinstance(allowed_targets, (str, Path)) else None
     targets = load_json(scope_path, "allowed_targets") if scope_path is not None else deepcopy(allowed_targets)
@@ -196,7 +205,11 @@ def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, 
                    allowed_targets=targets, clock=clock)
     if runner is not None:
         options["runner"] = runner
-    cluster = KubectlDeploymentAPI(**options)
+    if transport == "rest":
+        from services.executor.rest_adapter import KubernetesRESTDeploymentAPI
+        cluster = KubernetesRESTDeploymentAPI.from_kubeconfig(**options)
+    else:
+        cluster = KubectlDeploymentAPI(**options)
     authorizer = LiveGuardAuthorizer(**paths, context=context, cluster_id=cluster_id,
                                      kubeconfig=kubeconfig, server_dry_run=server_dry_run,
                                      approval_reader=approval_reader, clock=clock, baselines=baselines)
@@ -232,6 +245,8 @@ def _parser():
     parser.add_argument("--reconcile", action="store_true", help="Inspect a possibly committed write; no spec write")
     parser.add_argument("--fence-after", type=_fence_after, metavar="SECONDS",
                         help="Fence a write still in doubt (same UID and version) after this long; 0 fences now")
+    parser.add_argument("--transport", choices=TRANSPORTS, default="kubectl",
+                        help="Deployment client: kubectl (default) or rest (HTTPS; definite rejections decided at once)")
     return parser
 
 
@@ -254,6 +269,7 @@ def main(argv=None):
             policy=args.policy, baseline=args.baseline, dependencies=args.dependencies,
             approval=args.approval, server_dry_run=args.server_dry_run,
             reconcile_only=args.reconcile, fence_after_seconds=args.fence_after, baselines=args.baselines,
+            transport=args.transport,
         )
         result = (reconcile if args.reconcile else execute)(proposal, adapters)
     except Exception as exc:  # noqa: BLE001 - top-level boundary: print one error code and exit 1

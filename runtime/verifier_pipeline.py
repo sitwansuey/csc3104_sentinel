@@ -28,6 +28,17 @@ def _eligible(store, request):
     return action
 
 
+def _bind_expectations(policy, proposal):
+    """Bind what the persisted proposal wrote: its template, and a SCALE's restored replica count (P5.07)."""
+    health = policy.get("health")
+    if not isinstance(health, dict):
+        return
+    if health.get("require_template_match"):
+        health["expected_template_sha256"] = proposal["parameters"].get("template_sha256")
+    if proposal["action"] == "SCALE":
+        health["expected_desired_replicas"] = proposal["parameters"]["desired_replicas"]
+
+
 def process_verifier_requests(store, event_bus, *, sample_reader, policy_reader, ledger=None, clock=None):
     """Evaluate exact executions; incomplete collection cannot establish recovery.
 
@@ -40,9 +51,9 @@ requests pending. A committed outcome and acknowledgment are replay-safe.
 
         def bound_policy(execution):
             policy = deepcopy(policy_reader(deepcopy(execution)))
-            if policy.get("health", {}).get("require_template_match"):
-                action = store.action(execution["action_id"])
-                policy["health"]["expected_template_sha256"] = action["proposal"]["parameters"].get("template_sha256")
+            action = store.action(execution["action_id"])
+            if action is not None:  # Without it a required template stays unbound and the policy is refused.
+                _bind_expectations(policy, action["proposal"])
             return policy
 
         return process_durable(store, event_bus, ledger=ledger, sample_reader=sample_reader,
@@ -59,8 +70,7 @@ requests pending. A committed outcome and acknowledgment are replay-safe.
             continue
         execution = deepcopy(action["execution_result"])
         policy = deepcopy(policy_reader(deepcopy(execution)))
-        if policy.get("health", {}).get("require_template_match"):
-            policy["health"]["expected_template_sha256"] = action["proposal"]["parameters"].get("template_sha256")
+        _bind_expectations(policy, action["proposal"])
         collection_error = None
         try:
             samples = sample_reader(deepcopy(execution))

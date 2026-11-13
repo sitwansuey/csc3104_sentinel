@@ -9,7 +9,8 @@ describe("typed recovery action descriptions", () => {
     }
     expect(actionEffect("RESTART")).toContain("No configuration change")
     expect(actionEffect("ROLLBACK")).toContain("reviewed baseline")
-    expect(actionEffect("SCALE")).toContain("Not implemented")
+    expect(actionEffect("SCALE")).toContain("replica count recorded with the reviewed baseline")
+    expect(actionEffect("SCALE")).toContain("no configuration change")
   })
 
   it("never trusts a value outside the contract", () => {

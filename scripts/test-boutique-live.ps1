@@ -23,7 +23,11 @@ if ($Scenario -and $chaosScenarios -contains $Scenario -and -not $Connected) { t
 # A Chaos Mesh scenario takes its expected outcome from its catalog label. Only -Agent -Expect escalated may be given;
 # the harness then refuses it unless the label accepts ESCALATE (N2) or names it (N3).
 if ($Scenario -and $chaosScenarios -contains $Scenario -and $PSBoundParameters.ContainsKey('Expect') -and $Expect -ne 'escalated') { throw "-Scenario $Scenario (Chaos Mesh) takes its expected outcome from the catalog; drop -Expect $Expect." }
-if ($Scenario -and $operatorScenarios[$Target] -notcontains $Scenario -and $chaosScenarios -notcontains $Scenario -and -not ($Agent -and $Connected)) { throw "-Scenario $Scenario requires -Agent -Connected." }
+# P5.07: the scale fault plans with the code rule provider, on the connected lab only, and takes its outcome from the catalog.
+$scaleScenarios = @('S1')
+if ($Scenario -and $scaleScenarios -contains $Scenario -and -not $Connected) { throw "-Scenario $Scenario (scale) requires -Connected." }
+if ($Scenario -and $scaleScenarios -contains $Scenario -and ($Agent -or $PSBoundParameters.ContainsKey('Expect'))) { throw "-Scenario $Scenario (scale) plans with the code rule provider and takes its outcome from the catalog; drop -Agent and -Expect." }
+if ($Scenario -and $operatorScenarios[$Target] -notcontains $Scenario -and $chaosScenarios -notcontains $Scenario -and $scaleScenarios -notcontains $Scenario -and -not ($Agent -and $Connected)) { throw "-Scenario $Scenario requires -Agent -Connected." }
 if ($Agent -and $GuardRejection) { throw '-Agent and -GuardRejection are separate scenarios.' }
 if ($Agent -and $ProviderScript) { throw '-Agent and -ProviderScript are separate planning modes.' }
 if ($UIControls -and (-not $Dashboard -or $PauseBeforeInjection)) { throw '-UIControls requires -Dashboard and replaces -PauseBeforeInjection.' }

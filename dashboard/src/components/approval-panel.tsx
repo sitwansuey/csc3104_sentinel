@@ -95,6 +95,8 @@ function ApprovalCard({request, action, sessionId, stale, paused, now, refresh}:
     ["Action ID", request.action_id],
     ["Baseline", request.baseline_id],
     ["Template SHA-256", request.template_sha256_prefix],
+    ...(typeof request.desired_replicas === "number"
+      ? [["Replica count", String(request.desired_replicas)] as [string, string]] : []),
     ["Proposal digest", request.proposal_sha256],
     ["Guard verdict", `${request.guard.verdict}: ${request.guard.reason_codes.join(", ") || "no reason codes"}`],
     ["Policy version", request.policy_version],

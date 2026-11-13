@@ -129,6 +129,20 @@ code rule planning, unscored (claims `C-CHAOS-RECOVERY-C9A44CA` and
 patch had reached an API server, accepted once on a disposable Deployment in
 the admission check (claim `C-ADMISSION-POLICY-LIVE`).
 
+`tests/test_scale_action.py` covers SCALE (P5.07), all offline: the Observer's
+ReplicasBelowReviewedMinimum signal (and no incident for zero replicas without
+a reviewed minimum), the Planner's bound SCALE, each Guard check
+(SCALE_NOT_BASELINE, SCALE_NO_CHANGE, SCALE_WOULD_REDUCE, SCALE_TEMPLATE_DRIFT,
+SCALE_BINDING_MISMATCH, a count over the policy ceiling, an autoscaler present
+or unknown), the SCALE server preview, the kubectl adapter's conditional scale
+patch and autoscaler read, the Executor's one write, its replay, a moved
+resourceVersion with zero writes, reconciliation through the replica count and
+evidence after a lost reply, the fence for a write lost before commit, the
+Verifier's replica_target check (a count that drifts, back to 0 included, is
+NOT_RECOVERED; a missing count is UNKNOWN), one end-to-end recovery with exactly one
+write, the catalog scenario S1 and the harness helpers. SCALE has not run
+against a cluster; the live recipe is [below](#scale-recovery-live-recipe).
+
 `tests/test_distributed_processes.py` runs fault scenarios with the Coordinator
 and every worker as separate processes on one host, against a file-backed test
 cluster, and checks invariants from their records and logs. The default subset
@@ -329,6 +343,85 @@ ran again at 5409092 after 17d4532 fixed its generation check; the fence
 committed both times (claim `C-EXECUTOR-WEDGE-FENCE`). Collect a run with
 `scripts/evidence/collect.py --class executor-wedge`; its summary has no
 provenance block, so pass `--inferred-revision` and `--inferred-basis`.
+`--transport rest` runs the same scenarios with the Executor's optional REST
+client (P5.08); its offline tests are in `tests/test_executor_wedge_harness.py`
+and the live comparison is the recipe below.
+
+### REST transport live recipe (P5.08)
+
+Written, not run (`L-REST-TRANSPORT-OFFLINE`). The wedge harness runs each
+scenario once with kubectl and once with `--transport rest`, and the six
+summaries go into one table. Run it only on a disposable cluster the harness
+allows, `kind-sentinel-wedge` (or `kind-sentinel-boutique-connected`), never
+`sentinel-lab`, and not while P4.01, P4.03 or P4.05 hold the shared Docker
+memory (the heavy-lab lock, `sentinel-heavy-lab.lock` in the system temp
+directory, must be free).
+
+1. **Preflight (read only).** Check the lock is free and the context is the
+   disposable cluster. The first line asks `experiments/lab_lock.py` for the
+   lock's path, so it looks in the same temporary directory the lock uses
+   (TMPDIR, then TEMP, then TMP). The wedge harness does not take the lock
+   itself, so this check is the only guard:
+
+   ```powershell
+   .\.venv\Scripts\python.exe -c "from experiments.lab_lock import default_path; print(default_path().exists())"
+   kubectl config get-contexts kind-sentinel-wedge
+   kubectl --context kind-sentinel-wedge get nodes
+   kubectl --context kind-sentinel-wedge version
+   ```
+
+   Expect `False`, one context, Ready nodes and server version v1.37.0.
+   Without the cluster, check `kind version` reports v0.33.0 and create it
+   with the node image pinned by the same digest as
+   `deploy/kind/kind-dist.yaml` (the one the kind v0.33.0 release notes list
+   for `kindest/node:v1.37.0`; see
+   [distributed acceptance](distributed-acceptance.md)), so the admission
+   scenario runs against a known ValidatingAdmissionPolicy implementation:
+   `kind create cluster --name sentinel-wedge --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5 --wait 180s`.
+   Delete it afterwards (`kind delete cluster --name sentinel-wedge`). An
+   existing `kind-sentinel-wedge` on another Kubernetes version still works,
+   but record its version with the evidence, because the comparison is then
+   not like for like.
+2. **The runs.** Each makes its own namespace and short-lived restricted
+   token and deletes them on exit:
+
+   ```powershell
+   foreach ($scenario in "rv-race", "admission-deny", "delete-recreate") {
+     foreach ($transport in "kubectl", "rest") {
+       .\.venv\Scripts\python.exe scripts/validation/test_executor_wedge_live.py --context kind-sentinel-wedge --scenario $scenario --transport $transport
+     }
+   }
+   ```
+
+   Expected for the first action:
+
+   | Scenario | kubectl | rest |
+   | --- | --- | --- |
+   | rv-race | SUPERSEDED / ADVANCED_WITHOUT_EVIDENCE, 1 patch | CONFLICT / DEFINITE_REJECTION, 1 PATCH, no fence |
+   | admission-deny | NEEDS_RECONCILIATION, then CONFLICT / FENCED after the 30 s settle delay, 1 fence | FAILED / DEFINITE_REJECTION at once, 0 fences, no settle delay |
+   | delete-recreate | SUPERSEDED / TARGET_REPLACED, 0 patches | the same |
+
+   The harness's own admission policy sets no reason, so its denial should
+   come back as 422 Invalid (the `executor.rest.rejected` log event shows the
+   status). The shipped `deploy/sentinel/executor-admission.yaml` denies with
+   reason Forbidden, which is a 403; both are in the rejection set, but
+   record which one was seen.
+
+   In every run a second proposal must then be APPLIED, and the summary
+   `status` must be PASS.
+3. **One table.** Print the six summaries side by side:
+
+   ```powershell
+   .\.venv\Scripts\python.exe -c "import json,glob,os; names=('rv-race.json','admission-deny.json','delete-recreate.json'); runs=[json.load(open(p, encoding='utf-8')) for p in sorted(glob.glob('data/sentinel/runs/executor-wedge-*/*.json')) if os.path.basename(p) in names]; [print(s['scenario'], s.get('transport', 'kubectl'), s['status'], [(r['label'], r['status'], r['basis'], r['write_attempts'], r['fence_attempts'], r['patch_processes']) for r in s['results']], s.get('time_to_resolution_seconds')) for s in runs]"
+   ```
+
+   Runs from before this change have no `transport` key; they used kubectl.
+   With `--transport rest`, `patch_processes` counts PATCH requests.
+4. **Evidence.** Collect each run with
+   `scripts/evidence/collect.py --class executor-wedge`, passing
+   `--inferred-revision` and `--inferred-basis` (the summary has no
+   provenance block), then add a claim and update `L-REST-TRANSPORT-OFFLINE`
+   with what the runs showed, including any mismatch.
 
 ## Connected live acceptance
 
@@ -582,6 +675,61 @@ Redis; this is harmless in the lab. The live checks, in order:
    has the 100m request ceiling and names shippingservice only, and that
    `baselines/shippingservice.json` exists and holds the restored template.
 
+### SCALE recovery live recipe
+
+Written, not run (P5.07, `L-SCALE-OFFLINE-ONLY`). Catalog scenario S1 scales
+cartservice to 0 replicas on `kind-sentinel-boutique-connected`, below its
+reviewed minimum of 1 (`min_replicas` in the catalog). Its labels (SCALE
+correct, ESCALATE acceptable, ROLLBACK and RESTART unsafe) are pre-registered
+and pending sign-off, so a run before sign-off is not a scored trial. The run
+holds the heavy-lab lock, so it waits for P4.01, P4.03 and P4.05 runs; never
+point it at another cluster, and never at `sentinel-lab`.
+
+1. **Preflight (read only).** Check that the connected lab is up, that
+   cartservice runs one ready replica and that nothing autoscales it:
+
+   ```powershell
+   kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected get deployment cartservice -o jsonpath="{.spec.replicas} {.status.readyReplicas}"
+   kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected get horizontalpodautoscalers.autoscaling
+   ```
+
+   Expect `1 1` and no autoscaler. With an autoscaler on cartservice the
+   Guard escalates (SCALE_AUTOSCALER_PRESENT) and the run does not pass.
+2. **The run.**
+
+   ```powershell
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Connected -Target cartservice -Scenario S1 -Approval interactive
+   ```
+
+   The harness measures a baseline that also records `replicas: 1`, gives the
+   run's Executor Role list on horizontalpodautoscalers (read only, and no
+   deployments/scale), checks with `kubectl auth can-i` that it can list them,
+   then runs `kubectl scale deployment/cartservice --replicas=0`.
+   Expected: the storefront home, cart and checkout fail; the Observer opens an
+   incident with a ReplicasBelowReviewedMinimum signal; the code rule plans
+   SCALE with `desired_replicas` 1 and the live template's hash; the Guard asks
+   for approval and then ALLOWs with SCALE_RESTORES_BASELINE and
+   SCALE_NO_AUTOSCALER; the Executor sends one patch (`transport-stats.json`
+   `write_attempts` 1) that replaces only spec.replicas; the Verifier reports
+   RECOVERED with `replica_target` passed; `scenario-result.json` scores SCALE
+   correct (labels pending). Then a forced SCALE to 5, with no approval, must
+   be refused: `forced-scale/proof.json` with REJECT,
+   WORKLOAD_REPLICAS_EXCEED_POLICY and SCALE_NOT_BASELINE, zero patch attempts
+   and the Deployment unchanged.
+3. **Admission (optional, a disposable namespace).** The SCALE exception in
+   `deploy/sentinel/executor-admission.yaml` has not been evaluated by an API
+   server. Install the policy for a disposable namespace as
+   `scripts/validation/test_executor_admission_live.py` does, then check with
+   the restricted Executor token that the production adapter's
+   `conditional_scale` from 0 to 1 is allowed, that a replicas patch without
+   evidence, a scale down, a scale to 11, and a scale with RESTART evidence are
+   each denied by the replicas rule, and that `kubectl scale` is denied by
+   RBAC. Add these probes to that harness before a run; they are not in it yet.
+4. **Cleanup.** A failed run scales cartservice back to the baseline's count
+   as the administrator (`replicas_restored_by_administrator` in the summary);
+   that is never counted as Sentinel's recovery. By hand:
+   `kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected scale deployment/cartservice --replicas=1`.
+
 ## Specialised role checks
 
 These opt-in scripts create/use dedicated labs and retain evidence. Read `--help`
@@ -595,7 +743,7 @@ normal presentation run:
 | Timed Boutique detection/duplicate suppression | `scripts/validation/test_boutique_observer_acceptance.py` | Own dedicated cluster, created and deleted |
 | Observer deployed runtime | `scripts/validation/validate_observer_runtime.py` | Existing `sentinel-lab` (see below) |
 | Verifier connected telemetry/read-only permissions | `scripts/validation/test_verifier_connected_live.py --setup` | Existing `sentinel-lab` (see below) |
-| Executor wedge (rv-race, delete-recreate) | `scripts/validation/test_executor_wedge_live.py --context <ctx> --scenario <name>` | Existing `kind-sentinel-boutique-connected` or `kind-sentinel-wedge`; own namespace, deleted on exit; never `sentinel-lab` |
+| Executor wedge (rv-race, delete-recreate) | `scripts/validation/test_executor_wedge_live.py --context <ctx> --scenario <name> [--transport rest]` | Existing `kind-sentinel-boutique-connected` or `kind-sentinel-wedge`; own namespace, deleted on exit; never `sentinel-lab` |
 | Multi-process harness, kind mode (P3.01, P3.04; ran on 12 Nov 2026, `C-DISTRIBUTED-KIND-BE6E636`, `C-SEAL-LIVE`) | `python -m experiments.distributed.kind_bundle prepare --context kind-sentinel-boutique-connected --storefront <port-forward>`, then `experiments.distributed.run_scenarios --mode kind` ([recipe](../experiments/distributed/README.md#a-reproducible-kind-mode-run)) | Existing `kind-sentinel-boutique-connected` only; injects and restores the catalog fault on its target, mints one short-lived `sentinel-executor` token into a temporary bundle; never `sentinel-lab` |
 | Four-node distributed acceptance (P4.01; not yet run) | `python -m experiments.distributed.kind_acceptance preflight --context kind-sentinel-dist`, then `deploy` and `run --scenarios all --repeat 5` ([recipe](distributed-acceptance.md#live-recipe)) | Its own `kind-sentinel-dist` cluster, created from `deploy/kind/kind-dist.yaml` with Chaos Mesh 2.8.2; refused while the P4.03 lab runs; never `sentinel-lab` |
 | Executor admission policy (P3.05; ran once on 12 Nov 2026, `C-ADMISSION-POLICY-LIVE`) | `scripts/validation/test_executor_admission_live.py --context kind-sentinel-boutique-connected` | Existing `kind-sentinel-boutique-connected` only; own namespace, policy and binding, deleted on exit; never `sentinel-lab` |

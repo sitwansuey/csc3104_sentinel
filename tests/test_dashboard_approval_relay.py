@@ -235,6 +235,7 @@ class RelayDecisionTests(RelayServerCase):
         self.assertEqual(shown["target"], self.proposal["target"])
         self.assertEqual((shown["action"], shown["baseline_id"]), ("ROLLBACK", "BASE-DEMO-001"))
         self.assertEqual(shown["template_sha256_prefix"], self.proposal["parameters"]["template_sha256"][:12])
+        self.assertNotIn("desired_replicas", shown)  # Only a SCALE names a replica count (P5.07).
         self.assertEqual(shown["proposal_sha256"], _digest(self.proposal))
         self.assertEqual(shown["guard"], {"verdict": "ESCALATE", "reason_codes": ["OPERATOR_APPROVAL_REQUIRED"]})
         self.assertEqual(shown["policy_version"], self.decision["policy_version"])
@@ -242,6 +243,20 @@ class RelayDecisionTests(RelayServerCase):
         self.assertFalse(shown["rationale_truncated"])
         self.assertIsNone(shown["approval"])
         self.assertGreater(shown["expires_at"], shown["requested_at"])
+
+    def test_a_scale_request_shows_the_replica_count_it_would_write(self):
+        # P5.07: the operator approving a SCALE sees its desired_replicas; a malformed count is never shown.
+        entry = {"proposal": {**deepcopy(self.proposal), "action": "SCALE",
+                              "parameters": {"baseline_id": "BASE-DEMO-001", "desired_replicas": 2,
+                                             "template_sha256": "a" * 64}},
+                 "decision": self.decision, "record": None, "approver": Mock(identity=DASHBOARD_OPERATOR),
+                 "status": PENDING, "digest": "d" * 64, "requested_at": "t0", "expires_at": "t1",
+                 "approval_id": None, "revocation": None}
+        self.assertEqual(ApprovalRelay._public(entry)["desired_replicas"], 2)
+        entry["proposal"]["parameters"]["desired_replicas"] = "2"
+        self.assertIsNone(ApprovalRelay._public(entry)["desired_replicas"])
+        entry["proposal"].update(action="ROLLBACK", parameters={"desired_replicas": 2})
+        self.assertNotIn("desired_replicas", ApprovalRelay._public(entry))
 
     def test_typed_approval_is_relayed_as_the_dashboard_operator_and_executes_once(self):
         answer = self.approved()
