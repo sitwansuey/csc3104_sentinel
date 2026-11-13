@@ -1,0 +1,92 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "annotations": {
+      "deployment.kubernetes.io/revision": "2"
+    },
+    "generation": 3,
+    "labels": {
+      "app": "cartservice"
+    },
+    "name": "cartservice",
+    "namespace": "sentinel-boutique-connected",
+    "resourceVersion": "113026",
+    "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+  },
+  "spec": {
+    "minReadySeconds": 2,
+    "replicas": 1,
+    "selector": {
+      "matchLabels": {
+        "app": "cartservice"
+      }
+    },
+    "strategy": {
+      "type": "Recreate"
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "cartservice"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "env": [
+              {
+                "name": "REDIS_ADDR",
+                "value": "redis-cart:6390"
+              }
+            ],
+            "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e",
+            "imagePullPolicy": "Never",
+            "name": "server",
+            "ports": [
+              {
+                "containerPort": 7070,
+                "protocol": "TCP"
+              }
+            ],
+            "resources": {
+              "limits": {
+                "cpu": "500m",
+                "memory": "128Mi"
+              },
+              "requests": {
+                "cpu": "200m",
+                "memory": "64Mi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "readOnlyRootFilesystem": true
+            }
+          }
+        ],
+        "securityContext": {
+          "fsGroup": 1000,
+          "runAsNonRoot": true,
+          "runAsUser": 1000
+        },
+        "serviceAccountName": "cartservice",
+        "terminationGracePeriodSeconds": 5
+      }
+    }
+  },
+  "status": {
+    "availableReplicas": 0,
+    "observedGeneration": 3,
+    "readyReplicas": 0,
+    "replicas": 1,
+    "unavailableReplicas": 1,
+    "updatedReplicas": 1
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-41da2c7595471fee656bb8a4",
+  "based_on_resource_version": "80395",
+  "evidence_refs": [
+    "E-60EC89B7A98F",
+    "E-214430852F62",
+    "E-71219715D545",
+    "E-C43C7C062845",
+    "E-270730F9D374",
+    "E-D73ED80F09EA",
+    "E-23529D336437",
+    "E-2534EC04FBF0",
+    "E-0FF2AA8D5F0E"
+  ],
+  "incident_id": "INC-7E167394B82D",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-a3be676fa0c1",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence indicates a failure in the 'shippingservice' container due to an 'unknown port' error (evidence_id: E-0FF2AA8D5F0E). This error is directly linked to the container's inability to start, resulting in a 'CrashLoopBackOff' state (evidence_id: E-C43C7C062845). The readiness probe failure (evidence_id: E-270730F9D374) and deployment unavailability (evidence_id: E-60EC89B7A98F) are downstream effects of this failure. The root cause is likely a recent configuration change that introduced an invalid port setting. The observed healthy baseline (baseline_id: BASE-LIVE-a3be676fa0c1) represents a previously functional state, and restoring it would revert the faulty configuration, resolving the issue.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

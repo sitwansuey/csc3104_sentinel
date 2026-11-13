@@ -44,7 +44,7 @@ DEFAULT_MAX_CHANGE_AGE_SECONDS = 3600
 # Decision policies for the evaluation (roadmap P4.04): the default "gated" is P4.
 POLICIES = {
     "gated": "P4: the model decides with change evidence, inside the code eligibility gate",
-    "rule": "P1: the code eligibility rule decides alone; no Recovery Planner model call",
+    "rule": "P1R: the code eligibility rule decides alone; no Recovery Planner model call",
     "model": "P3: the model decides alone, without change evidence; eligibility is recorded but not enforced",
 }
 DEFAULT_POLICY = "gated"

@@ -1,0 +1,10 @@
+{
+  "agent_model_calls": 0,
+  "attempts": 3,
+  "decided_by": null,
+  "decision_policy": null,
+  "model": "qwen3:14b",
+  "model_action": null,
+  "planning_error_code": "BUDGET_EXCEEDED",
+  "source_revision": "4139385a2935718fe10b53f0df9316ad25263741"
+}

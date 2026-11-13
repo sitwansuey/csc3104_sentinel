@@ -1,0 +1,27 @@
+{
+  "attempt": 1,
+  "citations": {
+    "1": [
+      "branch-003"
+    ]
+  },
+  "incident_id": "INC-91716744A65B",
+  "prediction": {
+    "1": {
+      "root cause component": "shippingservice",
+      "root cause reason": "container startup failure"
+    }
+  },
+  "tools": [
+    {
+      "evidence_id": "branch-002",
+      "success": true,
+      "tool": "metrics"
+    },
+    {
+      "evidence_id": "branch-003",
+      "success": true,
+      "tool": "logs"
+    }
+  ]
+}

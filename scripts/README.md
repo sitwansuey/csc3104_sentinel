@@ -23,6 +23,10 @@ and optional; none runs during ordinary application setup.
 bundles. `latency_report.py` builds the per-stage latency ledger under
 `evidence/evaluation/latency/` from the agent and connected-harness bundles,
 reading their original run folders only for files bundles do not keep.
+`build_replay_corpus.py` builds the incident replay corpus under
+`evidence/replay/` from allowlisted bundle files, and `evaluate_recovery.py`
+replays decision policies at three validation levels over it; see
+[the replay guide](../docs/evaluation/replay/README.md).
 `trace_view.py` prints a waterfall per trace from JSON log files, offline; see
 [traces](../docs/observability.md#reading-a-trace).
 `check_doc_links.py` fails on dead relative Markdown links and anchors.

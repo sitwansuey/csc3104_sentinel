@@ -1,0 +1,31 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-bb169f4d91c612d6decff05d",
+  "based_on_resource_version": "79993",
+  "evidence_refs": [
+    "E-7D4AC7961876",
+    "E-7B7D3A844A11",
+    "E-A4991E929B02",
+    "E-CC9CA6773EBE",
+    "E-7CA834D7F8CD",
+    "E-4C594A411017",
+    "E-060627A72E9F",
+    "E-234D906251F0",
+    "E-6CA8F63D09A4"
+  ],
+  "incident_id": "INC-2255AEC555BC",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-8586d3bd21c2",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence indicates that the 'shippingservice' container is failing to start due to an attempt to listen on an invalid port, as shown in the container logs (evidence_id: E-6CA8F63D09A4). This failure results in a 'CrashLoopBackOff' state (evidence_id: E-CC9CA6773EBE), and the deployment remains in an unavailable state (evidence_id: E-A4991E929B02). The root cause is a configuration error in the container, likely introduced by a recent rollout. The observed healthy baseline (baseline_id: BASE-LIVE-8586d3bd21c2) represents a previously stable configuration, and restoring it would revert the container to a known working state. Since the evidence supports a harmful configuration rollout, a rollback is appropriate.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

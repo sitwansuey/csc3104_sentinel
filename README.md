@@ -125,8 +125,7 @@ prove live Kubernetes recovery. [Testing](docs/testing.md) also documents the
 browser-driven live run and specialised role checks.
 
 Optional work stays separate: [Chaos Mesh](docs/chaos.md) injects/collects faults
-without claiming Sentinel repair (claim `C-CHAOS-ALL`), and its guarded-recovery
-scenarios in the connected lab are tested offline only; [security](docs/security.md)
+without claiming Sentinel repair (claim `C-CHAOS-ALL`); [security](docs/security.md)
 is a protected lab for the shipping path only, not yet combined with guarded
 recovery (claim `C-SECURITY-LAB`); [RCAEval](agent/datasets/README.md) measures
 offline diagnosis, not recovery, and has no committed result yet; [packaging](docs/packaging.md)
@@ -158,6 +157,7 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-SINGLE-HOST-DISTRIBUTION](docs/limitations.md#l-single-host-distribution): The networked worker layer has only run on one host (limitation, open; planned P3.01, P3.07, P4.01)
 - [L-RESTART-BUDGET-LOCAL](docs/limitations.md#l-restart-budget-local): The restart budget is kept per Executor ledger, and only local wiring gives it to the Guard (limitation, open; planned P4.03)
 - [L-NO-DIAGNOSIS-ACCURACY](docs/limitations.md#l-no-diagnosis-accuracy): No diagnosis-accuracy evaluation (limitation, open; planned P2.07, P4.04)
+- [L-REPLAY-MODEL-ROWS](docs/limitations.md#l-replay-model-rows): The recovery decision ablation has no model rows yet, its labels are unreviewed and its state is reconstructed (limitation, open; planned P4.04, P4.07)
 - [L-CALLER-BLOCKS-CALLEE-REPAIR](docs/limitations.md#l-caller-blocks-callee-repair): A callee cannot be repaired while a caller it broke is NotReady, so the dependency-ordered pair cannot show its ordering (limitation, open; planned P4.05)
 - [L-SECURITY-SHIPPING-ONLY](docs/limitations.md#l-security-shipping-only): The security lab protects only the shipping path (limitation, open; planned P4.06, P5.04, P5.05)
 - [L-UNGATED-CVES](docs/limitations.md#l-ungated-cves): Workload image CVEs raise alerts but gate nothing (limitation, open; planned P5.02, P5.03)

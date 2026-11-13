@@ -1,0 +1,35 @@
+{
+  "attack": null,
+  "case_id": "cap-boutique-live-20261111t144125z-81e38f",
+  "kept": [
+    "incident",
+    "policy",
+    "decision"
+  ],
+  "provenance": "captured",
+  "reconstructed": {
+    "baseline": "Pod template from the catalog target and the run's pinned image digest; the recorded baseline id is kept, its template hash is not recoverable",
+    "baseline_healthy_observed_at": "harness baseline check time",
+    "dependency_finding": "held at CLEAR for every case, like the fixture approval",
+    "live_state_captured_at": "assumed: 20 s after the incident",
+    "observations": "one Observer snapshot rebuilt from the incident's quoted signals",
+    "planning_state": "baseline template with the catalog fault applied, recorded resource versions and generation, not-ready status"
+  },
+  "schema": "sentinel-replay-case-v1",
+  "source": {
+    "bundle_class": "agent",
+    "bundle_id": "boutique-live-20261111t144125z-81e38f",
+    "bundle_manifest_sha256": "a4c6a65c21ac266ef66906082934c5ee6798d863e427052798e846659a878668",
+    "provenance": "inferred",
+    "source_revision": "4e8b44a86c9a80b25e60d147b1a8acdfae622024"
+  },
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  },
+  "twin": null,
+  "variant": null
+}

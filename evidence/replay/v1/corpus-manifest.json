@@ -1,0 +1,1573 @@
+{
+  "built_by": "scripts/build_replay_corpus.py",
+  "cases": [
+    {
+      "case_id": "adv-escalate-override-boutique-live-20261111t202419z-cedc47",
+      "files": {
+        "case.json": "68219dfed5928b28c22147e777aae765968ab58c257243074dfc72490baacf0d",
+        "expected.json": "89f40fe322c49d9291093cac79447d5e3e5ee337167605f085ed549a9eb32edc",
+        "inputs/baseline.json": "fcadd0f8e9b47a075db91f4c4c874923bf2628db010a1b07a5afd87450e70d14",
+        "inputs/dependency-finding.json": "0b0c5052be09a257327eaf4a77eb6f98e0b40e364ce598d958bc614f4c9b6b93",
+        "inputs/incident.json": "deb3bae760a1bcc31282230b0f4c7a6bc58cc829dbd386176fdd9b545b153792",
+        "inputs/live-state.json": "dbb4eb792e334e6c5eca6a135ea1a566a2637cd5414e1d9e8970e5bb2e3f8f08",
+        "inputs/observations/0001-observation.json": "b39a205935682efd76c2bc9eb13c4b35f04a6ce8555372ae660d2a5b6ef45077",
+        "inputs/planning-state.json": "6ed9751d75c61fc0046a6d1040bc9a9d20e0eedecac8ab7090b64f6bd5c2fa84",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "adversarial",
+      "variant": "adversarial-log"
+    },
+    {
+      "case_id": "adv-escalate-override-boutique-live-20261111t202847z-3e370f",
+      "files": {
+        "case.json": "a13c2f3322b8184de1d92a3b16e6f5527bff494386bd0989e5f36c6a87826625",
+        "expected.json": "cd8c322019d8ea63e4ff539f3570e47f177aeee582b46d3fc1c61e6882c5d3e9",
+        "inputs/baseline.json": "d2698df19238c4c9bf1caf8650d6e8cb6867514e0e8675e73e1e6be778e4c4b0",
+        "inputs/dependency-finding.json": "822db033d1c626431aa83c208a6618d53866006d6f734fa8574c0856810491fb",
+        "inputs/incident.json": "5f2a42a0ee9b217e205ee19170bcbfe81964a273248e353998d03c85da6f95ef",
+        "inputs/live-state.json": "8406f26edf9d3e91561992b139211a087f16ba23657567c25dbc8d2793cdbb10",
+        "inputs/observations/0001-observation.json": "bb664604023fe3aaf208d516bbf8a70afb59acd4dcdb83f3c7bcc2f3948a6e56",
+        "inputs/planning-state.json": "c07697de0cd2c11c509dc71527a2d19864619898809d452a40edca525c6f3a0c",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "adversarial",
+      "variant": "adversarial-log"
+    },
+    {
+      "case_id": "adv-keep-rollout-boutique-live-20261111t202419z-cedc47",
+      "files": {
+        "case.json": "0dac5dc6976b085dfd833108bb863cf3471fcefc206838b09cd31dc0a9bb70d0",
+        "expected.json": "a1352ea9e204640e987d365ccd095040639ac22e21c76116d6575ac362fd0b18",
+        "inputs/baseline.json": "fcadd0f8e9b47a075db91f4c4c874923bf2628db010a1b07a5afd87450e70d14",
+        "inputs/dependency-finding.json": "0b0c5052be09a257327eaf4a77eb6f98e0b40e364ce598d958bc614f4c9b6b93",
+        "inputs/incident.json": "c658e29d52ef6010fc9993b9ec9ccac1f11472b0c211de3ae8f4987cb30cb777",
+        "inputs/live-state.json": "dbb4eb792e334e6c5eca6a135ea1a566a2637cd5414e1d9e8970e5bb2e3f8f08",
+        "inputs/observations/0001-observation.json": "679a6a9a08d70539972572fc0ee52e4778e6b457fc9738c54345359adaa48e85",
+        "inputs/planning-state.json": "6ed9751d75c61fc0046a6d1040bc9a9d20e0eedecac8ab7090b64f6bd5c2fa84",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "adversarial",
+      "variant": "adversarial-log"
+    },
+    {
+      "case_id": "adv-keep-rollout-boutique-live-20261111t202847z-3e370f",
+      "files": {
+        "case.json": "33a3ab056190408413e79801cb0c371648255408775cf6f3d46c00d3d40e7bf0",
+        "expected.json": "972e0a5fdff059ac1dbd55bf51d077da23a9d74c02e8d741fc327eb0199579e1",
+        "inputs/baseline.json": "d2698df19238c4c9bf1caf8650d6e8cb6867514e0e8675e73e1e6be778e4c4b0",
+        "inputs/dependency-finding.json": "822db033d1c626431aa83c208a6618d53866006d6f734fa8574c0856810491fb",
+        "inputs/incident.json": "4886e8d352c9d10cd8121bf00f9c321fb2fd984fa26d699a6e9c32266d0256ea",
+        "inputs/live-state.json": "8406f26edf9d3e91561992b139211a087f16ba23657567c25dbc8d2793cdbb10",
+        "inputs/observations/0001-observation.json": "ec0801253708ae7b4346cf652b2f12f4240e9af542f47d2488d07c34448010da",
+        "inputs/planning-state.json": "c07697de0cd2c11c509dc71527a2d19864619898809d452a40edca525c6f3a0c",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "adversarial",
+      "variant": "adversarial-log"
+    },
+    {
+      "case_id": "adv-rollback-directive-already-restored-boutique-live-20261112t074450z-38278f",
+      "files": {
+        "case.json": "20a46a424bfa1384524e8fcb7c1c0b233027c5598e3e3ee8740a74efd1821e33",
+        "expected.json": "e62584951df2d10e1a13f576c5a7142cf51e0b96c6a7c9293c0222acf20ea4bf",
+        "inputs/baseline.json": "96ee707b3aeca88fb3fdb7b2a34c5227e93bb03babe6ce61281e2e0462e34f6e",
+        "inputs/dependency-finding.json": "98a53e65174493ecbc90cb4ef90e2e6ba650d7358aef4c4e4a2e3b9624f09763",
+        "inputs/incident.json": "f6d55127ec0f555c5861b3e080b15bbc7cb5548cb9d0ee2f53b8d4501ba9c1eb",
+        "inputs/live-state.json": "0489b85f343770961501bd61d04d2f1ef4f617063a98e685cfa0d12dd648918e",
+        "inputs/observations/0001-observation.json": "a4dfdcac2af79ed5ae54f23756738b8c905dccf82e26c71993aff7e023b8cf88",
+        "inputs/planning-state.json": "a8af3a6ea5e341afb33148b362d724ee891895f7d29cebecf959066641d2d444",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "adversarial",
+      "variant": "adversarial-log"
+    },
+    {
+      "case_id": "adv-rollback-directive-already-restored-boutique-live-20261112t074810z-311065",
+      "files": {
+        "case.json": "b2851b5f87e151c9ebe20a349e03181843b5ed6c964aea1619da6fb3be495afa",
+        "expected.json": "69dabc8af8f29395f250760634b20cb84f000c1eff29e8949b2fe0484a6d34a7",
+        "inputs/baseline.json": "8b05b5625c7d4961a83de51388a3af43dbca6707a51c25fd6c9a74c188616e39",
+        "inputs/dependency-finding.json": "357f78f1969ab18aa45b49a5eb909b7c773ba8cf61d34176c052935bde07697c",
+        "inputs/incident.json": "406db2cf2b06da0be177e59b386fa61412dccc9523eb6bd13c182ec103e5926c",
+        "inputs/live-state.json": "3ca08b95a5a93baa85c454ab8cc151552f64fc33ac0c65e77f6fe7700d683264",
+        "inputs/observations/0001-observation.json": "e6faf2387d4458c07c27d9a30c0b013664a9254db912e5a6e727eae89945dd5b",
+        "inputs/planning-state.json": "3ca5633e09eb4ea056d910c483fd0c2ef5f55680b53bd853f64e71a197499a27",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "adversarial",
+      "variant": "adversarial-log"
+    },
+    {
+      "case_id": "adv-rollback-directive-boutique-live-20261112t075550z-26a26a",
+      "files": {
+        "case.json": "3ace89e39b2c7696cc4708f4be4554a8858bbdd8304c53e7d64fb5314296efb7",
+        "expected.json": "7d0dc57b6ff39560d26f72535fd37de7602b2f4d5525ff5959dd8694a4d6eefe",
+        "inputs/baseline.json": "db08fab815742b78644aae59cd0286c38f8a507e90221890d6f9c42754d91d07",
+        "inputs/dependency-finding.json": "b65b2ed25f63cd951ec28d25871f37eabde0905a8881835bd0a359f28cc162c6",
+        "inputs/incident.json": "beaeb9fe248fecf289675940a1be2ddafbd76a7fcc35577eb5011dd7f54dcc58",
+        "inputs/live-state.json": "3b67427afd7c13d15b2f76db55e364e696e806e8ea53ccea08fb9d1c02e796c6",
+        "inputs/observations/0001-observation.json": "0f678d43d21b11986e72af040e16fe6108823cb1068aa2a557ca527e87b7bb2a",
+        "inputs/planning-state.json": "5df7cd0734d8e46170f96f10d4d5b37f7b67fe78cfda9dc53ac2bb2251499f1e",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "adversarial",
+      "variant": "adversarial-log"
+    },
+    {
+      "case_id": "adv-rollback-directive-boutique-live-20261112t080756z-29fd09",
+      "files": {
+        "case.json": "7e62bde4c786810febfddde0e281399bf0787f8451dc5f164f6cc4ce37cab900",
+        "expected.json": "cd708c0129e846d46e1c317b21fff0f41742ffc2ee9eb6b626f29f5cd1734d32",
+        "inputs/baseline.json": "d449fc23e520320d181530b178fdbd0bdd884cc83c2f2f409350b8b28b90fa80",
+        "inputs/dependency-finding.json": "0a9ec581a1b4e61b608fca0bfda3054c2031d9c04920e31bf367fa5cab1f6d85",
+        "inputs/incident.json": "4b996dd9a548f6942b861afbd6f8fc68a617e9f823f3ce71fdccdf2659f193c9",
+        "inputs/live-state.json": "eed51d70397429e1264df6acc2251466eaeeb1d2b3d6e2109dd6cd7ab11bb133",
+        "inputs/observations/0001-observation.json": "4f30b8b3eb0d090763925b811169236453470aafda03a4a040e3a58e3631558a",
+        "inputs/planning-state.json": "0cdfc11a95a1ec5b9efcc73bebd24ff215253e758287f59ce9dafef332443728",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "adversarial",
+      "variant": "adversarial-log"
+    },
+    {
+      "case_id": "adv-rollback-runbook-already-restored-boutique-live-20261112t074450z-38278f",
+      "files": {
+        "case.json": "171a3575d456a1c88433c3b33c101b8ab6fa227b9f7e0424023009bd7b196c38",
+        "expected.json": "fbcb24d23f4aea850419d7c7a259180d1660614ebc2b1f9ad38ff79e3e7a03c4",
+        "inputs/baseline.json": "96ee707b3aeca88fb3fdb7b2a34c5227e93bb03babe6ce61281e2e0462e34f6e",
+        "inputs/dependency-finding.json": "98a53e65174493ecbc90cb4ef90e2e6ba650d7358aef4c4e4a2e3b9624f09763",
+        "inputs/incident.json": "e6c174a533a600d6a01f6abb3cfe1096733286f0f792cfb698be89d310a767f9",
+        "inputs/live-state.json": "0489b85f343770961501bd61d04d2f1ef4f617063a98e685cfa0d12dd648918e",
+        "inputs/observations/0001-observation.json": "db299d56c99f5947622ca37d4484301d181555547d93c0c978be57696d12d69d",
+        "inputs/planning-state.json": "a8af3a6ea5e341afb33148b362d724ee891895f7d29cebecf959066641d2d444",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "adversarial",
+      "variant": "adversarial-log"
+    },
+    {
+      "case_id": "adv-rollback-runbook-already-restored-boutique-live-20261112t074810z-311065",
+      "files": {
+        "case.json": "ac55e53fab334df9f55b8f506b88538ad438fff6eaece82875bff3017833e2c0",
+        "expected.json": "600a9a91a1907b26cf4d3260feca99713120ffbe87a977331a74bdfada53ee65",
+        "inputs/baseline.json": "8b05b5625c7d4961a83de51388a3af43dbca6707a51c25fd6c9a74c188616e39",
+        "inputs/dependency-finding.json": "357f78f1969ab18aa45b49a5eb909b7c773ba8cf61d34176c052935bde07697c",
+        "inputs/incident.json": "ab596cc0bbca2cf6ccb5e8c1465e288b215a63b8117000f13b176f2f1a4d5fe2",
+        "inputs/live-state.json": "3ca08b95a5a93baa85c454ab8cc151552f64fc33ac0c65e77f6fe7700d683264",
+        "inputs/observations/0001-observation.json": "46164e45904789fd988597d5a50d92025faf80bfc508757cd711b9d08a8f9b98",
+        "inputs/planning-state.json": "3ca5633e09eb4ea056d910c483fd0c2ef5f55680b53bd853f64e71a197499a27",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "adversarial",
+      "variant": "adversarial-log"
+    },
+    {
+      "case_id": "adv-rollback-runbook-boutique-live-20261112t075550z-26a26a",
+      "files": {
+        "case.json": "51664718101cedce58ba730123c23e832890442b63b848b9ef64a0337b7e60c4",
+        "expected.json": "bf9deb730beb8ca88732f5ad014d7dfb16bde0e974f01ebdd61ffb39775a23cb",
+        "inputs/baseline.json": "db08fab815742b78644aae59cd0286c38f8a507e90221890d6f9c42754d91d07",
+        "inputs/dependency-finding.json": "b65b2ed25f63cd951ec28d25871f37eabde0905a8881835bd0a359f28cc162c6",
+        "inputs/incident.json": "7bfaa5900cefbcfa5b848b1b201f2e9783f557efa4489515e37587ffdb36e09a",
+        "inputs/live-state.json": "3b67427afd7c13d15b2f76db55e364e696e806e8ea53ccea08fb9d1c02e796c6",
+        "inputs/observations/0001-observation.json": "0fcd6c91c0df05e0584d839365c0d180a0ee40bc1e7e5e27dd80365af1178bb6",
+        "inputs/planning-state.json": "5df7cd0734d8e46170f96f10d4d5b37f7b67fe78cfda9dc53ac2bb2251499f1e",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "adversarial",
+      "variant": "adversarial-log"
+    },
+    {
+      "case_id": "adv-rollback-runbook-boutique-live-20261112t080756z-29fd09",
+      "files": {
+        "case.json": "79255d860280f8a204467e588e8bd503b4921003f0bf8c3f035bbbf02d9ca5b8",
+        "expected.json": "b60131da4fcbfd635fcb34f5e30fc3e185d76d556bffc27a7d95da767570cad8",
+        "inputs/baseline.json": "d449fc23e520320d181530b178fdbd0bdd884cc83c2f2f409350b8b28b90fa80",
+        "inputs/dependency-finding.json": "0a9ec581a1b4e61b608fca0bfda3054c2031d9c04920e31bf367fa5cab1f6d85",
+        "inputs/incident.json": "109596b93b0ad41dd2ec98a7d09814c31a6b344df2b1d5b733eeb4aa3a8f0287",
+        "inputs/live-state.json": "eed51d70397429e1264df6acc2251466eaeeb1d2b3d6e2109dd6cd7ab11bb133",
+        "inputs/observations/0001-observation.json": "703c8c5418c3f23f5602ab2364bfd21c3f575aaf7c632afc336fe22e7cc758f1",
+        "inputs/planning-state.json": "0cdfc11a95a1ec5b9efcc73bebd24ff215253e758287f59ce9dafef332443728",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "adversarial",
+      "variant": "adversarial-log"
+    },
+    {
+      "case_id": "cap-boutique-live-20261110t170340z-924ad0",
+      "files": {
+        "case.json": "b6bc72861aafc1939057c4b08befdbe6a29665c549034b02bab9b9aab62043d9",
+        "expected.json": "8a799f9c89cb69f5769972564341208dc44ee77306bb56a0d0f553908cff2ab2",
+        "inputs/baseline.json": "405e93987ef9119481cedab22289fbb4693369826e2147ab117e734f5d8916f8",
+        "inputs/dependency-finding.json": "dd4cdfab200e8bbc12118a2525ccacae4f0efdc6c484d97c06eda263348791d5",
+        "inputs/incident.json": "071ef9a86431bb2abb7149266e8f08fbf771bea8b4e489a0cb18c6b6bed58fae",
+        "inputs/live-state.json": "c71041433b64a30a07027bb51a850a020ca759e2a3ef523f891974a1d2ccb58a",
+        "inputs/observations/0001-observation.json": "038875da002c9475676466f8535f294c5f3f704c0a404041bc0aa0cefcc7f4c6",
+        "inputs/planning-state.json": "9ba9f703a1646a74941f98c43e1689c7b081df278b98a458510dfcef8009e30b",
+        "inputs/policy.json": "e48783e6045b8b84b757377b2949ac4585351f6a1012e43efc7c07b93adce9e1",
+        "recorded/guard.json": "bd8bdbb340a04de158a476337390e6514a82087bf8a09fae97c1725a09041dfa",
+        "recorded/proposal.json": "641d63796ec505b1066f43a02296f16c8f4cc2bae46b63a975d269934609199e"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261110t171150z-44469c",
+      "files": {
+        "case.json": "2a1e1250dc28906d2f842a7d78dab8c26a0e77e4e279d9f783b5091d5c65addd",
+        "expected.json": "b89265bb427d83cec22f107858c5122d8e11fb1a1421cb4d8ccce45d43a97fc3",
+        "inputs/baseline.json": "51a0a25b1072a0a19f3936efba749202cb240d6968a3b8b25d29ca64c242dba3",
+        "inputs/dependency-finding.json": "cd150a92050ab6672bdaaab628eb3ad2517694d02b9f96698136adf3e8aeb041",
+        "inputs/incident.json": "688610065a63c2913a8086d9d319a2c7f8a99571e99ad39d94bf101e07c819b2",
+        "inputs/live-state.json": "6a356e5c53376009636eff7fab426d85d2421065d2419fa5f20e5991778908e6",
+        "inputs/observations/0001-observation.json": "d300ebccaa8e7b920c5fffccf64d10e24a22a6eb4b61dbcdee77177fb814ddb1",
+        "inputs/planning-state.json": "7823d4a437f8bfd669b96aa99612ad1c2ed4877489be7a6e75f2147d93fd495e",
+        "inputs/policy.json": "e48783e6045b8b84b757377b2949ac4585351f6a1012e43efc7c07b93adce9e1",
+        "recorded/decision.json": "e32c3960a7888854db75964070e79aababe9fad8024d4f1253e49cf002824e70",
+        "recorded/guard.json": "784c7ebf865fa6ec8d637d359f06bf5476a41bce2a67620f1586550676690f8d",
+        "recorded/proposal.json": "9a2f082beb1d8d9874363f7278ebaa67d3063b7638f9cfade64c80f2a078c5a6"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261110t171528z-3f8ebc",
+      "files": {
+        "case.json": "1efc27859ee316e813a37d9b55445f8f015a8f3bdc48883034134292e4678848",
+        "expected.json": "f4291ff3fc315f3b608772eaaed9d728873c789650c16d4e3566e3a8b4781d93",
+        "inputs/baseline.json": "38163e6f51790363c0a0ce764bdfbe7a66529976f2c4c85adbc7a1b09f751a9f",
+        "inputs/dependency-finding.json": "1309214ed3d328048387c83945eb7d618650f35a39cc069b8f5a71417fb9db58",
+        "inputs/incident.json": "933ed7189cce411e365b40d5af2ca39b9807e98fa337e8956db9843ecf5dc7e5",
+        "inputs/live-state.json": "5848bd6a858bc074fc7a7e5417112192cb48bc4ba37ff7d8972c604fbcedecbe",
+        "inputs/observations/0001-observation.json": "bcfb61ecbca5b03581f91b88917de186e32dcfbdb3cc604f89af02a982d4b2cc",
+        "inputs/planning-state.json": "cdd4b84a2f1370975dcbec0287fae71a7959b9aa4c7d5384a8f679430c82c48b",
+        "inputs/policy.json": "e48783e6045b8b84b757377b2949ac4585351f6a1012e43efc7c07b93adce9e1",
+        "recorded/decision.json": "e32c3960a7888854db75964070e79aababe9fad8024d4f1253e49cf002824e70",
+        "recorded/guard.json": "162ba31bf7e09aaaf3f402bcf7bffdebc7082de68a485137116b267eef55799a",
+        "recorded/proposal.json": "c083ec3daf831d0958db8151db5031a8319cacfdd5391dbd07b2c88a35a010ba"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261110t184654z-638872",
+      "files": {
+        "case.json": "6439a7f9c4e6e02503be9a6038a87d361f855d1c839db108126f2875ec5c7420",
+        "expected.json": "62148f18b51c48e5f4123334c376ccc332d508a1edee7894f962b4249c2ad492",
+        "inputs/baseline.json": "53baaa5d435d550295f6bd1c27b3ba9ef7f292a0026bed652c7d65b11b0afb1f",
+        "inputs/dependency-finding.json": "7be43266b8f43a4387d0e6e072ae13d49362df0e023f42ea3431ff4366e913c7",
+        "inputs/incident.json": "f7cfb41b1381e62424afe9aff82ed5bccacf63f071fb04191886854b149d8561",
+        "inputs/live-state.json": "142ac7c726a88e1ed8817afeaaeb378e2c2daa8931dc8ae7249f097261c8abc6",
+        "inputs/observations/0001-observation.json": "102175ef023a538fdfc0220743a85baa5ef8f01603ebbeff19cc59111006a29e",
+        "inputs/planning-state.json": "e3d918e6f9eb7620d8bdeef4565689add5d3b81b9e4d36dab9af1d5c54449ced",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "4e017bdcb3c83cf0d7b5519d46c5ba423c1e56a3fd41f11fd3a8bcf53df78aa8",
+        "recorded/guard.json": "1072e39ba69eddc319572bbb410f6a92b4532c11e3fa995058e24bd56ad6f333",
+        "recorded/proposal.json": "565fd2f85b11c0dd3b4098db4901bc1a41b9e5dabd4957ee0d0e7a94d7d73417"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261110t185103z-e3d521",
+      "files": {
+        "case.json": "565088cfc59112999c6542c3b1747ddc0e000883104d04618b27bcb16393d10b",
+        "expected.json": "0cfdb13dbce011457b44bfdb432b78cf0eeb64d9c6574dff32370ba92d1033be",
+        "inputs/baseline.json": "0cca06ccbc34f7214c9e4e280dcf875a0302150942970584a197d5f5c122dce0",
+        "inputs/dependency-finding.json": "c5f1ae5763b65401e4203cbbac305afa815a42c038dea3ef60ff6404c4750a37",
+        "inputs/incident.json": "d77af1a9d28028b9daf0561a90b6d3ec3d169bc81c78115f6a03fab101d5ec99",
+        "inputs/live-state.json": "7b8c4a84d6280fd5c0618868f9544bf8a6115bab320445c2123cca7d5572d873",
+        "inputs/observations/0001-observation.json": "36eeae3b56fd2a0698004cdfed60b39b4c0f8476a34a18cda4122a5b570e6c0f",
+        "inputs/planning-state.json": "817cb02e8b367db31fc7bdf308ca839c76544dddacdc5ae08ffee9603c6bc547",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "e32c3960a7888854db75964070e79aababe9fad8024d4f1253e49cf002824e70",
+        "recorded/guard.json": "1f3e313294bf3e54fc70887861d76b6774ffa474f25439f8553659568d15b75e",
+        "recorded/proposal.json": "d2d49ce218f2c7a01e6e9f1e1b4b5c6aabb3a7d5b66199d7f5c109adf1c6a2e3"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261110t185411z-484196",
+      "files": {
+        "case.json": "aef82bd53c5f1f02405e9425e7e1501939cfe19733847ea28558afe182346506",
+        "expected.json": "5340f26942690cb409b4e95657a7204039a8813185f76c3a5183db16203e2d67",
+        "inputs/baseline.json": "ce059a009e66f29f5093229f5eae261feb4a1b00bd95ae931044376003aaa616",
+        "inputs/dependency-finding.json": "41356a0a98050c659039fc5b63eb0fe1ff6599e7e4afadbcd00911bb011ac0d4",
+        "inputs/incident.json": "742dd726c157168da9270b341524ab41d526efdc01c8c77b795e4df5c1d5a664",
+        "inputs/live-state.json": "057343e337ee908e8fe95c554a17152dce0427ae3bfa13e430b79699b77b1745",
+        "inputs/observations/0001-observation.json": "1a0d14d949b1bfbbb7f90919481c56ad1809f17b2392b76bb561088a9733a28f",
+        "inputs/planning-state.json": "beac8446724ed712685b8bc37f5263f578532ce2729255bac87cdd4c27952d43",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/guard.json": "18d7d617484d1434b33ce7a3e29b5038ae7c7cb31fde4f71db58553376c51b02",
+        "recorded/proposal.json": "9ea153d98dcc9ae7f5a3c38a6d19a021bf27ae445251a627f3430082fa5aace1"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261110t185646z-275eb5",
+      "files": {
+        "case.json": "843088498479046bb171a0d9e11bf1bcf9778d8057d0a745b830611782ae0617",
+        "expected.json": "6eea7caa4615162cd75959eb2d729930718ed0d4f40d7cb82e437c4d638b2f1b",
+        "inputs/baseline.json": "b1b79305b5016c9c9e9cd1383d15aa7ba7ab29ac64c396f5b85db7f68ab9985a",
+        "inputs/dependency-finding.json": "b1e554d4e82ac7ccd595fa0e5e7dcf610151fb2d89cf7076f3c4e26e95eb0a30",
+        "inputs/incident.json": "1e3fdb61f08b14290e216dcdfb33bc328145b61293b6f03cfbbcbc7e602f9f50",
+        "inputs/live-state.json": "6e7b6625e9f7c9ab6311ca4f3b8a8e99b5af3d0deb27b0e9c588fc0d6283bc16",
+        "inputs/observations/0001-observation.json": "f1d95c494cb7aecaccfc487dee8582b78d0008de1c3ad3a7cc35c528d473c98a",
+        "inputs/planning-state.json": "56ff11f0bf8b4993e07f317996ecb0c242817f93069f477c43f1e6db05cbceee",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/guard.json": "aa15d18f89e909f8c90ec56a06e97f2c8aef1cf6b6d54eaee1399c806c47962a",
+        "recorded/proposal.json": "793b53c9e0418734ef3103701d5a454cc4f1647f65955fdeae4b725183e587ae"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261110t192436z-42206e",
+      "files": {
+        "case.json": "39dc72a4869a8a78649dcf675d582ffbf4aba02feb8b0ca9bee92a0252ccfc99",
+        "expected.json": "ddf4e30e2f7ddf02886eb757b22cd3817ca5947e5a97c94afea67ca1cb7908cf",
+        "inputs/baseline.json": "e0b022802624e13b8f546f3bee46b1f68e64ff6882154e66a97b2f7368446e0d",
+        "inputs/dependency-finding.json": "20fba0aa573f92e17a00db4c48387f8b06f5b81f34bcc569eba6c534741d4c41",
+        "inputs/incident.json": "a689bfc72e86b12ef7b9358ad15ed017b70bdf5dbb8a2c8f33aab879486a52fe",
+        "inputs/live-state.json": "7faafeb00e1500b170ced581f5035e0f3945185a59158c8acbcf292894715a76",
+        "inputs/observations/0001-observation.json": "2fd39dbf6abff5442bfee18c843a0931ad92c3999aaac99b6d950ae6b0123956",
+        "inputs/planning-state.json": "c40138a6048f59a354b938b24d65c97b6a6a2f71321b9086cb53bc5a4fcae4ef",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261110t192628z-f6ccfc",
+      "files": {
+        "case.json": "835432ae50e1af385fd190f0e90a2218e16746ff5779c394c2c8f786c25b1104",
+        "expected.json": "38adc2251c60892e5e86dc9284a8ffdbd7f783299b074002c2dd1f8f33e566a2",
+        "inputs/baseline.json": "3b8cc5e2a087812282dedce4d826d0eac97c290588286dca060571037e13f7fb",
+        "inputs/dependency-finding.json": "b475cb1923c7d9b5150e7613bbf1e1b3718a6e9de684b4893b29d25054872426",
+        "inputs/incident.json": "0340ba22d01aed4cc75cc21436cb256be9037b08d7b62db96fb94e6b1d4623e0",
+        "inputs/live-state.json": "9cf5fe8de86f0a42dcb82d79c29c37727a88c187923f7ac9c52307d1a084c7a0",
+        "inputs/observations/0001-observation.json": "62d6204bd96945510c3c0ccfe38ae453af409502de39c287369de77b0000ce2d",
+        "inputs/planning-state.json": "de1192ad495688ad5aaa8982105ecbc82d7253ad725b8e6640c5879c0bf34247",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261110t192806z-88c2d9",
+      "files": {
+        "case.json": "6c2def5b6a27c1d7df75fd891d80fdd98183a3aaa93b16396aa1ec23a1a27fcc",
+        "expected.json": "dcf7b65b29a01a558878f374e9e9c8fd5205a037ffc93d9a81212d582b989350",
+        "inputs/baseline.json": "33b9659a63c204b44618a3d98045bc99cfb35ce26fdc3e9987efe659c55534f4",
+        "inputs/dependency-finding.json": "3a009a65db32c17b4646dff477079bca098b1bb806bd69eddc9141fb4b4cc099",
+        "inputs/incident.json": "369b1051bd7cad80b9ef292edd577a45221b54086b875d07c4038aba28681f4d",
+        "inputs/live-state.json": "d98d51e1fd60e2c823f60185809b6118394fc977906430562def56bc40debf05",
+        "inputs/observations/0001-observation.json": "ff141585ddef1cf2df8548d03865d6ff59022740a80c1fe2c46fbd2c68c4454f",
+        "inputs/planning-state.json": "5282a4e1258a798dd75e2c57e4ea04ff499af4ba0e877c1094d06f51c88b7f8a",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "e32c3960a7888854db75964070e79aababe9fad8024d4f1253e49cf002824e70",
+        "recorded/guard.json": "1b2a1d0f413219c3a33039c1a40ccf3f3edf0bcf2bd793bcf3b4c5f1ce09f173",
+        "recorded/proposal.json": "a3c9dbc510b2eb8df853a48fb594b0e8abc59f3d21f8930dee8152683df8b6f8"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261110t193604z-2aad1c",
+      "files": {
+        "case.json": "60bb82e74bb229b8981f033ff657f0e888942afec3040be18ac8be85dfbcbed7",
+        "expected.json": "530e38e2395b9caa0caab63a6ea9b3fcb993390358d05d14c72e6fca5f8d035f",
+        "inputs/baseline.json": "047740028c8d6d6362a5a3e9272201211f7351990cc3ae0f0200a86d57580628",
+        "inputs/dependency-finding.json": "1b09bde2873f962ebdd82692445d141e6ecf65d78ef09df3336fceff2880cba5",
+        "inputs/incident.json": "16cfc6521013de9ced13951df72fd8bbcd9da23c6a9658d68c160e93983e7c9b",
+        "inputs/live-state.json": "9751374be12341dca86b65de26a444e469936d5013c084ff21a7ed0f67aec013",
+        "inputs/observations/0001-observation.json": "da83df1be987f44bd28e5e7e9844d6662f30573c1ff5e60fcb2339e42a724bed",
+        "inputs/planning-state.json": "5a344036eb0ef310286e412e5de602e53e66d76fc06d7bbaa696681d9f749608",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "e32c3960a7888854db75964070e79aababe9fad8024d4f1253e49cf002824e70",
+        "recorded/guard.json": "f0df69470d13aba0f2f6cf956dedc8f033846275d5db5ab817535c81c0497468",
+        "recorded/proposal.json": "ab51aa0d219a18c104718fd74a32312f72a4119a59164311d6c7bf929ae5c3f4"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261110t193859z-7f29f5",
+      "files": {
+        "case.json": "7466987108cc8bcb3d9fa2ed14487111e83ab0d59155526c8980ee57bf48c294",
+        "expected.json": "2d42aaa28d88fd961d299eaf90fc7ea770391d0b7609735a9f7f06beceb3520d",
+        "inputs/baseline.json": "e6e12446cc341d43d9d2ebdc7f6ad5754b3166c262c2cc5ac796db3a4590478b",
+        "inputs/dependency-finding.json": "05b8ea8084d881b6040e6da9baaeabe0e846d50caf07988ebc35b0003fe14965",
+        "inputs/incident.json": "21c1b58d3942eedd59078e6064d511c50cfd06a0ba4ee78ab9c30632cd7d11fd",
+        "inputs/live-state.json": "14767472c13eace45dcadb512de6dc034d1ba396083048bc5bc36d03c9a992d3",
+        "inputs/observations/0001-observation.json": "8d7ab909c3177dae7800330928c9218f9613bffcb8eb76a450fd15ad796f296d",
+        "inputs/planning-state.json": "bf02359ba763dc7d2b0a21245de69b56addeb008d98b406f894a076cee5f1edd",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "e32c3960a7888854db75964070e79aababe9fad8024d4f1253e49cf002824e70",
+        "recorded/guard.json": "1161bc240d0f96694c7ff62b7c9d2a2754cdbd6c2bb989adaed9bb0181869a53",
+        "recorded/proposal.json": "e69e4725cb7f4ed642c184aba22785d86e6fd179db16134709653e006e022b10"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261110t194214z-c5f251",
+      "files": {
+        "case.json": "a801ecf986b88f20a2f0abb8172d636389456144f5b7277f87fa9f93297a27fd",
+        "expected.json": "1db59c69bc4920c8eb2fba9e7274015693b42e4515aa47ffd45308aa1a27781f",
+        "inputs/baseline.json": "bbf1e8ec6ee9333136de37d9d60b97f19da8a1a4fd1cc0d5b40eb39ba9726b9a",
+        "inputs/dependency-finding.json": "24c84f66e56d81af10df6c271f9b715a6bc634e51a0bfc53a57bf9fe0483dca0",
+        "inputs/incident.json": "87c7b71f5d58937c1946a821983acc44eff0d25d02251a633a75e5159cf875c7",
+        "inputs/live-state.json": "7bd292bdc0c143f3631e27923ffd69522639057db942738cb586719fa4cc837e",
+        "inputs/observations/0001-observation.json": "8723188513ed0277ef825d542d5988ad648326a0c8b39ce06dd4571bfedb5718",
+        "inputs/planning-state.json": "e63cefcc9013ba7ad8d20235f59f953db26f6b20dabd991ea0db53e96d2ade61",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t144125z-81e38f",
+      "files": {
+        "case.json": "d1f9ab1ff4478c8e1a3558c5452805c37ce55b95bdabf97a7762da31dcf6fb91",
+        "expected.json": "86d92625d7f60e0d1e1dc101e3219905cea5bbf710f485f3220b9f062f756bf8",
+        "inputs/baseline.json": "d4db2facb9e9b7584776beb469e51360071a4722ee77c13ed3689676caea7054",
+        "inputs/dependency-finding.json": "902f5e5df12ac4d392161d97ebb7381c9d220c59369e45feb657bc901c5d7e9c",
+        "inputs/incident.json": "a78b78120a607f67f53e9881bccf0941586409144ac8da1f8287e57e8c660a74",
+        "inputs/live-state.json": "926ab5f529b197141fa533505d95c3944137b711f0f11403d660cdac94128455",
+        "inputs/observations/0001-observation.json": "3bf3711b3383c82d308d76d66dd3e82b2c980357fd2dc5c40cb39f953897cdf9",
+        "inputs/planning-state.json": "dece9a3059ada8914679bb4ff1f10e9767c78500b284a61978140a3a530dd936",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "ba9715f9d026651b3004ce0367c930cfae1b6be381ee3331ed2cfb7bab540597"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t144310z-65663a",
+      "files": {
+        "case.json": "478e673f888652decbe299ec28a68ab841c7d97a6e722b019393c03b89cee76a",
+        "expected.json": "008b931fe5223051ca8b9beb575acd09847356ed4684b7f634a19cc2a2faa390",
+        "inputs/baseline.json": "cdee1f5c6e5a5ad66ab9c30c20762c2918d9b82deec3104caf811a244bb82948",
+        "inputs/dependency-finding.json": "582e787894cac816b060bcbca02094ede10b52abc87586e772bffa536037d223",
+        "inputs/incident.json": "9d11ff564e9557c1757bba0f814a177f40c539268e2bf4259d62fae0d4893874",
+        "inputs/live-state.json": "4abb15b0acd70a7056384e416cedae15a84866ea7e86e4d1965fb19e3781c0fb",
+        "inputs/observations/0001-observation.json": "b8962b7ef10c420bfb8c4ee733345d864dc15a2da27adea06dc189be22506f86",
+        "inputs/planning-state.json": "fc9acec22894cfbf57657016eacad4c1e6f498d361b5fffd93533f4bdeda6810",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "cf4c10498b578a541c06f106352338d5d2b398f51f9f141968a57f8824b6342d"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t144432z-5fb1d8",
+      "files": {
+        "case.json": "8773e7a240719196c6d7566bc15e94c3ef432febf06482c3b4019cb46cedae25",
+        "expected.json": "78b550113b2ae4328000f3087dc944ddf86ac35417c3559b0dab8ff3c3955150",
+        "inputs/baseline.json": "0cbcae66914b1d4c309ca57a3a49bdd8dd6520f73232cd5a215994df6ce87d6e",
+        "inputs/dependency-finding.json": "1ea1b109d41f062659eb9c5ef51f0c904dfb135233a8f5c0d3bfb5ccb04cc937",
+        "inputs/incident.json": "aad2b897e7089d658dc635e1a4e3a6e6effe378a81ab196a56770c81fc2304da",
+        "inputs/live-state.json": "2b884255b3ad909b34e05d485ffc9bbcc311713634ccf17a9f61aa3907e16b47",
+        "inputs/observations/0001-observation.json": "d2f6634ca2353641626bd31851838ebe024a4ac8f140c25903953e36a130112d",
+        "inputs/planning-state.json": "d1e6b544bf5634ff26c88efc3b07b8b102572742c130681216c3562a784a532a",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "e32c3960a7888854db75964070e79aababe9fad8024d4f1253e49cf002824e70",
+        "recorded/guard.json": "b07290874d1cbf75c8f62911b1cba101470cc46070664cbb5ebe1d6d3ba401b7",
+        "recorded/proposal.json": "61fcfda20f0c30e156b39d48da7559e2ce2c981462196352814e72d330528278"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t145525z-4aa779",
+      "files": {
+        "case.json": "7f11d2ee979d7959cb1c451fffb7411b3669a7e7ba3d8527eff366bff076f67b",
+        "expected.json": "94ae9d68a58ebe4c66a0bff285c9274d490196c58c1e871ac0938386d329588d",
+        "inputs/baseline.json": "32a707c0671ba447c2dab4f5606a3ac91d428dafeec9bed63e4bfc68b6da4812",
+        "inputs/dependency-finding.json": "d0ae8e567a4b0b14ac24e9e0d08d179c8f3097d15948082ac9c4386b49f3aca4",
+        "inputs/incident.json": "e7ecf230d25c869c5f4f74b6aa2c7368ec04a92148a3c0f466e4e96785a72eda",
+        "inputs/live-state.json": "2eccc754956f0405b0838a42f09bcb023b986b2222cc9de560a4492c9b7b10bb",
+        "inputs/observations/0001-observation.json": "a60fdf0a397260cfabdbced2e9f11e66dcc2b1ef8ce1ed92c3e6ae49e786d98b",
+        "inputs/planning-state.json": "e159123006c32622ef9acda21ebffb3b0979cbb11f03e4b38cfe5197087f67cf",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/guard.json": "677d5247c52a380109eb57f51c960401c178a683b43ee95996b0fac7b5d8e175",
+        "recorded/proposal.json": "7204300b4f336808523111387687e5b52231b76d2bee7121afb70cab2bcb5b6e"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t160349z-4edbe0",
+      "files": {
+        "case.json": "6ebf5e7b741d60d0354bbca11c424e3b911b828fc7dd86c5d5c4fb75b8dbb478",
+        "expected.json": "3edea0e02a18d9606d843f18890cb6369917c5fd5876b938c22f3bf6ec4d2101",
+        "inputs/baseline.json": "76232ddb85731f1e877243d720854bedb5dc26a483a367864052ee4c21c70311",
+        "inputs/dependency-finding.json": "2d4c8ec1074f152428068504e298d88cbbf14a5b82a62ab7967ad9fffc88ec43",
+        "inputs/incident.json": "7845e21363bdff485bff4b64b63da57088e38fd172df83ccba6601be8398e8b4",
+        "inputs/live-state.json": "e9032631cb0489db44529ac44464790c4221bf01eaadf24be4d7e6f4f961a897",
+        "inputs/observations/0001-observation.json": "866221e6076d4345a25bb0913335111ec3f8aa32aef3d4c8b1317e76b0cffe9e",
+        "inputs/planning-state.json": "b003c463162888825a2f3b11d8eb77d03209139bab3cabcfa1e84273ea45fab5",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "9bcaa9fccbd448f40dec6bea28b4fb5f2d8361414f1697ac7c4e9b4799b2ec89"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t160522z-20298d",
+      "files": {
+        "case.json": "bcb75612cb898dfc09e45a2a008012014ffad1a4dcbaefd967db81d9bd987c84",
+        "expected.json": "bd0f7d06fc389ce736e0b0f71121579c4ac5470ff610faa2d91c777601f32233",
+        "inputs/baseline.json": "1b6d4f0f40473ae6eec54335ace7f54eec8950418bac466e30ed12136f2a88b4",
+        "inputs/dependency-finding.json": "ba5300a8240ba5b04a20b310ec2f27879f65402845154d7b3de4af913410a86e",
+        "inputs/incident.json": "e04bc3ef589c514bcc8cde16ae41a250c843e65e86ee60e8a690b7900abb27b0",
+        "inputs/live-state.json": "b3c8ec8d3ca262a4ce88d48e5a68b55d6732c7401169659043f0e5b2e3dfc60c",
+        "inputs/observations/0001-observation.json": "13f6ea18c101a2cfa651c424f43e94ac003a511f40b76cbc7ea05738e3c95ffd",
+        "inputs/planning-state.json": "c14aeacba284f205ff45658dee9240cfb5e685f0623c9c78dd810c9a31d59276",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "275ce9c0b4e095fed735dbe868358c2a0408c46237f5346cbf20ab8dd33180a9"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t160642z-6cedf0",
+      "files": {
+        "case.json": "570aa6f99960e108dffa3cec68e78fc498a3f4a43422471acee57b3370062841",
+        "expected.json": "d8b6289b4d172e0b865caa7dc83df49d89f93dbe6f7617498cb1882db8f9b7b4",
+        "inputs/baseline.json": "f51101e96033949fa36f8207532355940b0bd581a886b22cc4421db01ffa5f05",
+        "inputs/dependency-finding.json": "4918f7bbd40b58e3ac538d3b48c7f55d6459938226185270e82e0bc62019b9a3",
+        "inputs/incident.json": "9a35fdcaf3ad2d15f330f9ab2df7fabb7c73e2b5630d609051004f3087632a81",
+        "inputs/live-state.json": "c2d6d1172c7be0e648b18c8f59adb8f7959bbb45f1f07d1eb607e4e0cc958d21",
+        "inputs/observations/0001-observation.json": "08cb3ff5664fb0173c808ce971a046cf4496774d677be103f55328636df66efe",
+        "inputs/planning-state.json": "849f14746e209c1d1d7bac0504d57145df11401db2ec2220324ff48d5ba628e7",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "9bcaa9fccbd448f40dec6bea28b4fb5f2d8361414f1697ac7c4e9b4799b2ec89",
+        "recorded/proposal.json": "4399268c9cc55d85dd3d8a20ef8a25818ca0e55f913655288f51f7f51d0d0b29"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t160943z-f1193b",
+      "files": {
+        "case.json": "4199923fa0e0732ce23b4c1e3be8478e1e33c0e64dd7656938e09fa9e653c17f",
+        "expected.json": "eb3f52c44f9a114eb1fbd456adff70e2ea1c5e895b4848f618d906f3874a1529",
+        "inputs/baseline.json": "711d5ad74739dad2469f56e5a31a862882563c56ad7c04013bbc44de5a557bcf",
+        "inputs/dependency-finding.json": "1a0eaed8391fc31d074ea771fe6fc28611bfa9871c1c451e3d288b8a9d451d68",
+        "inputs/incident.json": "869787db33204c206e68d46767154bb7af211fa18093a05e33cfc7d94180eac3",
+        "inputs/live-state.json": "2f32f23a1598c02be4e43c2c4f07903475a97ae681e8a2a818dc6814a47f1f85",
+        "inputs/observations/0001-observation.json": "88a246c3513b9bd94de2329e473d141b7d97343af7d1c01592a11efecf831120",
+        "inputs/planning-state.json": "58284b96a6aa749e864571a792ef049b3d3d326cddc6b8478bfadcf0954c0b73",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "ad7f382dd3f9508696f136e137ff841659d23afc079cfbaf370a38a0b96ca5ca",
+        "recorded/guard.json": "0f9b3891ca3eaa91787c6c73dfc10bde2901c714b6f5914d880cd0c54e7b1d94",
+        "recorded/proposal.json": "0c75e20d2e74e259be7ffed25606215d2f9bf4a5482313e23c3ffec03539d647"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t161243z-d4cba2",
+      "files": {
+        "case.json": "28247685db7a3b168ac63768fe0822bcc3a87a1271ccf66c346a13470327156c",
+        "expected.json": "f63269d2c14ddfc56c809f4b12e07d5a16b55b257576e3002a740b3b91b62850",
+        "inputs/baseline.json": "de1771a3af2910bf99eb93d11c293971f96766225a218f865c5c069cd37f3c95",
+        "inputs/dependency-finding.json": "a6a75ca455dd7d029b87081bd628d59079f7833fed522b7140ac6b70190740a5",
+        "inputs/incident.json": "5c63816564060ae79093377b670419e84159403f654b0fb45da28d0792dc6487",
+        "inputs/live-state.json": "55fe466e2e54ce88a6793bf7c3125ea4dd09da6e239894d4e4130013dcd095cb",
+        "inputs/observations/0001-observation.json": "171593fd29973166eb2f40c6fe5d7d736a0eafc5e8d98c54359219caa0704dc9",
+        "inputs/planning-state.json": "d56e5a0674b28321da6d21e35e3bafad684772fa3469c362ba46d3d47673d9ff",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "ad7f382dd3f9508696f136e137ff841659d23afc079cfbaf370a38a0b96ca5ca",
+        "recorded/guard.json": "78a3bb774d38b2d09783bc5ca1c322cfa60fc3c2ca652be6e74f96d9c3032271",
+        "recorded/proposal.json": "8ec4b57fe736e9386fbad24dbd66b04ff5a75c96d0c665a1a8809dfe983f4173"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t165457z-da6e95",
+      "files": {
+        "case.json": "d6e440a212d5a30122550508c9b24335a2979d8ed5bcf1e9f4b3897f29dda843",
+        "expected.json": "89ea7b90b91867e13488c5307a843acfe0988ba6aa0724a6dc78a838d6cf62bd",
+        "inputs/baseline.json": "5a8b282d5ac3019af6ebdb1df71064b53216f45bbf7b61e4e5c24f0071cb5308",
+        "inputs/dependency-finding.json": "446ecc3c8d8d504cee02659506358fdc19664d753ac7c5bd8cc909f42910765d",
+        "inputs/incident.json": "27af58699947794573e4d91147d10988cd0d87de89920b6ff6842a6252104bc7",
+        "inputs/live-state.json": "16b4f833e96aae994a62c71d01a20704fad732215bb63afc1b5a8535658eae10",
+        "inputs/observations/0001-observation.json": "79fb6e7a5bb469b5cb6decfe589674c441d8dced74fae833c991eb6f40efab62",
+        "inputs/planning-state.json": "c4ce50722dea84f5ffe716fe1c059dd3fa5335dbbad928eb3fe45acd4ea2bf10",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "ad7f382dd3f9508696f136e137ff841659d23afc079cfbaf370a38a0b96ca5ca",
+        "recorded/guard.json": "6b2196c1defc0f341ec2d11bc06b2a322b8c003fb237df010bd14b5d97802e55",
+        "recorded/proposal.json": "9b88c8d10c6135de31472a69ad388acc2859ec3b79da18c7d455d40400a3a6e9"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t165802z-914d8d",
+      "files": {
+        "case.json": "51f6def0b44661ea0c281bd9512a330309e8be789d5613062e6eaddb47eaf881",
+        "expected.json": "429b9c98ff0284f81fe9a60cf2c1614fe6015bd21829e355ad3c14732f01f91d",
+        "inputs/baseline.json": "083df95314d7394fb8cb12ac54208646ef1b20049e82d7b508cb1c6ff2639393",
+        "inputs/dependency-finding.json": "c2a016df3eed99659cc0e7ced9ed0ecafd9d959a7d1233042f60e63ba3596c85",
+        "inputs/incident.json": "6098b5e428134f63a56dfb322b140f323e0efd9c6b0513a519e3799b82b5ebd1",
+        "inputs/live-state.json": "1beee5306e737f84b7b9cfe178c8c217375d941d3493d84b8106706b6335793c",
+        "inputs/observations/0001-observation.json": "11c1e1e4fd43b10d97ff8d1517739cc852bf35a650fa7b0ef2bfdfd9ccd6d830",
+        "inputs/planning-state.json": "e725d04af320e384fe3d81efe8b7896aa4297d09e4c681b244b5dab99a6e55a1",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "ad7f382dd3f9508696f136e137ff841659d23afc079cfbaf370a38a0b96ca5ca",
+        "recorded/guard.json": "f5600e30af8c389f0ffe0fca0dfd4a824f612e1ee5c5239b3cffe6a5cd1ea7ef",
+        "recorded/proposal.json": "849f2efcfdf4001672e8a18c4bf2c6b852ca495c8efdb07110b6d2d278ae57a9"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t170034z-1cc9bc",
+      "files": {
+        "case.json": "9d6e959f44c41e7b8b049e0b905e409bcec971759685437bfc71e0776ccba307",
+        "expected.json": "fd86307983463886a796c3266acc1f86cea832a56297c62dda8d590340b8a1f3",
+        "inputs/baseline.json": "f4494635beb3d96fe136fff8e10079396f15b96ffb7e839f64dc7c5c18496815",
+        "inputs/dependency-finding.json": "a3b7cdb94781efe37b79e85f8335449f188b2dadb440703a19f72ea48ba87cee",
+        "inputs/incident.json": "fdae55c52c0b8179a8055621dc5e48ae0fc54fdaa3312c5fed36f3208d7def0f",
+        "inputs/live-state.json": "d66fae5e3d875c64c28c989e6f8cf0346ebc643316759e0e89f885b82ed4791a",
+        "inputs/observations/0001-observation.json": "2f05966104d117e478cc1b89cfcdc54144c9b9e9fc399bf20e99fa0cb832bf19",
+        "inputs/planning-state.json": "ae385ce36e65dd8fb7d7f7ddd81a34a3d58f6519792bea80799999d500f2b41c",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "ad7f382dd3f9508696f136e137ff841659d23afc079cfbaf370a38a0b96ca5ca",
+        "recorded/guard.json": "a8b6d51bd9d774b16b3e5555eda5f007e629759f3d2de341dc91ac565b1e55a2",
+        "recorded/proposal.json": "85807e8074182a60a76c756df76717d3d476e4d292465076b30c6c249cca0001"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t202419z-cedc47",
+      "files": {
+        "case.json": "bc88f6596adc574d390ba303e7cda5595f4353c7efb616b9458517f8b708279c",
+        "expected.json": "6103b6eff42b9fa2ed6bcfe4fb6ccf9f45cf0452b09bfddf9cf71815d882be2b",
+        "inputs/baseline.json": "fcadd0f8e9b47a075db91f4c4c874923bf2628db010a1b07a5afd87450e70d14",
+        "inputs/dependency-finding.json": "0b0c5052be09a257327eaf4a77eb6f98e0b40e364ce598d958bc614f4c9b6b93",
+        "inputs/incident.json": "5a973eaaa89ee5de30212e71d573c2a6bad6aba74f1fdcd82656f282c735fadd",
+        "inputs/live-state.json": "dbb4eb792e334e6c5eca6a135ea1a566a2637cd5414e1d9e8970e5bb2e3f8f08",
+        "inputs/observations/0001-observation.json": "909b5b9de4f8fe43c1c4feb16e2e02ba0f89cb580fb5fde906efce43bcc8da23",
+        "inputs/planning-state.json": "6ed9751d75c61fc0046a6d1040bc9a9d20e0eedecac8ab7090b64f6bd5c2fa84",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/guard.json": "27e8fe0d8620c6d04c2b813f886dce51372d5c3efa72551be4acb1057ebfdbb9",
+        "recorded/proposal.json": "c6678674d78d1077a10f465854182d931d11aecacd6b660996c6c45c147c48de"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t202847z-3e370f",
+      "files": {
+        "case.json": "07c3fd9e6cc9e7c7599d82e40ab55a54c46e1463cc7e456469f20f60bf716c60",
+        "expected.json": "147c4a4ea83a47f2c5f68a30d81c815c60104965403ce5ff94bb215b269f01ed",
+        "inputs/baseline.json": "d2698df19238c4c9bf1caf8650d6e8cb6867514e0e8675e73e1e6be778e4c4b0",
+        "inputs/dependency-finding.json": "822db033d1c626431aa83c208a6618d53866006d6f734fa8574c0856810491fb",
+        "inputs/incident.json": "199a827eccc399a7f04a4eda1cc002ad5731d2a4e529a423ce9b790d737aed27",
+        "inputs/live-state.json": "8406f26edf9d3e91561992b139211a087f16ba23657567c25dbc8d2793cdbb10",
+        "inputs/observations/0001-observation.json": "4988055907038096aa29f67bc7dd8742fdf418d524d6ef31bee7c4e389fd3b94",
+        "inputs/planning-state.json": "c07697de0cd2c11c509dc71527a2d19864619898809d452a40edca525c6f3a0c",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "c4d6a81f1e295cc6faef082be620c566ad1c2c297ca024cac6cb4707e6734b51",
+        "recorded/guard.json": "df95a6564855018281032ee2f8cb31da72230059aa40ed497717ef0dfc6ebe3a",
+        "recorded/proposal.json": "44a8ff9b971a5ada264bae8cc4cc70de8ef75ea949825d7abb19294b18976988"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t203130z-728cc5",
+      "files": {
+        "case.json": "704c9f0d4596f6a44ff1b95c46616848526e48d2aa3a83df552a167b46a8973d",
+        "expected.json": "dd2b06261186f25d866f579582d3014e96184c1c02a1bf33c4d10ee66084a133",
+        "inputs/baseline.json": "6da7aac5dc42242637cb6d6a29458b85ed10d75a312d4b356a58987223e5885c",
+        "inputs/dependency-finding.json": "05e8a33e6f437b2edfdb0114f8b010d9c517e4f8a8142399d4b1eaf7e6ac2b5f",
+        "inputs/incident.json": "7f5354dbdf9c7d4f1e71c55ddf331ac8dce0a63e2e44b2fdbcd3857674ee1610",
+        "inputs/live-state.json": "ddcf82c830ee745cf80fe38f46591f286df737248e90a1f3e50a83179e57849f",
+        "inputs/observations/0001-observation.json": "449906bd535c89d9f44eab9b190e97e9515f9a55ba541238f6cacd48de2e7bf1",
+        "inputs/planning-state.json": "68ec92c69c8ac818e49d42d556526bbf0cc1b7b39aeaefedd86c38b7c3622c9d",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "c4d6a81f1e295cc6faef082be620c566ad1c2c297ca024cac6cb4707e6734b51",
+        "recorded/guard.json": "bc76997153ac9422ab4e5478f1644b073c6d87e52a0cb07a8fd2ce3f9c49f417",
+        "recorded/proposal.json": "4d5d2842376eee631101c59d01b9d6c60d3fd257a848e9d93366a46c1f8172bd"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t203342z-c264c5",
+      "files": {
+        "case.json": "d04f588a3aed41cc286c45b3e4a57f5934f2de453dd3c88fdd9f3eb7819c1d0b",
+        "expected.json": "8e4d7998b69c4517dae1fa7921a790d55d30bf9c0104995f68ed166389cfd2e8",
+        "inputs/baseline.json": "d1684d88cead4d4794a7764d4fc246765630e491c96121762cdea188cf777a3d",
+        "inputs/dependency-finding.json": "26f7506c24a9e669ec7ebf40fe432872af6ee7d915469c3256eb1bd40879a0fa",
+        "inputs/incident.json": "d8772ddb9d006e8f5159d9dd267f981dac11cffc57632cb6b02d85ce7b2c1514",
+        "inputs/live-state.json": "4f8ad28f5bf8a9799d98d267de164da6fff8a70736865a650b8996839ab4cecd",
+        "inputs/observations/0001-observation.json": "d05c809ab69656e2ad6418100513c09d54880e6ca7e35e0fcd8120bb95a839d5",
+        "inputs/planning-state.json": "fd75d4bb612214c2df02f4eb9691c82aace14aca109925154cae354fd646d208",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "c4d6a81f1e295cc6faef082be620c566ad1c2c297ca024cac6cb4707e6734b51",
+        "recorded/guard.json": "ed539aaab8353f0da22a24cdd4404909b909baeef9c025ae4fad223655a0c7bf",
+        "recorded/proposal.json": "e5aae027b7f427d154f137141802d9be745e2cccab7159eaea6d8ccb2c1d7405"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t220652z-f42864",
+      "files": {
+        "case.json": "75a73798e10a19c57f1c68732aa3ea6fb238052d3b78303bd12d3fe49e063c88",
+        "expected.json": "c4976e6227d177ceea9d7bf694cb83add1cf269c0ed00339ba035b0b459baaa1",
+        "inputs/baseline.json": "8138af6dd659b5597e648adcbdcb150937d4a5ef3a969e97aae069dd21ed76eb",
+        "inputs/dependency-finding.json": "fd0e76d9ad5c637943efa790cf15c42ee01ec5ff64fa3e3acd26f45baa96cbf2",
+        "inputs/incident.json": "fb6811c63a231123ad3ac6b854551b0a76541d3d820bf7aeef090b58a1f300e9",
+        "inputs/live-state.json": "d095c32e46144ff61920bdebab3ba1ac7931a31bcd1593d5725158410cc76d86",
+        "inputs/observations/0001-observation.json": "104a5e8dcb3d99f856bf99e48392eeffb886690509fb66afe08ebb355146ecda",
+        "inputs/planning-state.json": "77b53db5160c10131e66d1d0398a7906b59450e50041988431d2959ba22d0eb7",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/guard.json": "3294e6f8930fd4a4a52cff49b4dedb4a3020affc2c4466ff1430bf7ebfd6ce8c",
+        "recorded/proposal.json": "93c99d4df1103b89470353bcad4a5c749178543b24f2faa2bb44499be54a70b9"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t220933z-5145ad",
+      "files": {
+        "case.json": "0f50fc813d07ed1f1a43e0cae001a2202ddb639752fc60ed95694aaba7dd15c9",
+        "expected.json": "a3c41bd3531e6f7e07e363feaf244b90e01377176da020d7dd29209368f7ebf6",
+        "inputs/baseline.json": "b3e3ab74f2e5a0a380fa8e6c43e461e9f226dc50aa92cb168475bd7eeaf01586",
+        "inputs/dependency-finding.json": "7533646a62f0844f5bf9524835516cf65ec3265b5a4cbc461d19da46e1db1cff",
+        "inputs/incident.json": "3b5debc32e2637ae7ae2516899202badcdd85cb6d6fef8160ecfd383f1e4cdf1",
+        "inputs/live-state.json": "c5eaf9fd67858133abc1234d572fb6139fca52aec4e9fdba2976fcc414ba779f",
+        "inputs/observations/0001-observation.json": "746f7543e984350c8933077faefc6db8bc85e2462300fed5d4fe4cb014f54433",
+        "inputs/planning-state.json": "e70efefc87ed04bd7617ae7d5f2d7d840f68e5e4f16d98a3c3b0ef96e9c665f8",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/proposal.json": "7b44fa5795486da3df06f95db593937f5a60116852d1e469ad709c4ce5334ac0"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t221204z-602449",
+      "files": {
+        "case.json": "048a15a378b0a6fa81fb85932de55a05fb1051e98d06c68d6a737342016e20bc",
+        "expected.json": "1e74bbce12c30f0dc0ec0bf0fd27eacc2faa8c5100b54acc61d3a6e6bab37a50",
+        "inputs/baseline.json": "f7d525c60fc40b609f5025312ea119ce34f74defe99450e01e24d62a9897318c",
+        "inputs/dependency-finding.json": "c7082b2c0a732c2153297aafc9c1d0fd3dd68c46cf8c1735021a382f9f318de0",
+        "inputs/incident.json": "40580a456ef9c641ef0152924d1e62aaf0a5c65d1ad2611aef070dadb67eeef3",
+        "inputs/live-state.json": "2f0a1e64880f9acdd75e657592c892e086618796563b4e626e1406177085fc84",
+        "inputs/observations/0001-observation.json": "95bfd9661e3f0598132f7ff1c810a9e1384b8af80736cc25ce3ad6d140dd1e98",
+        "inputs/planning-state.json": "5943af19e1d1de1f6b47dc19d946893d67b3ce5946627aef9cecf002966f2ddd",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "0862b46be95bf85aedf3036245308db36d50f594cb91e3a8fafb15edbd418823",
+        "recorded/diagnosis.json": "d5cd5ea9e9defa59410682001ad2865de7c9a560dcbbfed98bde82812e612cc6",
+        "recorded/guard.json": "318fba35ef80195b82cfc320ee44c7f40dd16b677c107435259fcebf83e6ceb9",
+        "recorded/proposal.json": "e34b4d5be9626be64139614a2779a752d48c1052d89038e1381f6d66c37306d3"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t221600z-772bbe",
+      "files": {
+        "case.json": "023b57328d5c22002924bee18ff07d8e6b6f248be80ae67aa8b49e46ce49badd",
+        "expected.json": "d3ba0f1f50cd947868c06a70081c65cbbefca9bb0d1ba123290848d65aacba6f",
+        "inputs/baseline.json": "bda091d99b2efa6374d24db6b8486db9b102d27553390ca3a18d47b268f3eacc",
+        "inputs/dependency-finding.json": "6659b3c718a8d9872b1df4254d94899cbfc1a45cc63f53d8c42e73ad39674c66",
+        "inputs/incident.json": "af27a0fbb130bfd0da1b10deae2220102bf29184939283ec414ca439a4eb6257",
+        "inputs/live-state.json": "34c34741cff56bca70aef171a7f61f6b2cd48bda90da21279be9963f7f35d7be",
+        "inputs/observations/0001-observation.json": "fa6ab688280c99079b87bd136e5775d8560d152ef775814767b8a10ab3d1fb0c",
+        "inputs/planning-state.json": "46679164d346ce4c09433743293a5aff2edac263d7abdaea2178a6e15a664465",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "696ca3a27b05cd40bf688dd9cae7c84d471e9e99a065e10dbb9520696a304b62",
+        "recorded/diagnosis.json": "ea19d09f13ccd2d762a8eda1e70f113db1973cbdaaa04bb92b4c71576db22bb9",
+        "recorded/proposal.json": "704e4a473fa3f7c455414d5c414d0e47f545ccdc5db7e42cd0c9dd618d3702c8"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t221737z-2b9319",
+      "files": {
+        "case.json": "b5a9dc3212315b9bf23e738b7c28bb5af4a2b76d79dbec144c309e2723021faf",
+        "expected.json": "57247e7aafb25e9d6955424f1fbba6f1973941f227d4837af2e0cd8c6771e0fc",
+        "inputs/baseline.json": "71edf3dcfffa3d2a90254d6146382b133e555b411fa34ed36df8cc24a05edccd",
+        "inputs/dependency-finding.json": "9664182e0449d3706621a797a75e8b1de2c82d6c8d62beddaeb096b7a556a161",
+        "inputs/incident.json": "ee05fcc0ca9a5422194a2c4044e9ed3a0e064a8f865a84e741a27d0d0884041c",
+        "inputs/live-state.json": "751492d9ba96ccb7dde7857c425447b1f38938b5e91035bd2bbc0b87c0e1724b",
+        "inputs/observations/0001-observation.json": "3e9402e08067548d2bd504c5ca50c349071a2ed48ad2a1684b131a75d16f3e5a",
+        "inputs/planning-state.json": "a10db45ff14dea5898fa0b1fff37f87a8ac40f1c06553c9e5a142c0f5a2bc8e2",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "c2e8f6b5626131f1adecdf7bed2828ba1b8e5554d848f70ebb10d870995330cb",
+        "recorded/diagnosis.json": "fe70efc17f25dc495d4ab1987de6ce65cd8746e442657b753bbe38f6980e5d06",
+        "recorded/guard.json": "4e1c027654a6651269ce767c093486f992ed305d80f9b297482bf6d2d10c8f45",
+        "recorded/proposal.json": "7255e128a62ee14fdd7bbd331012ce7c2f645da90073e893f71a0d1d2a893f55"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261111t222004z-07f850",
+      "files": {
+        "case.json": "d73a65699877491e37cdece9a2b6f4b99c57a2b4892dc2bd773d834c9f292352",
+        "expected.json": "c57258c120343344b1ece38a257eddb957db2267121a3f0c3c321e3b4c56cf27",
+        "inputs/baseline.json": "5952e86c3f7763c9859921ebb072341bd760c02649289dba5010f7539b0e87b0",
+        "inputs/dependency-finding.json": "995633729c5a7bdb751b71ec9d0e46753ec577ed175363c72fd8deae206c36a3",
+        "inputs/incident.json": "97331723be6df17b1269289b413a9d23fb60c50477d3c7c6c53288bb84e8f691",
+        "inputs/live-state.json": "432e386a91527e29818599c44d32058aeba48e6c3af4d23f8db1c51d8ef14348",
+        "inputs/observations/0001-observation.json": "9b0566aa1e2041968ff985b4ffdb8a7f2b6f74062d46e753771789cfdcf76868",
+        "inputs/planning-state.json": "4c5f33563e8aa9adaacfa8ba4b8bdb329f4d208b3ce70826bfd40eb76928e1f0",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "5347426311d4eb3b724876763bff302f75859c651f4d7836ce0ba836f6ea10b0",
+        "recorded/proposal.json": "8e128ac9a3b0f2f87f5ca0a3870a247a65fd10d413cde10c608a9e31c57024c8"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t050930z-ba0f81",
+      "files": {
+        "case.json": "5e12aa0cbc2b3a0bb1c87a0c46a315e57adac62bd9a3634e99296b4a216f72e1",
+        "expected.json": "3aa78c50f42ac7e50a2d7eea355eef72342440216b1e2f580a65f66a0f8b811d",
+        "inputs/baseline.json": "d991c2a17e45141aedd68b3fc07ba209d0a0f4955767fe09312804d9aac6e981",
+        "inputs/dependency-finding.json": "860c562b9af3c7d0ff550e74d3ae2d51e49856cc4c477eb4a1208693dc2682ea",
+        "inputs/incident.json": "0fe1d15efdbfc2c78a3853b7a96bd94a48063085caa2eab5b7dc209ac05a973b",
+        "inputs/live-state.json": "c1452c8d491c969b5cdfedf7a760a3869202e07a7d3730e19136816ff2692c0a",
+        "inputs/observations/0001-observation.json": "b3fe9f2e0accac4463d80402a22efaa7e67b44f8712d18088705c483ea60b8f3",
+        "inputs/planning-state.json": "53120eeaa85b2493268a6b445dfb43d8462c04be746186013447eb8da8da980c",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "381becccfaf2c7591c917eac1a5a9c622e46417fc10918d7f3e4f64cc3f48368",
+        "recorded/diagnosis.json": "13f67d3a524906cdfdeffd5e43b61105b550a4ecd6885f0c1b9d6b9889cd9c40",
+        "recorded/guard.json": "fb9c70a09c82fa2579046189a4c59952d8d3a646413750389ac8edb240579ca9",
+        "recorded/proposal.json": "f427b63c6d6aa24040ebb997738931bee1e1ab0ac555d20ed5114abde38ee19a"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t051156z-009b69",
+      "files": {
+        "case.json": "eb2120aa98b184a2d9bf92ab2a8f18e03495c1b2f773ed321223ad1d78297151",
+        "expected.json": "9a6c907c771b1af58ef8135238ae0f184f3bccdb77f8da1641d10b30026e05ba",
+        "inputs/baseline.json": "d3a7568af8c5016c7924763c869ee43f73293d4b2fd9da417feb616dde135adb",
+        "inputs/dependency-finding.json": "6f3900af934966970ea63cec82054b6861f4e551a26b7d6975618c83385b9e17",
+        "inputs/incident.json": "3a21758cac184af3fba51cfa835954ed113434518641179726fe21e254c266cb",
+        "inputs/live-state.json": "c685f6095b84d14dd3d81f9d0b09e677095eef2ebbd1a3ff197971dc418a140b",
+        "inputs/observations/0001-observation.json": "4b0a4089e4d74d8723b98534517d70841b61d9e2e741ab513069c7f3fa696792",
+        "inputs/planning-state.json": "a606ea89c6eac1815675cb19b821705bf5e7e6b7f39016dd3cbdd5c4ac24cb1b",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "381becccfaf2c7591c917eac1a5a9c622e46417fc10918d7f3e4f64cc3f48368",
+        "recorded/diagnosis.json": "aaf6886c481ee412d13dd7acc6593cdd98df2561789ab780858b6492ec0443e7",
+        "recorded/guard.json": "1ef5e0aa00b64d7bb0bf2240aadf3ebfba8489101e918633f09a6979a16909cb",
+        "recorded/proposal.json": "ccc1146a2d207a539a78b9d4cd72a1a9be2941439c12d0c23ea980342e5e0b1c"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t051406z-ef3fbb",
+      "files": {
+        "case.json": "d61176d87afd736f3a71e25ee218845efe56b085e74df0d5e5db3bd1cb8c4277",
+        "expected.json": "2cb78aba543ea7678d66580880ce5d2592e6ee5d5fe62feaee382df195b3642b",
+        "inputs/baseline.json": "3219d08638e2c2fbb39ff08c3d7189cc1b16ab6d69f83c6852e2bb27b6b121c4",
+        "inputs/dependency-finding.json": "fc8e112dffbb6efefd6b371a662859ef9e57fa7f7dec64d30e40c5bfe4464501",
+        "inputs/incident.json": "31a9ba78ab69f38b1ca5df817721290e2bd17135ea12ce41f5252e86469a821b",
+        "inputs/live-state.json": "7f65504a13bed7b707fcfd6dd33ae896bd240ade8148f5e61092a224e6cfa135",
+        "inputs/observations/0001-observation.json": "cfec8a6e0f2b3b86ef9df835317ffb3d78a1b9885ce82f441a756dd1afbe8a6e",
+        "inputs/planning-state.json": "6bb547846cfb27e963fb8d166401d5f90e2f5e9fe06e2b0e2f093ab0ec0d6e0e",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "381becccfaf2c7591c917eac1a5a9c622e46417fc10918d7f3e4f64cc3f48368",
+        "recorded/diagnosis.json": "9a9daed47dd677b8cb1a370c937d839efdfcf4009432da48f068725600864ec9",
+        "recorded/guard.json": "664fe8abab7bb8cae736a623cdc34984edbfad343275c580de6e10d8b86e73b8",
+        "recorded/proposal.json": "8455154e2d702c708d26622dc08905bf663b55f2fa31226b721803df48952278"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t074450z-38278f",
+      "files": {
+        "case.json": "ab605f1206fbcc01598018a50707dbe85847b349628565870843828928cce1e9",
+        "expected.json": "66d5d288cc6a9c87dbc1b03972c2bc51b655bd83f40c3bda8a7480e225bf6cbb",
+        "inputs/baseline.json": "96ee707b3aeca88fb3fdb7b2a34c5227e93bb03babe6ce61281e2e0462e34f6e",
+        "inputs/dependency-finding.json": "98a53e65174493ecbc90cb4ef90e2e6ba650d7358aef4c4e4a2e3b9624f09763",
+        "inputs/incident.json": "217c56f15f150818780118a0cb514fd265b7f3d804c609371668538ce658fe70",
+        "inputs/live-state.json": "19b19c153cc09177f158227db6c4476567376584cd762a01a32ae76f6bd0c9a0",
+        "inputs/observations/0001-observation.json": "7a507b2649e947e057a6f7282880f0c27d29ab5b8242765a3852b5e651ccda9a",
+        "inputs/planning-state.json": "7852e1fb534bae07d3453ef2e116699d9821b32d80205feca746e740adae7caf",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "a9b2113c4000d64420f2f8912d612650343c1a9dd19f1eb8c764092adad0f8f5",
+        "recorded/diagnosis.json": "1b3393be7e1d770cbd32c94b1287ed3d1fdaa0f9712412f5f0500b7a968fcc56",
+        "recorded/guard.json": "ae7e4fd9be69b45dd94b70d37be8ead803bfd7cb0cb3903638cb8298d0de082f",
+        "recorded/proposal.json": "ae24f1aeb3c7eebcaa02e7558e52582a8c245a10db4be1d39365aa0bc7c2c93d"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t074810z-311065",
+      "files": {
+        "case.json": "00a1a74b5f3bbe74af13592a9c1c691bbf4b7d3ce148afde52663867639d3fd9",
+        "expected.json": "eb269681a728b48e4bd2f9dfe205f6dcaef1aacbd42bd8cc8426f216cca94b75",
+        "inputs/baseline.json": "8b05b5625c7d4961a83de51388a3af43dbca6707a51c25fd6c9a74c188616e39",
+        "inputs/dependency-finding.json": "357f78f1969ab18aa45b49a5eb909b7c773ba8cf61d34176c052935bde07697c",
+        "inputs/incident.json": "41d56b3124280f1c9d10db84d576a83fb05a0536015351ff8765e1303d19cbe6",
+        "inputs/live-state.json": "3ce790354f7a5f273bb5a88a39ede5eea5f994c18afa24b64fc6440b76d82499",
+        "inputs/observations/0001-observation.json": "43b3300c4c48430f965c50fcadd220784d1890f82a0b5820046d4c2213f3ead5",
+        "inputs/planning-state.json": "d3e7ec92113775f4d45302137605dfb750f77410b2ca68979752dc01948506f0",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "a9b2113c4000d64420f2f8912d612650343c1a9dd19f1eb8c764092adad0f8f5",
+        "recorded/diagnosis.json": "e39cc16f82a3daa4c4dc005d70c583842575ecfaac0c7e1bf365d05b86ce9c94",
+        "recorded/guard.json": "48e26075e97bad654523fe74c7852a858151c62a547635e8b39707275e6941cf",
+        "recorded/proposal.json": "5e6aa2e1107f8176af203a03a8e204950e4f39131722b72607acbcf0cb05011e"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t075130z-fb6439",
+      "files": {
+        "case.json": "1c756a5fb33a44f33d0abbbff96dfa0bbf3b6703229673f9271efd49dbc1713c",
+        "expected.json": "7f2bc2cbc9f3791cc68f1654e92aa62f0195bd20eb90043cca7a0e6ef25ba729",
+        "inputs/baseline.json": "5379b25ad965d286a3aa14b6fd1f918758bdb030df8b05d07a34f6d836f4aa2e",
+        "inputs/dependency-finding.json": "802d60f33270f4d834b7471256da00d4738d5e3c6ceb731ddf5a44f20d30108c",
+        "inputs/incident.json": "49fb17f67878a7c45422699d51b42dc32e34a6a509137b9eda4e01e077a956a3",
+        "inputs/live-state.json": "1492a3bfbd15a6b4609d77bab6db8cc26c507378d2f04fa6e5935ddb4b64feb1",
+        "inputs/observations/0001-observation.json": "b30934d5d632b23c0f1340a687baa4427cf1f08d1aa449e68bf72f44e76324b4",
+        "inputs/planning-state.json": "c59f6fd2ff4917faa8a2378695b0aef9fc3b929fa6d6cca499802f8da535b8c6",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "b60fc1c088dea6c52128153b44db31c623a1593e539b965c6dacc73f5eca8412",
+        "recorded/diagnosis.json": "d73a19fed2c98020809a3ddab960101549e692359fa80598d80946d1a495a9a3",
+        "recorded/guard.json": "8dac537b2687517041aac6e4e06816af9a475845bdaab8673d9d6cae391d5a28",
+        "recorded/proposal.json": "52849fec2bce34d2102f916756962e6c6c77e62a12e33adf16278bb27e955461"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t075413z-3d1324",
+      "files": {
+        "case.json": "563bee726deccc08e29bc89227ef611a9f0d01a96dab06b21c59870040984ff7",
+        "expected.json": "1e3bb9c1ea87bb1aefc040eeca2386fb6dd43e02d5d27717c4daa4b09541ea3c",
+        "inputs/baseline.json": "a4aba26e4803ae8b5d374ce205e3087045eba263f59da684c269b68ee86e77cb",
+        "inputs/dependency-finding.json": "cc249246f44bbd27cec3d1a078d617f396288109642432cf50b7cba26b0898c5",
+        "inputs/incident.json": "f570cf9fc98a31e4e0a40ea22f6128eedec726c14c8463262ba39b44f4bd999d",
+        "inputs/live-state.json": "0f382bd8d0d6c25b281f8968603e9daf280ab21d10395c88cebc4fce29516a49",
+        "inputs/observations/0001-observation.json": "2374830433c2973fde54599bcc196cbf8b39e8885aa39eb11cc55a3253e549c7",
+        "inputs/planning-state.json": "160e78a6d02a611cbc964eb40f002f5f4a191780c98c5f2c0c33d3ba5d5c50d9",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "ef96a52dc7c5aaa75548964b33440454455d131b80c8a0741cc8e18b2b58183a",
+        "recorded/diagnosis.json": "2f3375fa9d76a2a668a19790b5e601b768ee3448beb88469ae1892d2c63cacd9",
+        "recorded/proposal.json": "3491ef11ffad4b6465459d92d77b4eec4e388f1c224beee6b46fe4b793cca079"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t075550z-26a26a",
+      "files": {
+        "case.json": "6bf88ec098fb80c1a1d2a2c1436aafbe7eac9ec1870a68f58b84f673887596c4",
+        "expected.json": "6c81ce096cdec3f8b590be0fe337ae3f5d1dfdfa6f86c17db9627208fc689607",
+        "inputs/baseline.json": "db08fab815742b78644aae59cd0286c38f8a507e90221890d6f9c42754d91d07",
+        "inputs/dependency-finding.json": "b65b2ed25f63cd951ec28d25871f37eabde0905a8881835bd0a359f28cc162c6",
+        "inputs/incident.json": "f70136092acb5a47196da70247621b7d1aef7272b8c54002c85759069fd63e01",
+        "inputs/live-state.json": "3b67427afd7c13d15b2f76db55e364e696e806e8ea53ccea08fb9d1c02e796c6",
+        "inputs/observations/0001-observation.json": "06bbd13f5af1bfafdd1c65498a19dc83629b75aba17c9bb0881dffc3d8140a61",
+        "inputs/planning-state.json": "5df7cd0734d8e46170f96f10d4d5b37f7b67fe78cfda9dc53ac2bb2251499f1e",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "ef96a52dc7c5aaa75548964b33440454455d131b80c8a0741cc8e18b2b58183a",
+        "recorded/diagnosis.json": "4275583630699304a18a04d3262b8fe2d7698ae816ddfcc402f1421217afce63",
+        "recorded/proposal.json": "73d772cad3a453eaf16028d7504d3e21435bb40b8934f78ffd9f06df0b5ebf5b"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t080534z-160519",
+      "files": {
+        "case.json": "e2b33bc8bbe51ef82a3d97a0d3d4d940eff58e2e40c1857c56966a9a9260c746",
+        "expected.json": "162fcf5d3a8e534dbb83261d9db5d7c244ab7a2f7518ac54c15bcc268c0b7145",
+        "inputs/baseline.json": "66163d00d840bb90d97b127fbc6986cf36408d356b58a29a4ea11afcc405cdcc",
+        "inputs/dependency-finding.json": "0d307f160639636f04aaa96eac6aa85659939b4d020c8adfb0445e12a5e756ab",
+        "inputs/incident.json": "2813135de6da6c4c6c2586e66ce4841bc2981169910eaf4f52908fbdb1fbcaa5",
+        "inputs/live-state.json": "2801acc22665550e902857ecf65cfb3bdb35577948dd7c6c8bf4f14021a23084",
+        "inputs/observations/0001-observation.json": "3b04100e18999e0b94283e34053df798a8f3d4d03c73ed6fe0388e3282692ec9",
+        "inputs/planning-state.json": "e37afdb37af5fc724974df2d8583c56e1cd81853ae195c425d40829e8c318993",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "a371861f749000a2331667e373db9de4974a93c786ab6b0259b04e6708bddd7a",
+        "recorded/diagnosis.json": "8e52c47fc6da0c20c13e1ddb18646cf1bfce39fa071490a6ae5b1d8f4be1edb1",
+        "recorded/guard.json": "72dfbfc6bcde9cb8b40334d79b2d1a462f281c808794c651bd1fc6d6899e53af",
+        "recorded/proposal.json": "879f08a0e62962d4470d952ef35eef4071c72b074b827b0a7585981a4aa43526"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t080756z-29fd09",
+      "files": {
+        "case.json": "7b397183ea771111e00c9432fe273f9d40f89f3c1d802b6bef3311f617caa60f",
+        "expected.json": "c7dced91809b86aed1b8830c1865fbf019feea3685d686651a885973e85b7e4e",
+        "inputs/baseline.json": "d449fc23e520320d181530b178fdbd0bdd884cc83c2f2f409350b8b28b90fa80",
+        "inputs/dependency-finding.json": "0a9ec581a1b4e61b608fca0bfda3054c2031d9c04920e31bf367fa5cab1f6d85",
+        "inputs/incident.json": "0aad47266e59d2aa7d4c98a2c531f8de51601f7b5e1d737cb5f3f9516e14a663",
+        "inputs/live-state.json": "eed51d70397429e1264df6acc2251466eaeeb1d2b3d6e2109dd6cd7ab11bb133",
+        "inputs/observations/0001-observation.json": "2d4344aabb8720ef2b437e92425d63e90d1415d382c7460cee5fa3d9bfeab04c",
+        "inputs/planning-state.json": "0cdfc11a95a1ec5b9efcc73bebd24ff215253e758287f59ce9dafef332443728",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "448097c283e7a6a543ac206f17e2102c843e2320056815bf4ac704fea8112919",
+        "recorded/diagnosis.json": "cadd0eb672d4daa52ec4be19530fd9c4df35219e2561eba891cf1ec9c821da2c",
+        "recorded/proposal.json": "5518e0012fd3d515030d483eaa0957fdf07e58fb0cfafbac9d3f9333001a78f3"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t081032z-63d609",
+      "files": {
+        "case.json": "e1d98f28483f99565d3204b39ff5af2ffc000fddcb372da1ac66e6bdee29edff",
+        "expected.json": "f1549ff7ae5c13b687d2dd73a3f1e6db0c46a231424132c46ccaed22f4bcae2b",
+        "inputs/baseline.json": "3086a0e5ccb7ae3dd7d340f8006e81df6e3656890d28c9855e01882053fb4c83",
+        "inputs/dependency-finding.json": "e53e4e29edd214c28793bd391d66c3a25203f4f211887862c13b73a330f42f50",
+        "inputs/incident.json": "145eacd3b24c23393e85469ff7ff64871b7e80c2b073b28116c9034020f422d1",
+        "inputs/live-state.json": "4d6e59cfc2ec31c2e63d81409feba3ff368bd72977f42fc737294ee9f7dd1259",
+        "inputs/observations/0001-observation.json": "de6efebb1184feb9d0b6bf7e3f6c831fd49f1e67305507395b945ad5a2ec69d4",
+        "inputs/planning-state.json": "22dc66c3e38b903d260879887004909f819523525a3197c782a3f5a58f0f7a75",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "626cde70466d64a92c37446feac5c766c5e0755b67b1489a75391aadea9d98ec",
+        "recorded/diagnosis.json": "9b476a83fdfebad7f76666665cc429cb2cf121a334b4867a9472e89b14764747",
+        "recorded/guard.json": "bb527fdb34f623abf87bf3e71736e903e033d458620a85250c8b5c6b1c21e40d",
+        "recorded/proposal.json": "ec31d9ace1be03893f5aa7f1e4eb8aaaf24c97caf82f640baaf46e8f4e4aa94e"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t111640z-b8eaa6",
+      "files": {
+        "case.json": "77f1b894d9c7cb2425e53c8a179eddd1f6ea304b7c450467cc8c80d082a6249c",
+        "expected.json": "6e03928d0ea8438ef47830408eb134d49f77897ffb25a9a24833757524adc2e4",
+        "inputs/baseline.json": "831e4e7a4d5bb58fd20b24a8e767d19938c7377dc62df4a9d3b76aff2b85d847",
+        "inputs/dependency-finding.json": "6dd6590e1c7d5b76e74881fc126087e75d54a1bcdf1392b40da55996332c9c57",
+        "inputs/incident.json": "1c2d1359e8ae968499c2014ddf2f9fcb563d6bd6103cec83ba3602add2b0ede8",
+        "inputs/live-state.json": "d6667f9bcefe2b7dd0a9f4ad16fee00b3885d9d2d410a7a3aa36b1056b9958af",
+        "inputs/observations/0001-observation.json": "6d85cfeb3cd753e1ee9cd5d873c89d6d2d9c86b54d51f66fddbd5a24e873baaa",
+        "inputs/planning-state.json": "b5e362deb2c7e748851a6ee32faffa47167ecbbc861a5ad68597af8dd2275e4d",
+        "inputs/policy.json": "73474a0233d03ac424977af57ea890ca5c15fd0305fae0982bc9f4feafc5f658",
+        "recorded/guard.json": "ee1d0b1c0b652bc386dba39e9e5593ba2fe16d16ecb865441c06f2caf096ddeb",
+        "recorded/proposal.json": "675c38b9f2e915ad1bf82723d284e0b6f9c45d8dd864786686bc993c1b8e562e"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t112137z-9b327b",
+      "files": {
+        "case.json": "f829a069d94241722d988cff9e3590bffb6e4b8f22cb1949b5961ffd4d879cdb",
+        "expected.json": "e8276844462c04281416c7d92a884b1817a1a96e27f59b402c99884f2d25d48f",
+        "inputs/baseline.json": "68c14d4f67053b2c787a0d0a09b09a57df633a5d596bd7efe25cc2cffd05da6a",
+        "inputs/dependency-finding.json": "c063768624944c22614d0d5e2e6cc1c94a0a605d77939e318fa8768fbdb5db9b",
+        "inputs/incident.json": "d7b3a6c47fccde3ed200b2b10ed287ea5ca387015d437ae7772e6906b960e9ac",
+        "inputs/live-state.json": "61f01c1c872ba81c4eaae3decdfb0bc7393d74636ef3a89040f4279428073e51",
+        "inputs/observations/0001-observation.json": "2f32ac3e52d139d234cfd2790929780dee5d395194e8910db081e98b45aa797f",
+        "inputs/planning-state.json": "327c7ddab5781cf3b250f2fc4fcabcd7c79833c1a9d7164a2bdc3179d88058d4",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/guard.json": "0f9a623224efa3b0d23c2c34b9ec6f04d4da263116ca06b4c8024c3999380db4",
+        "recorded/proposal.json": "67eefafea79b81daacc3a4cb15e3ce41f672d1be6883e0fea63afd68fc7af520"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t112406z-01cb56",
+      "files": {
+        "case.json": "1f6a08c1efafdf25059fd0ff15037db6433b5b5271a7922834cbe15706886656",
+        "expected.json": "a0e86789490358a82ec54874f522e9f9f90fee8cb801ea0653d415d14ae8a85c",
+        "inputs/baseline.json": "f679d7d7fe5a998f71aee27dbb2b52c184d7e737ad81c3c363f23d358abb7697",
+        "inputs/dependency-finding.json": "1ae40e6a83b0c36ed4d933fbd1cdfffc94e561dfc69188e830a76016c9c0bacc",
+        "inputs/incident.json": "b0e805d291f9f2118f41c3166df0df454206fd7f129fc787e4562cf420ab9567",
+        "inputs/live-state.json": "c843d0f763112f3a5cc5203b63eafe374cb04452ab9afb96db914321f7b6dca3",
+        "inputs/observations/0001-observation.json": "274256e09cb50ee4515b502b4851f3fa01c51e238fe5a41b1355815f8317d3f4",
+        "inputs/planning-state.json": "067b28a15945b0222aab1f028bc1318a163599933d6f6b0662b5e2d100c1e5f0",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/decision.json": "9931698907bd12d9945c2913ac0b1d9f18caa4b71e91db4b3bf6b97eea1c65a9",
+        "recorded/diagnosis.json": "b2b599fb3049638ca3b9539993aa4331491ea59c527d56586d883fba90b7cd5a",
+        "recorded/guard.json": "3aa338b630cf9269f21d05fc25b6d2c3989b3597177dc42a14a39d388941935f",
+        "recorded/proposal.json": "36dd8942bcc80277deaf03c54d178644e4e0e7ed9fa064cd5851caf07bc9f44d"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-boutique-live-20261112t112846z-f1c4ed",
+      "files": {
+        "case.json": "5992d48a31b460db4620df58985e6fb373c865f82a27b22bff74e7e79c8955ec",
+        "expected.json": "706f675839076c223eb80dffff903143bdf0878a29b6a4424dad6c9206e89d05",
+        "inputs/baseline.json": "f95a089250cf3a3130014cadb9ddc3dbd7f70278993684edf0d6828296353822",
+        "inputs/dependency-finding.json": "ea0806b241f5b85afcf341e798f90321861e5c7ab7fa979165e282f1f40512e7",
+        "inputs/incident.json": "50fa7fe333c409140bf46540014ec84abb0bf5c4c11a312cc99345b681c0c7e0",
+        "inputs/live-state.json": "f846aaca376df8f6f3e319af39123c32be509986b96af6128fd415ffbb251633",
+        "inputs/observations/0001-observation.json": "6d9fe6ae70f41a142e5d12690d44a269ecd65b25dfcbb983634c278be22e1349",
+        "inputs/planning-state.json": "43440061a744bbb7264fd05e4a4e0a7beffc8f64f9c34ec796a78e5c1f5df0bc",
+        "inputs/policy.json": "73474a0233d03ac424977af57ea890ca5c15fd0305fae0982bc9f4feafc5f658",
+        "recorded/guard.json": "0e4a12346b1b0bae87917d03d6bcb0999c6a7addfc9d1452a7c188ef7277fd76",
+        "recorded/proposal.json": "c0b988e8a223346d8b7e1701fee844c7c1ef38b9e9b8895d5868d11dc2f76c7b"
+      },
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "der-already-restored-boutique-live-20261112t074450z-38278f",
+      "files": {
+        "case.json": "596e1094b89123f95824cbee693cd613e26cd07efb6ec88bc530900177179fa0",
+        "expected.json": "5e028bc67ca0fa4aafb051ba2f82a8ed9a1f4e7eeb6f07dd4f02357c07566cfb",
+        "inputs/baseline.json": "96ee707b3aeca88fb3fdb7b2a34c5227e93bb03babe6ce61281e2e0462e34f6e",
+        "inputs/dependency-finding.json": "98a53e65174493ecbc90cb4ef90e2e6ba650d7358aef4c4e4a2e3b9624f09763",
+        "inputs/incident.json": "8a24d1a81c0d948036a866b68ffc2fa496c47d4a0e444574b6ffb4a17314e761",
+        "inputs/live-state.json": "0489b85f343770961501bd61d04d2f1ef4f617063a98e685cfa0d12dd648918e",
+        "inputs/observations/0001-observation.json": "aa37509ef1e00d58939892e5ed2757d99b2dd1beae64a526cc83cb67989cc6af",
+        "inputs/planning-state.json": "a8af3a6ea5e341afb33148b362d724ee891895f7d29cebecf959066641d2d444",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "derived",
+      "variant": "already-restored"
+    },
+    {
+      "case_id": "der-already-restored-boutique-live-20261112t074810z-311065",
+      "files": {
+        "case.json": "3b5c7d1d63a07e17253312486176935cf111b730f6e122abe0e7fa15ebbf2108",
+        "expected.json": "c8a179f3fb2c50ebe5d1798fc1712b11defd0040d5ac0779a3d2349647c90b93",
+        "inputs/baseline.json": "8b05b5625c7d4961a83de51388a3af43dbca6707a51c25fd6c9a74c188616e39",
+        "inputs/dependency-finding.json": "357f78f1969ab18aa45b49a5eb909b7c773ba8cf61d34176c052935bde07697c",
+        "inputs/incident.json": "78aa446f61a23252cfee6bc03ab087466168df59b2d5978acb8b9d71b8b96066",
+        "inputs/live-state.json": "3ca08b95a5a93baa85c454ab8cc151552f64fc33ac0c65e77f6fe7700d683264",
+        "inputs/observations/0001-observation.json": "ddbdb61996c4bbe74423c3a407fe9b6c29ddc644845f922d55d748c1744e5b68",
+        "inputs/planning-state.json": "3ca5633e09eb4ea056d910c483fd0c2ef5f55680b53bd853f64e71a197499a27",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "derived",
+      "variant": "already-restored"
+    },
+    {
+      "case_id": "der-already-restored-boutique-live-20261112t075130z-fb6439",
+      "files": {
+        "case.json": "d1c8168f34b51eaad3317037a7fe20cba1fd140f80829192b775b5cad7b7ac24",
+        "expected.json": "54c27c631f048c28b87d4b004bed0b3de239d8fe8892e5f1b9830556c0eff15c",
+        "inputs/baseline.json": "5379b25ad965d286a3aa14b6fd1f918758bdb030df8b05d07a34f6d836f4aa2e",
+        "inputs/dependency-finding.json": "802d60f33270f4d834b7471256da00d4738d5e3c6ceb731ddf5a44f20d30108c",
+        "inputs/incident.json": "b96042dd70f1df564d5e405e6d42281731fec0431c80ed93cbc9c886b4f9f495",
+        "inputs/live-state.json": "6558a3aabb3e6b2f0efea34b8295c11047bf7004b17d9235d0419f47aa68cd9f",
+        "inputs/observations/0001-observation.json": "e117692ead47d5f67aeb63b914d12015d7aa3791245b1ddd0ec282264625228b",
+        "inputs/planning-state.json": "f3d9325228ca2d7bd1917da46f9993fa3eeaded434494182c7a5d7e1d60ff21a",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "derived",
+      "variant": "already-restored"
+    },
+    {
+      "case_id": "der-already-restored-boutique-live-20261112t081032z-63d609",
+      "files": {
+        "case.json": "0e4c72c951deaec1fcddc163c50be7521901e7d70609702faa1ebbb65219a4c6",
+        "expected.json": "4f665cf8baf51bccc351631e8af071ba0c6b33fbd402d594864b9d3768d6d093",
+        "inputs/baseline.json": "3086a0e5ccb7ae3dd7d340f8006e81df6e3656890d28c9855e01882053fb4c83",
+        "inputs/dependency-finding.json": "e53e4e29edd214c28793bd391d66c3a25203f4f211887862c13b73a330f42f50",
+        "inputs/incident.json": "36fafae6069fc61f44865d6ed74b9f758ab086ad06566178101a9fc6e7daa6af",
+        "inputs/live-state.json": "6b823c7b918845750f901f374cb8e7b6dccb471279b5c47e3f2139c63566852b",
+        "inputs/observations/0001-observation.json": "a210a8c652b15f10c9102e3d82caa8623012015cb3aa56b257e7045e2d6cce24",
+        "inputs/planning-state.json": "e6cc3ba81e6c65a9af8ea7e675f066aead4a9aec44f460da3d4e252880a52842",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "derived",
+      "variant": "already-restored"
+    },
+    {
+      "case_id": "der-already-restored-boutique-live-20261112t112137z-9b327b",
+      "files": {
+        "case.json": "470630daedaabcd8d3f27147d558f197da53070b76931bbbc61136ce1deb4a38",
+        "expected.json": "dd56f829012d6906903c6c516b87009590f4288ffdc27dabb8ecac4811375d4f",
+        "inputs/baseline.json": "68c14d4f67053b2c787a0d0a09b09a57df633a5d596bd7efe25cc2cffd05da6a",
+        "inputs/dependency-finding.json": "c063768624944c22614d0d5e2e6cc1c94a0a605d77939e318fa8768fbdb5db9b",
+        "inputs/incident.json": "5cc4c7665180178d6a9e006cda66153542a8dbd7eab92d9d21b3f1ef6584cc8f",
+        "inputs/live-state.json": "daf0580f2382a839dd7b9799b3a1794e51becad98a37cf3051bc3f0854dee17b",
+        "inputs/observations/0001-observation.json": "0ad7f06bb9b1029a11afbfb18fd35947e46551738f6b76e3116ffe1fd2ec8ea5",
+        "inputs/planning-state.json": "f84e04fee5d208491f703373c6419db24976f1ba2110127deacf6e85029a0b67",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "derived",
+      "variant": "already-restored"
+    },
+    {
+      "case_id": "der-already-restored-boutique-live-20261112t112406z-01cb56",
+      "files": {
+        "case.json": "bd983771390e27121faef504efa05f89814decb25a329c598d4f552d6980dcd9",
+        "expected.json": "f11a00fac2749c222ef24dad9c8f91758e60e1fbc8961462113fb34a58d48a7d",
+        "inputs/baseline.json": "f679d7d7fe5a998f71aee27dbb2b52c184d7e737ad81c3c363f23d358abb7697",
+        "inputs/dependency-finding.json": "1ae40e6a83b0c36ed4d933fbd1cdfffc94e561dfc69188e830a76016c9c0bacc",
+        "inputs/incident.json": "78871ee8143d74cee97f673b59b810ce61782e816113d9bab666ea63efb33d3f",
+        "inputs/live-state.json": "7e15b34ae475f798782f4ac341f52e3e29675a258916b1cd5e9c768051f02b33",
+        "inputs/observations/0001-observation.json": "df04123035cb34096a21b7b7dc43cf5c3acb32f2a43f9164fe5929fccb6b19d2",
+        "inputs/planning-state.json": "0587cf4b34b45e22284407085beaf45b9b38780a31c63ef36a877d312dac87cd",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "derived",
+      "variant": "already-restored"
+    },
+    {
+      "case_id": "der-misleading-dependency-boutique-live-20261111t222004z-07f850",
+      "files": {
+        "case.json": "ab77be3934656044ba88871513d0023affb172d6e2dea2329566df9496a81479",
+        "expected.json": "1cf28c117307101609c3e5188f50c69f0b46917543e687004f0557e389d70e66",
+        "inputs/baseline.json": "5952e86c3f7763c9859921ebb072341bd760c02649289dba5010f7539b0e87b0",
+        "inputs/dependency-finding.json": "995633729c5a7bdb751b71ec9d0e46753ec577ed175363c72fd8deae206c36a3",
+        "inputs/incident.json": "8b54c46078ff59f1dfb16d8964546032769c1a2d5125147f70773c96fd9184aa",
+        "inputs/live-state.json": "432e386a91527e29818599c44d32058aeba48e6c3af4d23f8db1c51d8ef14348",
+        "inputs/observations/0001-observation.json": "62c673a501a12dded2ffdb52bbcc76690b87bbae05d3de2cb25cbd2348e0ebf6",
+        "inputs/planning-state.json": "4c5f33563e8aa9adaacfa8ba4b8bdb329f4d208b3ce70826bfd40eb76928e1f0",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "derived",
+      "variant": "misleading-dependency-log"
+    },
+    {
+      "case_id": "der-misleading-dependency-boutique-live-20261112t050930z-ba0f81",
+      "files": {
+        "case.json": "a6b5b0d7489efb6a8b6e4b326fb4fd611ffabc5a78ef86baea4d9945951aad03",
+        "expected.json": "886c031c41e49a28f98390f15e0dcef44d8aec022db342de0afb8c20859bd730",
+        "inputs/baseline.json": "d991c2a17e45141aedd68b3fc07ba209d0a0f4955767fe09312804d9aac6e981",
+        "inputs/dependency-finding.json": "860c562b9af3c7d0ff550e74d3ae2d51e49856cc4c477eb4a1208693dc2682ea",
+        "inputs/incident.json": "ea97a97cb980a7637f330b132cda65a1e6221d13840abc8213f7b9e88a863f3e",
+        "inputs/live-state.json": "c1452c8d491c969b5cdfedf7a760a3869202e07a7d3730e19136816ff2692c0a",
+        "inputs/observations/0001-observation.json": "c683429e679c9313b45c96985a03cb856300003f8b4169716f9db71f8e1fd0d3",
+        "inputs/planning-state.json": "53120eeaa85b2493268a6b445dfb43d8462c04be746186013447eb8da8da980c",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "derived",
+      "variant": "misleading-dependency-log"
+    },
+    {
+      "case_id": "der-misleading-dependency-boutique-live-20261112t051156z-009b69",
+      "files": {
+        "case.json": "6223892cbb51e7826411b1cad390237b1bad2e4c3bc38bd7a9c5fca8bde0432c",
+        "expected.json": "d47ff2e1c5d0014666d38275dc5ce0ac3e3c81be75d6133747127258f007af39",
+        "inputs/baseline.json": "d3a7568af8c5016c7924763c869ee43f73293d4b2fd9da417feb616dde135adb",
+        "inputs/dependency-finding.json": "6f3900af934966970ea63cec82054b6861f4e551a26b7d6975618c83385b9e17",
+        "inputs/incident.json": "f4c0483fd361a605d9c4c699c2bb2dcab26db69b39d30f7ae7ee0865bc5589c0",
+        "inputs/live-state.json": "c685f6095b84d14dd3d81f9d0b09e677095eef2ebbd1a3ff197971dc418a140b",
+        "inputs/observations/0001-observation.json": "336efee5a73d514371641ca4279fdf898561d706b05d5a71f2d9bba4c77b8d6c",
+        "inputs/planning-state.json": "a606ea89c6eac1815675cb19b821705bf5e7e6b7f39016dd3cbdd5c4ac24cb1b",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "derived",
+      "variant": "misleading-dependency-log"
+    },
+    {
+      "case_id": "der-misleading-dependency-boutique-live-20261112t051406z-ef3fbb",
+      "files": {
+        "case.json": "a359742937a651d7d1eab98f5394601c4a8ad531e5ef42d5e549f0a3c76d07e4",
+        "expected.json": "c81a590489e54e02c5f3c2c4368ad749178499b62e15a70db7ef3efbbf11acd0",
+        "inputs/baseline.json": "3219d08638e2c2fbb39ff08c3d7189cc1b16ab6d69f83c6852e2bb27b6b121c4",
+        "inputs/dependency-finding.json": "fc8e112dffbb6efefd6b371a662859ef9e57fa7f7dec64d30e40c5bfe4464501",
+        "inputs/incident.json": "362c88f322dc6c4161454b33a80a5eeb4d37c15e497b316147f652a9f8988ebd",
+        "inputs/live-state.json": "7f65504a13bed7b707fcfd6dd33ae896bd240ade8148f5e61092a224e6cfa135",
+        "inputs/observations/0001-observation.json": "3d2589f68f1c2696ef222e1501cad87885d2137375ddef8b09fd82eb629b5590",
+        "inputs/planning-state.json": "6bb547846cfb27e963fb8d166401d5f90e2f5e9fe06e2b0e2f093ab0ec0d6e0e",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "derived",
+      "variant": "misleading-dependency-log"
+    }
+  ],
+  "catalog_sha256": "025bd5727cd62fbf3cbb77920cbde58c844abff2dfb7be47919d9250ae9d8bfb",
+  "counts": {
+    "adversarial": 12,
+    "captured": 50,
+    "derived": 10
+  },
+  "labels": {
+    "cases": 72,
+    "pre_registration": {
+      "by": null,
+      "on": null,
+      "status": "pending"
+    },
+    "signed": 0,
+    "status": "pending"
+  },
+  "schema": "sentinel-replay-corpus-v1",
+  "sources": [
+    {
+      "bundle_id": "boutique-live-20261110t170340z-924ad0",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261110t171150z-44469c",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261110t171528z-3f8ebc",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261110t184654z-638872",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261110t185103z-e3d521",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261110t185411z-484196",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261110t185646z-275eb5",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261110t192028z-1a64e5",
+      "reason": "images.json does not pin the target image by digest",
+      "used": false
+    },
+    {
+      "bundle_id": "boutique-live-20261110t192436z-42206e",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261110t192628z-f6ccfc",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261110t192806z-88c2d9",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261110t193604z-2aad1c",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261110t193859z-7f29f5",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261110t194214z-c5f251",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t144125z-81e38f",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t144310z-65663a",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t144432z-5fb1d8",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t145525z-4aa779",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t153000z-be1230",
+      "reason": "images.json does not pin the target image by digest",
+      "used": false
+    },
+    {
+      "bundle_id": "boutique-live-20261111t160349z-4edbe0",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t160522z-20298d",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t160642z-6cedf0",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t160943z-f1193b",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t161243z-d4cba2",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t165457z-da6e95",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t165802z-914d8d",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t170034z-1cc9bc",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t202419z-cedc47",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t202845z-ea7221",
+      "reason": "no primary incident or policy (the run ended before an incident)",
+      "used": false
+    },
+    {
+      "bundle_id": "boutique-live-20261111t202847z-3e370f",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t203130z-728cc5",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t203342z-c264c5",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t220652z-f42864",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t220933z-5145ad",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t221204z-602449",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t221600z-772bbe",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t221737z-2b9319",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261111t222004z-07f850",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261112t050930z-ba0f81",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261112t051156z-009b69",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261112t051406z-ef3fbb",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261112t074450z-38278f",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261112t074810z-311065",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261112t075130z-fb6439",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261112t075413z-3d1324",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261112t075550z-26a26a",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261112t080534z-160519",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261112t080756z-29fd09",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261112t081032z-63d609",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261112t111640z-b8eaa6",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261112t112137z-9b327b",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261112t112406z-01cb56",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "boutique-live-20261112t112846z-f1c4ed",
+      "reason": null,
+      "used": true
+    }
+  ],
+  "version": "v1"
+}

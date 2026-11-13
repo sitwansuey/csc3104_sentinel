@@ -25,7 +25,10 @@ the video storyboard and the readiness gate. Benchmarks are
 documented beside their code/data: [RCAEval](../agent/datasets/README.md) and
 [Guard cases](../data/experimentation/guard/README.md). The pre-registered RCAEval
 Online Boutique evaluation (prepared, not yet run) has its own
-[protocol and run guide](evaluation/rcaeval/README.md).
+[protocol and run guide](evaluation/rcaeval/README.md). The
+[incident replay and recovery decision ablation](evaluation/replay/README.md)
+replays decision policies at three validation levels on recorded incidents
+(deterministic rows committed; the model rows not yet run).
 
 Role design lives beside the implementation: [Coordinator](../services/coordinator/README.md),
 [Observer](../services/observer/README.md), [Planner](../services/planner/README.md),

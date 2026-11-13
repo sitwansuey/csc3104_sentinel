@@ -1,0 +1,31 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-7a5ba38902e1cc19cbae2901",
+  "based_on_resource_version": "38162",
+  "evidence_refs": [
+    "E-62FE5FA0E3B3",
+    "E-232E827A8047",
+    "E-DD62B3D82F4A",
+    "E-54AE28425744",
+    "E-35299350AF76",
+    "E-53C74A650C0B",
+    "E-BFDD2B8692BE",
+    "E-8D52F1A436F9",
+    "E-01D083861D43"
+  ],
+  "incident_id": "INC-4AC03E52EE30",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-d1386b1e0af6",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence indicates that the container failed to start due to an 'unknown port' error (E-01D083861D43), which is a misconfiguration in the application's port settings. This is the root cause of the failure, as it directly prevents the container from running and leads to the 'CrashLoopBackOff' state (E-54AE28425744) and readiness probe failure (E-35299350AF76). The diagnosis confirms that the failure is due to a misconfigured port, which is a harmful configuration rollout. The observed healthy baseline (BASE-LIVE-d1386b1e0af6) represents a previously functional state of the deployment, and restoring it would revert the configuration to a known working state. Therefore, a rollback is appropriate and supported by the evidence.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

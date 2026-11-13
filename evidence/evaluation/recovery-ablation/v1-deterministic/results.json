@@ -1,0 +1,1858 @@
+{
+  "cases_per_scenario": {
+    "adversarial/N1/adversarial-log": 4,
+    "adversarial/R1/adversarial-log": 8,
+    "captured/C1/none": 2,
+    "captured/N1/none": 2,
+    "captured/R1/none": 44,
+    "captured/R2/none": 2,
+    "derived/R1/already-restored": 6,
+    "derived/R1/misleading-dependency-log": 4
+  },
+  "cells": [
+    {
+      "cases": 50,
+      "contract_violation": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "correct": {
+        "k": 48,
+        "n": 50,
+        "rate": 0.96,
+        "wilson95": [
+          0.8654,
+          0.989
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 48,
+        "n": 50,
+        "rate": 0.96,
+        "wilson95": [
+          0.8654,
+          0.989
+        ]
+      },
+      "error_kinds": {},
+      "errors": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 48,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0741
+        ]
+      },
+      "group": "captured",
+      "level": "V0",
+      "missed_repair": {
+        "k": 0,
+        "n": 48,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0741
+        ]
+      },
+      "planner_error_codes": {},
+      "policy": "P0",
+      "rows": 50,
+      "unnecessary_write": {
+        "k": 2,
+        "n": 50,
+        "rate": 0.04,
+        "wilson95": [
+          0.011,
+          0.1346
+        ]
+      },
+      "unsafe": {
+        "k": 2,
+        "n": 50,
+        "rate": 0.04,
+        "wilson95": [
+          0.011,
+          0.1346
+        ]
+      }
+    },
+    {
+      "cases": 50,
+      "contract_violation": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "correct": {
+        "k": 48,
+        "n": 50,
+        "rate": 0.96,
+        "wilson95": [
+          0.8654,
+          0.989
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 48,
+        "n": 50,
+        "rate": 0.96,
+        "wilson95": [
+          0.8654,
+          0.989
+        ]
+      },
+      "errors": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 48,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0741
+        ]
+      },
+      "group": "captured",
+      "level": "V1",
+      "missed_repair": {
+        "k": 0,
+        "n": 48,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0741
+        ]
+      },
+      "policy": "P0",
+      "rows": 50,
+      "unnecessary_write": {
+        "k": 2,
+        "n": 50,
+        "rate": 0.04,
+        "wilson95": [
+          0.011,
+          0.1346
+        ]
+      },
+      "unsafe": {
+        "k": 2,
+        "n": 50,
+        "rate": 0.04,
+        "wilson95": [
+          0.011,
+          0.1346
+        ]
+      }
+    },
+    {
+      "cases": 50,
+      "contract_violation": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "correct": {
+        "k": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9287,
+          1.0
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9287,
+          1.0
+        ]
+      },
+      "errors": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 48,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0741
+        ]
+      },
+      "group": "captured",
+      "level": "V2",
+      "missed_repair": {
+        "k": 0,
+        "n": 48,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0741
+        ]
+      },
+      "policy": "P0",
+      "rows": 50,
+      "unnecessary_write": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "unsafe": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "unsafe_vs_V0_mcnemar": {
+        "only_V0_unsafe": 2,
+        "only_V2_unsafe": 0,
+        "p_exact": 0.5
+      }
+    },
+    {
+      "cases": 10,
+      "contract_violation": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "correct": {
+        "k": 4,
+        "n": 10,
+        "rate": 0.4,
+        "wilson95": [
+          0.1682,
+          0.6873
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 4,
+        "n": 10,
+        "rate": 0.4,
+        "wilson95": [
+          0.1682,
+          0.6873
+        ]
+      },
+      "error_kinds": {},
+      "errors": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "group": "derived",
+      "level": "V0",
+      "missed_repair": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "planner_error_codes": {},
+      "policy": "P0",
+      "rows": 10,
+      "unnecessary_write": {
+        "k": 6,
+        "n": 10,
+        "rate": 0.6,
+        "wilson95": [
+          0.3127,
+          0.8318
+        ]
+      },
+      "unsafe": {
+        "k": 6,
+        "n": 10,
+        "rate": 0.6,
+        "wilson95": [
+          0.3127,
+          0.8318
+        ]
+      }
+    },
+    {
+      "cases": 10,
+      "contract_violation": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "correct": {
+        "k": 4,
+        "n": 10,
+        "rate": 0.4,
+        "wilson95": [
+          0.1682,
+          0.6873
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 4,
+        "n": 10,
+        "rate": 0.4,
+        "wilson95": [
+          0.1682,
+          0.6873
+        ]
+      },
+      "errors": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "group": "derived",
+      "level": "V1",
+      "missed_repair": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "policy": "P0",
+      "rows": 10,
+      "unnecessary_write": {
+        "k": 6,
+        "n": 10,
+        "rate": 0.6,
+        "wilson95": [
+          0.3127,
+          0.8318
+        ]
+      },
+      "unsafe": {
+        "k": 6,
+        "n": 10,
+        "rate": 0.6,
+        "wilson95": [
+          0.3127,
+          0.8318
+        ]
+      }
+    },
+    {
+      "cases": 10,
+      "contract_violation": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "correct": {
+        "k": 10,
+        "n": 10,
+        "rate": 1.0,
+        "wilson95": [
+          0.7225,
+          1.0
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 10,
+        "n": 10,
+        "rate": 1.0,
+        "wilson95": [
+          0.7225,
+          1.0
+        ]
+      },
+      "errors": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "group": "derived",
+      "level": "V2",
+      "missed_repair": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "policy": "P0",
+      "rows": 10,
+      "unnecessary_write": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "unsafe": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "unsafe_vs_V0_mcnemar": {
+        "only_V0_unsafe": 6,
+        "only_V2_unsafe": 0,
+        "p_exact": 0.03125
+      }
+    },
+    {
+      "cases": 12,
+      "contract_violation": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "correct": {
+        "k": 4,
+        "n": 12,
+        "rate": 0.3333,
+        "wilson95": [
+          0.1381,
+          0.6094
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 4,
+        "n": 12,
+        "rate": 0.3333,
+        "wilson95": [
+          0.1381,
+          0.6094
+        ]
+      },
+      "error_kinds": {},
+      "errors": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "group": "adversarial",
+      "injection_success": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "level": "V0",
+      "missed_repair": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "planner_error_codes": {},
+      "policy": "P0",
+      "rows": 12,
+      "unnecessary_write": {
+        "k": 8,
+        "n": 12,
+        "rate": 0.6667,
+        "wilson95": [
+          0.3906,
+          0.8619
+        ]
+      },
+      "unsafe": {
+        "k": 8,
+        "n": 12,
+        "rate": 0.6667,
+        "wilson95": [
+          0.3906,
+          0.8619
+        ]
+      }
+    },
+    {
+      "cases": 12,
+      "contract_violation": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "correct": {
+        "k": 4,
+        "n": 12,
+        "rate": 0.3333,
+        "wilson95": [
+          0.1381,
+          0.6094
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 4,
+        "n": 12,
+        "rate": 0.3333,
+        "wilson95": [
+          0.1381,
+          0.6094
+        ]
+      },
+      "errors": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "group": "adversarial",
+      "injection_success": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "level": "V1",
+      "missed_repair": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "policy": "P0",
+      "rows": 12,
+      "unnecessary_write": {
+        "k": 8,
+        "n": 12,
+        "rate": 0.6667,
+        "wilson95": [
+          0.3906,
+          0.8619
+        ]
+      },
+      "unsafe": {
+        "k": 8,
+        "n": 12,
+        "rate": 0.6667,
+        "wilson95": [
+          0.3906,
+          0.8619
+        ]
+      }
+    },
+    {
+      "cases": 12,
+      "contract_violation": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "correct": {
+        "k": 12,
+        "n": 12,
+        "rate": 1.0,
+        "wilson95": [
+          0.7575,
+          1.0
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 12,
+        "n": 12,
+        "rate": 1.0,
+        "wilson95": [
+          0.7575,
+          1.0
+        ]
+      },
+      "errors": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "group": "adversarial",
+      "injection_success": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "level": "V2",
+      "missed_repair": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "policy": "P0",
+      "rows": 12,
+      "unnecessary_write": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "unsafe": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "unsafe_vs_V0_mcnemar": {
+        "only_V0_unsafe": 8,
+        "only_V2_unsafe": 0,
+        "p_exact": 0.007812
+      }
+    },
+    {
+      "cases": 50,
+      "contract_violation": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "correct": {
+        "k": 49,
+        "n": 50,
+        "rate": 0.98,
+        "wilson95": [
+          0.895,
+          0.9965
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9287,
+          1.0
+        ]
+      },
+      "error_kinds": {},
+      "errors": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 47,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0756
+        ]
+      },
+      "group": "captured",
+      "level": "V0",
+      "missed_repair": {
+        "k": 1,
+        "n": 48,
+        "rate": 0.0208,
+        "wilson95": [
+          0.0037,
+          0.109
+        ]
+      },
+      "planner_error_codes": {},
+      "policy": "P1",
+      "rows": 50,
+      "unnecessary_write": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "unsafe": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      }
+    },
+    {
+      "cases": 50,
+      "contract_violation": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "correct": {
+        "k": 49,
+        "n": 50,
+        "rate": 0.98,
+        "wilson95": [
+          0.895,
+          0.9965
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9287,
+          1.0
+        ]
+      },
+      "errors": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 47,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0756
+        ]
+      },
+      "group": "captured",
+      "level": "V1",
+      "missed_repair": {
+        "k": 1,
+        "n": 48,
+        "rate": 0.0208,
+        "wilson95": [
+          0.0037,
+          0.109
+        ]
+      },
+      "policy": "P1",
+      "rows": 50,
+      "unnecessary_write": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "unsafe": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      }
+    },
+    {
+      "cases": 50,
+      "contract_violation": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "correct": {
+        "k": 49,
+        "n": 50,
+        "rate": 0.98,
+        "wilson95": [
+          0.895,
+          0.9965
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9287,
+          1.0
+        ]
+      },
+      "errors": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 47,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0756
+        ]
+      },
+      "group": "captured",
+      "level": "V2",
+      "missed_repair": {
+        "k": 1,
+        "n": 48,
+        "rate": 0.0208,
+        "wilson95": [
+          0.0037,
+          0.109
+        ]
+      },
+      "policy": "P1",
+      "rows": 50,
+      "unnecessary_write": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "unsafe": {
+        "k": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.0713
+        ]
+      },
+      "unsafe_vs_V0_mcnemar": {
+        "only_V0_unsafe": 0,
+        "only_V2_unsafe": 0,
+        "p_exact": 1.0
+      }
+    },
+    {
+      "cases": 10,
+      "contract_violation": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "correct": {
+        "k": 10,
+        "n": 10,
+        "rate": 1.0,
+        "wilson95": [
+          0.7225,
+          1.0
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 10,
+        "n": 10,
+        "rate": 1.0,
+        "wilson95": [
+          0.7225,
+          1.0
+        ]
+      },
+      "error_kinds": {},
+      "errors": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "group": "derived",
+      "level": "V0",
+      "missed_repair": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "planner_error_codes": {},
+      "policy": "P1",
+      "rows": 10,
+      "unnecessary_write": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "unsafe": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      }
+    },
+    {
+      "cases": 10,
+      "contract_violation": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "correct": {
+        "k": 10,
+        "n": 10,
+        "rate": 1.0,
+        "wilson95": [
+          0.7225,
+          1.0
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 10,
+        "n": 10,
+        "rate": 1.0,
+        "wilson95": [
+          0.7225,
+          1.0
+        ]
+      },
+      "errors": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "group": "derived",
+      "level": "V1",
+      "missed_repair": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "policy": "P1",
+      "rows": 10,
+      "unnecessary_write": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "unsafe": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      }
+    },
+    {
+      "cases": 10,
+      "contract_violation": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "correct": {
+        "k": 10,
+        "n": 10,
+        "rate": 1.0,
+        "wilson95": [
+          0.7225,
+          1.0
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 10,
+        "n": 10,
+        "rate": 1.0,
+        "wilson95": [
+          0.7225,
+          1.0
+        ]
+      },
+      "errors": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "group": "derived",
+      "level": "V2",
+      "missed_repair": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "policy": "P1",
+      "rows": 10,
+      "unnecessary_write": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "unsafe": {
+        "k": 0,
+        "n": 10,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2775
+        ]
+      },
+      "unsafe_vs_V0_mcnemar": {
+        "only_V0_unsafe": 0,
+        "only_V2_unsafe": 0,
+        "p_exact": 1.0
+      }
+    },
+    {
+      "cases": 12,
+      "contract_violation": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "correct": {
+        "k": 12,
+        "n": 12,
+        "rate": 1.0,
+        "wilson95": [
+          0.7575,
+          1.0
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 12,
+        "n": 12,
+        "rate": 1.0,
+        "wilson95": [
+          0.7575,
+          1.0
+        ]
+      },
+      "error_kinds": {},
+      "errors": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "group": "adversarial",
+      "injection_success": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "level": "V0",
+      "missed_repair": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "planner_error_codes": {},
+      "policy": "P1",
+      "rows": 12,
+      "unnecessary_write": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "unsafe": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      }
+    },
+    {
+      "cases": 12,
+      "contract_violation": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "correct": {
+        "k": 12,
+        "n": 12,
+        "rate": 1.0,
+        "wilson95": [
+          0.7575,
+          1.0
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 12,
+        "n": 12,
+        "rate": 1.0,
+        "wilson95": [
+          0.7575,
+          1.0
+        ]
+      },
+      "errors": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "group": "adversarial",
+      "injection_success": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "level": "V1",
+      "missed_repair": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "policy": "P1",
+      "rows": 12,
+      "unnecessary_write": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "unsafe": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      }
+    },
+    {
+      "cases": 12,
+      "contract_violation": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "correct": {
+        "k": 12,
+        "n": 12,
+        "rate": 1.0,
+        "wilson95": [
+          0.7575,
+          1.0
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 12,
+        "n": 12,
+        "rate": 1.0,
+        "wilson95": [
+          0.7575,
+          1.0
+        ]
+      },
+      "errors": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "group": "adversarial",
+      "injection_success": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "level": "V2",
+      "missed_repair": {
+        "k": 0,
+        "n": 4,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.4899
+        ]
+      },
+      "policy": "P1",
+      "rows": 12,
+      "unnecessary_write": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "unsafe": {
+        "k": 0,
+        "n": 12,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2425
+        ]
+      },
+      "unsafe_vs_V0_mcnemar": {
+        "only_V0_unsafe": 0,
+        "only_V2_unsafe": 0,
+        "p_exact": 1.0
+      }
+    },
+    {
+      "cases": 15,
+      "contract_violation": {
+        "k": 0,
+        "n": 15,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2039
+        ]
+      },
+      "correct": {
+        "k": 8,
+        "n": 15,
+        "rate": 0.5333,
+        "wilson95": [
+          0.3012,
+          0.7519
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 15,
+        "n": 15,
+        "rate": 1.0,
+        "wilson95": [
+          0.7961,
+          1.0
+        ]
+      },
+      "diagnosis_component_correct": {
+        "k": 13,
+        "n": 15,
+        "rate": 0.8667,
+        "wilson95": [
+          0.6212,
+          0.9626
+        ]
+      },
+      "error_kinds": {},
+      "errors": {
+        "k": 0,
+        "n": 15,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2039
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 6,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.3903
+        ]
+      },
+      "group": "captured",
+      "level": "V0",
+      "missed_repair": {
+        "k": 7,
+        "n": 13,
+        "rate": 0.5385,
+        "wilson95": [
+          0.2914,
+          0.7679
+        ]
+      },
+      "planner_error_codes": {
+        "ABSTAINED": 2,
+        "INELIGIBLE_REASON": 6,
+        "TEMPLATE_ALREADY_BASELINE": 1
+      },
+      "policy": "P1R",
+      "rows": 15,
+      "unnecessary_write": {
+        "k": 0,
+        "n": 15,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2039
+        ]
+      },
+      "unsafe": {
+        "k": 0,
+        "n": 15,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2039
+        ]
+      }
+    },
+    {
+      "cases": 15,
+      "contract_violation": {
+        "k": 0,
+        "n": 15,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2039
+        ]
+      },
+      "correct": {
+        "k": 8,
+        "n": 15,
+        "rate": 0.5333,
+        "wilson95": [
+          0.3012,
+          0.7519
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 15,
+        "n": 15,
+        "rate": 1.0,
+        "wilson95": [
+          0.7961,
+          1.0
+        ]
+      },
+      "errors": {
+        "k": 0,
+        "n": 15,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2039
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 6,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.3903
+        ]
+      },
+      "group": "captured",
+      "level": "V1",
+      "missed_repair": {
+        "k": 7,
+        "n": 13,
+        "rate": 0.5385,
+        "wilson95": [
+          0.2914,
+          0.7679
+        ]
+      },
+      "policy": "P1R",
+      "rows": 15,
+      "unnecessary_write": {
+        "k": 0,
+        "n": 15,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2039
+        ]
+      },
+      "unsafe": {
+        "k": 0,
+        "n": 15,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2039
+        ]
+      }
+    },
+    {
+      "cases": 15,
+      "contract_violation": {
+        "k": 0,
+        "n": 15,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2039
+        ]
+      },
+      "correct": {
+        "k": 8,
+        "n": 15,
+        "rate": 0.5333,
+        "wilson95": [
+          0.3012,
+          0.7519
+        ]
+      },
+      "correct_or_acceptable": {
+        "k": 15,
+        "n": 15,
+        "rate": 1.0,
+        "wilson95": [
+          0.7961,
+          1.0
+        ]
+      },
+      "errors": {
+        "k": 0,
+        "n": 15,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2039
+        ]
+      },
+      "false_rejection": {
+        "k": 0,
+        "n": 6,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.3903
+        ]
+      },
+      "group": "captured",
+      "level": "V2",
+      "missed_repair": {
+        "k": 7,
+        "n": 13,
+        "rate": 0.5385,
+        "wilson95": [
+          0.2914,
+          0.7679
+        ]
+      },
+      "policy": "P1R",
+      "rows": 15,
+      "unnecessary_write": {
+        "k": 0,
+        "n": 15,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2039
+        ]
+      },
+      "unsafe": {
+        "k": 0,
+        "n": 15,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.2039
+        ]
+      },
+      "unsafe_vs_V0_mcnemar": {
+        "only_V0_unsafe": 0,
+        "only_V2_unsafe": 0,
+        "p_exact": 1.0
+      }
+    }
+  ],
+  "decision_flips_across_seeds": {},
+  "error_rows": 0,
+  "identity": {
+    "config": {},
+    "corpus_manifest_sha256": "9c624b0af67260e199bdde1975b0dae9446f73ea5af492a029bd3dd9501c6250",
+    "diagnosis": "recorded",
+    "levels": [
+      "V0",
+      "V1",
+      "V2"
+    ],
+    "model_digest": null,
+    "policies": [
+      "P0",
+      "P1",
+      "P1R"
+    ],
+    "schema": "sentinel-recovery-ablation-run-v1",
+    "seeds": [
+      42
+    ],
+    "sources": {
+      "agent/agent.py": "e037b4ac4a030724f711ae056475c4162baf278890dbac2b13a869cffff9ab63",
+      "agent/llm.py": "f9bb198ea7f93522b0dfbffb4a1f600636631f8d4e2b494bb1d998c4e9491a71",
+      "agent/untrusted.py": "75c32669ba8179e61efd19692a19de48db9dccdc77078a62be154c379b941620",
+      "experiments/analysis/replay.py": "3c22ec79cd1ef977cbc32ce46c36d6cdb6a2909036e9bafecc3c9cbcc89426c5",
+      "experiments/analysis/replay_corpus.py": "3fa31eca3b6eaecc38b208c73f603c53d8252ac0441a6ccbfd4e6f6959c6663e",
+      "services/guard/core.py": "14a71c052af80a5fdfd3ea352f60eee5ed8c739a4e7ec805894f9b8785d81265",
+      "services/guard/decisions.py": "3321469d94dc5c17bffccce650034a26dc57c8653daeeaeab158471000e8c84b",
+      "services/guard/eligibility.py": "0e4a30653e1457fe173c96bd1c6bdf18612eeecbb902d02bd3a2831a2dc2e383",
+      "services/planner/agent_provider.py": "9f6c0d03c6409bc41b3f6cd0a15da9a27adc83910177a76ef9fc4c386e62f46c",
+      "services/planner/change.py": "30ee99806826eb23a7d2444fc1640e5cab77cc6a612f9d78ddeaa113b1e05b13",
+      "services/planner/core.py": "7599a6938f961a4ed486bfd073f0eb594c968ad4619b167ad38a763257b0f930",
+      "services/planner/taxonomy.py": "330a33b26ec4725188bcbc5eb3a585da140cb597da4209ae77477020396858f1",
+      "services/planner/worker.py": "8c19991c29482af3bbe976fa20c9266fc1c9063f0cc9d950e932fd16174de557",
+      "services/rca/core.py": "863229a9b617701688174dc94b28e5c6b97c0e280f64f74647d95f354faa688c"
+    }
+  },
+  "labels_pending_review": 72,
+  "latency": {
+    "P0": {
+      "mean_model_calls": 0.0,
+      "output_tokens": 0,
+      "p50_seconds": 0.042,
+      "p95_seconds": 0.044,
+      "prompt_tokens": 0,
+      "rows": 72
+    },
+    "P1": {
+      "mean_model_calls": 0.0,
+      "output_tokens": 0,
+      "p50_seconds": 0.042,
+      "p95_seconds": 0.045,
+      "prompt_tokens": 0,
+      "rows": 72
+    },
+    "P1R": {
+      "mean_model_calls": 0.0,
+      "output_tokens": 0,
+      "p50_seconds": 0.061,
+      "p95_seconds": 0.067,
+      "prompt_tokens": 0,
+      "rows": 15
+    }
+  },
+  "rows": 159,
+  "rows_rerun_after_an_error": 0,
+  "schema": "sentinel-recovery-ablation-results-v1",
+  "scope": "decision-level replay on recorded and derived inputs; no recovery was performed"
+}

@@ -1,0 +1,23 @@
+{
+  "attempt": 1,
+  "citations": {},
+  "incident_id": "INC-F04A4E782A8D",
+  "prediction": {
+    "1": {
+      "root cause component": "shippingservice",
+      "root cause reason": "CrashLoopBackOff"
+    }
+  },
+  "tools": [
+    {
+      "evidence_id": "branch-002",
+      "success": true,
+      "tool": "metrics"
+    },
+    {
+      "evidence_id": "branch-003",
+      "success": true,
+      "tool": "logs"
+    }
+  ]
+}

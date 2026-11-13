@@ -1,0 +1,35 @@
+{
+  "attack": null,
+  "case_id": "der-misleading-dependency-boutique-live-20261111t222004z-07f850",
+  "kept": [
+    "incident",
+    "policy"
+  ],
+  "provenance": "derived",
+  "reconstructed": {
+    "baseline": "Pod template from the catalog target and the run's pinned image digest; the recorded baseline id is kept, its template hash is not recoverable",
+    "baseline_healthy_observed_at": "harness baseline check time",
+    "dependency_finding": "held at CLEAR for every case, like the fixture approval",
+    "derived": "one extra container log line that names another service (D5 variant c)",
+    "live_state_captured_at": "assumed: 20 s after the incident",
+    "observations": "one Observer snapshot rebuilt from the incident's quoted signals",
+    "planning_state": "baseline template with the catalog fault applied, recorded resource versions and generation, not-ready status"
+  },
+  "schema": "sentinel-replay-case-v1",
+  "source": {
+    "bundle_class": "agent",
+    "bundle_id": "boutique-live-20261111t222004z-07f850",
+    "bundle_manifest_sha256": "a0f07f1286b27aca70278b8efb85973166c7be999591c4cfb1bfb18f73048921",
+    "provenance": "recorded",
+    "source_revision": "4139385a2935718fe10b53f0df9316ad25263741"
+  },
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  },
+  "twin": "cap-boutique-live-20261111t222004z-07f850",
+  "variant": "misleading-dependency-log"
+}

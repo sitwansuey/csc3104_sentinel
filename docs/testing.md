@@ -178,6 +178,28 @@ and a run with an empty, partial or rotated audit extract failing.
 `tests/test_distributed_audit.py` checks the audit sanitiser, I7 and the
 extract's completeness checks on the fixtures in
 `tests/fixtures/distributed_audit/`. None of it has run against a cluster.
+The incident replay (P4.04) has three test files. `tests/test_replay_corpus.py`
+builds a corpus from a copy of a real agent run that also holds a kubeconfig,
+SQLite stores, a private key, credentials and raw telemetry, and shows by a
+recursive scan that none of them reaches the corpus; it also checks that the
+scan refuses such files planted anywhere, and that each content check (SQLite
+bytes, PEM blocks, kubeconfig key data, JWTs, credential values) alone
+refuses its own plant in an allowlisted file, that labels stay beside `inputs/`,
+that the committed corpus matches a rebuild, and that a golden replay of the
+recorded live agent runs made under a decision policy reproduces each
+delivered proposal. `tests/test_recovery_ablation.py` shows P0 at V0 counted
+unsafe on an N case and refused by the Guard at V2, a fabricated template
+hash executed at V0 and recorded as a contract violation at V1, a false
+rejection on stale state, injection success against the clean twin, Wilson
+bounds, error rows kept in denominators, an unreachable model or a spent
+planning budget scored as an error row with no credit (not as the Planner's
+escalation) and run again by a resume, `--runbooks none` emptying both the
+runbooks and the RCA agent's workflows, and a resume that refuses a changed
+corpus manifest, policy set, configuration or model digest.
+`tests/test_retrieval_contamination.py` checks that no label reaches the
+runbooks, `agent/knowledge` or any prompt built from a case's inputs. These
+use a scripted model; the [replay guide](evaluation/replay/README.md) has the
+commands and the model batch that has not run.
 
 The Planner handoff checks inject unavailable/invalid providers, restart during
 backoff, exhaust attempts after a worker death, fence a replaced lease and replay

@@ -111,12 +111,13 @@ and `services/planner/change.py`:
 
 The agent config's `decision_policy` (set through `-AgentConfig`) chooses how
 the rule and the model combine. The names map to the evaluation policies of
-roadmap item P4.04:
+roadmap item P4.04, which the [replay guide](evaluation/replay/README.md)
+replays offline on recorded incidents:
 
 | `decision_policy` | Evaluation policy | Behaviour |
 |---|---|---|
 | `gated` (default) | P4 | The Recovery Planner also sees the change evidence. An ineligible case ends in the fixed escalation for its first code, without a Recovery Planner call. A model ROLLBACK for an ineligible case is overridden. The model may answer ESCALATE for an eligible case. |
-| `rule` | P1 | The rule decides alone: an eligible case gets a ROLLBACK to the trusted baseline with a fixed rationale, an ineligible one the fixed escalation. There is no Recovery Planner call. |
+| `rule` | P1R | The rule decides alone: an eligible case gets a ROLLBACK to the trusted baseline with a fixed rationale, an ineligible one the fixed escalation. There is no Recovery Planner call. The replay's P1 is the same rule without an RCA diagnosis. |
 | `model` | P3 | The model decides without change evidence. Eligibility is still computed and saved but not enforced, so model-only behaviour stays measurable. The vocabulary, evidence citation and other diagnosis checks still apply, so this is not the behaviour before these checks existed. The Guard still refuses a rollback that would change nothing. |
 
 With `gated`, `consult_model_when_ineligible: true` asks the model even for an
