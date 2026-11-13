@@ -198,6 +198,17 @@ cluster (`L-REST-TRANSPORT-OFFLINE`); kubectl stays the default.
    SUPERSEDED, and only then does the rejection give CONFLICT (version moved)
    or FAILED (version unchanged), with no fence. If that read fails, the
    action stays in doubt; the rejection is never used to release it later.
+   A peer host's committed attempt of the same action followed by our own
+   422 is APPLIED, not rejected
+   (`tests/test_rest_executor_adapter.py::DefiniteRejectionTableTests.test_row_r3_evidence_beats_a_rejection`,
+   `tests/test_rest_executor_adapter.py::RESTExecutorTests.test_a_peer_commit_of_this_action_before_our_422_is_applied_not_rejected`).
+   FAILED releases the workload because this attempt never committed; an
+   earlier holder's write that may still be in flight is covered separately
+   by the Coordinator, which seals before it reassigns the workload when a
+   later holder reports FAILED
+   (`runtime/worker_transport.py::Delivery._seal_abandoned`, see
+   [when a seal is required](distributed-model.md#target-ownership-epochs-and-the-seal-p304)). The owner signs
+   off on that dependency together with this argument.
 5. Nothing new leaks or weakens. TLS verification is always on, plain http
    is refused except to a loopback address, unsupported credential types and
    proxies fail closed, and only the status and an allowlisted reason word

@@ -27,18 +27,21 @@ from experiments.distributed.topology import find_openssl, make_certificates
 from experiments.validation.demo_guard import load_fixtures
 from runtime.executor_pipeline import GuardAuthorizer
 from services.executor.core import (
-    ACTION_ANNOTATION, ConditionalWriteConflict, ExecutionAdapters, ReadUnavailable, TargetAbsent, WriteRejected,
-    execute, reconcile, seal,
+    ACTION_ANNOTATION, SEAL_ATTEMPTS, ConditionalWriteConflict, ExecutionAdapters, ReadUnavailable, TargetAbsent,
+    WriteRejected, execute, reconcile, seal,
 )
 from services.executor.kubernetes_adapter import KubectlDeploymentAPI, LiveAdapterError, WriteOutcomeUnknown
-from services.executor.reconciliation import FENCE_ANNOTATION, classify, fence_marker, observe
+from services.executor.reconciliation import (
+    FENCE_ANNOTATION, Basis, Decision, Observation, classify, fence_marker, observe,
+)
 from services.executor.rest_adapter import (
     DEFINITE_REJECTIONS, FIELD_MANAGER, KubernetesRESTDeploymentAPI, kubeconfig_credentials,
 )
-from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedger, fingerprint
+from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedger, TargetBusy, fingerprint
 from services.guard.core import proposal_fingerprint
+from shared.canonical import canonical_json
 from shared.contracts import validate_message
-from tests.support.fake_apiserver import PRIVATE, FakeAPIServer, bump
+from tests.support.fake_apiserver import PEER_ATTEMPT, PRIVATE, FakeAPIServer, bump
 from tests.support.sim_apiserver import SimAPIServer, SimKubectl
 import tests.test_executor as executor_suite  # A module import, so its TestCases are not collected twice.
 from tests.test_k8s_executor_adapter import Runner
@@ -409,6 +412,18 @@ class RESTExecutorTests(unittest.TestCase):
         handled = [record for record in records if record.getMessage() == "executor.write.rejected"]
         self.assertEqual([r.sentinel_fields["error_type"] for r in handled], ["WriteRejected"])
 
+    def test_a_peer_commit_of_this_action_before_our_422_is_applied_not_rejected(self):
+        # Row R3 runs before R5 and R6: this action's evidence on the object beats our own rejection.
+        self.server.fail_next_patch("peer-commits-first")
+        result = self.run_action(fence_after_seconds=0)
+        self.assertEqual(self.outcome(result), ("APPLIED", "EVIDENCE_MATCH"))
+        self.assertIn("adopted peer write", result["details"])
+        self.assertEqual(self.server.count("PATCH"), 1)
+        self.assertEqual([request.host for request in self.write_commits()], ["peer"])
+        self.assertEqual(self.cluster.stats["rejected_writes"], 1)
+        self.assertEqual(self.cluster.stats["fence_attempts"], 0)
+        self.assertEqual(self.ledger.fences(self.proposal["action_id"]), [])
+
     def test_403_with_the_version_unchanged_fails_at_once_with_no_fence_and_no_wait(self):
         self.server.fail_next_patch("forbidden")
         version = self.sim.resource_version
@@ -470,6 +485,39 @@ class RESTExecutorTests(unittest.TestCase):
         time.sleep(1.6)  # The late write now arrives and fails its resourceVersion test.
         self.assertEqual(self.write_commits(), [])
         self.assertEqual(self.server.count("PATCH"), 2)
+
+    def test_a_rejected_fence_neither_confirms_the_fence_nor_releases_the_action(self):
+        # The fence's own 403 or 422 is about the fence, never about the write: the action stays in doubt.
+        for mode in ("forbidden", "status=422"):
+            with self.subTest(mode=mode):
+                self.setUp()
+                self.server.fail_next_patch("drop-before-commit")
+                self.assertEqual(self.run_action(fence_after_seconds=0)["status"], "NEEDS_RECONCILIATION")
+                self.server.fail_next_patch(mode)
+                with captured_logs() as records:
+                    result = reconcile(deepcopy(self.proposal), self.adapters(fence_after_seconds=0))
+                self.assertEqual(self.outcome(result), ("NEEDS_RECONCILIATION", "UNCHANGED_IN_DOUBT"))
+                self.assertEqual(self.server.count("PATCH"), 2)  # The write and the refused fence.
+                self.assertEqual([fence["committed_version"] for fence in
+                                  self.ledger.fences(self.proposal["action_id"])], [None])
+                self.assertEqual(self.ledger.get(self.proposal["action_id"])["phase"], "UNCERTAIN")
+                self.assertIn("executor.fence.refused", [record.getMessage() for record in records])
+                rival = deepcopy(self.proposal)
+                rival["action_id"] = "rival-while-in-doubt"
+                with self.assertRaises(TargetBusy):
+                    self.ledger.prepare(rival)
+
+    def test_a_seal_whose_fences_are_rejected_stays_unsealed(self):
+        for _attempt in range(SEAL_ATTEMPTS):
+            self.server.fail_next_patch("forbidden")
+        with captured_logs() as records:
+            result = seal(deepcopy(self.proposal), 3, self.adapters())
+        self.assertEqual(result["outcome"], "UNSEALED")
+        self.assertEqual(self.server.count("PATCH"), SEAL_ATTEMPTS)
+        self.assertNotIn(FENCE_ANNOTATION, self.sim.deployment["metadata"].get("annotations", {}))
+        messages = [record.getMessage() for record in records]
+        self.assertEqual(messages.count("executor.seal.refused"), SEAL_ATTEMPTS)
+        self.assertNotIn("executor.seal.indeterminate", messages)
 
     def test_a_transport_that_misreports_a_rejection_leaves_the_write_unknown(self):
         def misreport(**kwargs):
@@ -922,7 +970,7 @@ class TransportSelectionTests(unittest.TestCase):
 class DefiniteRejectionTableTests(unittest.TestCase):
     """classify() with a rejection: state evidence still wins over the response."""
 
-    def test_rows_r3_r5_r6_with_a_rejection(self):
+    def test_rows_r0_r5_r6_with_a_rejection(self):
         fixtures = load_fixtures()
         proposal, snapshot = fixtures["proposal"], fixtures["live_state"]
         rejection = WriteRejected(403, "Forbidden")
@@ -932,6 +980,23 @@ class DefiniteRejectionTableTests(unittest.TestCase):
         moved["deployment"]["metadata"]["resourceVersion"] = "999"
         self.assertEqual(classify(None, proposal, observe(moved, proposal["target"]), rejection).status, "CONFLICT")
         self.assertEqual(classify(None, proposal, None, rejection).status, "NEEDS_RECONCILIATION")
+
+    def test_row_r3_evidence_beats_a_rejection(self):
+        fixtures = load_fixtures()
+        proposal = fixtures["proposal"]
+        evidence = {"action_id": proposal["action_id"], "proposal_sha256": fingerprint(proposal),
+                    "target_uid": proposal["target"]["uid"],
+                    "template_sha256": proposal["parameters"]["template_sha256"], "attempt_id": PEER_ATTEMPT}
+        moved = Observation(present=True, uid=proposal["target"]["uid"], resource_version="999",
+                            evidence_annotation=canonical_json(evidence),
+                            template_sha256=proposal["parameters"]["template_sha256"])
+        for rejection in (WriteRejected(422, "Invalid"), WriteRejected(403, "Forbidden")):
+            with self.subTest(rejection=rejection.status):
+                self.assertEqual(classify(None, proposal, moved, rejection),
+                                 Decision("APPLIED", Basis.EVIDENCE_MATCH, "999", writer="peer:" + PEER_ATTEMPT))
+                overwritten = Observation(**dict(vars(moved), template_sha256="d" * 64))
+                self.assertEqual(classify(None, proposal, overwritten, rejection).basis,
+                                 Basis.COMMITTED_THEN_OVERWRITTEN)
 
 
 if __name__ == "__main__":

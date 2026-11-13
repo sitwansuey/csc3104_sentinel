@@ -480,8 +480,9 @@ class WedgeHarness:
             elif self.scenario == "admission-deny":
                 self.await_settle(first)
         except StopBeforeSend:
-            # The adapter counts the attempt before it starts kubectl, so write_attempts is 1 here
-            # while patch_processes stays 0: the patch never left this process.
+            # With kubectl the adapter counts the attempt before it starts kubectl, so write_attempts
+            # is 1 here; with --transport rest the hook raises before the adapter counts it, so it is 0.
+            # patch_processes stays 0 either way: the patch never left this process.
             self.record("execute (stopped before send)", None, [adapters], 0)
             self.check("process stopped after journaling, before sending",
                        self.ledger.get(first["action_id"])["phase"] == "WRITE_STARTED")

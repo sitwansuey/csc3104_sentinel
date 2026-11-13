@@ -594,8 +594,23 @@ in kind mode yet.
   (`tests/test_rest_executor_adapter.py::RESTExecutorTests`), and
   `TransportParityMixin` runs the same Executor scenarios over kubectl and
   REST, and `RESTExecutorSuiteTests` reruns `tests/test_executor.py`'s
-  `ExecutorTests` with the REST transport as the default cluster. Owner
-  sign-off is pending.
+  `ExecutorTests` with the REST transport as the default cluster; the
+  `ExecutorTests` cases that build their own in-memory fault cluster still
+  use that cluster, not REST, and `FencedAbortTests` is not ported. That
+  this action's evidence beats a rejection is tested on its own: a peer
+  host's committed attempt followed by our own 422 is APPLIED
+  (`tests/test_rest_executor_adapter.py::DefiniteRejectionTableTests.test_row_r3_evidence_beats_a_rejection`,
+  `tests/test_rest_executor_adapter.py::RESTExecutorTests.test_a_peer_commit_of_this_action_before_our_422_is_applied_not_rejected`).
+  A FAILED with DEFINITE_REJECTION releases the workload because this
+  attempt never committed. It says nothing about an earlier holder's write
+  that may still be in flight; that case relies on the Coordinator sealing
+  before it reassigns when a later holder reports FAILED (see "When a seal
+  is required" below, `runtime/worker_transport.py::Delivery._seal_abandoned`).
+  A fence's or seal's own 403 or 422 is about the fence, not the write: it
+  confirms no fence and the action stays in doubt
+  (`tests/test_rest_executor_adapter.py::RESTExecutorTests.test_a_rejected_fence_neither_confirms_the_fence_nor_releases_the_action`,
+  `tests/test_rest_executor_adapter.py::RESTExecutorTests.test_a_seal_whose_fences_are_rejected_stays_unsealed`).
+  Owner sign-off is pending, for this rule and that dependency together.
 - Fenced abort, when configured (`fence_after_seconds`, off by default). After
   the settle delay, a reconcile pass journals a fresh nonce and then sends a
   patch with the same UID and resourceVersion tests that only adds this

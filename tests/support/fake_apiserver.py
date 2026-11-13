@@ -25,6 +25,8 @@ fail_next_patch(mode) injects one fault into the next PATCH:
   drop-before-commit  the connection closes with no response and nothing applied
   error-after-commit  the patch commits, then a 500 InternalError
   delay-then-commit   wait `delay` seconds (past the client's timeout), then commit
+  peer-commits-first  a peer host's attempt of this same action (this patch with
+                      another attempt_id) commits first, so this patch's test fails (422)
 
 Nothing here contacts a cluster.
 """
@@ -35,10 +37,13 @@ import threading
 import time
 from urllib.parse import parse_qs, urlsplit
 
+from services.executor.reconciliation import ACTION_ANNOTATION
+from shared.canonical import canonical_json
 from tests.support.sim_apiserver import is_fence
 
 
 PRIVATE = "PRIVATE server detail"
+PEER_ATTEMPT = "1" * 32
 _REASONS = {400: "BadRequest", 401: "Unauthorized", 403: "Forbidden", 404: "NotFound", 408: "Timeout",
             409: "Conflict", 415: "UnsupportedMediaType", 422: "Invalid", 429: "TooManyRequests",
             500: "InternalError", 502: "Unknown", 503: "ServiceUnavailable", 504: "Timeout"}
@@ -47,6 +52,22 @@ _REASONS = {400: "BadRequest", 401: "Unauthorized", 403: "Forbidden", 404: "NotF
 def bump(deployment):
     """Another writer's harmless change: it moves the resourceVersion."""
     deployment["metadata"].setdefault("annotations", {})["example.org/bump"] = str(time.monotonic_ns())
+
+
+def as_peer_attempt(operations):
+    """The same patch as a peer host's attempt: only the evidence's attempt_id differs."""
+    def rewrite(value):
+        evidence = json.loads(value)
+        evidence["attempt_id"] = PEER_ATTEMPT
+        return canonical_json(evidence)
+    peer = json.loads(json.dumps(operations))
+    escaped = "/metadata/annotations/" + ACTION_ANNOTATION.replace("~", "~0").replace("/", "~1")
+    for operation in peer:
+        if operation.get("path") == escaped:
+            operation["value"] = rewrite(operation["value"])
+        elif operation.get("path") == "/metadata/annotations" and ACTION_ANNOTATION in operation.get("value", {}):
+            operation["value"][ACTION_ANNOTATION] = rewrite(operation["value"][ACTION_ANNOTATION])
+    return peer
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -124,6 +145,10 @@ class _Handler(BaseHTTPRequestHandler):
                 self.fake.sim.external_write(bump)
             elif fault == "delete-first":
                 self.fake.sim.delete()
+            elif fault == "peer-commits-first":
+                peer = self.fake.sim.submit("peer", "unknown", as_peer_attempt(operations))
+                if not self.fake.sim.deliver(peer):
+                    raise AssertionError("the peer's attempt must commit for this fault")
         if fault == "delay-then-commit":
             time.sleep(delay)
         with self.fake.lock:

@@ -351,17 +351,30 @@ memory (the heavy-lab lock, `sentinel-heavy-lab.lock` in the system temp
 directory, must be free).
 
 1. **Preflight (read only).** Check the lock is free and the context is the
-   disposable cluster:
+   disposable cluster. The first line asks `experiments/lab_lock.py` for the
+   lock's path, so it looks in the same temporary directory the lock uses
+   (TMPDIR, then TEMP, then TMP). The wedge harness does not take the lock
+   itself, so this check is the only guard:
 
    ```powershell
-   Test-Path (Join-Path $env:TEMP "sentinel-heavy-lab.lock")
+   .\.venv\Scripts\python.exe -c "from experiments.lab_lock import default_path; print(default_path().exists())"
    kubectl config get-contexts kind-sentinel-wedge
    kubectl --context kind-sentinel-wedge get nodes
+   kubectl --context kind-sentinel-wedge version
    ```
 
-   Expect `False`, one context and Ready nodes. Without the cluster, create
-   it first (`kind create cluster --name sentinel-wedge`), and delete it
-   afterwards (`kind delete cluster --name sentinel-wedge`).
+   Expect `False`, one context, Ready nodes and server version v1.37.0.
+   Without the cluster, check `kind version` reports v0.33.0 and create it
+   with the node image pinned by the same digest as
+   `deploy/kind/kind-dist.yaml` (the one the kind v0.33.0 release notes list
+   for `kindest/node:v1.37.0`; see
+   [distributed acceptance](distributed-acceptance.md)), so the admission
+   scenario runs against a known ValidatingAdmissionPolicy implementation:
+   `kind create cluster --name sentinel-wedge --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5 --wait 180s`.
+   Delete it afterwards (`kind delete cluster --name sentinel-wedge`). An
+   existing `kind-sentinel-wedge` on another Kubernetes version still works,
+   but record its version with the evidence, because the comparison is then
+   not like for like.
 2. **The runs.** Each makes its own namespace and short-lived restricted
    token and deletes them on exit:
 
@@ -380,6 +393,12 @@ directory, must be free).
    | rv-race | SUPERSEDED / ADVANCED_WITHOUT_EVIDENCE, 1 patch | CONFLICT / DEFINITE_REJECTION, 1 PATCH, no fence |
    | admission-deny | NEEDS_RECONCILIATION, then CONFLICT / FENCED after the 30 s settle delay, 1 fence | FAILED / DEFINITE_REJECTION at once, 0 fences, no settle delay |
    | delete-recreate | SUPERSEDED / TARGET_REPLACED, 0 patches | the same |
+
+   The harness's own admission policy sets no reason, so its denial should
+   come back as 422 Invalid (the `executor.rest.rejected` log event shows the
+   status). The shipped `deploy/sentinel/executor-admission.yaml` denies with
+   reason Forbidden, which is a 403; both are in the rejection set, but
+   record which one was seen.
 
    In every run a second proposal must then be APPLIED, and the summary
    `status` must be PASS.
