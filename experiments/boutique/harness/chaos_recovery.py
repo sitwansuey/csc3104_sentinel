@@ -636,12 +636,14 @@ class ChaosRecoveryMixin(ScenarioScoringMixin):
         self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=180s", timeout=200)
         self.check("Drift removed by the administrator; the target is back at its baseline")
 
-    def administrator_restore(self, name, attempts=3):
+    def administrator_restore(self, name, attempts=3, *, drift_cell=True):
         """Put the baseline template back as the lab administrator (conditional JSON Patch); not a Sentinel repair.
 
         The drift's rollout is still running, so a controller status update can
         change the resourceVersion between the read and the patch. Each attempt
         re-reads the Deployment and patches only that version of the same UID.
+        Returns the attempt that applied the patch. drift_cell=False (the
+        scenario-pair cleanup) leaves the drift cell's summary keys alone.
         """
         for attempt in range(1, attempts + 1):
             deployment = self.deployment()
@@ -653,9 +655,10 @@ class ChaosRecoveryMixin(ScenarioScoringMixin):
             result = self.kubectl("patch", "deployment", self.name, "--type=json", "--patch-file",
                                   str(self.directory / name), allow_failure=True)
             if result.returncode == 0:
-                self.summary["drift_cell_restored"] = True
-                self.summary["drift_restore_attempts"] = attempt
-                return
+                if drift_cell:
+                    self.summary["drift_cell_restored"] = True
+                    self.summary["drift_restore_attempts"] = attempt
+                return attempt
             time.sleep(1)
         require(False, f"The administrator could not restore the baseline after {attempts} conditional patches")
 

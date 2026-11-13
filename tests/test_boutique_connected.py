@@ -1386,5 +1386,135 @@ class PairVerdictTests(unittest.TestCase):
                 self.verifying(name, proposal, outcomes).assert_not_called()
 
 
+class FakeTemplates:
+    """The pair's Deployments behind deployment() and kubectl: conditional JSON patches and rollouts, offline."""
+
+    def __init__(self, experiment, templates, *, failing_patches=0, ignore_patches=False):
+        self.experiment, self.templates = experiment, deepcopy(templates)
+        self.versions = {name: 10 for name in templates}
+        self.failing_patches, self.ignore_patches = failing_patches, ignore_patches
+        self.calls, self.patches = [], []
+
+    def deployment(self):
+        name = self.experiment.name
+        return {"metadata": {"name": name, "uid": name + "-uid", "resourceVersion": str(self.versions[name])},
+                "spec": {"template": deepcopy(self.templates[name])}}
+
+    def kubectl(self, *arguments, restricted=False, timeout=40, allow_failure=False):
+        self.calls.append(arguments)
+        if arguments[0] != "patch":
+            return SimpleNamespace(returncode=0, stdout="")
+        name = arguments[2]
+        document = json.loads(Path(arguments[-1]).read_text(encoding="utf-8"))
+        self.patches.append((name, document))
+        tests = {op["path"]: op["value"] for op in document if op["op"] == "test"}
+        applies = (self.failing_patches == 0 and tests == {"/metadata/uid": name + "-uid",
+                                                           "/metadata/resourceVersion": str(self.versions[name])})
+        if not applies:
+            self.failing_patches = max(0, self.failing_patches - 1)
+            if not allow_failure:
+                raise RuntimeError("kubectl operation failed: patch")
+            return SimpleNamespace(returncode=1, stdout="")
+        if not self.ignore_patches:
+            self.templates[name] = deepcopy(next(op["value"] for op in document if op["op"] == "replace"))
+        self.versions[name] += 1
+        return SimpleNamespace(returncode=0, stdout="")
+
+
+def lane_template(name, env="ok"):
+    return {"metadata": {"labels": {"app": name}},
+            "spec": {"containers": [{"name": "server", "env": [{"name": "SETTING", "value": env}]}]}}
+
+
+class PairCleanupTests(unittest.TestCase):
+    """A passing pair leaves no fault behind: the administrator cleanup after scoring, never a repair (finding 1)."""
+
+    setUp = PairHarnessTests.setUp
+    pair = PairHarnessTests.pair
+
+    def cleaning(self, live, **fake_options):
+        from shared.actions import restart_template
+        experiment = self.pair()
+        for name in experiment.order:
+            template = lane_template(name)
+            experiment.lanes[name]["baseline"] = {"pod_template": template, "template_sha256": fingerprint(template)}
+        live = {name: restart_template(lane_template(name), "RST-0123456789abcdef") if state == "restarted"
+                else lane_template(name, state) for name, state in live.items()}
+        fake = FakeTemplates(experiment, live, **fake_options)
+        experiment.deployment, experiment.kubectl = fake.deployment, fake.kubectl
+        return experiment, fake
+
+    def test_a_left_configuration_fault_is_restored_and_recorded_apart_from_the_result(self):
+        # DEPENDENCY_DEADLOCK: cartservice keeps its C1 fault; a verified RESTART leaves only its annotation.
+        experiment, fake = self.cleaning({"redis-cart": "restarted", "cartservice": "redis-cart:6390"})
+        with patch("experiments.boutique.harness.chaos_recovery.time.sleep"), redirect_stdout(StringIO()):
+            cleanup = experiment.operator_cleanup()
+        self.assertEqual(cleanup["redis-cart"], {"restored": False, "reason": "configuration at baseline"})
+        self.assertEqual((cleanup["cartservice"]["restored"], cleanup["cartservice"]["patch_attempts"]), (True, 1))
+        self.assertEqual(fake.templates["cartservice"], lane_template("cartservice"))
+        self.assertEqual([name for name, _ in fake.patches], ["cartservice"])
+        name, document = fake.patches[0]
+        self.assertEqual([op["op"] for op in document], ["test", "test", "replace"])
+        self.assertIn(("rollout", "status", "deployment/cartservice", "--timeout=180s"), fake.calls)
+        self.assertEqual(experiment.summary["operator_cleanup"], cleanup)
+        self.assertNotIn("drift_cell_restored", experiment.summary)
+        self.assertNotIn("pair_result", experiment.summary)  # Recorded apart from the scored result.
+        self.assertFalse((experiment.directory / "executor.sqlite").exists())  # No Executor write.
+        self.assertIn("not a repair", experiment.summary["checks"][-1]["name"])
+
+    def test_nothing_is_patched_when_both_configurations_are_at_baseline(self):
+        experiment, fake = self.cleaning({"redis-cart": "restarted", "cartservice": "ok"})
+        cleanup = experiment.operator_cleanup()
+        self.assertEqual({name: item["restored"] for name, item in cleanup.items()},
+                         {"redis-cart": False, "cartservice": False})
+        self.assertEqual(fake.patches, [])
+        self.assertEqual(experiment.summary["checks"], [])
+
+    def test_a_cleanup_that_cannot_patch_or_does_not_take_fails_the_run(self):
+        for options, error in (({"failing_patches": 3}, "could not restore the baseline after 3"),
+                               ({"ignore_patches": True}, "did not bring cartservice back")):
+            experiment, _ = self.cleaning({"redis-cart": "restarted", "cartservice": "redis-cart:6390"}, **options)
+            with self.subTest(**options), patch("experiments.boutique.harness.chaos_recovery.time.sleep"), \
+                    self.assertRaisesRegex(RuntimeError, error):
+                experiment.operator_cleanup()
+
+    def test_a_passing_run_cleans_up_after_judging_and_a_failed_one_restores_instead(self):
+        from experiments.boutique.harness import multi_fault
+        for judged in (True, False):
+            experiment, fake = self.cleaning({"redis-cart": "ok", "cartservice": "redis-cart:6390"})
+            order = []
+            for step in ("prepare", "permissions", "inject_pair", "remove_chaos", "close_approval_authority"):
+                setattr(experiment, step, Mock(side_effect=lambda step=step: order.append(step)))
+            experiment.detect_pair = Mock(return_value={name: {"incident_id": "INC-" + name}
+                                                        for name in experiment.order})
+
+            def judge(incidents, run, judged=judged, fake=fake):
+                # Scored before any cleanup: the fault is still in place when the pair is judged.
+                order.append(("judge", fake.templates["cartservice"] == lane_template("cartservice")))
+                if not judged:
+                    raise RuntimeError("Pair redis-pod+cart-config ended FAILED")
+            experiment.judge = judge
+            runner = Mock()
+            runner.return_value.run.return_value = {"states": {}, "stops": {}}
+            with self.subTest(judged=judged), patch.object(multi_fault, "PairRunner", runner), \
+                    patch("experiments.boutique.harness.chaos_recovery.time.sleep"), redirect_stdout(StringIO()):
+                if judged:
+                    experiment.run()
+                    self.assertEqual(experiment.summary["status"], "PASS")
+                    self.assertTrue(experiment.summary["operator_cleanup"]["cartservice"]["restored"])
+                    self.assertNotIn("operator_emergency_restore", experiment.summary)
+                    self.assertIn(("judge", False), order)
+                    saved = json.loads((experiment.directory / "pair-cartservice" / "final-deployment.json")
+                                       .read_text(encoding="utf-8"))
+                    # The evidence keeps the configuration Sentinel left, before the administrator's cleanup.
+                    self.assertEqual(saved["spec"]["template"], lane_template("cartservice", "redis-cart:6390"))
+                else:
+                    with self.assertRaisesRegex(RuntimeError, "ended FAILED"):
+                        experiment.run()
+                    self.assertNotIn("operator_cleanup", experiment.summary)
+                    self.assertEqual(experiment.summary["operator_emergency_restore"]["cartservice"], True)
+                self.assertEqual(fake.templates["cartservice"], lane_template("cartservice"))
+
+
 if __name__ == "__main__":
     unittest.main()

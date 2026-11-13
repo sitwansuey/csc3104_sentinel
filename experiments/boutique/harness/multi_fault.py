@@ -72,6 +72,7 @@ from services.observer.kubernetes import CollectionError, KubernetesEvidenceColl
 from services.planner.core import mock_provider, propose, retrieve_runbooks
 from services.verifier.store import VerificationStore
 from shared import log
+from shared.actions import config_fingerprint
 
 LOG = log.get_logger("experiment")
 
@@ -903,6 +904,40 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
         self.summary["operator_emergency_restore"] = restored
         return restored
 
+    def operator_cleanup(self):
+        """After a passing run, put back every target configuration still left faulted, as the administrator.
+
+        An accepted result that is not a recovery (DEPENDENCY_DEADLOCK, the
+        predicted result for redis-pod+cart-config) leaves a configuration
+        fault in place, for example cartservice's bad REDIS_ADDR. This runs
+        after the pair was judged and saved, with the same conditional patch
+        (UID and resourceVersion tested) as the drift cell's cleanup, and waits
+        for the rollout. It is lab cleanup, never a Sentinel repair: the write
+        is not in the Executor ledger and is recorded only in
+        summary["operator_cleanup"]. A template that differs from its baseline
+        only by Sentinel's restart annotation (a verified RESTART) is left alone.
+        """
+        cleanup = {}
+        for name in self.order:
+            with self.acting_as(name):
+                template = self.deployment()["spec"]["template"]
+                if config_fingerprint(template) == config_fingerprint(self.baseline["pod_template"]):
+                    cleanup[name] = {"restored": False, "reason": "configuration at baseline"}
+                    continue
+                attempts = self.administrator_restore("operator-cleanup-" + name + "-patch.json", drift_cell=False)
+                self.kubectl("rollout", "status", "deployment/" + name, "--timeout=180s", timeout=200)
+                restored = self.deployment()["spec"]["template"]
+                require(config_fingerprint(restored) == config_fingerprint(self.baseline["pod_template"]),
+                        f"The administrator cleanup did not bring {name} back to its baseline configuration")
+                cleanup[name] = {"restored": True, "patch_attempts": attempts, "rollout_complete": True,
+                                 "by": "lab administrator; not a Sentinel repair"}
+        self.summary["operator_cleanup"] = cleanup
+        restored = sorted(name for name, item in cleanup.items() if item["restored"])
+        if restored:
+            self.check("Administrator put the remaining faulted configuration back after scoring (not a repair)",
+                       targets=restored)
+        return cleanup
+
     def run(self):
         try:
             self.prepare()
@@ -918,7 +953,9 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
             self.check("Chaos Mesh object deleted and its cleanup confirmed")
             for name in self.order:
                 with self.acting_as(name):
+                    # The state Sentinel left, before any administrator cleanup.
                     save(self.lanes[name]["folder"] / "final-deployment.json", self.deployment())
+            self.operator_cleanup()
             self.summary["status"] = "PASS"
         except BaseException as exc:
             self.summary.update(status="FAILED", error_type=type(exc).__name__, error=str(exc)[:300])

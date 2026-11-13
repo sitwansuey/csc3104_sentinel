@@ -144,8 +144,8 @@ both targets.
 
 ## Evidence a pair run writes
 
-In the run folder: `summary.json` (with `pair`, `pair_injection` and
-`pair_result`), `pair-result.json` (the incident states and stops, the
+In the run folder: `summary.json` (with `pair`, `pair_injection`,
+`pair_result` and, after a passing run, `operator_cleanup`), `pair-result.json` (the incident states and stops, the
 ShopOutcome, writes per target from the Executor ledger, the ordering proof
 and `ordered_recovery_shown` for the dependency-ordered pair, cross-incident
 transitions, per-incident timings from the Coordinator journal and each
@@ -290,5 +290,19 @@ call, so neither stamp is when the fault took effect.
 
 Cleanup is automatic: each run deletes its chaos object and, on failure, puts
 a changed template back as the administrator (never counted as a repair).
+A run that passes can still leave a fault in place: DEPENDENCY_DEADLOCK, the
+predicted result for `redis-pod+cart-config`, writes nothing, so
+cartservice keeps its C1 `REDIS_ADDR=redis-cart:6390` and the storefront stays
+broken. So after the pair is judged and saved, and after the chaos object is
+deleted, the harness also puts back, as the administrator, every target whose
+configuration still differs from its baseline (`operator_cleanup` in
+`experiments/boutique/harness/multi_fault.py`). It uses the drift cell's
+conditional patch (the UID and resourceVersion are tested), waits for the
+rollout and records the result in `summary.json` as `operator_cleanup`, apart
+from `pair_result`. This cleanup is never a Sentinel repair: it happens after
+scoring, it is not in the Executor ledger, and `final-deployment.json` in each
+`pair-<target>` folder keeps the template as Sentinel left it. A template
+that differs from its baseline only by Sentinel's restart annotation (a
+verified RESTART) is left alone.
 The `--dashboard` end-of-run check verifies a single-target walkthrough, so a
 pair run does not take `--dashboard`.
