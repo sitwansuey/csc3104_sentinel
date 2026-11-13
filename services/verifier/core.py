@@ -229,8 +229,12 @@ def _assess(execution, samples, policy):
             status = sample.get("http_status")
             response_complete = type(status) is int and 100 <= status <= 599
             response_healthy = status == rules["required_http_status"]
+        # A SCALE binds the restored count, so a present desired_replicas of 0 is a
+        # measured regression (the original fault re-applied), not missing data.
+        # Without that expectation (ROLLBACK, RESTART) a reading still needs desired > 0.
+        desired_known = type(desired) is int and (desired > 0 or (replica_target is not None and desired == 0))
         complete = (protocol_matches and response_complete and type(ready) is int and ready >= 0
-                    and type(desired) is int and desired > 0)
+                    and desired_known)
         available = sample.get("available_replicas")
         if rules.get("require_available_replicas"):
             complete = complete and type(available) is int and available >= 0
@@ -239,7 +243,8 @@ def _assess(execution, samples, policy):
             # The Deployment must keep the restored count; ready >= desired below then means ready >= the target.
             unhealthy_replicas |= desired != replica_target
         if complete:
-            unhealthy_service |= not response_healthy or ready < desired
+            # desired == 0 is complete only under a SCALE expectation; it is never healthy service.
+            unhealthy_service |= not response_healthy or ready < desired or desired == 0
             if rules.get("require_available_replicas"):
                 unhealthy_service |= available < desired
         if rules.get("require_template_match"):

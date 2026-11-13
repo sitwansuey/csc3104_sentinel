@@ -40,7 +40,7 @@ from services.planner.store import PlannerStore
 from services.verifier.core import VerifierInputError, inspect_dependencies, verify
 from services.verifier.store import VerificationStore
 from shared.actions import (
-    IMPLEMENTED_ACTIONS, TEMPLATE_ACTIONS, baseline_replicas, restart_template, scale_parameters,
+    IMPLEMENTED_ACTIONS, SCALE_MAX_REPLICAS, TEMPLATE_ACTIONS, baseline_replicas, restart_template, scale_parameters,
 )
 from shared.canonical import sha256_hex
 from shared.contracts import ContractError, validate_message
@@ -177,6 +177,66 @@ class ScaleRegistryTests(unittest.TestCase):
         drifted["spec"]["containers"][0]["image"] = "other@sha256:" + "0" * 64
         with self.assertRaises(ValueError):
             scale_parameters(base, drifted)
+
+
+class ScaleCeilingTests(unittest.TestCase):
+    """Every layer that bounds a SCALE count agrees on shared.actions.SCALE_MAX_REPLICAS.
+
+    The ceiling is repeated as a literal where a module avoids importing
+    shared.actions, and in the admission CEL; each copy is checked at its edge.
+    """
+
+    def test_every_copy_of_the_replica_ceiling_agrees(self):
+        from services.executor import reconciliation
+        from services.observer import core as observer_core
+        top, over = SCALE_MAX_REPLICAS, SCALE_MAX_REPLICAS + 1
+        self.assertEqual(top, 10)
+        self.assertEqual(observer_core.MAX_EXPECTED_REPLICAS, top)
+        self.assertEqual(reconciliation._MAX_REPLICAS, top)
+        # shared/actions.py and shared/contracts.py
+        self.assertEqual(baseline_replicas({"replicas": top}), top)
+        self.assertIsNone(baseline_replicas({"replicas": over}))
+        live = live_state()
+        validate_message(scale_proposal(live, desired_replicas=top))
+        with self.assertRaises(ContractError):
+            validate_message(scale_proposal(live, desired_replicas=over))
+        # services/executor/reconciliation.py: action evidence
+        proposal = scale_proposal(live, desired_replicas=top)
+        evidence = action_evidence(proposal, sha256_hex(proposal), "b" * 32)
+        self.assertTrue(evidence_fields_valid(evidence))
+        self.assertFalse(evidence_fields_valid(dict(evidence, replicas=over)))
+        # services/observer/core.py
+        Observer({"detection": {"expected_min_replicas": {KEY: top}}})
+        with self.assertRaises(ObservationError):
+            Observer({"detection": {"expected_min_replicas": {KEY: over}}})
+        # services/verifier/core.py
+        execution = VerifierScaleTests().execution()
+        samples = VerifierScaleTests().samples((top, top, top), ready=top)
+        health = dict(VerifierScaleTests().policy()["health"], expected_desired_replicas=top)
+        self.assertEqual(verify(execution, samples, {"health": health})["status"], "RECOVERED")
+        with self.assertRaises(VerifierInputError):
+            verify(execution, samples, {"health": dict(health, expected_desired_replicas=over)})
+        # The lab's fault injection and the admission CEL.
+        self.assertEqual(scenarios.scale_argv("cartservice", top)[-1], f"--replicas={top}")
+        with self.assertRaises(CatalogError):
+            scenarios.scale_argv("cartservice", over)
+        admission = (ROOT / "deploy/sentinel/executor-admission.yaml").read_text(encoding="utf-8")
+        self.assertIn(f"object.spec.replicas <= {top} &&", admission)
+
+    def test_the_kubectl_adapter_ceiling_agrees(self):
+        case = KubectlScaleAdapterTests()
+        case.setUp()
+        top, over = SCALE_MAX_REPLICAS, SCALE_MAX_REPLICAS + 1
+        for replicas, refused in ((top, False), (over, True)):
+            proposal = scale_proposal(case.live, desired_replicas=replicas)
+            evidence = action_evidence(proposal, sha256_hex(proposal), "b" * 32)
+            with self.subTest(replicas=replicas):
+                if refused:
+                    with self.assertRaises(LiveAdapterError):
+                        case.scale(case.adapter(), replicas=replicas, evidence=evidence)
+                else:
+                    applied = case.scale(case.adapter(), replicas=replicas, evidence=evidence)
+                    self.assertEqual(applied["deployment"]["spec"]["replicas"], top)
 
 
 class ObserverScaleTests(unittest.TestCase):
@@ -539,6 +599,31 @@ class ExecutorScaleTests(unittest.TestCase):
         self.assertEqual(reconcile(proposal, self.adapters()), result)
         self.assertEqual(len(cluster.write_attempts), 1)
 
+    def test_a_success_response_with_another_count_is_not_trusted_and_triggers_a_fresh_read(self):
+        cluster = self.cluster
+        reads = []
+
+        class WrongReply(FakeDeploymentAPI):
+            def conditional_scale(self, **kwargs):
+                applied = FakeDeploymentAPI.conditional_scale(cluster, **kwargs)
+                applied["deployment"]["spec"]["replicas"] = 2  # Evidence and template match; the count does not.
+                return applied
+
+        def read(target):
+            reads.append(len(cluster.write_attempts))
+            return cluster.read(target)
+
+        wrong = WrongReply(cluster.snapshot)
+        wrong.read, wrong.autoscalers = read, cluster.autoscalers
+        self.cluster = wrong
+        result = execute(self.proposal(), self.adapters())
+        # The response alone would not prove the write; a fresh read of the object does.
+        self.assertEqual(result["status"], "APPLIED", result["details"])
+        self.assertTrue(result["details"].startswith("[basis=EVIDENCE_MATCH]"))
+        self.assertIn(1, reads, "no fresh read after the write")
+        self.assertEqual(cluster.snapshot["deployment"]["spec"]["replicas"], 1)
+        self.assertEqual(len(cluster.write_attempts), 1)
+
     def test_a_count_changed_after_the_write_is_superseded(self):
         cluster = self.cluster
 
@@ -585,7 +670,12 @@ class ExecutorScaleTests(unittest.TestCase):
         up["spec"]["replicas"] = 1
         drifted = deepcopy(live)
         drifted["spec"]["template"]["spec"]["containers"][0]["image"] = "other@sha256:" + "0" * 64
+        # Same configuration as the baseline, but restarted since the proposal was bound:
+        # only the template_sha256 binding tells the two templates apart.
+        restarted = deepcopy(live)
+        restarted["spec"]["template"] = restart_template(live["spec"]["template"], "2026-10-10T12:00:30Z")
         for name, args in (("at count", (proposal, up, self.baseline)),
+                           ("bound", (proposal, restarted, self.baseline)),
                            ("drift", (scale_proposal({"deployment": drifted}, self.baseline), drifted, self.baseline)),
                            ("binding", (proposal, drifted, self.baseline)),
                            ("count", (proposal, live, baseline(2))),
@@ -748,9 +838,34 @@ class VerifierScaleTests(unittest.TestCase):
         self.assertNotIn("replica_target", {check["name"] for check in verify(
             self.execution(), self.samples((1, 2, 1), ready=2), unbound)["checks"]})
 
+    def test_a_count_scaled_back_to_zero_during_the_window_is_not_recovered(self):
+        # The original fault re-applied is drift, not missing evidence.
+        for desired, ready in (((1, 0, 1), 1), ((1, 1, 0), 0), ((0, 0, 0), 0)):
+            with self.subTest(desired=desired, ready=ready):
+                outcome = verify(self.execution(), self.samples(desired, ready=ready), self.policy())
+                failed = {check["name"] for check in outcome["checks"] if not check["passed"]}
+                self.assertEqual(outcome["status"], "NOT_RECOVERED", outcome["checks"])
+                self.assertLessEqual({"replica_target", "service_health"}, failed)
+        outcome = verify(self.execution(), self.samples((0, 1, 1, 1)), self.policy(convergence_grace_seconds=30))
+        self.assertEqual(outcome["status"], "NOT_RECOVERED")
+
+    def test_a_zero_count_without_a_scale_expectation_stays_unknown(self):
+        # ROLLBACK and RESTART keep the rule that a reading needs a positive desired count.
+        unbound = {"health": {key: value for key, value in self.policy()["health"].items()
+                              if key != "expected_desired_replicas"}}
+        self.assertEqual(verify(self.execution(), self.samples((1, 0, 1)), unbound)["status"], "UNKNOWN")
+
     def test_missing_counts_are_unknown_not_a_failure(self):
-        samples = self.samples()
-        del samples[1]["desired_replicas"]
+        for bad in (None, -1, True, "0", 1.0):
+            with self.subTest(desired=bad):
+                samples = self.samples()
+                if bad is None:
+                    del samples[1]["desired_replicas"]
+                else:
+                    samples[1]["desired_replicas"] = bad
+                self.assertEqual(verify(self.execution(), samples, self.policy())["status"], "UNKNOWN")
+        samples = self.samples((1, 0, 1))
+        del samples[1]["http_status"]
         self.assertEqual(verify(self.execution(), samples, self.policy())["status"], "UNKNOWN")
 
     def test_a_drift_inside_the_convergence_grace_is_never_set_aside(self):
@@ -770,6 +885,46 @@ class VerifierScaleTests(unittest.TestCase):
         policy = {"health": {}}
         _bind_expectations(policy, rollback)
         self.assertEqual(policy, {"health": {}})
+
+    def test_the_remote_verifier_binds_the_scale_expectation_from_the_delivered_proposal(self):
+        from runtime.remote_adapters import VerifierAdapter
+
+        class Stop(Exception):
+            pass
+
+        class Lease:
+            def ensure_current(self):
+                return None
+
+        def read_samples(execution):
+            raise Stop()  # The job, with its bound policy, is saved before the first reading.
+
+        static = {"health": dict(self.policy()["health"], require_template_match=True)}
+        del static["health"]["expected_desired_replicas"]
+        for action in ("SCALE", "ROLLBACK"):
+            with self.subTest(action=action), tempfile.TemporaryDirectory() as directory:
+                if action == "SCALE":
+                    proposal = scale_proposal(live_state(), desired_replicas=1)
+                else:
+                    proposal = fixture("messages/proposal.json")
+                    proposal["incident_id"] = "INC-SCALE-001"
+                    proposal = bind(proposal)
+                execution = dict(self.execution(), action_id=proposal["action_id"], target=proposal["target"])
+                store = VerificationStore(Path(directory) / "verifier.db")
+                try:
+                    adapter = VerifierAdapter(store, policy_reader=lambda _: static, sample_reader=read_samples,
+                                              clock=lambda: NOW + timedelta(seconds=1))
+                    delivery = {"topic": "verifier.request", "payload": {"execution": execution, "proposal": proposal}}
+                    with self.assertRaises(Stop):
+                        adapter.process(delivery, Lease())
+                    health = store.get(execution["action_id"])["policy"]["health"]
+                finally:
+                    store.close()
+                self.assertEqual(health["expected_template_sha256"], proposal["parameters"]["template_sha256"])
+                if action == "SCALE":
+                    self.assertEqual(health.get("expected_desired_replicas"), 1)
+                else:
+                    self.assertNotIn("expected_desired_replicas", health)
 
 
 class ScaleFlowTests(unittest.TestCase):
@@ -842,14 +997,58 @@ class ScaleFlowTests(unittest.TestCase):
         self.assertEqual(self.store.incident(incident["incident_id"])["state"], "RECOVERED")
         self.assertEqual(len(self.cluster.write_attempts), 1)
 
-    def test_the_coordinator_accepts_one_scale_per_incident(self):
+    def refused_scale(self):
+        """An incident whose first SCALE the Guard refused, so planning is open again."""
+        incident = detect(scaled_down(), self.policy)
+        handle(incident, self.store, self.bus)
+        first = scale_proposal(self.cluster.read(None), self.baseline, incident_id=incident["incident_id"])
+        first = bind({**first, "target": incident["target"]})
+        handle(first, self.store, self.bus)
+        guard = fixture("messages/guard-result.json")
+        guard.update(incident_id=incident["incident_id"], target=incident["target"], action_id=first["action_id"],
+                     verdict="REJECT", reason_codes=["SCALE_TEMPLATE_DRIFT"],
+                     validated_resource_version=first["based_on_resource_version"])
+        handle(guard, self.store, self.bus)
+        self.assertEqual(self.store.incident(incident["incident_id"])["state"], "REJECTED")
+        return incident, first
+
+    def test_a_second_scale_for_one_incident_is_refused_once_planning_reopens(self):
+        incident, first = self.refused_scale()
+        # The incident is REJECTED, so 'only one active action' no longer applies;
+        # only the one-SCALE-per-incident rule can refuse this.
+        second = bind({**first, "rationale": "Try the restore once more."})
+        with self.assertRaisesRegex(CoordinatorError, "A SCALE was already proposed for this incident"):
+            handle(second, self.store, self.bus)
+        self.assertEqual(self.store.incident(incident["incident_id"])["state"], "REJECTED")
+        self.assertEqual([action["proposal"]["action"] for action in
+                          self.store.actions_for_incident(incident["incident_id"])], ["SCALE"])
+
+    def test_after_a_refused_scale_a_non_scale_proposal_is_still_accepted(self):
+        for action, state in (("ESCALATE", "NEEDS_REVIEW"), ("ROLLBACK", "VALIDATING")):
+            with self.subTest(action=action):
+                self.setUp()
+                incident, first = self.refused_scale()
+                if action == "ROLLBACK":
+                    other = fixture("messages/proposal.json")
+                    other.update(incident_id=incident["incident_id"], target=incident["target"],
+                                 based_on_resource_version=first["based_on_resource_version"])
+                else:
+                    other = {key: value for key, value in first.items() if key != "parameters"}
+                    other.update(action="ESCALATE", parameters={}, rationale="Hand the replica count to an operator.")
+                other = bind(other)
+                self.assertTrue(handle(other, self.store, self.bus))
+                self.assertEqual(self.store.incident(incident["incident_id"])["state"], state)
+                self.assertEqual([item["proposal"]["action"] for item in
+                                  self.store.actions_for_incident(incident["incident_id"])], ["SCALE", action])
+
+    def test_a_second_scale_while_the_first_is_active_is_refused_by_the_active_action_rule(self):
         incident = detect(scaled_down(), self.policy)
         handle(incident, self.store, self.bus)
         first = scale_proposal(self.cluster.read(None), self.baseline, incident_id=incident["incident_id"])
         first = bind({**first, "target": incident["target"]})
         handle(first, self.store, self.bus)
         second = bind({**first, "rationale": "Again."})
-        with self.assertRaises(CoordinatorError):
+        with self.assertRaisesRegex(CoordinatorError, "Only one active action is permitted"):
             handle(second, self.store, self.bus)
 
 

@@ -1321,7 +1321,7 @@
       "variant": "misleading-dependency-log"
     }
   ],
-  "catalog_sha256": "01fa2bb9e692c2240af26a54177ab8babc0f54b08a83a66293ea38018d671427",
+  "catalog_sha256": "a9d95e8b98ed350e0ef808709d6b7c81ea746ba23b94fe92082e3b61d203452e",
   "counts": {
     "adversarial": 12,
     "captured": 52,

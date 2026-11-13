@@ -235,7 +235,7 @@ class RelayDecisionTests(RelayServerCase):
         self.assertEqual(shown["target"], self.proposal["target"])
         self.assertEqual((shown["action"], shown["baseline_id"]), ("ROLLBACK", "BASE-DEMO-001"))
         self.assertEqual(shown["template_sha256_prefix"], self.proposal["parameters"]["template_sha256"][:12])
-        self.assertIsNone(shown["desired_replicas"])  # Only a SCALE names a replica count (P5.07).
+        self.assertNotIn("desired_replicas", shown)  # Only a SCALE names a replica count (P5.07).
         self.assertEqual(shown["proposal_sha256"], _digest(self.proposal))
         self.assertEqual(shown["guard"], {"verdict": "ESCALATE", "reason_codes": ["OPERATOR_APPROVAL_REQUIRED"]})
         self.assertEqual(shown["policy_version"], self.decision["policy_version"])
@@ -256,7 +256,7 @@ class RelayDecisionTests(RelayServerCase):
         entry["proposal"]["parameters"]["desired_replicas"] = "2"
         self.assertIsNone(ApprovalRelay._public(entry)["desired_replicas"])
         entry["proposal"].update(action="ROLLBACK", parameters={"desired_replicas": 2})
-        self.assertIsNone(ApprovalRelay._public(entry)["desired_replicas"])
+        self.assertNotIn("desired_replicas", ApprovalRelay._public(entry))
 
     def test_typed_approval_is_relayed_as_the_dashboard_operator_and_executes_once(self):
         answer = self.approved()

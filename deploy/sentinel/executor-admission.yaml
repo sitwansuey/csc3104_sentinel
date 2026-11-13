@@ -6,7 +6,8 @@
 # Deployments its Role names. This policy limits what such a patch may change. It applies to
 # every Deployment UPDATE (a PATCH is an UPDATE here) made by a ServiceAccount
 # named sentinel-executor, in the namespaces the binding selects:
-#   - spec: only spec.template may change, and only together with a new
+#   - spec: apart from spec.replicas under the SCALE rule below, only
+#     spec.template may change, and only together with a new
 #     sentinel.io/execution evidence annotation, as a ROLLBACK or RESTART
 #     writes it (a RESTART's token is a Pod template annotation);
 #   - spec.replicas may change only as a reviewed SCALE writes it (P5.07): up,
@@ -120,7 +121,7 @@ spec:
         (!has(object.spec.progressDeadlineSeconds) || object.spec.progressDeadlineSeconds == oldObject.spec.progressDeadlineSeconds) &&
         has(object.spec.paused) == has(oldObject.spec.paused) &&
         (!has(object.spec.paused) || object.spec.paused == oldObject.spec.paused)
-      message: The Sentinel Executor may change no spec field other than spec.template
+      message: The Sentinel Executor may change no spec field other than spec.template (spec.replicas only as the SCALE rule allows)
       reason: Forbidden
     - expression: |-
         has(object.metadata.labels) == has(oldObject.metadata.labels) &&

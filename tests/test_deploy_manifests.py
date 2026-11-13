@@ -71,7 +71,8 @@ PINNED_VALIDATIONS = {
     "The Sentinel Executor may not change spec.replicas except as a reviewed SCALE (up, to at most 10, with new "
     "SCALE evidence naming that count and no template or fence change)":
         "58572ad4fd696796d19e748e940d7c5ca27c8c4632d87dd717ef9a9ab002c4df",
-    "The Sentinel Executor may change no spec field other than spec.template":
+    "The Sentinel Executor may change no spec field other than spec.template "
+    "(spec.replicas only as the SCALE rule allows)":
         "fa76c39f0763c89d4f944576913247a83a6a6a894a57e02175031712a58d4359",
     "The Sentinel Executor may not change metadata.labels":
         "990771f33819df0386827ca9ba0893cfb79ca6b0290273991bb9800ff4a9ecee",

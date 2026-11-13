@@ -4,7 +4,7 @@
   "pre_registration": {
     "registered_on": "2026-11-12",
     "sign_off": {"status": "pending", "by": null, "on": null},
-    "rule": "The expected outcome sets below were committed before any live run of R2, N1, C1 or C2 (2026-11-12), of N2, N3 and T1 (2026-11-13), of C3, D1 and the pairs (2026-11-13), and of S1 (2026-11-13). N2 is labelled RESTART correct and ESCALATE acceptable from its first registration, as the remediation plan requires before its first trial. A team member must review and sign them off (set sign_off to signed, with a role and date) before a scored trial is reported. Changing a label after a scored trial needs a new pre-registration commit and invalidates earlier trials for that scenario."
+    "rule": "The expected outcome sets below were committed before any live run of R2, N1, C1 or C2 (2026-11-12), of N2, N3 and T1 (2026-11-13), of C3, D1 and the pairs (2026-11-13), and of S1 (2026-11-13 UTC). N2 is labelled RESTART correct and ESCALATE acceptable from its first registration, as the remediation plan requires before its first trial. A team member must review and sign them off (set sign_off to signed, with a role and date) before a scored trial is reported. Changing a label after a scored trial needs a new pre-registration commit and invalidates earlier trials for that scenario."
   },
   "default_target": "shippingservice",
   "scopes": {

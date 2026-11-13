@@ -133,7 +133,7 @@ class ApprovalRelay:
         rationale = proposal.get("rationale", "")
         rationale = rationale if isinstance(rationale, str) else repr(rationale)
         record = entry["record"]
-        return {
+        public = {
             "action_id": _text(proposal["action_id"], TEXT_LIMIT),
             "incident_id": _text(proposal.get("incident_id", ""), TEXT_LIMIT),
             "status": entry["status"], "mode": MODE,
@@ -142,9 +142,6 @@ class ApprovalRelay:
             "action": _text(proposal.get("action", ""), FIELD_LIMIT),
             "baseline_id": _text(str(parameters.get("baseline_id", "")), FIELD_LIMIT),
             "template_sha256_prefix": _text(str(parameters.get("template_sha256", ""))[:12], 12),
-            # P5.07: the replica count a SCALE would write; null for every other action.
-            "desired_replicas": (parameters.get("desired_replicas") if proposal.get("action") == "SCALE"
-                                 and type(parameters.get("desired_replicas")) is int else None),
             "proposal_sha256": entry["digest"],
             "policy_version": _text(str(decision.get("policy_version", "")), FIELD_LIMIT),
             "guard": {"verdict": _text(decision.get("verdict", ""), FIELD_LIMIT),
@@ -157,6 +154,11 @@ class ApprovalRelay:
                 "approved_at": record["approved_at"], "expires_at": record["expires_at"]},
             "revocation": entry["revocation"],
         }
+        if proposal.get("action") == "SCALE":
+            # P5.07: the replica count a SCALE would write (null if malformed); other actions omit the key.
+            replicas = parameters.get("desired_replicas")
+            public["desired_replicas"] = replicas if type(replicas) is int else None
+        return public
 
     @staticmethod
     def _fields(payload, expected):

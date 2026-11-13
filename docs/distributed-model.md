@@ -530,7 +530,11 @@ in kind mode yet.
   reconciliation reports APPLIED only while the Deployment still has that
   count and the template the proposal named; a later change to either is
   SUPERSEDED (`services/executor/reconciliation.py::_write_still_in_place`).
-  This is tested offline only; no SCALE has reached an API server.
+  This is tested offline only; no SCALE has reached an API server. The
+  in-flight-write model checker
+  (`tests/test_executor_reconcile_model.py::ModelCheckerTests`) still drives
+  ROLLBACK only, so SCALE's at-most-once write rests on the unit tests in
+  `tests/test_scale_action.py`, which use the same decision table.
 - The per-target lock is an OS file lock on one host
   (`services/executor/store.py::LocalTargetCoordinator.hold`); it still
   separates the processes of one host. Across hosts the Coordinator now gives

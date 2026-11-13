@@ -165,6 +165,14 @@ its safety rests on these points, each tested offline in
    Role adds a read-only list on HorizontalPodAutoscalers. The admission policy's
    one exception (a scale-up to at most 10 with matching SCALE evidence) bounds
    the shape of the write, not who wrote the evidence.
+7. Its recovery is judged on the count it restored. The Verifier's
+   replica_target check needs every reading to keep that count. A reading
+   whose desired count is present and different, 0 included (the fault put
+   back), makes the outcome NOT_RECOVERED and the incident FAILED, which
+   starts no automatic re-plan, and the Coordinator refuses a second SCALE for
+   that incident. A missing or malformed count stays UNKNOWN (NEEDS_REVIEW).
+   ROLLBACK and RESTART keep the older rule that a desired count of 0 is
+   missing data.
 
 
 ## Observation and outcome

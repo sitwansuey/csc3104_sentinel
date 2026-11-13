@@ -138,7 +138,8 @@ or unknown), the SCALE server preview, the kubectl adapter's conditional scale
 patch and autoscaler read, the Executor's one write, its replay, a moved
 resourceVersion with zero writes, reconciliation through the replica count and
 evidence after a lost reply, the fence for a write lost before commit, the
-Verifier's replica_target check, one end-to-end recovery with exactly one
+Verifier's replica_target check (a count that drifts, back to 0 included, is
+NOT_RECOVERED; a missing count is UNKNOWN), one end-to-end recovery with exactly one
 write, the catalog scenario S1 and the harness helpers. SCALE has not run
 against a cluster; the live recipe is [below](#scale-recovery-live-recipe).
 
