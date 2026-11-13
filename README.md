@@ -153,6 +153,7 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-RAW-LOGS-PROMPT](docs/limitations.md#l-raw-logs-prompt): Sentinel's planning prompts carry log text only cleaned and quoted, and the injection gate is a pattern list no live adversarial run has exercised (defect, mitigated; planned P2.04, P2.05, P4.04)
 - [L-FREE-TEXT-DECISION](docs/limitations.md#l-free-text-decision): The live diagnosis was model free text and the rollback choice had no change evidence (defect, mitigated; planned P2.05, P4.04)
 - [L-NO-LOGGING](docs/limitations.md#l-no-logging): Structured logs cover only the networked entrypoints, and no live run has collected them (defect, mitigated; planned P1.07, P3.02)
+- [L-STALE-PROPOSAL](docs/limitations.md#l-stale-proposal): A tokenless Planner's proposal goes stale when the target's rollout moves its resourceVersion (defect, mitigated; planned P4.01)
 - [L-WORKER-READINESS-LONG-PASS](docs/limitations.md#l-worker-readiness-long-pass): A worker's /readyz turned 503 during a long pass while it was renewing its lease (defect, mitigated; planned P3.07)
 - [L-VERIFIER-RETRY-BACKOFF](docs/limitations.md#l-verifier-retry-backoff): In kind mode the Coordinator's retry back-off spaced the Verifier's samples past the health policy's gap (defect, mitigated; planned P3.06, P4.01)
 - [L-ORPHANED-EXECUTOR-LEDGER](docs/limitations.md#l-orphaned-executor-ledger): A crashed Executor whose peer finished the action kept it in doubt and refused that workload (defect, mitigated; planned P3.04, P4.01)

@@ -132,7 +132,8 @@ def store_position(store):
 
 
 def handler(database, services, lease_seconds=30, retention_seconds=86400,
-            request_timeout=15, stopping=None, clock=None, dependency_requests=False, max_clock_skew=None):
+            request_timeout=15, stopping=None, clock=None, dependency_requests=False, max_clock_skew=None,
+            stale_replans=0):
     def server_time():
         """The Coordinator's clock: the store clock when one is injected, else the system clock."""
         return (clock() if clock is not None else datetime.now(UTC)).timestamp()
@@ -200,7 +201,8 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
                     # not the counter after its own commit, with what it saw before.
                     before = store_position(store)
                     delivery = Delivery(store, lease_seconds=lease_seconds, retention_seconds=retention_seconds,
-                                        dependency_requests=dependency_requests, max_clock_skew=max_clock_skew)
+                                        dependency_requests=dependency_requests, max_clock_skew=max_clock_skew,
+                                        stale_replans=stale_replans)
                     if self.path == "/v1/claim":
                         answer = delivery.claim(name, role, clock_estimate=estimate)
                         ids.update(delivery_ids(answer["delivery"]))

@@ -5,7 +5,7 @@ import math
 import time
 from uuid import uuid4
 
-from services.coordinator.core import LocalEventBus, acknowledge, dispatch_pending, record_message
+from services.coordinator.core import MAX_STALE_REPLANS, LocalEventBus, acknowledge, dispatch_pending, record_message
 from services.coordinator.store import SupersededResult
 from shared.canonical import sha256_hex as digest
 from shared.contracts import validate_message
@@ -61,18 +61,25 @@ def within_skew_bound(estimate, bound):
 
 class Delivery:
     """max_clock_skew (seconds), when set, refuses claims from a worker whose
-    latest reported clock estimate is missing or outside the bound."""
+    latest reported clock estimate is missing or outside the bound.
+    stale_replans, when above 0, lets a Guard refusal whose only reason is
+    STALE_RESOURCE_VERSION queue up to that many re-plans per incident
+    (services/coordinator/core.py::replan_after_stale); 0 keeps a stale
+    refusal final."""
 
     def __init__(self, store, *, clock=time.time, lease_seconds=30, retention_seconds=86400,
-                 dependency_requests=False, max_clock_skew=None):
+                 dependency_requests=False, max_clock_skew=None, stale_replans=0):
         if any(not math.isfinite(value) or value <= 0 for value in (lease_seconds, retention_seconds)):
             raise ValueError("Lease and retention must be positive")
         if max_clock_skew is not None and (not math.isfinite(max_clock_skew) or max_clock_skew <= 0):
             raise ValueError("The clock skew bound must be positive and finite")
+        if type(stale_replans) is not int or not 0 <= stale_replans <= MAX_STALE_REPLANS:
+            raise ValueError(f"stale_replans must be an integer from 0 to {MAX_STALE_REPLANS}")
         self.store, self.clock = store, clock
         self.lease, self.retention = lease_seconds, retention_seconds
         self.dependency_requests = dependency_requests
         self.max_clock_skew = max_clock_skew
+        self.stale_replans = stale_replans
         store.db.execute("""CREATE TABLE IF NOT EXISTS transport_receipts (
             event_id INTEGER PRIMARY KEY REFERENCES outbox(id),
             delivery_id TEXT UNIQUE NOT NULL, owner TEXT, lease_token TEXT,
@@ -312,7 +319,8 @@ class Delivery:
                 raise ProtocolError(403, "Only the Guard may submit an authorization report")
             try:
                 # The result answers this outbox row: ordering uses its sequence number.
-                record_message(result, self.store, answers=row["event_id"], producer=identity)
+                record_message(result, self.store, answers=row["event_id"], producer=identity,
+                               stale_replans=self.stale_replans)
             except SupersededResult as error:
                 # 409, so the worker releases the delivery instead of resending it.
                 raise ProtocolError(409, "Result answers a superseded request") from error

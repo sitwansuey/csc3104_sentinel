@@ -9,12 +9,29 @@ from services.guard import (
     eligibility as guard_eligibility, resources as guard_resources, restart as guard_restart,
 )
 from services.guard.common import GuardInputError, finding, json_sha256, mapping, utc_timestamp
-from shared.actions import TEMPLATE_ACTIONS, config_fingerprint
+from shared.actions import STALE_READ_SPEC, TEMPLATE_ACTIONS, config_fingerprint
 from shared.contracts import validate_message
 
 
 _MAX_AGE_SECONDS = 366 * 24 * 60 * 60
 _MAX_CLOCK_SKEW_SECONDS = 60
+# STALE_READ_SPEC (shared/actions.py) records, beside a STALE_RESOURCE_VERSION failure, the spec the live read
+# saw: its metadata.generation and Pod template digest. It never changes the verdict. The Coordinator re-plans
+# a stale refusal only when this generation is still the incident's (services/coordinator/core.py::replan_after_stale).
+
+
+def _live_spec(live_state):
+    """(metadata.generation, Pod template digest) of the live read; None for a part that is missing or malformed."""
+    deployment = live_state.get("deployment") if isinstance(live_state, dict) else None
+    metadata = deployment.get("metadata") if isinstance(deployment, dict) else None
+    spec = deployment.get("spec") if isinstance(deployment, dict) else None
+    generation = metadata.get("generation") if isinstance(metadata, dict) else None
+    template = spec.get("template") if isinstance(spec, dict) else None
+    try:
+        digest = json_sha256(template) if isinstance(template, dict) else None
+    except (TypeError, ValueError, RecursionError):
+        digest = None
+    return (generation if type(generation) is int and generation >= 1 else None), digest
 
 
 def _integer(policy, key, *, required=False, maximum=None):
@@ -229,6 +246,14 @@ def _core_findings(core_result, proposal, live_state, policy, trace):
             result.append(finding(code, path, actual, expected,
                                   "Refresh the indicated input or correct the policy violation, then revalidate.",
                                   "FAIL" if code in failures else "UNKNOWN"))
+    if "STALE_RESOURCE_VERSION" in failures:
+        # SKIP: a record for the audit and the Coordinator, never a reason code. A status write moves the
+        # resourceVersion and leaves the generation; a change to the spec moves both.
+        generation, template = _live_spec(live_state)
+        result.append(finding(STALE_READ_SPEC, "live_state.deployment.metadata.generation",
+                              {"generation": generation, "template_sha256": template},
+                              "the generation the incident observed, for a re-plan",
+                              "The spec the stale read saw; it does not change this decision.", "SKIP"))
     families = (
         ("TARGET_POLICY", ("TARGET_NOT_ALLOWED",), "policy.targets"),
         ("ACTION_POLICY", ("ACTION_NOT_ALLOWED", "ACTION_NOT_IMPLEMENTED"), "proposal.action"),

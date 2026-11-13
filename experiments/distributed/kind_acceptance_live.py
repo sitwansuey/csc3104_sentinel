@@ -6,7 +6,8 @@ kind_acceptance.Shell, so the context is always kind-sentinel-dist and the
 offline tests can drive it with a fake kubectl, docker and helm. The scenario
 functions follow experiments/distributed/scenarios.py, with Chaos Mesh, docker
 pause and fault points armed inside the Pods in place of local processes,
-proxies and signals. Not yet run against a cluster.
+proxies and signals. deploy and the first S0 runs have run against the lab
+once (13 Nov 2026); no run has passed yet.
 """
 import base64
 from contextlib import suppress
@@ -21,7 +22,7 @@ import time
 
 from experiments.distributed import audit, invariants
 from experiments.distributed.kind_acceptance import (
-    ADMISSION, CHAOS_LABEL, CHAOS_VERSION, CLUSTER, CONTEXT, CONTROL_PLANE, DEADLINE_SECONDS, DEPLOYMENTS,
+    ADMISSION, AFTER_FAULT, CHAOS_LABEL, CHAOS_VERSION, CLUSTER, CONTEXT, CONTROL_PLANE, DEADLINE_SECONDS, DEPLOYMENTS,
     EXECUTORS, IDENTITIES, LEASE_SECONDS, LOCAL_IMAGES, MANIFESTS, NAMESPACE, NODE_IMAGE, OPERATOR, PROBE_HELPER,
     SCENARIOS, TARGET, WORKLOAD, AcceptanceError, Lab, RunView, approval_permissions, certificate_names,
     cluster_identity, config_map, control_plane_window, coordinator_recovery, credentials, delay_to_api_server,
@@ -145,6 +146,38 @@ def rbac_checks(shell):
     return rows
 
 
+def overlay_without_workload(text):
+    """The overlay's kustomization.yaml without workload.yaml, which deploy applies (and pins) first.
+
+    Applying the full overlay after pin_demo_image re-applied the workload's
+    tag-image template (kubectl apply patches every field that differs from
+    the manifest), so on 13 Nov 2026 the target left its recorded baseline
+    and rolled out again before the first run, and that rollout opened an
+    incident of its own (docs/distributed-acceptance.md#first-live-attempts).
+    """
+    lines = text.splitlines(keepends=True)
+    kept = [line for line in lines if line.strip() != "- workload.yaml"]
+    if len(kept) != len(lines) - 1:
+        raise AcceptanceError("The overlay must list workload.yaml exactly once")
+    return "".join(kept)
+
+
+def apply_sentinel(shell, lab, manifests, baseline_template):
+    """Apply the overlay (run-dir copy) without the pinned workload, wait for Sentinel, and keep the baseline.
+
+    The target's template must still be the one its baseline recorded once
+    every Sentinel Deployment is rolled out; otherwise the first run would
+    start from a rollout of its own (13 Nov 2026).
+    """
+    overlay = Path(manifests) / "kustomization.yaml"
+    overlay.write_text(overlay_without_workload(overlay.read_text(encoding="utf-8")), encoding="utf-8")
+    shell.kubectl("apply", "--kustomize=" + str(manifests))
+    for name in DEPLOYMENTS:
+        shell.kubectl("rollout", "status", "deployment/" + name, "--timeout=300s", namespace=NAMESPACE, timeout=320)
+    if lab.target()["spec"]["template"] != baseline_template:
+        raise AcceptanceError("The target's template changed after its baseline was recorded; deploy again")
+
+
 def _write(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(value if isinstance(value, str) else json.dumps(value, indent=2), encoding="utf-8")
@@ -197,9 +230,7 @@ def deploy(shell, run_dir, *, min_free_gib, lock, lab=None):
     shell.apply(config_map("sentinel-dist-approval-permissions", {"permissions.json": approval_permissions(target)}))
     for name, value in inputs.items():
         _write(run_dir / "inputs" / name, value)
-    shell.kubectl("apply", "--kustomize=" + str(manifests))
-    for name in DEPLOYMENTS:
-        shell.kubectl("rollout", "status", "deployment/" + name, "--timeout=300s", namespace=NAMESPACE, timeout=320)
+    apply_sentinel(shell, lab, manifests, deployment["spec"]["template"])
     placement = lab.placement()
     if not placement["pinned_on_distinct_nodes"]:
         raise AcceptanceError("The Coordinator and the two Executors are not on their three pinned nodes")
@@ -579,15 +610,24 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out):
     approver = None
     if scenario.name != "S9":
         operator_actions.append(lab.inject())
-    if scenario.options.get("auto_approve", True) and scenario.name != "S9":
-        approver = threading.Thread(target=_operator, args=(lab, policy_version, stopping), daemon=True)
-        approver.start()
+    approving = scenario.options.get("auto_approve", True) if scenario.name != "S9" else False
+
+    def start_approver():
+        thread = threading.Thread(target=_operator, args=(lab, policy_version, stopping), daemon=True)
+        thread.start()
+        return thread
+    if approving is True:
+        approver = start_approver()
     try:
         RUNNERS[scenario.name](run)
     except (AcceptanceError, AssertionError, TimeoutError, OSError, ValueError, subprocess.SubprocessError) as caught:
         error = f"{type(caught).__name__}: {caught}"
     finally:
         run.cleanup()
+    if approving == AFTER_FAULT:
+        # The scenario approved by hand during its fault; from here the operator also approves what
+        # waits for approval afterwards, such as a re-plan after a stale refusal (--stale-replans).
+        approver = start_approver()
     try:
         remaining = max(10.0, DEADLINE_SECONDS - (lab.monotonic() - started))
         terminal = True if scenario.name == "S9" else lab.wait_terminal(remaining)

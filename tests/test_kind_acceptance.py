@@ -9,9 +9,11 @@ from datetime import UTC, datetime
 import io
 import json
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -581,6 +583,94 @@ class LabTests(unittest.TestCase):
         self.assertEqual(calls, [["docker", "pause", "sentinel-dist-worker2"], ["docker", "unpause",
                                                                                 "sentinel-dist-worker2"]])
 
+    def test_the_restore_patch_goes_in_a_private_file_kubectl_can_open_never_on_standard_input(self):
+        """kubectl on Windows read --patch-file=- as a file named "-", so no restore happened (13 Nov 2026)."""
+        from services.executor.store import fingerprint
+        template = {"metadata": {"labels": {"app": "demo-api"}}, "spec": {"containers": [{"name": "demo-api"}]}}
+        injected = {"metadata": {"labels": {"app": "demo-api"}},
+                    "spec": {"containers": [{"name": "demo-api", "env": [{"name": "STARTUP_FAILURE", "value": "true"}]}]}}
+        baseline = {"target": {"uid": "uid-1"}, "pod_template": template, "template_sha256": fingerprint(template)}
+        seen = []
+
+        def runner(command, **options):
+            if "patch" in command:
+                [argument] = [part for part in command if part.startswith("--patch-file")]
+                path = Path(argument.split("=", 1)[1])
+                seen.append({"stdin": options.get("input"), "parent": path.parent,
+                             "patch": json.loads(path.read_text(encoding="utf-8"))})
+                return done()
+            if "get" in command:
+                return done(json.dumps({"metadata": {"uid": "uid-1", "resourceVersion": "77"},
+                                        "spec": {"template": injected}}))
+            return done()
+        with tempfile.TemporaryDirectory() as directory:
+            lab = acceptance.Lab(acceptance.Shell("kind-sentinel-dist", runner=runner), directory,
+                                 sleep=lambda seconds: None)
+            self.assertTrue(lab.restore(baseline)["operator_restore"])
+            [call] = seen
+            self.assertIsNone(call["stdin"])
+            self.assertEqual(call["parent"], Path(directory))
+            self.assertEqual(call["patch"], [
+                {"op": "test", "path": "/metadata/uid", "value": "uid-1"},
+                {"op": "test", "path": "/metadata/resourceVersion", "value": "77"},
+                {"op": "replace", "path": "/spec/template", "value": template}])
+            self.assertEqual(list(Path(directory).iterdir()), [])  # Removed after the call.
+
+    def test_no_harness_command_reads_a_patch_or_file_from_a_dash_but_apply_and_create(self):
+        """kubectl apply and create take -f - as standard input everywhere; patch --patch-file does not."""
+        root = Path(acceptance.__file__).resolve().parent
+        for path in sorted(root.glob("*.py")):
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(path=path.name):
+                self.assertNotIn('"--patch-file=-"', text)
+                self.assertNotIn('"--patch-file", "-"', text)
+
+    def test_deploy_applies_the_overlay_without_the_workload_it_pinned(self):
+        text = (acceptance.MANIFESTS / "kustomization.yaml").read_text(encoding="utf-8")
+        overlay = live.overlay_without_workload(text)
+        self.assertNotIn("workload.yaml", overlay)
+        self.assertEqual(overlay.count("\n"), text.count("\n") - 1)
+        for other in ("coordinator.yaml", "planner.yaml", "namespaces.yaml", "rbac.yaml"):
+            self.assertIn("- " + other, overlay)
+        with self.assertRaises(acceptance.AcceptanceError):
+            live.overlay_without_workload(overlay)
+
+    def test_deploy_applies_sentinel_without_the_workload_and_refuses_a_moved_baseline(self):
+        template = {"spec": {"containers": [{"name": "demo-api", "image": "demo-api@sha256:" + "a" * 64}]}}
+
+        class Shell:
+            def __init__(self, manifests):
+                self.manifests, self.calls, self.applied = manifests, [], None
+
+            def kubectl(self, *args, **options):
+                self.calls.append(args)
+                if args[0] == "apply":
+                    self.applied = (self.manifests / "kustomization.yaml").read_text(encoding="utf-8")
+
+        class Lab:
+            def __init__(self, live):
+                self.live = live
+
+            def target(self):
+                return {"spec": {"template": self.live}}
+        for current, raises in ((template, False), ({"spec": {"containers": [{"name": "demo-api"}]}}, True)):
+            with self.subTest(raises=raises), tempfile.TemporaryDirectory() as directory:
+                manifests = Path(directory) / "manifests"
+                shutil.copytree(acceptance.MANIFESTS, manifests)
+                shell = Shell(manifests)
+                if raises:
+                    with self.assertRaises(acceptance.AcceptanceError):
+                        live.apply_sentinel(shell, Lab(current), manifests, template)
+                else:
+                    live.apply_sentinel(shell, Lab(current), manifests, template)
+                self.assertEqual(shell.calls[0], ("apply", "--kustomize=" + str(manifests)))
+                self.assertNotIn("workload.yaml", shell.applied)
+                self.assertIn("- coordinator.yaml", shell.applied)
+                self.assertEqual(len(shell.calls), 1 + len(acceptance.DEPLOYMENTS))
+                # The repository's overlay is untouched: only the run directory's copy changed.
+                self.assertIn("- workload.yaml", (acceptance.MANIFESTS / "kustomization.yaml").read_text(
+                    encoding="utf-8"))
+
     def test_teardown_deletes_nothing_through_a_context_that_names_another_cluster(self):
         elsewhere = done(json.dumps({"clusters": [{"name": "kind-sentinel-dist", "cluster": {
             "server": "https://10.0.0.5:6443"}}]}))
@@ -896,6 +986,20 @@ class RunOneTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, self.assertRaises(acceptance.AcceptanceError):
             live.run_one(lab, acceptance.SCENARIOS["S0"], 1, self.deployed, {}, self.tokens, Path(directory))
         self.assertEqual(lab.steps[-1], "restore")
+
+    def test_s6_approves_by_hand_during_the_partition_and_waiting_actions_only_after_it(self):
+        """S6 with --stale-replans: a re-plan after the partition waits for approval and still gets its operator."""
+        self.assertEqual(acceptance.SCENARIOS["S6"].options["auto_approve"], acceptance.AFTER_FAULT)
+        for name, expected in (("S6", ["runner", "approver"]), ("S0", ["approver", "runner"]),
+                               ("S9", ["runner"])):
+            with self.subTest(scenario=name):
+                lab = FakeLab(self.rows)
+                with tempfile.TemporaryDirectory() as directory, \
+                        patch.object(live, "git_revision", lambda: "abc123"), \
+                        patch.object(live, "_operator", lambda lab, version, stopping: lab.steps.append("approver")), \
+                        patch.dict(live.RUNNERS, {name: lambda run: (time.sleep(0.2), run.lab.steps.append("runner"))}):
+                    live.run_one(lab, acceptance.SCENARIOS[name], 1, self.deployed, {}, self.tokens, Path(directory))
+                self.assertEqual([step for step in lab.steps if step in ("runner", "approver")], expected)
 
     def test_s9_neither_injects_nor_restores(self):
         lab = FakeLab([])
