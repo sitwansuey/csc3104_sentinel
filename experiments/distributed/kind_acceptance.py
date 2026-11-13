@@ -24,8 +24,11 @@ context, the current context included: every kubectl and helm call names
 one exception is a read: preflight lists Chaos Mesh experiments with the
 connected lab's context (kubectl get only). preflight refuses to start
 without enough free Docker memory (docker stats against docker info) and
-while the P4.03 lab may be running (its shared lock file is held, or Chaos
-Mesh experiments exist in the connected lab).
+while another heavy lab run may be going on: the shared heavy-lab lock
+(experiments/lab_lock.py, also taken by the P4.03 chaos and P4.05 pair runs)
+is held or left stale, or Chaos Mesh experiments exist in the connected lab.
+deploy and run hold that lock for their whole run; --break-stale-lock
+removes one left by a process that is no longer running.
 
 What deploy writes to the cluster: the namespaces, workload, RBAC, network
 policy, Coordinator, Observer and five workers of
@@ -82,17 +85,16 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 import json
-import os
 from pathlib import Path
 import re
 import secrets
 import shutil
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 
+from experiments import lab_lock
 from experiments.distributed import audit, invariants
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -110,9 +112,9 @@ CHAOS_VERSION = "2.8.2"
 CHAOS_NAMESPACE = "chaos-mesh"
 CONNECTED_CONTEXT = "kind-sentinel-boutique-connected"  # Where P4.03 runs Chaos Mesh; read here, never written.
 CHAOS_KINDS = ("podchaos", "networkchaos", "stresschaos", "timechaos")
-# Meant to be shared with the P4.03 harness, which does not exist yet and so does not take it: until it
-# does, the check for Chaos Mesh experiments in the connected lab (connected_chaos) is the real guard.
-LOCK_NAME = "sentinel-heavy-lab.lock"
+# The heavy-lab lock shared with the P4.03 chaos and P4.05 pair harnesses (experiments/lab_lock.py); the check
+# for Chaos Mesh experiments in the connected lab (connected_chaos) also catches a run started without it.
+LOCK_NAME = lab_lock.LOCK_NAME
 AUDIT_LOG = "/var/log/kubernetes/kube-apiserver-audit.log"
 AUDIT_DIR = "/var/log/kubernetes"
 # The live log and the backups the API server rotates it into (--audit-log-maxbackup in kind-dist.yaml).
@@ -305,36 +307,23 @@ def memory_headroom(total_bytes, stats_lines):
     return total_bytes, used, max(0, total_bytes - used)
 
 
-class LabLock:
-    """An exclusive lock file for heavy lab runs; P4.03 is to take it too (LOCK_NAME), so the two never overlap."""
+class LabLock(lab_lock.HeavyLabLock):
+    """The shared heavy-lab lock (experiments/lab_lock.py) as P4.01 takes it; refusals are AcceptanceError."""
 
-    def __init__(self, path=None, holder="P4.01 kind_acceptance"):
-        self.path = Path(path) if path is not None else Path(tempfile.gettempdir()) / LOCK_NAME
-        self.holder, self.held = holder, False
+    def __init__(self, path=None, holder="P4.01 kind_acceptance", **options):
+        super().__init__(path, holder, **options)
 
-    def holder_of(self):
+    def check(self):
         try:
-            return json.loads(self.path.read_text(encoding="utf-8")).get("holder", "unknown")
-        except FileNotFoundError:
-            return None
-        except (OSError, ValueError):
-            return "unknown"
+            super().check()
+        except lab_lock.LabLockError as error:
+            raise AcceptanceError(str(error)) from None
 
-    def __enter__(self):
+    def acquire(self):
         try:
-            descriptor = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            raise AcceptanceError(f"Another heavy lab run holds {self.path} ({self.holder_of()}); "
-                                  "run P4.01 and P4.03 one at a time") from None
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump({"holder": self.holder, "pid": os.getpid(), "since": stamp(utc_now())}, stream)
-        self.held = True
-        return self
-
-    def __exit__(self, *args):
-        if self.held:
-            self.path.unlink(missing_ok=True)
-            self.held = False
+            return super().acquire()
+        except lab_lock.LabLockError as error:
+            raise AcceptanceError(str(error)) from None
 
 
 def connected_chaos(shell):
@@ -362,10 +351,7 @@ def host_checks(shell, *, min_free_gib, lock):
                                 "free_gib": round(free / gib, 2), "required_free_gib": min_free_gib}}
     if free < min_free_gib * gib:
         raise AcceptanceError(f"Only {free / gib:.1f} GiB of Docker memory is free; {min_free_gib} GiB is needed")
-    lock = lock or LabLock()
-    holder = lock.holder_of()
-    if holder is not None and not lock.held:
-        raise AcceptanceError(f"Another heavy lab run holds {lock.path} ({holder}); do not run P4.03 at the same time")
+    (lock or LabLock()).check()  # Held by another run, or stale: refused, never taken over here.
     running = connected_chaos(shell)
     if running:
         raise AcceptanceError(f"{len(running)} Chaos Mesh experiment(s) exist in {CONNECTED_CONTEXT}: "
@@ -1212,6 +1198,8 @@ def main(argv=None):
         sub.add_argument("--context", required=True)
         if name in {"deploy", "run"}:
             sub.add_argument("--run-dir", required=True, type=Path)
+            sub.add_argument(lab_lock.BREAK_OPTION, action="store_true",
+                             help="Remove a heavy-lab lock whose process is no longer running, then take it")
         if name in {"preflight", "deploy", "run"}:
             sub.add_argument("--min-free-gib", type=float,
                              help=f"Free Docker memory needed (default {MIN_FREE_GIB}, {CREATE_FREE_GIB} before create)")
@@ -1245,12 +1233,12 @@ def main(argv=None):
             raise AcceptanceError("--repeat must be 1 to 20")
         from experiments.distributed import kind_acceptance_live as live
         if args.command == "deploy":
-            with LabLock() as lock:
+            with LabLock(break_stale=args.break_stale_lock) as lock:
                 print(json.dumps(live.deploy(shell, args.run_dir, min_free_gib=args.min_free_gib, lock=lock),
                                  indent=2))
             return 0
         if args.command == "run":
-            with LabLock() as lock:
+            with LabLock(break_stale=args.break_stale_lock) as lock:
                 summaries = live.run(shell, args.run_dir, select(args.scenarios.split(",")), repeat=args.repeat,
                                      min_free_gib=args.min_free_gib, lock=lock)
             print(results_table(summaries), end="")

@@ -239,6 +239,24 @@ works), applies the same tested JSON patch only when the template differs from
 `baseline.json`, waits until the target is healthy, prints the record and exits
 0 only then.
 
+After the template, the restore (after every run and in this command) also
+returns Sentinel's own annotations on the target, `sentinel.io/execution`,
+`sentinel.io/fence` and `sentinel.io/fence-epoch`, to the values `prepare`
+recorded in `lab.json` (`target_annotations`). It sends one metadata-only JSON
+patch that tests the uid and resourceVersion it read; a refused patch (a 409
+or a failed test) reads again, up to 3 times. It writes nothing when they
+already match. It never touches any other annotation: if one changed, was
+added or was removed since `prepare` (the controller's
+`deployment.kubernetes.io/revision` excepted), it writes no annotation,
+records `annotations.status` `refused` with the keys, and the restore is not
+healthy, which stops the invocation. The record's `annotations` says what was
+`removed`, `reset` (from and to) or `added`, with the values. A bundle
+prepared before this change has no `target_annotations`; its restore says
+`not recorded` and leaves the annotations as they are. This is a lab reset
+between runs only: lowering `sentinel.io/fence-epoch` undoes a seal, so it
+must never be part of normal operation. Tested offline only; it has not run
+against the lab.
+
 `summary.json` in kind mode adds `kind_lab` (the injection, whether the fault
 showed and after how long, and the restore with `operator_restore` true only
 when the operator side wrote; both are operator writes, never counted as
@@ -281,13 +299,17 @@ spacing the Verifier's samples past the policy's 20 s gap, is in
 [L-VERIFIER-RETRY-BACKOFF](../../docs/limitations.md#l-verifier-retry-backoff)).
 Each session left the fence annotations of its S8 runs
 (`sentinel.io/fence`, `sentinel.io/fence-epoch`) on the Deployment; the
-restore puts back the template only, and leaves those metadata annotations
-as they are. With the P3.05 admission policy installed, that matters: each run
+restore at those revisions put back the template only, and the operator
+removed them by hand. With the P3.05 admission policy installed, that matters: each run
 starts a fresh Coordinator store, and a seal whose epoch is below the stored
 `sentinel.io/fence-epoch` is denied
-([deploy/README.md](../../deploy/README.md)), so `--repeat` of S8 under the
-policy may not reproduce. Run S8 without the policy, or settle the fence
-epoch first (an owner decision listed under P3.05).
+([deploy/README.md](../../deploy/README.md)). The restore now returns those
+annotations to their prepared values after every run (above), so `--repeat`
+of S8 under the policy should start each run without a stored epoch, as long
+as none was there at `prepare`; this is tested offline only and has not run
+against the lab. The reset is a lab reset between runs, never normal
+operation; whether a store should seed its epoch from the annotation is still
+an owner decision listed under P3.05.
 
 ## Four-node acceptance (P4.01)
 

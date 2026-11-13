@@ -117,6 +117,20 @@ What the harness (`experiments/boutique/harness/chaos_recovery.py`) does:
   annotation, no chaos object left from an earlier run, and a Metrics API
   that returns at least one Pod's metrics for the namespace (it fails
   otherwise, because no threshold could then be complete).
+- **One heavy lab run at a time.** `install` and every chaos scenario run
+  (`scripts/test_boutique_live.py --connected --scenario N2|N3|T1`) hold the
+  shared heavy-lab lock (`experiments/lab_lock.py`, the file
+  `sentinel-heavy-lab.lock` in the system temporary directory) for the whole
+  run, the chaos cleanup included; the P4.01 acceptance harness
+  ([distributed acceptance](distributed-acceptance.md)) and the P4.05 fault
+  pairs ([dual faults](dual-fault.md)) take the same lock. While another run
+  holds it, the command prints `Refused:` with the holder, its process id,
+  command and start time, and exits 2 before it creates anything. The lock is
+  removed when the run ends, also when it fails or is interrupted. A lock
+  left by a process that is no longer running is reported as stale, never
+  taken over silently; after checking that nothing of that run is left on the
+  cluster, rerun with `--break-stale-lock`. `preflight` reads only and takes
+  no lock. Tested offline only.
 - **Detection.** Every chaos run wraps the Observer with a read-only bridge
   (`runtime/metrics_bridge.py`) that turns metrics-server Pod usage into
   `k8s.pod.cpu.usage` (cores) and `k8s.pod.memory.working_set` (bytes)

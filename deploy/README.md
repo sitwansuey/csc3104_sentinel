@@ -72,6 +72,12 @@ the annotation, or recreate the Deployment:
 kubectl --context <context> --namespace sentinel-demo annotate deployment demo-api sentinel.io/fence-epoch-
 ```
 
+In the kind-mode scenario lab, the restore in
+`experiments/distributed/kind_bundle.py` returns the Sentinel annotations to
+their values at `prepare` after every run
+([kind-mode runs](../experiments/distributed/README.md#a-reproducible-kind-mode-run)).
+That is a lab reset between runs only, never part of normal operation.
+
 The Executor cannot tell a policy denial from a lost reply, so it reports any
 denied write as `WriteOutcomeUnknown` and settles it by reconciliation from a
 read. Whether to seed a store's epoch from the annotation, or to drop the epoch

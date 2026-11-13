@@ -178,6 +178,13 @@ and a run with an empty, partial or rotated audit extract failing.
 `tests/test_distributed_audit.py` checks the audit sanitiser, I7 and the
 extract's completeness checks on the fixtures in
 `tests/fixtures/distributed_audit/`. None of it has run against a cluster.
+`tests/test_lab_lock.py` covers the shared heavy-lab lock
+(`experiments/lab_lock.py`) and the three harnesses that take it (P4.01
+`deploy` and `run`, the P4.03 install and chaos scenario runs, the P4.05
+pairs): each refuses while another run holds it, releases it after success,
+failure and an interrupt, reports a stale lock and takes it only with
+`--break-stale-lock`, and the offline and read-only commands take none. It
+uses a lock file in a temporary directory, never the system one.
 The incident replay (P4.04) has three test files. `tests/test_replay_corpus.py`
 builds a corpus from a copy of a real agent run that also holds a kubeconfig,
 SQLite stores, a private key, credentials and raw telemetry, and shows by a

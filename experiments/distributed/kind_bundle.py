@@ -38,6 +38,8 @@ temporary directory unless --bundle names another new one):
   credential, and kubeconfig: that token, the CA and the server, with one
   context named after the lab context, readable by the owner only. Delete the
   directory when the session ends; the token also expires by itself.
+  lab.json also keeps the target's annotations from the last window read,
+  which the restore returns Sentinel's annotations to.
 The printed summary names the files and the expiry, never the token.
 
 KindLab, used by run_scenarios, writes with the operator's kubeconfig (an
@@ -52,6 +54,16 @@ that changed identity, a fault that never shows, an interrupt) is followed
 by a restore, and the error says whether that restore reached a verified
 healthy baseline; when it did not, the fault may still be in place and the
 error names the restore command.
+
+After the template, the restore returns Sentinel's own annotations on the
+target (sentinel.io/execution, sentinel.io/fence, sentinel.io/fence-epoch;
+SENTINEL_ANNOTATIONS) to what prepare recorded in lab.json: one metadata-only
+JSON patch that tests the uid and resourceVersion it read, and no write when
+nothing differs. It never touches another annotation: if any other one
+(except the controller's deployment.kubernetes.io/revision) changed since
+prepare, it writes nothing to the annotations, records the refusal with the
+keys that changed, and the restore is not healthy. Resetting fence-epoch is a
+lab reset between runs only, never part of normal operation.
 
 restore reads lab.json and baseline.json from the bundle and does what
 KindLab.restore does after a run, with the operator's kubeconfig (the
@@ -75,6 +87,7 @@ from urllib.request import ProxyHandler, build_opener
 from uuid import uuid4
 
 from experiments.distributed.topology import KIND_CONTEXTS, OBSERVER_FAILURE_SECONDS, ROOT
+from services.executor.reconciliation import ACTION_ANNOTATION, FENCE_ANNOTATION, FENCE_EPOCH_ANNOTATION
 
 # Allowlisted lab contexts and their cluster and namespace. An entry is needed
 # here and in topology.KIND_CONTEXTS, and the catalog needs a scope for it.
@@ -102,6 +115,16 @@ RESTORE_HINT = ("restore it with python -m experiments.distributed.kind_bundle r
 RBAC_CHECKS = (("get", "deployment/{target}", "yes"), ("patch", "deployment/{target}", "yes"),
                ("delete", "deployment/{target}", "no"), ("patch", "deployment/paymentservice", "no"),
                ("get", "secrets", "no"), ("list", "pods", "no"))
+# The annotations Sentinel writes on a target (the Executor's evidence, its fence and a seal's epoch).
+# The restore puts these, and only these, back to their prepared values.
+SENTINEL_ANNOTATIONS = (ACTION_ANNOTATION, FENCE_ANNOTATION, FENCE_EPOCH_ANNOTATION)
+# Set by the Deployment controller on every template rollout, so it is expected to differ after a run.
+CONTROLLER_ANNOTATIONS = frozenset({"deployment.kubernetes.io/revision"})
+
+
+def annotation_path(key):
+    """The JSON pointer to one metadata annotation (RFC 6901: ~ is ~0, / is ~1)."""
+    return "/metadata/annotations/" + key.replace("~", "~0").replace("/", "~1")
 
 
 class LabError(RuntimeError):
@@ -191,14 +214,21 @@ class KindLab:
     tests drive it offline.
     """
 
-    def __init__(self, context, target, baseline_template, fault, storefront, *, runner=subprocess.run,
-                 status=http_status, sleep=time.sleep, monotonic=time.monotonic):
+    def __init__(self, context, target, baseline_template, fault, storefront, *, prepared_annotations=None,
+                 runner=subprocess.run, status=http_status, sleep=time.sleep, monotonic=time.monotonic):
+        """prepared_annotations: the target's annotations when prepare read it (None: not recorded)."""
         self.scope = lab_scope(context)
         if target.get("cluster_id") != self.scope["cluster_id"] or target.get("namespace") != self.scope["namespace"]:
             raise LabError("The bundle target is not in the allowlisted lab")
         if fault["target"] != target.get("name"):
             raise LabError("The catalog scenario targets another workload")
+        if prepared_annotations is not None and not (
+                isinstance(prepared_annotations, dict)
+                and all(isinstance(key, str) and isinstance(value, str)
+                        for key, value in prepared_annotations.items())):
+            raise LabError("The bundle's prepared annotations are not a map of strings")
         self.target, self.baseline_template, self.fault = dict(target), baseline_template, fault
+        self.prepared_annotations = None if prepared_annotations is None else dict(prepared_annotations)
         self.health_url = storefront_origin(storefront) + HEALTH_PATH
         self.runner, self.status, self.sleep, self.monotonic = runner, status, sleep, monotonic
 
@@ -228,7 +258,8 @@ class KindLab:
         if check_token and expires - now() < MIN_TOKEN_LEFT:
             raise LabError("The bundle's Executor token expires within 10 minutes; prepare a new bundle")
         fault = catalog_fault(lab["fault_scenario"], lab_scope(context))
-        return cls(context, lab["target"], baseline["pod_template"], fault, lab["storefront"], **options)
+        return cls(context, lab["target"], baseline["pod_template"], fault, lab["storefront"],
+                   prepared_annotations=lab.get("target_annotations"), **options)
 
     # Reads ----------------------------------------------------------------
 
@@ -360,9 +391,81 @@ class KindLab:
                 continue
             record.update(operator_restore=True, restored_at=stamp(utc_now()))
             break
+        record["annotations"] = self.restore_annotations(attempts=attempts)
         item, healthy = self._until(self._healthy, timeout)
-        record.update(healthy=healthy, seconds=round(self.monotonic() - started, 1), after=self.state(item))
+        settled = record["annotations"]["status"] in {"unchanged", "reset", "not recorded"}
+        record.update(healthy=healthy and settled, seconds=round(self.monotonic() - started, 1),
+                      after=self.state(item))
+        if not settled:
+            record["error"] = record["annotations"]["error"]
         return record
+
+    def annotation_changes(self, item):
+        """What returns Sentinel's annotations on item to their prepared values.
+
+        Returns (operations, changes, foreign): the JSON patch operations, the
+        record of what they remove, reset or add (with the values), and the
+        sorted keys of any other annotation that differs from prepare (the
+        controller's revision excepted), in which case nothing may be written.
+        """
+        prepared = self.prepared_annotations or {}
+        current = item["metadata"].get("annotations") or {}
+        foreign = sorted(key for key in set(current) | set(prepared)
+                         if key not in SENTINEL_ANNOTATIONS and key not in CONTROLLER_ANNOTATIONS
+                         and current.get(key) != prepared.get(key))
+        operations, changes = [], {"removed": {}, "reset": {}, "added": {}}
+        for key in SENTINEL_ANNOTATIONS:
+            was, now = prepared.get(key), current.get(key)
+            if was == now:
+                continue
+            if was is None:
+                changes["removed"][key] = now
+                operations.append({"op": "remove", "path": annotation_path(key)})
+            elif now is None:
+                changes["added"][key] = was
+                operations.append({"op": "add", "path": annotation_path(key), "value": was})
+            else:
+                changes["reset"][key] = {"from": now, "to": was}
+                operations.append({"op": "replace", "path": annotation_path(key), "value": was})
+        if operations and not current:  # No annotations map to add a key to: add the map itself.
+            operations = [{"op": "add", "path": "/metadata/annotations", "value": dict(changes["added"])}]
+        return operations, changes, foreign
+
+    def restore_annotations(self, *, attempts=3):
+        """Return Sentinel's annotations to their prepared values in one metadata-only patch; the record.
+
+        The patch tests the uid and resourceVersion it read, so it never
+        overwrites a change it did not see; a refused patch (a 409 or a failed
+        test) reads again, up to attempts times. Nothing is written when
+        nothing differs, or when an annotation that is not Sentinel's changed
+        since prepare (status refused). This is a lab reset between runs,
+        never part of normal operation: lowering sentinel.io/fence-epoch
+        undoes a seal.
+        """
+        if self.prepared_annotations is None:
+            return {"status": "not recorded", "note": "The bundle does not record the target's annotations "
+                    "(prepared before the annotation reset); Sentinel's annotations were left as they are"}
+        for _ in range(attempts):
+            item = self.deployment()
+            operations, changes, foreign = self.annotation_changes(item)
+            if foreign:
+                return {"status": "refused", "foreign_changed": foreign,
+                        "error": "Annotations that are not Sentinel's changed since prepare (" + ", ".join(foreign)
+                                 + "); the restore writes no annotation then. Inspect the target and prepare a "
+                                   "new bundle"}
+            if not operations:
+                return {"status": "unchanged"}
+            patch = [{"op": "test", "path": "/metadata/uid", "value": item["metadata"]["uid"]},
+                     {"op": "test", "path": "/metadata/resourceVersion", "value": item["metadata"]["resourceVersion"]},
+                     *operations]
+            try:
+                self.kubectl("patch", "deployment", self.target["name"], "--type=json", "--patch=" + json.dumps(patch))
+            except LabError:
+                continue  # A conflict or a failed test: someone committed since the read. Read again.
+            return {"status": "reset", "reset_at": stamp(utc_now()),
+                    **{name: values for name, values in changes.items() if values}}
+        return {"status": "failed", "error": f"The conditional annotation patch was refused {attempts} times; "
+                                             "Sentinel's annotations are not at their prepared values"}
 
 
 # Preparation --------------------------------------------------------------
@@ -464,6 +567,7 @@ def prepare(context, storefront, *, scenario_id="R1", bundle=None, token_duratio
             or "certificate-authority-data" not in cluster:
         raise LabError("The lab API server must be HTTPS on loopback with its CA in the kubeconfig")
     frontend = read("frontend")
+    annotations = dict(current["metadata"].get("annotations") or {})
     directory = bundle_directory(bundle)
     digest = fingerprint(template)
     baseline = {"baseline_id": "BASE-KIND-" + uuid4().hex[:12], "target": target,
@@ -488,7 +592,9 @@ def prepare(context, storefront, *, scenario_id="R1", bundle=None, token_duratio
                           "namespace": target["namespace"], "target": target, "fault_scenario": fault["id"],
                           "storefront": origin, "health_path": HEALTH_PATH, "prepared_at": stamp(now()),
                           "executor_service_account": EXECUTOR_ACCOUNT, "kubeconfig_expires_at": stamp(expires),
-                          "observer_failure_window_seconds": OBSERVER_FAILURE_SECONDS}}
+                          "observer_failure_window_seconds": OBSERVER_FAILURE_SECONDS,
+                          # The restore returns Sentinel's annotations to these values (the last window read).
+                          "target_annotations": annotations}}
     for name, value in files.items():
         _json(directory / name, value)
     kubeconfig = directory / "kubeconfig"
@@ -522,6 +628,7 @@ def prepare(context, storefront, *, scenario_id="R1", bundle=None, token_duratio
     return {"bundle": str(directory), "context": context, "target": target, "fault_scenario": fault["id"],
             "template_sha256": digest, "baseline_id": baseline["baseline_id"], "policy_version": POLICY_VERSION,
             "kubeconfig_expires_at": stamp(expires), "rbac": checks,
+            "sentinel_annotations_at_prepare": sorted(key for key in SENTINEL_ANNOTATIONS if key in annotations),
             "files": sorted([*files, "kubeconfig", "rbac-checks.json"])}
 
 
