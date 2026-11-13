@@ -178,7 +178,10 @@ def x3(records):
     recorded = set(records.get("message_digests", []))
     failures = [f"command {row['event_id']}: acknowledged result not recorded"
                 for row in records.get("worker_results", []) if row["accepted"] and row["message_digest"] not in recorded]
-    incidents = {row["incident_id"] for row in records.get("incidents", [])}
+    # The kind acceptance harness narrows incidents to one run's (kind_acceptance.py::scope_records) and passes
+    # every incident the Coordinator recorded here, so an earlier run's delivered incident is not reported lost.
+    incidents = set(records["recorded_incident_ids"]) if "recorded_incident_ids" in records else {
+        row["incident_id"] for row in records.get("incidents", [])}
     failures += [f"incident {row['incident_id']}: acknowledged to the Observer but not recorded"
                  for row in records.get("observer_outbox", []) if row["delivered"] and row["incident_id"] not in incidents]
     count = sum(1 for row in records.get("worker_results", []) if row["accepted"])

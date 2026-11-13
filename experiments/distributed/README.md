@@ -374,4 +374,9 @@ audit log. Written and tested offline only; the recipe and the empty results
 table are in [distributed acceptance](../../docs/distributed-acceptance.md).
 Since one Coordinator store serves every run, ownership epochs keep growing
 across runs, so the admission policy's monotonic fence epoch does not deny
-the seals of later S8 repeats as it would with a fresh store per run.
+the seals of later S8 repeats as it would with a fresh store per run. The
+same store still holds every earlier run's incidents, so each run starts
+only on a settled lab, waits for and approves only the incidents it opened,
+and settles after its restore (`kind_acceptance.py::run_unsettled`,
+`Lab.settle`); on 13 Nov 2026, before that, the S0 runs after a passing one
+took its RECOVERED incident as theirs and ended with no incident.
