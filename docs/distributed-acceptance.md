@@ -549,8 +549,11 @@ own (empty) set of incidents.
 After the fifth run's restore (13:03:50) the target's managed fields show a
 further write by `kubectl set` (the manager the harness's injection uses) at
 13:03:51 and a `kubectl patch` putting the template back at 13:04:13, with no
-evidence folder for either; managed fields keep only each manager's latest
-write, so who made them is not recorded. In the 21 s between
+evidence folder for either. The operator's session notes account for both: the
+first is the injection of the matrix's next run, which the operator stopped
+before it wrote a summary, and the second is the operator's manual restore
+(a uid- and resourceVersion-tested JSON patch from a file) after stopping the
+matrix. In the 21 s between
 them the target had no Pod, and the Observer opened `INC-ECED0043B19F`
 at 13:04:08 for that generation (15), after the first incident had
 RECOVERED: a new fault on the same target opens a new incident, as the
