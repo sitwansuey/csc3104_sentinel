@@ -28,7 +28,8 @@ The script owns a dedicated Calico/kind lab with mTLS and inspected shipping
 traffic. Only the shipping path is protected by mTLS and inspection: the other
 Boutique services keep their upstream plaintext connections. From P4.06 the lab
 also applies graph-derived default-deny NetworkPolicies to all 11 services (see
-below); that part has been tested offline only. The smaller `scripts/security/security_lab.py`
+below); their enforcement matrix passed in one live run on 13 Nov 2026
+(`C-SECURITY-NETPOL-LIVE`). The smaller `scripts/security/security_lab.py`
 supports `start`, `test` and `stop` too. Normal connected recovery does not
 install either overlay. Read each module's setup/ownership checks before use.
 
@@ -139,8 +140,22 @@ installed kind enforces it has not been checked here, so the policies are
 not applied there. On a cluster that does not enforce them, every forbidden
 connection succeeds and the matrix reports UNKNOWN.
 
-The live run has not been done. To do it, use a fresh run folder (the path
-below is an example):
+The live run was done once, on 13 Nov 2026 at 02d91e5, on a fresh
+`sentinel-boutique-security` cluster with Calico 3.33.0 (bundle
+`protected-boutique-netpol`): PASS, 19 of 19 allowed edges open, 202 of 202
+forbidden edges closed by timeout, an empty `policy_drift`, no untested cell,
+and the storefront journey and the existing shipping bypass, identity and
+outage probes passed. The first attempt stopped before any probe because an
+inherited `OPENSSL_CONF` named a missing file; it was rerun with that variable
+unset and is listed in [evidence/exclusions.json](../evidence/README.md). One
+Windows host, one kind node.
+
+<!-- BEGIN GENERATED:claim-c-security-netpol-live -->
+> **C-SECURITY-NETPOL-LIVE:** The P4.06 graph-derived NetworkPolicy matrix in the protected Boutique security lab passed in 1/1 runs.
+> Scope: One run on a fresh sentinel-boutique-security cluster with Calico 3.33.0 at 02d91e5: 19 of 19 allowed edges open, 202 of 202 forbidden edges closed by timeout, no policy drift, no untested cell; the storefront journey and the existing shipping bypass, identity and outage probes passed. L4 rules keyed on the Pod label app, not authentication; mTLS and inspection still cover the shipping path only, and the connected recovery cluster applies none of these policies. The first attempt stopped before any probe on an operator environment fault (evidence/exclusions.json). One Windows/amd64 host with Docker Desktop and one kind node. Provenance recorded: 02d91e5, 2026-11-13 UTC.
+<!-- END GENERATED:claim-c-security-netpol-live -->
+
+To repeat it, use a fresh run folder (the path below is an example):
 
 ```powershell
 # Preflight: Docker answers, the folder is new, the reviewed policies are current.
@@ -186,8 +201,11 @@ project's pinned Trivy. The PR reports 0 High and 0 Medium findings in both,
 with unrated Go findings left that need a newer toolchain. That scan output is
 not a committed evidence bundle, and no release image is tagged.
 
-Two gaps remain. Only the shipping path is protected by mTLS and inspection,
-and the NetworkPolicies for the other services have not run live. Workload images are
+Two gaps remain. Only the shipping path is protected by mTLS and inspection:
+the other services now have L4 default-deny NetworkPolicies in the security
+lab only, shown by one live run on one kind node, and their traffic is still
+plaintext; the connected recovery cluster applies none of these policies.
+Workload images are
 scanned and raise dashboard alerts, but nothing gates on them: the 11 November
 evaluation found High or Critical findings in 11 of 13 images. See
 `L-SECURITY-SHIPPING-ONLY` and `L-UNGATED-CVES` in [limitations](limitations.md).

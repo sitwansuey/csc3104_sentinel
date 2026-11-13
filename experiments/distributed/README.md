@@ -274,8 +274,13 @@ healthy, which stops the invocation. The record's `annotations` says what was
 prepared before this change has no `target_annotations`; its restore says
 `not recorded` and leaves the annotations as they are. This is a lab reset
 between runs only: lowering `sentinel.io/fence-epoch` undoes a seal, so it
-must never be part of normal operation. Tested offline only; it has not run
-against the lab.
+must never be part of normal operation. It has run against the lab once, in
+the 02d91e5 session of 13 Nov 2026: every run's restore reported
+`annotations.status` `reset` (it put the prepared `sentinel.io/execution`
+back), and after each of the two S8 runs it also removed `sentinel.io/fence`
+and `sentinel.io/fence-epoch` (epoch 2), which were not there at `prepare`
+(`C-DISTRIBUTED-KIND-02D91E5`). No reset was refused; one kind node on one
+host.
 
 `summary.json` in kind mode adds `kind_lab` (the injection, whether the fault
 showed and after how long, and the restore with `operator_restore` true only
@@ -292,7 +297,8 @@ Kind-mode defaults that differ from file mode:
   alone may take up to its 90 s timeout after the write. Up to be6e636 the
   live Verifier took one sample per pass and the Coordinator's retry back-off
   spaced those passes; it now samples every 10 s within one pass under this
-  policy (fixed in code; not yet re-run in kind mode).
+  policy, and at 02d91e5 its command was delivered once in every non-S8
+  kind run (`C-DISTRIBUTED-KIND-02D91E5`).
 - **Observer failure window.** 15 s
   (`topology.py::OBSERVER_FAILURE_SECONDS`), written to the run's own Observer
   policy whatever the bundle says. With 2 s, the Recreate rollout after the
@@ -319,28 +325,33 @@ incident, and S2 r2 failed I5 after its Verifier command was delivered 8 times
 (`C-DISTRIBUTED-KIND-BE6E636`; the suspected cause, the retry back-off
 spacing the Verifier's samples past the policy's 20 s gap, is in
 [L-VERIFIER-RETRY-BACKOFF](../../docs/limitations.md#l-verifier-retry-backoff)).
-The Verifier now samples within one pass instead; that is fixed in code and
-tested offline only. To re-check it live, prepare a fresh bundle as above and
-run S2 and S8 twice each, then read `verifier_attempts` and `verification` in
-each `summary.json`:
+The Verifier now samples within one pass instead (5341a0d). A third session,
+at 02d91e5 on 13 Nov 2026, re-ran the same six scenarios twice each with the
+committed tools, on the same cluster with Chaos Mesh and metrics-server
+installed: 12 of 12 matched their expectation, every invariant held, and the
+Verifier command was delivered once (`verifier_attempts` 1) in each of the ten
+non-S8 runs, against 5 to 8 deliveries at be6e636
+(`C-DISTRIBUTED-KIND-02D91E5`). The command it used:
 
 ```powershell
-python -m experiments.distributed.run_scenarios --mode kind --context kind-sentinel-boutique-connected --kind-bundle <bundle> --scenarios S2,S8 --repeat 2 --out runs/distributed-kind-recheck
+python -m experiments.distributed.run_scenarios --mode kind --context kind-sentinel-boutique-connected --kind-bundle <bundle> --scenarios S1b,S1c,S2,S4,S5,S8 --repeat 2 --out runs/distributed-kind-recheck
 ```
 
-Each session left the fence annotations of its S8 runs
+The first two sessions left the fence annotations of their S8 runs
 (`sentinel.io/fence`, `sentinel.io/fence-epoch`) on the Deployment; the
 restore at those revisions put back the template only, and the operator
 removed them by hand. With the P3.05 admission policy installed, that matters: each run
 starts a fresh Coordinator store, and a seal whose epoch is below the stored
 `sentinel.io/fence-epoch` is denied
 ([deploy/README.md](../../deploy/README.md)). The restore now returns those
-annotations to their prepared values after every run (above), so `--repeat`
-of S8 under the policy should start each run without a stored epoch, as long
-as none was there at `prepare`; this is tested offline only and has not run
-against the lab. The reset is a lab reset between runs, never normal
-operation; whether a store should seed its epoch from the annotation is still
-an owner decision listed under P3.05.
+annotations to their prepared values after every run (above); in the 02d91e5
+session it removed both fence annotations after each S8 run, so the second S8
+run started without a stored epoch. The session's records do not say whether
+the admission policy was installed, so they do not show `--repeat` of S8 under
+the policy. The reset
+is a lab reset between runs, never normal operation; whether a store should
+seed its epoch from the annotation is still an owner decision listed under
+P3.05.
 
 ## Four-node acceptance (P4.01)
 

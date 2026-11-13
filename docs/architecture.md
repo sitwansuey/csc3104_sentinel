@@ -36,9 +36,11 @@ plus a planner-bound restart token, so Kubernetes replaces every Pod without any
 configuration change; the Guard allows it only when the live configuration
 already equals the reviewed baseline, Pods are failing and the target's restart
 budget has room. Both use the same conditional write and reconciliation. A
-RESTART recovery has been tested offline only, against a fake Deployment API;
-the production adapter's RESTART patch was accepted once by an API server on a
-disposable Deployment (`C-ADMISSION-POLICY-LIVE`). SCALE is in the
+RESTART recovery has run live for one fault, the Chaos Mesh pod failure N2 on
+shippingservice in the connected lab, with code rule planning and labels
+pending, so unscored (`C-CHAOS-RECOVERY-C9A44CA`, `C-CHAOS-RECOVERY-29E41F8`);
+before that the production adapter's RESTART patch was accepted once by an API
+server on a disposable Deployment (`C-ADMISSION-POLICY-LIVE`). SCALE is in the
 contract but refused. Workload-specific limits belong in policy/topology/baseline
 configuration.
 

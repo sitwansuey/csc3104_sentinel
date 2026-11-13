@@ -1,9 +1,13 @@
 # Two simultaneous faults (P4.05)
 
-Status: implemented and tested offline only. Nothing on this page has run on
-a cluster, and the pair labels in `experiments/boutique/catalog.json` still
-need sign-off. Do not quote a pair result until the live recipe below has run
-and its `summary.json` files are committed. With the Guard's dependency rule
+Status: implemented and tested offline only; no pair run has a result. The
+live recipe was started on 13 Nov 2026 at 29e41f8 ([live attempt](#live-attempt-2026-11-13)):
+its single-fault baselines and the Redis spike ran, but all eight pair runs
+stopped on a harness defect right after both faults were applied, and they
+have not been repeated since the fix. The pair labels in
+`experiments/boutique/catalog.json` still need sign-off. Do not quote a pair
+result until pair runs have completed and their `summary.json` files are
+committed. With the Guard's dependency rule
 as it stands, the dependency-ordered pair is not expected to show an ordered
 recovery live; see [Owner decision](#owner-decision-callers-block-a-callees-repair).
 
@@ -110,9 +114,11 @@ while its neighbours are unhealthy", but it has a cost: a callee whose outage
 makes its caller NotReady cannot be repaired until the caller is Ready again,
 which may need the callee first. In the dependency-ordered pair, the faulted
 cart blocks the Redis RESTART and Redis blocks the cart ROLLBACK, so neither
-repair can run. If cartservice's health check fails whenever Redis is down,
-which the C1 runs suggest but no run has shown for a Redis outage alone, a
-lone Redis failure would be blocked by the cart in the same way.
+repair can run. A Redis outage alone does not do this: in the spike of
+13 Nov 2026 (step 3 of the recipe) redis-cart stayed down for about 6 minutes
+and cartservice stayed Ready with no restart, so under the current rule a
+lone Redis repair would not be blocked by its caller. The deadlock comes from
+the C1 fault making the cart Pod NotReady.
 
 This branch does not change the rule. Changing it is a safety decision for
 the owner, with a written argument and a test that fails before and passes
@@ -155,7 +161,44 @@ decisions, dependency findings, execution results, outcomes,
 with the last readiness read, and for the chaos target
 `chaos-experiment.json` and `attribution.json`.
 
-## Live recipe (not yet run)
+## Live attempt (2026-11-13)
+
+At 29e41f8 on the connected lab (one Windows host, one kind node, Chaos Mesh
+and metrics-server installed as for [chaos](chaos.md#live-results-2026-11-13-unscored),
+under the same owner-gate note), the recipe below ran in order:
+
+- **Preflight** passed.
+- **Single-fault baselines** passed: the connected walkthrough with shipping
+  R1 and with cart C1, harness-authored proposals and auto-lab approval. N2's
+  single-fault timing comes from the five passing P4.03 N2 runs at the same
+  revision.
+
+<!-- BEGIN GENERATED:claim-c-dual-fault-baselines-29e41f8 -->
+> **C-DUAL-FAULT-BASELINES-29E41F8:** Single-fault baselines for the P4.05 timing comparison (the connected walkthrough with shipping R1 and with cart C1 at 29e41f8) passed in 2/2 runs.
+> Scope: One run per target, harness-authored proposals, auto-lab approval (automated-lab identity, no person); R1 and C1 labels are pending, so these are not scored trials. They are the single-fault side of the P4.05 comparison; N2's single-fault timing comes from C-CHAOS-RECOVERY-29E41F8. No pair run has a result yet: all eight pair runs at this revision stopped on a harness defect right after both faults were applied (listed in evidence/exclusions.json). One Windows/amd64 host with Docker Desktop and one kind node (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 29e41f8, clean tree, 2026-11-13 UTC.
+<!-- END GENERATED:claim-c-dual-fault-baselines-29e41f8 -->
+
+- **Redis spike** (operator log, no Sentinel component running): a PodChaos
+  pod failure kept redis-cart 0/1 for about 6 minutes while cartservice
+  stayed Ready (1/1, the same Pod, no restart). So a Redis outage alone does
+  not make cartservice NotReady; see the [owner decision](#owner-decision-callers-block-a-callees-repair).
+- **All eight pair runs FAILED with no Sentinel result**: three of each pair
+  and both Executor-kill variants. Each applied both faults within 0.3 s and
+  the Observer opened an incident for each target, then the harness stopped
+  with `ValueError: Unknown Boutique observation stage`, because the
+  storefront journal (`runtime/boutique_observability.py`) did not accept the
+  pair-fault stage; the offline pair tests had mocked the journal. No
+  proposal was planned, so there was no Guard decision and no Executor write.
+  Each run's chaos object was cleaned up and the administrator put the
+  configuration fault back. The defect was fixed in 1941683 (merged in
+  02d91e5). These eight runs are listed in
+  [evidence/exclusions.json](../evidence/README.md), not as bundles, because
+  the collector has no evidence class for pair runs at this revision.
+
+So steps 4 to 7 are still to be run, and the timing comparison and the
+Executor-kill variant have no result.
+
+## Live recipe
 
 Run these on the host that holds the connected lab, in this order. Never
 against `sentinel-lab`, and not while the `sentinel-dist` cluster (P4.01) or a
@@ -177,7 +220,7 @@ only.
 
 1. **Preflight.** The connected lab must exist from an earlier connected run,
    Chaos Mesh and metrics-server must be installed as in
-   [Chaos Mesh in guarded recovery](chaos.md#live-recipe-not-yet-run), and the
+   [Chaos Mesh in guarded recovery](chaos.md#live-recipe-run-on-2026-11-13-unscored), and the
    single cartservice run (C1) should have passed first.
 
    ```powershell
@@ -216,7 +259,8 @@ only.
    ```
 
    Record whether cartservice turns NotReady while only Redis is down, and
-   attach the output to the owner decision above.
+   attach the output to the owner decision above. Result on 13 Nov 2026:
+   cartservice stayed Ready throughout (above).
 
 4. **Independent pair, three runs.**
 
