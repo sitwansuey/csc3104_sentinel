@@ -229,6 +229,10 @@ first scored trial (step 4 onwards).
    threshold change) in the pre-registration commit, so the pin can be
    reviewed in the repository before the scored trials.
 
+   Pinned on 2026-11-13 (the multi-architecture index digest of
+   metrics-server v0.7.2, resolved with the command above):
+   `sha256:ffcb2bf004d6aa0a17d90e0247cf94f2865c8901dcab4427034c341951c239f9`.
+
    **Owner gate.** Step 2 installs a privileged chaos-daemon on the kind node
    and a metrics-server that skips kubelet TLS verification
    (`--kubelet-insecure-tls`; see B1 in the [threat model](threat-model.md)).
@@ -271,6 +275,18 @@ first scored trial (step 4 onwards).
    Record the peak `cpu` of the shipping Pod and whether it stayed Ready. If
    0.18 cores is never exceeded, or is exceeded at rest, change
    `observer_thresholds` in a pre-registration commit before step 4.
+
+   Spike results on 2026-11-13, in the connected lab on one host:
+   - Pod failure: Chaos Mesh 2.8.2 named the record
+     `sentinel-boutique-connected/<pod>` with `desiredPhase: Run`.
+   - Pod failure: after the selected Pod was deleted, the replacement was
+     not re-selected. It was Ready within about 15 s, and the chaos object
+     still listed only the old Pod.
+   - CPU stress: the shipping Pod used about 0.0005 cores at rest. Under
+     stress it held at about 0.200 cores, its limit, for the whole 300 s.
+   - CPU stress: the Pod stayed Ready with no restarts.
+   - So the 0.18-core threshold is crossed only under stress, and it is
+     unchanged.
 
 4. **Pod failure x5 (N2).** Each run measures a fresh baseline, injects,
    refuses the forced ROLLBACK, plans RESTART, asks for approval, restarts,
