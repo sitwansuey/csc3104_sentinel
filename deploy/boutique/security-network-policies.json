@@ -128,23 +128,6 @@
           {
             "ports": [
               {
-                "port": 7070,
-                "protocol": "TCP"
-              }
-            ],
-            "to": [
-              {
-                "podSelector": {
-                  "matchLabels": {
-                    "app": "cartservice"
-                  }
-                }
-              }
-            ]
-          },
-          {
-            "ports": [
-              {
                 "port": 7000,
                 "protocol": "TCP"
               }
@@ -226,6 +209,23 @@
                 }
               }
             ]
+          },
+          {
+            "ports": [
+              {
+                "port": 8445,
+                "protocol": "TCP"
+              }
+            ],
+            "to": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app": "security-gateway"
+                  }
+                }
+              }
+            ]
           }
         ],
         "podSelector": {
@@ -259,23 +259,6 @@
                 "podSelector": {
                   "matchLabels": {
                     "app": "adservice"
-                  }
-                }
-              }
-            ]
-          },
-          {
-            "ports": [
-              {
-                "port": 7070,
-                "protocol": "TCP"
-              }
-            ],
-            "to": [
-              {
-                "podSelector": {
-                  "matchLabels": {
-                    "app": "cartservice"
                   }
                 }
               }
@@ -365,6 +348,23 @@
                 }
               }
             ]
+          },
+          {
+            "ports": [
+              {
+                "port": 8445,
+                "protocol": "TCP"
+              }
+            ],
+            "to": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app": "security-gateway"
+                  }
+                }
+              }
+            ]
           }
         ],
         "podSelector": {
@@ -426,6 +426,23 @@
           {
             "ports": [
               {
+                "port": 8446,
+                "protocol": "TCP"
+              }
+            ],
+            "to": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app": "cartservice"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "ports": [
+              {
                 "port": 8444,
                 "protocol": "TCP"
               }
@@ -481,68 +498,6 @@
         "podSelector": {
           "matchLabels": {
             "app": "adservice"
-          }
-        },
-        "policyTypes": [
-          "Ingress"
-        ]
-      }
-    },
-    {
-      "apiVersion": "networking.k8s.io/v1",
-      "kind": "NetworkPolicy",
-      "metadata": {
-        "name": "ingress-cartservice",
-        "namespace": "sentinel-boutique-security"
-      },
-      "spec": {
-        "ingress": [
-          {
-            "from": [
-              {
-                "podSelector": {
-                  "matchLabels": {
-                    "app": "checkoutservice"
-                  }
-                }
-              },
-              {
-                "podSelector": {
-                  "matchLabels": {
-                    "app": "frontend"
-                  }
-                }
-              }
-            ],
-            "ports": [
-              {
-                "port": 7070,
-                "protocol": "TCP"
-              }
-            ]
-          },
-          {
-            "from": [
-              {
-                "podSelector": {
-                  "matchLabels": {
-                    "app": "sentinel-probe",
-                    "sentinel.io/probe-target": "cartservice"
-                  }
-                }
-              }
-            ],
-            "ports": [
-              {
-                "port": 7070,
-                "protocol": "TCP"
-              }
-            ]
-          }
-        ],
-        "podSelector": {
-          "matchLabels": {
-            "app": "cartservice"
           }
         },
         "policyTypes": [

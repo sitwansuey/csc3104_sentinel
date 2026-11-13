@@ -129,7 +129,7 @@ without claiming Sentinel repair (claim `C-CHAOS-ALL`), and three Chaos Mesh
 catalog scenarios have driven guarded recovery in the connected lab, unscored
 with labels pending (claims `C-CHAOS-RECOVERY-C9A44CA`, `C-CHAOS-RECOVERY-29E41F8`);
 [security](docs/security.md) is a protected lab with mTLS for the shipping path
-only and graph-derived L4 NetworkPolicies for every service, not yet combined
+only, shown live (a cart route is in code with offline tests only), and graph-derived L4 NetworkPolicies for every service, not yet combined
 with guarded recovery (claims `C-SECURITY-LAB`, `C-SECURITY-NETPOL-LIVE`); [RCAEval](agent/datasets/README.md) measures
 offline diagnosis, not recovery, and has no committed result yet; [packaging](docs/packaging.md)
 describes the packaged runner (claim `C-PACKAGED`). The runner was rebuilt and
@@ -167,7 +167,8 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-NO-DIAGNOSIS-ACCURACY](docs/limitations.md#l-no-diagnosis-accuracy): No diagnosis-accuracy evaluation (limitation, open; planned P2.07, P4.04)
 - [L-REPLAY-MODEL-ROWS](docs/limitations.md#l-replay-model-rows): The recovery decision ablation has no model rows yet, its labels are unreviewed and its state is reconstructed (limitation, open; planned P4.04, P4.07)
 - [L-CALLER-BLOCKS-CALLEE-REPAIR](docs/limitations.md#l-caller-blocks-callee-repair): A callee cannot be repaired while a caller it broke is NotReady, so the dependency-ordered pair cannot show its ordering (limitation, open; planned P4.05)
-- [L-SECURITY-SHIPPING-ONLY](docs/limitations.md#l-security-shipping-only): mTLS and inspection cover only the shipping path, and the other services' L4 default-deny runs in the security lab only (limitation, open; planned P4.06, P5.04, P5.05)
+- [L-SECURITY-SHIPPING-ONLY](docs/limitations.md#l-security-shipping-only): mTLS and inspection are shown live only on the shipping path (the cart route is offline only), and the other services' L4 default-deny runs in the security lab only (limitation, open; planned P4.06, P5.04, P5.05)
+- [L-SECURITY-GATEWAY-CAPACITY](docs/limitations.md#l-security-gateway-capacity): The inspector's capacity bounds and real readiness are tested offline only, and one gateway replica is a single point of failure (limitation, open; planned P5.04)
 - [L-UNGATED-CVES](docs/limitations.md#l-ungated-cves): Workload image CVEs are gated only in offline tests; no live run uses the CVE gate (limitation, open; planned P5.02, P5.03)
 - [L-NO-RELEASE](docs/limitations.md#l-no-release): No tagged, scanned release image (limitation, open; planned P2.09, P2.10)
 - [L-LAB-CERTS](docs/limitations.md#l-lab-certs): Security lab certificates are two-day fixtures with no rotation (limitation, open; planned P5.06)

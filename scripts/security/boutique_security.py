@@ -1,4 +1,4 @@
-"""Full Boutique with inspected shipping traffic in a dedicated Calico kind lab."""
+"""Full Boutique with inspected shipping and cart traffic in a dedicated Calico kind lab."""
 
 import argparse
 import base64
@@ -23,12 +23,12 @@ sys.path.insert(0, str(ROOT))
 from runtime.security_store import import_inspections
 from experiments.boutique.harness.connected import APPLICATIONS, UPSTREAM, UPSTREAM_SHA256, connected_manifest, decoded_resources, image_digest
 from experiments.boutique.harness.dashboard import BoutiqueDashboard
-from scripts.security.boutique_security_manifest import GATEWAY, NAMESPACE, overlay, protect_policies
+from scripts.security.boutique_security_manifest import GATEWAY, GATEWAY_SERVICES, NAMESPACE, overlay, protect_policies
 from scripts.security.network_policy import (MATRIX_IMAGE, MATRIX_LABEL, committed_security_policies, graph_from_manifest,
                                              matrix_destinations, matrix_sources, policy_differences, probe_targets,
                                              reviewed_security_policies, run_matrix)
 from experiments.boutique.traffic.storefront import StorefrontProbe
-from scripts.security.security_lab import CLIENT, ENVOY, INSPECTOR, certificates
+from scripts.security.security_lab import CLIENT, ENVOY, INSPECTOR, ROUTES, certificates
 from runtime.boutique_observability import emit_observation, service_inventory
 from shared import provenance
 
@@ -36,6 +36,14 @@ CLUSTER = "sentinel-boutique-security"
 CONTEXT = "kind-" + CLUSTER
 CALICO_URL = "https://raw.githubusercontent.com/projectcalico/calico/v3.33.0/manifests/calico.yaml"
 CALICO_SHA = "2de8f47595fb9c41b3f47d7b767a1f8e72ecf84057af834738ff12689a234da5"
+# The certificate identities whose Secrets the lab creates (never committed).
+IDENTITIES = ("gateway", "upstream", "cart-upstream", "proxy-client", "client", "frontend-client", "checkoutservice-client")
+# The grpcurl probe per route: its schema file and the read-only RPC used for
+# a valid call. A cart probe with a quantity sends AddItem instead.
+PROBE_RPCS = {"shipping": ("shipping.proto", "hipstershop.ShippingService/GetQuote"),
+              "cart": ("cart.proto", "hipstershop.CartService/GetCart")}
+# A fixed test session id; the lab's cartservice keeps carts in its own redis-cart.
+PROBE_USER = "00000000-0000-4000-8000-000000000001"
 
 
 def command(args, *, timeout=300, required=True):
@@ -159,7 +167,7 @@ def prepare(directory, candidate):
     save(public, manifest)
     kube("apply", "-f", public)
     # Identity-specific Secrets never enter the public manifest or source tree.
-    for identity in ("gateway", "upstream", "proxy-client", "client", "frontend-client", "checkoutservice-client"):
+    for identity in IDENTITIES:
         secret = {"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "security-" + identity, "namespace": NAMESPACE},
                   "type": "Opaque", "data": {name: base64.b64encode((pki / identity / name).read_bytes()).decode()
                                              for name in ("ca.crt", "tls.crt", "tls.key")}}
@@ -168,7 +176,8 @@ def prepare(directory, candidate):
         path.chmod(0o600)
         kube("apply", "-f", path)
     proto = {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "security-test-proto", "namespace": NAMESPACE},
-             "data": {"shipping.proto": (ROOT / "experiments/workloads/security/shipping.proto").read_text()}}
+             "data": {name: (ROOT / "experiments/workloads/security" / name).read_text()
+                      for name in sorted({schema for schema, _ in PROBE_RPCS.values()})}}
     save(directory / "proto.json", proto)
     kube("apply", "-f", directory / "proto.json")
     for name in sorted(APPLICATIONS | {"security-gateway"}):
@@ -185,19 +194,31 @@ def prepare(directory, candidate):
                                        "calico": "3.33.0", "calico_sha256": CALICO_SHA})
 
 
-def probe(directory, *, quantity=1, target="security-gateway:8443", secure=True, certificate=True, identity="client"):
+def probe_call(route="shipping", quantity=None):
+    """(schema file, RPC, request JSON) for one route's grpcurl probe."""
+    schema, method = PROBE_RPCS[route]
+    if route == "shipping":
+        return schema, method, {"items": [{"productId": "OLJCESPC7Z", "quantity": 1 if quantity is None else quantity}]}
+    if quantity is None:
+        return schema, method, {"userId": PROBE_USER}
+    return schema, "hipstershop.CartService/AddItem", {"userId": PROBE_USER,
+                                                       "item": {"productId": "OLJCESPC7Z", "quantity": quantity}}
+
+
+def probe(directory, *, route="shipping", quantity=None, target=None, secure=True, certificate=True, identity="client"):
     if identity not in {"client", "proxy-client"}:
         raise ValueError("Only the lab's test identities may be used")
+    schema, method, request = probe_call(route, quantity)
+    target = target or f"{GATEWAY_SERVICES[route]}:{ROUTES[route]['gateway_port']}"
     name = "security-probe-" + uuid4().hex[:8]
-    args = ["-max-time", "5", "-import-path", "/proto", "-proto", "shipping.proto"]
+    args = ["-max-time", "5", "-import-path", "/proto", "-proto", schema]
     if secure:
         args += ["-cacert", "/client/ca.crt", "-servername", "gateway.internal"]
         if certificate:
             args += ["-cert", "/client/tls.crt", "-key", "/client/tls.key"]
     else:
         args += ["-plaintext"]
-    args += ["-d", json.dumps({"items": [{"productId": "OLJCESPC7Z", "quantity": quantity}]}), target,
-             "hipstershop.ShippingService/GetQuote"]
+    args += ["-d", json.dumps(request), target, method]
     pod = {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": name, "namespace": NAMESPACE, "labels": {"app": "security-test"}},
            "spec": {"automountServiceAccountToken": False, "restartPolicy": "Never", "activeDeadlineSeconds": 45,
                     "securityContext": {"runAsUser": 10001, "runAsNonRoot": True, "fsGroup": 10001,
@@ -274,6 +295,15 @@ def workload(app):
     return "app=" + app + ",!" + MATRIX_LABEL
 
 
+# The probes that must succeed, and those that must fail, for a passing run.
+ALLOWED_PROBES = ("valid_mtls_quote", "valid_mtls_cart")
+DENIED_PROBES = ("invalid_quantity", "missing_client_certificate", "wrong_client_identity", "direct_service_bypass",
+                 "direct_pod_ip_bypass", "direct_egress_bypass", "proxy_outage", "outage_direct_bypass",
+                 "cart_invalid_quantity", "cart_missing_client_certificate", "cart_wrong_client_identity",
+                 "cart_direct_service_bypass", "cart_direct_pod_ip_bypass", "cart_direct_egress_bypass",
+                 "cart_proxy_outage", "cart_outage_direct_bypass")
+
+
 def validate(directory, storefront):
     # passed stays false in every partial save; only the final verdict sets it.
     summary = {"provenance": provenance.collect(ROOT, tools=("kubectl", "kind", "docker"), captured_by="security-lab"),
@@ -305,6 +335,17 @@ def validate(directory, storefront):
     summary["direct_pod_ip_bypass"] = probe(directory, target=shipping["status"]["podIP"] + ":50051", secure=False)
     frontend = json.loads(kube("get", "pods", "-l", workload("frontend"), "-o", "json").stdout)["items"][0]
     summary["direct_egress_bypass"] = probe(directory, target=frontend["status"]["podIP"] + ":50052", secure=False)
+    # The cart route (P5.04): the same checks through its own gateway port.
+    summary["valid_mtls_cart"] = probe(directory, route="cart")
+    summary["cart_invalid_quantity"] = probe(directory, route="cart", quantity=11)
+    summary["cart_missing_client_certificate"] = probe(directory, route="cart", certificate=False)
+    summary["cart_wrong_client_identity"] = probe(directory, route="cart", identity="proxy-client")
+    summary["cart_direct_service_bypass"] = probe(directory, route="cart", target="cartservice:7070", secure=False)
+    cart = json.loads(kube("get", "pods", "-l", workload("cartservice"), "-o", "json").stdout)["items"][0]
+    summary["cart_direct_pod_ip_bypass"] = probe(directory, route="cart", target=cart["status"]["podIP"] + ":7070",
+                                                 secure=False)
+    summary["cart_direct_egress_bypass"] = probe(directory, route="cart", target=frontend["status"]["podIP"] + ":50053",
+                                                 secure=False)
     collect_inspections(directory)
     kube("scale", "deployment/security-gateway", "--replicas=0")
     try:
@@ -315,6 +356,8 @@ def validate(directory, storefront):
             time.sleep(.5)
         summary["proxy_outage"] = probe(directory)
         summary["outage_direct_bypass"] = probe(directory, target="shippingservice:50051", secure=False)
+        summary["cart_proxy_outage"] = probe(directory, route="cart")
+        summary["cart_outage_direct_bypass"] = probe(directory, route="cart", target="cartservice:7070", secure=False)
     finally:
         kube("scale", "deployment/security-gateway", "--replicas=1")
         kube("rollout", "status", "deployment/security-gateway", "--timeout=120s", timeout=140)
@@ -325,9 +368,8 @@ def validate(directory, storefront):
     opener = build_opener(HTTPCookieProcessor(CookieJar()))
     status, _, error = storefront._request(opener, "/cart")
     summary["empty_cart"] = {"status": status, "error": error}
-    expected = summary["valid_mtls_quote"]["succeeded"] and all(not summary[key]["succeeded"] for key in (
-        "invalid_quantity", "missing_client_certificate", "wrong_client_identity", "direct_service_bypass", "direct_pod_ip_bypass",
-        "direct_egress_bypass", "proxy_outage", "outage_direct_bypass"))
+    expected = all(summary[key]["succeeded"] for key in ALLOWED_PROBES) and all(
+        not summary[key]["succeeded"] for key in DENIED_PROBES)
     summary["passed"] = bool(expected and summary["shopping_after_proxy_restore"]["passed"] is True and status == 200
                              and summary["network_matrix"]["status"] == "PASS")
     save(directory / "validation.json", summary)
@@ -337,16 +379,25 @@ def validate(directory, storefront):
     return summary
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("start", "test", "serve", "stop"))
+    parser.add_argument("action", choices=("start", "test", "serve", "stop", "probe"))
     parser.add_argument("--directory", type=Path, default=ROOT / "data/sentinel/runs/boutique-security")
     parser.add_argument("--candidate", type=Path, help="Reviewed candidate.json with adjacent passing scan.json")
     parser.add_argument("--storefront-port", type=int, default=8081)
     parser.add_argument("--dashboard-port", type=int, default=8767)
     parser.add_argument("--exit-after-test", action="store_true")
-    args = parser.parse_args()
+    parser.add_argument("--route", choices=sorted(ROUTES), default="shipping",
+                        help="probe: the protected route to call through the gateway")
+    parser.add_argument("--quantity", type=int, help="probe: send this item quantity (cart: AddItem instead of GetCart)")
+    args = parser.parse_args(argv)
     directory = args.directory.resolve()
+    if args.action == "probe":
+        # One authenticated call through the gateway from a short-lived test Pod;
+        # exit status 0 only when the call succeeded.
+        result = probe(directory, route=args.route, quantity=args.quantity)
+        print(json.dumps({"route": args.route, "quantity": args.quantity, "succeeded": result["succeeded"]}), flush=True)
+        return 0 if result["succeeded"] else 1
     if args.action == "stop":
         directory.mkdir(parents=True, exist_ok=True)
         (directory / "stop-ui.request").touch()
@@ -390,7 +441,7 @@ def main():
             time.sleep(.3)
         if args.action != "serve":
             validate(directory, storefront)
-            print("PASS: full Boutique shipping traffic inspected; direct bypass and proxy outage blocked; "
+            print("PASS: full Boutique shipping and cart traffic inspected; direct bypass and proxy outage blocked; "
                   "NetworkPolicy matrix passed", flush=True)
         else:
             print("Serving recorded validation and current read-only observations; no faults injected.", flush=True)
@@ -422,4 +473,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -35,7 +35,7 @@ export function SecurityOverview({events,now=Date.now()}:{events:SecurityEvent[]
         f.id,<Status value={f.severity}/>,f.package,f.installed,f.fixed||"No fix listed",<Prose>{f.recommendation}</Prose>
       ])}/>
     </Panel>)}
-    <Panel title="gRPC request inspection" description="Envoy decrypts TLS; the inspector validates unary shipping Protobuf requests. Raw payloads and addresses are excluded.">
+    <Panel title="gRPC request inspection" description="Envoy decrypts TLS; the inspector validates unary shipping and cart Protobuf requests. Raw payloads, addresses and user ids are excluded.">
       {inspections.length?<Records headers={["AT","RPC","DECISION","RULE","BYTES"]} rows={inspections.map(e=>[
         time(e.at),<code className="break-all text-[10px]">{e.method}</code>,<Status value={e.verdict||"UNKNOWN"}/>,e.rule,e.bytes
       ])}/>:<p className="p-5 text-sm text-muted-foreground">No inspection evidence. Start the security lab and send traffic through its proxy.</p>}
