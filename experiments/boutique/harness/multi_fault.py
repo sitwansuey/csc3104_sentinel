@@ -321,7 +321,8 @@ def lane_score(item, proposal, *, facts, error_code=None, stop=None):
     proposed_action is the decision of the incident's first proposal and
     decision_score its score against the scenario's pre-registered sets. A
     ROLLBACK or RESTART is delivered only when the Executor's own ledger shows
-    a write for the target (facts["executor_writes"] above 0). A repair that
+    a write attempt for the target (facts["executor_writes"] above 0, the
+    ledger's attempt count, as in single runs). A repair that
     was refused, stopped or never written is scored NOT_DELIVERED with
     matched_expected False and its stop reason, never as a correct delivered
     repair; an unmeasured write count leaves delivered None and is not

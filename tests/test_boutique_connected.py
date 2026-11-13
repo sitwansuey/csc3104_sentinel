@@ -1588,6 +1588,14 @@ class PairPlanningTests(unittest.TestCase):
         escalation = lab.store.action(lab.store.incident(ids["cartservice"])["active_action_id"])["proposal"]
         self.assertEqual(escalation["action"], "ESCALATE")
         self.assertEqual(self.status(experiment, "cartservice")["attempts"], 3)
+        # The real scores() reads the planning failure from the Planner journal and scores the escalation.
+        graded = experiment.scores(ids, stops={"cartservice": "ESCALATED"}, writes={})
+        cart = graded["cartservice"]
+        self.assertEqual(cart["planning_error_code"], self.status(experiment, "cartservice")["error_code"])
+        self.assertIsNotNone(cart["planning_error_code"])
+        self.assertEqual((cart["proposed_action"], cart["actual"], cart["delivered"], cart["executor_writes"],
+                          cart["stop_reason"]), ("ESCALATE", "ESCALATE", True, 0, "ESCALATED"))
+        self.assertIsNone(graded["shippingservice"]["planning_error_code"])
 
 
 class PairChaosWindowTests(unittest.TestCase):

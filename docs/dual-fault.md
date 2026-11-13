@@ -224,13 +224,21 @@ Each target's `scenario-result.json` (`lane_score` in
 apart from what was delivered. `proposed_action` and `decision_score` are the
 first proposal's decision and its score against the scenario's
 pre-registered sets. A ROLLBACK or RESTART counts as delivered only when the
-Executor's own ledger shows a write for that target; a repair that was
-refused, stopped or never written scores `not_delivered`, with
+Executor's own ledger records at least one write attempt for that target
+(`writes_by_target`, the ledger's attempt count, the same meaning as a single
+run's `executor_writes`). An attempt that the cluster then refused still
+counts, so the Verifier's outcome, not this score, says whether the repair
+worked. A repair that was refused, stopped or never written scores
+`not_delivered`, with
 `matched_expected` false and the runner's `stop_reason` (for example
 DEPENDENCY_DEADLOCK), never `correct`. The facts are the ones single runs
 record (`scenario_facts`): `executor_writes`, `executor_routes` over every
 action of the incident, the target's own `fault_injected_at` and
 `incident_observed_at`, and the Guard verdict of each action.
+`not_delivered` is a pair-only score: it is not one of the single-run scores
+(`SCORES` in `experiments/boutique/harness/scenarios.py`), and
+`scripts/evidence/summarize.py` reads a pair run's `pair-result.json` and
+`summary.json`, not these per-target files.
 
 ## Live recipe (not yet run)
 
