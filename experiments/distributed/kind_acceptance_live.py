@@ -25,9 +25,10 @@ import time
 
 from experiments.distributed import audit, invariants
 from experiments.distributed.kind_acceptance import (
-    ADMISSION, AFTER_FAULT, CHAOS_KINDS, CHAOS_LABEL, CHAOS_VERSION, CLUSTER, CONTEXT, CONTROL_PLANE, DEADLINE_SECONDS,
-    DEPLOYMENTS, EXECUTORS, IDENTITIES, LEASE_SECONDS, LOCAL_IMAGES, MANIFESTS, NAMESPACE, NODE_IMAGE, OPERATOR,
-    PAUSE_CONFIRM_SECONDS, PROBE_HELPER, SCENARIOS, TARGET, WORKLOAD, AcceptanceError, Lab, RunView,
+    ADMISSION, AFTER_FAULT, CHAOS_CONFIRM_SECONDS, CHAOS_KINDS, CHAOS_LABEL, CHAOS_VERSION, CLUSTER, CONTEXT,
+    CONTROL_PLANE, DEADLINE_SECONDS, DEPLOYMENTS, EXECUTORS, IDENTITIES, LEASE_SECONDS, LOCAL_IMAGES, MANIFESTS,
+    NAMESPACE, NODE_IMAGE, OPERATOR, PAUSE_CONFIRM_SECONDS, PROBE_HELPER, SCENARIOS, TARGET, WORKLOAD,
+    AcceptanceError, Lab, RunView,
     approval_permissions, certificate_names, cluster_identity, config_map, control_plane_window, coordinator_recovery,
     credentials, delay_to_api_server, expectation, partition, pod_failure, pod_kill, load_summaries, preflight,
     render_admission, render_api_server_policy, results_table, secret_documents, scope_records, secret_name,
@@ -456,7 +457,8 @@ class Run:
     def _let_go(self, entry):
         """Release a held process, or note that its Pod or container (and the process) is already gone."""
         identity, stem = entry["identity"], entry["stem"]
-        with suppress(AcceptanceError, subprocess.SubprocessError, KeyError, ValueError):
+        unreadable = (AcceptanceError, subprocess.SubprocessError, KeyError, ValueError)
+        with suppress(*unreadable):
             now = self.lab.holder_facts(identity)
             if entry.get("uid") and (now["uid"], now["container_id"]) != (entry["uid"], entry.get("container_id")):
                 self.held.remove(entry)
@@ -471,6 +473,12 @@ class Run:
                 return False  # The container may still be restarting after its chaos was removed.
             return True
         self.lab.wait(released, 60, f"fault point {stem} could not be released", interval=2)
+        # The release went to the Pod running when it succeeded, which after a retry may not be the one the
+        # hold recorded (pod): record that one too, or None when it cannot be read.
+        released_in = None
+        with suppress(*unreadable):
+            released_in = self.lab.holder_facts(identity)["pod"]
+        self.actions[-1]["released_in_pod"] = released_in
 
     def _disarm(self, identity, stem):
         """Disarm a point this run armed; a process that took it anyway (unheld) is released too."""
@@ -520,8 +528,17 @@ def _holder(run, stem, action="block", identities=EXECUTORS):
 
 
 def _holder_uid(run, holder):
-    """The UID of the Pod whose process holds the fault point, which a fault aimed at it must select."""
-    return next((entry.get("uid") for entry in run.held if entry["identity"] == holder), None)
+    """The UID of the Pod whose process holds the fault point, which a fault aimed at it must select.
+
+    AcceptanceError when the hold could not read that Pod (Run.hold): the
+    fault is then not created at all, rather than created without the check
+    that it selects the holder's Pod. The hold stays tracked for cleanup.
+    """
+    uid = next((entry.get("uid") for entry in run.held if entry["identity"] == holder), None)
+    if not uid:
+        raise AcceptanceError(f"The Pod whose process ({holder}) holds the fault point could not be read, so the "
+                              "harness cannot check that the fault aimed at it selects that Pod; not created")
+    return uid
 
 
 def _release(run, holder, stem):
@@ -650,15 +667,27 @@ def s6(run):
     row = run.lab.wait_state({"AWAITING_APPROVAL"}, 180)
     workers = [_app(identity) for identity in IDENTITIES]
     since = run.mark()
-    cut = run.create(partition(run.name("all"), "sentinel-coordinator", workers, 3 * LEASE_SECONDS + 60))
+    # Long enough that three leases still fit after a confirmation that takes all of CHAOS_CONFIRM_SECONDS.
+    cut = run.create(partition(run.name("all"), "sentinel-coordinator", workers,
+                               3 * LEASE_SECONDS + 60 + CHAOS_CONFIRM_SECONDS))
     run.lab.approve(row["active_action_id"], run.policy_version)  # The operator reaches it over the port-forward.
-    run.lab.sleep(3 * LEASE_SECONDS)
+    seconds = min(3 * LEASE_SECONDS, run.window_left(cut))
+    run.lab.sleep(seconds)
     rows, _ = run.audit_rows(since)
     during = sum(1 for item in rows if item["effect"] == "template_write" and item["sentinel"])
-    run.notes["during_partition"] = {"template_writes": during, "seconds": 3 * LEASE_SECONDS}
-    run.remove(cut)
+    run.notes["during_partition"] = {"template_writes": during, "seconds": seconds}
+    findings = []
     if during:
-        raise AssertionError("A template write happened while the Coordinator was partitioned from every worker")
+        findings.append("A template write happened while the Coordinator was partitioned from every worker")
+    if seconds < 3 * LEASE_SECONDS:
+        findings.append(f"the partition had only {seconds:.0f} s left of the {3 * LEASE_SECONDS} s (three leases) "
+                        "S6 watches")
+    try:
+        run.remove(cut)
+    except AcceptanceError as error:  # Reported with, not instead of, a write during the partition.
+        findings.append(str(error))
+    if findings:
+        raise (AssertionError if during else AcceptanceError)("; ".join(findings))
 
 
 def s7(run):
@@ -873,7 +902,8 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
         approver = start_approver()
     try:
         RUNNERS[scenario.name](run)
-    except (AcceptanceError, AssertionError, TimeoutError, OSError, ValueError, subprocess.SubprocessError) as caught:
+    except (AcceptanceError, AssertionError, TimeoutError, OSError, ValueError, LookupError, StopIteration,
+            subprocess.SubprocessError) as caught:  # Recorded with the cleanup, settle and summary below.
         error = f"{type(caught).__name__}: {caught}"
     finally:
         cleaned = run.cleanup()  # Every fault undone, or said not to be: never a silent leftover.
@@ -1004,12 +1034,22 @@ def run(shell, run_dir, names, *, repeat, min_free_gib, lock, lab=None):
     try:
         for name in names:
             for index in range(1, repeat + 1):
-                summaries.append(run_one(lab, SCENARIOS[name], index, deployed, baseline, tokens, run_dir,
-                                         policy=policy))
+                summary = run_one(lab, SCENARIOS[name], index, deployed, baseline, tokens, run_dir, policy=policy)
+                summaries.append(summary)
                 write_overview(run_dir, deployed, tokens)
+                left = left_behind(summary)
+                if left:  # The next run would start on top of it: stop the matrix here.
+                    raise AcceptanceError(f"{name} r{index} left faults behind ({'; '.join(left)}); "
+                                          "the remaining runs were not started; check and undo them first")
     finally:
         lab.close()
     return summaries
+
+
+def left_behind(summary):
+    """What a run's cleanup could not undo or its settle still found (Run.cleanup, Lab.settle); [] when nothing."""
+    return [*((summary.get("cleanup") or {}).get("problems") or []),
+            *((summary.get("settle") or {}).get("leftovers") or [])]
 
 
 def write_overview(run_dir, deployed, tokens):

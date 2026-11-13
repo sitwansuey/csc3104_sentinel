@@ -58,9 +58,10 @@ class FakeCluster:
     identities in reachers; a blocked one stays blocked until it is released or its Pod or container goes.
     """
 
-    def __init__(self, *, latency=0.6, injects=True, deletes=True, pause_works=True, annotated=True,
+    def __init__(self, *, latency=0.6, injects=True, deletes=True, lingers=False, pause_works=True, annotated=True,
                  reachers=("planner-1", "executor-a", "coordinator")):
         self.now, self.serial, self.latency, self.injects, self.deletes = 0.0, 0, latency, injects, deletes
+        self.lingers = lingers  # kubectl delete succeeds but the object stays (a finalizer still pending).
         self.pause_works, self.annotated, self.reachers = pause_works, annotated, set(reachers)
         self.pods = {app: [self.new_pod(app)] for app in acceptance.DEPLOYMENTS}
         self.chaos, self.history, self.paused, self.calls, self.releases = {}, [], set(), [], []
@@ -171,8 +172,10 @@ class FakeCluster:
         verb = args[0]
         if verb == "apply":
             document = json.loads(input)
+            # The live controller sets desiredPhase Run almost at once, before it selects or injects anything:
+            # Run alone, with no records or none Injected, is not yet in effect.
             entry = {"doc": document, "created": self.now, "records": None, "injected_at": None,
-                     "deleted_at": None, "desired": None, "chosen": {}}
+                     "deleted_at": None, "desired": "Run" if self.injects else None, "chosen": {}}
             self.chaos[(document["kind"].lower(), document["metadata"]["name"])] = entry
             self.history.append(entry)
             return done()
@@ -182,6 +185,8 @@ class FakeCluster:
                 return done()
             if not self.deletes:
                 return done(code=1)  # A finalizer that never finishes: kubectl delete --wait times out.
+            if self.lingers:
+                return done()
             if entry["injected_at"] is not None and entry["desired"] == "Run":
                 self.recover(entry)
             entry["deleted_at"] = self.now
@@ -314,6 +319,29 @@ class ScenarioLab(acceptance.Lab):
                            "availableReplicas": 1}}
 
 
+class RunLab(ScenarioLab):
+    """ScenarioLab with the steps run_one adds around a scenario (clock offset, inject, restore, records) stubbed."""
+
+    def clock_offset(self):
+        return {"offset_seconds": 0.0, "uncertainty_seconds": 0.01, "at": acceptance.stamp(self.clock())}
+
+    def inject(self):
+        return {"operator_action": "inject STARTUP_FAILURE=true", "at": acceptance.stamp(self.clock())}
+
+    def restore(self, baseline):
+        return {"operator_restore": False}
+
+    def copy_database(self, identity, path, destination):
+        return False
+
+    def logs(self, identity, since, destination, *, prefix=""):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(prefix, encoding="utf-8")
+
+    def audit_log(self, since, until):
+        return {"rows": [], "skipped": 0, "first_at": "2026-11-13T09:00:00Z", "files": 1}
+
+
 def in_effect_at(lab, step):
     """The faults in effect at each noted step of that kind."""
     return [effective for what, effective in lab.seen if what == step]
@@ -442,6 +470,39 @@ class PartitionTests(Harness):
                 expected = 6 if name == "S6" else 1
                 self.assertEqual(len(targets), expected)
 
+    def test_s6_still_watches_three_leases_after_a_confirmation_that_takes_its_whole_limit(self):
+        cluster = FakeCluster(latency=acceptance.CHAOS_CONFIRM_SECONDS)
+        lab, run, error = self.scenario(cluster, "S6", rows=[])
+        self.assertIsNone(error)
+        self.assertEqual(run.notes["during_partition"], {"template_writes": 0, "seconds": 3 * acceptance.LEASE_SECONDS})
+        self.assertTrue(run.notes["chaos"][0]["in_effect_until_removal"])
+        self.assertNothingLeft(cluster)
+
+    def test_s6_watches_no_longer_than_the_partition_lasts_and_says_when_that_is_short_of_three_leases(self):
+        cluster = FakeCluster(latency=acceptance.CHAOS_CONFIRM_SECONDS)
+        with patch.object(ScenarioLab, "approve", lambda lab, action_id, version: cluster.advance(60)):
+            lab, run, error = self.scenario(cluster, "S6", rows=[])  # The approval took a minute over the port-forward.
+        self.assertIsInstance(error, acceptance.AcceptanceError)
+        self.assertIn("only 15 s left", str(error))
+        self.assertEqual(run.notes["during_partition"], {"template_writes": 0, "seconds": 15})
+        self.assertTrue(run.notes["chaos"][0]["in_effect_until_removal"])
+        self.assertNothingLeft(cluster)
+
+    def test_s6_reports_a_write_during_the_partition_even_when_its_removal_fails(self):
+        cluster = FakeCluster(latency=1.0)  # The scripted audit rows hold a template write from executor-b.
+        removals = []
+
+        def gone(run, document, *, check=True):
+            removals.append(check)
+            raise acceptance.AcceptanceError(f"{document['metadata']['name']} was no longer in effect")
+        with patch.object(live.Run, "remove", gone):
+            lab, run, error = self.scenario(cluster, "S6")
+        self.assertIsInstance(error, AssertionError)
+        self.assertIn("A template write happened", str(error))
+        self.assertIn("s6-r1-all was no longer in effect", str(error))
+        self.assertEqual(run.notes["during_partition"]["template_writes"], 1)
+        self.assertEqual(removals, [True, False])  # The scenario's own removal, then cleanup's.
+
     def test_a_partition_that_never_takes_effect_stops_the_run_and_releases_the_holder(self):
         for name in ("S3", "S4", "S6"):
             with self.subTest(scenario=name):
@@ -552,8 +613,12 @@ class SelectorTests(Harness):
             live_object["status"]["experiment"]["containerRecords"][0]["id"] = record_id
             with self.subTest(record_id=record_id), self.assertRaises(acceptance.AcceptanceError):
                 acceptance.chaos_effect(document, live_object, targets, {})
-        # Not yet in effect: no object, the wrong phase, a record not yet injected, the container still running.
+        # Not yet in effect: no object, the wrong phase, Run with no records yet (the controller sets Run before
+        # it selects), a record not yet injected, the container still running.
         waiting = [None, {"status": {"experiment": {"desiredPhase": "Stop"}}},
+                   {"status": {"experiment": {"desiredPhase": "Run"}}},
+                   {"status": {"experiment": {"desiredPhase": "Run", "containerRecords": []}}},
+                   {"status": {"experiment": {"desiredPhase": "Run", "containerRecords": None}}},
                    {"status": {"experiment": {"desiredPhase": "Run", "containerRecords": [
                        {"id": "sentinel-dist/sentinel-executor-a-1", "selectorKey": ".", "phase": "Not Injected"}]}}},
                    {"status": {"experiment": {"desiredPhase": "Run", "containerRecords": [
@@ -565,6 +630,28 @@ class SelectorTests(Harness):
                 effect = acceptance.chaos_effect(document, state, targets, now)
                 self.assertFalse(effect["in_effect"])
                 self.assertTrue(effect["waiting"])
+
+    def test_a_duration_fault_is_in_effect_only_while_its_desired_phase_is_run(self):
+        """Every record Injected (and the container replaced) is not enough once Chaos Mesh stops or pauses it."""
+        executor = {"name": "sentinel-executor-a-1", "uid": "u1", "deleting": False,
+                    "containers": {"worker": {"id": "c1", "running": True}}}
+        coordinator = {"name": "sentinel-coordinator-1", "uid": "u2", "deleting": False, "containers": {}}
+        replaced = {"sentinel-executor-a": [{**executor, "containers": {"worker": {"id": "c2", "running": True}}}]}
+        cases = [(acceptance.pod_failure("s1b-r1-down", "sentinel-executor-a", 60), {".": [executor]}, replaced,
+                  [{"id": "sentinel-dist/sentinel-executor-a-1", "selectorKey": ".", "phase": "Injected"}]),
+                 (acceptance.partition("s3-r1-cut", "sentinel-executor-a", ["sentinel-coordinator"], 180),
+                  {".": [executor], ".Target": [coordinator]}, {},
+                  [{"id": "sentinel-dist/sentinel-executor-a-1", "selectorKey": ".", "phase": "Injected"},
+                   {"id": "sentinel-dist/sentinel-coordinator-1", "selectorKey": ".Target", "phase": "Injected"}])]
+        for document, targets, now, records in cases:
+            for desired in ("Run", "Stop", "Pause", None):
+                with self.subTest(chaos=document["metadata"]["name"], desired=desired):
+                    experiment = {"containerRecords": [dict(record) for record in records]}
+                    if desired is not None:
+                        experiment["desiredPhase"] = desired
+                    effect = acceptance.chaos_effect(document, {"status": {"experiment": experiment}}, targets, now)
+                    self.assertEqual(effect["in_effect"], desired == "Run")
+                    self.assertEqual(bool(effect["waiting"]), desired != "Run")
 
     def test_every_chaos_selector_names_the_pod_label_of_a_sentinel_dist_deployment_and_only_that_namespace_is_annotated(self):
         labels, annotations = {}, {}
@@ -613,34 +700,112 @@ class CleanupTests(Harness):
         self.assertNothingLeft(cluster)
         self.assertIn(("executor-b", "executor.after_start_write"), [(i, s) for i, s, _ in cluster.releases])
 
-    def test_run_one_records_the_failed_confirmation_and_every_cleanup_step(self):
-        cluster = FakeCluster(injects=False)
-
-        class RunLab(ScenarioLab):
-            def clock_offset(self):
-                return {"offset_seconds": 0.0, "uncertainty_seconds": 0.01, "at": acceptance.stamp(self.clock())}
-
-            def inject(self):
-                return {"operator_action": "inject STARTUP_FAILURE=true", "at": acceptance.stamp(self.clock())}
-
-            def restore(self, baseline):
-                return {"operator_restore": False}
-
-            def copy_database(self, identity, path, destination):
-                return False
-
-            def logs(self, identity, since, destination, *, prefix=""):
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                destination.write_text(prefix, encoding="utf-8")
-
-            def audit_log(self, since, until):
-                return {"rows": [], "skipped": 0, "first_at": "2026-11-13T09:00:00Z", "files": 1}
+    def run_one(self, cluster, name):
+        """live.run_one of scenario name over cluster, with the records it copies out stubbed."""
         lab = RunLab(cluster, self.directory / "lab")
         deployed = {"policy_version": "v1", "versions": {}, "api_server": {"endpoint": "172.18.0.4"}}
         with patch.object(live, "git_revision", lambda: "abc123"), \
                 patch.object(live, "_operator", lambda lab, version, stopping: None):
-            summary = live.run_one(lab, acceptance.SCENARIOS["S1a"], 1, deployed, BASELINE,
-                                   {"executor-a": {"delivery-token": "q" * 43}}, self.directory / "out")
+            return live.run_one(lab, acceptance.SCENARIOS[name], 1, deployed, BASELINE,
+                                {"executor-a": {"delivery-token": "q" * 43}}, self.directory / "out")
+
+    def test_a_chaos_object_still_there_after_a_successful_delete_is_an_error_not_a_removal(self):
+        cluster = FakeCluster(latency=1.0, lingers=True)
+        lab, run, error = self.scenario(cluster, "S7")
+        self.assertIsInstance(error, acceptance.AcceptanceError)
+        self.assertIn("s7-r1-skew is still in sentinel-dist after its delete", str(error))
+        self.assertNotIn("remove chaos", [item["operator_action"] for item in run.actions])
+        self.assertIn("s7-r1-skew", " ".join(run.cleaned["problems"]))
+        self.assertEqual(run.leftovers(), ["TimeChaos s7-r1-skew is still in sentinel-dist"])
+
+    def test_run_one_adds_what_cleanup_could_not_undo_to_the_harness_error(self):
+        summary = self.run_one(FakeCluster(latency=1.0, deletes=False), "S7")
+        self.assertFalse(summary["passed"])
+        self.assertTrue(summary["cleanup"]["problems"])
+        self.assertIn("cleanup: TimeChaos s7-r1-skew could not be removed", summary["harness_error"])
+        self.assertEqual(live.left_behind(summary)[0], summary["cleanup"]["problems"][0])
+
+    def test_run_one_records_an_unexpected_lookup_error_and_still_cleans_up(self):
+        cluster = FakeCluster(latency=1.0)
+
+        def broken(run):
+            run.create(acceptance.time_skew(run.name("skew"), ["sentinel-executor-a"], -300, 60))
+            raise KeyError("duration")
+        with patch.dict(live.RUNNERS, {"S7": broken}):
+            summary = self.run_one(cluster, "S7")
+        self.assertIn("KeyError", summary["harness_error"])
+        self.assertIn("remove chaos", [item.get("operator_action") for item in summary["operator_actions"]])
+        self.assertNothingLeft(cluster)
+
+    def test_a_hold_drops_only_when_the_confirmed_fault_ended_that_pod_or_container(self):
+        cluster = FakeCluster()
+        run = live.Run(ScenarioLab(cluster, self.directory), acceptance.SCENARIOS["S1b"], 1, "v1")
+        document = acceptance.pod_failure("s1b-r1-down", "sentinel-executor-a", 60)
+        run.held = [{"identity": "executor-a", "stem": "a", "pod": "p1", "uid": "u1", "container_id": "c1"},
+                    {"identity": "executor-a", "stem": "b", "pod": "p2", "uid": "u2", "container_id": "c1"},
+                    {"identity": "executor-a", "stem": "c", "pod": "p1", "uid": "u1", "container_id": "c0"},
+                    {"identity": "executor-a", "stem": "d"}]
+        run.notes["chaos"] = [{"name": "s1b-r1-down", "confirmation": {"replaced": [
+            {"pod": "p1", "uid": "u1", "container": "worker", "container_before": "c1", "container_after": "c2"}]}}]
+        run.fault_ended("executor-a", document)
+        self.assertEqual([entry["stem"] for entry in run.held], ["b", "c", "d"])
+        run.notes["chaos"][0]["confirmation"] = {"killed": [{"pod": "p2", "uid": "u2"}]}
+        run.fault_ended("executor-a", document)
+        self.assertEqual([entry["stem"] for entry in run.held], ["c", "d"])
+        run.notes["chaos"][0]["confirmation"] = None  # Never confirmed: nothing ended.
+        run.fault_ended("executor-a", document)
+        self.assertEqual([entry["stem"] for entry in run.held], ["c", "d"])
+
+    def test_a_fault_aimed_at_a_holder_whose_pod_could_not_be_read_is_not_created(self):
+        cluster = FakeCluster()
+        planner = cluster.current("sentinel-planner-1")
+        reads = []
+        real = acceptance.Lab.holder_facts
+
+        def unreadable_at_first(lab, identity):
+            reads.append(identity)
+            if len(reads) == 1:
+                raise acceptance.AcceptanceError("sentinel-planner-1 has 2 running Pods")
+            return real(lab, identity)
+        with patch.object(acceptance.Lab, "holder_facts", unreadable_at_first):
+            lab, run, error = self.scenario(cluster, "S1a")
+        self.assertIsInstance(error, acceptance.AcceptanceError)
+        self.assertIn("could not be read", str(error))
+        self.assertFalse([command for command in cluster.calls if "apply" in command])
+        self.assertNothingLeft(cluster)
+        [release] = [item for item in run.actions if item["operator_action"] == "release fault point"]
+        self.assertEqual((release["pod"], release["released_in_pod"]), (None, planner["name"]))
+
+    def test_the_matrix_stops_after_a_run_that_left_a_fault_behind(self):
+        summaries = iter([{"cleanup": {"problems": []}, "settle": {"leftovers": []}},
+                          {"cleanup": {"problems": ["node sentinel-dist-worker could not be unpaused: x"]},
+                           "settle": {"leftovers": ["node sentinel-dist-worker is still paused"]}},
+                          {"cleanup": {"problems": []}, "settle": {"leftovers": []}}])
+        started = []
+
+        class MatrixLab:
+            def labelled_chaos(self):
+                return []
+
+            def close(self):
+                started.append("closed")
+        run_dir = self.directory / "matrix"
+        (run_dir / "inputs").mkdir(parents=True)
+        (run_dir / "lab.json").write_text(json.dumps({"policy_version": "v1"}), encoding="utf-8")
+        (run_dir / "inputs" / "baseline.json").write_text(json.dumps(BASELINE), encoding="utf-8")
+        with patch.object(live, "preflight", lambda *args, **options: {}), \
+                patch.object(live, "check_target", lambda lab, baseline: "uid-demo"), \
+                patch.object(live, "read_tokens", lambda shell: {acceptance.OPERATOR: {"approval-token": "t"}}), \
+                patch.object(live, "write_overview", lambda *args: None), \
+                patch.object(live, "run_one", lambda lab, scenario, index, *args, **options: (
+                    started.append((scenario.name, index)), next(summaries))[1]), \
+                self.assertRaisesRegex(acceptance.AcceptanceError, r"S2 r2 left faults behind .*still paused"):
+            live.run(None, run_dir, ["S2"], repeat=3, min_free_gib=1, lock=None, lab=MatrixLab())
+        self.assertEqual(started, [("S2", 1), ("S2", 2), "closed"])
+
+    def test_run_one_records_the_failed_confirmation_and_every_cleanup_step(self):
+        cluster = FakeCluster(injects=False)
+        summary = self.run_one(cluster, "S1a")
         self.assertIn("not confirmed in effect", summary["harness_error"])
         self.assertFalse(summary["passed"])
         self.assertEqual(summary["cleanup"]["problems"], [])

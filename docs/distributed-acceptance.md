@@ -811,7 +811,9 @@ and `experiments/distributed/kind_acceptance.py::chaos_effect`):
   `enableFilterNamespace`, so without it nothing is injected), every app it
   names must have a running Pod, a mode-one fault must have exactly one
   candidate, and a fault aimed at the holder of a fault point must select
-  that holder's Pod (by UID).
+  that holder's Pod (by UID). When the hold could not read that Pod, the
+  fault is not created at all (a harness error), rather than created
+  without the check.
 - **A fault is confirmed in effect from the cluster before the scenario goes
   on** (`Run.create`, `Lab.confirm_chaos`, polling every second for up to
   `CHAOS_CONFIRM_SECONDS`, 60 s). For pod-kill: no Pod it selected is still
@@ -819,7 +821,11 @@ and `experiments/distributed/kind_acceptance.py::chaos_effect`):
   delay and TimeChaos: `desiredPhase` Run and a record Injected for every
   Pod it selected (both ends of a partition, selector keys `.` and
   `.Target`; each named container for TimeChaos), and for pod-failure the
-  container that was running in the selected Pod no longer is. A record for
+  container that was running in the selected Pod no longer is. The live
+  controller sets `desiredPhase` Run almost at once, before it selects or
+  injects anything, so Run with no records, or with a record not yet
+  Injected, is still waiting; every record Injected under a `desiredPhase`
+  other than Run (Stop, Pause) is not in effect either. A record for
   a Pod the harness did not select, in another namespace or for another
   container is an error at once. When confirmation does not come in time
   the run stops with a harness error naming what was missing, and does not
@@ -835,7 +841,13 @@ and `experiments/distributed/kind_acceptance.py::chaos_effect`):
   Removal reads the object again first, deletes it with `--wait` and checks
   that it is gone; a fault that Chaos Mesh had already ended (its duration
   ran out) is a harness error, since it did not cover the scenario's
-  window.
+  window. A delete that succeeds while the object is still there is an
+  error, not a removal. S6's partition lasts three leases plus 60 s plus
+  `CHAOS_CONFIRM_SECONDS`, so three leases still fit after the slowest
+  confirmation; S6 watches for no longer than the partition has left
+  (`notes.during_partition.seconds`), and a watch shorter than three leases
+  is a harness error. A write during the partition is reported together
+  with, not instead of, a failed removal.
 - **Nothing is left behind silently.** `Run` tracks every fault point it
   armed and every process it holds. `cleanup`, in `run_one`'s `finally`,
   unpauses nodes, removes chaos objects, releases held processes (or
@@ -847,7 +859,13 @@ and `experiments/distributed/kind_acceptance.py::chaos_effect`):
   object still there, a node still paused, a point still held or armed)
   and does not settle while there is any; the summary reports it under
   `settle.leftovers` and `cleanup`. `run` refuses to start while a chaos
-  object with the harness's label is in `sentinel-dist`.
+  object with the harness's label is in `sentinel-dist`, and stops the
+  matrix after a run whose cleanup reported a problem or whose settle found
+  a leftover, so the next run never starts on top of it. A release that
+  needed retries records both the Pod the hold recorded (`pod`) and the
+  one running when the release succeeded (`released_in_pod`). An
+  unexpected `LookupError` in a scenario runner is recorded as the harness
+  error with the cleanup and settle, like the other harness errors.
 - **The evidence is in each summary**: under `notes.chaos`, the Pods each
   selector matched, the confirmation (records and their phases,
   `desiredPhase`, the killed Pods or replaced containers, when it was
@@ -887,11 +905,20 @@ error and leaves nothing behind. Also: a fault that ended before its
 removal is an error; an unannotated namespace, a selector with no running
 Pod or one that would not select the holder is refused before anything is
 created; a record for a Pod the harness did not select is an error, not a
-wait; the selectors match the manifests' Pod labels and only
-`sentinel-dist` is annotated; a chaos object that cannot be removed is a
-cleanup problem and keeps the lab from settling; a point no process reached
-is disarmed, and a second process that took it is released; and `run_one`
-records the failed confirmation and every cleanup step. At 1adcfe3 every one
+wait; `desiredPhase` Run with no records (the fake controller sets Run at
+creation, as the live one does) or with every record Injected under Stop or
+Pause is not in effect; the selectors match the manifests' Pod labels and
+only `sentinel-dist` is annotated; a chaos object that cannot be removed,
+or is still there after a successful delete, is a cleanup problem and keeps
+the lab from settling; a point no process reached is disarmed, and a second
+process that took it is released; a hold drops only for the Pod UID or
+container the confirmed fault ended; a fault aimed at a holder whose Pod
+could not be read is not created; S6 watches three leases after the slowest
+confirmation, says when its partition has less left, and reports a write
+during the partition with a failed removal; `run_one` records the failed
+confirmation, every cleanup step, a cleanup problem in the harness error
+and an unexpected `LookupError`; and `run` stops the matrix after a run
+that left a fault behind. At 1adcfe3 every one
 of these tests fails, the S1a one because the PodChaos is deleted before the
 fake controller injects it and the Planner is left blocked.
 
