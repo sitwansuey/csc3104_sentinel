@@ -89,6 +89,24 @@ The Executor never changes a proposal's resource version under the same action
 ID. Replanning with changed intent requires a new action ID and new validation
 and approval as required by policy.
 
+A CONFLICT result may carry an optional `conflict` record for that re-plan
+(`core.py::_conflict`, contract in `shared/contracts.py`). After refusing, the
+Executor reads the target again (or uses the read that refused it); when the
+decision table shows the same UID at a version other than the proposal's,
+without this action's evidence or fence (ADVANCED_WITHOUT_EVIDENCE), no write
+of the action committed or can ever commit, and the record names the `basis`
+(NOT_SENT: no write was sent, the Executor's own read already showed another
+version; REFUSED: `ConditionalWriteConflict`, which the adapter raises only
+for a precondition it refused without committing), the `resource_version` read
+and the Deployment's `generation`. Anything else (an unreadable target,
+another UID, evidence of this action, no valid generation) gives no record.
+The Coordinator re-plans from it only under `--stale-replans`, when the
+generation is still the incident's
+(`services/coordinator/core.py::replan_after_conflict`). The Executor itself
+never retries at the newer version: every write of an action tests the same
+V0, which is what makes reconciliation, the fence and the seal sound
+([argument](../../docs/distributed-model.md#a-conflict-after-the-allow-is-re-planned-not-retried-p401)).
+
 The fake restore API models one atomic operation: test UID/resource version,
 replace `spec.template` with the resolved baseline and write action evidence in
 a Deployment metadata annotation. The evidence lives outside the Pod template,

@@ -103,6 +103,14 @@ FIELDS = {
 # SEALED: no write of the action can commit any more, and none had. APPLIED: a write of the action
 # landed before the seal. UNSEALED: the seal could not finish within its bounded attempts.
 FENCE_OUTCOMES = frozenset({"SEALED", "APPLIED", "UNSEALED"})
+# Optional fields a message kind may carry. An execution_result with status CONFLICT may name why
+# no write of the action committed and what the Executor then read of the same target
+# (services/executor/core.py::_conflict); the Coordinator's re-plan rule reads it
+# (services/coordinator/core.py::replan_after_conflict). NOT_SENT: this Executor sent no write,
+# because its own read already showed another version. REFUSED: the adapter refused the write's
+# preconditions without committing it (ConditionalWriteConflict).
+OPTIONAL_FIELDS = {"execution_result": {"conflict"}}
+CONFLICT_BASES = frozenset({"NOT_SENT", "REFUSED"})
 
 
 def validate_message(message):
@@ -114,7 +122,8 @@ def validate_message(message):
         raise ContractError("message.kind: unknown message type")
     version = message.get("schema_version")
     bound_fields = {"proposal_sha256", "inputs_sha256", "valid_until"} if kind == "guard_result" and version == "2.0" else set()
-    _object(message, {"kind", "schema_version", "target"} | FIELDS[kind] | bound_fields)
+    _object(message, {"kind", "schema_version", "target"} | FIELDS[kind] | bound_fields,
+            OPTIONAL_FIELDS.get(kind, ()))
     if version != "1.0" and not (kind == "guard_result" and version == "2.0"):
         raise ContractError("schema_version: unsupported message version")
     _target(message["target"])
@@ -173,6 +182,16 @@ def validate_message(message):
             _string(message["resource_version"], "resource_version")
         _timestamp(message["recorded_at"], "recorded_at")
         _string(message["details"], "details", allow_empty=True)
+        if "conflict" in message:
+            if message["status"] != "CONFLICT":
+                raise ContractError("conflict: only a CONFLICT result names why nothing committed")
+            conflict = message["conflict"]
+            _object(conflict, {"basis", "resource_version", "generation"}, path="conflict")
+            _enum(conflict["basis"], CONFLICT_BASES, "conflict.basis")
+            _string(conflict["resource_version"], "conflict.resource_version")
+            if len(conflict["resource_version"]) > 256:
+                raise ContractError("conflict.resource_version: at most 256 characters")
+            _integer(conflict["generation"], "conflict.generation", 1)
 
     elif kind == "outcome":
         _enum(message["status"], {"RECOVERED", "NOT_RECOVERED", "UNKNOWN"}, "status")

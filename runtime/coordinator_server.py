@@ -73,8 +73,9 @@ def main(argv=None):
     parser.add_argument("--max-clock-skew-seconds", type=float,
                         help="Refuse claims from a worker whose reported clock offset plus uncertainty exceeds this")
     parser.add_argument("--stale-replans", type=int, default=0,
-                        help="Re-plans per incident after a Guard refusal for a stale resource version only "
-                             f"(0 to {MAX_STALE_REPLANS}; default 0, the refusal is final)")
+                        help="Re-plans per incident, in all, after a Guard refusal for a stale resource version only "
+                             "or an Executor CONFLICT that provably wrote nothing "
+                             f"(0 to {MAX_STALE_REPLANS}; default 0, the refusal or CONFLICT is final)")
     args = parser.parse_args(argv)
     if (bool(args.cert) != bool(args.key) or not args.cert and not ipaddress.ip_address(args.bind).is_loopback):
         parser.error("Non-loopback serving requires --cert and --key")

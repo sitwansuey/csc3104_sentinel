@@ -10,7 +10,7 @@ from services.executor.core import execute, reconcile, seal, settle, unchanged_u
 from services.guard.common import json_sha256
 from services.guard.core import assert_decision_usable, evaluate_with_report
 from services.planner.core import mock_provider, retrieve_runbooks
-from services.planner.worker import ReplanProvider, planning_request, prepare
+from services.planner.worker import ReplanProvider, planning_request, prepare, replan_cause
 from services.verifier.core import reading_status
 from services.verifier.store import sampling_interval
 from runtime.worker_health import PreflightFailed
@@ -46,7 +46,7 @@ class PlannerAdapter:
         incident, key, attempt = planning_request(delivery["payload"])
         options = dict(self.options)
         if key is not None:
-            options.update(key=key, provider=ReplanProvider(options["provider"], attempt))
+            options.update(key=key, provider=ReplanProvider(options["provider"], attempt, replan_cause(delivery["payload"])))
         proposal = prepare(incident, journal=self.journal, **options)
         return (proposal, None) if proposal is not None else None
 
@@ -118,7 +118,7 @@ class AgentPlannerAdapter(PlannerAdapter):
         planner = self.last = self.planner(self.folder / ("incident-" + json_sha256(name)[:24]))
         options = planner.options()
         if key is not None:
-            options["provider"] = ReplanProvider(options["provider"], attempt)
+            options["provider"] = ReplanProvider(options["provider"], attempt, replan_cause(delivery["payload"]))
         proposal = prepare(incident, journal=self.journal, max_attempts=self.max_attempts,
                            retry_seconds=self.retry_seconds, key=key, **options)
         return (proposal, None) if proposal is not None else None

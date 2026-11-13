@@ -13,7 +13,7 @@
         {"at": "services/executor/kubernetes_adapter.py:248", "text": "Live write returned an error; reconcile its outcome"},
         {"at": "services/executor/reconciliation.py:233", "text": "Basis.UNCHANGED_IN_DOUBT, version, may_fence=True"},
         {"at": "services/executor/core.py:47", "text": "Live state does not confirm this attempt"},
-        {"at": "services/executor/core.py:276-277", "text": "adapters.ledger.record_fence(action_id, nonce, _now(adapters))"},
+        {"at": "services/executor/core.py:318-319", "text": "adapters.ledger.record_fence(action_id, nonce, _now(adapters))"},
         {"at": "services/executor/kubernetes_adapter.py:218", "text": "A fence may change metadata only"},
         {"at": "tests/test_executor_reconciliation_table.py:325", "text": "def test_external_version_bump_supersedes_and_releases_the_workload"},
         {"at": "tests/test_executor_reconciliation_table.py:357", "text": "def test_unchanged_version_stays_in_doubt_and_is_deduplicated"},
@@ -35,8 +35,8 @@
       "impact": "Fixed in code; live verification is left to P3.01 and P4.01. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host given a reconcile command with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it never starts that write. An execute command on a fresh host can still write, and the resourceVersion test in the patch lets at most one write for the action commit. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. The P3.01 multi-process harness runs two Executor processes with separate ledgers and locks on one host: in S1c a peer adopted a write committed by a crashed Executor and in S2 a stalled Executor adopted its peer's write, each with one template write. That is still one machine and a file-backed test cluster; no live run has used two Executors.",
       "workaround": "Run one Executor with one ledger directory, as every documented run does, until a multi-host run verifies this.",
       "cites": [
-        {"at": "services/executor/core.py:531", "text": "# Another host may already have committed this same action."},
-        {"at": "services/executor/core.py:364", "text": "# Journal the action as in doubt here, so this host can never start it."},
+        {"at": "services/executor/core.py:572", "text": "# Another host may already have committed this same action."},
+        {"at": "services/executor/core.py:405", "text": "# Journal the action as in doubt here, so this host can never start it."},
         {"at": "tests/test_executor_reconciliation_table.py:420", "text": "def test_peer_adoption_gives_applied_with_zero_writes_on_host_b"},
         {"at": "tests/test_executor_reconciliation_table.py:475", "text": "def test_reconcile_on_a_host_with_no_row_returns_a_result"},
         {"at": "services/executor/store.py:3", "text": "Every worker must use the same ledger and lock directory"},
@@ -56,7 +56,7 @@
       "cites": [
         {"at": "services/coordinator/core.py:161", "text": "_answers_current_request(message, store, answers)"},
         {"at": "services/coordinator/core.py:236", "text": "_issued_after(store, answers, \"guard_result\""},
-        {"at": "runtime/worker_transport.py:326", "text": "Result answers a superseded request"},
+        {"at": "runtime/worker_transport.py:327", "text": "Result answers a superseded request"},
         {"at": "runtime/remote_worker.py:174", "text": "lease_duration(delivery, clock) / 3"},
         {"at": "services/guard/core.py:159", "text": "if approved_at > checked_at + skew:"},
         {"at": "runtime/worker_http.py:322", "text": "self.samples.clear()"},
@@ -78,8 +78,8 @@
       "workaround": "For runs recorded before this change, read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.",
       "cites": [
         {"at": "experiments/boutique/harness/agent_live.py:258", "text": "state = run_durable_case(self, incident"},
-        {"at": "services/planner/worker.py:235", "text": "raise PlanningError(\"ABSTAINED\", terminal=True)"},
-        {"at": "services/planner/worker.py:249", "text": "proposal = _rebound(proposal, finalize)"},
+        {"at": "services/planner/worker.py:249", "text": "raise PlanningError(\"ABSTAINED\", terminal=True)"},
+        {"at": "services/planner/worker.py:263", "text": "proposal = _rebound(proposal, finalize)"},
         {"at": "tests/test_agent_journal.py:202", "text": "def test_unavailable_model_retries_with_backoff_across_restart_then_escalates"},
         {"at": "tests/test_agent_journal.py:279", "text": "def test_lost_delivery_replays_the_same_action_without_a_model_call"},
         {"at": "docs/planner.md", "text": "Agent mode through the journal"},
@@ -199,7 +199,7 @@
         {"at": "shared/log.py:237", "text": "def entrypoint(component: str)"},
         {"at": "runtime/worker_http.py:529", "text": "@log.entrypoint(\"worker_http\")"},
         {"at": "shared/tracing.py:123", "text": "def start_span("},
-        {"at": "services/executor/core.py:240-241", "text": "any read failure leaves the outcome unknown"},
+        {"at": "services/executor/core.py:281-282", "text": "any read failure leaves the outcome unknown"},
         {"at": "docs/observability.md", "text": "only when their entrypoint configures logging"},
         {"at": "tests/test_except_audit.py:39", "text": "def test_repository_has_no_unjustified_broad_handler"},
         {"claim": "C-CONNECTED-HARNESS-AUTOLAB"},
@@ -360,8 +360,8 @@
       "kind": "defect",
       "status": "mitigated",
       "since": "2026-11-13",
-      "impact": "The Planner binds a proposal to the incident's observed_resource_version. The agent Planner rebinds it to its own live read before saving it, but the provider-mode Planner, the deterministic lab planner included, has no Kubernetes token, so it cannot. On sentinel-dist (P4.01) the target rolls out with Recreate, the Observer opened each incident while no Pod existed, and the Deployment controller's later status write (scaling up the new ReplicaSet, about 30 s after the fault) moved the resourceVersion after the incident: the Guard refused one proposal as STALE_RESOURCE_VERSION on its first pass and another on its re-check after the operator's approval, so the first live S0 runs on 13 Nov 2026 repaired nothing (docs/distributed-acceptance.md, First live attempts). Fixed in code, not yet verified live: with --stale-replans N the Coordinator reopens the incident after a Guard REJECT whose only reason is STALE_RESOURCE_VERSION, for its active ROLLBACK, and sends the version the Guard read back to the Planner, at most N times per incident. Each re-plan is a new proposal with a new action ID that the Guard checks against live state again and the operator approves again; the refused action keeps its decision, and the Planner still has no token. A re-plan happens only when the Guard's report shows the live metadata.generation it read still equal to the incident's observed_generation (a status write moved the version, not a change to the spec: the first proposal's version binding guaranteed the spec was the evidence's, and this keeps that guarantee, so a ROLLBACK is never rebound over an operator's fix or a new deploy), and only before any ALLOW, revoked approval or seal of the refused action (so S8's revocation stays final). It stays mitigated: the default is 0 (only the sentinel-dist Coordinator sets 3), a target whose version keeps moving still ends REJECTED after the last re-plan, a spec change or a stale refusal after an ALLOW or a revocation ends REJECTED with no re-plan, a RESTART is never re-planned (the per-incident restart budget), and a status write between a re-plan's ALLOW and the Executor's patch still ends the action FAILED, which is not re-planned.",
-      "workaround": "Set --stale-replans on the Coordinator of a deployment whose Planner has no Kubernetes read, or use the agent Planner, which rebinds to its own live read.",
+      "impact": "The Planner binds a proposal to the incident's observed_resource_version. The agent Planner rebinds it to its own live read before saving it, but the provider-mode Planner, the deterministic lab planner included, has no Kubernetes token, so it cannot. On sentinel-dist (P4.01) the target rolls out with Recreate, the Observer opened each incident while no Pod existed, and the Deployment controller's later status write (scaling up the new ReplicaSet, about 30 s after the fault) moved the resourceVersion after the incident: the Guard refused one proposal as STALE_RESOURCE_VERSION on its first pass and another on its re-check after the operator's approval, so the first live S0 runs on 13 Nov 2026 repaired nothing (docs/distributed-acceptance.md, First live attempts). Fixed in code, not yet verified live: with --stale-replans N the Coordinator reopens the incident after a Guard REJECT whose only reason is STALE_RESOURCE_VERSION, for its active ROLLBACK, and sends the version the Guard read back to the Planner, at most N times per incident. Each re-plan is a new proposal with a new action ID that the Guard checks against live state again and the operator approves again; the refused action keeps its decision, and the Planner still has no token. A re-plan happens only when the Guard's report shows the live metadata.generation it read still equal to the incident's observed_generation (a status write moved the version, not a change to the spec: the first proposal's version binding guaranteed the spec was the evidence's, and this keeps that guarantee, so a ROLLBACK is never rebound over an operator's fix or a new deploy), and only before any ALLOW, revoked approval or seal of the refused action (so S8's revocation stays final). It stays mitigated: the default is 0 (only the sentinel-dist Coordinator sets 3), a target whose version keeps moving still ends REJECTED after the last re-plan, a spec change or a stale refusal after an ALLOW or a revocation ends REJECTED with no re-plan, a RESTART is never re-planned (the per-incident restart budget), and a target whose version keeps moving can still end FAILED after the last re-plan. A status write between the Guard's ALLOW and the Executor's patch made the Executor refuse with CONFLICT, correctly and with nothing written, in two of three S0 runs of the third deployment (13 Nov 2026, 16:42 and 16:44 UTC), and CONFLICT ended both incidents FAILED (docs/distributed-acceptance.md, Third deployment). Fixed in code, not yet verified live: the Executor's CONFLICT result now carries a conflict record (basis NOT_SENT or REFUSED, the resourceVersion and metadata.generation it read) when a read after refusing shows the same UID at another version with no evidence or fence of the action, so no write of it committed or can; with --stale-replans the Coordinator then re-plans like a stale refusal (replan_after_conflict: new proposal on the version read, new Guard check, new approval), from the same budget shared over both causes, only for the active ROLLBACK, only when that generation is the incident's, only when the Executor reported nothing earlier on the action, only in its first approval cycle and never after a revocation or a seal. A CONFLICT without the record, or with the default 0, stays final. The Executor itself never retries at a newer version under the same action ID, because reconciliation, the fence and the seal rest on every write of an action testing one version.",
+      "workaround": "Set --stale-replans on the Coordinator of a deployment whose Planner has no Kubernetes read, or use the agent Planner, which rebinds to its own live read. A CONFLICT that is not re-planned needs a new incident or an operator's repair.",
       "cites": [
         {"at": "services/planner/core.py:186", "text": "\"based_on_resource_version\": incident[\"observed_resource_version\"]"},
         {"at": "services/guard/core.py:182", "text": "if proposal[\"based_on_resource_version\"] != resource_version:"},
@@ -372,7 +372,12 @@
         {"at": "tests/test_stale_replan.py", "text": "def test_s8_a_revoked_approval_then_a_moved_version_is_final"},
         {"at": "deploy/sentinel/sentinel-dist/coordinator.yaml", "text": "--stale-replans=3"},
         {"at": "tests/test_stale_replan.py", "text": "def test_a_version_moved_between_approval_and_the_recheck_needs_a_new_proposal_and_a_new_approval"},
-        {"at": "docs/distributed-acceptance.md", "text": "## First live attempts"}
+        {"at": "docs/distributed-acceptance.md", "text": "## First live attempts"},
+        {"at": "services/coordinator/core.py", "text": "def replan_after_conflict(message, store, *, limit):"},
+        {"at": "services/executor/core.py", "text": "def _conflict(basis, proposal, adapters, snapshot):"},
+        {"at": "tests/test_conflict_replan.py", "text": "def test_r3_a_status_write_after_the_allow_is_replanned_and_repaired_with_one_write"},
+        {"at": "tests/test_conflict_replan.py", "text": "def test_a_spec_change_after_the_allow_is_final"},
+        {"at": "docs/distributed-acceptance.md", "text": "### Third deployment: Recreate and conflicts"}
       ],
       "planned": ["P4.01"],
       "issues": []
@@ -410,7 +415,7 @@
         {"at": "runtime/remote_adapters.py:286", "text": "def _sample(self, execution, job, lease):"},
         {"at": "runtime/remote_adapters.py:293", "text": "lease.ensure_current()  # A lost lease stops sampling before the next reading."},
         {"at": "services/verifier/store.py:40", "text": "def sampling_interval(health):"},
-        {"at": "runtime/worker_transport.py:287", "text": "delay = min(60, 2 ** min(row[\"attempts\"] - 1, 6))"},
+        {"at": "runtime/worker_transport.py:288", "text": "delay = min(60, 2 ** min(row[\"attempts\"] - 1, 6))"},
         {"at": "experiments/distributed/kind_bundle.py:110", "text": "\"max_sample_gap_seconds\": 20"},
         {"at": "experiments/distributed/invariants.py:44", "text": "MAX_ATTEMPTS = 6"},
         {"at": "experiments/distributed/scenarios.py:301", "text": "max_verifier_attempts=2"},
@@ -435,7 +440,7 @@
       "cites": [
         {"at": "runtime/remote_adapters.py:208", "text": "VERIFIER_MAX_PASS_SECONDS = 600"},
         {"at": "runtime/worker_transport.py:20", "text": "\"verifier\": {\"verifier.request\": \"outcome\", \"dependency.request\": \"dependency_result\"}"},
-        {"at": "runtime/worker_transport.py:202", "text": "SELECT 1 FROM outbox dep WHERE dep.topic='dependency.request'"},
+        {"at": "runtime/worker_transport.py:203", "text": "SELECT 1 FROM outbox dep WHERE dep.topic='dependency.request'"},
         {"at": "experiments/distributed/topology.py:63", "text": "(\"verifier-1\", \"verifier\")"},
         {"at": "deploy/sentinel/sentinel-dist/verifier.yaml:43", "text": "replicas: 1"},
         {"at": "tests/test_verifier_sampling.py:320", "text": "def test_a_dependency_check_queued_during_a_pass_is_claimed_only_after_the_pass_ends"},
@@ -472,7 +477,7 @@
       "workaround": "Quote live recovery results for the PORT fault and ROLLBACK on shippingservice, and for cartservice C1 only with harness-authored proposals (C-CART-TARGET-LIVE), until scored R2 and N1 trials and an agent-mode cartservice run are committed. Run them with the commands in docs/testing.md, after the labels are signed off. Describe a RESTART recovery as run live for one fault (N2 on shippingservice), unscored, with code rule planning only; the agent-mode Recovery Planner cannot choose it yet.",
       "cites": [
         {"at": "services/guard/core.py:176-177", "text": "ACTION_NOT_IMPLEMENTED"},
-        {"at": "services/executor/core.py:524", "text": "Only explicit baseline ROLLBACK and RESTART are implemented."},
+        {"at": "services/executor/core.py:565", "text": "Only explicit baseline ROLLBACK and RESTART are implemented."},
         {"at": "tests/test_restart_action.py", "text": "FakeDeploymentAPI"},
         {"claim": "C-CONNECTED-HARNESS"},
         {"at": "experiments/boutique/catalog.json", "text": "\"name\": \"node-image-evicted\""},
@@ -776,6 +781,24 @@
       ],
       "planned": [],
       "issues": [56, 87]
+    },
+    {
+      "id": "L-VERIFIER-ROLLOUT-READING",
+      "title": "A reading with no Pod during a Recreate rollout kept a repaired target UNKNOWN",
+      "kind": "defect",
+      "status": "mitigated",
+      "since": "2026-11-13",
+      "impact": "On sentinel-dist (P4.01) demo-api rolls out with Recreate, so for some seconds after the Executor's write no Pod exists. In S0 r1 of the third deployment (13 Nov 2026) verifier-1's first reading, 6 s after the rollback, got no HTTP response with 0 ready and 0 available replicas; every later reading, +13 s to +84 s, was healthy with the approved template, yet the outcome was UNKNOWN (service_health) and the incident went to NEEDS_REVIEW. The convergence grace set aside only complete, unhealthy leading readings, and a reading with no response is incomplete, so it kept the whole window UNKNOWN. Fixed in code, not yet verified live: the live collector records each reading's generation, observed_generation, updated_replicas and total_replicas from the same consistent Deployment read, and inside the grace a reading with no response, no ready or available replica and those counts is judged unhealthy rather than missing (_awaiting_rollout), so it can be set aside like any leading unhealthy reading. Everything else about it must still be complete; relapse and readings after the grace still count; a target that never answers, or answers unhealthy, still ends UNKNOWN. It stays mitigated until a live S0 shows it: readings from collectors that do not record the counts (the Boutique harness, file mode) are judged as before, and a policy without convergence_grace_seconds stays strict.",
+      "workaround": "An operator reviews the NEEDS_REVIEW incident: the outcome lists every reading's status, and the readings after the Pod-less one show sustained health.",
+      "cites": [
+        {"at": "services/verifier/core.py:351", "text": "def _awaiting_rollout(sample, rules, limit):"},
+        {"at": "services/verifier/live.py", "text": "\"observed_generation\": observed, \"updated_replicas\": updated, \"total_replicas\": total,"},
+        {"at": "tests/test_verifier_rollout.py", "text": "def test_the_r1_window_recovers_once_the_pod_less_first_reading_carries_its_rollout_counts"},
+        {"at": "tests/test_verifier_rollout.py", "text": "def test_any_other_gap_in_the_silent_reading_still_counts"},
+        {"at": "docs/distributed-acceptance.md", "text": "### Third deployment: Recreate and conflicts"}
+      ],
+      "planned": ["P4.01"],
+      "issues": []
     },
     {
       "id": "L-RECONCILE-AS-EXECUTE",
