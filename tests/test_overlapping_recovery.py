@@ -224,6 +224,55 @@ class TwoTargetRecoveryTests(unittest.TestCase):
         runner = bounded(replan=Mock())
         self.assertEqual(runner.run()["stops"], {"a": "REJECTED"})
 
+    def test_write_counts_other_than_one_per_target_are_never_recovered(self):
+        from experiments.boutique.harness import scenarios
+        from experiments.boutique.harness.multi_fault import pair_result, shop_outcome
+        pair = scenarios.pair("shipping-config+cart-pod")
+        both = {"shippingservice": "RECOVERED", "cartservice": "RECOVERED"}
+        shop = shop_outcome(both, [{"passed": True}] * 3)
+        for writes in ({"shippingservice": 2, "cartservice": 1}, {"shippingservice": 0, "cartservice": 1},
+                       {"cartservice": 1}, {"shippingservice": 1, "cartservice": 3}):
+            with self.subTest(writes=writes):
+                graded = pair_result(pair, shop=shop, stops={}, writes=writes)
+                self.assertEqual(graded["result"], "UNEXPECTED_WRITES")
+                self.assertFalse(graded["matched_expected"] or graded["acceptable"])
+        partial = shop_outcome({"shippingservice": "RECOVERED", "cartservice": "FAILED"}, [{"passed": True}] * 3)
+        self.assertEqual(pair_result(pair, shop=partial, stops={}, writes={"shippingservice": 1, "cartservice": 1})
+                         ["result"], "PARTIAL")
+
+    def test_a_deadlock_needs_a_dependency_pair_both_stopped_and_no_write(self):
+        from experiments.boutique.harness import scenarios
+        from experiments.boutique.harness.multi_fault import pair_result, shop_outcome
+        dependent, independent = scenarios.pair("redis-pod+cart-config"), scenarios.pair("shipping-config+cart-pod")
+        rejected = {"redis-cart": "REJECTED", "cartservice": "REJECTED"}
+        both = {"redis-cart": "DEPENDENCY_DEADLOCK", "cartservice": "DEPENDENCY_DEADLOCK"}
+        shop = shop_outcome(rejected, [], stopped=both)
+        self.assertEqual(pair_result(dependent, shop=shop, stops=both, writes={})["result"], "DEPENDENCY_DEADLOCK")
+        for stops, writes in ((both, {"redis-cart": 1}), ({"cartservice": "DEPENDENCY_DEADLOCK"}, {}),
+                              ({"redis-cart": "DEPENDENCY_DEADLOCK", "cartservice": "REJECTED"}, {})):
+            with self.subTest(stops=stops, writes=writes):
+                self.assertEqual(pair_result(dependent, shop=shop, stops=stops, writes=writes)["result"], "FAILED")
+        renamed = {"shippingservice": "DEPENDENCY_DEADLOCK", "cartservice": "DEPENDENCY_DEADLOCK"}
+        self.assertEqual(pair_result(independent, shop=shop, stops=renamed, writes={})["result"], "FAILED")
+
+    def test_only_a_recovered_result_with_a_passing_proof_shows_an_ordered_recovery(self):
+        from experiments.boutique.harness import scenarios
+        from experiments.boutique.harness.multi_fault import pair_result, shop_outcome
+        dependent, independent = scenarios.pair("redis-pod+cart-config"), scenarios.pair("shipping-config+cart-pod")
+        recovered = shop_outcome({"redis-cart": "RECOVERED", "cartservice": "RECOVERED"}, [{"passed": True}] * 3)
+        writes = {"redis-cart": 1, "cartservice": 1}
+        for ordering, shown in (({"passed": True}, True), ({"passed": False}, False), (None, False),
+                                ({"passed": "yes"}, False)):
+            with self.subTest(ordering=ordering):
+                graded = pair_result(dependent, shop=recovered, stops={}, writes=writes, ordering=ordering)
+                self.assertIs(graded["ordered_recovery_shown"], shown)
+        both = {"redis-cart": "DEPENDENCY_DEADLOCK", "cartservice": "DEPENDENCY_DEADLOCK"}
+        deadlock = pair_result(dependent, shop=shop_outcome({"redis-cart": "REJECTED", "cartservice": "REJECTED"}, []),
+                               stops=both, writes={}, ordering={"passed": True})
+        self.assertEqual((deadlock["result"], deadlock["acceptable"], deadlock["ordered_recovery_shown"]),
+                         ("DEPENDENCY_DEADLOCK", True, False))
+        self.assertIsNone(pair_result(independent, shop=recovered, stops={}, writes={})["ordered_recovery_shown"])
+
     def test_the_budget_bounds_a_pair_that_never_settles(self):
         from experiments.boutique.harness.multi_fault import PairRunner, shop_outcome
         lab = self.lab()

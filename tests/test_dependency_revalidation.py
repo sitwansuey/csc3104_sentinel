@@ -304,11 +304,15 @@ class DependencyRevalidationTests(unittest.TestCase):
         self.assertEqual(flow.store.action(flow.aid)["state"], "VERIFYING")
 
 
-def cart_redis_lab(test, *, cart_ready=True):
+def cart_redis_lab(test, *, cart_ready=False):
     """redis-cart pod failure and a cart bad rollout (P4.05); cart calls redis-cart.
 
-    cart_ready is whether cartservice stays Ready while Redis is down, which
-    the live spike decides; it matters only to the check of the Redis repair.
+    cart_ready=False, the default, is what the live C1 runs show: the cart Pod
+    with the bad REDIS_ADDR is NotReady. The Guard's dependency check counts
+    callers, so it then also blocks the Redis repair. cart_ready=True is a
+    hypothetical cart fault that leaves the cart Ready: only then is the Redis
+    repair allowed, so the tests that use it check the re-plan mechanics, not
+    a prediction of the live run.
     """
     from tests.support.pair_lab import PairLab
     directory = test.enterContext(tempfile.TemporaryDirectory())
@@ -343,7 +347,7 @@ class PairDependencyRevalidationTests(unittest.TestCase):
 
     def test_blocked_redis_rejects_the_cart_repair_then_clear_allows_exactly_one_write(self):
         from experiments.boutique.harness.multi_fault import cross_incident_transitions, ordering_proof
-        lab = cart_redis_lab(self)
+        lab = cart_redis_lab(self, cart_ready=True)
         ids = lab.open()
         proposals = {proposal["target"]["name"]: proposal for proposal in lab.plan()}
         self.assertEqual({name: proposal["action"] for name, proposal in proposals.items()},
@@ -403,7 +407,7 @@ class PairDependencyRevalidationTests(unittest.TestCase):
         return ids, runner.run()
 
     def test_the_runner_waits_for_redis_then_replans_the_cart_once(self):
-        lab = cart_redis_lab(self)
+        lab = cart_redis_lab(self, cart_ready=True)
         ids, run = self.run_pair(lab)
         self.assertEqual(run["states"], {"redis-cart": "RECOVERED", "cartservice": "RECOVERED"})
         self.assertEqual(run["stops"], {})
@@ -415,7 +419,7 @@ class PairDependencyRevalidationTests(unittest.TestCase):
     def test_refusals_that_name_each_other_stop_both_without_a_write(self):
         from experiments.boutique.harness import scenarios
         from experiments.boutique.harness.multi_fault import pair_result, shop_outcome
-        lab = cart_redis_lab(self, cart_ready=False)
+        lab = cart_redis_lab(self)
         ids, run = self.run_pair(lab)
         self.assertEqual(run["stops"], {"redis-cart": "DEPENDENCY_DEADLOCK", "cartservice": "DEPENDENCY_DEADLOCK"})
         self.assertEqual(run["states"], {"redis-cart": "REJECTED", "cartservice": "REJECTED"})
@@ -427,8 +431,46 @@ class PairDependencyRevalidationTests(unittest.TestCase):
         self.assertTrue(graded["acceptable"])
         self.assertFalse(graded["matched_expected"])
 
-    def test_a_dependency_that_fails_again_ends_after_one_replan(self):
+    def test_a_not_ready_cart_blocks_the_redis_repair_under_the_current_rule(self):
+        # The Guard counts callers as well as callees (inspect_dependencies), so the C1 cart, NotReady as in
+        # the live runs, refuses the Redis RESTART. Changing that rule is an owner decision
+        # (L-CALLER-BLOCKS-CALLEE-REPAIR); this test changes with it, on purpose.
         lab = cart_redis_lab(self)
+        lab.open()
+        redis = next(proposal for proposal in lab.plan() if proposal["target"]["name"] == "redis-cart")
+        self.assertEqual(redis["action"], "RESTART")
+        lab.assess(redis)
+        finding = lab.store.dependency_result(redis["action_id"])
+        self.assertEqual((finding["status"], finding["blockers"]), ("BLOCKED", ["cartservice"]))
+        decision = next(item for item in lab.guard() if item["action_id"] == redis["action_id"])
+        self.assertEqual((decision["verdict"], decision["reason_codes"]), ("REJECT", ["DEPENDENCY_BLOCKED"]))
+        self.assertEqual((lab.writes("redis-cart"), lab.writes("cartservice")), (0, 0))
+
+    def test_a_partner_blocked_by_a_third_service_is_not_a_deadlock(self):
+        from unittest.mock import Mock
+        from experiments.boutique.harness.multi_fault import PairRunner
+        store = Mock()
+        incidents = {"redis-cart": {"state": "REJECTED", "active_action_id": "ACT-REDIS"},
+                     "cartservice": {"state": "REJECTED", "active_action_id": "ACT-CART"}}
+        blockers = {"ACT-REDIS": ["cartservice"], "ACT-CART": ["frontend"]}
+        store.incident.side_effect = lambda incident_id: incidents[incident_id]
+        store.action.side_effect = lambda action_id: {"guard_result": {"reason_codes": ["DEPENDENCY_BLOCKED"]}}
+        store.dependency_result.side_effect = lambda action_id: {"blockers": blockers[action_id]}
+        ticks = iter(range(1000))
+        runner = PairRunner(store, {"redis-cart": "redis-cart", "cartservice": "cartservice"}, advance=Mock(),
+                            replan=Mock(), clock=lambda: next(ticks), sleep=Mock(), budget_seconds=5)
+        runner.after_rejection("redis-cart")
+        self.assertEqual(runner.stops, {})  # The cart refusal does not name Redis: no mutual block.
+        run = runner.run()
+        self.assertEqual(run["stops"], {"cartservice": "REJECTED", "redis-cart": "BLOCKER_NOT_RECOVERED"})
+        blockers["ACT-CART"] = ["redis-cart"]
+        runner = PairRunner(store, {"redis-cart": "redis-cart", "cartservice": "cartservice"}, advance=Mock(),
+                            replan=Mock(), clock=lambda: next(ticks), sleep=Mock(), budget_seconds=5)
+        self.assertEqual(runner.run()["stops"], {"redis-cart": "DEPENDENCY_DEADLOCK",
+                                                 "cartservice": "DEPENDENCY_DEADLOCK"})
+
+    def test_a_dependency_that_fails_again_ends_after_one_replan(self):
+        lab = cart_redis_lab(self, cart_ready=True)
 
         def advance(name, incident_id):
             state = lab.advance(name, incident_id)

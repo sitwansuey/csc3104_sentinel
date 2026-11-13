@@ -273,8 +273,12 @@ class ConnectedBoutiqueExperiment(BoutiqueExperiment):
         target = next(item for item in deployments if item["metadata"]["name"] == self.name)
         state = {"cluster_id": self.cluster_id, "captured_at": utc(), "deployment": target,
                  "known_health": readiness(deployments, self.name)}
-        save(self.directory / "dependency-readiness.json", state)
+        save(self.readiness_path(), state)
         return inspect_dependencies(proposal, self.graph, state, now=now())
+
+    def readiness_path(self):
+        """Where the last dependency-readiness read is kept; one file for a single-target run."""
+        return self.directory / "dependency-readiness.json"
 
     def application_inventory(self):
         # Called by the dashboard thread: no Coordinator connection or mutation.

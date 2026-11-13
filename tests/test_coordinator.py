@@ -320,7 +320,6 @@ class CoordinatorTests(unittest.TestCase):
             self.assertCountEqual(results, ["accepted", "rejected"])
 
 
-
 def other_target(message):
     """The same lifecycle message for a second incident on another target (cartservice)."""
     text = json.dumps(message)

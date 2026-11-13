@@ -7,7 +7,11 @@ on two different targets that are injected together:
   target calls the other, so each incident is planned, checked, repaired and
   verified on its own; and
 - a dependency-ordered pair (redis-pod+cart-config: D1 and C1), where cart
-  calls redis-cart, so the cart repair must wait for Redis.
+  calls redis-cart, so the cart repair must wait for Redis. The Guard's
+  dependency check counts callers as well as callees, and C1 leaves the cart
+  NotReady, so with the rule as it stands the Redis repair is also refused
+  and the expected live result is DEPENDENCY_DEADLOCK, a safe stop that shows
+  no ordering (docs/dual-fault.md, L-CALLER-BLOCKS-CALLEE-REPAIR).
 
 Each target is verified by its own probe and its own callees only
 (connected.verification_dependencies, the "target" verification scope). The
@@ -103,12 +107,15 @@ def pair_order(pair):
 
 # The separate shop aggregate (pure).
 
-def shop_outcome(states, journeys, *, required_passes=SHOP_PASSES):
+def shop_outcome(states, journeys, *, stopped=(), required_passes=SHOP_PASSES):
     """The whole-storefront result after both incidents settled; separate from every incident outcome.
 
     states maps each pair target to its Coordinator incident state (None when
     no incident was recorded). journeys are storefront journeys collected
     after both settled, oldest first, each with "passed" True, False or None.
+    stopped names the targets PairRunner stopped (an escalation, a refused
+    approval, a deadlock): the runner never acts on them again, so they count
+    as settled and not recovered, whatever state the Coordinator still shows.
 
     UNKNOWN when an incident has not settled. Then PARTIAL when some but not
     all incidents are RECOVERED, and FAILED when none is: the storefront
@@ -129,7 +136,8 @@ def shop_outcome(states, journeys, *, required_passes=SHOP_PASSES):
     storefront = {"journeys": len(passed), "passed": sum(value is True for value in passed),
                   "required_passes": required_passes, "complete": complete,
                   "sustained": complete and all(tail)}
-    unsettled = sorted(name for name, state in states.items() if state not in SETTLED | {"REJECTED"})
+    unsettled = sorted(name for name, state in states.items()
+                       if state not in SETTLED | {"REJECTED"} and name not in stopped)
     if unsettled:
         status, reason = "UNKNOWN", "incident not settled: " + ", ".join(unsettled)
     elif others:
@@ -213,13 +221,18 @@ def incident_timings(transitions, incidents):
     return result
 
 
-def pair_result(pair, *, shop, stops, writes):
+def pair_result(pair, *, shop, stops, writes, ordering=None):
     """The pair's scored result against its pre-registered expectation.
 
     RECOVERED needs a RECOVERED shop and exactly the expected writes on each
     target; DEPENDENCY_DEADLOCK needs both incidents stopped in a mutual block
     with no write at all; a RECOVERED shop with other write counts is
     UNEXPECTED_WRITES; anything else is the shop's own status.
+
+    For a dependency-ordered pair, ordered_recovery_shown is True only for a
+    RECOVERED result whose ordering proof (ordering_proof) passed. An
+    acceptable DEPENDENCY_DEADLOCK is a safe stop, never ordering evidence, so
+    it is False then. It is None for an independent pair.
     """
     expected = pair["expected"]
     names = [item["target"] for item in pair["items"]]
@@ -234,10 +247,12 @@ def pair_result(pair, *, shop, stops, writes):
     else:
         result = shop["status"]
     labels = pair.get("labels") or {}
+    shown = (None if pair["kind"] != "dependency_ordered" else
+             result == "RECOVERED" and isinstance(ordering, dict) and ordering.get("passed") is True)
     return {"pair": pair["id"], "kind": pair["kind"], "result": result, "expected": deepcopy(expected),
             "matched_expected": result == expected["result"], "acceptable": result in expected["acceptable"],
             "writes": counts, "stops": dict(stops), "labels": labels.get("status"),
-            "labels_pending": labels.get("status") != "signed"}
+            "labels_pending": labels.get("status") != "signed", "ordered_recovery_shown": shown}
 
 
 def replan(incident, *, baselines, retriever, provider, live_template, resource_version, attempt):
@@ -384,7 +399,7 @@ class PairRunner:
                 "budget_exhausted": exhausted, "events": deepcopy(self.events)}
 
 
-# The live harness. Never run: see docs/dual-fault.md and L-DUAL-FAULT-NOT-RUN.
+# The live harness. Never run: see docs/dual-fault.md and L-OVERLAPPING-FAULTS.
 
 class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
     """Two catalog faults on the connected lab at once, each repaired and verified on its own.
@@ -448,6 +463,10 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
 
     def policy_path(self, name):
         return self.directory / "policies" / (name + ".json")
+
+    def readiness_path(self):
+        """One dependency-readiness file per target, so the other target's read never overwrites it."""
+        return self.directory / ("dependency-readiness-" + self.name + ".json")
 
     def executor_names(self):
         """Every target enabled in the connected scope plus both pair targets (redis-cart only in its pair)."""
@@ -569,8 +588,10 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
                 self.phase("fault_injected", name)
         stamps = sorted(datetime.fromisoformat(value.replace("Z", "+00:00")) for value in applied.values())
         spread = round((stamps[-1] - stamps[0]).total_seconds(), 1)
-        self.summary["pair_injection"] = {"applied_at": applied, "spread_seconds": spread,
-                                          "limit_seconds": INJECTION_SPREAD_SECONDS}
+        self.summary["pair_injection"] = {
+            "applied_at": applied, "spread_seconds": spread, "limit_seconds": INJECTION_SPREAD_SECONDS,
+            # Approximate: neither stamp is when the fault took effect in the cluster.
+            "basis": "configuration fault: after kubectl returned; chaos fault: just before the create call"}
         require(spread <= INJECTION_SPREAD_SECONDS,
                 f"The two faults were applied {spread} s apart; the pair needs them within {INJECTION_SPREAD_SECONDS} s")
         self.check("both faults applied together", spread_seconds=spread)
@@ -832,19 +853,22 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
         """Score the pair, save its evidence, and fail unless it ended in an expected or acceptable result."""
         ids = {name: incidents[name]["incident_id"] for name in self.order}
         journeys = [] if run["budget_exhausted"] else self.shop_journeys()
-        shop = shop_outcome(run["states"], journeys)
+        shop = shop_outcome(run["states"], journeys, stopped=run["stops"])
         with SQLiteExecutionLedger(self.directory / "executor.sqlite") as ledger:
             writes = writes_by_target(ledger.db)
         transitions = self.store.transitions()
-        graded = pair_result(self.pair, shop=shop, stops=run["stops"], writes=writes)
+        ordering = None
+        if self.pair["kind"] == "dependency_ordered":
+            first, then = self.order
+            ordering = ordering_proof(transitions, first_incident=ids[first], then_incident=ids[then])
+        graded = pair_result(self.pair, shop=shop, stops=run["stops"], writes=writes, ordering=ordering)
         evidence = {"incidents": ids, "run": run, "shop": shop, "result": graded,
                     "cross_incident_transitions": cross_incident_transitions(self.store),
                     "timings": incident_timings(transitions, ids), "scenario_scores": self.scores(ids),
                     "changed_payload_refused": {name: self.lanes[name].get("changed_payload_refused", False)
                                                 for name in self.order}}
-        if self.pair["kind"] == "dependency_ordered":
-            first, then = self.order
-            evidence["ordering"] = ordering_proof(transitions, first_incident=ids[first], then_incident=ids[then])
+        if ordering is not None:
+            evidence["ordering"] = ordering
         save(self.directory / "pair-result.json", evidence)
         self.summary["pair_result"] = {key: evidence[key] for key in ("shop", "result", "timings")}
         self.summary["pair_result"]["ordering"] = evidence.get("ordering")
@@ -940,4 +964,7 @@ def run_pair(args, directory, *, tools):
           f"labels {result['labels']}", flush=True)
     if result["labels_pending"]:
         print("WARNING: the pair labels are not signed off; do not report this trial as scored", flush=True)
+    if result["ordered_recovery_shown"] is False:
+        print(f"NOTE: {result['result']} is not an ordered recovery; this run is not evidence that the second "
+              "repair was allowed only after the first RECOVERED", flush=True)
     return 0
