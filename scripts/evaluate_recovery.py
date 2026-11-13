@@ -6,7 +6,7 @@
     python scripts/evaluate_recovery.py golden
     # Model policies on the local Ollama model (hours; resumable):
     python scripts/evaluate_recovery.py run --policy P2 P3 P4 --seeds 42 43 44 --model qwen3:14b \
-        --num-ctx 16384 --out <new folder>
+        --model-digest <full sha256 of the model> --num-ctx 16384 --out <new folder>
     python scripts/evaluate_recovery.py run ... --out <same folder> --resume
     # Recompute results.json and table.md from saved rows:
     python scripts/evaluate_recovery.py report --out <folder>
@@ -50,22 +50,30 @@ def ollama_factory(config, *, progress=None, deadline=None):
     return Ollama(config, progress=progress, deadline=deadline)
 
 
+def pinned_digest(text):
+    """A --model-digest value as 64 lower-case hex characters; a model run must pin its model."""
+    if not text:
+        raise SystemExit("Model policies need --model-digest, the full SHA-256 of the pinned model "
+                         "(64 hexadecimal characters, as in the run guide)")
+    digest = text.removeprefix("sha256:").lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise SystemExit("--model-digest must be the full SHA-256: 64 hexadecimal characters")
+    return digest
+
+
 def check_digest(reported, expected):
-    """The reported model digest, if it matches the pinned one (a 12 to 64 hex character prefix)."""
+    """The reported model digest, if it is the pinned one."""
+    expected = pinned_digest(expected)
     if not reported or reported == "unavailable":
         raise SystemExit("Ollama did not report a model digest; a run must name its model digest")
-    reported = reported.removeprefix("sha256:")
-    if expected is not None:
-        expected = expected.removeprefix("sha256:").lower()
-        if not re.fullmatch(r"[0-9a-f]{12,64}", expected):
-            raise SystemExit("--model-digest must be 12 to 64 hexadecimal characters")
-        if not reported.startswith(expected):
-            raise SystemExit(f"The local model digest {reported[:12]} is not the pinned {expected[:12]}; "
-                             "pull the pinned model or pin the new digest in a new run folder")
+    reported = reported.removeprefix("sha256:").lower()
+    if reported != expected:
+        raise SystemExit(f"The local model digest {reported[:12]} is not the pinned {expected[:12]}; "
+                         "pull the pinned model or pin the new digest in a new run folder")
     return "sha256:" + reported
 
 
-def model_digest(config, expected=None):
+def model_digest(config, expected):
     """The digest of the configured model, read from the local Ollama server and checked against the pin."""
     from agent.llm import Ollama
     client = Ollama(config)
@@ -84,8 +92,8 @@ def main(argv=None):
     run.add_argument("--diagnosis", choices=replay.DIAGNOSES, default="live",
                      help="P3/P4: run the RCA agent (live) or use each captured case's recorded diagnosis")
     run.add_argument("--model", default="qwen3:14b", help="Ollama model tag for P2-P4")
-    run.add_argument("--model-digest", help="pinned model digest (at least 12 hex characters); the run "
-                     "refuses a local model with another digest")
+    run.add_argument("--model-digest", help="pinned model digest (the full SHA-256, 64 hex characters); "
+                     "required for P2-P4, and the run refuses a local model with another digest")
     run.add_argument("--num-ctx", type=int, default=16384, help="context window for P2-P4 (#86 ablation)")
     run.add_argument("--planning-budget", type=float, help="planning_budget_seconds per unit (default 600)")
     run.add_argument("--runbooks", choices=("all", "none"), default="all",
@@ -105,7 +113,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     if args.command == "report":
-        replay.report(args.corpus, args.out)
+        try:
+            replay.report(args.corpus, args.out)
+        except replay.ReplayError as error:
+            raise SystemExit(str(error)) from None
         print((args.out / "table.md").read_text(encoding="utf-8"))
         return 0
     if args.command == "golden":
@@ -135,6 +146,8 @@ def main(argv=None):
         return 1 if args.strict and failed else 0
 
     needs_model = any(replay.needs_model(policy, args.diagnosis) for policy in args.policy)
+    if needs_model:
+        pinned_digest(args.model_digest)
     config = model_config(args) if needs_model else {}
     if args.runbooks == "none":
         config["runbooks"] = "none"

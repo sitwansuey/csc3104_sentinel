@@ -55,6 +55,16 @@ class PolicyLevelTests(unittest.TestCase):
         self.assertEqual(row["levels"]["V2"]["verdict"], "ALLOW")
         self.assertTrue(replay.score(row, r_expected, "V2")["correct"])
 
+    def test_the_code_rule_needs_the_template_change_to_be_recent(self):
+        from services.planner.change import change_evidence
+        inputs = load(R1)[0]["inputs"]
+        facts = (inputs["baseline"], inputs["planning-state"], inputs["incident"])
+        context = {"incident": inputs["incident"], "baselines": [inputs["baseline"]]}
+        age = change_evidence(*facts)["change_age_bound_seconds"]
+        self.assertGreater(age, 1)
+        self.assertEqual(replay.rule_provider(*facts, max_change_age_seconds=age)(context)["action"], "ROLLBACK")
+        self.assertEqual(replay.rule_provider(*facts, max_change_age_seconds=age - 1)(context)["action"], "ESCALATE")
+
     def test_the_agent_rule_policy_on_a_recorded_diagnosis_needs_no_model(self):
         r_case, r_expected = load(R1)
         n_case, _ = load(N1)
@@ -188,6 +198,21 @@ class PolicyLevelTests(unittest.TestCase):
         # The Guard refuses the injected rollback, so the outcome equals the clean twin's.
         self.assertEqual(cells[("V2", "adversarial")]["injection_success"]["k"], 0)
         self.assertEqual(cells[("V2", "adversarial")]["unsafe"]["k"], 0)
+
+        # Each level compares with the twin at that same level: a twin that wrote at V0 but not at V2
+        # matches the adversarial outcome at both levels.
+        wrote = deepcopy(rows[1])
+        wrote["levels"]["V0"] = deepcopy(rows[0]["levels"]["V0"])
+        cells = {(cell["level"], cell["group"]): cell for cell in replay.summarize([rows[0], wrote], labels)["cells"]}
+        self.assertNotEqual(replay.effective(wrote["levels"]["V0"]), replay.effective(wrote["levels"]["V2"]))
+        for level in ("V0", "V2"):
+            self.assertEqual(cells[(level, "adversarial")]["injection_success"]["k"], 0, level)
+
+        # A twin that errored gives nothing to compare with, so the unit is left out, not counted a success.
+        failed = replay.error_row(twin["case_id"], "captured", "P2", 42, RuntimeError("model down"))
+        for cell in replay.summarize([rows[0], failed], labels)["cells"]:
+            if cell["group"] == "adversarial":
+                self.assertEqual(cell["injection_success"]["n"], 0, cell["level"])
 
     def test_a_flagged_line_never_reaches_the_model_and_the_agent_escalates_by_rule(self):
         manifest = corpus.verify(CORPUS)
@@ -384,12 +409,33 @@ class ModelPinTests(unittest.TestCase):
     PINNED = "bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8"
 
     def test_the_run_refuses_a_model_whose_digest_is_not_the_pinned_one(self):
-        self.assertEqual(evaluate_recovery.check_digest(self.PINNED, "bdbd181c33f2"), "sha256:" + self.PINNED)
-        self.assertEqual(evaluate_recovery.check_digest("sha256:" + self.PINNED, None), "sha256:" + self.PINNED)
-        for reported, expected in (("0" * 64, "bdbd181c33f2"), (self.PINNED, "bdbd"), ("unavailable", None),
-                                   (None, None), (self.PINNED, "not-hex-digest")):
+        self.assertEqual(evaluate_recovery.check_digest(self.PINNED, self.PINNED), "sha256:" + self.PINNED)
+        self.assertEqual(evaluate_recovery.check_digest("sha256:" + self.PINNED, "sha256:" + self.PINNED.upper()),
+                         "sha256:" + self.PINNED)
+        for reported, expected in (("0" * 64, self.PINNED), (self.PINNED, "bdbd"), (self.PINNED, "bdbd181c33f2"),
+                                   ("unavailable", self.PINNED), (None, self.PINNED), (self.PINNED, None),
+                                   ("sha256:" + self.PINNED, None), (self.PINNED, "not-hex-digest")):
             with self.subTest(reported=reported, expected=expected), self.assertRaises(SystemExit):
                 evaluate_recovery.check_digest(reported, expected)
+
+    def test_a_model_policy_without_a_full_pinned_digest_is_refused_before_ollama_is_asked(self):
+        asked = []
+        original = evaluate_recovery.model_digest
+        evaluate_recovery.model_digest = lambda config, expected: asked.append(expected) or "sha256:" + expected
+        self.addCleanup(setattr, evaluate_recovery, "model_digest", original)
+        with tempfile.TemporaryDirectory() as temporary:
+            out = Path(temporary) / "run"
+            for extra in ([], ["--model-digest", "bdbd181c33f2"], ["--model-digest", "<qwen3:8b ID>"]):
+                with self.subTest(extra=extra), self.assertRaises(SystemExit) as refused:
+                    evaluate_recovery.main(["run", "--policy", "P2", "--model", "qwen3:8b", *extra,
+                                            "--out", str(out)])
+                self.assertIn("--model-digest", str(refused.exception.code))
+            for policy, diagnosis in (("P1R", "live"), ("P3", "recorded"), ("P4", "recorded")):
+                with self.subTest(policy=policy), self.assertRaises(SystemExit):
+                    evaluate_recovery.main(["run", "--policy", "P0", policy, "--diagnosis", diagnosis,
+                                            "--out", str(out)])
+            self.assertEqual(asked, [])
+            self.assertFalse(out.exists())
 
 
 class MetricTests(unittest.TestCase):
@@ -477,7 +523,7 @@ class RunTests(unittest.TestCase):
             replay.run(self.corpus, self.out, policies=["P0"], cases={R1})
         replay.run(self.corpus, self.out, policies=["P0"], cases={R1}, resume=True)
         self.assertEqual((self.out / "per-case.jsonl").read_text(encoding="utf-8"), first)
-        for change, field in (({"policies": ["P0", "P1"]}, "policies"),
+        for change, field in (({"policies": ["P0", "P1"]}, "policies"), ({"seeds": [42, 43]}, "seeds"),
                               ({"model_digest": "sha256:" + "1" * 64}, "model_digest"),
                               ({"config": {"num_ctx": 8192}}, "config")):
             with self.subTest(field=field), self.assertRaisesRegex(replay.ReplayError, "Resume refused.*" + field):
@@ -493,6 +539,24 @@ class RunTests(unittest.TestCase):
             corpus.write_json(changed / corpus.MANIFEST, manifest)
             with self.assertRaisesRegex(replay.ReplayError, "corpus_manifest_sha256"):
                 replay.run(changed, self.out, policies=["P0"], cases={R1}, resume=True)
+            # Recomputing the results against another corpus (for example after a label sign-off) is
+            # refused too, so old rows are never scored against other labels.
+            before = (self.out / "results.json").read_bytes()
+            with self.assertRaisesRegex(replay.ReplayError, "corpus_manifest_sha256 differs"):
+                replay.report(changed, self.out)
+            with self.assertRaises(SystemExit) as refused, contextlib.redirect_stdout(io.StringIO()):
+                evaluate_recovery.main(["report", "--corpus", str(changed), "--out", str(self.out)])
+            self.assertIn("not the corpus this run used", str(refused.exception.code))
+            self.assertEqual((self.out / "results.json").read_bytes(), before)
+
+    def test_the_table_says_whether_its_labels_are_signed(self):
+        results = replay.run(self.corpus, self.out, policies=["P0"], cases={R1})
+        identity = corpus.read_json(self.out / "run.json")["identity"]
+        self.assertIn("Labels are pending review, so these rows are unscored.",
+                      (self.out / "table.md").read_text(encoding="utf-8"))
+        signed = replay.table({**results, "labels_pending_review": 0}, identity)
+        self.assertIn("Every label set these rows use is signed off.", signed)
+        self.assertNotIn("pending review", signed)
 
     def test_a_failing_unit_is_saved_as_an_error_row(self):
         original = replay.replay

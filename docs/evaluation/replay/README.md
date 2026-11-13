@@ -139,7 +139,8 @@ Abstention, injection, ineligibility, off-target, NO_ACTION and contract codes
 (`INVALID_MODEL_OUTPUT`, `INVALID_PROPOSAL`) stay decisions, because they are
 what the policy did with the evidence. `table.md` lists the Planner codes and
 error kinds per policy under each group. Adversarial cells add injection success (the
-outcome differs from the clean twin's under the same policy and seed) and,
+outcome differs from the clean twin's under the same policy, seed and level; a
+unit whose clean twin errored is left out) and,
 for the RCA policies, how often the code gate flagged the line. V2 cells add
 an exact McNemar test of unsafe writes against V0 on the same rows. Results
 also give diagnosis component accuracy (RCA policies), decision flips across
@@ -218,6 +219,8 @@ down) and appends the new row, which replaces the error row in the results.
 `results.json` says how many rows are still errors (`error_rows`) and how many
 were run again (`rows_rerun_after_an_error`). A recorded diagnosis that
 belongs to another incident stops the run instead of being saved as a row.
+`report` also refuses a corpus whose manifest is not the run's, so rows made
+before a label sign-off are never scored against the signed labels.
 
 ## Run the model ablation
 
@@ -230,9 +233,15 @@ Preflight, in order:
 
 1. No live agent run, RCAEval batch (P2.07) or other model job is using the
    GPU, and none will start until the batch ends.
-2. `ollama list` shows `qwen3:14b` with ID `bdbd181c33f2`, the digest every
-   recorded live agent run used (`model-runtime.json` in the agent bundles),
-   and `qwen3:8b`. Note the 12-character ID of `qwen3:8b` for its command.
+2. `ollama list` shows `qwen3:14b` with ID `bdbd181c33f2` and `qwen3:8b`
+   with ID `500a1f067a9f`. The commands below pin the full SHA-256 of each:
+   for `qwen3:14b` the digest every recorded live agent run used
+   (`model-runtime.json` in the agent bundles), and for `qwen3:8b` the digest
+   of the `qwen3:8b` manifest in the Ollama library as read on 2026-11-13. If
+   a pull brings another ID, the library tag has moved: do not run that
+   command; pin the new digest in a new folder and say so. The run compares
+   the full digest Ollama reports with the pin and refuses a mismatch, and it
+   refuses P2, P3, P4 (and P1R with a live diagnosis) without `--model-digest`.
 3. `python scripts/build_replay_corpus.py --check` passes, and
    `python -m unittest tests.test_replay_corpus tests.test_recovery_ablation tests.test_retrieval_contamination`
    passes.
@@ -243,10 +252,10 @@ Then, each in its own folder (the model, context and runbook settings are part
 of the identity):
 
 ```powershell
-python scripts/evaluate_recovery.py run --policy P2 P3 P4 --seeds 42 43 44 --model qwen3:14b --model-digest bdbd181c33f2 --num-ctx 16384 --out evidence/evaluation/recovery-ablation/v1-model-14b-16k
-python scripts/evaluate_recovery.py run --policy P4 --seeds 42 43 44 --model qwen3:14b --model-digest bdbd181c33f2 --num-ctx 8192 --out evidence/evaluation/recovery-ablation/v1-model-14b-8k
-python scripts/evaluate_recovery.py run --policy P4 --seeds 42 43 44 --model qwen3:8b --model-digest <qwen3:8b ID> --num-ctx 16384 --out evidence/evaluation/recovery-ablation/v1-model-8b-16k
-python scripts/evaluate_recovery.py run --policy P3 --runbooks none --seeds 42 43 44 --model qwen3:14b --model-digest bdbd181c33f2 --num-ctx 16384 --out evidence/evaluation/recovery-ablation/v1-model-14b-norag
+python scripts/evaluate_recovery.py run --policy P2 P3 P4 --seeds 42 43 44 --model qwen3:14b --model-digest bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8 --num-ctx 16384 --out evidence/evaluation/recovery-ablation/v1-model-14b-16k
+python scripts/evaluate_recovery.py run --policy P4 --seeds 42 43 44 --model qwen3:14b --model-digest bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8 --num-ctx 8192 --out evidence/evaluation/recovery-ablation/v1-model-14b-8k
+python scripts/evaluate_recovery.py run --policy P4 --seeds 42 43 44 --model qwen3:8b --model-digest 500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41 --num-ctx 16384 --out evidence/evaluation/recovery-ablation/v1-model-8b-16k
+python scripts/evaluate_recovery.py run --policy P3 --runbooks none --seeds 42 43 44 --model qwen3:14b --model-digest bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8 --num-ctx 16384 --out evidence/evaluation/recovery-ablation/v1-model-14b-norag
 ```
 
 `--runbooks none` (the P3-noRAG run) removes both kinds of retrieved
@@ -260,10 +269,6 @@ without a runbook. What the run measures beyond that is the RCA diagnosis
 without workflows (diagnosis component accuracy). It needs `--diagnosis
 live`; a recorded diagnosis was made with the workflows, so the run refuses
 one.
-
-The qwen3:8b command has no recorded ID yet. After its first run, copy the
-digest from that folder's `run.json` (`model_digest`) into the commit message
-and the `L-REPLAY-MODEL-ROWS` entry, and use it for any resume.
 
 To continue after a stop, repeat the same command with `--resume`. The run
 refuses a model whose digest is not the pinned one. Afterwards:
