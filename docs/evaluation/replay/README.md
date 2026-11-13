@@ -70,8 +70,9 @@ never lists a run folder, so a run's `.executor-kubeconfig.json`, SQLite stores
 and credentials cannot reach the corpus. The finished tree is scanned
 recursively (`experiments/analysis/replay_corpus.py::scan`): any file that is
 not on the corpus allowlist, any name that looks like a kubeconfig, database
-or credential, SQLite bytes, PEM blocks, kubeconfig key data, JWTs and
-credential values fail the build, and loading a corpus runs the same scan.
+or credential, SQLite bytes, PEM blocks, kubeconfig key data, JWTs,
+`Authorization: Bearer` values and credential values fail the build, and
+loading a corpus runs the same scan.
 
 Labels come from the catalog's pre-registered sets
 (`experiments/boutique/catalog.json`) or, for a derived variant, from a stated
@@ -197,6 +198,12 @@ python scripts/evaluate_recovery.py golden --out <folder>/golden.json
 python scripts/evaluate_recovery.py run --policy P0 P1 P1R --diagnosis recorded --out <new folder>
 python scripts/evaluate_recovery.py report --out <folder>   # recompute results.json and table.md
 ```
+
+The builder replaces an existing `--out` folder only when it is empty or
+already holds a replay corpus (`corpus-manifest.json` with schema
+`sentinel-replay-corpus-v1` and no file a corpus never holds); any other
+folder is refused and left untouched. It builds and checks the new corpus in
+a sibling folder first, so a failed build keeps the old one.
 
 A run folder holds `run.json` (the run identity: corpus manifest SHA-256,
 policies, seeds, diagnosis mode, model settings, model digest and the SHA-256

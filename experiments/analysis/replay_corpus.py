@@ -56,6 +56,8 @@ _FORBIDDEN_TEXT = (
     (re.compile(rb"client-(?:key|certificate)-data|certificate-authority-data"), "kubeconfig key data"),
     (re.compile(rb"\"(?:token|password|client_secret|api_key)\"\s*:\s*\"[^\"<]"), "a credential value"),
     (re.compile(rb"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"), "a JWT"),
+    # An opaque token in an HTTP header quoted in a log line; a placeholder such as <token> does not match.
+    (re.compile(rb"(?i)authorization[\"']?\s*[:=]\s*[\"']?bearer\s+[A-Za-z0-9._~+/=-]{8,}"), "a bearer token"),
 )
 
 
@@ -78,6 +80,35 @@ def read_json(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+def _allowlisted(relative):
+    parts = PurePosixPath(relative).parts
+    return str(PurePosixPath(relative)) in TOP_FILES or (
+        len(parts) >= 3 and parts[0] == "cases" and bool(_CASE_ID.fullmatch(parts[1]))
+        and "/".join(parts[2:]) in CASE_FILES)
+
+
+def foreign_files(root):
+    """Files under root that a corpus never holds (judged by name only), as relative paths."""
+    root = Path(root)
+    return sorted(path.relative_to(root).as_posix() for path in root.rglob("*")
+                  if not path.is_dir() and not _allowlisted(path.relative_to(root).as_posix()))
+
+
+def is_corpus_folder(root):
+    """True when root holds a replay corpus manifest and only files a corpus holds.
+
+    The builder replaces such a folder; anything else might hold someone's work.
+    The content scan is not applied here, so a corpus built before a new secret
+    pattern was added can still be rebuilt.
+    """
+    root = Path(root)
+    try:
+        manifest = read_json(root / MANIFEST)
+    except (OSError, ValueError):
+        return False
+    return isinstance(manifest, dict) and manifest.get("schema") == SCHEMA and not foreign_files(root)
+
+
 def scan(root):
     """Problems with a corpus tree; empty when every file is allowlisted and clean.
 
@@ -93,11 +124,7 @@ def scan(root):
             continue
         if path.is_dir():
             continue
-        parts = relative.parts
-        allowed = (str(relative) in TOP_FILES or (
-            len(parts) >= 3 and parts[0] == "cases" and _CASE_ID.fullmatch(parts[1])
-            and "/".join(parts[2:]) in CASE_FILES))
-        if not allowed:
+        if not _allowlisted(relative):
             problems.append(f"{relative}: not an allowlisted corpus file")
             continue
         data = path.read_bytes()

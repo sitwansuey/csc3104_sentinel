@@ -127,6 +127,8 @@ class BuilderAllowlistTests(unittest.TestCase):
              "a PEM key or certificate"),
             ("inputs/baseline.json",
              b'{"note": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJyZXBsYXkifQ.c2lnbmF0dXJlLWZpeHR1cmU"}', "a JWT"),
+            ("inputs/observations/0002-observation.json",
+             b'{"line": "GET /cart Authorization: Bearer 3f9a1c0d7e6b5a4c2d1e"}', "a bearer token"),
             ("inputs/live-state.json", b'{"password": "x"}', "a credential value"),
             ("inputs/dependency-finding.json", b'{"api_key" : "fixture"}', "a credential value"),
             ("inputs/incident.json", b'{"users": [{"client-key-data": "QUJD"}]}', "kubeconfig key data"),
@@ -151,7 +153,8 @@ class BuilderAllowlistTests(unittest.TestCase):
         policy = next((out / "cases").iterdir()) / "inputs/policy.json"
         original = policy.read_bytes()
         # An empty value or a <placeholder> is how a document names a field without holding a secret.
-        for text in (b'"password": "", "policy_id"', b'"token": "<set at deploy time>", "policy_id"'):
+        for text in (b'"password": "", "policy_id"', b'"token": "<set at deploy time>", "policy_id"',
+                     b'"note": "Authorization: Bearer <token>", "policy_id"'):
             with self.subTest(text=text):
                 policy.write_bytes(original.replace(b'"policy_id"', text, 1))
                 self.assertEqual(corpus.scan(out), [])
@@ -167,6 +170,100 @@ class BuilderAllowlistTests(unittest.TestCase):
         corpus.write_json(incident, value)
         with self.assertRaisesRegex(corpus.CorpusError, "does not match the manifest"):
             corpus.verify(out)
+
+    def test_build_scans_its_own_output_and_deletes_an_unsafe_corpus(self):
+        original = builder.write_case
+
+        def leaky(root, case, previous=None):
+            files = original(root, case, previous)
+            (Path(root) / "cases" / case["case_id"] / "inputs/planner.db").write_bytes(b"SQLite format 3\x00")
+            return files
+
+        builder.write_case = leaky
+        self.addCleanup(setattr, builder, "write_case", original)
+        out = self.root / "corpus"
+        with self.assertRaisesRegex(builder.BuildError, "failed the safety scan.*planner.db"):
+            builder.build([bundle(GOLDEN)], out)
+        self.assertFalse(out.exists())
+
+
+class OutputFolderTests(unittest.TestCase):
+    """The command line replaces an existing --out only when it already is a replay corpus."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+
+    def main(self, out):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as errors:
+            code = builder.main(["--runs", str(bundle(GOLDEN)), "--out", str(out)])
+        return code, errors.getvalue()
+
+    def snapshot(self, folder):
+        return {path.relative_to(folder).as_posix(): path.read_bytes()
+                for path in sorted(folder.rglob("*")) if path.is_file()}
+
+    def assertNoStaging(self):
+        self.assertEqual([path.name for path in self.root.iterdir() if "-build-" in path.name], [])
+
+    def test_a_folder_that_is_not_a_corpus_is_refused_and_left_untouched(self):
+        victim = self.root / "victim"
+        (victim / "important").mkdir(parents=True)
+        (victim / "important/notes.txt").write_text("uncommitted work\n", encoding="utf-8")
+        # A corpus manifest is not enough: any file a corpus never holds marks someone's folder.
+        mixed = self.root / "mixed"
+        builder.build([bundle(GOLDEN)], mixed)
+        (mixed / "notes.txt").write_text("uncommitted work\n", encoding="utf-8")
+        # A folder of corpus-shaped files whose manifest is not a replay corpus manifest.
+        other = self.root / "other"
+        other.mkdir()
+        (other / "corpus-manifest.json").write_text('{"schema": "something-else"}\n', encoding="utf-8")
+        (other / "README.md").write_text("notes\n", encoding="utf-8")
+        a_file = self.root / "a-file.txt"
+        a_file.write_text("keep\n", encoding="utf-8")
+        for out in (victim, mixed, other):
+            before = self.snapshot(out)
+            with self.subTest(out=out.name):
+                code, errors = self.main(out)
+                self.assertEqual(code, 2)
+                self.assertIn("is not a replay corpus", errors)
+                self.assertEqual(self.snapshot(out), before)
+        self.assertEqual(self.main(a_file)[0], 2)
+        self.assertEqual(a_file.read_text(encoding="utf-8"), "keep\n")
+        self.assertNoStaging()
+
+    def test_an_existing_corpus_or_empty_folder_is_replaced_and_a_new_folder_is_built(self):
+        existing = self.root / "existing"
+        builder.build([bundle(GOLDEN)], existing)
+        case = next((existing / "cases").iterdir())
+        (case / "inputs/live-state.json").write_text('{"stale": true}\n', encoding="utf-8")
+        empty = self.root / "empty"
+        empty.mkdir()
+        for out in (existing, empty, self.root / "new" / "corpus"):
+            with self.subTest(out=out.name):
+                self.assertEqual(self.main(out), (0, ""))
+                corpus.verify(out)
+        self.assertNotIn("stale", (case / "inputs/live-state.json").read_text(encoding="utf-8"))
+        self.assertNoStaging()
+
+    def test_a_failed_build_keeps_the_previous_corpus(self):
+        out = self.root / "corpus"
+        builder.build([bundle(GOLDEN)], out)
+        before = self.snapshot(out)
+        original = builder.build
+
+        def failing(sources, target, **_):
+            original(sources, target)
+            raise builder.BuildError("simulated failure after writing")
+
+        builder.build = failing
+        self.addCleanup(setattr, builder, "build", original)
+        code, errors = self.main(out)
+        self.assertEqual(code, 2)
+        self.assertIn("simulated failure", errors)
+        self.assertEqual(self.snapshot(out), before)
+        self.assertNoStaging()
 
 
 class LabelSeparationTests(unittest.TestCase):

@@ -2,7 +2,7 @@
 
     python scripts/build_replay_corpus.py                  # rebuild evidence/replay/v1
     python scripts/build_replay_corpus.py --check          # fail if the committed corpus is stale
-    python scripts/build_replay_corpus.py --runs <dir> ... --out <new dir>
+    python scripts/build_replay_corpus.py --runs <dir> ... --out <dir>   # a new folder or an existing corpus
 
 Each source is a run folder or an evidence bundle with a primary incident. The
 builder reads only the files named in SOURCE_FILES and SOURCE_GLOBS and never
@@ -543,6 +543,37 @@ def build(sources, out, catalog_path=CATALOG, reviews=None):
     return manifest
 
 
+def rebuild(sources, out, reviews=None):
+    """Build a corpus beside out and swap it in; return the manifest.
+
+    An existing out is replaced only when it already is a replay corpus
+    (corpus.is_corpus_folder) or is empty, so a mistyped --out such as
+    "evidence" or "." is refused and left untouched. The new corpus is built
+    and verified in a sibling folder first, so a failed build leaves the old
+    corpus in place.
+    """
+    out = Path(out)
+    if out.exists() and not (out.is_dir() and (not any(out.iterdir()) or corpus.is_corpus_folder(out))):
+        raise BuildError(f"{out} exists and is not a replay corpus ({corpus.MANIFEST} with schema "
+                         f"{corpus.SCHEMA} and only corpus files); refusing to replace it")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{out.name}-build-", dir=out.parent))
+    try:
+        built, previous = staging / "corpus", staging / "previous"
+        manifest = build(sources, built, reviews=reviews)
+        if out.exists():
+            out.rename(previous)
+        try:
+            built.rename(out)
+        except OSError:
+            if previous.exists():
+                previous.rename(out)
+            raise
+        return manifest
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
 def differences(left, right):
     """Relative paths whose bytes differ between two corpus folders."""
     files = {path.relative_to(left).as_posix() for path in Path(left).rglob("*") if path.is_file()}
@@ -570,9 +601,11 @@ def main(argv=None):
         print(f"Replay corpus {args.out.relative_to(ROOT).as_posix() if args.out.is_relative_to(ROOT) else args.out} "
               "is up to date")
         return 0
-    if args.out.exists():
-        shutil.rmtree(args.out)
-    manifest = build(sources, args.out, reviews=reviews)
+    try:
+        manifest = rebuild(sources, args.out, reviews=reviews)
+    except BuildError as error:
+        print(error, file=sys.stderr)
+        return 2
     print(f"Wrote {len(manifest['cases'])} cases to {args.out}: " + json.dumps(manifest["counts"]))
     return 0
 
