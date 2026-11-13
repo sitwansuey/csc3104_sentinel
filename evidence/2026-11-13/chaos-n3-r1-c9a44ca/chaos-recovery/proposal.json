@@ -1,0 +1,28 @@
+{
+  "action": "ESCALATE",
+  "action_id": "ACT-f4b3cbef3e6fd205a7e184ef",
+  "based_on_resource_version": "170982",
+  "evidence_refs": [
+    "E-EC8266B582C8",
+    "OTEL-80f7a0438698003eeaac563fc159bbd29ebd707eeee3dedcbb50bf5b8615dfc8",
+    "OTEL-ab3d720439bfaf069f7be7e8341fbd144baaa56b154686a75cf57733a1d9b64d",
+    "OTEL-4802ba6b48617a59d9ae4fc091a9709245b0a216d919eb394ffdfdeb32b72871",
+    "OTEL-00c92d027a76f101cf7b336e50fb28907713e297e19b30abdf096ed8f1728309",
+    "OTEL-e252d67783e85b5204d577f8e96bb3306204c9a939ce650ad8cf27d5476b077c",
+    "E-DF7A5A43F361",
+    "OTEL-ab63e595ca534b4bd810162a6eb2c44edaf17c96b970a562b002c216344f0e92",
+    "OTEL-a47f71a15eeb7e4aa1707459f17f06126dd6551032189f43ca6c3f3fa72ef461"
+  ],
+  "incident_id": "INC-5C18919548ED",
+  "kind": "proposal",
+  "parameters": {},
+  "rationale": "Only metric alerts show a problem: the Deployment and its Pods report no failure, so no repair is justified. Decided by a code rule, not a provider. Operator review is required (runbook resource-saturation). No repair is authorized.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

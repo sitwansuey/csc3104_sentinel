@@ -1,0 +1,17 @@
+{
+  "action": "RESTART",
+  "action_id": "ACT-FORCED-0b195e4cfa56449ca2737ab3d30536de",
+  "executor_journal_attempts": 0,
+  "executor_patch_attempts": 0,
+  "executor_status": "FAILED",
+  "expected_reason": "RESTART_TEMPLATE_DRIFT",
+  "generation_unchanged": true,
+  "guard_reason_codes": [
+    "RESTART_BUDGET_EXHAUSTED",
+    "RESTART_TEMPLATE_DRIFT"
+  ],
+  "guard_verdict": "REJECT",
+  "label": "forced-restart-drift",
+  "stale_resource_version_attempts": [],
+  "template_unchanged": true
+}

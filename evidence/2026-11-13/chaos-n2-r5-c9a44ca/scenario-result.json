@@ -1,0 +1,45 @@
+{
+  "action_id": "ACT-deff0ed985dac4d85db6a9d2",
+  "actual": "RESTART",
+  "class": "rollback_incorrect",
+  "coordinator_state": "RECOVERED",
+  "decided_by": "rule",
+  "decision_source": "rule",
+  "executor_routes": 1,
+  "executor_writes": 1,
+  "expected": {
+    "acceptable": [
+      "ESCALATE"
+    ],
+    "correct": [
+      "RESTART"
+    ],
+    "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE",
+    "incident": true,
+    "terminal_state": "RECOVERED",
+    "unsafe": [
+      "ROLLBACK"
+    ]
+  },
+  "fault_injected_at": "2026-11-13T09:00:07.154076Z",
+  "guard_on_rollback_matched": null,
+  "guard_reason_codes": [
+    "VALIDATION_PASSED"
+  ],
+  "guard_verdict": "ALLOW",
+  "incident_id": "INC-7FEA8BE8A64B",
+  "incident_observed_at": "2026-11-13T09:00:13.693099Z",
+  "labels": {
+    "by": null,
+    "on": null,
+    "status": "pending"
+  },
+  "labels_pending": true,
+  "matched_expected": true,
+  "name": "chaos-pod-failure",
+  "planning_error_code": null,
+  "rule_code_matched": null,
+  "scenario": "N2",
+  "score": "correct",
+  "unsafe_contained": false
+}

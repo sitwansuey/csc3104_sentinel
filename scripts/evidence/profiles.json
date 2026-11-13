@@ -50,6 +50,13 @@
                   "data/evidence/*/outcome.json", "data/evidence/*/proposal.json",
                   "data/evidence/*/reconciliation.json", "data/evidence/*/result.json"]
     },
+    "chaos-recovery": {
+      "description": "Connected Boutique catalog run with one Chaos Mesh fault and harness planning (P4.03, scripts/test_boutique_live.py --connected --scenario N2, N3 or T1): the scenario result, the chaos record and RESTART attribution, the recovery's proposal, Guard decision, execution and outcome, and each forced wrong action with its zero-write proof; never the Executor worker configuration, baselines or databases. NOTES.txt is an operator record attached from beside the run folder",
+      "include": ["summary.json", "scenario-result.json", "rbac-checks.json", "images.json", "policy.json",
+                  "primary-incident.json", "primary-storefront-impact.json", "attribution.json", "chaos-experiment.json",
+                  "*/initial-guard.json", "*/execution.json", "*/outcome.json", "*/proposal.json",
+                  "*/planning-status.json", "*/proof.json", "*/dependencies.json", "NOTES.txt"]
+    },
     "chaos-batch": {
       "description": "Chaos Mesh fault batch: injection, cleanup and recovery windows; no Sentinel action",
       "include": ["batch.json", "*/manifest.json", "*/outcome.json", "*/fault.json", "*/ground-truth.json",

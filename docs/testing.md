@@ -122,10 +122,12 @@ ROLLBACK, and Pods failing under an unchanged template repaired by RESTART.
 `tests/test_restart_action.py` covers RESTART: the allowed path, each Guard
 refusal, the restart budget across an Executor restart, reconciliation and the
 fence for an in-doubt RESTART, and the model checker run with a RESTART. All of it
-uses a fake Deployment API; no RESTART recovery has run against a cluster. Only
-the production adapter's RESTART patch has reached an API server: it was
-accepted once on a disposable Deployment in the admission check
-(claim `C-ADMISSION-POLICY-LIVE`).
+uses a fake Deployment API. Live, a RESTART recovery has run for one fault,
+the Chaos Mesh pod failure N2 on shippingservice in the connected lab, with
+code rule planning, unscored (claims `C-CHAOS-RECOVERY-C9A44CA` and
+`C-CHAOS-RECOVERY-29E41F8`); before that only the production adapter's RESTART
+patch had reached an API server, accepted once on a disposable Deployment in
+the admission check (claim `C-ADMISSION-POLICY-LIVE`).
 
 `tests/test_distributed_processes.py` runs fault scenarios with the Coordinator
 and every worker as separate processes on one host, against a file-backed test
@@ -343,8 +345,11 @@ guarded repair. Separately, the catalog's Chaos Mesh scenarios N2 (pod
 failure, RESTART correct), N3 (CPU stress, ESCALATE correct) and T1 (network
 delay, no incident correct) drive guarded recovery in the connected lab, with
 an attribution proof, forced wrong actions refused with zero writes and a
-true-negative proof. They are tested offline only; the install, spikes and
-trials are in [Chaos Mesh in guarded recovery](chaos.md#chaos-mesh-in-guarded-recovery),
+true-negative proof. They ran live on 13 Nov 2026, unscored (N2 five times
+at c9a44ca, failing a harness race in the drift cell, and five times at
+29e41f8, passing; N3 and T1 once each; one agent-mode N2), see
+`C-CHAOS-RECOVERY-C9A44CA` and `C-CHAOS-RECOVERY-29E41F8`; the install, spikes
+and trials are in [Chaos Mesh in guarded recovery](chaos.md#chaos-mesh-in-guarded-recovery),
 and the labels need sign-off before a scored trial.
 
 Two simultaneous faults (P4.05) run as catalog pairs with `--pair`: an
@@ -360,8 +365,11 @@ unexpected write counts, an accepted changed payload and a reconciliation
 that writes). The offline ordered recovery of the dependency-ordered pair
 uses a cart that stays Ready; with the faulted cart NotReady, as in the live
 C1 runs, the Guard blocks both repairs and the pair stops with
-DEPENDENCY_DEADLOCK and no write. The live recipe, not yet run, is in
-[Two simultaneous faults](dual-fault.md#live-recipe-not-yet-run).
+DEPENDENCY_DEADLOCK and no write. The live recipe is in
+[Two simultaneous faults](dual-fault.md#live-recipe); its first attempt on
+13 Nov 2026 ran the single-fault baselines (`C-DUAL-FAULT-BASELINES-29E41F8`),
+but every pair run stopped on a harness defect (fixed in 1941683) before any
+proposal, so no pair run has a result yet.
 
 ## Agent-mode acceptance
 

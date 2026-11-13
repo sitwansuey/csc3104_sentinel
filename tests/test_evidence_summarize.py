@@ -412,6 +412,60 @@ class Phase2DerivationTests(unittest.TestCase):
                          "agent escalated (ABSTAINED)")
 
 
+class ChaosRecoveryTests(unittest.TestCase):
+    """Catalog runs with a Chaos Mesh fault: scenario rows, attribution and forced wrong actions."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        runs = self.root / "source"
+        rollback = fx.forced("ROLLBACK", codes=("ROLLBACK_ALREADY_AT_BASELINE",))
+        cases = {
+            "n2-race": dict(status="FAILED", refusals=[rollback, fx.forced("RESTART", verdict=None,
+                                                                            status="CONFLICT")]),
+            "n2-pass": dict(started="2026-11-13T09:10:00Z", refusals=[rollback, fx.forced(
+                "RESTART", codes=("RESTART_BUDGET_EXHAUSTED", "RESTART_TEMPLATE_DRIFT"))]),
+            "n3-pass": dict(scenario="N3", kind="StressChaos", actual="ESCALATE", writes=0, attributed=None,
+                            started="2026-11-13T09:20:00Z",
+                            refusals=[fx.forced("RESTART", codes=("RESTART_NOT_JUSTIFIED",))]),
+            "t1-pass": dict(scenario="T1", kind="NetworkChaos", actual="NO_INCIDENT", writes=0, attributed=None,
+                            started="2026-11-13T09:30:00Z"),
+        }
+        for name, options in cases.items():
+            run = fx.chaos_recovery_run(runs, name, **options)
+            collect.collect(run, "chaos-recovery", name, evidence_root=self.root / "evidence", context=fx.context(),
+                            inferred_revision=fx.REVISION, inferred_basis="fixture")
+        self.bundles = {b.bundle_id: b for b in summarize.load_bundles(self.root)}
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_profile_keeps_the_chaos_record_and_proofs_but_never_approvals_or_databases(self):
+        files = {item["path"] for item in self.bundles["n2-race"].manifest["files"]}
+        self.assertTrue({"summary.json", "scenario-result.json", "chaos-experiment.json", "chaos-recovery/proposal.json",
+                         "forced-rollback/proof.json"} <= files)
+        self.assertFalse({"chaos-recovery/approval.json", "executor.sqlite"} & files)
+
+    def test_rows_show_attribution_and_each_forced_action_with_its_writes(self):
+        rows = {row[0]: row[1:] for row in summarize.chaos_recovery_rows(list(self.bundles.values()))}
+        self.assertEqual(rows["n2-race"], [
+            "N2", "PodChaos", "0123456", "FAILED", "RESTART", "1", "yes",
+            "ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART no Guard verdict, Executor CONFLICT, "
+            "0 writes", "yes"])
+        self.assertEqual(rows["n2-pass"][7], "ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT "
+                                             "RESTART_BUDGET_EXHAUSTED, RESTART_TEMPLATE_DRIFT, 0 writes")
+        self.assertEqual(rows["n3-pass"][:7], ["N3", "StressChaos", "0123456", "PASS", "ESCALATE", "0", "n/a"])
+        self.assertEqual(rows["t1-pass"][6:], ["n/a", "none", "yes"])
+
+    def test_chaos_runs_join_the_scenario_rows_and_outcomes(self):
+        rows = {row[0]: row[1:] for row in summarize.scenario_rows(list(self.bundles.values()))}
+        self.assertEqual(sorted(rows), ["n2-pass", "n2-race", "n3-pass", "t1-pass"])
+        self.assertEqual(rows["n2-race"][:3], ["N2", "0123456", "FAILED"])
+        self.assertEqual(rows["t1-pass"][3:7], ["NO_INCIDENT", "decided by the rule", "0", "no incident"])
+        self.assertIn("N2 at 0123456 FAILED: RESTART decided by the rule, 1 Executor write",
+                      summarize.scenario_outcomes([self.bundles["n2-race"]]))
+
+
 class ExclusionTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

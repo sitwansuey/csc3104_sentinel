@@ -1,0 +1,53 @@
+{
+  "action": "RESTART",
+  "action_id": "ACT-85ab6e2217e5a0f5ee9c114e",
+  "based_on_resource_version": "173600",
+  "evidence_refs": [
+    "E-84F2039EDA9C",
+    "E-39177A2F9E51",
+    "E-C98704880F15",
+    "E-7CAB5A8B04A6",
+    "E-7DC1DA06B6D3",
+    "E-03158D1DE243",
+    "E-438D8C53E6DD",
+    "E-2F18DAF1733C",
+    "E-C4924E452E99",
+    "E-B4DFA24F18A9",
+    "E-F7991DA0AD34",
+    "E-4575FDCF8E19",
+    "E-E07A1ADD991A",
+    "E-7D8284699D46",
+    "E-F7DE7136CE5F",
+    "E-E5E5F846023E",
+    "E-CFB4D0F59C90",
+    "E-0B62DF6023F0",
+    "E-10DCE318A06E",
+    "E-E53F506F3897",
+    "E-4551171043C1",
+    "E-EAD149FA3E97",
+    "E-860725C76E91",
+    "E-64D3B55AA314",
+    "E-EEA7CF4D295F",
+    "E-305F1D175C4A",
+    "OTEL-8e613a733663f2c9dbc6beb208d1e391c60ab3b7e417f847451607038bbe5aac",
+    "OTEL-ab10690adc975e2a030cc340d0d89fdbc154b74b19e9627190dd21496f3bafef",
+    "E-CD67507F124C",
+    "E-927268001305"
+  ],
+  "incident_id": "INC-7DA16CC111C3",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-03a39ff0c42f",
+    "restart_token": "<redacted:eb35b9d8>",
+    "template_sha256": "7393982040ef8ba7430cf855f6bd10f17b2c6d7f43bbc3991f49f14f7c105d4c"
+  },
+  "rationale": "Pods are failing while the live configuration equals the reviewed healthy baseline, so a rollback would change nothing; restart the Pods from that template.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

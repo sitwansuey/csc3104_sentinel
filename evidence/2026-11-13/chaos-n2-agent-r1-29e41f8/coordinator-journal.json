@@ -1,0 +1,121 @@
+{
+  "incidents": [
+    {
+      "sequence": 1,
+      "incident_id": "INC-60120809618A",
+      "target": {
+        "cluster_id": "sentinel-boutique-connected",
+        "kind": "Deployment",
+        "name": "shippingservice",
+        "namespace": "sentinel-boutique-connected",
+        "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+      },
+      "state": "NEEDS_REVIEW",
+      "active_action_id": "ACT-3ddd47a70e307b64fe5bff0b",
+      "trace_context": "00-dc2d10fa0cb096d902e9b336a51dd643-30abe974ec594744-01",
+      "high_water": 2
+    }
+  ],
+  "actions": [
+    {
+      "sequence": 1,
+      "action_id": "ACT-3ddd47a70e307b64fe5bff0b",
+      "incident_id": "INC-60120809618A",
+      "proposal": {
+        "action": "ESCALATE",
+        "action_id": "ACT-3ddd47a70e307b64fe5bff0b",
+        "based_on_resource_version": "174057",
+        "evidence_refs": [
+          "E-13EFD030C114",
+          "E-AFBA43C9C9F2",
+          "E-F5753D8AFF29",
+          "E-D0CFFF398F88",
+          "E-18FA6C24D000",
+          "E-30D7CCCC6FE4",
+          "E-6E5B9EF60C59",
+          "E-6366B60027B5",
+          "E-04081C27BEE5",
+          "E-E1B6AD39B3A6",
+          "E-6B0B03EA22A6",
+          "E-91D8BD0C56C2",
+          "E-98EC63BAB27B",
+          "E-090D3B938572",
+          "E-E9F89824699F",
+          "E-188A2BC35EC5",
+          "E-DB535460BFAB",
+          "E-406E1574CB86",
+          "E-00A7DBCEDDCB",
+          "E-B2957C9BBE87",
+          "E-09B64EE76359",
+          "E-5144F004242D",
+          "E-D6D8F9DE3E48",
+          "E-C4C52840F620",
+          "E-4D9D6A83F83A",
+          "E-534F06B08BE4",
+          "E-EA6EB218EB1D",
+          "OTEL-e573a4f29edf18b4ecfc524a701db20e5a912746bd3a412216f27c60ff61a9ed",
+          "OTEL-df9167a521db308251f307cdab8d4fdc88654a4da4368a0d182ff10d2719243a",
+          "OTEL-c245aa6351df7c1505b850bd8e5a276fb9f4aa2d8ebfccd86882819f61eb19f0",
+          "OTEL-9973729fe95df7094a319dd2082565863746593b969f9fade3a921ffeab130d2",
+          "OTEL-295d7857d92f60aa1c1656c96a0183c86c26b16d0682aaf89fa86bf46c0048b8",
+          "E-4EF5278C0576",
+          "E-5B04EDD46CF3",
+          "E-B1C601B6B4D0"
+        ],
+        "incident_id": "INC-60120809618A",
+        "kind": "proposal",
+        "parameters": {},
+        "rationale": "The live Pod template already matches the healthy baseline, so a rollback would change nothing. Decided by a code rule, not the model. Operator review is required. No repair is authorized.",
+        "schema_version": "1.0",
+        "target": {
+          "cluster_id": "sentinel-boutique-connected",
+          "kind": "Deployment",
+          "name": "shippingservice",
+          "namespace": "sentinel-boutique-connected",
+          "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+        }
+      },
+      "state": "NEEDS_REVIEW",
+      "guard_result": null,
+      "execution_result": null
+    }
+  ],
+  "approvals": [],
+  "outbox": [
+    {
+      "id": 2,
+      "topic": "incident.review",
+      "action_id": "ACT-3ddd47a70e307b64fe5bff0b",
+      "delivered": 0
+    },
+    {
+      "id": 1,
+      "topic": "planner.request",
+      "action_id": null,
+      "delivered": 1
+    }
+  ],
+  "reports": [],
+  "transitions": [
+    {
+      "seq": 2,
+      "incident_id": "INC-60120809618A",
+      "action_id": "ACT-3ddd47a70e307b64fe5bff0b",
+      "from_state": "OPEN",
+      "to_state": "NEEDS_REVIEW",
+      "cause": "[\"proposal\",\"ACT-3ddd47a70e307b64fe5bff0b\",\"\"]",
+      "outbox_high_water": 1,
+      "recorded_at": "2026-11-13T09:20:54.465631Z"
+    },
+    {
+      "seq": 1,
+      "incident_id": "INC-60120809618A",
+      "action_id": null,
+      "from_state": null,
+      "to_state": "OPEN",
+      "cause": "[\"incident\",\"INC-60120809618A\",\"\"]",
+      "outbox_high_water": null,
+      "recorded_at": "2026-11-13T09:20:14.324566Z"
+    }
+  ]
+}

@@ -73,6 +73,12 @@ class BuilderAllowlistTests(unittest.TestCase):
                           "credentials.json", "logs.csv", "pki"):
             self.assertNotIn(forbidden, names)
 
+    def test_a_chaos_fault_run_is_listed_as_unused_with_its_reason_not_reconstructed(self):
+        catalog = json.loads(builder.CATALOG.read_text(encoding="utf-8"))
+        case, reason = builder.capture(bundle("chaos-n2-agent-r1-29e41f8"), catalog)
+        self.assertIsNone(case)
+        self.assertIn("chaos fault (N2) acts outside the Deployment", reason)
+
     def test_the_builder_refuses_to_read_a_file_outside_its_allowlist(self):
         run = self.run_folder()
         for name in (".executor-kubeconfig.json", "approved-rollback/planner.db", "credentials.json"):

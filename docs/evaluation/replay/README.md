@@ -24,7 +24,7 @@ every source bundle, used or not and why, and every file with its SHA-256.
 
 | Provenance | Cases | How they are made |
 |---|---|---|
-| captured | 50 | One per recorded incident: 44 R1 (invalid PORT), 2 R2 (missing image digest), 2 N1 (image evicted, template unchanged), 2 C1 (cartservice `REDIS_ADDR` pointing at a port nothing listens on). Repeated runs of one scenario are not independent. |
+| captured | 52 | One per recorded incident: 45 R1 (invalid PORT), 2 R2 (missing image digest), 2 N1 (image evicted, template unchanged), 3 C1 (cartservice `REDIS_ADDR` pointing at a port nothing listens on). A Chaos Mesh run (the agent-mode N2 bundle) is listed in the manifest as not used: the fault acts outside the Deployment and this version does not reconstruct its state. Repeated runs of one scenario are not independent. |
 | derived | 10 | 6 already-restored (an R1 case whose live template already equals the baseline, so ESCALATE or NO_ACTION is correct and ROLLBACK is unsafe) and 4 misleading-dependency-log (an R1 case with an extra error line naming currencyservice). |
 | adversarial | 12 | One injected container log line and Event message on an N case (pushing towards ROLLBACK) or an R1 case (pushing towards no repair). Two lines are expected to match the code-owned injection rules and two are paraphrases the rules miss. Each case names its clean twin. |
 
@@ -159,8 +159,8 @@ with a recorded diagnosis) and `golden.json`. Read the numbers in its
   N-based adversarial case at V0 and V1. V1 does not stop it, because the
   state and policy checks pass; V2 refuses each one with
   `ROLLBACK_ALREADY_AT_BASELINE`.
-- P1 makes no unsafe write at any level on this corpus. It misses one repair:
-  a C1 run whose signals name no rollout or startup symptom (only
+- P1 makes no unsafe write at any level on this corpus. It misses two repairs:
+  two C1 runs whose signals name no rollout or startup symptom (only
   `ContainerNotReady` and replica counts), so the rule escalates. Its other
   perfect rows partly reflect the reconstruction: every live template is the
   catalog fault applied to the catalog baseline, so the template-change test
@@ -180,7 +180,7 @@ with a recorded diagnosis) and `golden.json`. Read the numbers in its
   eligibility and gate decision, and the resource-version rebind. It does not
   show that a model would answer the same again. The 6 earlier runs differ for
   the reason above and are reported, not hidden.
-- Guard cross-check: on the 36 captured cases whose live Guard judged a
+- Guard cross-check: on the 38 captured cases whose live Guard judged a
   ROLLBACK, V2 on the reconstructed state gives the same verdict (ALLOW) every
   time. This shows the reconstruction is consistent with the live checks; it
   is not independent evidence, because the reconstruction was built to match.
@@ -224,7 +224,7 @@ before a label sign-off are never scored against the signed labels.
 
 ## Run the model ablation
 
-This is the GPU batch, about 1,300 units (72 cases, six model variants, three
+This is the GPU batch, about 1,300 units (74 cases, six model variants, three
 seeds). At 10 to 50 seconds a unit it takes roughly 6 to 15 hours on the
 16 GB GPU and can be stopped and resumed at any time. A person starts it; it
 has not been run.

@@ -6,7 +6,9 @@ Boutique, injects faults, measures shopping impact and retains evidence. It does
 Kubernetes self-healing and harness cleanup are not Sentinel repair outcomes.
 Chaos Mesh faults that do drive guarded recovery, in the connected lab only,
 are described in [Chaos Mesh in guarded recovery](#chaos-mesh-in-guarded-recovery);
-that path is tested offline and has not run against a cluster yet.
+that path has run live once in the connected lab, on 13 Nov 2026, with the
+labels awaiting sign-off, so its runs are unscored
+([live results](#live-results-2026-11-13-unscored)).
 
 Install the core Docker/kind/kubectl/Python tools plus Helm on PATH. The runner
 pins Chaos Mesh 2.8.2 and uses the dedicated `sentinel-boutique-chaos` cluster,
@@ -84,8 +86,8 @@ restoration. Results on Docker Desktop (Windows, WSL2 kernel), per fault in
 <!-- END GENERATED:claim-c-chaos-all -->
 
 These runs inject and clean up faults only. The next section wires three
-Chaos Mesh faults into guarded recovery in the connected lab; it is tested
-offline only (`L-CHAOS-NOT-WIRED` in [limitations](limitations.md)).
+Chaos Mesh faults into guarded recovery in the connected lab; that has run
+live, unscored (`L-CHAOS-NOT-WIRED` in [limitations](limitations.md)).
 
 ## Chaos Mesh in guarded recovery
 
@@ -222,17 +224,89 @@ against fakes),
 `tests/test_observer_telemetry.py::MetricsBridgeThresholdTests`,
 `tests/test_guard_necessity.py::ChaosNegativeMatrixTests`,
 `tests/test_planner.py::MetricOnlyTests` and
-`tests/test_recovery_scenarios.py::ChaosCatalogTests`. Nothing here has run
-against a cluster.
+`tests/test_recovery_scenarios.py::ChaosCatalogTests`. The live runs are
+below.
 
-Assumptions the spike must confirm before any trial: that Chaos Mesh 2.8.2
+Assumptions the spike had to confirm before any trial: that Chaos Mesh 2.8.2
 names records `<namespace>/<pod>` (or `<namespace>/<pod>/<container>`) in
 `status.experiment.containerRecords` and reports `desiredPhase` there (the
 harness refuses an injection whose records it cannot parse), that it does
 not re-select the new Pod after a restart, and whether CPU stress raises an
-incident and of which kind.
+incident and of which kind. The spikes of 13 Nov 2026 confirmed the first
+two and measured the third (step 3 below).
 
-### Live recipe (not yet run)
+### Live results (2026-11-13, unscored)
+
+The recipe below ran on 13 Nov 2026 in `kind-sentinel-boutique-connected` on
+one Windows host with Docker Desktop and one kind node, which other test runs
+shared at the time. The labels are pending, unscored: no owner has signed off
+the N2, N3 and T1 labels, so these runs say what happened and whether it
+matched the pre-registered expected outcome; none is a scored trial. Every run
+is a committed bundle, failures included
+([results](results.md#chaos-mesh-faults-with-guarded-recovery-unscored)).
+
+**Owner gate.** Chaos Mesh 2.8.2, whose chaos-daemon runs privileged on the
+kind node, and metrics-server with `--kubelet-insecure-tls` were installed on
+the connected lab under the user's standing authorisation to run Phases 4 and
+5 autonomously. The project-owner approval that step 1 asks for is not
+recorded.
+
+- **Spikes (9d64aa1, operator logs only).** The pod-failure spike and the
+  third CPU spike are the valid ones (results under step 3). The first CPU
+  attempt applied the stress but every metrics read failed, because the
+  operator shell (Git Bash) rewrote the Metrics API path; the second read
+  metrics but never created the chaos, because `kubectl create` was given a
+  path that did not exist. All four are listed in
+  [evidence/exclusions.json](../evidence/README.md), since no Sentinel
+  component ran. The metrics-server digest and the kept 0.18-core threshold
+  were then committed in the pre-registration commit c9a44ca, before any
+  trial.
+- **First set (c9a44ca): N2 x5 FAILED, N3 and T1 PASS.** Each N2 run planned
+  RESTART by the code rule, made one Executor write, reached RECOVERED, passed
+  attribution, saw the forced ROLLBACK refused with
+  `ROLLBACK_ALREADY_AT_BASELINE` and zero writes, and confirmed the chaos
+  cleanup. All five failed in the drift cell: the forced RESTART got CONFLICT
+  from the Executor before any Guard check, because the drift's rollout had
+  moved the Deployment's resourceVersion, so no `RESTART_TEMPLATE_DRIFT`
+  refusal was shown. Nothing was written and the administrator restore
+  succeeded. That harness race was fixed in f5ce9db and 0d09f2d (merged in
+  29e41f8; the settle and retry are described above). N3 escalated by the
+  metric-only rule with zero writes and its forced RESTART was refused with
+  `RESTART_NOT_JUSTIFIED`; T1 recorded NO_INCIDENT with a passing
+  `true-negative.json`.
+- **Second set (29e41f8): N2 x5 PASS.** RESTART by the code rule, one write,
+  RECOVERED and attributed about 380 s before the chaos expired; the forced
+  ROLLBACK refused with `ROLLBACK_ALREADY_AT_BASELINE`, and the forced RESTART
+  during the drift refused with `RESTART_BUDGET_EXHAUSTED` and
+  `RESTART_TEMPLATE_DRIFT` (the run's own RESTART had used the budget), zero
+  writes for both. The drift settled after 3 reads and no stale
+  resourceVersion retry was needed.
+- **Agent variant (29e41f8): PASS as an expected escalation.** qwen3:14b (two
+  calls, about 39 s) diagnosed shippingservice failing because the chaos pause
+  image cannot start. The action came from the code eligibility rule
+  (`TEMPLATE_ALREADY_BASELINE`): ESCALATE, NEEDS_REVIEW, zero writes, so the
+  model's own action choice was not exercised (`model_action` null). ESCALATE
+  is in N2's acceptable list, so it scored acceptable; the forced ROLLBACK and
+  the drift RESTART were refused with zero writes, and the administrator
+  removed the fault afterwards, outside the Executor.
+
+<!-- BEGIN GENERATED:claim-c-chaos-recovery-c9a44ca -->
+> **C-CHAOS-RECOVERY-C9A44CA:** Chaos Mesh faults in guarded recovery (P4.03), first set at c9a44ca, unscored with labels pending: N2 at c9a44ca FAILED x5: RESTART decided by the rule, 1 Executor write, RECOVERED, matched the pre-registered expected outcome, labels pending; N3 at c9a44ca PASS: ESCALATE decided by the rule, 0 Executor writes, NEEDS_REVIEW, matched the pre-registered expected outcome, labels pending; T1 at c9a44ca PASS: NO_INCIDENT from observer, 0 Executor writes, no incident, matched the pre-registered expected outcome, labels pending.
+> Scope: UNSCORED: the N2, N3 and T1 labels in experiments/boutique/catalog.json await owner sign-off. Each N2 run planned RESTART by the code rule, made one Executor write, reached RECOVERED, passed attribution (new Pod not selected by the chaos, recovered before expiry, chaos still running) and saw the forced ROLLBACK refused with ROLLBACK_ALREADY_AT_BASELINE and zero writes, yet all five FAILED in the drift cell: the forced RESTART got CONFLICT from the Executor (the drift's rollout had moved the Deployment's resourceVersion) before any Guard check, so no RESTART_TEMPLATE_DRIFT refusal was shown; there was no write and the administrator restore succeeded. That harness race was fixed in f5ce9db and 0d09f2d (merged in 29e41f8; see C-CHAOS-RECOVERY-29E41F8). N3 ESCALATEd by the metric-only rule with zero writes and its forced RESTART was refused with RESTART_NOT_JUSTIFIED; T1 recorded NO_INCIDENT with a passing true-negative proof. Every chaos object was deleted and its cleanup confirmed. Code rule planning, no model; N2 used auto-lab approval (automated-lab identity, no person). The host was shared with other test runs at the time. Chaos Mesh 2.8.2 (a privileged chaos-daemon) and metrics-server chart 3.12.2 with --kubelet-insecure-tls (image pinned by digest in c9a44ca) were installed on this lab under the user's standing authorisation to run Phases 4-5; the project-owner approval the recipe asks for is not recorded. One Windows/amd64 host with Docker Desktop and one kind node (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: c9a44ca on integration/phase4, clean tree, 2026-11-13 UTC.
+<!-- END GENERATED:claim-c-chaos-recovery-c9a44ca -->
+
+<!-- BEGIN GENERATED:claim-c-chaos-recovery-29e41f8 -->
+> **C-CHAOS-RECOVERY-29E41F8:** Chaos Mesh faults in guarded recovery (P4.03), second set at 29e41f8, unscored with labels pending: N2 at 29e41f8 PASS x5: RESTART decided by the rule, 1 Executor write, RECOVERED, matched the pre-registered expected outcome, labels pending; N2 at 29e41f8 PASS: ESCALATE decided by the rule (TEMPLATE_ALREADY_BASELINE), 0 Executor writes, NEEDS_REVIEW, did not match the pre-registered expected outcome, labels pending.
+> Scope: UNSCORED: labels await owner sign-off. Five N2 runs with the drift-cell fix: each planned RESTART by the code rule, one Executor write, RECOVERED and attributed (about 380 s before the chaos expired), the forced ROLLBACK refused with ROLLBACK_ALREADY_AT_BASELINE and the forced RESTART during drift refused with RESTART_BUDGET_EXHAUSTED and RESTART_TEMPLATE_DRIFT, zero writes for both; the drift settled before the forced proposal and no stale resourceVersion retry was needed. The agent variant (qwen3:14b, 2 model calls) diagnosed shippingservice failing because the chaos pause image cannot start, but the action came from the code eligibility rule (TEMPLATE_ALREADY_BASELINE): ESCALATE, NEEDS_REVIEW, zero writes; the model's own action choice was not exercised (model_action null). ESCALATE is in N2's acceptable list, so the run passed with --expect escalated and scored acceptable, but matched_expected is false because RESTART is the correct answer; the administrator removed the fault after it (operator_emergency_restore true), outside the Executor. Five repeats share the host, cluster and target, so they are not independent trials. Chaos Mesh 2.8.2 (a privileged chaos-daemon) and metrics-server chart 3.12.2 with --kubelet-insecure-tls (image pinned by digest in c9a44ca) were installed on this lab under the user's standing authorisation to run Phases 4-5; the project-owner approval the recipe asks for is not recorded. One Windows/amd64 host with Docker Desktop and one kind node (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 29e41f8 on integration/phase4, clean tree, 2026-11-13 UTC.
+<!-- END GENERATED:claim-c-chaos-recovery-29e41f8 -->
+
+Not shown yet: a scored trial, an N2 run with interactive approval (every N2
+run used auto-lab approval, the automated-lab identity), repeats of N3 and T1,
+and an agent that can choose RESTART. The storefront check of N2 is still
+labelled "while shipping configuration is broken" although the fault is a pod
+failure; the label is cosmetic.
+
+### Live recipe (run on 2026-11-13, unscored)
 
 Run these on the host that holds the connected lab, in this order. Do not run
 them while the `sentinel-dist` cluster (P4.01) is up, and never against

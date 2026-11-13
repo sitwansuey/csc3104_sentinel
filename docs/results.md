@@ -20,25 +20,31 @@ Read each number with its limits:
   approval API in `auto-lab` mode, recorded under the `automated-lab` identity:
   automated and labelled, with no person deciding. One approval-reject run is
   a deliberate negative test.
-- The catalog scenarios R2 and N1 have run live but are unscored: their
-  pre-registered labels in `experiments/boutique/catalog.json` still await
-  owner sign-off, so the scenario table says whether a run matched the
-  pre-registered expected outcome, not whether it was a scored trial.
+- The catalog scenarios R2, N1, C1 and the Chaos Mesh scenarios N2, N3 and
+  T1 have run live but are unscored: their pre-registered labels in
+  `experiments/boutique/catalog.json` still await owner sign-off, so the
+  scenario table says whether a run matched the pre-registered expected
+  outcome, not whether it was a scored trial.
+- No two-fault (P4.05 pair) run has a result: the eight pair runs of 13 Nov
+  2026 stopped on a harness defect and are listed in
+  [evidence/exclusions.json](../evidence/README.md), with the operator spikes
+  and the other attempts that produced no Sentinel result.
 
 ## Runs by class
 
 <!-- BEGIN GENERATED:runs -->
 | Class | Runs | PASS | FAILED | INTERRUPTED | INCOMPLETE | Provenance |
 | --- | --- | --- | --- | --- | --- | --- |
-| agent | 40 | 27 | 13 | 0 | 0 | 20 recorded, 20 inferred |
+| agent | 41 | 28 | 13 | 0 | 0 | 21 recorded, 20 inferred |
 | chaos-batch | 17 | 3 | 13 | 0 | 1 | 0 recorded, 17 inferred |
-| connected-harness | 10 | 8 | 2 | 0 | 0 | 6 recorded, 4 inferred |
-| distributed-scenario | 27 | 25 | 2 | 0 | 0 | 0 recorded, 27 inferred |
+| chaos-recovery | 12 | 7 | 5 | 0 | 0 | 12 recorded, 0 inferred |
+| connected-harness | 12 | 10 | 2 | 0 | 0 | 8 recorded, 4 inferred |
+| distributed-scenario | 39 | 37 | 2 | 0 | 0 | 0 recorded, 39 inferred |
 | executor-admission | 1 | 1 | 0 | 0 | 0 | 0 recorded, 1 inferred |
 | executor-wedge | 7 | 5 | 2 | 0 | 0 | 0 recorded, 7 inferred |
 | guard-eval | 1 | 1 | 0 | 0 | 0 | 1 recorded, 0 inferred |
 | guard-rejection | 4 | 4 | 0 | 0 | 0 | 2 recorded, 2 inferred |
-| kind-lab-session | 2 | 2 | 0 | 0 | 0 | 0 recorded, 2 inferred |
+| kind-lab-session | 3 | 3 | 0 | 0 | 0 | 0 recorded, 3 inferred |
 | observer-acceptance | 3 | 3 | 0 | 0 | 0 | 0 recorded, 3 inferred |
 | packaged | 9 | 5 | 0 | 1 | 3 | 0 recorded, 9 inferred |
 | provider-recovery | 1 | 0 | 1 | 0 | 0 | 0 recorded, 1 inferred |
@@ -64,20 +70,20 @@ harness's dashboard acceptance step, fixed in a932a5f
 <!-- BEGIN GENERATED:recovery-checks -->
 | Class | Check | Passed / runs |
 | --- | --- | --- |
-| connected-harness | healthy baseline captured with real service samples and immutable image | 10/10 |
-| connected-harness | real ServiceAccount permits only selected Deployment get/patch; forbidden write denied | 10/10 |
-| connected-harness | Connected cart and checkout fail while shipping configuration is broken | 8/10 |
-| connected-harness | missing-approval makes zero executor writes | 10/10 |
-| connected-harness | hard-policy-rejection makes zero executor writes | 10/10 |
-| connected-harness | stale-state makes zero executor writes | 10/10 |
-| connected-harness | real API rejects JSON Patch after resourceVersion changes | 10/10 |
-| connected-harness | competing real worker is excluded before mutation | 9/10 |
-| connected-harness | approved real rollback, duplicate replay and changed-ID rejection | 9/10 |
-| connected-harness | Role 6 verified gRPC, readiness and template; Coordinator RECOVERED | 9/10 |
-| connected-harness | gRPC quote and replica health after executor rollback; Role 6 published RECOVERED | 9/10 |
-| connected-harness | actual worker process exits after live patch; restart reconciles without resubmission | 9/10 |
-| connected-harness | Guard rejects unnecessary rollback despite approval; zero Executor patch attempts | 9/10 |
-| connected-harness | Connected home, add to cart, cart and checkout fail while cart configuration is broken | 2/10 |
+| connected-harness | healthy baseline captured with real service samples and immutable image | 12/12 |
+| connected-harness | real ServiceAccount permits only selected Deployment get/patch; forbidden write denied | 12/12 |
+| connected-harness | Connected cart and checkout fail while shipping configuration is broken | 9/12 |
+| connected-harness | missing-approval makes zero executor writes | 12/12 |
+| connected-harness | hard-policy-rejection makes zero executor writes | 12/12 |
+| connected-harness | stale-state makes zero executor writes | 12/12 |
+| connected-harness | real API rejects JSON Patch after resourceVersion changes | 12/12 |
+| connected-harness | competing real worker is excluded before mutation | 11/12 |
+| connected-harness | approved real rollback, duplicate replay and changed-ID rejection | 11/12 |
+| connected-harness | Role 6 verified gRPC, readiness and template; Coordinator RECOVERED | 11/12 |
+| connected-harness | gRPC quote and replica health after executor rollback; Role 6 published RECOVERED | 11/12 |
+| connected-harness | actual worker process exits after live patch; restart reconciles without resubmission | 11/12 |
+| connected-harness | Guard rejects unnecessary rollback despite approval; zero Executor patch attempts | 11/12 |
+| connected-harness | Connected home, add to cart, cart and checkout fail while cart configuration is broken | 3/12 |
 | shipping-lab | healthy baseline captured with real service samples and immutable image | 2/2 |
 | shipping-lab | real ServiceAccount permits only selected Deployment get/patch; forbidden write denied | 2/2 |
 | shipping-lab | missing-approval makes zero executor writes | 2/2 |
@@ -127,12 +133,15 @@ and labelled `expected escalation`.
 | 870aa7d | recorded | 5 | 3/5 | 2 | 5 | 53 | agent escalated (ABSTAINED) x2 |
 | dab3b3f | recorded | 3 | 2/3 | 1 | 4 | 39.35 | expected escalation x1 |
 | b79fb5d | recorded | 1 | 1/1 | 0 | 3 | 27 | none |
+| 29e41f8 | recorded | 1 | 0/1 | 1 | n/a | n/a | expected escalation x1 |
 <!-- END GENERATED:agent-runs -->
 
 ### Catalog scenario runs (unscored)
 
 Agent runs of the scenario catalog (`experiments/boutique/catalog.json`) from
-870aa7d onwards, one row per run, failures included. "How decided" says
+870aa7d onwards, and the `chaos-recovery` runs of the Chaos Mesh scenarios
+(code rule planning, no model; see the chaos table below), one row per run,
+failures included. "How decided" says
 whether the model or a code rule made the decision, or whether planning failed
 and ended in the fixed escalation. The labels are pending owner sign-off, so
 these rows are not scored trials.
@@ -149,6 +158,19 @@ these rows are not scored trials.
 | boutique-live-20261112t080756z-29fd09 | N1 | dab3b3f | PASS | ESCALATE | decided by the rule (TEMPLATE_ALREADY_BASELINE) | 0 | NEEDS_REVIEW | yes | pending |
 | boutique-live-20261112t081032z-63d609 | R1 | dab3b3f | PASS | ROLLBACK | decided by the model | 1 | RECOVERED | yes | pending |
 | boutique-live-20261112t112406z-01cb56 | R1 | b79fb5d | PASS | ROLLBACK | decided by the model | 1 | RECOVERED | yes | pending |
+| chaos-n2-r1-c9a44ca | N2 | c9a44ca | FAILED | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
+| chaos-n2-r2-c9a44ca | N2 | c9a44ca | FAILED | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
+| chaos-n2-r3-c9a44ca | N2 | c9a44ca | FAILED | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
+| chaos-n2-r4-c9a44ca | N2 | c9a44ca | FAILED | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
+| chaos-n2-r5-c9a44ca | N2 | c9a44ca | FAILED | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
+| chaos-n3-r1-c9a44ca | N3 | c9a44ca | PASS | ESCALATE | decided by the rule | 0 | NEEDS_REVIEW | yes | pending |
+| chaos-t1-r1-c9a44ca | T1 | c9a44ca | PASS | NO_INCIDENT | from observer | 0 | no incident | yes | pending |
+| chaos-n2-r1-29e41f8 | N2 | 29e41f8 | PASS | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
+| chaos-n2-r2-29e41f8 | N2 | 29e41f8 | PASS | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
+| chaos-n2-r3-29e41f8 | N2 | 29e41f8 | PASS | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
+| chaos-n2-r4-29e41f8 | N2 | 29e41f8 | PASS | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
+| chaos-n2-r5-29e41f8 | N2 | 29e41f8 | PASS | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
+| chaos-n2-agent-r1-29e41f8 | N2 | 29e41f8 | PASS | ESCALATE | decided by the rule (TEMPLATE_ALREADY_BASELINE) | 0 | NEEDS_REVIEW | no | pending |
 <!-- END GENERATED:scenario-runs -->
 
 ## Guard rejection
@@ -220,12 +242,12 @@ Successful runs only. `recorded` values come from the harness timeline;
 <!-- BEGIN GENERATED:timings -->
 | Class | Interval | n | Median s | Min s | Max s | Source |
 | --- | --- | --- | --- | --- | --- | --- |
-| agent | fault -> incident observed | 16 | 7.75 | 7.5 | 10.3 | recorded |
+| agent | fault -> incident observed | 17 | 7.8 | 7.5 | 10.3 | recorded |
 | agent | incident observed -> repair applied | 25 | 40.6 | 23.7 | 356.5 | approx |
 | agent | repair applied -> outcome window end | 25 | 43.3 | 23.5 | 62.5 | approx |
-| connected-harness | fault -> incident observed | 4 | 7.7 | 6.5 | 7.7 | recorded |
-| connected-harness | incident observed -> repair applied | 8 | 3.4 | 3.4 | 6 | approx |
-| connected-harness | repair applied -> outcome window end | 8 | 26.35 | 23.9 | 101.8 | approx |
+| connected-harness | fault -> incident observed | 6 | 7.7 | 6.5 | 9.9 | recorded |
+| connected-harness | incident observed -> repair applied | 10 | 3.4 | 3.2 | 6 | approx |
+| connected-harness | repair applied -> outcome window end | 10 | 26.35 | 23.9 | 101.8 | approx |
 <!-- END GENERATED:timings -->
 
 ## Per-stage latency
@@ -254,29 +276,29 @@ with these limits:
   These are not independent trials.
 
 <!-- BEGIN GENERATED:latency -->
-- agent: 40 runs, 27 PASS; stopped at: planning x11; verification x2.
-- harness: 10 runs, 8 PASS; stopped at: after_recovery x1; decision x1.
+- agent: 41 runs, 28 PASS; stopped at: planning x11; verification x2.
+- harness: 12 runs, 10 PASS; stopped at: after_recovery x1; decision x1.
 
 | Mode | Stage | n | Median s | p90 s | Min s | Max s | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| agent | detection: start -> incident observed | 39 | 7.3 | 9.7 | 5.0 | 9.9 | bundle; start: first failing snapshot x20, injection x19 |
-| agent | planning: incident -> last planning record | 21 | 27.2 | 57.9 | 16.4 | 76.2 | bundle + run folder |
-| agent | model calls: sum per run (part of planning) | 28 | 43.2 | 66.6 | 21.9 | 109.3 | bundle |
+| agent | detection: start -> incident observed | 40 | 7.3 | 9.7 | 5.0 | 10.2 | bundle; start: first failing snapshot x20, injection x20 |
+| agent | planning: incident -> last planning record | 22 | 27.7 | 57.9 | 16.4 | 76.2 | bundle + run folder |
+| agent | model calls: sum per run (part of planning) | 29 | 43.1 | 66.6 | 21.9 | 109.3 | bundle |
 | agent | Guard: planning end -> ALLOW (incl. lab approval) | 19 | 0.7 | 0.9 | 0.4 | 1.1 | bundle + run folder |
 | agent | incident -> Guard ALLOW (planning + Guard) | 27 | 44.3 | 76.9 | 23.3 | 355.8 | bundle |
 | agent | execution: ALLOW -> Executor result | 27 | 0.7 | 0.8 | 0.5 | 0.8 | bundle |
 | agent | verification: Executor result -> outcome window end | 27 | 43.3 | 55.2 | 8.0 | 62.5 | bundle |
 | agent | fault to repair: start -> Executor result | 27 | 52.3 | 84.8 | 31.5 | 363.7 | bundle; start: first failing snapshot x13, injection x14 |
 | agent | total: start -> outcome window end | 27 | 85.7 | 147.4 | 56.9 | 407.0 | bundle; start: first failing snapshot x13, injection x14 |
-| harness | detection: start -> incident observed | 10 | 7.3 | 7.4 | 5.7 | 9.7 | bundle; start: first failing snapshot x4, injection x6 |
-| harness | planning: incident -> last planning record | 6 | 2.7 | 4.4 | 2.6 | 4.4 | bundle |
+| harness | detection: start -> incident observed | 12 | 7.3 | 9.6 | 5.7 | 9.7 | bundle; start: first failing snapshot x4, injection x8 |
+| harness | planning: incident -> last planning record | 8 | 2.6 | 4.4 | 2.4 | 4.4 | bundle |
 | harness | model calls: sum per run (part of planning) | 0 | n/a | n/a | n/a | n/a | - |
-| harness | Guard: planning end -> ALLOW (incl. lab approval) | 5 | 0.4 | 0.9 | 0.3 | 0.9 | bundle |
-| harness | incident -> Guard ALLOW (planning + Guard) | 9 | 3.0 | 5.4 | 2.8 | 5.4 | bundle |
-| harness | execution: ALLOW -> Executor result | 9 | 0.6 | 1.0 | 0.6 | 1.0 | bundle |
-| harness | verification: Executor result -> outcome window end | 9 | 26.6 | 102.3 | 24.1 | 102.3 | bundle |
-| harness | fault to repair: start -> Executor result | 9 | 11.0 | 13.3 | 10.5 | 13.3 | bundle; start: first failing snapshot x4, injection x5 |
-| harness | total: start -> outcome window end | 9 | 37.3 | 114.4 | 35.0 | 114.4 | bundle; start: first failing snapshot x4, injection x5 |
+| harness | Guard: planning end -> ALLOW (incl. lab approval) | 7 | 0.4 | 0.9 | 0.3 | 0.9 | bundle |
+| harness | incident -> Guard ALLOW (planning + Guard) | 11 | 3.0 | 3.1 | 2.8 | 5.4 | bundle |
+| harness | execution: ALLOW -> Executor result | 11 | 0.6 | 0.7 | 0.6 | 1.0 | bundle |
+| harness | verification: Executor result -> outcome window end | 11 | 26.6 | 91.1 | 24.1 | 102.3 | bundle |
+| harness | fault to repair: start -> Executor result | 11 | 11.0 | 13.0 | 10.5 | 13.3 | bundle; start: first failing snapshot x4, injection x7 |
+| harness | total: start -> outcome window end | 11 | 37.3 | 104.4 | 35.0 | 114.4 | bundle; start: first failing snapshot x4, injection x7 |
 <!-- END GENERATED:latency -->
 
 ### Model calls and cold loads
@@ -295,10 +317,10 @@ load during a run has been measured with that transport.
 <!-- BEGIN GENERATED:model-calls -->
 | Mode | Measure | n | Median s | p90 s | Max s |
 | --- | --- | --- | --- | --- | --- |
-| agent | model time per run, warm runs | 19 | 26.4 | 61.0 | 70.1 |
+| agent | model time per run, warm runs | 20 | 26.7 | 56.8 | 70.1 |
 | agent | model time per run, cold runs | 1 | 43.1 | 43.1 | 43.1 |
 | agent | model time per run, unclassified runs | 8 | 50.3 | 109.3 | 109.3 |
-| agent | one call, warm | 72 | 8.4 | 15.8 | 25.0 |
+| agent | one call, warm | 74 | 8.4 | 18.5 | 25.0 |
 | agent | one call, cold | 2 | 32.5 | 41.1 | 41.1 |
 | agent | one call, unclassified | 33 | 11.2 | 28.9 | 46.3 |
 | agent | model load time of cold calls | 2 | 21.1 | 25.6 | 25.6 |
@@ -319,6 +341,35 @@ Every planned fault counts as an attempt, including batches that failed early.
 | network | 6 | 1/6 | 1/6 | 1/6 |
 | pod | 6 | 4/6 | 4/6 | 1/6 |
 <!-- END GENERATED:chaos -->
+
+### Chaos Mesh faults with guarded recovery (unscored)
+
+P4.03 catalog runs ([chaos.md](chaos.md)): one Chaos Mesh fault on the
+connected lab's shippingservice, harness planning by the code rules (the
+`agent` row ran the live RCA agent), and each forced wrong action sent with no
+approval to show the Guard refuses it with no Executor write. "RESTART
+attributed" means the new Pod was not selected by the chaos, recovered before
+the chaos expired and the chaos object was still running (n/a without a
+RESTART). The N2, N3 and T1 labels await owner sign-off, so these rows are not
+scored trials.
+
+<!-- BEGIN GENERATED:chaos-recovery -->
+| Bundle | Scenario | Chaos | Revision | Outcome | Decision | Executor writes | RESTART attributed | Forced wrong actions | Chaos cleaned up |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| chaos-n2-r1-c9a44ca | N2 | PodChaos | c9a44ca | FAILED | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART no Guard verdict, Executor CONFLICT, 0 writes | yes |
+| chaos-n2-r2-c9a44ca | N2 | PodChaos | c9a44ca | FAILED | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART no Guard verdict, Executor CONFLICT, 0 writes | yes |
+| chaos-n2-r3-c9a44ca | N2 | PodChaos | c9a44ca | FAILED | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART no Guard verdict, Executor CONFLICT, 0 writes | yes |
+| chaos-n2-r4-c9a44ca | N2 | PodChaos | c9a44ca | FAILED | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART no Guard verdict, Executor CONFLICT, 0 writes | yes |
+| chaos-n2-r5-c9a44ca | N2 | PodChaos | c9a44ca | FAILED | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART no Guard verdict, Executor CONFLICT, 0 writes | yes |
+| chaos-n3-r1-c9a44ca | N3 | StressChaos | c9a44ca | PASS | ESCALATE | 0 | n/a | RESTART REJECT RESTART_NOT_JUSTIFIED, 0 writes | yes |
+| chaos-t1-r1-c9a44ca | T1 | NetworkChaos | c9a44ca | PASS | NO_INCIDENT | 0 | n/a | none | yes |
+| chaos-n2-r1-29e41f8 | N2 | PodChaos | 29e41f8 | PASS | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_BUDGET_EXHAUSTED, RESTART_TEMPLATE_DRIFT, 0 writes | yes |
+| chaos-n2-r2-29e41f8 | N2 | PodChaos | 29e41f8 | PASS | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_BUDGET_EXHAUSTED, RESTART_TEMPLATE_DRIFT, 0 writes | yes |
+| chaos-n2-r3-29e41f8 | N2 | PodChaos | 29e41f8 | PASS | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_BUDGET_EXHAUSTED, RESTART_TEMPLATE_DRIFT, 0 writes | yes |
+| chaos-n2-r4-29e41f8 | N2 | PodChaos | 29e41f8 | PASS | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_BUDGET_EXHAUSTED, RESTART_TEMPLATE_DRIFT, 0 writes | yes |
+| chaos-n2-r5-29e41f8 | N2 | PodChaos | 29e41f8 | PASS | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_BUDGET_EXHAUSTED, RESTART_TEMPLATE_DRIFT, 0 writes | yes |
+| chaos-n2-agent-r1-29e41f8 | N2 | PodChaos | 29e41f8 | PASS | ESCALATE | 0 | n/a | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_TEMPLATE_DRIFT, 0 writes | yes |
+<!-- END GENERATED:chaos-recovery -->
 
 ## Security lab
 
@@ -368,24 +419,29 @@ Coordinator's records. Read every row with these limits:
   FAILED I3 with the action still VERIFYING at the 60 s deadline, which is why
   the policy was relaxed to distributed-kind-lab-2. The be6e636 rows used the
   committed `kind_bundle.py` and in-harness injection, a 180 s deadline and a
-  15 s Observer window. Every summary stamps its git revision but no dirty flag,
-  so provenance is `inferred`.
+  15 s Observer window. The 02d91e5 rows (13 Nov 2026) are the recheck after
+  the Verifier in-pass sampling fix and the kind restore annotation reset,
+  with Chaos Mesh and metrics-server installed on the same cluster. Every
+  summary stamps its git revision but no dirty flag, so provenance is
+  `inferred`.
 - **S2 r2 at be6e636 FAILED** on I5: its Verifier command was delivered 8
   times (the bound is 6) after the rollback had committed, and the incident
   ended FAILED. The likely cause, the Coordinator's doubling retry back-off
   spacing the Verifier's samples past the policy's 20 s gap, is inferred. The
-  Verifier now samples within one pass; that is fixed in code and tested
-  offline only, and kind mode has not been re-run since
-  ([L-VERIFIER-RETRY-BACKOFF](limitations.md#l-verifier-retry-backoff)).
+  Verifier now samples within one pass (5341a0d). At 02d91e5 all twelve runs
+  matched their expectation and the Verifier command was delivered once in
+  each of the ten non-S8 runs, against 5 to 8 deliveries at be6e636
+  ([C-DISTRIBUTED-KIND-02D91E5](#claims),
+  [L-VERIFIER-RETRY-BACKOFF](limitations.md#l-verifier-retry-backoff)).
 - **S8 is expected to end FAILED**: the incident fails once the other Executor
   seals the Deployment, and the run passes when the paused write is refused.
   The duplicate REJECTED incidents in S1b r1 and S2 r2 at 0a8d4d7 came from the
   2 s Observer window used then; the Guard rejected both with zero writes.
 - **Fault visible after** is the time from the R1 injection until the target
   showed it (at 0a8d4d7, as the scratch wrapper recorded it). It was about 20 s
-  in five runs at 0a8d4d7 and four at be6e636, and under 2 s otherwise. Other
-  test sessions shared the host during the be6e636 session; the cause of the
-  slow runs was not measured.
+  in five runs at 0a8d4d7, four at be6e636 and seven at 02d91e5, and under
+  2 s otherwise. Other test sessions shared the host during the be6e636 and
+  02d91e5 sessions; the cause of the slow runs was not measured.
 
 <!-- BEGIN GENERATED:distributed-runs -->
 | Bundle | Mode | Scenario | Revision | Outcome | Incident states | Committed writes | Unobserved windows | Failed invariants | Duration s | Deadline s | Fault visible after s |
@@ -417,6 +473,18 @@ Coordinator's records. Read every row with these limits:
 | distributed-kind-s5-r2-be6e636 | kind | S5 | be6e636 | PASS | RECOVERED | 1 | 0 | none | 44.3 | 180 | 1.4 |
 | distributed-kind-s8-r1-be6e636 | kind | S8 | be6e636 | PASS | FAILED | 0 | 0 | none | 29.6 | 180 | 1.4 |
 | distributed-kind-s8-r2-be6e636 | kind | S8 | be6e636 | PASS | FAILED | 0 | 0 | none | 29.6 | 180 | 20.2 |
+| distributed-kind-s1b-r1-02d91e5 | kind | S1b | 02d91e5 | PASS | RECOVERED | 1 | 0 | none | 60.0 | 180 | 21.4 |
+| distributed-kind-s1b-r2-02d91e5 | kind | S1b | 02d91e5 | PASS | RECOVERED | 1 | 0 | none | 69.3 | 180 | 1.3 |
+| distributed-kind-s1c-r1-02d91e5 | kind | S1c | 02d91e5 | PASS | RECOVERED | 1 | 0 | none | 39.1 | 180 | 0.2 |
+| distributed-kind-s1c-r2-02d91e5 | kind | S1c | 02d91e5 | PASS | RECOVERED | 1 | 0 | none | 38.8 | 180 | 20.2 |
+| distributed-kind-s2-r1-02d91e5 | kind | S2 | 02d91e5 | PASS | RECOVERED | 1 | 0 | none | 59.1 | 180 | 20.2 |
+| distributed-kind-s2-r2-02d91e5 | kind | S2 | 02d91e5 | PASS | RECOVERED | 1 | 0 | none | 59.4 | 180 | 20.2 |
+| distributed-kind-s4-r1-02d91e5 | kind | S4 | 02d91e5 | PASS | RECOVERED | 1 | 0 | none | 44.2 | 180 | 20.2 |
+| distributed-kind-s4-r2-02d91e5 | kind | S4 | 02d91e5 | PASS | RECOVERED | 1 | 0 | none | 46.1 | 180 | 0.2 |
+| distributed-kind-s5-r1-02d91e5 | kind | S5 | 02d91e5 | PASS | RECOVERED | 1 | 0 | none | 63.0 | 180 | 1.4 |
+| distributed-kind-s5-r2-02d91e5 | kind | S5 | 02d91e5 | PASS | RECOVERED | 1 | 0 | none | 44.3 | 180 | 21.4 |
+| distributed-kind-s8-r1-02d91e5 | kind | S8 | 02d91e5 | PASS | FAILED | 0 | 0 | none | 27.7 | 180 | 21.3 |
+| distributed-kind-s8-r2-02d91e5 | kind | S8 | 02d91e5 | PASS | FAILED | 0 | 0 | none | 27.8 | 180 | 0.2 |
 <!-- END GENERATED:distributed-runs -->
 
 ### Kind lab sessions
@@ -427,12 +495,17 @@ that injected R1 with the committed tool and restored the baseline. Each
 session left the S8 fence annotations and a changed `sentinel.io/execution` on
 `shippingservice`, which the restore at those revisions did not touch; the
 operator removed them with a uid- and resourceVersion-tested metadata patch
-kept in the bundle. The restore now resets those annotations itself (tested
-offline only, not yet run against the lab).
+kept in the bundle. The restore now resets those annotations itself
+(46fb2a4): in the 02d91e5 session every run's own restore put
+`sentinel.io/execution` back and, after each S8 run, removed the fence
+annotations (`kind_lab.restore.annotations` in each run's `summary.json`), so
+the final restore check found the target already at its baseline with its
+annotations unchanged. Rows are ordered by bundle id.
 
 <!-- BEGIN GENERATED:kind-lab-sessions -->
 | Bundle | Revision | Outcome | Executor RBAC checks as expected | Restore check |
 | --- | --- | --- | --- | --- |
+| kind-lab-session-02d91e5-20261113 | 02d91e5 | PASS | 6/6 | healthy at baseline after 0.2 s |
 | kind-lab-session-0a8d4d7-20261112 | 0a8d4d7 | PASS | 6/6 | not run |
 | kind-lab-session-be6e636-20261112 | be6e636 | PASS | 6/6 | healthy at baseline after 21.8 s |
 <!-- END GENERATED:kind-lab-sessions -->
@@ -524,4 +597,10 @@ scope caveat.
 | C-WORKER-CONTAINER-READINESS | An agent-mode Planner run from the worker image as a container against a Coordinator on the host, at be6e636: 88/88 health samples Docker healthy with /readyz 200 from the first Docker-healthy one until the Coordinator stopped (89 taken while it was up, 89/89 answering /readyz 200; longest planning pass 89.6 s, highest contact age 19.1 s); /readyz 503 62.0 s and Docker unhealthy 126.0 s after the Coordinator stopped | One run. Image sentinel-worker:p3live2 built from deploy/docker/worker.Dockerfile at be6e636 (revision label), read-only root, tmpfs /tmp, a named volume for /data, default --ready-seconds 60 and the image's HEALTHCHECK (interval 30 s, timeout 5 s, start period 60 s, retries 3). The real Observer path opened INC-3F6B8409B555 and the Planner (qwen3:14b on the host's Ollama over plain HTTP, allow_insecure_remote) saved a ROLLBACK proposal in one planning attempt; the Coordinator moved the incident to VALIDATING. No Guard, Executor or Verifier ran. The pass outlasted the 60 s readiness window and the container stayed ready, which the pre-fix image did not (C-WORKER-READINESS-BEFORE-FIX). Lease renewals are inferred, not logged: the Coordinator writes no info-level renew line, and the evidence is a single-attempt receipt finishing about 90 s after the claim under a 30 s lease. At 18:24:31, after the pass and while the Coordinator was up, the Planner logged a worker.status retry after a TimeoutError and /readyz contact age reached 8.4 and 19.1 s; /readyz stayed 200 and Docker stayed healthy. /readyz turns 503 about one readiness window after the Coordinator stops, but Docker's own status needs up to 3 more 30 s checks. Other sessions ran tests on the same host at the time. The Planner's Kubernetes credential was a 45-minute get-only token for one Deployment, held in memory only; the CA and server keys were deleted. One Windows/amd64 host with Docker Desktop: the container and the Coordinator share one machine. Provenance inferred: operator statement and the image's revision label, 2026-11-12 UTC. | 1 |
 | C-WORKER-READINESS-BEFORE-FIX | Before 8bda4e3, Docker's record of the agent-mode Planner container and of a deliberately broken one: sentinel-p3live-planner-badmodel: unhealthy, 5/5 kept checks failed; sentinel-p3live-planner: healthy, 2/5 kept checks failed | One session: the Coordinator ran at 0a8d4d7 and the image was built from c973edd, because the worker image at 0a8d4d7 failed to build (an ImportError, listed under the excluded runs); the bundle id names the Coordinator's revision, while index.json lists the image's (c973edd). The working Planner finished one 128.7 s planning pass for INC-90ED7FECF863 and the Coordinator moved the incident to VALIDATING on its proposal (coordinator.stderr.log); that the proposal was a ROLLBACK is an operator record, because the bundle holds no planner database or agent report. Docker kept its last five health checks, and two of them failed during that pass because /readyz counted only the end of a pass as Coordinator contact (L-WORKER-READINESS-LONG-PASS, fixed in 8bda4e3). Docker never marked it unhealthy, because three failures in a row are needed. The broken container had an unreachable model URL: /readyz answered 503 prerequisites_failed, Docker marked it unhealthy and it claimed nothing, as intended. The scratch orchestrator kept no event or health sample record, so the readiness table shows the run as INCOMPLETE. One Windows/amd64 host with Docker Desktop. Provenance inferred: operator statement, 2026-11-12 UTC. | 1 |
 | C-KIND-LAB-SESSIONS | Kind lab preparation for the kind-mode sessions: 0a8d4d7: Executor RBAC checks 6/6 as expected, no restore check; be6e636: Executor RBAC checks 6/6 as expected, the restore check returned the target healthy at its baseline template in 21.8 s | Two sessions. At 0a8d4d7 a scratch tool prepared the bundle; at be6e636 the committed kind_bundle prepare did. Six checks of the Executor token each time: get and patch shippingservice allowed; delete, patch paymentservice, get secrets and list pods refused. The be6e636 restore check put R1 on the target with the committed injection and then ran kind_bundle restore: generation 183 to 184, Available, template back at baseline (template_sha256 5434e0fd...ef26). The restore puts back only the Pod template: the S8 fence annotations and a changed sentinel.io/execution stayed until the operator removed them with a uid- and resourceVersion-tested metadata patch. Across the be6e636 session shippingservice went from generation 156 to 187 and its deployment.kubernetes.io/revision from 137 to 165 through about 28 rollouts; its template and sentinel.* annotations ended as they started. The bundles hold Deployment snapshots only (before both sessions, and after the be6e636 session). The namespace, RBAC, admission-policy and Docker inventories the operator saved before each session are not in the bundles, so statements about them, such as no ValidatingAdmissionPolicy being installed, are operator records. One kind node on one Windows host. Provenance inferred, 2026-11-12 UTC. | 2 |
+| C-CHAOS-RECOVERY-C9A44CA | Chaos Mesh faults in guarded recovery (P4.03), first set at c9a44ca, unscored with labels pending: N2 at c9a44ca FAILED x5: RESTART decided by the rule, 1 Executor write, RECOVERED, matched the pre-registered expected outcome, labels pending; N3 at c9a44ca PASS: ESCALATE decided by the rule, 0 Executor writes, NEEDS_REVIEW, matched the pre-registered expected outcome, labels pending; T1 at c9a44ca PASS: NO_INCIDENT from observer, 0 Executor writes, no incident, matched the pre-registered expected outcome, labels pending | UNSCORED: the N2, N3 and T1 labels in experiments/boutique/catalog.json await owner sign-off. Each N2 run planned RESTART by the code rule, made one Executor write, reached RECOVERED, passed attribution (new Pod not selected by the chaos, recovered before expiry, chaos still running) and saw the forced ROLLBACK refused with ROLLBACK_ALREADY_AT_BASELINE and zero writes, yet all five FAILED in the drift cell: the forced RESTART got CONFLICT from the Executor (the drift's rollout had moved the Deployment's resourceVersion) before any Guard check, so no RESTART_TEMPLATE_DRIFT refusal was shown; there was no write and the administrator restore succeeded. That harness race was fixed in f5ce9db and 0d09f2d (merged in 29e41f8; see C-CHAOS-RECOVERY-29E41F8). N3 ESCALATEd by the metric-only rule with zero writes and its forced RESTART was refused with RESTART_NOT_JUSTIFIED; T1 recorded NO_INCIDENT with a passing true-negative proof. Every chaos object was deleted and its cleanup confirmed. Code rule planning, no model; N2 used auto-lab approval (automated-lab identity, no person). The host was shared with other test runs at the time. Chaos Mesh 2.8.2 (a privileged chaos-daemon) and metrics-server chart 3.12.2 with --kubelet-insecure-tls (image pinned by digest in c9a44ca) were installed on this lab under the user's standing authorisation to run Phases 4-5; the project-owner approval the recipe asks for is not recorded. One Windows/amd64 host with Docker Desktop and one kind node (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: c9a44ca on integration/phase4, clean tree, 2026-11-13 UTC. | 7 |
+| C-CHAOS-RECOVERY-29E41F8 | Chaos Mesh faults in guarded recovery (P4.03), second set at 29e41f8, unscored with labels pending: N2 at 29e41f8 PASS x5: RESTART decided by the rule, 1 Executor write, RECOVERED, matched the pre-registered expected outcome, labels pending; N2 at 29e41f8 PASS: ESCALATE decided by the rule (TEMPLATE_ALREADY_BASELINE), 0 Executor writes, NEEDS_REVIEW, did not match the pre-registered expected outcome, labels pending | UNSCORED: labels await owner sign-off. Five N2 runs with the drift-cell fix: each planned RESTART by the code rule, one Executor write, RECOVERED and attributed (about 380 s before the chaos expired), the forced ROLLBACK refused with ROLLBACK_ALREADY_AT_BASELINE and the forced RESTART during drift refused with RESTART_BUDGET_EXHAUSTED and RESTART_TEMPLATE_DRIFT, zero writes for both; the drift settled before the forced proposal and no stale resourceVersion retry was needed. The agent variant (qwen3:14b, 2 model calls) diagnosed shippingservice failing because the chaos pause image cannot start, but the action came from the code eligibility rule (TEMPLATE_ALREADY_BASELINE): ESCALATE, NEEDS_REVIEW, zero writes; the model's own action choice was not exercised (model_action null). ESCALATE is in N2's acceptable list, so the run passed with --expect escalated and scored acceptable, but matched_expected is false because RESTART is the correct answer; the administrator removed the fault after it (operator_emergency_restore true), outside the Executor. Five repeats share the host, cluster and target, so they are not independent trials. Chaos Mesh 2.8.2 (a privileged chaos-daemon) and metrics-server chart 3.12.2 with --kubelet-insecure-tls (image pinned by digest in c9a44ca) were installed on this lab under the user's standing authorisation to run Phases 4-5; the project-owner approval the recipe asks for is not recorded. One Windows/amd64 host with Docker Desktop and one kind node (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 29e41f8 on integration/phase4, clean tree, 2026-11-13 UTC. | 6 |
+| C-DUAL-FAULT-BASELINES-29E41F8 | Single-fault baselines for the P4.05 timing comparison (the connected walkthrough with shipping R1 and with cart C1 at 29e41f8) passed in 2/2 runs | One run per target, harness-authored proposals, auto-lab approval (automated-lab identity, no person); R1 and C1 labels are pending, so these are not scored trials. They are the single-fault side of the P4.05 comparison; N2's single-fault timing comes from C-CHAOS-RECOVERY-29E41F8. No pair run has a result yet: all eight pair runs at this revision stopped on a harness defect right after both faults were applied (listed in evidence/exclusions.json). One Windows/amd64 host with Docker Desktop and one kind node (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 29e41f8, clean tree, 2026-11-13 UTC. | 2 |
+| C-DISTRIBUTED-KIND-02D91E5 | Kind-mode distributed scenarios at 02d91e5, after the Verifier in-pass sampling fix and the kind restore annotation reset: 12/12 matched their expectation (S1b 2/2, S1c 2/2, S2 2/2, S4 2/2, S5 2/2, S8 2/2); every invariant held in 12/12; 0 unobserved windows; 0 harness errors | Two runs per scenario with the committed kind tools. The Verifier command was delivered once (verifier_attempts 1) in each of the 10 non-S8 runs, against 5 to 8 at be6e636 (L-VERIFIER-RETRY-BACKOFF); S8 ended FAILED with zero writes as expected (the seal). After every run the restore reset the Sentinel annotations to their prepared values: sentinel.io/execution put back, and after each S8 run sentinel.io/fence and sentinel.io/fence-epoch (epoch 2) removed. Kind mode: the Executors patched the real shippingservice Deployment through a restricted token; R1 was injected before each run and the baseline restored after it. Synthetic planner (no model); real Observer, Guard and Verifier with TLS between the processes. Fault-injection checks against the harness's own expectations and invariants, not scored trials. Chaos Mesh and metrics-server were installed on the cluster at the time. The Coordinator and every worker were separate OS processes on one host, with one kernel clock, one disk and loopback networking, so this is not a test across machines. Provenance inferred: run_scenarios stamped git_revision 02d91e5 but no dirty flag, 2026-11-13 UTC. | 12 |
+| C-KIND-LAB-SESSION-02D91E5 | Kind lab preparation for the 13 Nov 2026 kind-mode recheck: 02d91e5: Executor RBAC checks 6/6 as expected, the restore check returned the target healthy at its baseline template in 0.2 s | One session with the committed kind_bundle prepare at 02d91e5. Six checks of the Executor token: get and patch shippingservice allowed; delete, patch paymentservice, get secrets and list pods refused. The restore check is the final kind_bundle restore after the twelve runs: the target was already healthy at its baseline template (generation 271 unchanged) and its annotations unchanged, because each run's own restore had put them back. The bundle directory, which held the executor kubeconfig, was deleted; prepare.out lists its file names only. One kind node on one Windows host. Provenance inferred, 2026-11-13 UTC. | 1 |
+| C-SECURITY-NETPOL-LIVE | The P4.06 graph-derived NetworkPolicy matrix in the protected Boutique security lab passed in 1/1 runs | One run on a fresh sentinel-boutique-security cluster with Calico 3.33.0 at 02d91e5: 19 of 19 allowed edges open, 202 of 202 forbidden edges closed by timeout, no policy drift, no untested cell; the storefront journey and the existing shipping bypass, identity and outage probes passed. L4 rules keyed on the Pod label app, not authentication; mTLS and inspection still cover the shipping path only, and the connected recovery cluster applies none of these policies. The first attempt stopped before any probe on an operator environment fault (evidence/exclusions.json). One Windows/amd64 host with Docker Desktop and one kind node. Provenance recorded: 02d91e5, 2026-11-13 UTC. | 1 |
 <!-- END GENERATED:claims -->

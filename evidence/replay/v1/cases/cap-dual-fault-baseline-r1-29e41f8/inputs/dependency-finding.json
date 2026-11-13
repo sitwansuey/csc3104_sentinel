@@ -1,0 +1,10 @@
+{
+  "affected_services": [
+    "shippingservice"
+  ],
+  "basis": "held constant across cells; dependency blocking is tested in tests/test_dependency_revalidation.py",
+  "blockers": [],
+  "checked_at": "2026-11-13T09:23:16.902373Z",
+  "status": "CLEAR",
+  "unknowns": []
+}

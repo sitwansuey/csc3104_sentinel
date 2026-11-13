@@ -35,8 +35,8 @@ from scripts.evidence import collect, limitations  # noqa: E402
 
 TARGETS = {
     "docs/results.md": ("runs", "recovery-checks", "agent-runs", "scenario-runs", "guard-rejection", "guard-eval",
-                        "executor-wedge", "timings", "latency", "model-calls", "chaos", "security-lab", "observer",
-                        "distributed-runs", "kind-lab-sessions", "executor-admission", "worker-container", "claims"),
+                        "executor-wedge", "timings", "latency", "model-calls", "chaos", "chaos-recovery",
+                        "security-lab", "observer", "distributed-runs", "kind-lab-sessions", "executor-admission", "worker-container", "claims"),
     "evidence/README.md": ("index", "exclusions"),
     "docs/limitations.md": ("limitations",),
     "README.md": ("limitations-summary",),
@@ -53,6 +53,8 @@ BLOCK = re.compile(r"(<!-- BEGIN GENERATED:(?P<name>[a-z0-9-]+) -->\n)(?P<body>.
 OUTCOMES = ("PASS", "FAILED", "INTERRUPTED", "INCOMPLETE")
 NONE = "_No bundles yet._"
 EXCLUSIONS = "evidence/exclusions.json"
+# Classes whose runs may carry a catalog scenario result (scenario-result.json).
+SCENARIO_CLASSES = ("agent", "chaos-recovery")
 SECURITY_PROBES = ("invalid_quantity", "missing_client_certificate", "wrong_client_identity", "direct_service_bypass",
                    "direct_pod_ip_bypass", "direct_egress_bypass", "proxy_outage", "outage_direct_bypass")
 
@@ -1030,6 +1032,40 @@ def scenario_result(bundle):
     return bundle.json("scenario-result.json") or summary_of(bundle).get("scenario_result") or {}
 
 
+def forced_text(item):
+    """One forced wrong action: its verdict and reason codes (or the Executor status when no verdict came back)."""
+    verdict = item.get("guard_verdict")
+    codes = ", ".join(item.get("guard_reason_codes") or [])
+    said = f"{verdict} {codes}".strip() if verdict else f"no Guard verdict, Executor {item.get('executor_status')}"
+    writes = item.get("executor_patch_attempts")
+    return (f"{item.get('action') or 'unknown'} {said}, "
+            f"{writes if isinstance(writes, int) else 'unmeasured'} write{'' if writes == 1 else 's'}")
+
+
+def chaos_recovery_rows(bundles):
+    """One row per catalog run with a Chaos Mesh fault: decision, writes, RESTART attribution, forced wrong actions.
+
+    Agent runs of a chaos scenario are listed too. Attribution reads "n/a"
+    when the run made no RESTART to attribute.
+    """
+    members = sorted((b for b in bundles if b.run_class in SCENARIO_CLASSES and summary_of(b).get("chaos")),
+                     key=lambda b: (b.entry.get("captured_at") or "", b.bundle_id))
+    rows = []
+    for bundle in members:
+        summary, result = summary_of(bundle), scenario_result(bundle)
+        attribution = summary.get("attribution")
+        attributed = "n/a" if not isinstance(attribution, dict) else (
+            "yes" if attribution.get("attributed") is True else "no")
+        forced = "; ".join(forced_text(item) for item in summary.get("forced_refusals") or []) or "none"
+        writes = result.get("executor_writes")
+        cleanup = summary.get("chaos_cleanup_confirmed")
+        rows.append([bundle.bundle_id, result.get("scenario") or "unknown", summary["chaos"].get("kind") or "unknown",
+                     short(bundle.entry.get("source_revision")), outcome(bundle), result.get("actual") or "no decision",
+                     str(writes) if isinstance(writes, int) else "unmeasured", attributed, forced,
+                     {True: "yes", False: "no"}.get(cleanup, "unknown")])
+    return rows
+
+
 def scenario_parts(bundle):
     """Scenario, revision, outcome, decision, how it was decided, writes, state, match and labels for one run."""
     result = scenario_result(bundle)
@@ -1044,12 +1080,12 @@ def scenario_parts(bundle):
     labels = (result.get("labels") or {}).get("status") or ("pending" if result.get("labels_pending") else "unknown")
     return [result.get("scenario") or "unknown", short(bundle.entry.get("source_revision")), outcome(bundle),
             result.get("actual") or "no decision", how, str(writes) if isinstance(writes, int) else "unmeasured",
-            result.get("coordinator_state") or "unknown",
+            result.get("coordinator_state") or ("no incident" if result.get("actual") == "NO_INCIDENT" else "unknown"),
             "yes" if result.get("matched_expected") is True else "no", labels]
 
 
 def scenario_rows(bundles):
-    members = sorted((b for b in bundles if b.run_class == "agent" and scenario_result(b)),
+    members = sorted((b for b in bundles if b.run_class in SCENARIO_CLASSES and scenario_result(b)),
                      key=lambda b: (b.entry.get("captured_at") or "", b.bundle_id))
     return [[bundle.bundle_id, *scenario_parts(bundle)] for bundle in members]
 
@@ -1239,6 +1275,9 @@ def render_blocks(root):
         "latency": latency,
         "model-calls": model_calls,
         "chaos": table(["Fault", "Attempts", "Injected", "Cleaned up", "Healthy recovery window"], chaos(bundles)),
+        "chaos-recovery": table(["Bundle", "Scenario", "Chaos", "Revision", "Outcome", "Decision", "Executor writes",
+                                 "RESTART attributed", "Forced wrong actions", "Chaos cleaned up"],
+                                chaos_recovery_rows(bundles)),
         "security-lab": table(["Bundle", "Outcome", "Valid mTLS quote", "Blocked probes", "Shopping after restore"],
                               security_lab(bundles)),
         "observer": table(["Bundle", "Outcome", "Detection s", "Duplicate suppression s"], observer(bundles)),

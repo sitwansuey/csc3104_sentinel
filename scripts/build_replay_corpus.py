@@ -55,6 +55,9 @@ SOURCE_FILES = ("MANIFEST.json", "primary-incident.json", "policy.json", "images
                 "approved-rollback/model-proposal.json", "approved-rollback/initial-guard.json")
 SOURCE_GLOBS = ("approved-rollback/attempt-*/agent/report.json",
                 "approved-rollback/attempt-*/agent/branch-*/result.json")
+# Catalog fault kinds a captured case is not built from: a Chaos Mesh fault (P4.03) leaves the Pod template
+# unchanged but its state (the chaos object, the selected Pod, metrics) is not in a bundle to rebuild.
+UNRECONSTRUCTED_FAULTS = ("chaos",)
 # Derived variants: how many captured R1 cases each one is generated from.
 ALREADY_RESTORED = 6
 MISLEADING_DEPENDENCY = 4
@@ -260,6 +263,9 @@ def capture(folder, catalog):
     scenario, basis = _scenario(read_source(folder, "scenario-result.json"), summary, incident, catalog)
     if scenario is None:
         return None, "the scenario cannot be identified from the recorded files"
+    if scenario["injection"]["kind"] in UNRECONSTRUCTED_FAULTS:
+        return None, (f"a {scenario['injection']['kind']} fault ({scenario['id']}) acts outside the Deployment, "
+                      "and this corpus version has no reconstruction for its state")
     target = incident["target"]
     item = catalog["targets"].get(target["name"])
     if item is None or scenario["target"] != target["name"]:

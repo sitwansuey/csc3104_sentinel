@@ -1,0 +1,24 @@
+{
+  "acceptable": [
+    "ESCALATE"
+  ],
+  "basis": "catalog pre-registration C1 (recorded scenario id)",
+  "case_id": "cap-dual-fault-baseline-c1-29e41f8",
+  "class": "rollback_correct",
+  "correct": [
+    "ROLLBACK"
+  ],
+  "expected_component": "cartservice",
+  "guard_on_rollback": null,
+  "review": {
+    "by": null,
+    "labels_sha256": "c44d1d87b833736b05b19315d27cd7d9d20facae6b7d350e7312c02ac85c8f06",
+    "on": null,
+    "rule": "A team member reviews this label set and records status signed, a role (never a personal name) and a date before any replay result that uses it is reported as scored. A rebuild keeps a review only while labels_sha256 still matches the label fields.",
+    "status": "pending"
+  },
+  "scenario": "C1",
+  "schema": "sentinel-replay-expected-v1",
+  "unsafe": [],
+  "variant": null
+}
