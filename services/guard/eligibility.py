@@ -20,10 +20,63 @@ _BASELINE_FIELDS = {
 _SECURITY_FIELDS = {
     "deny_privileged", "deny_host_access", "allowed_image_registries",
     "allowed_service_accounts", "forbid_service_account_change", "image_vulnerability_gate",
+    "allowed_sidecars",
 }
 _DIGEST_IMAGE = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._:/-]*@sha256:[0-9a-f]{64}")
 _REGISTRY = re.compile(r"(?:localhost|[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)(?::[0-9]+)?")
 _REFERENCE_FIELDS = {"kind", "namespace", "name", "uid", "resource_version"}
+# P5.05: one reviewed sidecar of one target. Its image is a digest and every
+# mount names the exact ConfigMap or Secret behind it, so neither a new image
+# nor a different key, configuration or host path can pass as the reviewed one.
+# command and args are optional; when given, they must match exactly too.
+_SIDECAR_FIELDS = {"target", "name", "image", "mounts"}
+_SIDECAR_OPTIONAL = {"command", "args"}
+_SIDECAR_MOUNT_FIELDS = {"volume", "mount_path", "source"}
+_DNS_LABEL = re.compile(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?")
+
+
+def _validate_sidecars(value, path):
+    """allowed_sidecars: a list of {target, name, image (digest), mounts [{volume, mount_path, source}]}."""
+    if not isinstance(value, list):
+        raise GuardInputError(f"{path}: expected a list of reviewed sidecars")
+    seen = set()
+    for index, entry in enumerate(value):
+        where = f"{path}[{index}]"
+        mapping(entry, where)
+        if not _SIDECAR_FIELDS <= set(entry) <= _SIDECAR_FIELDS | _SIDECAR_OPTIONAL:
+            raise GuardInputError(f"{where}: expected target, name, image and mounts, and optionally command and args")
+        for key in _SIDECAR_OPTIONAL & set(entry):
+            if not isinstance(entry[key], list) or any(not isinstance(item, str) for item in entry[key]):
+                raise GuardInputError(f"{where}.{key}: expected a list of strings")
+        for key in ("target", "name"):
+            if not isinstance(entry[key], str) or not _DNS_LABEL.fullmatch(entry[key]):
+                raise GuardInputError(f"{where}.{key}: expected a Kubernetes name")
+        if not isinstance(entry["image"], str) or not _DIGEST_IMAGE.fullmatch(entry["image"]):
+            raise GuardInputError(f"{where}.image: a reviewed sidecar image must be pinned by SHA-256 digest")
+        if (entry["target"], entry["name"]) in seen:
+            raise GuardInputError(f"{where}: duplicate sidecar for one target")
+        seen.add((entry["target"], entry["name"]))
+        if not isinstance(entry["mounts"], list):
+            raise GuardInputError(f"{where}.mounts: expected a list")
+        volumes, paths = set(), set()
+        for offset, mount in enumerate(entry["mounts"]):
+            mount_path = f"{where}.mounts[{offset}]"
+            mapping(mount, mount_path)
+            if set(mount) != _SIDECAR_MOUNT_FIELDS:
+                raise GuardInputError(f"{mount_path}: expected exactly volume, mount_path and source")
+            if not isinstance(mount["volume"], str) or not _DNS_LABEL.fullmatch(mount["volume"]):
+                raise GuardInputError(f"{mount_path}.volume: expected a volume name")
+            if (not isinstance(mount["mount_path"], str) or not mount["mount_path"].startswith("/")
+                    or ".." in mount["mount_path"].split("/")):
+                raise GuardInputError(f"{mount_path}.mount_path: expected an absolute path")
+            source = mapping(mount["source"], f"{mount_path}.source")
+            if (set(source) != {"kind", "name"} or source["kind"] not in ("ConfigMap", "Secret")
+                    or not isinstance(source["name"], str) or not source["name"]):
+                raise GuardInputError(f"{mount_path}.source: expected a ConfigMap or Secret name")
+            if mount["volume"] in volumes or mount["mount_path"] in paths:
+                raise GuardInputError(f"{mount_path}: duplicate volume or mount path")
+            volumes.add(mount["volume"])
+            paths.add(mount["mount_path"])
 
 
 def validate_policy(policy):
@@ -42,6 +95,8 @@ def validate_policy(policy):
                     image_security.validate_gate_rules(item)
                 except ValueError as exc:
                     raise GuardInputError(f"policy.{block}.{exc}") from exc
+            elif key == "allowed_sidecars":
+                _validate_sidecars(item, path)
             elif key in {"max_age_seconds", "min_healthy_duration_seconds"}:
                 if type(item) is not int or item < 0:
                     raise GuardInputError(f"{path}: expected a nonnegative integer")
@@ -379,6 +434,105 @@ def _security(spec, containers, live_state, rules):
     return output
 
 
+def _mount_sources(spec):
+    """{volume name: {"kind", "name"}} for ConfigMap and Secret volumes; any other volume maps to its type."""
+    volumes = spec.get("volumes", [])
+    if not isinstance(volumes, list):
+        raise GuardInputError("baseline.pod_template.spec.volumes: expected a list")
+    sources = {}
+    for index, volume in enumerate(volumes):
+        mapping(volume, f"baseline.pod_template.spec.volumes[{index}]")
+        types = sorted(set(volume) - {"name"})
+        name = volume.get("name")
+        if not isinstance(name, str) or len(types) != 1:
+            raise GuardInputError(f"baseline.pod_template.spec.volumes[{index}]: expected a name and one source")
+        kind = types[0]
+        source = volume[kind]
+        if kind == "secret" and isinstance(source, dict) and isinstance(source.get("secretName"), str):
+            sources[name] = {"kind": "Secret", "name": source["secretName"]}
+        elif kind == "configMap" and isinstance(source, dict) and isinstance(source.get("name"), str):
+            sources[name] = {"kind": "ConfigMap", "name": source["name"]}
+        else:
+            sources[name] = {"kind": kind}
+    return sources
+
+
+def _mount_order(item):
+    return str(item.get("volume")), str(item.get("mount_path"))
+
+
+def _sidecars(spec, containers, proposal, rules):
+    """P5.05: only the reviewed sidecars of this target may run beside its one application container.
+
+    A container whose name is a reviewed sidecar of the target must match it
+    exactly: the same image digest (and command and arguments when the
+    review names them), exactly the reviewed read-only mounts of
+    the same ConfigMaps and Secrets, and no environment references (its
+    configuration comes from those mounts only). Every reviewed sidecar must be
+    present, so a rollback never strips the protected route. Any other regular
+    container beyond the one application container, and any init container, is
+    SECURITY_SIDECAR_NOT_ALLOWED. The privilege and host-access rules still
+    apply to every container separately.
+    """
+    output = []
+    target = proposal.get("target", {}).get("name") if isinstance(proposal.get("target"), dict) else None
+    reviewed = {entry["name"]: entry for entry in rules["allowed_sidecars"] if entry["target"] == target}
+    sources = _mount_sources(spec)
+    application, present = [], set()
+
+    def check(code, path, actual, expected, okay, message):
+        output.append(_result(code, path, actual, expected, message, "PASS" if okay else "FAIL"))
+
+    for container, path in containers:
+        name = container["name"]
+        entry = reviewed.get(name) if ".initContainers[" not in path else None
+        if entry is None:
+            if ".initContainers[" in path:
+                check("SECURITY_SIDECAR_NOT_ALLOWED", path, name, sorted(reviewed), False,
+                      "An init container is not a reviewed sidecar of this target.")
+            else:
+                application.append((name, path))
+            continue
+        present.add(name)
+        image = container.get("image")
+        check("SECURITY_SIDECAR_IMAGE", f"{path}.image", image if isinstance(image, str) else "malformed",
+              entry["image"], image == entry["image"], "A reviewed sidecar must run its reviewed image digest.")
+        for key in sorted(_SIDECAR_OPTIONAL & set(entry)):
+            value = container.get(key)
+            check("SECURITY_SIDECAR_COMMAND", f"{path}.{key}", value if isinstance(value, list) else "malformed",
+                  entry[key], value == entry[key], "A reviewed sidecar must run its reviewed command and arguments.")
+        mounts = container.get("volumeMounts", [])
+        if not isinstance(mounts, list):
+            raise GuardInputError(f"{path}.volumeMounts: expected a list")
+        actual = []
+        for offset, mount in enumerate(mounts):
+            mapping(mount, f"{path}.volumeMounts[{offset}]")
+            if set(mount) != {"name", "mountPath", "readOnly"} or mount.get("readOnly") is not True:
+                actual.append({"volume": mount.get("name") if isinstance(mount.get("name"), str) else "malformed",
+                               "mount_path": "not a plain read-only mount"})
+                continue
+            actual.append({"volume": mount["name"], "mount_path": mount["mountPath"],
+                           "source": sources.get(mount["name"], {"kind": "missing"})})
+        expected = [{"volume": item["volume"], "mount_path": item["mount_path"], "source": item["source"]}
+                    for item in entry["mounts"]]
+        actual, expected = sorted(actual, key=_mount_order), sorted(expected, key=_mount_order)
+        check("SECURITY_SIDECAR_MOUNTS", f"{path}.volumeMounts", actual, expected, actual == expected,
+              "A reviewed sidecar may mount only its reviewed ConfigMaps and Secrets, read-only.")
+        env, env_from = container.get("env", []), container.get("envFrom", [])
+        if not isinstance(env, list) or not isinstance(env_from, list):
+            raise GuardInputError(f"{path}: env and envFrom must be lists")
+        referenced = bool(env_from) or any(isinstance(item, dict) and "valueFrom" in item for item in env)
+        check("SECURITY_SIDECAR_ENV", f"{path}.env", "references" if referenced else "none", "none", not referenced,
+              "A reviewed sidecar takes its configuration from its reviewed mounts only.")
+    check("SECURITY_SIDECAR_NOT_ALLOWED", "baseline.pod_template.spec.containers", [name for name, _ in application],
+          {"application_containers": 1, "reviewed_sidecars": sorted(reviewed)}, len(application) == 1,
+          "Only one application container and the target's reviewed sidecars may run in the restored template.")
+    for name in sorted(set(reviewed) - present):
+        check("SECURITY_SIDECAR_MISSING", "baseline.pod_template.spec.containers", None, name, False,
+              "The protected template must keep every reviewed sidecar of this target.")
+    return output
+
+
 def _template_images(containers, path):
     """{container name: image} for one Pod template; GuardInputError on a duplicate name or a missing image."""
     images = {}
@@ -464,6 +618,8 @@ def assess(proposal, live_state, baseline, policy, checked_at):
     if security_rules is not None:
         try:
             output.extend(_security(spec, containers, live_state, security_rules))
+            if "allowed_sidecars" in security_rules:
+                output.extend(_sidecars(spec, containers, proposal, security_rules))
         except GuardInputError as exc:
             output.append(_result("SECURITY_TEMPLATE_INVALID", "baseline.pod_template.spec", "malformed", "valid security-policy inputs", str(exc)))
         # The CVE gate covers the actions that write the baseline template (P5.02). A SCALE starts
