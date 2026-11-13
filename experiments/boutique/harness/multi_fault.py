@@ -56,7 +56,8 @@ import time
 
 from experiments import lab_lock
 from experiments.boutique.harness import chaos, scenarios, targets
-from experiments.boutique.harness.chaos_recovery import RESTART_BUDGET, ChaosRecoveryMixin, preflight
+from experiments.boutique.harness.chaos_recovery import (ATTRIBUTION_MARGIN_SECONDS, RESTART_BUDGET,
+                                                         ChaosRecoveryMixin, preflight)
 from experiments.boutique.harness.connected import ConnectedBoutiqueExperiment
 from experiments.boutique.harness.durable_case import MAX_ATTEMPTS as PLANNING_ATTEMPTS
 from experiments.boutique.harness.durable_case import RETRY_SECONDS as PLANNING_RETRY_SECONDS
@@ -78,7 +79,7 @@ from services.executor.store import ActionConflict, SQLiteExecutionLedger, finge
 from services.observer.kubernetes import CollectionError, KubernetesEvidenceCollector, KubectlReader
 from services.planner.core import mock_provider, propose, retrieve_runbooks
 from services.planner.store import PlannerStore
-from services.verifier.store import VerificationStore
+from services.verifier.store import VerificationStore, observation_seconds
 from shared import log
 from shared.actions import config_fingerprint
 
@@ -95,7 +96,11 @@ DETECTION_SECONDS = 180
 # Coordinator states after which the runner never acts on an incident again.
 SETTLED = frozenset({"RECOVERED", "NEEDS_REVIEW", "FAILED"})
 STOP_REASONS = ("REJECTED", "ESCALATED", "BLOCKER_NOT_RECOVERED", "REPLAN_BUDGET_EXHAUSTED", "REPLAN_REFUSED",
-                "DEPENDENCY_DEADLOCK", "APPROVAL_REFUSED")
+                "DEPENDENCY_DEADLOCK", "APPROVAL_REFUSED", "CHAOS_WINDOW_EXHAUSTED")
+# The worst case between a chaos lane's approval and its outcome (chaos_window): the Executor's write, and
+# verify_lane's rollout wait (its kubectl timeout); the Verifier's observation budget is added from the policy.
+EXECUTION_ALLOWANCE_SECONDS = 60
+ROLLOUT_WAIT_SECONDS = 160
 PAIR_POLICY_VERSION = "executor-live-pair-1"
 # A lane's score when its planned repair never reached a write (see lane_score).
 NOT_DELIVERED = "not_delivered"
@@ -110,16 +115,50 @@ class ApprovalRefused(Exception):
     """Raised by a pair run's approve callback when the operator refuses; the runner stops that incident."""
 
 
+class ChaosWindowExhausted(Exception):
+    """Raised before or after a chaos lane's approval when its RESTART could no longer be attributed in time.
+
+    details is the chaos_window() record; the runner stops the incident with
+    CHAOS_WINDOW_EXHAUSTED, before any Executor request.
+    """
+
+    def __init__(self, details):
+        super().__init__("The chaos window left is shorter than the worst case to an attributable outcome")
+        self.details = details
+
+
 def utc(value=None):
     return (value or datetime.now(UTC)).isoformat().replace("+00:00", "Z")
 
 
 def pair_order(pair):
-    """The pair's target names in the order the runner acts on them: the dependency first."""
-    names = [item["target"] for item in pair["items"]]
+    """The pair's target names in the order the runner acts on them.
+
+    A dependency-ordered pair starts with the dependency. An independent pair
+    starts with its Chaos Mesh fault: a RESTART is attributed only when its
+    outcome window ends ATTRIBUTION_MARGIN_SECONDS before the chaos object
+    expires, and the runner verifies one lane at a time, so the chaos lane
+    must not wait behind the other lane's approval and verification.
+    """
     if pair["kind"] == "dependency_ordered":
         return [pair["order"]["first"], pair["order"]["then"]]
-    return names
+    return [item["target"] for item in sorted(pair["items"], key=lambda item: item["injection"]["kind"] != "chaos")]
+
+
+def chaos_window(expires_at, now, health, *, margin_seconds=ATTRIBUTION_MARGIN_SECONDS):
+    """Whether a chaos lane's RESTART approved at now can still be attributed before the chaos object expires.
+
+    The worst case after approval is the Executor's write
+    (EXECUTION_ALLOWANCE_SECONDS), verify_lane's bounded rollout wait
+    (ROLLOUT_WAIT_SECONDS) and the Verifier's whole observation budget
+    (observation_seconds(health)); the outcome window must then still end
+    margin_seconds before expires_at (attribution in chaos_recovery.py).
+    """
+    expires = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    remaining = round((expires - now).total_seconds(), 1)
+    needed = EXECUTION_ALLOWANCE_SECONDS + ROLLOUT_WAIT_SECONDS + observation_seconds(health) + margin_seconds
+    return {"checked_at": utc(now), "expires_at": expires_at, "remaining_seconds": remaining,
+            "needed_seconds": needed, "enough": remaining >= needed}
 
 
 # The separate shop aggregate (pure).
@@ -457,6 +496,9 @@ class PairRunner:
                     state = self._advance(name, incident_id)
                 except ApprovalRefused:
                     self.stop(name, "APPROVAL_REFUSED")
+                    continue
+                except ChaosWindowExhausted as error:
+                    self.stop(name, "CHAOS_WINDOW_EXHAUSTED", window=error.details)
                     continue
                 if last.get(name) != state:
                     self.record(name, "state", state=state)
@@ -799,10 +841,37 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
                                   "reason_codes": decision["reason_codes"], "checked_at": decision["checked_at"]})
 
     def approve_pair(self, proposal, decision):
-        record = self.request_approval(proposal, decision)
+        """The run's approver for the acting lane; a chaos lane's RESTART first and last checks its chaos window."""
+        self.require_chaos_window(proposal, "before approval")
+        started = time.monotonic()
+        try:
+            record = self.request_approval(proposal, decision)
+        finally:
+            self.lane_time(self.name, "approval_seconds", time.monotonic() - started)
         if record is None:
             raise ApprovalRefused(proposal["action_id"])
+        # A slow (interactive) approval can use up the window: stop before any Executor request.
+        self.require_chaos_window(proposal, "after approval")
         return record
+
+    def require_chaos_window(self, proposal, when, now=None):
+        """Stop a chaos lane's RESTART with ChaosWindowExhausted when it can no longer be attributed (chaos_window)."""
+        if (proposal["action"] != "RESTART" or self.scenario["injection"]["kind"] != "chaos"
+                or not self.chaos_record):
+            return
+        check = dict(chaos_window(self.chaos_record["expires_at"], now or datetime.now(UTC),
+                                  self.lanes[self.name]["policy"]["health"]), when=when)
+        self.lanes[self.name].setdefault("chaos_window", []).append(check)
+        if not check["enough"]:
+            raise ChaosWindowExhausted(check)
+
+    def lane_time(self, name, key, seconds):
+        """Add seconds to one of the lane's wall-time counters (pair-result.json lane_wall_times)."""
+        wall = self.lanes[name].setdefault("wall", {"advances": 0, "advance_seconds": 0.0, "approval_seconds": 0.0,
+                                                    "verification_seconds": 0.0, "first_advance_at": None,
+                                                    "last_advance_at": None})
+        wall[key] = round(wall[key] + seconds, 1)
+        return wall
 
     def execute_lane(self, proposal):
         """Run the restricted Executor for the acting target's one pending request (or the kill variant)."""
@@ -873,7 +942,8 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
     def verify_lane(self, proposal, execution):
         """Role 6 for the acting target, in the target verification scope; records the outcome, never asserts it."""
         lane = self.lanes[self.name]
-        self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=120s", timeout=160,
+        started = time.monotonic()
+        self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=120s", timeout=ROLLOUT_WAIT_SECONDS,
                      allow_failure=True)
         ledger = VerificationStore(self.directory / "verifier.sqlite3")
         try:
@@ -884,6 +954,7 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
                 save(lane["folder"] / ("post-health-" + execution["action_id"] + ".json"), job["samples"])
         finally:
             ledger.close()
+            self.lane_time(self.name, "verification_seconds", time.monotonic() - started)
         for outcome in outcomes:
             folder = self.lane_of(outcome)["folder"]
             save(folder / ("outcome-" + outcome["action_id"] + ".json"), outcome)
@@ -895,10 +966,18 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
             self.attribute(lane["folder"])  # Fails the run unless the RESTART, not the fault's expiry, recovered it.
 
     def advance_lane(self, name, incident_id):
-        with self.acting_as(name):
-            return advance_incident(self.store, incident_id, plan=self.plan_pending, assess=self.assess,
-                                    guard=self.guard_pending, approve=self.approve_pair, execute=self.execute_lane,
-                                    verify=self.verify_lane)
+        """One runner step for one lane; its wall time is added to the lane's counters."""
+        started, at = time.monotonic(), live_utc()
+        try:
+            with self.acting_as(name):
+                return advance_incident(self.store, incident_id, plan=self.plan_pending, assess=self.assess,
+                                        guard=self.guard_pending, approve=self.approve_pair,
+                                        execute=self.execute_lane, verify=self.verify_lane)
+        finally:
+            wall = self.lane_time(name, "advance_seconds", time.monotonic() - started)
+            wall["advances"] += 1
+            wall["first_advance_at"] = wall["first_advance_at"] or at
+            wall["last_advance_at"] = live_utc()
 
     def replan_lane(self, name, incident_id, attempt, cause=REPLAN_DEPENDENCY):
         with self.acting_as(name) as lane:
@@ -1014,12 +1093,16 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
                     "timings": incident_timings(transitions, ids),
                     "scenario_scores": self.scores(ids, stops=run["stops"], writes=writes),
                     "shop_window": self.summary.get("pair_shop_window"),
+                    # One harness process: each lane's time inside its runner steps, approval and verification.
+                    "lane_wall_times": {name: self.lanes[name].get("wall") for name in self.order},
+                    "chaos_window": {name: self.lanes[name]["chaos_window"] for name in self.order
+                                     if self.lanes[name].get("chaos_window")},
                     "changed_payload_refused": {name: self.lanes[name].get("changed_payload_refused", False)
                                                 for name in self.order}}
         if ordering is not None:
             evidence["ordering"] = ordering
         save(self.directory / "pair-result.json", evidence)
-        self.summary["pair_result"] = {key: evidence[key] for key in ("shop", "result", "timings")}
+        self.summary["pair_result"] = {key: evidence[key] for key in ("shop", "result", "timings", "lane_wall_times")}
         self.summary["pair_result"]["ordering"] = evidence.get("ordering")
         require(not evidence["cross_incident_transitions"], "An incident changed state because of the other incident")
         require(graded["matched_expected"] or graded["acceptable"],

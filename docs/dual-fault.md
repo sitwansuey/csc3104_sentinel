@@ -116,7 +116,22 @@ Single-target runs keep the shop scope unchanged.
   request in one pass for every run, and a version can also go stale while
   the lane itself waits for approval. The Coordinator accepts one RESTART per
   incident, so a stale RESTART cannot be planned again: it stops with
-  REPLAN_REFUSED and no write.
+  REPLAN_REFUSED and no write. In both pairs the runner acts on the RESTART
+  lane first (see the next point), so the case this covers is the second
+  lane's ROLLBACK.
+- **The chaos lane goes first and checks its window.** A RESTART is
+  attributed only when its outcome window ends at least 60 seconds before
+  the 900-second PodChaos expires (`attribution` in
+  `experiments/boutique/harness/chaos_recovery.py`), and the harness verifies
+  one lane at a time. So an independent pair acts on its chaos lane first
+  (`pair_order`), and right before and right after the chaos lane's approval
+  the harness compares the time left with the worst case to an attributable
+  outcome (`chaos_window`: 60 s for the Executor, the 160 s rollout wait, the
+  Verifier's 300 s budget and the 60 s margin, 580 s in all). When less is
+  left, the incident stops with CHAOS_WINDOW_EXHAUSTED before any Executor
+  request, instead of failing attribution late; the checks are kept in
+  `pair-result.json` (`chaos_window`). A slow interactive approval can cause
+  this stop.
 - **Other stops.** A refusal for any other reason, an escalation other than
   the approval request, a refused approval, or a re-plan the Coordinator
   refuses (for example a second RESTART for one incident) stops that incident
@@ -169,7 +184,10 @@ item "The dual-fault runs are committed" open
 One harness process drives both incidents and collects one target's
 verification window at a time, so the other incident waits during it.
 Timings therefore measure this one process on one host, not two independent
-workers or machines. The Executor runs one target's request at a time; each
+workers or machines. `pair-result.json` records each lane's wall time
+(`lane_wall_times`: runner steps, seconds inside them, in approval and in
+verification, and the first and last step) beside the Coordinator journal
+timings. The Executor runs one target's request at a time; each
 target uses its own policy file (ceilings, registry, service account and
 health rules), while the allowlist, the Role and the approval authority name
 both targets.
@@ -275,7 +293,9 @@ only.
    shippingservice and 1 for cartservice, ShopOutcome RECOVERED, no
    cross-incident transitions, an attributed cart RESTART, and
    `chaos_cleanup_confirmed` true. Use `--approval interactive` for one run to
-   show a person approving both repairs.
+   show a person approving both repairs; approve the cart RESTART promptly,
+   because an approval that leaves less than the worst case to an
+   attributable outcome stops the cart with CHAOS_WINDOW_EXHAUSTED.
 
 5. **Dependency-ordered pair, three runs.**
 

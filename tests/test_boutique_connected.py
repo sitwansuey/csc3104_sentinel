@@ -925,7 +925,7 @@ class PairHarnessTests(unittest.TestCase):
         self.assertEqual(dependency.order, ["redis-cart", "cartservice"])
         self.assertEqual({name: lane["scenario_id"] for name, lane in dependency.lanes.items()},
                          {"redis-cart": "D1", "cartservice": "C1"})
-        self.assertEqual(independent.order, ["shippingservice", "cartservice"])
+        self.assertEqual(independent.order, ["cartservice", "shippingservice"])  # The chaos lane first.
         # redis-cart joins the Executor Role only in its own pair.
         self.assertEqual(dependency.executor_names(), ["cartservice", "redis-cart", "shippingservice"])
         self.assertEqual(independent.executor_names(), ["cartservice", "shippingservice"])
@@ -1151,6 +1151,8 @@ class PairVerdictTests(unittest.TestCase):
         self.assertIsNone(evidence["result"]["ordered_recovery_shown"])
         self.assertEqual(evidence["cross_incident_transitions"], [])
         self.assertTrue((experiment.directory / "pair-result.json").is_file())
+        self.assertEqual(set(evidence["lane_wall_times"]), {"shippingservice", "cartservice"})
+        self.assertIn("lane_wall_times", experiment.summary["pair_result"])
 
     def test_judge_fails_on_a_forged_cross_incident_journal_row(self):
         lab, ids, run = self.independent()
@@ -1546,6 +1548,105 @@ class PairPlanningTests(unittest.TestCase):
         escalation = lab.store.action(lab.store.incident(ids["cartservice"])["active_action_id"])["proposal"]
         self.assertEqual(escalation["action"], "ESCALATE")
         self.assertEqual(self.status(experiment, "cartservice")["attempts"], 3)
+
+
+class PairChaosWindowTests(unittest.TestCase):
+    """A chaos lane's RESTART stops before approval when it could no longer be attributed in time (finding 7)."""
+
+    setUp = PairHarnessTests.setUp
+    pair = PairHarnessTests.pair
+
+    def chaos_lab(self, seconds_left):
+        from experiments.boutique.harness.multi_fault import utc
+        experiment = self.pair("shipping-config+cart-pod")
+        for name in experiment.order:
+            experiment.lanes[name]["policy"] = experiment.lane_policy(name)
+        experiment.chaos_record = {"expires_at": utc(datetime.now(timezone.utc) + timedelta(seconds=seconds_left))}
+        experiment.request_approval = Mock(return_value={"operator_id": "automated-lab"})
+        return experiment
+
+    def test_an_independent_pair_acts_on_its_chaos_lane_first(self):
+        from experiments.boutique.harness import scenarios
+        from experiments.boutique.harness.multi_fault import pair_order
+        self.assertEqual(pair_order(scenarios.pair("shipping-config+cart-pod")), ["cartservice", "shippingservice"])
+        self.assertEqual(pair_order(scenarios.pair("redis-pod+cart-config")), ["redis-cart", "cartservice"])
+
+    def test_the_window_must_cover_the_worst_case_to_an_attributable_outcome(self):
+        from experiments.boutique.harness.multi_fault import chaos_window
+        health = self.pair("shipping-config+cart-pod").health_rules()
+        now = datetime(2026, 11, 13, 10, 0, tzinfo=timezone.utc)
+        # Executor 60 s + rollout wait 160 s + verification budget 300 s + attribution margin 60 s.
+        for left, enough in ((580, True), (579, False)):
+            check = chaos_window((now + timedelta(seconds=left)).isoformat().replace("+00:00", "Z"), now, health)
+            self.assertEqual((check["needed_seconds"], check["remaining_seconds"], check["enough"]),
+                             (580, left, enough))
+
+    def test_the_chaos_restart_is_checked_before_and_after_its_approval(self):
+        from experiments.boutique.harness.multi_fault import ChaosWindowExhausted
+        restart = {"action": "RESTART", "action_id": "ACT-CART", "target": {"name": "cartservice"}}
+        experiment = self.chaos_lab(800)
+        with experiment.acting_as("cartservice") as lane:
+            self.assertEqual(experiment.approve_pair(restart, {}), {"operator_id": "automated-lab"})
+        self.assertEqual([(check["when"], check["enough"]) for check in lane["chaos_window"]],
+                         [("before approval", True), ("after approval", True)])
+        self.assertIn("approval_seconds", lane["wall"])
+        experiment = self.chaos_lab(500)
+        with experiment.acting_as("cartservice") as lane, self.assertRaises(ChaosWindowExhausted) as stopped:
+            experiment.approve_pair(restart, {})
+        experiment.request_approval.assert_not_called()  # Never asked: nothing to approve in time.
+        self.assertEqual((stopped.exception.details["when"], stopped.exception.details["enough"]),
+                         ("before approval", False))
+        experiment = self.chaos_lab(800)
+
+        def slow(proposal, decision, experiment=experiment):
+            experiment.chaos_record["expires_at"] = "2026-01-01T00:00:00Z"  # The window ran out while waiting.
+            return {"operator_id": "operator"}
+        experiment.request_approval = Mock(side_effect=slow)
+        with experiment.acting_as("cartservice"), self.assertRaises(ChaosWindowExhausted) as stopped:
+            experiment.approve_pair(restart, {})
+        self.assertEqual(stopped.exception.details["when"], "after approval")
+        # The configuration lane's ROLLBACK has no chaos window to check.
+        experiment = self.chaos_lab(10)
+        rollback = {"action": "ROLLBACK", "action_id": "ACT-SHIP", "target": {"name": "shippingservice"}}
+        with experiment.acting_as("shippingservice") as lane:
+            self.assertEqual(experiment.approve_pair(rollback, {}), {"operator_id": "automated-lab"})
+        self.assertNotIn("chaos_window", lane)
+
+    def test_the_runner_stops_only_the_chaos_lane_before_any_write(self):
+        from experiments.boutique.harness.multi_fault import ChaosWindowExhausted, PairRunner
+        lab = PairVerdictTests.lab(self, {"cartservice": "pod", "shippingservice": "config"},
+                                   [("frontend", "shippingservice"), ("frontend", "cartservice")])
+        ids = lab.open()
+
+        def approve(proposal, decision):
+            if proposal["target"]["name"] == "cartservice":
+                raise ChaosWindowExhausted({"enough": False, "when": "before approval"})
+            return lab.approve(proposal, decision)
+        run = PairRunner(lab.store, ids, advance=lambda name, incident_id: lab.advance(name, incident_id,
+                                                                                         approve=approve),
+                         replan=Mock(), clock=lambda: lab.now.timestamp(), sleep=lab.tick).run()
+        self.assertEqual(run["stops"], {"cartservice": "CHAOS_WINDOW_EXHAUSTED"})
+        self.assertEqual(run["states"], {"cartservice": "AWAITING_APPROVAL", "shippingservice": "RECOVERED"})
+        self.assertEqual((lab.writes("cartservice"), lab.writes("shippingservice")), (0, 1))
+        stopped = next(event for event in run["events"] if event["event"] == "stopped")
+        self.assertEqual(stopped["window"], {"enough": False, "when": "before approval"})
+
+    def test_each_lane_records_its_own_wall_time(self):
+        from experiments.boutique.harness import multi_fault
+        experiment = self.pair("shipping-config+cart-pod")
+        seen = []
+
+        def advance(store, incident_id, **steps):
+            seen.append(experiment.name)
+            return "VERIFYING"
+        with patch.object(multi_fault, "advance_incident", side_effect=advance):
+            for name in ("cartservice", "shippingservice", "cartservice"):
+                self.assertEqual(experiment.advance_lane(name, "INC-" + name), "VERIFYING")
+        self.assertEqual(seen, ["cartservice", "shippingservice", "cartservice"])
+        walls = {name: experiment.lanes[name]["wall"] for name in experiment.order}
+        self.assertEqual({name: wall["advances"] for name, wall in walls.items()},
+                         {"cartservice": 2, "shippingservice": 1})
+        self.assertTrue(all(wall["first_advance_at"] and wall["last_advance_at"] for wall in walls.values()))
 
 
 class PairShopWindowTests(unittest.TestCase):
