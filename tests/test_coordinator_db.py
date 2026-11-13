@@ -4,7 +4,8 @@ Offline only. The contract tests are parameterised over the backends; the
 Postgres row is skipped because no Postgres driver is in the hash-locked
 requirements (owners' go/no-go for P5.01), so nothing here shows a Postgres
 server running the Coordinator. The unchanged-behaviour digests were recorded
-on integration/phase4 before the port existed, and pass there too; the port,
+on integration/phase4 before the port existed (2ef594a and 1adcfe3; see
+UNCHANGED), and pass there too; the port,
 dialect, refusal and seam tests fail there (services/coordinator/db.py and
 SQLiteStore(database=...) did not exist).
 """
@@ -13,6 +14,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from runtime.worker_transport import Delivery
 from services.coordinator.db import (
@@ -24,7 +26,11 @@ from tests.support import coordinator_fingerprint as fingerprints
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# (file fingerprint, digest of the SQL text sent, number of statements), from integration/phase4 at 2ef594a.
+# (file fingerprint, digest of the SQL text sent, number of statements). The first three were recorded on
+# integration/phase4 at 2ef594a and recomputed, identical, on 1adcfe3 (which added the CONFLICT re-plan,
+# core.py::_conflict_replan_declined); conflict-replan was recorded on 1adcfe3, before its three queries
+# were moved onto the port. All four were computed from clean exports of those commits with this file's
+# helper, tests/support/coordinator_fingerprint.py.
 UNCHANGED = {
     "failed-rollout": ("296915e7d3a179f9ca202c53bc78bf25745e914c28209155f970b2a4ebfdeedc",
                        "ee5501708390e796dd79094e216ad62c75817b55f56e86d1de4766b6efc11dfc", 288),
@@ -32,6 +38,8 @@ UNCHANGED = {
                     "dfdac2ab37c1868d415bf801753b8b4089f594f1d8b23fe3d13d09c924f10ff7", 287),
     "transport": ("800b2b79311b16409d30ee91a290fb603f0cf97a5bc61e55284b97315474f7f0",
                   "3f642a42596fd4dad5aa729ab022a2e7b5693014c797c0c860dd130f0c2fcd08", 365),
+    "conflict-replan": ("ca87201b03a821e66a7b760433ae13d871158667696c757e9f04fec563940c11",
+                        "84b2fedc0b8011e05f29fba54533147886bc4799dc552968fc31350f6e813e7f", 116),
 }
 
 POSTGRES_SKIP = "No Postgres driver is locked; the Postgres backend waits for the owners' go/no-go (P5.01)"
@@ -40,7 +48,7 @@ BACKENDS = (
     ("postgres", None),
 )
 
-# Statements the three flows send that the Postgres dialect refuses, apart from
+# Statements the four flows send that the Postgres dialect refuses, apart from
 # schema statements and PRAGMAs (counted separately below), with a fragment of
 # each reason. A new SQLite-only statement of a kind the dialect knows fails
 # here. This is a lower bound on the work for a Postgres store, not the whole
@@ -79,6 +87,8 @@ def normalise(sql):
 def run_flow(name, directory):
     if name == "transport":
         return fingerprints.transport_flow(directory)
+    if name == "conflict-replan":
+        return fingerprints.conflict_replan_flow(directory)
     return fingerprints.offline_flow(directory, name)
 
 
@@ -266,6 +276,31 @@ class SeamTests(unittest.TestCase):
                 delivery.claim("v", "verifier")
         self.assertGreater(len(database.seen), 50)
         self.assertEqual(sent, ["PRAGMA foreign_keys = ON", *database.seen])
+
+    def test_the_conflict_replan_rule_reads_through_the_port(self):
+        """core.py::_conflict_replan_declined's three queries reach SQLite through the store's Database."""
+        opened = []
+
+        class Recording(SQLiteDatabase):
+            def __init__(self, path):
+                super().__init__(path)
+                opened.append(self)
+                self.seen, inner = [], self.execute
+
+                def execute(sql, parameters=()):
+                    self.seen.append(sql)
+                    return inner(sql, parameters)
+                self.execute = execute
+
+        with tempfile.TemporaryDirectory() as directory, fingerprints.statements() as sent,                 patch("services.coordinator.store.SQLiteDatabase", Recording):
+            fingerprints.conflict_replan_flow(directory)
+        [database] = opened
+        self.assertEqual(sent, ["PRAGMA foreign_keys = ON", *database.seen])
+        for fragment in ("kind='execution_result' AND action_id=? LIMIT 1",
+                         "count(*) FROM transitions WHERE action_id=? AND to_state='READY'",
+                         "topic='executor.seal' AND action_id=? LIMIT 1"):
+            with self.subTest(fragment=fragment):
+                self.assertEqual(sum(fragment in sql for sql in database.seen), 1)
 
 
 class RefusalTests(unittest.TestCase):

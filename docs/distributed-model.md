@@ -978,16 +978,22 @@ three, and leaves the migrations alone:
    `migrate()`, versioned with `PRAGMA user_version`.
 
 `tests/test_coordinator_db.py` checks this rather than assuming it. It runs
-three fixed flows: the offline demo's ROLLBACK and RESTART lifecycles, and a
+four fixed flows: the offline demo's ROLLBACK and RESTART lifecycles, a
 transport flow with claims, a renewal, a retry, results and a replayed result,
-clock reports, an approval and its revocation, a seal and a delivery review.
-For each it compares two digests with values recorded on integration/phase4
+clock reports, an approval and its revocation, a seal and a delivery review,
+and an Executor CONFLICT that wrote nothing being re-planned
+(`services/coordinator/core.py::replan_after_conflict`). For each it compares
+two digests with values computed from clean exports of integration/phase4
 before the port existed: one of the SQLite file the flow leaves (columns,
 indexes, `user_version` and every row in rowid order; only the random store
 generation, its creation time and random trace ids are masked) and one of
-the SQL text sent to the database, statement by statement. Both match, and
-the same digests come out of the code before the change. A second test
-checks that every statement a store sends passes through the port. This is
+the SQL text sent to the database, statement by statement. The first three
+were recorded at 2ef594a and come out the same at 1adcfe3; the CONFLICT
+re-plan flow, which 1adcfe3 added, was recorded at 1adcfe3. All four match
+through the port. Two more tests check that every statement a store sends
+passes through the port, one of them for the CONFLICT re-plan's three
+queries, and a source check refuses any read of the raw connection in the
+Coordinator modules. This is
 an offline check on one host. It shows the SQLite path is unchanged; it does
 not show that anything works on Postgres.
 
@@ -1006,7 +1012,7 @@ CONFLICT ... DO UPDATE` (Postgres has both the target table and `EXCLUDED` in
 scope there and rejects the bare name as ambiguous). The rewrite is textual,
 done with regular expressions; no Postgres parser has checked any statement
 it produces, so "translates" means only that none of these rules found a
-problem. A test passes every statement the three flows send through it and
+problem. A test passes every statement the four flows send through it and
 pins the result: 37 PRAGMA and schema statements, three migration
 statements and seven runtime queries are refused. The seven are row order by
 `rowid` in `SQLiteStore.planning_blocker` and
@@ -1017,7 +1023,7 @@ dependency requests, `INSERT OR REPLACE` for dependency revalidations,
 `max_abs_offset` and `reports` without a qualifier. A new statement of a kind
 these rules know fails that test, and another test checks that `offset` is
 the only Postgres reserved word the schema uses as a name. The list is a
-lower bound, not the whole work list: statements the three flows do not send
+lower bound, not the whole work list: statements the four flows do not send
 are not classified, and a Postgres server may reject statements the dialect
 let through.
 

@@ -119,7 +119,8 @@ python -m unittest tests.test_remote_workers tests.test_worker_transport tests.t
 
 `tests/test_coordinator_db.py` covers the Coordinator's Database port (P5.01
 stage 8.1). It compares digests of the SQLite file and of the SQL text that
-three fixed flows produce with values recorded before the port existed, runs
+four fixed flows produce with values recorded before the port existed (at
+2ef594a and 1adcfe3 on integration/phase4), runs
 the port's contract per backend, and pins which of the flows' statements the
 Postgres dialect refuses (a lower bound: the dialect rewrites text and no
 Postgres parser has checked what it lets through). Its Postgres rows are

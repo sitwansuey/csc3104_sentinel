@@ -3,11 +3,14 @@
 Used by tests/test_coordinator_db.py to show that putting the store behind
 the Database port (P5.01 stage 8.1) changed nothing that SQLite stores. The
 expected digests there were computed on integration/phase4 before the port
-existed. Only values that are random or wall-clock by design are masked: the store
-generation (randomblob, P3.06), its creation time (SQLite now) and trace
-contexts (random span ids). statements() records the SQL text (not the bound
-values) sent to every connection opened on a coordinator.db file, so the
-digest of that list shows the same statements reach SQLite in the same order.
+existed (2ef594a and 1adcfe3). Only values that are random or wall-clock by
+design are masked: the store generation (randomblob, P3.06), its creation time
+(SQLite now) and trace contexts (random span ids). statements() records the
+SQL text (not the bound values) sent through Connection.execute on every
+connection opened on a coordinator.db file, so the digest of that list shows
+the same statements reach SQLite in the same order. It does not see
+cursor.execute, executemany or executescript; the store sends none of them,
+and a caller that did would escape this digest.
 """
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -148,3 +151,50 @@ def transport_flow(directory):
             pass
         assert dependency is not None and dependency["topic"] == "dependency.request", dependency
     return path
+
+
+def conflict_replan_flow(directory):
+    """An ALLOWed rollback whose Executor CONFLICT wrote nothing, re-planned (core.py::replan_after_conflict).
+
+    Runs every query of _conflict_replan_declined: the earlier-result lookup,
+    the count of READY transitions and the seal lookup.
+    """
+    from experiments.validation.demo_offline_flow import OfflineFlow, fixture
+    from services.coordinator.core import record_message
+    from services.observer.core import detect
+    from services.planner.core import mock_provider, retrieve_runbooks
+    from services.planner.store import PlannerStore
+    from services.planner.worker import prepare
+
+    flow = OfflineFlow(directory)
+    try:
+        store = flow.store
+        incident = detect(fixture("observations.json")["failed-rollout"], flow.policy)
+        journal = PlannerStore(":memory:", clock=lambda: flow.now)
+        try:
+            proposal = prepare(incident, journal=journal, baseline_reader=lambda _: [flow.baseline],
+                               retriever=retrieve_runbooks, provider=mock_provider)
+        finally:
+            journal.close()
+        for message in (incident, proposal):
+            with store.transaction():
+                record_message(message, store, stale_replans=3)
+        with store.transaction():
+            store.save_guard_result(proposal["action_id"], {
+                "schema_version": "1.0", "kind": "guard_result", "incident_id": proposal["incident_id"],
+                "action_id": proposal["action_id"], "target": proposal["target"], "verdict": "ALLOW",
+                "reason_codes": ["POLICY_SATISFIED"], "policy_version": "policy-1",
+                "validated_resource_version": proposal["based_on_resource_version"],
+                "checked_at": "2026-10-10T12:00:40Z"})
+            store.set_state(incident["incident_id"], proposal["action_id"], "READY")
+        result = {"schema_version": "1.0", "kind": "execution_result", "incident_id": proposal["incident_id"],
+                  "action_id": proposal["action_id"], "target": proposal["target"], "status": "CONFLICT",
+                  "resource_version": proposal["based_on_resource_version"], "recorded_at": "2026-10-10T12:00:50Z",
+                  "details": "x", "conflict": {"basis": "NOT_SENT", "resource_version": "rv-live",
+                                               "generation": incident["observed_generation"]}}
+        with store.transaction():
+            record_message(result, store, stale_replans=3)
+        assert store.incident(incident["incident_id"])["state"] == "OPEN", store.incident(incident["incident_id"])
+    finally:
+        flow.close()
+    return Path(directory) / "coordinator.db"
