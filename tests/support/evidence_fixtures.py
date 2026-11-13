@@ -161,10 +161,15 @@ def scenario_run(root, name, *, scenario="R2", status="PASS", actual="ROLLBACK",
     return run
 
 
-def forced(action, *, verdict="REJECT", codes=(), status="FAILED", writes=0):
+def forced(action, *, verdict="REJECT", codes=(), status="FAILED", writes=0, label=None, expected=None):
     """One forced wrong action as a chaos run's summary records it."""
-    return {"action": action, "guard_verdict": verdict, "guard_reason_codes": list(codes), "executor_status": status,
+    item = {"action": action, "guard_verdict": verdict, "guard_reason_codes": list(codes), "executor_status": status,
             "executor_patch_attempts": writes, "executor_journal_attempts": writes}
+    if label:
+        item["label"] = label
+    if expected:
+        item["expected_reason"] = expected
+    return item
 
 
 def chaos_recovery_run(root, name, *, scenario="N2", kind="PodChaos", status="PASS", actual="RESTART", writes=1,
@@ -187,6 +192,8 @@ def chaos_recovery_run(root, name, *, scenario="N2", kind="PodChaos", status="PA
     write(run / "chaos-recovery/proposal.json", {"action": actual})
     write(run / "chaos-recovery/approval.json", {"signature": "never collected"})
     write(run / "forced-rollback/proof.json", {"executor_patch_attempts": 0})
+    if actual == "NO_INCIDENT":
+        write(run / "true-negative.json", {"passed": True, "executor_writes": 0})
     write(run / "executor.sqlite", b"never collected")
     return run
 

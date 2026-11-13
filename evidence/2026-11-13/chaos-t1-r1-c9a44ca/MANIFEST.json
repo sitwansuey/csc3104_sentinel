@@ -66,6 +66,12 @@
       "redactions": 0
     },
     {
+      "path": "true-negative.json",
+      "sha256": "dc756a8d82e184120574a66adba26b76eb99d1fa01dee0c030ab95e74f1e2b26",
+      "bytes": 384,
+      "redactions": 0
+    },
+    {
       "path": "coordinator-journal.json",
       "sha256": "71ae8b640cae8ec37b90a5943f1332c5bb30ba018bd4f6bccfbf4bac3e3d4b51",
       "bytes": 112,

@@ -1,0 +1,16 @@
+{
+  "checks": {
+    "fault_injected": true,
+    "metric_thresholds_evaluated": true,
+    "no_coordinator_action": true,
+    "no_executor_action": true,
+    "no_incident": true,
+    "observer_window_covered": true,
+    "template_at_baseline": true
+  },
+  "executor_writes": 0,
+  "observations": 54,
+  "observed_seconds": 129.7,
+  "passed": true,
+  "thresholds_complete_readings": 54
+}

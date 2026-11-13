@@ -421,8 +421,9 @@ class ChaosRecoveryTests(unittest.TestCase):
         runs = self.root / "source"
         rollback = fx.forced("ROLLBACK", codes=("ROLLBACK_ALREADY_AT_BASELINE",))
         cases = {
-            "n2-race": dict(status="FAILED", refusals=[rollback, fx.forced("RESTART", verdict=None,
-                                                                            status="CONFLICT")]),
+            "n2-race": dict(status="FAILED", refusals=[rollback, fx.forced(
+                "RESTART", verdict=None, status="CONFLICT", label="forced-restart-drift",
+                expected="RESTART_TEMPLATE_DRIFT")]),
             "n2-pass": dict(started="2026-11-13T09:10:00Z", refusals=[rollback, fx.forced(
                 "RESTART", codes=("RESTART_BUDGET_EXHAUSTED", "RESTART_TEMPLATE_DRIFT"))]),
             "n3-pass": dict(scenario="N3", kind="StressChaos", actual="ESCALATE", writes=0, attributed=None,
@@ -445,6 +446,7 @@ class ChaosRecoveryTests(unittest.TestCase):
         self.assertTrue({"summary.json", "scenario-result.json", "chaos-experiment.json", "chaos-recovery/proposal.json",
                          "forced-rollback/proof.json"} <= files)
         self.assertFalse({"chaos-recovery/approval.json", "executor.sqlite"} & files)
+        self.assertIn("true-negative.json", {item["path"] for item in self.bundles["t1-pass"].manifest["files"]})
 
     def test_rows_show_attribution_and_each_forced_action_with_its_writes(self):
         rows = {row[0]: row[1:] for row in summarize.chaos_recovery_rows(list(self.bundles.values()))}
@@ -462,8 +464,17 @@ class ChaosRecoveryTests(unittest.TestCase):
         self.assertEqual(sorted(rows), ["n2-pass", "n2-race", "n3-pass", "t1-pass"])
         self.assertEqual(rows["n2-race"][:3], ["N2", "0123456", "FAILED"])
         self.assertEqual(rows["t1-pass"][3:7], ["NO_INCIDENT", "decided by the rule", "0", "no incident"])
-        self.assertIn("N2 at 0123456 FAILED: RESTART decided by the rule, 1 Executor write",
-                      summarize.scenario_outcomes([self.bundles["n2-race"]]))
+        self.assertEqual(summarize.scenario_outcomes([self.bundles["n2-race"]]),
+                         "N2 at 0123456 FAILED: RESTART decided by the rule, 1 Executor write, RECOVERED, the action "
+                         "matched the pre-registered expected outcome but the run FAILED: drift cell not refused "
+                         "(no Guard verdict, Executor CONFLICT), labels pending")
+
+    def test_a_failed_run_whose_action_matched_never_reads_as_a_plain_match(self):
+        rows = {row[0]: row[1:] for row in summarize.scenario_rows(list(self.bundles.values()))}
+        self.assertEqual(rows["n2-race"][7], "action matched; run FAILED: drift cell not refused "
+                                             "(no Guard verdict, Executor CONFLICT)")
+        self.assertEqual(rows["n2-pass"][7], "yes")
+        self.assertEqual(rows["t1-pass"][7], "yes")
 
 
 class ExclusionTests(unittest.TestCase):

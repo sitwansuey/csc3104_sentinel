@@ -276,9 +276,10 @@ prepared before this change has no `target_annotations`; its restore says
 between runs only: lowering `sentinel.io/fence-epoch` undoes a seal, so it
 must never be part of normal operation. It has run against the lab once, in
 the 02d91e5 session of 13 Nov 2026: every run's restore reported
-`annotations.status` `reset` (it put the prepared `sentinel.io/execution`
-back), and after each of the two S8 runs it also removed `sentinel.io/fence`
-and `sentinel.io/fence-epoch` (epoch 2), which were not there at `prepare`
+`annotations.status` `reset`. After each of the ten non-S8 runs the record
+shows the prepared `sentinel.io/execution` put back; after each of the two S8
+runs it shows only `sentinel.io/fence` and `sentinel.io/fence-epoch` (epoch 2)
+removed, which were not there at `prepare`
 (`C-DISTRIBUTED-KIND-02D91E5`). No reset was refused; one kind node on one
 host.
 

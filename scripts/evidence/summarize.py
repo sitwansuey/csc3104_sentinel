@@ -1066,6 +1066,36 @@ def chaos_recovery_rows(bundles):
     return rows
 
 
+def unrefused_cells(bundle):
+    """Forced wrong actions the run expected the Guard to refuse with a named reason that it did not refuse with."""
+    missed = []
+    for item in summary_of(bundle).get("forced_refusals") or []:
+        expected = item.get("expected_reason")
+        if not expected or expected in (item.get("guard_reason_codes") or []):
+            continue
+        cell = ("drift cell" if str(item.get("label") or "").endswith("-drift")
+                else f"forced {item.get('action') or 'unknown'} cell")
+        verdict = item.get("guard_verdict")
+        missed.append(f"{cell} not refused ({f'Guard {verdict}' if verdict else 'no Guard verdict'}, "
+                      f"Executor {item.get('executor_status') or 'status unknown'})")
+    return missed
+
+
+def match_text(bundle, result):
+    """Whether the decision matched its pre-registered outcome, never reading as a pass for a run that failed.
+
+    A run can decide the pre-registered action and still fail a later check
+    (a forced wrong action that was not refused, say); the failure is named.
+    """
+    if result.get("matched_expected") is not True:
+        return "no"
+    status = outcome(bundle)
+    if status == "PASS":
+        return "yes"
+    why = unrefused_cells(bundle) or [failure_class(summary_of(bundle))]
+    return f"action matched; run {status}: {' and '.join(why)}"
+
+
 def scenario_parts(bundle):
     """Scenario, revision, outcome, decision, how it was decided, writes, state, match and labels for one run."""
     result = scenario_result(bundle)
@@ -1081,7 +1111,7 @@ def scenario_parts(bundle):
     return [result.get("scenario") or "unknown", short(bundle.entry.get("source_revision")), outcome(bundle),
             result.get("actual") or "no decision", how, str(writes) if isinstance(writes, int) else "unmeasured",
             result.get("coordinator_state") or ("no incident" if result.get("actual") == "NO_INCIDENT" else "unknown"),
-            "yes" if result.get("matched_expected") is True else "no", labels]
+            match_text(bundle, result), labels]
 
 
 def scenario_rows(bundles):
@@ -1096,9 +1126,14 @@ def scenario_outcomes(bundles):
     for bundle in bundles:
         name, revision, result, actual, how, writes, state, matched, labels = scenario_parts(bundle)
         head = f"{name} at {revision} {result}"
-        tail = (f"{actual} {how}, {writes} Executor write{'' if writes == '1' else 's'}, {state}, "
-                f"{'matched' if matched == 'yes' else 'did not match'} the pre-registered expected outcome, "
-                f"labels {labels}")
+        if matched == "yes":
+            said = "matched the pre-registered expected outcome"
+        elif matched == "no":
+            said = "did not match the pre-registered expected outcome"
+        else:
+            said = ("the action matched the pre-registered expected outcome but the run "
+                    f"{matched.removeprefix('action matched; run ')}")
+        tail = f"{actual} {how}, {writes} Executor write{'' if writes == '1' else 's'}, {state}, {said}, labels {labels}"
         if groups and groups[-1][:2] == [head, tail]:
             groups[-1][2] += 1
         else:

@@ -189,8 +189,9 @@ under the same owner-gate note), the recipe below ran in order:
   storefront journal (`runtime/boutique_observability.py`) did not accept the
   pair-fault stage; the offline pair tests had mocked the journal. No
   proposal was planned, so there was no Guard decision and no Executor write.
-  Each run's chaos object was cleaned up and the administrator put the
-  configuration fault back. The defect was fixed in 1941683 (merged in
+  Each run's chaos object was cleaned up and the administrator's emergency
+  restore returned the configuration-faulted service (shippingservice or
+  cartservice) to its baseline. The defect was fixed in 1941683 (merged in
   02d91e5). These eight runs are listed in
   [evidence/exclusions.json](../evidence/README.md), not as bundles, because
   the collector has no evidence class for pair runs at this revision.
