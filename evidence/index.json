@@ -1370,6 +1370,286 @@
       "provenance": "recorded",
       "status": "current",
       "reason": null
+    },
+    {
+      "bundle_id": "chaos-n2-r1-c9a44ca",
+      "class": "chaos-recovery",
+      "path": "2026-11-13/chaos-n2-r1-c9a44ca",
+      "captured_at": "2026-11-13T08:49:52.695934Z",
+      "source_revision": "c9a44cacc004350f25bd3d76ddf85296d1af84e2",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "chaos-n2-r2-c9a44ca",
+      "class": "chaos-recovery",
+      "path": "2026-11-13/chaos-n2-r2-c9a44ca",
+      "captured_at": "2026-11-13T08:51:49.068257Z",
+      "source_revision": "c9a44cacc004350f25bd3d76ddf85296d1af84e2",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "chaos-n2-r3-c9a44ca",
+      "class": "chaos-recovery",
+      "path": "2026-11-13/chaos-n2-r3-c9a44ca",
+      "captured_at": "2026-11-13T08:53:42.750591Z",
+      "source_revision": "c9a44cacc004350f25bd3d76ddf85296d1af84e2",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "chaos-n2-r4-c9a44ca",
+      "class": "chaos-recovery",
+      "path": "2026-11-13/chaos-n2-r4-c9a44ca",
+      "captured_at": "2026-11-13T08:56:03.244056Z",
+      "source_revision": "c9a44cacc004350f25bd3d76ddf85296d1af84e2",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "chaos-n2-r5-c9a44ca",
+      "class": "chaos-recovery",
+      "path": "2026-11-13/chaos-n2-r5-c9a44ca",
+      "captured_at": "2026-11-13T08:58:32.087471Z",
+      "source_revision": "c9a44cacc004350f25bd3d76ddf85296d1af84e2",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "chaos-n3-r1-c9a44ca",
+      "class": "chaos-recovery",
+      "path": "2026-11-13/chaos-n3-r1-c9a44ca",
+      "captured_at": "2026-11-13T09:01:00.312291Z",
+      "source_revision": "c9a44cacc004350f25bd3d76ddf85296d1af84e2",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "chaos-t1-r1-c9a44ca",
+      "class": "chaos-recovery",
+      "path": "2026-11-13/chaos-t1-r1-c9a44ca",
+      "captured_at": "2026-11-13T09:03:34.261476Z",
+      "source_revision": "c9a44cacc004350f25bd3d76ddf85296d1af84e2",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "chaos-n2-r1-29e41f8",
+      "class": "chaos-recovery",
+      "path": "2026-11-13/chaos-n2-r1-29e41f8",
+      "captured_at": "2026-11-13T09:08:19.125635Z",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "chaos-n2-r2-29e41f8",
+      "class": "chaos-recovery",
+      "path": "2026-11-13/chaos-n2-r2-29e41f8",
+      "captured_at": "2026-11-13T09:10:18.056079Z",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "chaos-n2-r3-29e41f8",
+      "class": "chaos-recovery",
+      "path": "2026-11-13/chaos-n2-r3-29e41f8",
+      "captured_at": "2026-11-13T09:12:11.963159Z",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "chaos-n2-r4-29e41f8",
+      "class": "chaos-recovery",
+      "path": "2026-11-13/chaos-n2-r4-29e41f8",
+      "captured_at": "2026-11-13T09:14:32.048724Z",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "chaos-n2-r5-29e41f8",
+      "class": "chaos-recovery",
+      "path": "2026-11-13/chaos-n2-r5-29e41f8",
+      "captured_at": "2026-11-13T09:16:31.112089Z",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "chaos-n2-agent-r1-29e41f8",
+      "class": "agent",
+      "path": "2026-11-13/chaos-n2-agent-r1-29e41f8",
+      "captured_at": "2026-11-13T09:18:28.579793Z",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "dual-fault-baseline-r1-29e41f8",
+      "class": "connected-harness",
+      "path": "2026-11-13/dual-fault-baseline-r1-29e41f8",
+      "captured_at": "2026-11-13T09:21:49.561225Z",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "dual-fault-baseline-c1-29e41f8",
+      "class": "connected-harness",
+      "path": "2026-11-13/dual-fault-baseline-c1-29e41f8",
+      "captured_at": "2026-11-13T09:24:18.490176Z",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s1b-r1-02d91e5",
+      "class": "distributed-scenario",
+      "path": "2026-11-13/distributed-kind-s1b-r1-02d91e5",
+      "captured_at": "2026-11-13T10:03:27.845873Z",
+      "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s1b-r2-02d91e5",
+      "class": "distributed-scenario",
+      "path": "2026-11-13/distributed-kind-s1b-r2-02d91e5",
+      "captured_at": "2026-11-13T10:04:49.402220Z",
+      "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s1c-r1-02d91e5",
+      "class": "distributed-scenario",
+      "path": "2026-11-13/distributed-kind-s1c-r1-02d91e5",
+      "captured_at": "2026-11-13T10:06:00.238610Z",
+      "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s1c-r2-02d91e5",
+      "class": "distributed-scenario",
+      "path": "2026-11-13/distributed-kind-s1c-r2-02d91e5",
+      "captured_at": "2026-11-13T10:06:39.687746Z",
+      "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s2-r1-02d91e5",
+      "class": "distributed-scenario",
+      "path": "2026-11-13/distributed-kind-s2-r1-02d91e5",
+      "captured_at": "2026-11-13T10:07:38.888936Z",
+      "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s2-r2-02d91e5",
+      "class": "distributed-scenario",
+      "path": "2026-11-13/distributed-kind-s2-r2-02d91e5",
+      "captured_at": "2026-11-13T10:08:58.354438Z",
+      "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s4-r1-02d91e5",
+      "class": "distributed-scenario",
+      "path": "2026-11-13/distributed-kind-s4-r1-02d91e5",
+      "captured_at": "2026-11-13T10:10:18.126757Z",
+      "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s4-r2-02d91e5",
+      "class": "distributed-scenario",
+      "path": "2026-11-13/distributed-kind-s4-r2-02d91e5",
+      "captured_at": "2026-11-13T10:11:22.751163Z",
+      "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s5-r1-02d91e5",
+      "class": "distributed-scenario",
+      "path": "2026-11-13/distributed-kind-s5-r1-02d91e5",
+      "captured_at": "2026-11-13T10:12:09.245173Z",
+      "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s5-r2-02d91e5",
+      "class": "distributed-scenario",
+      "path": "2026-11-13/distributed-kind-s5-r2-02d91e5",
+      "captured_at": "2026-11-13T10:13:13.780728Z",
+      "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s8-r1-02d91e5",
+      "class": "distributed-scenario",
+      "path": "2026-11-13/distributed-kind-s8-r1-02d91e5",
+      "captured_at": "2026-11-13T10:14:19.651739Z",
+      "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "distributed-kind-s8-r2-02d91e5",
+      "class": "distributed-scenario",
+      "path": "2026-11-13/distributed-kind-s8-r2-02d91e5",
+      "captured_at": "2026-11-13T10:15:08.847588Z",
+      "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "kind-lab-session-02d91e5-20261113",
+      "class": "kind-lab-session",
+      "path": "2026-11-13/kind-lab-session-02d91e5-20261113",
+      "captured_at": null,
+      "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
     }
   ]
 }

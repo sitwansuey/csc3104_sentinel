@@ -203,7 +203,7 @@
       "status": "reproduced"
     }
   ],
-  "corpus_manifest_sha256": "11802fd6351a343f25cb95e8c82fb80e63624cbf381f58bd27db388b9657287b",
+  "corpus_manifest_sha256": "bec154577393cfff5165a214abf8db3aa6d8378fb3be39d232527053403901a9",
   "guard_crosscheck": [
     {
       "agrees": true,
@@ -636,6 +636,30 @@
         "VALIDATION_PASSED"
       ],
       "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-dual-fault-baseline-c1-29e41f8",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
+    },
+    {
+      "agrees": true,
+      "case_id": "cap-dual-fault-baseline-r1-29e41f8",
+      "recorded_guard_verdict": "ALLOW",
+      "recorded_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "replayed_v2_verdict": "ALLOW"
     }
   ],
   "schema": "sentinel-replay-golden-v1",
@@ -643,8 +667,8 @@
     "differs": 6,
     "error": 0,
     "guard_crosscheck": {
-      "agrees": 36,
-      "cases": 36
+      "agrees": 38,
+      "cases": 38
     },
     "not_replayable": 0,
     "reproduced": 9

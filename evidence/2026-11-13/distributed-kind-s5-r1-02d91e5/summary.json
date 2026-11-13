@@ -1,0 +1,225 @@
+{
+  "schema": "sentinel-distributed-run-v1",
+  "scenario": "S5",
+  "title": "Restart the Coordinator between commit and reply, and again later",
+  "mode": "kind",
+  "repeat": 1,
+  "date": "2026-11-13",
+  "started_at": "2026-11-13T10:12:09.245173Z",
+  "duration_seconds": 63.0,
+  "single_host": true,
+  "separate_processes": true,
+  "synthetic_planner": true,
+  "cluster": "kind-sentinel-boutique-connected",
+  "tls": true,
+  "lease_seconds": 4,
+  "deadline_seconds": 180,
+  "git_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+  "python": "3.13.2",
+  "os": "Windows",
+  "notes": {
+    "fault_point": "coordinator.after_commit_before_reply",
+    "exit_code": 73,
+    "restarts": 2
+  },
+  "harness_error": null,
+  "clock_offsets_simulated": {},
+  "max_clock_skew_seconds": null,
+  "clock_offsets_measured": {
+    "executor-a": {
+      "theta_seconds": 0.034,
+      "uncertainty_seconds": 0.034,
+      "max_abs_theta_seconds": 0.067,
+      "reports": 147
+    },
+    "executor-b": {
+      "theta_seconds": 0.037,
+      "uncertainty_seconds": 0.037,
+      "max_abs_theta_seconds": 0.065,
+      "reports": 151
+    },
+    "guard-1": {
+      "theta_seconds": 0.054,
+      "uncertainty_seconds": 0.054,
+      "max_abs_theta_seconds": 0.063,
+      "reports": 147
+    },
+    "planner-1": {
+      "theta_seconds": 0.043,
+      "uncertainty_seconds": 0.044,
+      "max_abs_theta_seconds": 0.068,
+      "reports": 150
+    },
+    "verifier-1": {
+      "theta_seconds": 0.043,
+      "uncertainty_seconds": 0.043,
+      "max_abs_theta_seconds": 0.062,
+      "reports": 89
+    }
+  },
+  "states": [
+    "RECOVERED"
+  ],
+  "committed_writes": 1,
+  "unobserved_windows": 0,
+  "invariants": [
+    {
+      "id": "I1",
+      "name": "At most one committed template write per action",
+      "passed": true,
+      "detail": "1 committed write(s) over 1 action(s)"
+    },
+    {
+      "id": "I2",
+      "name": "No template write after revocation unless surfaced for review",
+      "passed": true,
+      "detail": "0 revocation(s), no write after any"
+    },
+    {
+      "id": "I3",
+      "name": "Every incident terminal or reviewable within the deadline",
+      "passed": true,
+      "detail": "RECOVERED"
+    },
+    {
+      "id": "I4",
+      "name": "No delivery has two acknowledged results",
+      "passed": true,
+      "detail": "7 acknowledged command(s), one result each"
+    },
+    {
+      "id": "I5",
+      "name": "No poison loop (bounded attempts, at most two HTTP 400 refusals per command)",
+      "passed": true,
+      "detail": "at most 1 attempt(s) per command, 0 HTTP 400 result(s)"
+    },
+    {
+      "id": "I6",
+      "name": "No Executor ledger ends with a write in doubt",
+      "passed": true,
+      "detail": "1 ledger row(s), none in doubt"
+    },
+    {
+      "id": "X1",
+      "name": "Lease ownership exclusive",
+      "passed": true,
+      "detail": "7 delivery lease(s), each held by one identity at a time"
+    },
+    {
+      "id": "X2",
+      "name": "No secret in logs, configuration files or argv",
+      "passed": true,
+      "detail": "27 file(s) and 7 argv list(s) clean"
+    },
+    {
+      "id": "X3",
+      "name": "No acknowledged message lost",
+      "passed": true,
+      "detail": "7 acknowledged result(s) all recorded"
+    },
+    {
+      "id": "X4",
+      "name": "Transitions journal consistent with incidents and outbox",
+      "passed": true,
+      "detail": "7 transition(s) consistent"
+    }
+  ],
+  "passed": true,
+  "expected_failures": [],
+  "known_defect": null,
+  "matches_expectation": true,
+  "verifier_attempts": 1,
+  "max_verifier_attempts": null,
+  "verification": [
+    {
+      "identity": "verifier-1",
+      "action_id": "ACT-5b59af04d1266086aa74bd4d",
+      "started_after_execution_seconds": 3.533,
+      "deadline_after_execution_seconds": 93.533,
+      "outcome": "RECOVERED",
+      "first_healthy_after_execution_seconds": 14.623,
+      "readings": [
+        {
+          "after_execution_seconds": 4.297,
+          "status": "unhealthy"
+        },
+        {
+          "after_execution_seconds": 14.623,
+          "status": "healthy"
+        },
+        {
+          "after_execution_seconds": 24.932,
+          "status": "healthy"
+        }
+      ]
+    }
+  ],
+  "limits": "Separate OS processes on one host: one kernel clock, one disk, loopback networking. Not separate machines; clock skew is simulated by a gated offset, and the measured offsets measure that simulation over loopback, not skew between hosts.",
+  "deadline_source": "kind default",
+  "duplicate_incidents": {
+    "count": 0,
+    "incidents": []
+  },
+  "observer_failure_window_seconds": 15,
+  "kind_lab": {
+    "fault": {
+      "scenario": "R1",
+      "injection": {
+        "kind": "set_env",
+        "container": "server",
+        "env": "PORT",
+        "value": "invalid-port"
+      },
+      "injected_at": "2026-11-13T10:12:09.366699Z",
+      "health_http_status": 500,
+      "fault_visible": true,
+      "visible_after_seconds": 1.4,
+      "state": {
+        "generation": 258,
+        "observed_generation": 258,
+        "resource_version": "182817",
+        "desired": 1,
+        "available": 0,
+        "updated": 1,
+        "template_is_baseline": false,
+        "template_sha256": "bbf3cdf1bdf5cb2da049b116f062f52273d7cc6d1b40a2109adb21a60b1ad7ae"
+      }
+    },
+    "restore": {
+      "before": {
+        "generation": 259,
+        "observed_generation": 259,
+        "resource_version": "182947",
+        "desired": 1,
+        "available": 1,
+        "updated": 1,
+        "template_is_baseline": true,
+        "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+      },
+      "operator_restore": false,
+      "annotations": {
+        "status": "reset",
+        "reset_at": "2026-11-13T10:13:11.485460Z",
+        "reset": {
+          "sentinel.io/execution": {
+            "from": "{\"action_id\":\"ACT-5b59af04d1266086aa74bd4d\",\"attempt_id\":\"fa2822c3830f4593885924056c833abc\",\"proposal_sha256\":\"98791cf112800ff1b9f363d1595c487e30f55b1f4dbbc337d587abfda924e7f0\",\"target_uid\":\"7afb61df-2d75-4529-ae2c-5825a573335d\",\"template_sha256\":\"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"}",
+            "to": "{\"action_id\":\"ACT-LIVE-a926d4b60b4d44d999199d5fe5c8886c\",\"attempt_id\":\"a3c1c9ef0f4b448fa9d16a9bfe0c71cf\",\"proposal_sha256\":\"2cd8d8aefd9efa14a597b4a7d7716de246959a88f5e8368f7c9ab312a235355f\",\"target_uid\":\"7afb61df-2d75-4529-ae2c-5825a573335d\",\"template_sha256\":\"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"}"
+          }
+        }
+      },
+      "healthy": true,
+      "seconds": 2.5,
+      "after": {
+        "generation": 260,
+        "observed_generation": 260,
+        "resource_version": "182981",
+        "desired": 1,
+        "available": 1,
+        "updated": 1,
+        "template_is_baseline": true,
+        "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+      }
+    },
+    "operator_actions": "the fault injection and any operator_restore are lab operator writes with the operator's kubeconfig, not Sentinel writes"
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "incident_id": "INC-2D18A32617DE",
+  "kind": "incident",
+  "observed_at": "2026-11-13T09:26:00.380766Z",
+  "observed_generation": 15,
+  "observed_resource_version": "175135",
+  "schema_version": "1.0",
+  "signals": [
+    {
+      "at": "2026-11-13T09:25:53.177238Z",
+      "detail": "Deployment sentinel-boutique-connected/cartservice desired 1, ready 0, available 0; resourceVersion 175135, generation 15",
+      "evidence_id": "E-58C5326001F9",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-13T09:25:53.177238Z",
+      "detail": "Pod cartservice-5746c4c964-rsv7b container server is not ready; phase Running; restartCount 0",
+      "evidence_id": "E-3F2F3F7A49DB",
+      "reason": "ContainerNotReady",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-13T09:25:50Z",
+      "detail": "Deployment does not have minimum availability.",
+      "evidence_id": "E-E5DB5FD5E1C7",
+      "reason": "MinimumReplicasUnavailable",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T09:25:53.162489Z",
+      "detail": "8f1a4898-d4d9-4e84-825a-6de9d02dcbba/cartservice-5746c4c964-rsv7b/server: 2026-11-13T09:25:53.162489887Z info: Microsoft.Hosting.Lifetime[14]",
+      "evidence_id": "E-ADC995F5FD35",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:25:53.162527Z",
+      "detail": "8f1a4898-d4d9-4e84-825a-6de9d02dcbba/cartservice-5746c4c964-rsv7b/server: 2026-11-13T09:25:53.162527659Z       Now listening on: http://[::]:7070",
+      "evidence_id": "E-64ACFA3014A7",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:25:53.162761Z",
+      "detail": "8f1a4898-d4d9-4e84-825a-6de9d02dcbba/cartservice-5746c4c964-rsv7b/server: 2026-11-13T09:25:53.162761981Z info: Microsoft.Hosting.Lifetime[0]",
+      "evidence_id": "E-8B3650D9763A",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:25:53.162767Z",
+      "detail": "8f1a4898-d4d9-4e84-825a-6de9d02dcbba/cartservice-5746c4c964-rsv7b/server: 2026-11-13T09:25:53.162767902Z       Application started. Press Ctrl+C to shut down.",
+      "evidence_id": "E-188E246647E0",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:25:53.162769Z",
+      "detail": "8f1a4898-d4d9-4e84-825a-6de9d02dcbba/cartservice-5746c4c964-rsv7b/server: 2026-11-13T09:25:53.162769352Z info: Microsoft.Hosting.Lifetime[0]",
+      "evidence_id": "E-6C9D5B78ADFF",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:25:53.162770Z",
+      "detail": "8f1a4898-d4d9-4e84-825a-6de9d02dcbba/cartservice-5746c4c964-rsv7b/server: 2026-11-13T09:25:53.162770572Z       Hosting environment: Production",
+      "evidence_id": "E-7148F98E041A",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:25:53.162771Z",
+      "detail": "8f1a4898-d4d9-4e84-825a-6de9d02dcbba/cartservice-5746c4c964-rsv7b/server: 2026-11-13T09:25:53.162771612Z info: Microsoft.Hosting.Lifetime[0]",
+      "evidence_id": "E-7A4A66188D09",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:25:53.162773Z",
+      "detail": "8f1a4898-d4d9-4e84-825a-6de9d02dcbba/cartservice-5746c4c964-rsv7b/server: 2026-11-13T09:25:53.162773842Z       Content root path: /app",
+      "evidence_id": "E-B0540C7F06DB",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:26:00.380766Z",
+      "detail": "Deployment sentinel-boutique-connected/cartservice desired 1, ready 0, available 0; resourceVersion 175135, generation 15",
+      "evidence_id": "E-3F2BFCE6AFD0",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-13T09:26:00.380766Z",
+      "detail": "Pod cartservice-5746c4c964-rsv7b container server is not ready; phase Running; restartCount 0",
+      "evidence_id": "E-74C6BAD0CADB",
+      "reason": "ContainerNotReady",
+      "source": "pod_status"
+    }
+  ],
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "cartservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+  }
+}

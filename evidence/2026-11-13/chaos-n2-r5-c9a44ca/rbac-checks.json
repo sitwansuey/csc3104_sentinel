@@ -1,0 +1,47 @@
+[
+  {
+    "allowed": true,
+    "resource": "deployment/cartservice",
+    "verb": "get"
+  },
+  {
+    "allowed": true,
+    "resource": "deployment/cartservice",
+    "verb": "patch"
+  },
+  {
+    "allowed": true,
+    "resource": "deployment/shippingservice",
+    "verb": "get"
+  },
+  {
+    "allowed": true,
+    "resource": "deployment/shippingservice",
+    "verb": "patch"
+  },
+  {
+    "allowed": false,
+    "resource": "deployment/shippingservice",
+    "verb": "delete"
+  },
+  {
+    "allowed": false,
+    "resource": "secrets",
+    "verb": "get"
+  },
+  {
+    "allowed": false,
+    "resource": "pods/exec",
+    "verb": "create"
+  },
+  {
+    "allowed": false,
+    "resource": "deployment/outside-executor-scope",
+    "verb": "patch"
+  },
+  {
+    "allowed": false,
+    "resource": "deployment/paymentservice",
+    "verb": "patch"
+  }
+]

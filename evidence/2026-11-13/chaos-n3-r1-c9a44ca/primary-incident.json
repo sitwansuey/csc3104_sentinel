@@ -1,0 +1,80 @@
+{
+  "incident_id": "INC-5C18919548ED",
+  "kind": "incident",
+  "observed_at": "2026-11-13T09:03:30.218553Z",
+  "observed_generation": 202,
+  "observed_resource_version": "170982",
+  "schema_version": "1.0",
+  "signals": [
+    {
+      "at": "2026-11-13T09:03:05Z",
+      "detail": "{\"above\":0.18,\"metric\":\"k8s.pod.cpu.usage\",\"unit\":\"cores\",\"values\":[0.200115926]}",
+      "evidence_id": "E-EC8266B582C8",
+      "reason": "k8s.pod.cpu.usage",
+      "source": "otel_metric_alert"
+    },
+    {
+      "at": "2026-11-13T09:03:05.000000Z",
+      "detail": "{\"at\": \"2026-11-13T09:03:05.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-80f7a0438698003eeaac563fc159bbd29ebd707eeee3dedcbb50bf5b8615dfc8\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.memory.working_set\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"721c380c-432c-4682-839b-2bb8fdddd3cf\", \"service\": \"shippingservice\", \"signal\": \"metrics\", \"unit\": \"By\", \"value\": 9773056}",
+      "evidence_id": "OTEL-80f7a0438698003eeaac563fc159bbd29ebd707eeee3dedcbb50bf5b8615dfc8",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T09:03:05.000000Z",
+      "detail": "{\"at\": \"2026-11-13T09:03:05.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-ab3d720439bfaf069f7be7e8341fbd144baaa56b154686a75cf57733a1d9b64d\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.cpu.usage\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"721c380c-432c-4682-839b-2bb8fdddd3cf\", \"service\": \"shippingservice\", \"signal\": \"metrics\", \"unit\": \"cores\", \"value\": 0.200115926}",
+      "evidence_id": "OTEL-ab3d720439bfaf069f7be7e8341fbd144baaa56b154686a75cf57733a1d9b64d",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T09:02:45.000000Z",
+      "detail": "{\"at\": \"2026-11-13T09:02:45.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-4802ba6b48617a59d9ae4fc091a9709245b0a216d919eb394ffdfdeb32b72871\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.memory.working_set\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"721c380c-432c-4682-839b-2bb8fdddd3cf\", \"service\": \"shippingservice\", \"signal\": \"metrics\", \"unit\": \"By\", \"value\": 9117696}",
+      "evidence_id": "OTEL-4802ba6b48617a59d9ae4fc091a9709245b0a216d919eb394ffdfdeb32b72871",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T09:02:45.000000Z",
+      "detail": "{\"at\": \"2026-11-13T09:02:45.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-00c92d027a76f101cf7b336e50fb28907713e297e19b30abdf096ed8f1728309\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.cpu.usage\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"721c380c-432c-4682-839b-2bb8fdddd3cf\", \"service\": \"shippingservice\", \"signal\": \"metrics\", \"unit\": \"cores\", \"value\": 0.06479471}",
+      "evidence_id": "OTEL-00c92d027a76f101cf7b336e50fb28907713e297e19b30abdf096ed8f1728309",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T09:02:26.000000Z",
+      "detail": "{\"at\": \"2026-11-13T09:02:26.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-e252d67783e85b5204d577f8e96bb3306204c9a939ce650ad8cf27d5476b077c\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.memory.working_set\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"721c380c-432c-4682-839b-2bb8fdddd3cf\", \"service\": \"shippingservice\", \"signal\": \"metrics\", \"unit\": \"By\", \"value\": 4628480}",
+      "evidence_id": "OTEL-e252d67783e85b5204d577f8e96bb3306204c9a939ce650ad8cf27d5476b077c",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T09:03:19Z",
+      "detail": "{\"above\":0.18,\"metric\":\"k8s.pod.cpu.usage\",\"unit\":\"cores\",\"values\":[0.199437595]}",
+      "evidence_id": "E-DF7A5A43F361",
+      "reason": "k8s.pod.cpu.usage",
+      "source": "otel_metric_alert"
+    },
+    {
+      "at": "2026-11-13T09:03:19.000000Z",
+      "detail": "{\"at\": \"2026-11-13T09:03:19.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-ab63e595ca534b4bd810162a6eb2c44edaf17c96b970a562b002c216344f0e92\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.memory.working_set\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"721c380c-432c-4682-839b-2bb8fdddd3cf\", \"service\": \"shippingservice\", \"signal\": \"metrics\", \"unit\": \"By\", \"value\": 9396224}",
+      "evidence_id": "OTEL-ab63e595ca534b4bd810162a6eb2c44edaf17c96b970a562b002c216344f0e92",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T09:03:19.000000Z",
+      "detail": "{\"at\": \"2026-11-13T09:03:19.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-a47f71a15eeb7e4aa1707459f17f06126dd6551032189f43ca6c3f3fa72ef461\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.cpu.usage\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"721c380c-432c-4682-839b-2bb8fdddd3cf\", \"service\": \"shippingservice\", \"signal\": \"metrics\", \"unit\": \"cores\", \"value\": 0.199437595}",
+      "evidence_id": "OTEL-a47f71a15eeb7e4aa1707459f17f06126dd6551032189f43ca6c3f3fa72ef461",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    }
+  ],
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

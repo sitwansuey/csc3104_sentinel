@@ -1,0 +1,262 @@
+{
+  "incident_id": "INC-60120809618A",
+  "kind": "incident",
+  "observed_at": "2026-11-13T09:20:13.919071Z",
+  "observed_generation": 217,
+  "observed_resource_version": "174057",
+  "schema_version": "1.0",
+  "signals": [
+    {
+      "at": "2026-11-13T09:20:06.498876Z",
+      "detail": "Deployment sentinel-boutique-connected/shippingservice desired 1, ready 0, available 0; resourceVersion 174057, generation 217",
+      "evidence_id": "E-13EFD030C114",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-13T09:20:06.498876Z",
+      "detail": "Pod shippingservice-6d94cdf884-xwhv9 container server is not ready; phase Running; restartCount 0; Container image \"gcr.io/google-containers/pause:latest\" is not present with pull policy of Never; last exitCode 143",
+      "evidence_id": "E-AFBA43C9C9F2",
+      "reason": "ErrImageNeverPull",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-13T09:20:04Z",
+      "detail": "Deployment does not have minimum availability.",
+      "evidence_id": "E-F5753D8AFF29",
+      "reason": "MinimumReplicasUnavailable",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T09:20:04Z",
+      "detail": "Container image \"gcr.io/google-containers/pause:latest\" is not present with pull policy of Never",
+      "evidence_id": "E-D0CFFF398F88",
+      "reason": "ErrImageNeverPull",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T09:20:04Z",
+      "detail": "Error: ErrImageNeverPull",
+      "evidence_id": "E-18FA6C24D000",
+      "reason": "Failed",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T09:20:04Z",
+      "detail": "Readiness probe failed: timeout: failed to connect service \"<private-ip>:50051\" within 1s: context deadline exceeded",
+      "evidence_id": "E-30D7CCCC6FE4",
+      "reason": "Unhealthy",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T09:20:05Z",
+      "detail": "Back-off restarting failed container server in pod shippingservice-6d94cdf884-xwhv9_sentinel-boutique-connected(27195654-41bc-4e37-9c94-193b7d67a201)",
+      "evidence_id": "E-6E5B9EF60C59",
+      "reason": "BackOff",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T09:19:59.132744Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:19:59.132744018Z {\"message\":\"[GetQuote] received request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:19:59.13256878Z\"}",
+      "evidence_id": "E-6366B60027B5",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:19:59.132764Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:19:59.132764289Z {\"message\":\"[GetQuote] completed request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:19:59.132604683Z\"}",
+      "evidence_id": "E-04081C27BEE5",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.249997Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.249997207Z {\"message\":\"[GetQuote] received request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.249850681Z\"}",
+      "evidence_id": "E-E1B6AD39B3A6",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.250010Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.250010458Z {\"message\":\"[GetQuote] completed request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.249888954Z\"}",
+      "evidence_id": "E-6B0B03EA22A6",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.257798Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.257798354Z {\"message\":\"[GetQuote] received request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.257671674Z\"}",
+      "evidence_id": "E-91D8BD0C56C2",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.257808Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.257808835Z {\"message\":\"[GetQuote] completed request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.257696866Z\"}",
+      "evidence_id": "E-98EC63BAB27B",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.259455Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.259455944Z {\"message\":\"[ShipOrder] received request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.259326629Z\"}",
+      "evidence_id": "E-090D3B938572",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.259464Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.259464864Z {\"message\":\"[ShipOrder] completed request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.259356472Z\"}",
+      "evidence_id": "E-E9F89824699F",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.361612Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.361612264Z {\"message\":\"[GetQuote] received request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.361479489Z\"}",
+      "evidence_id": "E-188A2BC35EC5",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.361621Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.361621914Z {\"message\":\"[GetQuote] completed request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.361514142Z\"}",
+      "evidence_id": "E-DB535460BFAB",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.384975Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.384975019Z {\"message\":\"[GetQuote] received request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.384831368Z\"}",
+      "evidence_id": "E-406E1574CB86",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.384984Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.384984969Z {\"message\":\"[GetQuote] completed request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.38486332Z\"}",
+      "evidence_id": "E-00A7DBCEDDCB",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.386710Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.386710854Z {\"message\":\"[ShipOrder] received request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.38658078Z\"}",
+      "evidence_id": "E-B2957C9BBE87",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.386720Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.386720555Z {\"message\":\"[ShipOrder] completed request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.386617142Z\"}",
+      "evidence_id": "E-09B64EE76359",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.480579Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.480579150Z {\"message\":\"[GetQuote] received request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.480428085Z\"}",
+      "evidence_id": "E-5144F004242D",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.480589Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.480589521Z {\"message\":\"[GetQuote] completed request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.480460967Z\"}",
+      "evidence_id": "E-D6D8F9DE3E48",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.488278Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.488278536Z {\"message\":\"[GetQuote] received request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.488161783Z\"}",
+      "evidence_id": "E-C4C52840F620",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.488286Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.488286757Z {\"message\":\"[GetQuote] completed request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.488187965Z\"}",
+      "evidence_id": "E-4D9D6A83F83A",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.489815Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.489815827Z {\"message\":\"[ShipOrder] received request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.489697823Z\"}",
+      "evidence_id": "E-534F06B08BE4",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:20:02.489822Z",
+      "detail": "27195654-41bc-4e37-9c94-193b7d67a201/shippingservice-6d94cdf884-xwhv9/server: 2026-11-13T09:20:02.489822007Z {\"message\":\"[ShipOrder] completed request\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:20:02.489726146Z\"}",
+      "evidence_id": "E-EA6EB218EB1D",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:19:57.000000Z",
+      "detail": "{\"at\": \"2026-11-13T09:19:57.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-e573a4f29edf18b4ecfc524a701db20e5a912746bd3a412216f27c60ff61a9ed\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.memory.working_set\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"27195654-41bc-4e37-9c94-193b7d67a201\", \"service\": \"shippingservice\", \"signal\": \"metrics\", \"unit\": \"By\", \"value\": 4825088}",
+      "evidence_id": "OTEL-e573a4f29edf18b4ecfc524a701db20e5a912746bd3a412216f27c60ff61a9ed",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T09:19:57.000000Z",
+      "detail": "{\"at\": \"2026-11-13T09:19:57.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-df9167a521db308251f307cdab8d4fdc88654a4da4368a0d182ff10d2719243a\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.cpu.usage\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"27195654-41bc-4e37-9c94-193b7d67a201\", \"service\": \"shippingservice\", \"signal\": \"metrics\", \"unit\": \"cores\", \"value\": 0.000621958}",
+      "evidence_id": "OTEL-df9167a521db308251f307cdab8d4fdc88654a4da4368a0d182ff10d2719243a",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T09:19:41.000000Z",
+      "detail": "{\"at\": \"2026-11-13T09:19:41.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-c245aa6351df7c1505b850bd8e5a276fb9f4aa2d8ebfccd86882819f61eb19f0\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.memory.working_set\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"27195654-41bc-4e37-9c94-193b7d67a201\", \"service\": \"shippingservice\", \"signal\": \"metrics\", \"unit\": \"By\", \"value\": 4603904}",
+      "evidence_id": "OTEL-c245aa6351df7c1505b850bd8e5a276fb9f4aa2d8ebfccd86882819f61eb19f0",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T09:19:41.000000Z",
+      "detail": "{\"at\": \"2026-11-13T09:19:41.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-9973729fe95df7094a319dd2082565863746593b969f9fade3a921ffeab130d2\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.cpu.usage\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"27195654-41bc-4e37-9c94-193b7d67a201\", \"service\": \"shippingservice\", \"signal\": \"metrics\", \"unit\": \"cores\", \"value\": 0.000616973}",
+      "evidence_id": "OTEL-9973729fe95df7094a319dd2082565863746593b969f9fade3a921ffeab130d2",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T09:19:25.000000Z",
+      "detail": "{\"at\": \"2026-11-13T09:19:25.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-295d7857d92f60aa1c1656c96a0183c86c26b16d0682aaf89fa86bf46c0048b8\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.memory.working_set\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"27195654-41bc-4e37-9c94-193b7d67a201\", \"service\": \"shippingservice\", \"signal\": \"metrics\", \"unit\": \"By\", \"value\": 4542464}",
+      "evidence_id": "OTEL-295d7857d92f60aa1c1656c96a0183c86c26b16d0682aaf89fa86bf46c0048b8",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T09:20:13.919071Z",
+      "detail": "Deployment sentinel-boutique-connected/shippingservice desired 1, ready 0, available 0; resourceVersion 174057, generation 217",
+      "evidence_id": "E-4EF5278C0576",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-13T09:20:13.919071Z",
+      "detail": "Pod shippingservice-6d94cdf884-xwhv9 container server is not ready; phase Running; restartCount 0; back-off 10s restarting failed container=server pod=shippingservice-6d94cdf884-xwhv9_sentinel-boutique-connected(27195654-41bc-4e37-9c94-193b7d67a201); last exitCode 143",
+      "evidence_id": "E-5B04EDD46CF3",
+      "reason": "CrashLoopBackOff",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-13T09:20:06Z",
+      "detail": "Back-off restarting failed container server in pod shippingservice-6d94cdf884-xwhv9_sentinel-boutique-connected(27195654-41bc-4e37-9c94-193b7d67a201)",
+      "evidence_id": "E-B1C601B6B4D0",
+      "reason": "BackOff",
+      "source": "event"
+    }
+  ],
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "incident_id": "INC-26AD667E44B4",
+  "kind": "incident",
+  "observed_at": "2026-11-13T09:23:14.064386Z",
+  "observed_generation": 220,
+  "observed_resource_version": "174508",
+  "schema_version": "1.0",
+  "signals": [
+    {
+      "at": "2026-11-13T09:23:06.904324Z",
+      "detail": "Deployment sentinel-boutique-connected/shippingservice desired 1, ready 0, available 0; resourceVersion 174495, generation 220",
+      "evidence_id": "E-970727513D61",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-13T09:23:06Z",
+      "detail": "Deployment does not have minimum availability.",
+      "evidence_id": "E-9375C737206D",
+      "reason": "MinimumReplicasUnavailable",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T09:23:14.064386Z",
+      "detail": "Deployment sentinel-boutique-connected/shippingservice desired 1, ready 0, available 0; resourceVersion 174508, generation 220",
+      "evidence_id": "E-EAA425EAA89F",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-13T09:23:14.064386Z",
+      "detail": "Pod shippingservice-85576d7678-6tfzc container server is not ready; phase Running; restartCount 1; back-off 10s restarting failed container=server pod=shippingservice-85576d7678-6tfzc_sentinel-boutique-connected(06b04c4f-3d25-454e-b99b-8e7e1004a4be); last exitCode 1",
+      "evidence_id": "E-DABFF9371ABD",
+      "reason": "CrashLoopBackOff",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-13T09:23:09Z",
+      "detail": "Readiness probe failed: timeout: failed to connect service \"<private-ip>:50051\" within 1s: context deadline exceeded",
+      "evidence_id": "E-9841A93E5657",
+      "reason": "Unhealthy",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T09:23:12Z",
+      "detail": "Back-off restarting failed container server in pod shippingservice-85576d7678-6tfzc_sentinel-boutique-connected(06b04c4f-3d25-454e-b99b-8e7e1004a4be)",
+      "evidence_id": "E-10EC9211605F",
+      "reason": "BackOff",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T09:23:08.190085Z",
+      "detail": "06b04c4f-3d25-454e-b99b-8e7e1004a4be/shippingservice-85576d7678-6tfzc/server: 2026-11-13T09:23:08.190085685Z {\"message\":\"Tracing disabled.\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:23:08.189910647Z\"}",
+      "evidence_id": "E-8F5C7E04CF0A",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:23:08.190104Z",
+      "detail": "06b04c4f-3d25-454e-b99b-8e7e1004a4be/shippingservice-85576d7678-6tfzc/server: 2026-11-13T09:23:08.190104896Z {\"message\":\"Profiling disabled.\",\"severity\":\"info\",\"timestamp\":\"2026-11-13T09:23:08.189987383Z\"}",
+      "evidence_id": "E-1E9A85D2BE57",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T09:23:08.190341Z",
+      "detail": "06b04c4f-3d25-454e-b99b-8e7e1004a4be/shippingservice-85576d7678-6tfzc/server: 2026-11-13T09:23:08.190341933Z {\"message\":\"failed to listen: listen tcp: lookup tcp/invalid-port: unknown port\",\"severity\":\"fatal\",\"timestamp\":\"2026-11-13T09:23:08.190235111Z\"}",
+      "evidence_id": "E-8CC3D35CF74D",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    }
+  ],
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

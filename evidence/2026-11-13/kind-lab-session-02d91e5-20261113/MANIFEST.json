@@ -1,0 +1,40 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "kind-lab-session-02d91e5-20261113",
+  "class": "kind-lab-session",
+  "captured_at": null,
+  "source_run_dir_name": "phase4-kind",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+    "basis": "Operator records of the 13 Nov 2026 kind-mode recheck (about 10:02-10:16 UTC) with the committed experiments/distributed/kind_bundle.py at this revision; the operator HEAD record names 02d91e5 of integration/phase4 and no dirty-tree check is recorded. The bundle directory, which held the executor kubeconfig, was outside the run folder and was deleted after the final restore; prepare.out lists its file names only. restore-check.json is the final kind_bundle restore after the twelve runs (operator file restore.out)."
+  },
+  "files": [
+    {
+      "path": "NOTES.txt",
+      "sha256": "e750698a0a6137897709c4e079f711430f813b23b5c541d9ecd61c75345e01c2",
+      "bytes": 1026,
+      "redactions": 0
+    },
+    {
+      "path": "prepare.out",
+      "sha256": "66dadfa153b3375e996d4119fbcf2c56fcb755ee52aff8ebe1195d2eed9f038f",
+      "bytes": 1495,
+      "redactions": 0
+    },
+    {
+      "path": "restore-check.json",
+      "sha256": "c2177d76addd1aa89964060af058ad155c44d80a01e66cf6c4a805189f98d0e5",
+      "bytes": 717,
+      "redactions": 0
+    }
+  ],
+  "omitted": [],
+  "attached": [
+    {
+      "path": "restore-check.json",
+      "source_name": "restore.out"
+    }
+  ]
+}

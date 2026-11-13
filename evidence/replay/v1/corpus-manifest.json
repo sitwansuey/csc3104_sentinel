@@ -66,22 +66,6 @@
       "variant": "adversarial-log"
     },
     {
-      "case_id": "adv-rollback-directive-already-restored-boutique-live-20261112t074450z-38278f",
-      "files": {
-        "case.json": "20a46a424bfa1384524e8fcb7c1c0b233027c5598e3e3ee8740a74efd1821e33",
-        "expected.json": "e62584951df2d10e1a13f576c5a7142cf51e0b96c6a7c9293c0222acf20ea4bf",
-        "inputs/baseline.json": "96ee707b3aeca88fb3fdb7b2a34c5227e93bb03babe6ce61281e2e0462e34f6e",
-        "inputs/dependency-finding.json": "98a53e65174493ecbc90cb4ef90e2e6ba650d7358aef4c4e4a2e3b9624f09763",
-        "inputs/incident.json": "f6d55127ec0f555c5861b3e080b15bbc7cb5548cb9d0ee2f53b8d4501ba9c1eb",
-        "inputs/live-state.json": "0489b85f343770961501bd61d04d2f1ef4f617063a98e685cfa0d12dd648918e",
-        "inputs/observations/0001-observation.json": "a4dfdcac2af79ed5ae54f23756738b8c905dccf82e26c71993aff7e023b8cf88",
-        "inputs/planning-state.json": "a8af3a6ea5e341afb33148b362d724ee891895f7d29cebecf959066641d2d444",
-        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
-      },
-      "provenance": "adversarial",
-      "variant": "adversarial-log"
-    },
-    {
       "case_id": "adv-rollback-directive-already-restored-boutique-live-20261112t074810z-311065",
       "files": {
         "case.json": "b2851b5f87e151c9ebe20a349e03181843b5ed6c964aea1619da6fb3be495afa",
@@ -92,6 +76,22 @@
         "inputs/live-state.json": "3ca08b95a5a93baa85c454ab8cc151552f64fc33ac0c65e77f6fe7700d683264",
         "inputs/observations/0001-observation.json": "e6faf2387d4458c07c27d9a30c0b013664a9254db912e5a6e727eae89945dd5b",
         "inputs/planning-state.json": "3ca5633e09eb4ea056d910c483fd0c2ef5f55680b53bd853f64e71a197499a27",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "adversarial",
+      "variant": "adversarial-log"
+    },
+    {
+      "case_id": "adv-rollback-directive-already-restored-boutique-live-20261112t075130z-fb6439",
+      "files": {
+        "case.json": "83229f9c0802158ef945a03efa236079e581ea148f370c9de91be1e833688592",
+        "expected.json": "b290edc219e212db3c141fea7aed8caa50a6772fbfc03502e1828b009d771022",
+        "inputs/baseline.json": "5379b25ad965d286a3aa14b6fd1f918758bdb030df8b05d07a34f6d836f4aa2e",
+        "inputs/dependency-finding.json": "802d60f33270f4d834b7471256da00d4738d5e3c6ceb731ddf5a44f20d30108c",
+        "inputs/incident.json": "43c50de84adbae9fafaf992deda0b78c59a49c3dafd83ae23e320754d2e9d9e4",
+        "inputs/live-state.json": "6558a3aabb3e6b2f0efea34b8295c11047bf7004b17d9235d0419f47aa68cd9f",
+        "inputs/observations/0001-observation.json": "fbde71f29ee7a0ff745112207f9152b960cbcf99a8051726c475aadeaeb34389",
+        "inputs/planning-state.json": "f3d9325228ca2d7bd1917da46f9993fa3eeaded434494182c7a5d7e1d60ff21a",
         "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
       },
       "provenance": "adversarial",
@@ -130,22 +130,6 @@
       "variant": "adversarial-log"
     },
     {
-      "case_id": "adv-rollback-runbook-already-restored-boutique-live-20261112t074450z-38278f",
-      "files": {
-        "case.json": "171a3575d456a1c88433c3b33c101b8ab6fa227b9f7e0424023009bd7b196c38",
-        "expected.json": "fbcb24d23f4aea850419d7c7a259180d1660614ebc2b1f9ad38ff79e3e7a03c4",
-        "inputs/baseline.json": "96ee707b3aeca88fb3fdb7b2a34c5227e93bb03babe6ce61281e2e0462e34f6e",
-        "inputs/dependency-finding.json": "98a53e65174493ecbc90cb4ef90e2e6ba650d7358aef4c4e4a2e3b9624f09763",
-        "inputs/incident.json": "e6c174a533a600d6a01f6abb3cfe1096733286f0f792cfb698be89d310a767f9",
-        "inputs/live-state.json": "0489b85f343770961501bd61d04d2f1ef4f617063a98e685cfa0d12dd648918e",
-        "inputs/observations/0001-observation.json": "db299d56c99f5947622ca37d4484301d181555547d93c0c978be57696d12d69d",
-        "inputs/planning-state.json": "a8af3a6ea5e341afb33148b362d724ee891895f7d29cebecf959066641d2d444",
-        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
-      },
-      "provenance": "adversarial",
-      "variant": "adversarial-log"
-    },
-    {
       "case_id": "adv-rollback-runbook-already-restored-boutique-live-20261112t074810z-311065",
       "files": {
         "case.json": "ac55e53fab334df9f55b8f506b88538ad438fff6eaece82875bff3017833e2c0",
@@ -156,6 +140,22 @@
         "inputs/live-state.json": "3ca08b95a5a93baa85c454ab8cc151552f64fc33ac0c65e77f6fe7700d683264",
         "inputs/observations/0001-observation.json": "46164e45904789fd988597d5a50d92025faf80bfc508757cd711b9d08a8f9b98",
         "inputs/planning-state.json": "3ca5633e09eb4ea056d910c483fd0c2ef5f55680b53bd853f64e71a197499a27",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "adversarial",
+      "variant": "adversarial-log"
+    },
+    {
+      "case_id": "adv-rollback-runbook-already-restored-boutique-live-20261112t075130z-fb6439",
+      "files": {
+        "case.json": "e19b9e1feea5d9736862e9315816d4e4262e2b5d219caeba77826fcccfaa3410",
+        "expected.json": "71c2175128779a250859081622fcf662556b42a024ff7a1e07f02d9d6711d449",
+        "inputs/baseline.json": "5379b25ad965d286a3aa14b6fd1f918758bdb030df8b05d07a34f6d836f4aa2e",
+        "inputs/dependency-finding.json": "802d60f33270f4d834b7471256da00d4738d5e3c6ceb731ddf5a44f20d30108c",
+        "inputs/incident.json": "f2ff6ff9eecd96fc9e949135bf8b33c103af5c2677b43103a161ad07828502b2",
+        "inputs/live-state.json": "6558a3aabb3e6b2f0efea34b8295c11047bf7004b17d9235d0419f47aa68cd9f",
+        "inputs/observations/0001-observation.json": "a4340c13c95d809ece95e80a5a4892e4835887f8773933691fa74f9fa9b0c8b6",
+        "inputs/planning-state.json": "f3d9325228ca2d7bd1917da46f9993fa3eeaded434494182c7a5d7e1d60ff21a",
         "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
       },
       "provenance": "adversarial",
@@ -1125,20 +1125,40 @@
       "variant": null
     },
     {
-      "case_id": "der-already-restored-boutique-live-20261112t074450z-38278f",
+      "case_id": "cap-dual-fault-baseline-c1-29e41f8",
       "files": {
-        "case.json": "596e1094b89123f95824cbee693cd613e26cd07efb6ec88bc530900177179fa0",
-        "expected.json": "5e028bc67ca0fa4aafb051ba2f82a8ed9a1f4e7eeb6f07dd4f02357c07566cfb",
-        "inputs/baseline.json": "96ee707b3aeca88fb3fdb7b2a34c5227e93bb03babe6ce61281e2e0462e34f6e",
-        "inputs/dependency-finding.json": "98a53e65174493ecbc90cb4ef90e2e6ba650d7358aef4c4e4a2e3b9624f09763",
-        "inputs/incident.json": "8a24d1a81c0d948036a866b68ffc2fa496c47d4a0e444574b6ffb4a17314e761",
-        "inputs/live-state.json": "0489b85f343770961501bd61d04d2f1ef4f617063a98e685cfa0d12dd648918e",
-        "inputs/observations/0001-observation.json": "aa37509ef1e00d58939892e5ed2757d99b2dd1beae64a526cc83cb67989cc6af",
-        "inputs/planning-state.json": "a8af3a6ea5e341afb33148b362d724ee891895f7d29cebecf959066641d2d444",
-        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+        "case.json": "cf5ebd7ec09976370bc84dcb975c815fbbaa931bede88883dca3753731d9da7a",
+        "expected.json": "9aed02f2eec49f3657f754995e43dcaa15450178a432835b48a4ac8c550e275c",
+        "inputs/baseline.json": "3cbfe2bcc2313003f5b6600bb302cb20704431d6fca42d630260d6d0e903d798",
+        "inputs/dependency-finding.json": "bfd658b23f06079eb3ffd1fbbef2b9736dcc049646c6e160dd052d7188d4fde4",
+        "inputs/incident.json": "b62719b49a1a610ca07051e0ad0ad28735430b71a399c698aa63cda2437bb1eb",
+        "inputs/live-state.json": "615d8fe17da72361e858bf9ef7a3717f105d0041fac29437de37995854eee8a7",
+        "inputs/observations/0001-observation.json": "91aa240fe2aa85b5439b855e97907f67df8993e0c63c86d6ae14134a7d8d5f68",
+        "inputs/planning-state.json": "99b5e8eb1f2f314cb9d66e5d31ec28a11ffae9982a643a539b539aa04fb55a69",
+        "inputs/policy.json": "73474a0233d03ac424977af57ea890ca5c15fd0305fae0982bc9f4feafc5f658",
+        "recorded/guard.json": "cc9effbac21aeb6e80cbb835f53857e353d24b3f2d7b8ff2e4023f81c586d770",
+        "recorded/proposal.json": "58164c0e4a9e6d3b23a25688a734715f691956678570145bfa2cfbae019a6989"
       },
-      "provenance": "derived",
-      "variant": "already-restored"
+      "provenance": "captured",
+      "variant": null
+    },
+    {
+      "case_id": "cap-dual-fault-baseline-r1-29e41f8",
+      "files": {
+        "case.json": "0733e4189bb114f4a966fa732a4b3cd7631a3a5b107d70dab63388573d3b2936",
+        "expected.json": "84cb007d5f8a4a98fdc85a778db9155241b2321a622d198a677e1fbd68b9de28",
+        "inputs/baseline.json": "25b8e40b385c17e2e660f216d5ca922b5b2d003e6a64474334e7fca09bc95bd9",
+        "inputs/dependency-finding.json": "fc379166cd665f2f80f3dc68db30ad09893bf5ab1b58693dbb4847a96d832bfa",
+        "inputs/incident.json": "4bc69eca60e2f8408a99a520fb75351b9092512d114ae4a42ba2bb92a63b8f73",
+        "inputs/live-state.json": "650a7b20ce91df27d079a68381c92fd239a69d1e49de96ef842030b1b78e46bb",
+        "inputs/observations/0001-observation.json": "d3c14e4a7cba4eaa04452bfc30f770bc8dfbe587111155d806c97971b11414da",
+        "inputs/planning-state.json": "e1d5584bf2ff2a758e156c11cbcd481b8751060340b98e73e1bd36f5e7731326",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+        "recorded/guard.json": "bdbd276c66defb1b31b586de35007ba308fe8e90919167d71c42cfd2079941e3",
+        "recorded/proposal.json": "c8479c4146f4ddec7a07af287fe14ff98ff436528a881f9048f89ccd56ae911e"
+      },
+      "provenance": "captured",
+      "variant": null
     },
     {
       "case_id": "der-already-restored-boutique-live-20261112t074810z-311065",
@@ -1221,20 +1241,20 @@
       "variant": "already-restored"
     },
     {
-      "case_id": "der-misleading-dependency-boutique-live-20261111t222004z-07f850",
+      "case_id": "der-already-restored-dual-fault-baseline-r1-29e41f8",
       "files": {
-        "case.json": "ab77be3934656044ba88871513d0023affb172d6e2dea2329566df9496a81479",
-        "expected.json": "1cf28c117307101609c3e5188f50c69f0b46917543e687004f0557e389d70e66",
-        "inputs/baseline.json": "5952e86c3f7763c9859921ebb072341bd760c02649289dba5010f7539b0e87b0",
-        "inputs/dependency-finding.json": "995633729c5a7bdb751b71ec9d0e46753ec577ed175363c72fd8deae206c36a3",
-        "inputs/incident.json": "8b54c46078ff59f1dfb16d8964546032769c1a2d5125147f70773c96fd9184aa",
-        "inputs/live-state.json": "432e386a91527e29818599c44d32058aeba48e6c3af4d23f8db1c51d8ef14348",
-        "inputs/observations/0001-observation.json": "62c673a501a12dded2ffdb52bbcc76690b87bbae05d3de2cb25cbd2348e0ebf6",
-        "inputs/planning-state.json": "4c5f33563e8aa9adaacfa8ba4b8bdb329f4d208b3ce70826bfd40eb76928e1f0",
+        "case.json": "1e0d4d9f04fd1f38796ebc47c596d938e01609739f2dec6543542e841f326d26",
+        "expected.json": "8cd3afc5f56d47e7ffe727b2c7d024a2c84e541fb38683d061b8015585f596cc",
+        "inputs/baseline.json": "25b8e40b385c17e2e660f216d5ca922b5b2d003e6a64474334e7fca09bc95bd9",
+        "inputs/dependency-finding.json": "fc379166cd665f2f80f3dc68db30ad09893bf5ab1b58693dbb4847a96d832bfa",
+        "inputs/incident.json": "b55076a76e7d6b070a1e996e2cc1f513eb1a1afb738ef762eb6fc5931cb98212",
+        "inputs/live-state.json": "6c538ee046284efd4729551d2d001d5a148eb1a3602b3fcc3834e11689d0689e",
+        "inputs/observations/0001-observation.json": "d2c956919edf12e937fc7e6f3dc92f6467f0b477216e2585263a22720bf0a93a",
+        "inputs/planning-state.json": "3eb08c2c453d7d289c2a5db56ed89491001cc099f2d1f3e42859ae685e1f0547",
         "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
       },
       "provenance": "derived",
-      "variant": "misleading-dependency-log"
+      "variant": "already-restored"
     },
     {
       "case_id": "der-misleading-dependency-boutique-live-20261112t050930z-ba0f81",
@@ -1283,16 +1303,32 @@
       },
       "provenance": "derived",
       "variant": "misleading-dependency-log"
+    },
+    {
+      "case_id": "der-misleading-dependency-boutique-live-20261112t074450z-38278f",
+      "files": {
+        "case.json": "c736d138cdd87e4a71cc5520cc592ff4e0bc065d993513033020a53b5a673fce",
+        "expected.json": "6ec6e3a47a2d8f4d311f8cf97eb1c936fd80c471813adb9701e95349c5cfce8b",
+        "inputs/baseline.json": "96ee707b3aeca88fb3fdb7b2a34c5227e93bb03babe6ce61281e2e0462e34f6e",
+        "inputs/dependency-finding.json": "98a53e65174493ecbc90cb4ef90e2e6ba650d7358aef4c4e4a2e3b9624f09763",
+        "inputs/incident.json": "655d687a521a61ce2ae4c3df38232445bb0e8302f1a3fae31deee21985b15e26",
+        "inputs/live-state.json": "19b19c153cc09177f158227db6c4476567376584cd762a01a32ae76f6bd0c9a0",
+        "inputs/observations/0001-observation.json": "4ef9894523ca9f79e62b9a69c770cb974b5b6a67ff44942c42b1d99b9dc01776",
+        "inputs/planning-state.json": "7852e1fb534bae07d3453ef2e116699d9821b32d80205feca746e740adae7caf",
+        "inputs/policy.json": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95"
+      },
+      "provenance": "derived",
+      "variant": "misleading-dependency-log"
     }
   ],
   "catalog_sha256": "06fd5dd2d9d3bc23727290d8f3f876fa4e728b492e743c06b6edf00131a92270",
   "counts": {
     "adversarial": 12,
-    "captured": 50,
+    "captured": 52,
     "derived": 10
   },
   "labels": {
-    "cases": 72,
+    "cases": 74,
     "pre_registration": {
       "by": null,
       "on": null,
@@ -1565,6 +1601,21 @@
     },
     {
       "bundle_id": "boutique-live-20261112t112846z-f1c4ed",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "chaos-n2-agent-r1-29e41f8",
+      "reason": "a chaos fault (N2) acts outside the Deployment, and this corpus version has no reconstruction for its state",
+      "used": false
+    },
+    {
+      "bundle_id": "dual-fault-baseline-c1-29e41f8",
+      "reason": null,
+      "used": true
+    },
+    {
+      "bundle_id": "dual-fault-baseline-r1-29e41f8",
       "reason": null,
       "used": true
     }

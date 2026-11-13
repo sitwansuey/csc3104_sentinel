@@ -525,6 +525,89 @@
       ],
       "scope_caveat": "Two sessions. At 0a8d4d7 a scratch tool prepared the bundle; at be6e636 the committed kind_bundle prepare did. Six checks of the Executor token each time: get and patch shippingservice allowed; delete, patch paymentservice, get secrets and list pods refused. The be6e636 restore check put R1 on the target with the committed injection and then ran kind_bundle restore: generation 183 to 184, Available, template back at baseline (template_sha256 5434e0fd...ef26). The restore puts back only the Pod template: the S8 fence annotations and a changed sentinel.io/execution stayed until the operator removed them with a uid- and resourceVersion-tested metadata patch. Across the be6e636 session shippingservice went from generation 156 to 187 and its deployment.kubernetes.io/revision from 137 to 165 through about 28 rollouts; its template and sentinel.* annotations ended as they started. The bundles hold Deployment snapshots only (before both sessions, and after the be6e636 session). The namespace, RBAC, admission-policy and Docker inventories the operator saved before each session are not in the bundles, so statements about them, such as no ValidatingAdmissionPolicy being installed, are operator records. One kind node on one Windows host. Provenance inferred, 2026-11-12 UTC.",
       "value": "0a8d4d7: Executor RBAC checks 6/6 as expected, no restore check; be6e636: Executor RBAC checks 6/6 as expected, the restore check returned the target healthy at its baseline template in 21.8 s"
+    },
+    {
+      "id": "C-CHAOS-RECOVERY-C9A44CA",
+      "text": "Chaos Mesh faults in guarded recovery (P4.03), first set at c9a44ca, unscored with labels pending: {value}",
+      "derive": "scenario_outcomes",
+      "bundles": [
+        "chaos-n2-r1-c9a44ca",
+        "chaos-n2-r2-c9a44ca",
+        "chaos-n2-r3-c9a44ca",
+        "chaos-n2-r4-c9a44ca",
+        "chaos-n2-r5-c9a44ca",
+        "chaos-n3-r1-c9a44ca",
+        "chaos-t1-r1-c9a44ca"
+      ],
+      "scope_caveat": "UNSCORED: the N2, N3 and T1 labels in experiments/boutique/catalog.json await owner sign-off. Each N2 run planned RESTART by the code rule, made one Executor write, reached RECOVERED, passed attribution (new Pod not selected by the chaos, recovered before expiry, chaos still running) and saw the forced ROLLBACK refused with ROLLBACK_ALREADY_AT_BASELINE and zero writes, yet all five FAILED in the drift cell: the forced RESTART got CONFLICT from the Executor (the drift's rollout had moved the Deployment's resourceVersion) before any Guard check, so no RESTART_TEMPLATE_DRIFT refusal was shown; there was no write and the administrator restore succeeded. That harness race was fixed in f5ce9db and 0d09f2d (merged in 29e41f8; see C-CHAOS-RECOVERY-29E41F8). N3 ESCALATEd by the metric-only rule with zero writes and its forced RESTART was refused with RESTART_NOT_JUSTIFIED; T1 recorded NO_INCIDENT with a passing true-negative proof. Every chaos object was deleted and its cleanup confirmed. Code rule planning, no model; N2 used auto-lab approval (automated-lab identity, no person). The host was shared with other test runs at the time. Chaos Mesh 2.8.2 (a privileged chaos-daemon) and metrics-server chart 3.12.2 with --kubelet-insecure-tls (image pinned by digest in c9a44ca) were installed on this lab under the user's standing authorisation to run Phases 4-5; the project-owner approval the recipe asks for is not recorded. One Windows/amd64 host with Docker Desktop and one kind node (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: c9a44ca on integration/phase4, clean tree, 2026-11-13 UTC.",
+      "value": "N2 at c9a44ca FAILED x5: RESTART decided by the rule, 1 Executor write, RECOVERED, matched the pre-registered expected outcome, labels pending; N3 at c9a44ca PASS: ESCALATE decided by the rule, 0 Executor writes, NEEDS_REVIEW, matched the pre-registered expected outcome, labels pending; T1 at c9a44ca PASS: NO_INCIDENT from observer, 0 Executor writes, no incident, matched the pre-registered expected outcome, labels pending"
+    },
+    {
+      "id": "C-CHAOS-RECOVERY-29E41F8",
+      "text": "Chaos Mesh faults in guarded recovery (P4.03), second set at 29e41f8, unscored with labels pending: {value}",
+      "derive": "scenario_outcomes",
+      "bundles": [
+        "chaos-n2-r1-29e41f8",
+        "chaos-n2-r2-29e41f8",
+        "chaos-n2-r3-29e41f8",
+        "chaos-n2-r4-29e41f8",
+        "chaos-n2-r5-29e41f8",
+        "chaos-n2-agent-r1-29e41f8"
+      ],
+      "scope_caveat": "UNSCORED: labels await owner sign-off. Five N2 runs with the drift-cell fix: each planned RESTART by the code rule, one Executor write, RECOVERED and attributed (about 380 s before the chaos expired), the forced ROLLBACK refused with ROLLBACK_ALREADY_AT_BASELINE and the forced RESTART during drift refused with RESTART_BUDGET_EXHAUSTED and RESTART_TEMPLATE_DRIFT, zero writes for both; the drift settled before the forced proposal and no stale resourceVersion retry was needed. The agent variant (qwen3:14b, 2 model calls) diagnosed shippingservice failing because the chaos pause image cannot start, but the action came from the code eligibility rule (TEMPLATE_ALREADY_BASELINE): ESCALATE, NEEDS_REVIEW, zero writes; the model's own action choice was not exercised (model_action null). ESCALATE is in N2's acceptable list, so the run passed with --expect escalated and scored acceptable, but matched_expected is false because RESTART is the correct answer; the administrator removed the fault after it (operator_emergency_restore true), outside the Executor. Five repeats share the host, cluster and target, so they are not independent trials. Chaos Mesh 2.8.2 (a privileged chaos-daemon) and metrics-server chart 3.12.2 with --kubelet-insecure-tls (image pinned by digest in c9a44ca) were installed on this lab under the user's standing authorisation to run Phases 4-5; the project-owner approval the recipe asks for is not recorded. One Windows/amd64 host with Docker Desktop and one kind node (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 29e41f8 on integration/phase4, clean tree, 2026-11-13 UTC.",
+      "value": "N2 at 29e41f8 PASS x5: RESTART decided by the rule, 1 Executor write, RECOVERED, matched the pre-registered expected outcome, labels pending; N2 at 29e41f8 PASS: ESCALATE decided by the rule (TEMPLATE_ALREADY_BASELINE), 0 Executor writes, NEEDS_REVIEW, did not match the pre-registered expected outcome, labels pending"
+    },
+    {
+      "id": "C-DUAL-FAULT-BASELINES-29E41F8",
+      "text": "Single-fault baselines for the P4.05 timing comparison (the connected walkthrough with shipping R1 and with cart C1 at 29e41f8) passed in {value} runs",
+      "derive": "pass_ratio",
+      "bundles": [
+        "dual-fault-baseline-r1-29e41f8",
+        "dual-fault-baseline-c1-29e41f8"
+      ],
+      "scope_caveat": "One run per target, harness-authored proposals, auto-lab approval (automated-lab identity, no person); R1 and C1 labels are pending, so these are not scored trials. They are the single-fault side of the P4.05 comparison; N2's single-fault timing comes from C-CHAOS-RECOVERY-29E41F8. No pair run has a result yet: all eight pair runs at this revision stopped on a harness defect right after both faults were applied (listed in evidence/exclusions.json). One Windows/amd64 host with Docker Desktop and one kind node (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 29e41f8, clean tree, 2026-11-13 UTC.",
+      "value": "2/2"
+    },
+    {
+      "id": "C-DISTRIBUTED-KIND-02D91E5",
+      "text": "Kind-mode distributed scenarios at 02d91e5, after the Verifier in-pass sampling fix and the kind restore annotation reset: {value}",
+      "derive": "distributed_expectations",
+      "bundles": [
+        "distributed-kind-s1b-r1-02d91e5",
+        "distributed-kind-s1b-r2-02d91e5",
+        "distributed-kind-s1c-r1-02d91e5",
+        "distributed-kind-s1c-r2-02d91e5",
+        "distributed-kind-s2-r1-02d91e5",
+        "distributed-kind-s2-r2-02d91e5",
+        "distributed-kind-s4-r1-02d91e5",
+        "distributed-kind-s4-r2-02d91e5",
+        "distributed-kind-s5-r1-02d91e5",
+        "distributed-kind-s5-r2-02d91e5",
+        "distributed-kind-s8-r1-02d91e5",
+        "distributed-kind-s8-r2-02d91e5"
+      ],
+      "scope_caveat": "Two runs per scenario with the committed kind tools. The Verifier command was delivered once (verifier_attempts 1) in each of the 10 non-S8 runs, against 5 to 8 at be6e636 (L-VERIFIER-RETRY-BACKOFF); S8 ended FAILED with zero writes as expected (the seal). After every run the restore reset the Sentinel annotations to their prepared values: sentinel.io/execution put back, and after each S8 run sentinel.io/fence and sentinel.io/fence-epoch (epoch 2) removed. Kind mode: the Executors patched the real shippingservice Deployment through a restricted token; R1 was injected before each run and the baseline restored after it. Synthetic planner (no model); real Observer, Guard and Verifier with TLS between the processes. Fault-injection checks against the harness's own expectations and invariants, not scored trials. Chaos Mesh and metrics-server were installed on the cluster at the time. The Coordinator and every worker were separate OS processes on one host, with one kernel clock, one disk and loopback networking, so this is not a test across machines. Provenance inferred: run_scenarios stamped git_revision 02d91e5 but no dirty flag, 2026-11-13 UTC.",
+      "value": "12/12 matched their expectation (S1b 2/2, S1c 2/2, S2 2/2, S4 2/2, S5 2/2, S8 2/2); every invariant held in 12/12; 0 unobserved windows; 0 harness errors"
+    },
+    {
+      "id": "C-KIND-LAB-SESSION-02D91E5",
+      "text": "Kind lab preparation for the 13 Nov 2026 kind-mode recheck: {value}",
+      "derive": "lab_sessions",
+      "bundles": [
+        "kind-lab-session-02d91e5-20261113"
+      ],
+      "scope_caveat": "One session with the committed kind_bundle prepare at 02d91e5. Six checks of the Executor token: get and patch shippingservice allowed; delete, patch paymentservice, get secrets and list pods refused. The restore check is the final kind_bundle restore after the twelve runs: the target was already healthy at its baseline template (generation 271 unchanged) and its annotations unchanged, because each run's own restore had put them back. The bundle directory, which held the executor kubeconfig, was deleted; prepare.out lists its file names only. One kind node on one Windows host. Provenance inferred, 2026-11-13 UTC.",
+      "value": "02d91e5: Executor RBAC checks 6/6 as expected, the restore check returned the target healthy at its baseline template in 0.2 s"
+    },
+    {
+      "id": "C-SECURITY-NETPOL-LIVE",
+      "text": "The P4.06 graph-derived NetworkPolicy matrix in the protected Boutique security lab passed in {value} runs",
+      "derive": "pass_ratio",
+      "bundles": [
+        "protected-boutique-netpol"
+      ],
+      "scope_caveat": "One run on a fresh sentinel-boutique-security cluster with Calico 3.33.0 at 02d91e5: 19 of 19 allowed edges open, 202 of 202 forbidden edges closed by timeout, no policy drift, no untested cell; the storefront journey and the existing shipping bypass, identity and outage probes passed. L4 rules keyed on the Pod label app, not authentication; mTLS and inspection still cover the shipping path only, and the connected recovery cluster applies none of these policies. The first attempt stopped before any probe on an operator environment fault (evidence/exclusions.json). One Windows/amd64 host with Docker Desktop and one kind node. Provenance recorded: 02d91e5, 2026-11-13 UTC.",
+      "value": "1/1"
     }
   ]
 }

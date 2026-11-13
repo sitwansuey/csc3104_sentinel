@@ -1,0 +1,70 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": null
+    }
+  ],
+  "attempts": 1,
+  "delivered": 1,
+  "error_code": null,
+  "incident_id": "INC-625D95A1AA24",
+  "next_attempt": 0.0,
+  "proposal": {
+    "action": "RESTART",
+    "action_id": "ACT-e68113a9531e65671fd5808c",
+    "based_on_resource_version": "170262",
+    "evidence_refs": [
+      "E-8DA15AE0D1CA",
+      "E-E9C5B9E06A9E",
+      "E-F43E3ECDA480",
+      "E-25AF4D56F47F",
+      "E-78934D84C290",
+      "E-11665DC14CF6",
+      "E-21041A7679F3",
+      "E-B46DBE308B1C",
+      "E-793D6529B269",
+      "E-2C666FDFDB55",
+      "E-273404038632",
+      "E-C2961D673F40",
+      "E-F7FEF17F2B03",
+      "E-34C248AF8AE2",
+      "E-F5F6E9646397",
+      "E-F8D23940FC60",
+      "E-58FF6FD2CE23",
+      "E-C1645899B15C",
+      "E-8669A365F11D",
+      "E-A85B543F4390",
+      "E-F413DF027121",
+      "E-8FC32A51344F",
+      "E-27F6F27180D9",
+      "E-71D69F4AD5F4",
+      "E-C30E54D92239",
+      "OTEL-132c3d435614a6bc2c13b83a9ef9ae2b569011c26b2058a7aee0a55feb419ba7",
+      "OTEL-0d9a602703f37a1f76a31facca11138ec16f5625e9f66c92b8feec530cbe0dee",
+      "OTEL-55ec0d95b763ce1017398512fffbae9a2d1cef13247dcdf77338b1c0196d20dc",
+      "OTEL-1b9429719d385048c30190e596152774f12e4f5489d41d987fefee3c4a81dcb2",
+      "OTEL-3b9e39d228dea59873aca8913b1ebdd61e14e71f67302f9c20ee88418dfcfabc",
+      "E-543B5A139E1C",
+      "E-AC261FD1E543",
+      "E-E817EAA9FE30",
+      "E-4CE0E242D5B4"
+    ],
+    "incident_id": "INC-625D95A1AA24",
+    "kind": "proposal",
+    "parameters": {
+      "baseline_id": "BASE-LIVE-c8dc46e2c2dd",
+      "restart_token": "<redacted:7aa6d1ef>",
+      "template_sha256": "8a59dd623687fd7d1fa998a0c42e11db96c1b497df45bc756149b2009d3431c4"
+    },
+    "rationale": "Pods are failing while the live configuration equals the reviewed healthy baseline, so a rollback would change nothing; restart the Pods from that template.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    }
+  }
+}

@@ -161,6 +161,36 @@ def scenario_run(root, name, *, scenario="R2", status="PASS", actual="ROLLBACK",
     return run
 
 
+def forced(action, *, verdict="REJECT", codes=(), status="FAILED", writes=0):
+    """One forced wrong action as a chaos run's summary records it."""
+    return {"action": action, "guard_verdict": verdict, "guard_reason_codes": list(codes), "executor_status": status,
+            "executor_patch_attempts": writes, "executor_journal_attempts": writes}
+
+
+def chaos_recovery_run(root, name, *, scenario="N2", kind="PodChaos", status="PASS", actual="RESTART", writes=1,
+                       attributed=True, refusals=None, cleanup=True, started="2026-11-13T09:00:00Z"):
+    """A connected catalog run with a Chaos Mesh fault, harness planning and forced wrong actions."""
+    run = Path(root) / name
+    result = {"scenario": scenario, "actual": actual, "decision_source": "rule", "decided_by": "rule",
+              "eligibility_codes": [], "executor_writes": writes,
+              "coordinator_state": None if actual == "NO_INCIDENT" else "RECOVERED" if writes else "NEEDS_REVIEW",
+              "matched_expected": True,
+              "labels": {"status": "pending", "by": None, "on": None}, "labels_pending": True}
+    summary = {"status": status, "started_at": started, "checks": [], "scenario": {"id": scenario, "labels": "pending"},
+               "scenario_result": result, "chaos": {"kind": kind, "name": "sentinel-x"},
+               "chaos_cleanup_confirmed": cleanup,
+               "attribution": None if attributed is None else {"attributed": attributed, "failed": []},
+               "forced_refusals": refusals}
+    write(run / "summary.json", summary)
+    write(run / "scenario-result.json", result)
+    write(run / "chaos-experiment.json", {"kind": kind})
+    write(run / "chaos-recovery/proposal.json", {"action": actual})
+    write(run / "chaos-recovery/approval.json", {"signature": "never collected"})
+    write(run / "forced-rollback/proof.json", {"executor_patch_attempts": 0})
+    write(run / "executor.sqlite", b"never collected")
+    return run
+
+
 def jsonl(path, records):
     """Write one JSON object per line, as the distributed harness and the operator orchestrators do."""
     return write(path, "".join(json.dumps(record) + "\n" for record in records))

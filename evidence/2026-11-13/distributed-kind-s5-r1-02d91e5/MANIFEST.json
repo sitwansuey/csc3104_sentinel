@@ -1,0 +1,34 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "distributed-kind-s5-r1-02d91e5",
+  "class": "distributed-scenario",
+  "captured_at": "2026-11-13T10:12:09.245173Z",
+  "source_run_dir_name": "2026-11-13-S5",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+    "basis": "summary.json git_revision 02d91e5650ccc59587b823b4133d095451b13082 is stamped by run_scenarios itself, but it records no dirty-tree flag or tool versions, so provenance is inferred. Committed tools at this revision: experiments/distributed/kind_bundle.py prepare made the bundle and run_scenarios --mode kind injected R1 and restored the baseline and the Sentinel annotations around each run (summary.json kind_lab); the operator record names HEAD 02d91e5 of integration/phase4 (13 Nov 2026) and records no dirty-tree check."
+  },
+  "files": [
+    {
+      "path": "coordinator-records.json",
+      "sha256": "8dc70bafb619108e8cb9374604a14445e6777abda270018ef44ba71f28ee5f5c",
+      "bytes": 169823,
+      "redactions": 1
+    },
+    {
+      "path": "summary.json",
+      "sha256": "5164c960451ba5f2bbdff738c76cfb1323f4ba49da52ef439247bd5a1643ffdf",
+      "bytes": 7106,
+      "redactions": 0
+    },
+    {
+      "path": "timeline.jsonl",
+      "sha256": "45990b80017b723a885076f6b93145327217adda2d75277212c39e4794b1943e",
+      "bytes": 91964,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}
