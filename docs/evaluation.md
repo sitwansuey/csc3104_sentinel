@@ -171,11 +171,15 @@ The networked Coordinator and workers under injected faults: file mode
 (separate processes on one host), kind mode (the connected kind lab) and the
 four-node `sentinel-dist` acceptance
 ([recipe](distributed-acceptance.md), [model](distributed-model.md)).
-`sentinel-dist` has been deployed and attempted live, but no run has passed
-and none of its runs is committed as a bundle yet: the first S0 attempts were
-refused as stale and repaired nothing
-([first live attempts](distributed-acceptance.md#first-live-attempts)). Until
-a distributed-acceptance bundle is committed, the block below counts no
+`sentinel-dist` has been deployed live on 13 Nov 2026 and one S0 run passed
+(RECOVERED, one template PATCH in the audit log), but no scenario matrix has
+run and none of its runs is committed as a bundle yet. The first deployment's
+S0 attempts were refused as stale and repaired nothing; the later
+deployments' runs, and the fixes made after them, are recorded on the
+acceptance page
+([live attempts](distributed-acceptance.md#first-live-attempts),
+[the passing run](distributed-acceptance.md#second-deployment-one-pass-then-runs-that-waited-for-nothing)).
+Until a distributed-acceptance bundle is committed, the block below counts no
 `sentinel-dist` run, which is not the same as it never having been tried.
 
 <!-- BEGIN GENERATED:evaluation-distributed -->
