@@ -1,0 +1,45 @@
+{
+  "action": "RESTART",
+  "action_id": "ACT-a519ebc95a0b4c62aecebc6a",
+  "based_on_resource_version": "198618",
+  "evidence_refs": [
+    "E-1365C4EF2E46",
+    "E-6BD82F9DCCA6",
+    "E-2E6D5E184756",
+    "E-C05A9587973E",
+    "E-1AA41A863C59",
+    "E-344D2EA7F3DC",
+    "E-AEE5CA6C3358",
+    "E-FBB019251357",
+    "E-852AFCC80910",
+    "E-7933F2C14223",
+    "E-10AC7DE299F1",
+    "E-D7B0CAF229F1",
+    "E-9C4A31F70CE1",
+    "E-289E49ADCBEE",
+    "E-A72D1CE2459C",
+    "E-216AF35D21B9",
+    "E-88415830515D",
+    "E-7577BBEC640F",
+    "E-05FC763935B6",
+    "E-6943262C00BF",
+    "E-7C8ECD42D59F",
+    "E-3B9E7CDFED1A"
+  ],
+  "incident_id": "INC-46CFFFD831FA",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-7fd2db1184ab",
+    "restart_token": "<redacted:0073a6ae>",
+    "template_sha256": "f8c817cfa1d2ca81d8f06ef7f274465b110adabe88fa734576f82fde576b4dcc"
+  },
+  "rationale": "Pods are failing while the live configuration equals the reviewed healthy baseline, so a rollback would change nothing; restart the Pods from that template.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "redis-cart",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "1f95bce9-4a04-441b-8395-6370d7200682"
+  }
+}

@@ -1,0 +1,310 @@
+{
+  "attribution": {
+    "attributed": true,
+    "failed": []
+  },
+  "chaos": {
+    "expires_at": "2026-11-13T12:47:18.480710Z",
+    "kind": "PodChaos",
+    "name": "sentinel-pod-3b0d489b58"
+  },
+  "chaos_cleanup_confirmed": true,
+  "chaos_preflight": {
+    "chaos_mesh_pods": [
+      "chaos-controller-manager-6fb4668896-vxh8m",
+      "chaos-daemon-njmlj",
+      "chaos-dns-server-7d45d7ff7-gptrg"
+    ],
+    "context": "kind-sentinel-boutique-connected",
+    "namespace": "sentinel-boutique-connected",
+    "pod_metrics_items": 11
+  },
+  "checks": [
+    {
+      "at": "2026-11-13T12:32:17.479665Z",
+      "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e",
+      "name": "healthy baselines captured for both pair targets",
+      "passed": true,
+      "targets": [
+        "cartservice",
+        "shippingservice"
+      ]
+    },
+    {
+      "at": "2026-11-13T12:32:18.199380Z",
+      "name": "real ServiceAccount permits only selected Deployment get/patch; forbidden write denied",
+      "passed": true
+    },
+    {
+      "at": "2026-11-13T12:32:18.855900Z",
+      "name": "both faults applied together",
+      "passed": true,
+      "spread_seconds": 0.2
+    },
+    {
+      "at": "2026-11-13T12:32:25.727374Z",
+      "incidents": {
+        "cartservice": "INC-66DFD3E4962C",
+        "shippingservice": "INC-92EF191036B2"
+      },
+      "name": "an incident observed for each target",
+      "passed": true
+    },
+    {
+      "at": "2026-11-13T12:33:37.205105Z",
+      "name": "RESTART attributed: new Pod not selected by the chaos, recovered before its expiry, chaos still running",
+      "passed": true,
+      "seconds_before_expiry": 821.5
+    },
+    {
+      "at": "2026-11-13T12:33:38.481857Z",
+      "name": "Executor worker killed after its write; reconciliation found it without writing again",
+      "passed": true,
+      "target": "shippingservice"
+    },
+    {
+      "at": "2026-11-13T12:34:14.423251Z",
+      "labels": "pending",
+      "name": "Pair shipping-config+cart-pod ended RECOVERED",
+      "passed": true,
+      "shop": "RECOVERED",
+      "writes": {
+        "cartservice": 1,
+        "shippingservice": 1
+      }
+    },
+    {
+      "at": "2026-11-13T12:34:14.749332Z",
+      "name": "Chaos Mesh object deleted and its cleanup confirmed",
+      "passed": true
+    }
+  ],
+  "dependencies": "Configured upstream address graph; live component readiness; no trace discovery",
+  "executor_kill": {
+    "action_id": "ACT-7b4a64ca65de93cc8a3e570a",
+    "reconcile_writes": 0,
+    "reconciled": "APPLIED",
+    "target": "shippingservice",
+    "worker_exit": 73,
+    "worker_writes": 1
+  },
+  "fault_injected_at": "2026-11-13T12:32:18.284560Z",
+  "finished_at": "2026-11-13T12:34:15.033912Z",
+  "mode": "LIVE Kubernetes; restricted executor credentials",
+  "operator_approval": {
+    "approvals": [
+      {
+        "action_id": "ACT-25948f0d72f0a0416d6bbe43",
+        "approval_id": 1,
+        "approved_at": "2026-11-13T12:32:26.676848Z",
+        "expires_at": "2026-11-13T12:35:26.661362Z",
+        "operator_id": "automated-lab"
+      },
+      {
+        "action_id": "ACT-7b4a64ca65de93cc8a3e570a",
+        "approval_id": 2,
+        "approved_at": "2026-11-13T12:33:37.221961Z",
+        "expires_at": "2026-11-13T12:36:37.206381Z",
+        "operator_id": "automated-lab"
+      }
+    ],
+    "authority_stopped": true,
+    "decided_by": "automated-lab approval: explicit opt-in for an unattended lab run; no person decided",
+    "human": false,
+    "identity": "automated-lab",
+    "mode": "auto-lab",
+    "refusals": [],
+    "via": "approval_http"
+  },
+  "operator_cleanup": {
+    "cartservice": {
+      "reason": "configuration at baseline",
+      "restored": false
+    },
+    "shippingservice": {
+      "reason": "configuration at baseline",
+      "restored": false
+    }
+  },
+  "pair": {
+    "executor_kill": "shippingservice",
+    "id": "shipping-config+cart-pod",
+    "kind": "independent",
+    "labels": "pending",
+    "order": [
+      "cartservice",
+      "shippingservice"
+    ],
+    "scenarios": [
+      "R1",
+      "C3"
+    ]
+  },
+  "pair_injection": {
+    "applied_at": {
+      "cartservice": "2026-11-13T12:32:18.480710Z",
+      "shippingservice": "2026-11-13T12:32:18.284585Z"
+    },
+    "basis": "configuration fault: after kubectl returned; chaos fault: just before the create call",
+    "limit_seconds": 5,
+    "spread_seconds": 0.2
+  },
+  "pair_result": {
+    "lane_wall_times": {
+      "cartservice": {
+        "advance_seconds": 71.5,
+        "advances": 1,
+        "approval_seconds": 0.2,
+        "first_advance_at": "2026-11-13T12:32:25.727661Z",
+        "last_advance_at": "2026-11-13T12:33:37.205362Z",
+        "verification_seconds": 69.5
+      },
+      "shippingservice": {
+        "advance_seconds": 26.8,
+        "advances": 1,
+        "approval_seconds": 0.0,
+        "first_advance_at": "2026-11-13T12:33:37.205951Z",
+        "last_advance_at": "2026-11-13T12:34:04.040619Z",
+        "verification_seconds": 25.6
+      }
+    },
+    "ordering": null,
+    "result": {
+      "acceptable": false,
+      "expected": {
+        "acceptable": [],
+        "result": "RECOVERED",
+        "writes_per_target": 1
+      },
+      "kind": "independent",
+      "labels": "pending",
+      "labels_pending": true,
+      "matched_expected": true,
+      "ordered_recovery_shown": null,
+      "pair": "shipping-config+cart-pod",
+      "result": "RECOVERED",
+      "stops": {},
+      "writes": {
+        "cartservice": 1,
+        "shippingservice": 1
+      }
+    },
+    "shop": {
+      "incidents": {
+        "cartservice": "RECOVERED",
+        "shippingservice": "RECOVERED"
+      },
+      "not_recovered": [],
+      "reason": "every target recovered and the storefront passed 3 journeys in a row",
+      "recovered": [
+        "cartservice",
+        "shippingservice"
+      ],
+      "status": "RECOVERED",
+      "storefront": {
+        "complete": true,
+        "journeys": 3,
+        "passed": 3,
+        "required_passes": 3,
+        "sustained": true
+      }
+    },
+    "timings": {
+      "cartservice": {
+        "first_ready_at": "2026-11-13T12:32:26.941488Z",
+        "incident_id": "INC-66DFD3E4962C",
+        "opened_at": "2026-11-13T12:32:25.180986Z",
+        "recovered_at": "2026-11-13T12:33:37.027278Z",
+        "seconds_to_recovered": 71.8
+      },
+      "shippingservice": {
+        "first_ready_at": "2026-11-13T12:33:37.506682Z",
+        "incident_id": "INC-92EF191036B2",
+        "opened_at": "2026-11-13T12:32:25.630482Z",
+        "recovered_at": "2026-11-13T12:34:04.016184Z",
+        "seconds_to_recovered": 98.4
+      }
+    }
+  },
+  "pair_shop_window": {
+    "journeys": 3,
+    "required_passes": 3,
+    "seconds_to_passing_tail": 10.4,
+    "window_seconds": 150
+  },
+  "planning": "Code rule provider with a trusted live-template read; no model call",
+  "private_executor_credentials_removed": true,
+  "provenance": {
+    "captured_by": "harness",
+    "dirty": false,
+    "dirty_path_count": 0,
+    "dirty_paths_sha256": null,
+    "host_class": "windows-amd64",
+    "python": "3.13.2",
+    "schema": "sentinel-provenance-v1",
+    "source_revision": "dca73699c9bb7c6d99faa0cec517c75e98fa916b",
+    "tools": {
+      "docker": "29.4.3",
+      "helm": "4.3.1+gc0d08d0",
+      "kind": "0.33.0",
+      "kubectl": "1.34.1"
+    }
+  },
+  "recovery_target": null,
+  "recovery_targets": [
+    "cartservice",
+    "shippingservice"
+  ],
+  "scope": "Dedicated single-node cluster; cart-only recovery; harness planning",
+  "started_at": "2026-11-13T12:29:46.979315Z",
+  "status": "PASS",
+  "timeline": [
+    {
+      "at": "2026-11-13T12:32:18.284591Z",
+      "phase": "fault_injected",
+      "scenario": "shippingservice"
+    },
+    {
+      "at": "2026-11-13T12:32:18.855872Z",
+      "phase": "fault_injected",
+      "scenario": "cartservice"
+    },
+    {
+      "at": "2026-11-13T12:32:25.210058Z",
+      "phase": "incident_observed",
+      "scenario": "cartservice"
+    },
+    {
+      "at": "2026-11-13T12:32:25.652292Z",
+      "phase": "incident_observed",
+      "scenario": "shippingservice"
+    },
+    {
+      "at": "2026-11-13T12:32:25.977042Z",
+      "phase": "proposal_saved",
+      "scenario": "cartservice"
+    },
+    {
+      "at": "2026-11-13T12:32:25.979497Z",
+      "phase": "proposal_saved",
+      "scenario": "shippingservice"
+    },
+    {
+      "at": "2026-11-13T12:32:27.562855Z",
+      "phase": "execution_recorded",
+      "scenario": "cartservice"
+    },
+    {
+      "at": "2026-11-13T12:33:37.051223Z",
+      "phase": "outcome_recorded",
+      "scenario": "cartservice"
+    },
+    {
+      "at": "2026-11-13T12:34:04.040458Z",
+      "phase": "outcome_recorded",
+      "scenario": "shippingservice"
+    }
+  ],
+  "verification": "Per target: own probe, readiness, template and callees; the storefront is judged separately as a ShopOutcome",
+  "workload": "Full Online Boutique v0.10.7 with synthetic checkout traffic"
+}

@@ -1,0 +1,48 @@
+{
+  "attributed": true,
+  "chaos": {
+    "created_at": "2026-11-13T12:15:46.868342Z",
+    "expires_at": "2026-11-13T12:30:46.868342Z",
+    "kind": "PodChaos",
+    "name": "sentinel-pod-0f3b3a76db",
+    "uid": "dfd10142-3fa4-4c1e-8ca8-978aac6c4677"
+  },
+  "checks": [
+    {
+      "detail": "RECOVERED",
+      "name": "outcome_recovered",
+      "passed": true
+    },
+    {
+      "detail": {
+        "current_pods": [
+          "0200148e-7329-4fb2-a5d7-35fd42f2055c"
+        ],
+        "pods_named_in_records": [],
+        "records_parsed": true,
+        "selected_uids_still_running": []
+      },
+      "name": "new_pods_not_selected",
+      "passed": true
+    },
+    {
+      "detail": {
+        "latest_allowed": "2026-11-13T12:29:46.868342Z",
+        "seconds_before_expiry": 817.2,
+        "window_end": "2026-11-13T12:17:09.710468Z"
+      },
+      "name": "recovered_before_expiry",
+      "passed": true
+    },
+    {
+      "detail": {
+        "deleting": false,
+        "desired_phase": "Run",
+        "present": true,
+        "same_object": true
+      },
+      "name": "chaos_still_running",
+      "passed": true
+    }
+  ]
+}

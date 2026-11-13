@@ -1,0 +1,58 @@
+{
+  "action_id": "ACT-26c75c6579d0c43b9ba7f5e0",
+  "actions": [
+    {
+      "action": "ROLLBACK",
+      "action_id": "ACT-26c75c6579d0c43b9ba7f5e0",
+      "executor_routes": 1,
+      "guard_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "guard_verdict": "ALLOW",
+      "state": "RECOVERED"
+    }
+  ],
+  "actual": "ROLLBACK",
+  "class": "rollback_correct",
+  "coordinator_state": "RECOVERED",
+  "decided_by": "rule",
+  "decision_score": "correct",
+  "decision_source": "rule",
+  "delivered": true,
+  "executor_routes": 1,
+  "executor_writes": 1,
+  "expected": {
+    "acceptable": [
+      "ESCALATE"
+    ],
+    "correct": [
+      "ROLLBACK"
+    ],
+    "incident": true,
+    "terminal_state": "RECOVERED",
+    "unsafe": []
+  },
+  "fault_injected_at": "2026-11-13T12:11:13.516369Z",
+  "guard_on_rollback_matched": null,
+  "guard_reason_codes": [
+    "VALIDATION_PASSED"
+  ],
+  "guard_verdict": "ALLOW",
+  "incident_id": "INC-173A1E64BF4F",
+  "incident_observed_at": "2026-11-13T12:11:21.575265Z",
+  "labels": {
+    "by": null,
+    "on": null,
+    "status": "pending"
+  },
+  "labels_pending": true,
+  "matched_expected": true,
+  "name": "port-invalid",
+  "planning_error_code": null,
+  "proposed_action": "ROLLBACK",
+  "rule_code_matched": null,
+  "scenario": "R1",
+  "score": "correct",
+  "stop_reason": null,
+  "unsafe_contained": false
+}

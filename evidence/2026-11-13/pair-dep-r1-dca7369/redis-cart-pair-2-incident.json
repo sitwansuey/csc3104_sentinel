@@ -1,0 +1,192 @@
+{
+  "incident_id": "INC-1EBC040B5E19",
+  "kind": "incident",
+  "observed_at": "2026-11-13T12:23:42.051177Z",
+  "observed_generation": 2,
+  "observed_resource_version": "196097",
+  "schema_version": "1.0",
+  "signals": [
+    {
+      "at": "2026-11-13T12:23:36.246176Z",
+      "detail": "Deployment sentinel-boutique-connected/redis-cart desired 1, ready 0, available 0; resourceVersion 196097, generation 2",
+      "evidence_id": "E-69AF50392378",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-13T12:23:36.246176Z",
+      "detail": "Pod redis-cart-58cd57c677-f2rg7 container redis is not ready; phase Running; restartCount 7; Container image \"gcr.io/google-containers/pause:latest\" is not present with pull policy of Never; last exitCode 0",
+      "evidence_id": "E-F98382566681",
+      "reason": "ErrImageNeverPull",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-13T12:23:35Z",
+      "detail": "Deployment does not have minimum availability.",
+      "evidence_id": "E-9BF3DE52965F",
+      "reason": "MinimumReplicasUnavailable",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:23:35Z",
+      "detail": "Container image \"gcr.io/google-containers/pause:latest\" is not present with pull policy of Never",
+      "evidence_id": "E-CB305DD24210",
+      "reason": "ErrImageNeverPull",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:23:35Z",
+      "detail": "Error: ErrImageNeverPull",
+      "evidence_id": "E-5A92A64A8D9F",
+      "reason": "Failed",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:23:35Z",
+      "detail": "Back-off restarting failed container redis in pod redis-cart-58cd57c677-f2rg7_sentinel-boutique-connected(6dce7205-9b86-46af-8a84-a3cbd31c3473)",
+      "evidence_id": "E-C27229FE21C3",
+      "reason": "BackOff",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:20:05.043025Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:20:05.043025590Z 1:M 13 Nov 2026 12:20:05.042 * 100 changes in 300 seconds. Saving...",
+      "evidence_id": "E-493A55D61716",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:20:05.043626Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:20:05.043626848Z 1:M 13 Nov 2026 12:20:05.043 * Background saving started by pid 24",
+      "evidence_id": "E-649444AF5514",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:20:05.044678Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:20:05.044678009Z 24:C 13 Nov 2026 12:20:05.044 * BGSAVE done, 413 keys saved, 0 keys skipped, 33749 bytes written.",
+      "evidence_id": "E-E6F8A8734716",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:20:05.061743Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:20:05.061743150Z 24:C 13 Nov 2026 12:20:05.061 * DB saved on disk",
+      "evidence_id": "E-4E16D7731EB0",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:20:05.062139Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:20:05.062139370Z 24:C 13 Nov 2026 12:20:05.062 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB",
+      "evidence_id": "E-981A7B7176D8",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:20:05.144008Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:20:05.144008926Z 1:M 13 Nov 2026 12:20:05.143 * Background saving terminated with success",
+      "evidence_id": "E-969EE3E7E7E6",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:35.031742Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:35.031742906Z 1:signal-handler (1794572615) Received SIGTERM scheduling shutdown...",
+      "evidence_id": "E-89647B40457B",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:35.087061Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:35.087061328Z 1:M 13 Nov 2026 12:23:35.086 * User requested shutdown...",
+      "evidence_id": "E-C6CA0B2C96F1",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:35.087083Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:35.087083340Z 1:M 13 Nov 2026 12:23:35.087 * Saving the final RDB snapshot before exiting.",
+      "evidence_id": "E-B89F18F88F03",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:35.088351Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:35.088351779Z 1:M 13 Nov 2026 12:23:35.088 * BGSAVE done, 434 keys saved, 0 keys skipped, 35511 bytes written.",
+      "evidence_id": "E-E9B7E78DA501",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:35.131651Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:35.131651741Z 1:M 13 Nov 2026 12:23:35.131 * DB saved on disk",
+      "evidence_id": "E-EEA31A7FDEC6",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:35.131688Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:35.131688289Z 1:M 13 Nov 2026 12:23:35.131 # Redis is now ready to exit, bye bye...",
+      "evidence_id": "E-D96CCB9E09FD",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:11.000000Z",
+      "detail": "{\"at\": \"2026-11-13T12:23:11.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-79f1bea01b9fd5ec3edd49e248f92d4415816791cc9be24d29dfc8aefa4e5f27\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.memory.working_set\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"6dce7205-9b86-46af-8a84-a3cbd31c3473\", \"service\": \"redis-cart\", \"signal\": \"metrics\", \"unit\": \"By\", \"value\": 6168576}",
+      "evidence_id": "OTEL-79f1bea01b9fd5ec3edd49e248f92d4415816791cc9be24d29dfc8aefa4e5f27",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T12:23:11.000000Z",
+      "detail": "{\"at\": \"2026-11-13T12:23:11.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-1efb7ae8ee0955a55ff68f96d1dcdabf3b21e5e5f969f5b570e11ca3074b7c95\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.cpu.usage\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"6dce7205-9b86-46af-8a84-a3cbd31c3473\", \"service\": \"redis-cart\", \"signal\": \"metrics\", \"unit\": \"cores\", \"value\": 0.001255261}",
+      "evidence_id": "OTEL-1efb7ae8ee0955a55ff68f96d1dcdabf3b21e5e5f969f5b570e11ca3074b7c95",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T12:22:38.000000Z",
+      "detail": "{\"at\": \"2026-11-13T12:22:38.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-d8cd9fd43da006a7283f37a665d35c704b87314501237eee467729a6ddd5ead8\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.memory.working_set\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"6dce7205-9b86-46af-8a84-a3cbd31c3473\", \"service\": \"redis-cart\", \"signal\": \"metrics\", \"unit\": \"By\", \"value\": 6168576}",
+      "evidence_id": "OTEL-d8cd9fd43da006a7283f37a665d35c704b87314501237eee467729a6ddd5ead8",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T12:22:38.000000Z",
+      "detail": "{\"at\": \"2026-11-13T12:22:38.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-2099a33f0a060830e09912d4455a0e8ec486bc6e1b48af42b45fc22c4f2f712e\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.cpu.usage\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"6dce7205-9b86-46af-8a84-a3cbd31c3473\", \"service\": \"redis-cart\", \"signal\": \"metrics\", \"unit\": \"cores\", \"value\": 0.00124174}",
+      "evidence_id": "OTEL-2099a33f0a060830e09912d4455a0e8ec486bc6e1b48af42b45fc22c4f2f712e",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T12:23:42.051177Z",
+      "detail": "Deployment sentinel-boutique-connected/redis-cart desired 1, ready 0, available 0; resourceVersion 196097, generation 2",
+      "evidence_id": "E-D17376DB1963",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-13T12:23:42.051177Z",
+      "detail": "Pod redis-cart-58cd57c677-f2rg7 container redis is not ready; phase Running; restartCount 7; back-off 10s restarting failed container=redis pod=redis-cart-58cd57c677-f2rg7_sentinel-boutique-connected(6dce7205-9b86-46af-8a84-a3cbd31c3473); last exitCode 0",
+      "evidence_id": "E-B37659B34BE9",
+      "reason": "CrashLoopBackOff",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-13T12:23:37Z",
+      "detail": "Back-off restarting failed container redis in pod redis-cart-58cd57c677-f2rg7_sentinel-boutique-connected(6dce7205-9b86-46af-8a84-a3cbd31c3473)",
+      "evidence_id": "E-5B098E4A4560",
+      "reason": "BackOff",
+      "source": "event"
+    }
+  ],
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "redis-cart",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "1f95bce9-4a04-441b-8395-6370d7200682"
+  }
+}

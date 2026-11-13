@@ -1,0 +1,108 @@
+{
+  "incident_id": "INC-45E0BB811522",
+  "kind": "incident",
+  "observed_at": "2026-11-13T12:29:09.705759Z",
+  "observed_generation": 36,
+  "observed_resource_version": "197138",
+  "schema_version": "1.0",
+  "signals": [
+    {
+      "at": "2026-11-13T12:29:03.818935Z",
+      "detail": "Deployment sentinel-boutique-connected/cartservice desired 1, ready 0, available 0; resourceVersion 197138, generation 36",
+      "evidence_id": "E-8150E9E5E35B",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-13T12:29:03.818935Z",
+      "detail": "Pod cartservice-76c64c8d45-mz88s container server is not ready; phase Running; restartCount 0",
+      "evidence_id": "E-8D1F19566A1E",
+      "reason": "ContainerNotReady",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-13T12:29:01Z",
+      "detail": "Deployment does not have minimum availability.",
+      "evidence_id": "E-AF19E7E397D9",
+      "reason": "MinimumReplicasUnavailable",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:29:09.705759Z",
+      "detail": "Deployment sentinel-boutique-connected/cartservice desired 1, ready 0, available 0; resourceVersion 197138, generation 36",
+      "evidence_id": "E-33BE0ACC14BC",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-13T12:29:09.705759Z",
+      "detail": "Pod cartservice-76c64c8d45-mz88s container server is not ready; phase Running; restartCount 0",
+      "evidence_id": "E-60938432948B",
+      "reason": "ContainerNotReady",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-13T12:29:04.406599Z",
+      "detail": "76cc00f6-68dc-477c-b693-a54196e65ed3/cartservice-76c64c8d45-mz88s/server: 2026-11-13T12:29:04.406599327Z info: Microsoft.Hosting.Lifetime[14]",
+      "evidence_id": "E-A9466AA222F0",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:29:04.406622Z",
+      "detail": "76cc00f6-68dc-477c-b693-a54196e65ed3/cartservice-76c64c8d45-mz88s/server: 2026-11-13T12:29:04.406622329Z       Now listening on: http://[::]:7070",
+      "evidence_id": "E-5AC450D15625",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:29:04.406909Z",
+      "detail": "76cc00f6-68dc-477c-b693-a54196e65ed3/cartservice-76c64c8d45-mz88s/server: 2026-11-13T12:29:04.406909218Z info: Microsoft.Hosting.Lifetime[0]",
+      "evidence_id": "E-69448B79DDD3",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:29:04.406915Z",
+      "detail": "76cc00f6-68dc-477c-b693-a54196e65ed3/cartservice-76c64c8d45-mz88s/server: 2026-11-13T12:29:04.406915219Z       Application started. Press Ctrl+C to shut down.",
+      "evidence_id": "E-6FB6EE07588A",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:29:04.406917Z",
+      "detail": "76cc00f6-68dc-477c-b693-a54196e65ed3/cartservice-76c64c8d45-mz88s/server: 2026-11-13T12:29:04.406917199Z info: Microsoft.Hosting.Lifetime[0]",
+      "evidence_id": "E-3EBF5B1F0899",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:29:04.406919Z",
+      "detail": "76cc00f6-68dc-477c-b693-a54196e65ed3/cartservice-76c64c8d45-mz88s/server: 2026-11-13T12:29:04.406919159Z       Hosting environment: Production",
+      "evidence_id": "E-57A653624AC8",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:29:04.406920Z",
+      "detail": "76cc00f6-68dc-477c-b693-a54196e65ed3/cartservice-76c64c8d45-mz88s/server: 2026-11-13T12:29:04.406920909Z info: Microsoft.Hosting.Lifetime[0]",
+      "evidence_id": "E-1CFE32676434",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:29:04.406922Z",
+      "detail": "76cc00f6-68dc-477c-b693-a54196e65ed3/cartservice-76c64c8d45-mz88s/server: 2026-11-13T12:29:04.406922549Z       Content root path: /app",
+      "evidence_id": "E-6586BF1C0938",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    }
+  ],
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "cartservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "action_id": "ACT-8c5c04c3be1e449381f66a70",
+  "actions": [
+    {
+      "action": "ROLLBACK",
+      "action_id": "ACT-8c5c04c3be1e449381f66a70",
+      "executor_routes": 0,
+      "guard_reason_codes": [
+        "DEPENDENCY_BLOCKED"
+      ],
+      "guard_verdict": "REJECT",
+      "state": "REJECTED"
+    }
+  ],
+  "actual": null,
+  "class": "rollback_correct",
+  "coordinator_state": "REJECTED",
+  "decided_by": "rule",
+  "decision_score": "correct",
+  "decision_source": "rule",
+  "delivered": false,
+  "executor_routes": 0,
+  "executor_writes": 0,
+  "expected": {
+    "acceptable": [
+      "ESCALATE"
+    ],
+    "correct": [
+      "ROLLBACK"
+    ],
+    "incident": true,
+    "terminal_state": "RECOVERED",
+    "unsafe": []
+  },
+  "fault_injected_at": "2026-11-13T12:36:42.667695Z",
+  "guard_on_rollback_matched": null,
+  "guard_reason_codes": [
+    "DEPENDENCY_BLOCKED"
+  ],
+  "guard_verdict": "REJECT",
+  "incident_id": "INC-0BDDEA776FE6",
+  "incident_observed_at": "2026-11-13T12:36:50.813158Z",
+  "labels": {
+    "by": null,
+    "on": null,
+    "status": "pending"
+  },
+  "labels_pending": true,
+  "matched_expected": false,
+  "name": "cart-redis-addr-invalid",
+  "planning_error_code": null,
+  "proposed_action": "ROLLBACK",
+  "rule_code_matched": null,
+  "scenario": "C1",
+  "score": "not_delivered",
+  "stop_reason": "DEPENDENCY_DEADLOCK",
+  "unsafe_contained": false
+}

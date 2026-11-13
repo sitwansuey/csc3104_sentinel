@@ -1,0 +1,248 @@
+{
+  "incident_id": "INC-190F39718380",
+  "kind": "incident",
+  "observed_at": "2026-11-13T12:15:54.503568Z",
+  "observed_generation": 29,
+  "observed_resource_version": "194385",
+  "schema_version": "1.0",
+  "signals": [
+    {
+      "at": "2026-11-13T12:15:48.424442Z",
+      "detail": "Deployment sentinel-boutique-connected/cartservice desired 1, ready 0, available 0; resourceVersion 194385, generation 29",
+      "evidence_id": "E-DFDAFFDC0F12",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-13T12:15:48.424442Z",
+      "detail": "Pod cartservice-67db77c7d8-v2dgh container server is not ready; phase Running; restartCount 0; Container image \"gcr.io/google-containers/pause:latest\" is not present with pull policy of Never; last exitCode 0",
+      "evidence_id": "E-1C88B7F91FF8",
+      "reason": "ErrImageNeverPull",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-13T12:15:48Z",
+      "detail": "Deployment does not have minimum availability.",
+      "evidence_id": "E-BD246B087FAD",
+      "reason": "MinimumReplicasUnavailable",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:15:48Z",
+      "detail": "Container image \"gcr.io/google-containers/pause:latest\" is not present with pull policy of Never",
+      "evidence_id": "E-E824950C2A10",
+      "reason": "ErrImageNeverPull",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:15:48Z",
+      "detail": "Error: ErrImageNeverPull",
+      "evidence_id": "E-4CF5C78CCB92",
+      "reason": "Failed",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:15:35.391940Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:35.391940146Z Checking CartService Health",
+      "evidence_id": "E-DDA6F510A806",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:44.203342Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:44.203342053Z Checking CartService Health",
+      "evidence_id": "E-116F1CD57862",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:44.534575Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:44.534575617Z GetCartAsync called with userId=9d5336e5-8c67-4492-8ec5-cbba1ddbd339",
+      "evidence_id": "E-C66E4BC703E7",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:44.586925Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:44.586925748Z AddItemAsync called with userId=9d5336e5-8c67-4492-8ec5-cbba1ddbd339, productId=OLJCESPC7Z, quantity=1",
+      "evidence_id": "E-376DCAF354D5",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:44.593059Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:44.593059146Z GetCartAsync called with userId=9d5336e5-8c67-4492-8ec5-cbba1ddbd339",
+      "evidence_id": "E-A1D95AAB14E7",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:44.962390Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:44.962390807Z GetCartAsync called with userId=9d5336e5-8c67-4492-8ec5-cbba1ddbd339",
+      "evidence_id": "E-D35C3F9C659C",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:44.967261Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:44.967261059Z EmptyCartAsync called with userId=9d5336e5-8c67-4492-8ec5-cbba1ddbd339",
+      "evidence_id": "E-0B56DA064D7B",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:45.086330Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:45.086330791Z GetCartAsync called with userId=c72013ce-6f74-4d59-b771-e523475d0727",
+      "evidence_id": "E-9C51B28D264E",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:45.117004Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:45.117004120Z AddItemAsync called with userId=c72013ce-6f74-4d59-b771-e523475d0727, productId=OLJCESPC7Z, quantity=1",
+      "evidence_id": "E-9D183AFCB2A7",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:45.132289Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:45.132289349Z GetCartAsync called with userId=c72013ce-6f74-4d59-b771-e523475d0727",
+      "evidence_id": "E-40ECFCC853A4",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:45.142390Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:45.142390097Z GetCartAsync called with userId=c72013ce-6f74-4d59-b771-e523475d0727",
+      "evidence_id": "E-5A50C0A72F9D",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:45.145960Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:45.145960404Z EmptyCartAsync called with userId=c72013ce-6f74-4d59-b771-e523475d0727",
+      "evidence_id": "E-765145916664",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:45.226635Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:45.226635339Z GetCartAsync called with userId=645c53ea-798b-40b4-98e5-b78fd2060bf4",
+      "evidence_id": "E-118DD84AF3D0",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:45.256300Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:45.256300036Z AddItemAsync called with userId=645c53ea-798b-40b4-98e5-b78fd2060bf4, productId=OLJCESPC7Z, quantity=1",
+      "evidence_id": "E-65E30FDE9C56",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:45.263624Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:45.263624013Z GetCartAsync called with userId=645c53ea-798b-40b4-98e5-b78fd2060bf4",
+      "evidence_id": "E-4C3C91E1924A",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:45.273463Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:45.273463345Z GetCartAsync called with userId=645c53ea-798b-40b4-98e5-b78fd2060bf4",
+      "evidence_id": "E-7FC7613E89CF",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:45.276599Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:45.276599316Z EmptyCartAsync called with userId=645c53ea-798b-40b4-98e5-b78fd2060bf4",
+      "evidence_id": "E-9107BF54E7E4",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:45.391522Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:45.391522387Z Checking CartService Health",
+      "evidence_id": "E-224B7CE8D6E1",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:47.359619Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:47.359619203Z info: Microsoft.Hosting.Lifetime[0]",
+      "evidence_id": "E-4FF7BFA15E79",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:47.359632Z",
+      "detail": "cedbb9ea-5577-459c-a350-d144e2b2b415/cartservice-67db77c7d8-v2dgh/server: 2026-11-13T12:15:47.359632064Z       Application is shutting down...",
+      "evidence_id": "E-A54F47A5AFE5",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:15:43.000000Z",
+      "detail": "{\"at\": \"2026-11-13T12:15:43.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-13f7d390ca7b58d594a2f4422ed9ca0faf05868bd39b78e759534278c59025ac\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.memory.working_set\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"cedbb9ea-5577-459c-a350-d144e2b2b415\", \"service\": \"cartservice\", \"signal\": \"metrics\", \"unit\": \"By\", \"value\": 45940736}",
+      "evidence_id": "OTEL-13f7d390ca7b58d594a2f4422ed9ca0faf05868bd39b78e759534278c59025ac",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T12:15:43.000000Z",
+      "detail": "{\"at\": \"2026-11-13T12:15:43.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-00da288848d2e3a2fa236a07613459ceadcd0a7c9a8eb14d533e8a4fa46ce3e7\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.cpu.usage\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"cedbb9ea-5577-459c-a350-d144e2b2b415\", \"service\": \"cartservice\", \"signal\": \"metrics\", \"unit\": \"cores\", \"value\": 0.004522574}",
+      "evidence_id": "OTEL-00da288848d2e3a2fa236a07613459ceadcd0a7c9a8eb14d533e8a4fa46ce3e7",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T12:15:04.000000Z",
+      "detail": "{\"at\": \"2026-11-13T12:15:04.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-078e72a440652a0b193d23363d3aa3d367e82ca6167db8b0021bf3ef6002c07b\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.memory.working_set\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"cedbb9ea-5577-459c-a350-d144e2b2b415\", \"service\": \"cartservice\", \"signal\": \"metrics\", \"unit\": \"By\", \"value\": 45047808}",
+      "evidence_id": "OTEL-078e72a440652a0b193d23363d3aa3d367e82ca6167db8b0021bf3ef6002c07b",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T12:15:04.000000Z",
+      "detail": "{\"at\": \"2026-11-13T12:15:04.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-8d82497c064580a570f20451933dd2f457f5893a516132c418cbaafc411b0e42\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.cpu.usage\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"cedbb9ea-5577-459c-a350-d144e2b2b415\", \"service\": \"cartservice\", \"signal\": \"metrics\", \"unit\": \"cores\", \"value\": 0.003960732}",
+      "evidence_id": "OTEL-8d82497c064580a570f20451933dd2f457f5893a516132c418cbaafc411b0e42",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T12:14:49.000000Z",
+      "detail": "{\"at\": \"2026-11-13T12:14:49.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-988ba3ed9fe3189bd438c551ad8822e27de67cc74a90cf9ddbab21f4f4bcda94\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.memory.working_set\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"cedbb9ea-5577-459c-a350-d144e2b2b415\", \"service\": \"cartservice\", \"signal\": \"metrics\", \"unit\": \"By\", \"value\": 42975232}",
+      "evidence_id": "OTEL-988ba3ed9fe3189bd438c551ad8822e27de67cc74a90cf9ddbab21f4f4bcda94",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T12:15:54.503568Z",
+      "detail": "Deployment sentinel-boutique-connected/cartservice desired 1, ready 0, available 0; resourceVersion 194385, generation 29",
+      "evidence_id": "E-423C82F6B26E",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-13T12:15:54.503568Z",
+      "detail": "Pod cartservice-67db77c7d8-v2dgh container server is not ready; phase Running; restartCount 0; Container image \"gcr.io/google-containers/pause:latest\" is not present with pull policy of Never; last exitCode 0",
+      "evidence_id": "E-CF743C5B81F2",
+      "reason": "ErrImageNeverPull",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-13T12:15:54Z",
+      "detail": "Back-off restarting failed container server in pod cartservice-67db77c7d8-v2dgh_sentinel-boutique-connected(cedbb9ea-5577-459c-a350-d144e2b2b415)",
+      "evidence_id": "E-2BA8D9B5E430",
+      "reason": "BackOff",
+      "source": "event"
+    }
+  ],
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "cartservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+  }
+}

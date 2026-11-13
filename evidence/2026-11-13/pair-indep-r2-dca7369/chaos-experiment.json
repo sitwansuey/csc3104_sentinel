@@ -1,0 +1,31 @@
+{
+  "created_at": "2026-11-13T12:15:46.868342Z",
+  "duration_seconds": 900,
+  "expires_at": "2026-11-13T12:30:46.868342Z",
+  "kind": "PodChaos",
+  "name": "sentinel-pod-0f3b3a76db",
+  "namespace": "sentinel-boutique-connected",
+  "record_ids": [
+    "sentinel-boutique-connected/cartservice-67db77c7d8-v2dgh"
+  ],
+  "selected_pods": [
+    {
+      "name": "cartservice-67db77c7d8-v2dgh",
+      "uid": "cedbb9ea-5577-459c-a350-d144e2b2b415"
+    }
+  ],
+  "spec": {
+    "action": "pod-failure",
+    "duration": "900s",
+    "mode": "one",
+    "selector": {
+      "labelSelectors": {
+        "app": "cartservice"
+      },
+      "namespaces": [
+        "sentinel-boutique-connected"
+      ]
+    }
+  },
+  "uid": "dfd10142-3fa4-4c1e-8ca8-978aac6c4677"
+}

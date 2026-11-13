@@ -1,0 +1,170 @@
+{
+  "captured_at": "2026-11-13T12:12:33.935051Z",
+  "cluster_id": "sentinel-boutique-connected",
+  "deployment": {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "annotations": {
+        "deployment.kubernetes.io/revision": "234",
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"shippingservice\"},\"name\":\"shippingservice\",\"namespace\":\"sentinel-boutique-connected\"},\"spec\":{\"minReadySeconds\":2,\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"shippingservice\"}},\"strategy\":{\"type\":\"Recreate\"},\"template\":{\"metadata\":{\"labels\":{\"app\":\"shippingservice\"}},\"spec\":{\"automountServiceAccountToken\":false,\"containers\":[{\"env\":[{\"name\":\"PORT\",\"value\":\"50051\"},{\"name\":\"DISABLE_PROFILER\",\"value\":\"1\"},{\"name\":\"DISABLE_TRACING\",\"value\":\"1\"}],\"image\":\"us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4\",\"imagePullPolicy\":\"Never\",\"livenessProbe\":{\"grpc\":{\"port\":50051},\"initialDelaySeconds\":5,\"periodSeconds\":5},\"name\":\"server\",\"ports\":[{\"containerPort\":50051}],\"readinessProbe\":{\"grpc\":{\"port\":50051},\"periodSeconds\":3},\"resources\":{\"limits\":{\"cpu\":\"200m\",\"memory\":\"128Mi\"},\"requests\":{\"cpu\":\"100m\",\"memory\":\"64Mi\"}},\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]},\"readOnlyRootFilesystem\":true}}],\"securityContext\":{\"runAsGroup\":1000,\"runAsNonRoot\":true,\"runAsUser\":1000,\"seccompProfile\":{\"type\":\"RuntimeDefault\"}},\"serviceAccountName\":\"shippingservice\"}}}}\n",
+        "sentinel.io/execution": "{\"action_id\":\"ACT-LIVE-a926d4b60b4d44d999199d5fe5c8886c\",\"attempt_id\":\"a3c1c9ef0f4b448fa9d16a9bfe0c71cf\",\"proposal_sha256\":\"2cd8d8aefd9efa14a597b4a7d7716de246959a88f5e8368f7c9ab312a235355f\",\"target_uid\":\"7afb61df-2d75-4529-ae2c-5825a573335d\",\"template_sha256\":\"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"}",
+        "sentinel.io/race": "c11a4f30f7f84c8d8cd1e113b1535567",
+        "sentinel.io/stale-probe": "b86fdf346ac746839c8e94a672fee68a"
+      },
+      "creationTimestamp": "2026-11-10T17:07:32Z",
+      "generation": 272,
+      "labels": {
+        "app": "shippingservice"
+      },
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "resourceVersion": "193450",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    },
+    "spec": {
+      "minReadySeconds": 2,
+      "progressDeadlineSeconds": 600,
+      "replicas": 1,
+      "revisionHistoryLimit": 10,
+      "selector": {
+        "matchLabels": {
+          "app": "shippingservice"
+        }
+      },
+      "strategy": {
+        "type": "Recreate"
+      },
+      "template": {
+        "metadata": {
+          "labels": {
+            "app": "shippingservice"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "containers": [
+            {
+              "env": [
+                {
+                  "name": "PORT",
+                  "value": "invalid-port"
+                },
+                {
+                  "name": "DISABLE_PROFILER",
+                  "value": "1"
+                },
+                {
+                  "name": "DISABLE_TRACING",
+                  "value": "1"
+                }
+              ],
+              "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4",
+              "imagePullPolicy": "Never",
+              "livenessProbe": {
+                "failureThreshold": 3,
+                "grpc": {
+                  "port": 50051,
+                  "service": ""
+                },
+                "initialDelaySeconds": 5,
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 1
+              },
+              "name": "server",
+              "ports": [
+                {
+                  "containerPort": 50051,
+                  "protocol": "TCP"
+                }
+              ],
+              "readinessProbe": {
+                "failureThreshold": 3,
+                "grpc": {
+                  "port": 50051,
+                  "service": ""
+                },
+                "periodSeconds": 3,
+                "successThreshold": 1,
+                "timeoutSeconds": 1
+              },
+              "resources": {
+                "limits": {
+                  "cpu": "200m",
+                  "memory": "128Mi"
+                },
+                "requests": {
+                  "cpu": "100m",
+                  "memory": "64Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "readOnlyRootFilesystem": true
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File"
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "restartPolicy": "Always",
+          "schedulerName": "default-scheduler",
+          "securityContext": {
+            "runAsGroup": 1000,
+            "runAsNonRoot": true,
+            "runAsUser": 1000,
+            "seccompProfile": {
+              "type": "RuntimeDefault"
+            }
+          },
+          "serviceAccount": "shippingservice",
+          "serviceAccountName": "shippingservice",
+          "terminationGracePeriodSeconds": 30
+        }
+      }
+    },
+    "status": {
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-11-10T17:07:32Z",
+          "lastUpdateTime": "2026-11-13T09:21:08Z",
+          "message": "ReplicaSet \"shippingservice-6d94cdf884\" has successfully progressed.",
+          "reason": "NewReplicaSetAvailable",
+          "status": "True",
+          "type": "Progressing"
+        },
+        {
+          "lastTransitionTime": "2026-11-13T12:11:13Z",
+          "lastUpdateTime": "2026-11-13T12:11:13Z",
+          "message": "Deployment does not have minimum availability.",
+          "reason": "MinimumReplicasUnavailable",
+          "status": "False",
+          "type": "Available"
+        }
+      ],
+      "observedGeneration": 272,
+      "replicas": 1,
+      "terminatingReplicas": 0,
+      "unavailableReplicas": 1,
+      "updatedReplicas": 1
+    }
+  },
+  "known_health": {
+    "adservice": true,
+    "cartservice": true,
+    "checkoutservice": true,
+    "currencyservice": true,
+    "emailservice": true,
+    "frontend": true,
+    "paymentservice": true,
+    "productcatalogservice": true,
+    "recommendationservice": true,
+    "redis-cart": true
+  }
+}

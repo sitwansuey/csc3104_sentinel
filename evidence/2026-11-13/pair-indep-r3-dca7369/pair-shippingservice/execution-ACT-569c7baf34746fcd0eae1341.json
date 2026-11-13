@@ -1,0 +1,19 @@
+[
+  {
+    "action_id": "ACT-569c7baf34746fcd0eae1341",
+    "details": "[basis=EVIDENCE_MATCH] Exact template and persisted action evidence confirm the write; health verification is pending.",
+    "incident_id": "INC-AC2C2DCF8C63",
+    "kind": "execution_result",
+    "recorded_at": "2026-11-13T12:20:59.869468Z",
+    "resource_version": "195556",
+    "schema_version": "1.0",
+    "status": "APPLIED",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    }
+  }
+]

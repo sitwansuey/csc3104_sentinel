@@ -1,0 +1,68 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": null
+    }
+  ],
+  "attempts": 1,
+  "delivered": 1,
+  "error_code": null,
+  "incident_id": "INC-DEA6ECBE5048",
+  "next_attempt": 0.0,
+  "proposal": {
+    "action": "RESTART",
+    "action_id": "ACT-47c3b8276d5b41e0a9b1034c",
+    "based_on_resource_version": "197148",
+    "evidence_refs": [
+      "E-A5D1AF1AEEC3",
+      "E-F3B7B4DE8237",
+      "E-F568F845D3D7",
+      "E-A0127032AC77",
+      "E-5A524E586A67",
+      "E-A5781017866C",
+      "E-63E4C107CB90",
+      "E-94B02C33A20D",
+      "E-FB8674458FBA",
+      "E-AECCE33AA053",
+      "E-6C34E447BD52",
+      "E-E4C93A065C95",
+      "E-FF3DA94038EF",
+      "E-CF6AE21CCB4C",
+      "E-CEE79A150489",
+      "E-07F7628458E0",
+      "E-0ACEBCA1FA26",
+      "E-FD8FC64E122B",
+      "E-CE879DF5D0D5",
+      "E-28263F1E32A8",
+      "E-BDB2DA820A16",
+      "E-B316A30933B3",
+      "E-A0BF836FEB58",
+      "E-C1F268EBBB2F",
+      "E-E900B37509D2",
+      "E-EE0E87140C2B",
+      "E-19E3ACE602B1",
+      "OTEL-51054eed6e9887f09750df1b2adb9f9cc664ae9b43a9f49c573e0b66e4e33267",
+      "OTEL-c96480287a2adb44ef758ec18e2d5d2c51c1d59d780bc8c9d71712f87692e97d",
+      "E-CDD92B155BAE",
+      "E-8FC917E81284",
+      "E-8BBCF6EFD227"
+    ],
+    "incident_id": "INC-DEA6ECBE5048",
+    "kind": "proposal",
+    "parameters": {
+      "baseline_id": "BASE-LIVE-7303ce2d6eb9",
+      "restart_token": "<redacted:c0f8b943>",
+      "template_sha256": "ff1ec3516cab2f345559a13bdf96f9e4455318dde9bcaf6faa9607983bdbc1aa"
+    },
+    "rationale": "Pods are failing while the live configuration equals the reviewed healthy baseline, so a rollback would change nothing; restart the Pods from that template.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "redis-cart",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "1f95bce9-4a04-441b-8395-6370d7200682"
+    }
+  }
+}

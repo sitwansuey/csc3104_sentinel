@@ -1,0 +1,13 @@
+{
+  "add_to_cart_status": 500,
+  "at": "2026-11-13T12:23:42.972489Z",
+  "cart_contains_product": false,
+  "cart_status": 500,
+  "checkout_status": 500,
+  "errors": {},
+  "home_status": 500,
+  "order_confirmation_found": false,
+  "order_confirmation_id": null,
+  "order_page_confirmed": false,
+  "passed": false
+}

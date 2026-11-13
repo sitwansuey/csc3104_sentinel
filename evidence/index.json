@@ -1660,6 +1660,86 @@
       "provenance": "recorded",
       "status": "current",
       "reason": null
+    },
+    {
+      "bundle_id": "pair-indep-r1-dca7369",
+      "class": "scenario-pair",
+      "path": "2026-11-13/pair-indep-r1-dca7369",
+      "captured_at": "2026-11-13T12:09:14.436144Z",
+      "source_revision": "dca73699c9bb7c6d99faa0cec517c75e98fa916b",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "pair-indep-r2-dca7369",
+      "class": "scenario-pair",
+      "path": "2026-11-13/pair-indep-r2-dca7369",
+      "captured_at": "2026-11-13T12:13:13.517750Z",
+      "source_revision": "dca73699c9bb7c6d99faa0cec517c75e98fa916b",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "pair-indep-r3-dca7369",
+      "class": "scenario-pair",
+      "path": "2026-11-13/pair-indep-r3-dca7369",
+      "captured_at": "2026-11-13T12:17:48.175442Z",
+      "source_revision": "dca73699c9bb7c6d99faa0cec517c75e98fa916b",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "pair-dep-r1-dca7369",
+      "class": "scenario-pair",
+      "path": "2026-11-13/pair-dep-r1-dca7369",
+      "captured_at": "2026-11-13T12:21:37.771955Z",
+      "source_revision": "dca73699c9bb7c6d99faa0cec517c75e98fa916b",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "pair-dep-r2-dca7369",
+      "class": "scenario-pair",
+      "path": "2026-11-13/pair-dep-r2-dca7369",
+      "captured_at": "2026-11-13T12:24:20.054504Z",
+      "source_revision": "dca73699c9bb7c6d99faa0cec517c75e98fa916b",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "pair-dep-r3-dca7369",
+      "class": "scenario-pair",
+      "path": "2026-11-13/pair-dep-r3-dca7369",
+      "captured_at": "2026-11-13T12:27:04.114677Z",
+      "source_revision": "dca73699c9bb7c6d99faa0cec517c75e98fa916b",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "pair-indep-kill-r1-dca7369",
+      "class": "scenario-pair",
+      "path": "2026-11-13/pair-indep-kill-r1-dca7369",
+      "captured_at": "2026-11-13T12:29:46.979315Z",
+      "source_revision": "dca73699c9bb7c6d99faa0cec517c75e98fa916b",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "pair-dep-kill-r1-dca7369",
+      "class": "scenario-pair",
+      "path": "2026-11-13/pair-dep-kill-r1-dca7369",
+      "captured_at": "2026-11-13T12:34:15.927841Z",
+      "source_revision": "dca73699c9bb7c6d99faa0cec517c75e98fa916b",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
     }
   ]
 }

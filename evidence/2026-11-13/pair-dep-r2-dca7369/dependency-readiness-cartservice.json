@@ -1,0 +1,165 @@
+{
+  "captured_at": "2026-11-13T12:26:27.326922Z",
+  "cluster_id": "sentinel-boutique-connected",
+  "deployment": {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "annotations": {
+        "deployment.kubernetes.io/revision": "27",
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"cartservice\"},\"name\":\"cartservice\",\"namespace\":\"sentinel-boutique-connected\"},\"spec\":{\"minReadySeconds\":2,\"selector\":{\"matchLabels\":{\"app\":\"cartservice\"}},\"strategy\":{\"type\":\"Recreate\"},\"template\":{\"metadata\":{\"labels\":{\"app\":\"cartservice\"}},\"spec\":{\"automountServiceAccountToken\":false,\"containers\":[{\"env\":[{\"name\":\"REDIS_ADDR\",\"value\":\"redis-cart:6379\"}],\"image\":\"us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e\",\"imagePullPolicy\":\"Never\",\"livenessProbe\":{\"grpc\":{\"port\":7070},\"initialDelaySeconds\":15,\"periodSeconds\":10},\"name\":\"server\",\"ports\":[{\"containerPort\":7070}],\"readinessProbe\":{\"grpc\":{\"port\":7070},\"initialDelaySeconds\":15},\"resources\":{\"limits\":{\"cpu\":\"300m\",\"memory\":\"128Mi\"},\"requests\":{\"cpu\":\"200m\",\"memory\":\"64Mi\"}},\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]},\"privileged\":false,\"readOnlyRootFilesystem\":true}}],\"securityContext\":{\"fsGroup\":1000,\"runAsGroup\":1000,\"runAsNonRoot\":true,\"runAsUser\":1000},\"serviceAccountName\":\"cartservice\",\"terminationGracePeriodSeconds\":5}}}}\n",
+        "sentinel.io/execution": "{\"action\":\"RESTART\",\"action_id\":\"ACT-0958976717f52e98774a77a9\",\"attempt_id\":\"b42ef3391d0442749476ab2a7b2762ac\",\"proposal_sha256\":\"1bdaf1a9b98ad858dc57845d65cceb32b2acef478398521f67725bfad0ce21dc\",\"target_uid\":\"a049b7c4-ad14-4680-b3d3-d31ef3944221\",\"template_sha256\":\"95f6de5b5ba31cfa06d2a037180915d658003ad4c81ebd953f509de9658d353f\"}",
+        "sentinel.io/race": "64956b6de2c147c98d46c73cc68bc7bf",
+        "sentinel.io/stale-probe": "3174f2015c8c4b16aaa116165a6ef133"
+      },
+      "creationTimestamp": "2026-11-10T17:07:33Z",
+      "generation": 34,
+      "labels": {
+        "app": "cartservice"
+      },
+      "name": "cartservice",
+      "namespace": "sentinel-boutique-connected",
+      "resourceVersion": "196592",
+      "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+    },
+    "spec": {
+      "minReadySeconds": 2,
+      "progressDeadlineSeconds": 600,
+      "replicas": 1,
+      "revisionHistoryLimit": 10,
+      "selector": {
+        "matchLabels": {
+          "app": "cartservice"
+        }
+      },
+      "strategy": {
+        "type": "Recreate"
+      },
+      "template": {
+        "metadata": {
+          "annotations": {
+            "sentinel.io/restart-token": "<redacted:3de72115>"
+          },
+          "labels": {
+            "app": "cartservice"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "containers": [
+            {
+              "env": [
+                {
+                  "name": "REDIS_ADDR",
+                  "value": "redis-cart:6390"
+                }
+              ],
+              "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e",
+              "imagePullPolicy": "Never",
+              "livenessProbe": {
+                "failureThreshold": 3,
+                "grpc": {
+                  "port": 7070,
+                  "service": ""
+                },
+                "initialDelaySeconds": 15,
+                "periodSeconds": 10,
+                "successThreshold": 1,
+                "timeoutSeconds": 1
+              },
+              "name": "server",
+              "ports": [
+                {
+                  "containerPort": 7070,
+                  "protocol": "TCP"
+                }
+              ],
+              "readinessProbe": {
+                "failureThreshold": 3,
+                "grpc": {
+                  "port": 7070,
+                  "service": ""
+                },
+                "initialDelaySeconds": 15,
+                "periodSeconds": 10,
+                "successThreshold": 1,
+                "timeoutSeconds": 1
+              },
+              "resources": {
+                "limits": {
+                  "cpu": "300m",
+                  "memory": "128Mi"
+                },
+                "requests": {
+                  "cpu": "200m",
+                  "memory": "64Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "privileged": false,
+                "readOnlyRootFilesystem": true
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File"
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "restartPolicy": "Always",
+          "schedulerName": "default-scheduler",
+          "securityContext": {
+            "fsGroup": 1000,
+            "runAsGroup": 1000,
+            "runAsNonRoot": true,
+            "runAsUser": 1000
+          },
+          "serviceAccount": "cartservice",
+          "serviceAccountName": "cartservice",
+          "terminationGracePeriodSeconds": 5
+        }
+      }
+    },
+    "status": {
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-11-10T17:07:33Z",
+          "lastUpdateTime": "2026-11-13T12:24:19Z",
+          "message": "ReplicaSet \"cartservice-68d54d466b\" has successfully progressed.",
+          "reason": "NewReplicaSetAvailable",
+          "status": "True",
+          "type": "Progressing"
+        },
+        {
+          "lastTransitionTime": "2026-11-13T12:26:18Z",
+          "lastUpdateTime": "2026-11-13T12:26:18Z",
+          "message": "Deployment does not have minimum availability.",
+          "reason": "MinimumReplicasUnavailable",
+          "status": "False",
+          "type": "Available"
+        }
+      ],
+      "observedGeneration": 34,
+      "replicas": 1,
+      "terminatingReplicas": 0,
+      "unavailableReplicas": 1,
+      "updatedReplicas": 1
+    }
+  },
+  "known_health": {
+    "adservice": true,
+    "checkoutservice": true,
+    "currencyservice": true,
+    "emailservice": true,
+    "frontend": true,
+    "paymentservice": true,
+    "productcatalogservice": true,
+    "recommendationservice": true,
+    "redis-cart": false,
+    "shippingservice": true
+  }
+}

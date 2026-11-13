@@ -50,6 +50,7 @@ Read each number with its limits:
 | observer-acceptance | 3 | 3 | 0 | 0 | 0 | 0 recorded, 3 inferred |
 | packaged | 9 | 5 | 0 | 1 | 3 | 0 recorded, 9 inferred |
 | provider-recovery | 1 | 0 | 1 | 0 | 0 | 0 recorded, 1 inferred |
+| scenario-pair | 8 | 8 | 0 | 0 | 0 | 8 recorded, 0 inferred |
 | security-lab | 4 | 4 | 0 | 0 | 0 | 1 recorded, 3 inferred |
 | shipping-lab | 2 | 2 | 0 | 0 | 0 | 0 recorded, 2 inferred |
 | ui-session | 7 | 0 | 0 | 0 | 7 | 0 recorded, 7 inferred |
@@ -390,7 +391,16 @@ class existed; they are listed in the [exclusions](../evidence/README.md),
 not here.
 
 <!-- BEGIN GENERATED:pair-runs -->
-_No bundles yet._
+| Bundle | Pair | Revision | Outcome | Pair result | ShopOutcome | Executor writes | Stops | Ordered recovery shown | Labels |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| pair-indep-r1-dca7369 | shipping-config+cart-pod | dca7369 | PASS | RECOVERED | RECOVERED | cartservice 1, shippingservice 1 | none | n/a | pending |
+| pair-indep-r2-dca7369 | shipping-config+cart-pod | dca7369 | PASS | RECOVERED | RECOVERED | cartservice 1, shippingservice 1 | none | n/a | pending |
+| pair-indep-r3-dca7369 | shipping-config+cart-pod | dca7369 | PASS | RECOVERED | RECOVERED | cartservice 1, shippingservice 1 | none | n/a | pending |
+| pair-dep-r1-dca7369 | redis-pod+cart-config | dca7369 | PASS | DEPENDENCY_DEADLOCK | FAILED | cartservice 0, redis-cart 0 | cartservice DEPENDENCY_DEADLOCK, redis-cart DEPENDENCY_DEADLOCK | no | pending |
+| pair-dep-r2-dca7369 | redis-pod+cart-config | dca7369 | PASS | DEPENDENCY_DEADLOCK | FAILED | cartservice 0, redis-cart 0 | cartservice DEPENDENCY_DEADLOCK, redis-cart DEPENDENCY_DEADLOCK | no | pending |
+| pair-dep-r3-dca7369 | redis-pod+cart-config | dca7369 | PASS | DEPENDENCY_DEADLOCK | FAILED | cartservice 0, redis-cart 0 | cartservice DEPENDENCY_DEADLOCK, redis-cart DEPENDENCY_DEADLOCK | no | pending |
+| pair-indep-kill-r1-dca7369 | shipping-config+cart-pod | dca7369 | PASS | RECOVERED | RECOVERED | cartservice 1, shippingservice 1 | none | n/a | pending |
+| pair-dep-kill-r1-dca7369 | redis-pod+cart-config | dca7369 | PASS | DEPENDENCY_DEADLOCK | FAILED | cartservice 0, redis-cart 0 | cartservice DEPENDENCY_DEADLOCK, redis-cart DEPENDENCY_DEADLOCK | no | pending |
 <!-- END GENERATED:pair-runs -->
 
 ## Security lab

@@ -1,0 +1,35 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-8c5c04c3be1e449381f66a70",
+  "based_on_resource_version": "198589",
+  "evidence_refs": [
+    "E-CC275BF871E5",
+    "E-1000EEA6B8E4",
+    "E-C8BCE1F163CE",
+    "E-E2B9B1798BF4",
+    "E-373AB1DBD24D",
+    "E-46A2C1869C3A",
+    "E-B6F564F406E2",
+    "E-A06A10C014FD",
+    "E-71C2CE558782",
+    "E-75AEE7D3DC76",
+    "E-B7E027D30DA2",
+    "E-3019A4639BCA",
+    "E-9F76F0CD7193"
+  ],
+  "incident_id": "INC-0BDDEA776FE6",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-26600d77918d",
+    "template_sha256": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d"
+  },
+  "rationale": "Restore the saved observed healthy template described by the failed-rollout runbook.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "cartservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+  }
+}
