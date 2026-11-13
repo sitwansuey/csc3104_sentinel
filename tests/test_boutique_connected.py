@@ -1108,11 +1108,11 @@ class PairVerdictTests(unittest.TestCase):
         from services.planner.core import mock_provider, retrieve_runbooks
         ids = lab.open()
 
-        def again(name, incident_id, attempt):
+        def again(name, incident_id, attempt, cause):
             live = lab.cluster.read(lab.incidents[name]["target"])["deployment"]
             proposal = replan(lab.incidents[name], baselines=[lab.baselines[name]], retriever=retrieve_runbooks,
                               provider=mock_provider, live_template=live["spec"]["template"],
-                              resource_version=live["metadata"]["resourceVersion"], attempt=attempt)
+                              resource_version=live["metadata"]["resourceVersion"], attempt=attempt, cause=cause)
             handle(proposal, lab.store, lab.bus)
             return proposal
 

@@ -224,6 +224,96 @@ class TwoTargetRecoveryTests(unittest.TestCase):
         runner = bounded(replan=Mock())
         self.assertEqual(runner.run()["stops"], {"a": "REJECTED"})
 
+    def again(self, lab, causes):
+        """A re-plan callback on the fake target's live resource version, as replan_lane does live."""
+        from experiments.boutique.harness.multi_fault import replan
+
+        def replanned(name, incident_id, attempt, cause):
+            causes.append((name, attempt, cause))
+            live = lab.cluster.read(lab.incidents[name]["target"])["deployment"]
+            proposal = replan(lab.incidents[name], baselines=[lab.baselines[name]], retriever=retrieve_runbooks,
+                              provider=mock_provider, live_template=live["spec"]["template"],
+                              resource_version=live["metadata"]["resourceVersion"], attempt=attempt, cause=cause)
+            handle(proposal, lab.store, lab.bus)
+            return proposal
+        return replanned
+
+    def stale_second_lane(self, faults):
+        """Run a pair whose second lane's Deployment moves (a status write) while the first lane is repaired."""
+        lab = self.lab(faults)
+        ids = lab.open()
+        first, second = ids
+        moved = []
+
+        def advance(name, incident_id):
+            state = lab.advance(name, incident_id)
+            if name == first and not moved:
+                # Both incidents were planned in the first lane's pass; the second Deployment then moves.
+                lab.clusters[second].snapshot["deployment"]["metadata"]["resourceVersion"] += "-status"
+                moved.append(second)
+            return state
+        causes = []
+        run = self.runner(lab, ids, advance=advance, replan=self.again(lab, causes)).run()
+        stale = lab.store.actions_for_incident(ids[second])[0]
+        self.assertEqual(stale["guard_result"]["reason_codes"], ["STALE_RESOURCE_VERSION"])
+        return lab, run, causes
+
+    def test_a_rollback_whose_version_went_stale_while_the_other_lane_ran_is_planned_again(self):
+        lab, run, causes = self.stale_second_lane({"cartservice": "pod", "shippingservice": "config"})
+        self.assertEqual(run["states"], {"cartservice": "RECOVERED", "shippingservice": "RECOVERED"})
+        self.assertEqual((run["stops"], causes), ({}, [("shippingservice", 1, "STALE_RESOURCE_VERSION")]))
+        self.assertEqual((lab.writes("shippingservice"), lab.writes("cartservice")), (1, 1))
+        replanned = next(event for event in run["events"] if event["event"] == "replanned")
+        self.assertEqual(replanned["cause"], "STALE_RESOURCE_VERSION")
+
+    def test_a_stale_restart_is_not_replanned_past_the_one_restart_per_incident_rule(self):
+        # The Coordinator accepts one RESTART per incident (services/coordinator/core.py); the stale re-plan of a
+        # RESTART is refused there and the incident stops, with no write.
+        lab, run, causes = self.stale_second_lane({"shippingservice": "config", "cartservice": "pod"})
+        self.assertEqual(run["stops"], {"cartservice": "REPLAN_REFUSED"})
+        self.assertEqual(causes, [("cartservice", 1, "STALE_RESOURCE_VERSION")])
+        self.assertEqual((lab.writes("shippingservice"), lab.writes("cartservice")), (1, 0))
+
+    def test_only_a_refusal_for_a_stale_version_alone_is_planned_again_within_one_budget(self):
+        from experiments.boutique.harness.multi_fault import PairRunner
+        store = Mock()
+        incidents = {"a": {"state": "REJECTED", "active_action_id": "ACT-A"},
+                     "b": {"state": "RECOVERED", "active_action_id": "ACT-B"}}
+        refusal = {"reason_codes": [], "blockers": [], "unknowns": []}
+        store.incident.side_effect = lambda incident_id: incidents[incident_id]
+        store.action.side_effect = lambda action_id: {"guard_result": {"reason_codes": refusal["reason_codes"]}}
+        store.dependency_result.side_effect = lambda action_id: {"blockers": refusal["blockers"],
+                                                                 "unknowns": refusal["unknowns"]}
+
+        def run(reasons, blockers=(), unknowns=(), replans=()):
+            refusal.update(reason_codes=list(reasons), blockers=list(blockers), unknowns=list(unknowns))
+            ticks = iter(range(1000))
+            replan = Mock(return_value={"action_id": "ACT-A2"})
+            runner = PairRunner(store, {"a": "a", "b": "b"}, advance=Mock(), replan=replan,
+                                clock=lambda: next(ticks), sleep=Mock(), budget_seconds=5)
+            runner.replans["a"].extend(replans)
+            runner.after_rejection("a")
+            return runner.stops, replan
+        for reasons, unknowns in ((["STALE_RESOURCE_VERSION"], ()),
+                                  (["STALE_RESOURCE_VERSION", "DEPENDENCY_UNKNOWN"], ["live-resource-version-mismatch"])):
+            with self.subTest(reasons=reasons):
+                stops, replan = run(reasons, unknowns=unknowns)
+                self.assertEqual(stops, {})
+                replan.assert_called_once_with("a", "a", 1, cause="STALE_RESOURCE_VERSION")
+        for reasons, blockers, unknowns in ((["STALE_RESOURCE_VERSION", "ACTION_NOT_ALLOWED"], (), ()),
+                                            (["STALE_RESOURCE_VERSION", "DEPENDENCY_UNKNOWN"], (), ["frontend"]),
+                                            (["STALE_RESOURCE_VERSION", "DEPENDENCY_UNKNOWN"], (), ()),
+                                            (["STALE_RESOURCE_VERSION"], ["b"], ()),
+                                            (["STALE_LIVE_STATE"], (), ())):
+            with self.subTest(reasons=reasons, blockers=blockers, unknowns=unknowns):
+                stops, replan = run(reasons, blockers, unknowns)
+                self.assertEqual(stops, {"a": "REJECTED"})
+                replan.assert_not_called()
+        # The stale re-plan shares the incident's one re-plan: a second stale refusal stops it.
+        stops, replan = run(["STALE_RESOURCE_VERSION"], replans=["ACT-A1"])
+        self.assertEqual(stops, {"a": "REPLAN_BUDGET_EXHAUSTED"})
+        replan.assert_not_called()
+
     def test_write_counts_other_than_one_per_target_are_never_recovered(self):
         from experiments.boutique.harness import scenarios
         from experiments.boutique.harness.multi_fault import pair_result, shop_outcome

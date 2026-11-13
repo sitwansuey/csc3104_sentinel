@@ -95,6 +95,23 @@ Single-target runs keep the shop scope unchanged.
   The pair result then records `ordered_recovery_shown: false`, and the run
   prints a note saying so. A DEPENDENCY_DEADLOCK run is a safe stop, not
   evidence that the cart ALLOW came after Redis RECOVERED.
+- **A stale resource version is planned again, once.** The Planner plans
+  every pending incident in one pass, so the second incident's proposal is
+  made during the first lane's turn and keeps its detection-time
+  `based_on_resource_version` while the first lane is approved, written,
+  rolled out and verified. A status write to the second Deployment in that
+  time makes the Guard refuse it with STALE_RESOURCE_VERSION (and the
+  dependency finding reports `live-resource-version-mismatch`). A REJECT
+  whose only reasons are those is planned again on the live resource
+  version (`PairRunner.stale_only` and `replan_lane`), within the same one
+  re-plan per incident; the new proposal gets a fresh dependency finding and
+  a full Guard check. Any other reason in the refusal keeps it final. We
+  chose this over planning a lane only when the runner reaches it because
+  the Planner pipeline (`runtime/planner_pipeline.py`) plans every pending
+  request in one pass for every run, and a version can also go stale while
+  the lane itself waits for approval. The Coordinator accepts one RESTART per
+  incident, so a stale RESTART cannot be planned again: it stops with
+  REPLAN_REFUSED and no write.
 - **Other stops.** A refusal for any other reason, an escalation other than
   the approval request, a refused approval, or a re-plan the Coordinator
   refuses (for example a second RESTART for one incident) stops that incident

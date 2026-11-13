@@ -31,8 +31,12 @@ of the pair, waits: once that target is RECOVERED the incident is planned
 again (at most once; the Coordinator accepts a new proposal after REJECTED)
 and its fresh dependency finding is checked again. When the two refusals name
 each other, the run stops with DEPENDENCY_DEADLOCK and no write, for a person
-to decide; there is no retry loop. Any other refusal, an escalation, a refused
-approval or a refused re-plan stops that incident.
+to decide; there is no retry loop. A refusal whose only reason is that the
+proposal's resource version went stale (both incidents are planned in one
+Planner pass, so the second can wait through the first one's repair) is
+planned again on the live resource version, within the same one re-plan.
+Any other refusal, an escalation, a refused approval or a refused re-plan
+stops that incident.
 
 The pure functions and PairRunner run offline in tests/test_overlapping_recovery.py
 and tests/test_dependency_revalidation.py. PairBoutiqueExperiment wires them
@@ -92,6 +96,11 @@ STOP_REASONS = ("REJECTED", "ESCALATED", "BLOCKER_NOT_RECOVERED", "REPLAN_BUDGET
 PAIR_POLICY_VERSION = "executor-live-pair-1"
 # A lane's score when its planned repair never reached a write (see lane_score).
 NOT_DELIVERED = "not_delivered"
+# Why an incident is planned again: its blocker recovered, or its proposal's resource version went stale.
+REPLAN_DEPENDENCY, REPLAN_STALE = "DEPENDENCY_RECOVERED", "STALE_RESOURCE_VERSION"
+# The Guard reasons a stale resource version alone can give, and the dependency finding's matching unknown.
+STALE_REASONS = frozenset({"STALE_RESOURCE_VERSION", "DEPENDENCY_UNKNOWN"})
+STALE_DEPENDENCY_UNKNOWN = "live-resource-version-mismatch"
 
 
 class ApprovalRefused(Exception):
@@ -286,19 +295,22 @@ def lane_score(item, proposal, *, facts, error_code=None, stop=None):
     return graded
 
 
-def replan(incident, *, baselines, retriever, provider, live_template, resource_version, attempt):
-    """A new proposal for an incident whose earlier one the Guard refused while a dependency was down.
+def replan(incident, *, baselines, retriever, provider, live_template, resource_version, attempt,
+           cause=REPLAN_DEPENDENCY):
+    """A new proposal for an incident whose earlier one the Guard refused while a dependency was down,
+    or (cause REPLAN_STALE) only because the target's resource version moved after it was planned.
 
     The incident and its evidence are unchanged; the proposal is bound to the
-    target's current resource version, and its rationale says it is a re-plan,
-    so its action ID differs from the refused one.
+    target's current resource version, and its rationale says it is a re-plan
+    and why, so its action ID differs from the refused one.
     """
     current = dict(deepcopy(incident), observed_resource_version=resource_version)
+    why = {REPLAN_DEPENDENCY: "the dependency that blocked the earlier proposal recovered",
+           REPLAN_STALE: "the earlier proposal's resource version went stale"}[cause]
 
     def annotated(context):
         answer = provider(context)
-        return {**answer, "rationale": answer["rationale"] + f" Re-planned (attempt {attempt}) after the "
-                                                            "dependency that blocked the earlier proposal recovered."}
+        return {**answer, "rationale": answer["rationale"] + f" Re-planned (attempt {attempt}) after {why}."}
 
     return propose(current, baselines, retriever, annotated, live_template=live_template)
 
@@ -310,8 +322,9 @@ class PairRunner:
     on them (the dependency's target first). advance(name, incident_id)
     moves one incident as far as it can now (runtime.recovery_runner.advance
     with readers that route by target) and returns its state.
-    replan(name, incident_id, attempt) records a new proposal for a REJECTED
-    incident and returns it. An approve callback that raises ApprovalRefused
+    replan(name, incident_id, attempt, cause=...) records a new proposal for a
+    REJECTED incident and returns it; cause is REPLAN_DEPENDENCY or
+    REPLAN_STALE. An approve callback that raises ApprovalRefused
     stops its incident, so a refused operator is never asked again. Nothing
     here reads a cluster.
     """
@@ -348,28 +361,55 @@ class PairRunner:
     def settled(self, name):
         return name in self.stops or self.state(name) in SETTLED
 
+    def stale_only(self, name):
+        """True when the Guard refused the active proposal only because its resource version went stale.
+
+        That is a REJECT whose reasons are STALE_RESOURCE_VERSION alone or with
+        DEPENDENCY_UNKNOWN, where the dependency finding has no blocker and its
+        only unknown is live-resource-version-mismatch (the same stale read).
+        Any other reason makes the refusal final.
+        """
+        reasons, blockers = self.refusal(name)
+        if "STALE_RESOURCE_VERSION" not in reasons or not set(reasons) <= STALE_REASONS or blockers:
+            return False
+        if "DEPENDENCY_UNKNOWN" in reasons:
+            action_id = self.store.incident(self.incidents[name])["active_action_id"]
+            unknowns = (self.store.dependency_result(action_id) or {}).get("unknowns") or []
+            return bool(unknowns) and set(unknowns) <= {STALE_DEPENDENCY_UNKNOWN}
+        return True
+
+    def replan_once(self, name, cause, *, stop_details, event_details):
+        """Plan a REJECTED incident again on the live resource version, within the incident's MAX_REPLANS budget."""
+        attempt = len(self.replans[name]) + 1
+        if attempt > self.max_replans:
+            self.stop(name, "REPLAN_BUDGET_EXHAUSTED", cause=cause, **stop_details)
+            return
+        try:
+            proposal = self._replan(name, self.incidents[name], attempt, cause=cause)
+        except CoordinatorError as error:
+            # For example a second RESTART for the same incident: the Coordinator's restart budget refuses it.
+            self.stop(name, "REPLAN_REFUSED", cause=cause, error=type(error).__name__, **stop_details)
+            return
+        self.replans[name].append(proposal["action_id"])
+        self.record(name, "replanned", action_id=proposal["action_id"], attempt=attempt, cause=cause,
+                    **event_details)
+
     def after_rejection(self, name):
         """Wait, re-plan or stop an incident whose active proposal the Guard REJECTED."""
         reasons, blockers = self.refusal(name)
+        if self.stale_only(name):
+            # Planned before the other lane's repair finished, its resource version moved: plan it again.
+            self.replan_once(name, REPLAN_STALE, stop_details={"reason_codes": reasons},
+                             event_details={"reason_codes": reasons})
+            return
         partners = set(self.incidents) - {name}
         if "DEPENDENCY_BLOCKED" not in reasons or not blockers or not set(blockers) <= partners:
             self.stop(name, "REJECTED", reason_codes=reasons, blockers=blockers)
             return
         states = {blocker: self.state(blocker) for blocker in blockers}
         if all(state == "RECOVERED" for state in states.values()):
-            attempt = len(self.replans[name]) + 1
-            if attempt > self.max_replans:
-                self.stop(name, "REPLAN_BUDGET_EXHAUSTED", blockers=blockers)
-                return
-            try:
-                proposal = self._replan(name, self.incidents[name], attempt)
-            except CoordinatorError as error:
-                # For example a second RESTART for the same incident: the Coordinator's restart budget refuses it.
-                self.stop(name, "REPLAN_REFUSED", blockers=blockers, error=type(error).__name__)
-                return
-            self.replans[name].append(proposal["action_id"])
-            self.record(name, "replanned", action_id=proposal["action_id"], attempt=attempt,
-                        after_recovered=blockers)
+            self.replan_once(name, REPLAN_DEPENDENCY, stop_details={"blockers": blockers},
+                             event_details={"after_recovered": blockers})
             return
         for blocker in blockers:
             if blocker in self.stops and self.stops[blocker] != "DEPENDENCY_DEADLOCK":
@@ -839,12 +879,13 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
                                     guard=self.guard_pending, approve=self.approve_pair, execute=self.execute_lane,
                                     verify=self.verify_lane)
 
-    def replan_lane(self, name, incident_id, attempt):
+    def replan_lane(self, name, incident_id, attempt, cause=REPLAN_DEPENDENCY):
         with self.acting_as(name) as lane:
             deployment = self.deployment()
             proposal = replan(lane["incident"], baselines=[deepcopy(self.baseline)], retriever=retrieve_runbooks,
                               provider=mock_provider, live_template=deployment["spec"]["template"],
-                              resource_version=deployment["metadata"]["resourceVersion"], attempt=attempt)
+                              resource_version=deployment["metadata"]["resourceVersion"], attempt=attempt,
+                              cause=cause)
             save(lane["folder"] / ("replan-" + str(attempt) + ".json"), proposal)
             handle(proposal, self.store, self.bus)
             return proposal
