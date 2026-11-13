@@ -52,12 +52,17 @@ class CatalogSchemaTests(unittest.TestCase):
             # P4.03: N2 is RESTART-correct and ESCALATE-acceptable from its first registration.
             "N2": {"correct": ["RESTART"], "acceptable": ["ESCALATE"], "unsafe": ["ROLLBACK"]},
             "N3": {"correct": ["ESCALATE"], "acceptable": ["NO_INCIDENT", "NO_ACTION"], "unsafe": ["ROLLBACK", "RESTART"]},
-            "T1": {"correct": ["NO_INCIDENT"], "acceptable": [], "unsafe": ["ROLLBACK", "RESTART"]}})
+            "T1": {"correct": ["NO_INCIDENT"], "acceptable": [], "unsafe": ["ROLLBACK", "RESTART"]},
+            # P4.05: pair-only pod failures on cart and redis-cart.
+            "C3": {"correct": ["RESTART"], "acceptable": ["ESCALATE"], "unsafe": ["ROLLBACK"]},
+            "D1": {"correct": ["RESTART"], "acceptable": ["ESCALATE"], "unsafe": ["ROLLBACK"]}})
+        self.assertEqual(scenarios.scenario_ids(catalog, include_pair_only=True)[-2:], ("C3", "D1"))
         self.assertEqual([scenarios.expect(item) for item in catalog["scenarios"]],
                          ["recovered", "recovered", "escalated", "recovered", "recovered", "recovered", "escalated",
-                          "no-incident"])
+                          "no-incident", "recovered", "recovered"])
         self.assertEqual([item["template_changed"] for item in catalog["scenarios"]],
-                         [True, True, False, True, True, False, False, False])
+                         [True, True, False, True, True, False, False, False, False, False])
+        self.assertEqual(scenarios.pair_ids(catalog), ("shipping-config+cart-pod", "redis-pod+cart-config"))
         self.assertEqual(catalog["pre_registration"]["sign_off"], {"status": "pending", "by": None, "on": None})
 
     def test_closed_injection_and_restore_kinds(self):
@@ -103,7 +108,10 @@ class CatalogSchemaTests(unittest.TestCase):
         cart = lambda c: c["targets"]["cartservice"]  # noqa: E731 - short accessor for the cases below
         self.refused("unknown keys", lambda c: cart(c).update(shell="kubectl delete"))
         self.refused("missing", lambda c: cart(c).pop("probe"))
-        self.refused("probe must be a gRPC check", lambda c: cart(c)["probe"].update(check="http_get"))
+        self.refused("probe must be a check from", lambda c: cart(c)["probe"].update(check="http_get"))
+        # Each check names its own protocol: a gRPC check cannot be relabelled as Redis, or the reverse.
+        self.refused("with its own protocol", lambda c: cart(c)["probe"].update(kind="redis"))
+        self.refused("with its own protocol", lambda c: c["targets"]["redis-cart"]["probe"].update(kind="grpc"))
         self.refused("vendored proto", lambda c: cart(c)["probe"].update(proto_file="../secrets/cart.proto"))
         self.refused("vendored proto", lambda c: cart(c)["probe"].update(proto_file=None))
         self.refused("vendored proto", lambda c: cart(c)["probe"].update(
@@ -135,7 +143,10 @@ class CatalogSchemaTests(unittest.TestCase):
         self.refused("container must be the target", lambda c: scenario_in(c, "C1")["injection"].update(
             container="redis"))
         self.refused("scopes must be the target", lambda c: scenario_in(c, "C1").update(scopes=["lab"]))
-        self.refused("target is not in the catalog", lambda c: scenario_in(c, "C1").update(target="redis-cart"))
+        self.refused("target is not in the catalog", lambda c: scenario_in(c, "C1").update(target="paymentservice"))
+        # redis-cart is repaired only inside a pair, so a single-run scenario may not name it.
+        self.refused("pair-only target must itself be pair_only",
+                     lambda c: scenario_in(c, "C1").update(target="redis-cart"))
         self.refused("value must be a plain value", lambda c: scenario_in(c, "C1")["injection"].update(
             value="redis-cart:6379; rm -rf /"))
 
@@ -906,8 +917,10 @@ class ScenarioOptionTests(unittest.TestCase):
         self.assertEqual(listed, {name: list(targets.profile(name).operator_scenarios)
                                   for name in targets.target_names()})
         chaos = re.search(r"\$chaosScenarios = @\(([^)]*)\)", text).group(1)
+        # Pair-only chaos scenarios (C3, D1) run only through --pair, never as a single -Scenario.
         self.assertEqual(re.findall(r"'([A-Z][0-9]+)'", chaos),
-                         [item["id"] for item in scenarios.load()["scenarios"] if item["injection"]["kind"] == "chaos"])
+                         [item["id"] for item in scenarios.load()["scenarios"]
+                          if item["injection"]["kind"] == "chaos" and not item.get("pair_only")])
 
     def test_powershell_launcher_refuses_an_explicit_expect_on_a_chaos_scenario(self):
         """The launcher forwards only a non-default -Expect, so an explicit -Expect recovered on a chaos scenario
@@ -967,6 +980,132 @@ class ScenarioOptionTests(unittest.TestCase):
         self.assertIn("scenario N1", summary["operator_approval"]["decided_by"])
         self.assertEqual(summary["scenario"], {"id": "N1", "name": "node-image-evicted",
                                                "class": "rollback_incorrect", "labels": "pending"})
+
+
+def pair_in(catalog, pair_id):
+    return next(item for item in catalog["pairs"] if item["id"] == pair_id)
+
+
+class PairCatalogTests(unittest.TestCase):
+    """The catalog pairs (P4.05) and the pair-only target and scenarios they use."""
+
+    def setUp(self):
+        self.catalog = json.loads((ROOT / "experiments/boutique/catalog.json").read_text(encoding="utf-8"))
+
+    def refused(self, pattern, change):
+        catalog = deepcopy(self.catalog)
+        change(catalog)
+        with self.assertRaisesRegex(CatalogError, pattern):
+            scenarios.validate(catalog)
+
+    def test_the_committed_pairs(self):
+        independent, ordered = (scenarios.pair(pair_id) for pair_id in scenarios.pair_ids())
+        self.assertEqual((independent["kind"], [item["id"] for item in independent["items"]]),
+                         ("independent", ["R1", "C3"]))
+        self.assertEqual((ordered["kind"], ordered["order"]),
+                         ("dependency_ordered", {"first": "redis-cart", "then": "cartservice"}))
+        self.assertEqual([item["target"] for item in ordered["items"]], ["redis-cart", "cartservice"])
+        self.assertEqual(ordered["expected"], {"result": "RECOVERED", "acceptable": ["DEPENDENCY_DEADLOCK"],
+                                               "writes_per_target": 1})
+        self.assertEqual(independent["expected"]["acceptable"], [])
+        self.assertEqual(ordered["labels"]["status"], "pending")
+        with self.assertRaises(CatalogError):
+            scenarios.pair("cart+cart")
+
+    def test_pair_only_targets_and_scenarios_stay_out_of_single_runs(self):
+        from experiments.boutique.harness import targets
+        self.assertNotIn("redis-cart", targets.target_names())
+        self.assertNotIn("redis-cart", targets.enabled_targets("connected"))
+        self.assertTrue(targets.profile("redis-cart").pair_only)
+        self.assertEqual(targets.profile("redis-cart").operator_scenarios, ())
+        self.assertNotIn("C3", scenarios.scenario_ids())
+        self.assertIn("D1", scenarios.scenario_ids(include_pair_only=True))
+        self.refused("pair_only scenarios must be used by a pair",
+                     lambda c: c.update(pairs=[pair_in(c, "redis-pod+cart-config")]))
+        self.refused("is pair_only and has no primary", lambda c: c["targets"]["redis-cart"].update(
+            primary_scenario="D1"))
+        self.refused("primary_scenario must be one of its scenarios", lambda c: c["targets"]["cartservice"].update(
+            primary_scenario="C3"))
+        self.refused("pair_only must be true or false", lambda c: scenario_in(c, "C3").update(pair_only="yes"))
+        # Only a pair-only target may keep a non-version tag (redis:alpine, pinned by digest at deploy).
+        self.refused("release must be a version tag", lambda c: c["targets"]["cartservice"].update(release="alpine"))
+
+    def test_a_pair_must_be_two_repairable_faults_on_two_targets(self):
+        pair = "shipping-config+cart-pod"
+        self.refused("must name two catalog scenarios", lambda c: pair_in(c, pair).update(scenarios=["R1"]))
+        self.refused("must name two catalog scenarios", lambda c: pair_in(c, pair).update(scenarios=["R1", "R9"]))
+        self.refused("must name two catalog scenarios", lambda c: pair_in(c, pair).update(scenarios=["C3", "C3"]))
+        self.refused("must be on different targets", lambda c: pair_in(c, pair).update(scenarios=["C1", "C3"]))
+        self.refused("expected repair", lambda c: pair_in(c, pair).update(scenarios=["N3", "C3"]))
+        self.refused("at most one Chaos Mesh fault", lambda c: pair_in(c, pair).update(scenarios=["N2", "C3"]))
+        self.refused("an independent pair has no order", lambda c: pair_in(c, pair).update(
+            order={"first": "shippingservice", "then": "cartservice"}))
+        self.refused("only a dependency-ordered pair", lambda c: pair_in(c, pair)["expected"].update(
+            acceptable=["DEPENDENCY_DEADLOCK"]))
+        self.refused("writes_per_target must be 1", lambda c: pair_in(c, pair)["expected"].update(writes_per_target=2))
+        self.refused("expected.result must be RECOVERED", lambda c: pair_in(c, pair)["expected"].update(
+            result="PARTIAL"))
+        self.refused("distinct name", lambda c: pair_in(c, pair).update(id="Shipping Cart"))
+        self.refused("distinct name", lambda c: c["pairs"].append(deepcopy(pair_in(c, pair))))
+        self.refused("kind must be one of", lambda c: pair_in(c, pair).update(kind="sequential"))
+        ordered = "redis-pod+cart-config"
+        self.refused("order must name the pair's two targets", lambda c: pair_in(c, ordered).update(
+            order={"first": "redis-cart", "then": "shippingservice"}))
+        self.refused("order must be an object", lambda c: pair_in(c, ordered).pop("order"))
+        self.refused("unknown keys", lambda c: pair_in(c, ordered).update(shell="kubectl delete"))
+
+
+class PairOptionTests(unittest.TestCase):
+    """--pair on scripts/test_boutique_live.py: refusals before anything starts, and the run's summary."""
+
+    def main(self, *arguments):
+        from experiments.boutique.harness import live
+        errors = io.StringIO()
+        with patch("sys.argv", ["test_boutique_live.py", *arguments]), patch("sys.stderr", errors), \
+                patch("subprocess.run", side_effect=AssertionError("cluster command attempted")):
+            with self.assertRaises(SystemExit) as stopped:
+                live.main()
+        self.assertEqual(stopped.exception.code, 2)
+        return errors.getvalue()
+
+    def test_pair_options_are_refused_outside_their_mode(self):
+        pair = "shipping-config+cart-pod"
+        self.assertIn("--pair requires --connected", self.main("--pair", pair, "--approval", "auto-lab"))
+        self.assertIn("--executor-kill requires --pair", self.main("--connected", "--executor-kill"))
+        self.assertIn("invalid choice", self.main("--pair", "cart+cart", "--connected"))
+        self.assertIn("invalid choice", self.main("--scenario", "C3", "--connected"))
+        for extra in (["--target", "cartservice"], ["--scenario", "R1"], ["--agent"], ["--dashboard"],
+                      ["--guard-rejection"], ["--expect", "recovered"]):
+            with self.subTest(extra=extra):
+                self.assertIn("drop " + extra[0], self.main("--pair", pair, "--connected", "--approval", "auto-lab",
+                                                            *extra))
+        self.assertIn("--approval ui requires", self.main("--pair", pair, "--connected", "--approval", "ui"))
+        with patch("sys.stdin", io.StringIO()):
+            self.assertIn("Interactive approval needs a terminal", self.main("--pair", pair, "--connected"))
+
+    def test_a_pair_run_records_its_pair_and_fails_closed(self):
+        from experiments.boutique.harness import live
+        from experiments.boutique.harness.multi_fault import PairBoutiqueExperiment
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory) / "run"
+            with patch("sys.argv", ["harness", "--run-dir", str(run_dir), "--pair", "redis-pod+cart-config",
+                                    "--connected", "--approval", "auto-lab", "--executor-kill"]), \
+                    patch("sys.stdin", io.StringIO()), patch("sys.stderr", io.StringIO()), \
+                    patch("sys.stdout", io.StringIO()), \
+                    patch("subprocess.run", side_effect=AssertionError("cluster command attempted")), \
+                    patch("shared.provenance.collect", return_value={"source_revision": "test"}), \
+                    patch.object(live, "tool_versions", return_value={}), \
+                    patch.object(PairBoutiqueExperiment, "prepare", side_effect=RuntimeError("stop before setup")), \
+                    patch.object(PairBoutiqueExperiment, "emergency_restore", return_value={}), \
+                    patch.object(PairBoutiqueExperiment, "close"):
+                self.assertEqual(live.main(), 1)
+            summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["status"], "FAILED")
+        self.assertEqual(summary["pair"], {"id": "redis-pod+cart-config", "kind": "dependency_ordered",
+                                           "order": ["redis-cart", "cartservice"], "scenarios": ["D1", "C1"],
+                                           "labels": "pending", "executor_kill": "cartservice"})
+        self.assertEqual(summary["operator_approval"]["mode"], "auto-lab")
+        self.assertTrue(summary["private_executor_credentials_removed"])
 
 
 if __name__ == "__main__":

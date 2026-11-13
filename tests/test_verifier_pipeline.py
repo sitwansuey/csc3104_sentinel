@@ -150,6 +150,73 @@ class GrpcVerifierTests(unittest.TestCase):
         self.assertEqual(verify(self.execution, rows, self.policy, final=False), result)
 
 
+def redis_policy(template):
+    """A redis-cart health policy (P4.05): a PING must answer exactly PONG."""
+    policy = grpc_policy(template)
+    health = policy["health"]
+    del health["required_grpc_status"]
+    health.update(protocol="redis", required_redis_reply="PONG")
+    return policy
+
+
+def redis_samples(execution, template):
+    rows = grpc_samples(execution, template)
+    for row in rows:
+        for key in ("grpc_status", "application_check_passed"):
+            del row[key]
+        row.update(protocol="redis", redis_reply="PONG")
+    return rows
+
+
+class RedisVerifierTests(unittest.TestCase):
+    """The Redis protocol check (P4.05) is as strict as the gRPC one: an exact reply, never a guess."""
+
+    def setUp(self):
+        self.execution = load("messages/execution-result.json")
+        self.template = load("messages/proposal.json")["parameters"]["template_sha256"]
+        self.policy = redis_policy(self.template)
+        self.samples = redis_samples(self.execution, self.template)
+
+    def test_pong_with_readiness_and_template_is_recovered(self):
+        outcome = verify(self.execution, self.samples, self.policy)
+        self.assertEqual(outcome["status"], "RECOVERED")
+        health = next(check for check in outcome["checks"] if check["name"] == "service_health")
+        self.assertIn("latest reply PONG", health["detail"])
+
+    def test_a_wrong_reply_is_not_recovered_and_its_text_stays_out_of_the_outcome(self):
+        samples = deepcopy(self.samples)
+        samples[1]["redis_reply"] = "LOADING Redis is loading the dataset in memory"
+        outcome = verify(self.execution, samples, self.policy)
+        self.assertEqual(outcome["status"], "NOT_RECOVERED")
+        samples = deepcopy(self.samples)
+        samples[2]["redis_reply"] = "ERR secret-detail"
+        outcome = verify(self.execution, samples, self.policy)
+        self.assertEqual(outcome["status"], "NOT_RECOVERED")
+        self.assertNotIn("secret-detail", json.dumps(outcome))
+
+    def test_missing_or_mislabelled_redis_evidence_is_unknown(self):
+        for change in ({"redis_reply": None}, {"redis_reply": ""}, {"redis_reply": "P" * 65},
+                       {"protocol": "grpc"}, {"redis_reply": 1}):
+            with self.subTest(change=change):
+                samples = deepcopy(self.samples)
+                samples[1].update(change)
+                self.assertEqual(verify(self.execution, samples, self.policy)["status"], "UNKNOWN")
+        # A gRPC-shaped reading cannot pass a Redis policy.
+        grpc = grpc_samples(self.execution, self.template)
+        self.assertEqual(verify(self.execution, grpc, self.policy)["status"], "UNKNOWN")
+
+    def test_the_redis_policy_needs_the_exact_expected_reply(self):
+        for change in ({"required_redis_reply": "OK"}, {"required_redis_reply": None}, {"protocol": "resp"}):
+            policy = deepcopy(self.policy)
+            policy["health"].update(change)
+            with self.subTest(change=change), self.assertRaises(VerifierInputError):
+                verify(self.execution, self.samples, policy)
+        policy = deepcopy(self.policy)
+        del policy["health"]["required_redis_reply"]
+        with self.assertRaises(VerifierInputError):
+            verify(self.execution, self.samples, policy)
+
+
 class VerifierWorkerTests(unittest.TestCase):
     def setUp(self):
         self.store = SQLiteStore(clock=lambda: NOW)

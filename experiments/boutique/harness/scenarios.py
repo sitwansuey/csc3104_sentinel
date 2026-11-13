@@ -17,6 +17,12 @@ Chaos Mesh scenario names one reviewed fault file (pod, cpu or network) and a
 bounded duration, never a free-form chaos spec, and carries the Observer's
 metric thresholds so every chaos run detects with the same rules.
 
+Pairs (P4.05) name two scenarios injected together on the connected lab: an
+independent pair and a dependency-ordered pair whose second target calls the
+first. A pair-only target (redis-cart) or scenario (C3, D1) runs only inside a
+pair: it is left out of the single-scenario choices, the lab controls and the
+Executor Role of single-target runs.
+
 score() compares a delivered decision with the pre-registered sets. Decisions
 are ROLLBACK, RESTART, ESCALATE, NO_ACTION and NO_INCIDENT. A decision in none of the
 sets scores "incorrect". Every planning failure also ends in a saved ESCALATE,
@@ -74,18 +80,21 @@ _NAME = re.compile(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?")
 _ENV = re.compile(r"[A-Z_][A-Z0-9_]{0,63}")
 _ID = re.compile(r"[A-Z][0-9]{1,2}")
 _TOP = {"schema_version", "description", "pre_registration", "default_target", "scopes", "targets", "lab_sequence",
-        "scenarios"}
+        "scenarios", "pairs"}
 _SCOPE = {"cluster_id", "context", "namespace", "node"}
 _TARGET = {"kind", "label", "container", "service_account", "image_repository", "release", "port", "scopes",
            "primary_scenario", "fallback_scenario", "isolated_lab", "spec_overrides", "probe",
            "fault_storefront_impact", "ceilings"}
+# A pair-only target is repaired only inside a pair (P4.05); it has no operator sequence.
+_TARGET_OPTIONAL = {"pair_only"}
 # The scope whose namespace runs the full connected application; every target can be deployed there.
 CONNECTED_SCOPE = "connected"
 # Targets with a reviewed single-service manifest (experiments/boutique/harness/live.py shipping_manifest).
 # Only these may be offered in the single-service lab and package scopes.
 ISOLATED_LAB_TARGETS = frozenset({"shippingservice"})
-# Code-owned application probes; the catalog only names one. Each needs a proto file or server reflection.
-PROBE_CHECKS = {"shipping_quote": False, "cart_round_trip": True}
+# Code-owned application probes; the catalog only names one. Value: (protocol, needs a vendored proto).
+# A gRPC check needs a proto file or server reflection; the Redis check is a PING through redis-cli.
+PROBE_CHECKS = {"shipping_quote": ("grpc", False), "cart_round_trip": ("grpc", True), "redis_ping": ("redis", False)}
 PROTO_DIRECTORY = "experiments/workloads/boutique/"
 IMPACT_PARTS = ("home", "add_to_cart", "cart", "checkout")
 _CEILINGS = {"container_requests", "container_limits", "pod_requests", "rollout_requests", "max_replicas",
@@ -95,10 +104,18 @@ _MEMORY = re.compile(r"[1-9][0-9]{0,4}(?:Mi|Gi)")
 _SEQUENCE = {"id", "title", "description", "expected"}
 _SCENARIO = {"id", "name", "class", "title", "target", "scopes", "injection", "restore", "template_changed",
              "symptom", "expected"}
+# pair_only: true marks a scenario that runs only inside a catalog pair.
+_SCENARIO_OPTIONAL = {"pair_only"}
 # Required for, and only allowed on, a Chaos Mesh scenario.
 _SCENARIO_CHAOS = {"observer_thresholds"}
 _EXPECTED = {"incident", "correct", "acceptable", "unsafe", "terminal_state"}
 _EXPECTED_OPTIONAL = {"rule_code", "guard_on_rollback"}
+# Two simultaneous faults (P4.05). A dependency-ordered pair names which target must recover first.
+PAIR_KINDS = ("independent", "dependency_ordered")
+# Pair-level results: both incidents RECOVERED with a sustained storefront, or a safe stop with no repair write.
+PAIR_RESULTS = ("RECOVERED", "DEPENDENCY_DEADLOCK")
+_PAIR = {"id", "kind", "title", "scenarios", "hypothesis", "expected"}
+_PAIR_ID = re.compile(r"[a-z]+(?:-[a-z]+)*\+[a-z]+(?:-[a-z]+)*")
 
 
 class CatalogError(ValueError):
@@ -211,7 +228,7 @@ def _validate_thresholds(value, where):
 def _validate_scenario(item, catalog, seen):
     where = "scenario " + str(item.get("id") if isinstance(item, dict) else item)
     chaos = isinstance(item, dict) and isinstance(item.get("injection"), dict) and item["injection"].get("kind") == "chaos"
-    _keys(item, _SCENARIO | (_SCENARIO_CHAOS if chaos else set()), where=where)
+    _keys(item, _SCENARIO | (_SCENARIO_CHAOS if chaos else set()), _SCENARIO_OPTIONAL, where=where)
     _require(isinstance(item["id"], str) and _ID.fullmatch(item["id"]), where + ": id must look like R1 or N1")
     _require(item["id"] not in seen["id"] and item["name"] not in seen["name"], where + ": duplicate id or name")
     seen["id"].add(item["id"])
@@ -222,6 +239,9 @@ def _validate_scenario(item, catalog, seen):
     _text(item["symptom"], where + ".symptom")
     _require(item["target"] in catalog["targets"], where + ": target is not in the catalog")
     target = catalog["targets"][item["target"]]
+    _require(item.get("pair_only", False) in (True, False), where + ".pair_only must be true or false")
+    _require(not target.get("pair_only") or item.get("pair_only") is True,
+             where + ": a scenario on a pair-only target must itself be pair_only")
     _require(isinstance(item["scopes"], list) and item["scopes"]
              and len(set(item["scopes"])) == len(item["scopes"])
              and set(item["scopes"]) <= set(target["scopes"]), where + ": scopes must be the target's scopes")
@@ -265,14 +285,19 @@ def _quantities(value, where):
 
 def _validate_target(name, target, catalog):
     where = "target " + name
-    _keys(target, _TARGET, where=where)
+    _keys(target, _TARGET, _TARGET_OPTIONAL, where=where)
+    _require(target.get("pair_only", False) in (True, False), where + ".pair_only must be true or false")
     _require(_NAME.fullmatch(name) and target["kind"] == "Deployment", where + " must be a named Deployment")
     for key in ("label", "container", "service_account"):
         _require(isinstance(target[key], str) and _NAME.fullmatch(target[key]), f"{where}.{key} must be a name")
     _require(isinstance(target["image_repository"], str)
              and re.fullmatch(r"[a-z0-9.-]+(?:/[a-z0-9._-]+)+", target["image_repository"]),
              where + ".image_repository must be a registry repository")
-    _require(isinstance(target["release"], str) and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", target["release"]),
+    # A pair-only target may keep the upstream manifest's own tag (redis:alpine); the connected
+    # harness pins every image by digest at deploy and records it in images.json.
+    _require(isinstance(target["release"], str) and bool(
+                 re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", target["release"]) or (
+                     target.get("pair_only") is True and re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", target["release"]))),
              where + ".release must be a version tag such as v0.10.7")
     _require(type(target["port"]) is int and 1 <= target["port"] <= 65535, where + ".port must be a port number")
     _require(isinstance(target["scopes"], list) and target["scopes"]
@@ -292,9 +317,9 @@ def _validate_target(name, target, catalog):
              where + ".spec_overrides.minReadySeconds must be 0 to 60")
     probe = target["probe"]
     _keys(probe, {"kind", "check", "proto_file"}, where=where + ".probe")
-    _require(probe["kind"] == "grpc" and probe["check"] in PROBE_CHECKS,
-             where + ".probe must be a gRPC check from " + ", ".join(PROBE_CHECKS))
-    if PROBE_CHECKS[probe["check"]]:
+    _require(probe["check"] in PROBE_CHECKS and probe["kind"] == PROBE_CHECKS[probe["check"]][0],
+             where + ".probe must be a check from " + ", ".join(PROBE_CHECKS) + " with its own protocol")
+    if PROBE_CHECKS[probe["check"]][1]:
         _require(isinstance(probe["proto_file"], str) and probe["proto_file"].startswith(PROTO_DIRECTORY)
                  and re.fullmatch(r"[a-z0-9_-]+\.proto", probe["proto_file"][len(PROTO_DIRECTORY):])
                  and (ROOT / probe["proto_file"]).is_file(),
@@ -318,8 +343,14 @@ def _validate_target_scenarios(name, target, catalog):
     """The primary scenario runs the operator sequence wherever the target is offered; the fallback replaces it."""
     where = "target " + name
     by_id = {item["id"]: item for item in catalog["scenarios"]}
+    if target.get("pair_only"):
+        # Repaired only inside a pair: no operator sequence, so no primary or fallback fault.
+        _require(target["primary_scenario"] is None and target["fallback_scenario"] is None,
+                 where + " is pair_only and has no primary or fallback scenario")
+        return
     primary = by_id.get(target["primary_scenario"])
-    _require(primary is not None and primary["target"] == name, where + ".primary_scenario must be one of its scenarios")
+    _require(primary is not None and primary["target"] == name and not primary.get("pair_only"),
+             where + ".primary_scenario must be one of its scenarios")
     _require(primary["class"] == "rollback_correct" and primary["template_changed"]
              and set(primary["scopes"]) == set(target["scopes"]),
              where + ".primary_scenario must be a template-changing rollback_correct fault in every target scope")
@@ -327,8 +358,8 @@ def _validate_target_scenarios(name, target, catalog):
     if fallback is None:
         return
     item = by_id.get(fallback)
-    _require(item is not None and item["target"] == name and fallback != target["primary_scenario"],
-             where + ".fallback_scenario must be another of its scenarios")
+    _require(item is not None and item["target"] == name and fallback != target["primary_scenario"]
+             and not item.get("pair_only"), where + ".fallback_scenario must be another of its scenarios")
     _require(item["class"] == "rollback_correct" and item["template_changed"]
              and item["injection"]["kind"] != primary["injection"]["kind"]
              and set(item["scopes"]) == set(target["scopes"]),
@@ -378,7 +409,63 @@ def validate(catalog):
         _validate_scenario(item, catalog, seen)
     for name, target in catalog["targets"].items():
         _validate_target_scenarios(name, target, catalog)
+    _validate_pairs(catalog)
     return catalog
+
+
+def _validate_pairs(catalog):
+    """Each pair: two connected repair scenarios on different targets; every pair-only scenario is used.
+
+    The list may be empty only when no scenario or target is pair_only.
+    """
+    pairs = catalog["pairs"]
+    _require(isinstance(pairs, list), "pairs must be a list")
+    by_id = {item["id"]: item for item in catalog["scenarios"]}
+    used, seen = set(), set()
+    for pair in pairs:
+        where = "pair " + str(pair.get("id") if isinstance(pair, dict) else pair)
+        _keys(pair, _PAIR, {"order"}, where)
+        _require(isinstance(pair["id"], str) and _PAIR_ID.fullmatch(pair["id"]) and pair["id"] not in seen,
+                 where + ": id must be a distinct name such as shipping-config+cart-pod")
+        seen.add(pair["id"])
+        _require(pair["kind"] in PAIR_KINDS, where + ".kind must be one of " + ", ".join(PAIR_KINDS))
+        _text(pair["title"], where + ".title")
+        _text(pair["hypothesis"], where + ".hypothesis")
+        ids = pair["scenarios"]
+        _require(isinstance(ids, list) and len(ids) == 2 and all(value in by_id for value in ids)
+                 and ids[0] != ids[1], where + ".scenarios must name two catalog scenarios")
+        items = [by_id[value] for value in ids]
+        names = [item["target"] for item in items]
+        _require(names[0] != names[1], where + ": the two faults must be on different targets")
+        for item in items:
+            _require(CONNECTED_SCOPE in item["scopes"] and item["expected"]["incident"] is True
+                     and item["expected"]["terminal_state"] == "RECOVERED",
+                     where + ": each fault must be a connected scenario with an expected repair")
+        # One chaos object per run keeps cleanup and the attribution proof unambiguous.
+        _require(sum(item["injection"]["kind"] == "chaos" for item in items) <= 1,
+                 where + " may use at most one Chaos Mesh fault")
+        used.update(ids)
+        if pair["kind"] == "dependency_ordered":
+            order = pair.get("order")
+            _keys(order, {"first", "then"}, where=where + ".order")
+            _require([order["first"], order["then"]] in (names, names[::-1]),
+                     where + ".order must name the pair's two targets, first and then")
+        else:
+            _require("order" not in pair, where + ": an independent pair has no order")
+        expected = pair["expected"]
+        _keys(expected, {"result", "acceptable", "writes_per_target"}, where=where + ".expected")
+        acceptable = expected["acceptable"]
+        _require(expected["result"] == "RECOVERED" and isinstance(acceptable, list)
+                 and set(acceptable) <= set(PAIR_RESULTS) - {"RECOVERED"} and len(set(acceptable)) == len(acceptable),
+                 where + ".expected.result must be RECOVERED, with acceptable results from " + ", ".join(PAIR_RESULTS))
+        _require("DEPENDENCY_DEADLOCK" not in acceptable or pair["kind"] == "dependency_ordered",
+                 where + ": only a dependency-ordered pair can stop in a dependency deadlock")
+        _require(expected["writes_per_target"] == 1, where + ".expected.writes_per_target must be 1")
+    pair_only = {item["id"] for item in catalog["scenarios"] if item.get("pair_only")}
+    _require(pair_only <= used, "pair_only scenarios must be used by a pair: " + ", ".join(sorted(pair_only - used)))
+    paired = {by_id[value]["target"] for value in used}
+    unused = sorted(name for name, target in catalog["targets"].items() if target.get("pair_only") and name not in paired)
+    _require(not unused, "pair_only targets must be repaired by a pair: " + ", ".join(unused))
 
 
 def load(path=CATALOG):
@@ -390,8 +477,24 @@ def load(path=CATALOG):
     return validate(catalog)
 
 
-def scenario_ids(catalog=None):
-    return tuple(item["id"] for item in (catalog or load())["scenarios"])
+def scenario_ids(catalog=None, *, include_pair_only=False):
+    """Scenario ids in catalog order; pair-only scenarios (P4.05) only when asked for."""
+    return tuple(item["id"] for item in (catalog or load())["scenarios"]
+                 if include_pair_only or not item.get("pair_only"))
+
+
+def pair_ids(catalog=None):
+    return tuple(item["id"] for item in (catalog or load())["pairs"])
+
+
+def pair(pair_id, catalog=None):
+    """A copy of one catalog pair, with its two scenarios (each with its target profile) under "items"."""
+    catalog = catalog or load()
+    for item in catalog["pairs"]:
+        if item["id"] == pair_id:
+            return {**deepcopy(item), "items": [scenario(value, catalog) for value in item["scenarios"]],
+                    "labels": deepcopy(catalog["pre_registration"]["sign_off"])}
+    raise CatalogError("Unknown scenario pair: " + str(pair_id))
 
 
 def scenario(scenario_id, catalog=None):
@@ -405,10 +508,13 @@ def scenario(scenario_id, catalog=None):
 
 
 def lab_scopes(catalog=None):
-    """(cluster_id, context, namespace, deployment) for every target in every scope it allows."""
+    """(cluster_id, context, namespace, deployment) for every target in every scope it allows.
+
+    Pair-only targets are left out: the lab controls never drive them.
+    """
     catalog = catalog or load()
     return frozenset((scope["cluster_id"], scope["context"], scope["namespace"], name)
-                     for name, target in catalog["targets"].items()
+                     for name, target in catalog["targets"].items() if not target.get("pair_only")
                      for scope in (catalog["scopes"][key] for key in target["scopes"]))
 
 

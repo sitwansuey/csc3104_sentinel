@@ -133,8 +133,17 @@ def validate_cart(response):
     return cart
 
 
+def validate_redis(response):
+    """A Redis PING (redis-cart, P4.05) is healthy only when it answers exactly PONG."""
+    require(response == "PONG", "Redis PING did not answer PONG")
+    return response
+
+
 # Code-owned application checks; the catalog names one per target. Value: (sample key, validator).
-PROBES = {"shipping_quote": ("quote", validate_quote), "cart_round_trip": ("cart", validate_cart)}
+PROBES = {"shipping_quote": ("quote", validate_quote), "cart_round_trip": ("cart", validate_cart),
+          "redis_ping": ("redis_reply", validate_redis)}
+# The longest Redis reply a probe keeps; anything longer is not a PING answer.
+REDIS_REPLY_LIMIT = 64
 
 
 class BoutiqueExperiment(Experiment):
@@ -267,7 +276,12 @@ class BoutiqueExperiment(Experiment):
 
     def prepare(self):
         super().prepare()
-        self.policy["health"] = {
+        self.policy["health"] = self.health_rules()
+        save(self.directory / "policy.json", self.policy)
+
+    def health_rules(self):
+        """The Verifier health policy for this run's target, in its probe's protocol."""
+        rules = {
             "protocol": "grpc", "required_grpc_status": 0,
             "minimum_samples": 3, "stable_window_seconds": 10,
             "max_sample_gap_seconds": 45, "required_dependencies": [],
@@ -276,7 +290,11 @@ class BoutiqueExperiment(Experiment):
             # Callers' gRPC reconnect backoff can outlive Pod readiness; sustained health is still required afterwards.
             "convergence_grace_seconds": 150, "verification_timeout_seconds": 300,
         }
-        save(self.directory / "policy.json", self.policy)
+        if self.profile.probe["kind"] == "redis":
+            # redis-cart (P4.05): a PING must answer exactly PONG.
+            del rules["required_grpc_status"]
+            rules.update(protocol="redis", required_redis_reply="PONG")
+        return rules
 
     def dependency_result(self, proposal):
         # Reviewed single-service topology, not automatic dependency discovery.
@@ -320,21 +338,29 @@ class BoutiqueExperiment(Experiment):
             except READ_ERRORS as error:
                 skip(error)
                 continue
-            sample = {"service": self.name, "protocol": "grpc", "dependencies": {},
-                      "grpc_status": None, "application_check_passed": None}
             key, validator = PROBES[self.profile.probe["check"]]
-            try:
-                response = self.probe_response()
-                sample.update(grpc_status=0, **{key: response})
+            if self.profile.probe["kind"] == "redis":
+                # The reply itself is the evidence; the Verifier accepts only the exact PONG.
+                sample = {"service": self.name, "protocol": "redis", "dependencies": {}, "redis_reply": None}
                 try:
-                    validator(response)
-                except (AttributeError, TypeError, ValueError, RuntimeError):
-                    sample["application_check_passed"] = False
-                else:
-                    sample["application_check_passed"] = True
-            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
-                # Do not turn a timeout or unavailable probe into an invented gRPC status.
-                sample["collection_error"] = type(error).__name__
+                    sample["redis_reply"] = self.probe_response()
+                except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+                    sample["collection_error"] = type(error).__name__
+            else:
+                sample = {"service": self.name, "protocol": "grpc", "dependencies": {},
+                          "grpc_status": None, "application_check_passed": None}
+                try:
+                    response = self.probe_response()
+                    sample.update(grpc_status=0, **{key: response})
+                    try:
+                        validator(response)
+                    except (AttributeError, TypeError, ValueError, RuntimeError):
+                        sample["application_check_passed"] = False
+                    else:
+                        sample["application_check_passed"] = True
+                except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+                    # Do not turn a timeout or unavailable probe into an invented gRPC status.
+                    sample["collection_error"] = type(error).__name__
             try:
                 after = self.deployment()
             except READ_ERRORS as error:
@@ -515,7 +541,38 @@ class BoutiqueExperiment(Experiment):
     def probe_response(self):
         """The target's catalog application check, called through cluster DNS by an unprivileged client."""
         check = self.profile.probe["check"]
+        if check == "redis_ping":
+            return self.redis_response()
         return self.quote_response() if check == "shipping_quote" else self.cart_response()
+
+    def redis_probe_pod(self, name):
+        """An unprivileged redis-cli Pod that sends one PING to the target's Service.
+
+        It runs the target's own image as pinned in the measured baseline (or,
+        before the baseline exists, the live template), so nothing new is
+        pulled: imagePullPolicy stays Never.
+        """
+        template = (self.baseline or {}).get("pod_template") or self.deployment()["spec"]["template"]
+        image = scenarios.container_image(template, self.profile.container)
+        require("@sha256:" in image, "The Redis probe image must be pinned by digest")
+        container = {"name": "probe", "image": image, "imagePullPolicy": "Never",
+                     "command": ["redis-cli", "-h", self.name, "-p", str(self.profile.port), "PING"],
+                     "resources": {"requests": {"cpu": "10m", "memory": "16Mi"},
+                                   "limits": {"cpu": "100m", "memory": "64Mi"}},
+                     "securityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
+                                         "capabilities": {"drop": ["ALL"]}}}
+        spec = {"restartPolicy": "Never", "activeDeadlineSeconds": 45, "automountServiceAccountToken": False,
+                "securityContext": {"runAsNonRoot": True, "runAsUser": 1000,
+                                    "seccompProfile": {"type": "RuntimeDefault"}},
+                "containers": [container]}
+        return {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": name, "namespace": self.namespace},
+                "spec": spec}
+
+    def redis_response(self):
+        """The PING reply text, bounded; a longer or empty reply is reported as it is, never as PONG."""
+        name = self.profile.label + "-probe-" + uuid4().hex[:10]
+        return self.run_probe_pod(name, self.redis_probe_pod(name),
+                                  lambda text: text.strip()[:REDIS_REPLY_LIMIT + 1])
 
     def probe(self):
         response = self.probe_response()
@@ -538,7 +595,10 @@ class BoutiqueExperiment(Experiment):
 
     def grpc_call(self, method, request):
         name = self.profile.label + "-probe-" + uuid4().hex[:10]
-        pod = self.probe_pod(name, method, request)
+        return self.run_probe_pod(name, self.probe_pod(name, method, request), json.loads)
+
+    def run_probe_pod(self, name, pod, parse):
+        """Create one probe Pod, wait for it to finish, and parse its log; the Pod is always deleted."""
         path = self.directory / (name + ".json")
         save(path, pod)
         try:
@@ -551,8 +611,7 @@ class BoutiqueExperiment(Experiment):
                     logs = self.kubectl("logs", name, allow_failure=True)
                     require(phase == "Succeeded" and logs.returncode == 0,
                             self.profile.label.capitalize() + " RPC failed: " + logs.stdout[-500:])
-                    response = json.loads(logs.stdout)
-                    return response
+                    return parse(logs.stdout)
                 time.sleep(1)
             raise RuntimeError(self.profile.label.capitalize() + " RPC probe timed out")
         finally:
@@ -736,8 +795,9 @@ def main():
                              "recovered for R1 and R2). 'escalated' passes only when planning ends "
                              "in a saved ESCALATE and NEEDS_REVIEW; the administrator then removes the fault")
     catalog_ids = scenarios.scenario_ids()
-    parser.add_argument("--target", choices=targets.target_names(), default=targets.default_target(),
-                        help="Catalog recovery target (default %(default)s). cartservice needs --connected")
+    parser.add_argument("--target", choices=targets.target_names(),
+                        help="Catalog recovery target (default " + targets.default_target()
+                             + "). cartservice needs --connected")
     parser.add_argument("--scenario", choices=catalog_ids,
                         help="Catalog scenario to inject (experiments/boutique/catalog.json). The default is the "
                              "target's primary scenario: R1, the invalid PORT, for shippingservice and C1 for "
@@ -767,7 +827,18 @@ def main():
                              "approval; ui: type the action ID and approve in the dashboard (needs --ui-controls)")
     parser.add_argument("--operator", help="Operator identity for interactive or ui approval "
                                            "(default lab-operator; dashboard-operator for ui)")
+    parser.add_argument("--pair", choices=scenarios.pair_ids(),
+                        help="Inject a catalog scenario pair together on the connected lab and verify each target "
+                             "on its own (P4.05); needs --connected and plans with the code rule provider")
+    parser.add_argument("--executor-kill", action="store_true",
+                        help="With --pair: kill the Executor worker right after the configuration fault's repair "
+                             "write and reconcile it without writing again")
     args = parser.parse_args()
+    if args.executor_kill and not args.pair:
+        parser.error("--executor-kill requires --pair")
+    if args.pair:
+        return pair_main(parser, args)
+    args.target = args.target or targets.default_target()
     if args.agent_config and not args.agent:
         parser.error("--agent-config requires --agent")
     if args.expect == "escalated" and not args.agent:
@@ -994,6 +1065,35 @@ def main():
         if graded.get("labels_pending"):
             print("WARNING: the scenario labels are not signed off; do not report this trial as scored", flush=True)
     return 0
+
+
+def pair_main(parser, args):
+    """Validate the --pair options and run the pair (experiments/boutique/harness/multi_fault.py)."""
+    if not args.connected:
+        parser.error("--pair requires --connected")
+    given = [option for option, value in (
+        ("--target", args.target), ("--scenario", args.scenario), ("--agent", args.agent),
+        ("--agent-config", args.agent_config), ("--expect", args.expect),
+        ("--prepared-environment", args.prepared_environment), ("--dashboard", args.dashboard),
+        ("--ui-controls", args.ui_controls), ("--pause-before-injection", args.pause_before_injection),
+        ("--guard-rejection", args.guard_rejection), ("--provider-script", args.provider_script),
+        ("--provider-policy", args.provider_policy), ("--crash-worker", args.crash_worker)) if value]
+    if given:
+        # The pair names its own targets and scenarios, plans by rule and has no dashboard end-of-run check.
+        parser.error("--pair runs its own targets, scenarios and checks; drop " + ", ".join(given))
+    try:
+        operator_identity(args.approval, args.operator)
+        require_attended(args.approval)  # Each of the two repairs needs an approval.
+    except ValueError as error:
+        parser.error(str(error))
+    if args.approval == "ui":
+        parser.error("--approval ui requires --dashboard --ui-controls, which a pair run does not use")
+    if not 1 <= args.storefront_port <= 65535:
+        parser.error("Storefront port must be valid")
+    from experiments.boutique.harness.multi_fault import run_pair
+    directory = args.run_dir or ROOT / "data/experimentation/runs" / (
+        "boutique-pair-" + now().strftime("%Y%m%dT%H%M%SZ-") + uuid4().hex[:6])
+    return run_pair(args, directory, tools=tool_versions(("kubectl", "kind", "docker", "helm")))
 
 
 if __name__ == "__main__":

@@ -129,8 +129,11 @@ class CatalogScopeTests(unittest.TestCase):
         catalog = scenarios.load()
         expected = {(catalog["scopes"][scope]["cluster_id"], catalog["scopes"][scope]["context"],
                      catalog["scopes"][scope]["namespace"], name)
-                    for name, target in catalog["targets"].items() for scope in target["scopes"]}
+                    for name, target in catalog["targets"].items() if not target.get("pair_only")
+                    for scope in target["scopes"]}
         self.assertEqual(set(lab_control.SCOPES), expected)
+        # redis-cart is repaired only inside a scenario pair (P4.05); the lab controls never drive it.
+        self.assertNotIn("redis-cart", {scope[3] for scope in lab_control.SCOPES})
         self.assertEqual([step[0] for step in lab_control.SCENARIOS], [step["id"] for step in catalog["lab_sequence"]])
 
     def test_a_second_catalog_target_is_allowed_only_in_its_own_scope(self):
@@ -148,8 +151,11 @@ class CatalogScopeTests(unittest.TestCase):
     def test_scopes_follow_a_changed_catalog(self):
         from experiments.boutique.harness import scenarios
         catalog = scenarios.load()
-        catalog["targets"].pop("cartservice")
-        catalog["scenarios"] = [item for item in catalog["scenarios"] if item["target"] != "cartservice"]
+        for name in ("cartservice", "redis-cart"):
+            catalog["targets"].pop(name)
+        catalog["scenarios"] = [item for item in catalog["scenarios"]
+                                if item["target"] not in {"cartservice", "redis-cart"}]
+        catalog["pairs"] = []
         names = {scope[3] for scope in scenarios.lab_scopes(scenarios.validate(catalog))}
         self.assertEqual(names, {"shippingservice"})
 

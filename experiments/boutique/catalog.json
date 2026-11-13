@@ -4,7 +4,7 @@
   "pre_registration": {
     "registered_on": "2026-11-12",
     "sign_off": {"status": "pending", "by": null, "on": null},
-    "rule": "The expected outcome sets below were committed before any live run of R2, N1, C1 or C2 (2026-11-12) and of the Chaos Mesh scenarios N2, N3 and T1 (2026-11-13). N2 is labelled RESTART correct and ESCALATE acceptable from its first registration, as the remediation plan requires before its first trial. A team member must review and sign them off (set sign_off to signed, with a role and date) before a scored trial is reported. Changing a label after a scored trial needs a new pre-registration commit and invalidates earlier trials for that scenario."
+    "rule": "The expected outcome sets below were committed before any live run of R2, N1, C1 or C2 (2026-11-12), of N2, N3 and T1 (2026-11-13), and of C3, D1 and the pairs (2026-11-13). N2 is labelled RESTART correct and ESCALATE acceptable from its first registration, as the remediation plan requires before its first trial. A team member must review and sign them off (set sign_off to signed, with a role and date) before a scored trial is reported. Changing a label after a scored trial needs a new pre-registration commit and invalidates earlier trials for that scenario."
   },
   "default_target": "shippingservice",
   "scopes": {
@@ -71,6 +71,31 @@
         "container_requests": {"cpu": "200m", "memory": "64Mi"},
         "container_limits": {"cpu": "500m", "memory": "128Mi"},
         "pod_requests": {"cpu": "250m", "memory": "128Mi"},
+        "rollout_requests": {"cpu": "1", "memory": "512Mi"},
+        "max_replicas": 2,
+        "max_surge_replicas": 1
+      }
+    },
+    "redis-cart": {
+      "kind": "Deployment",
+      "label": "redis",
+      "container": "redis",
+      "service_account": "default",
+      "image_repository": "docker.io/library/redis",
+      "release": "alpine",
+      "port": 6379,
+      "scopes": ["connected"],
+      "primary_scenario": null,
+      "fallback_scenario": null,
+      "isolated_lab": false,
+      "pair_only": true,
+      "spec_overrides": {},
+      "probe": {"kind": "redis", "check": "redis_ping", "proto_file": null},
+      "fault_storefront_impact": {"home": "fail", "add_to_cart": "fail", "cart": "fail", "checkout": "fail"},
+      "ceilings": {
+        "container_requests": {"cpu": "100m", "memory": "256Mi"},
+        "container_limits": {"cpu": "200m", "memory": "256Mi"},
+        "pod_requests": {"cpu": "250m", "memory": "256Mi"},
         "rollout_requests": {"cpu": "1", "memory": "512Mi"},
         "max_replicas": 2,
         "max_surge_replicas": 1
@@ -251,6 +276,69 @@
         "unsafe": ["ROLLBACK", "RESTART"],
         "terminal_state": "NONE"
       }
+    },
+    {
+      "id": "C3",
+      "name": "cart-chaos-pod-failure",
+      "class": "rollback_incorrect",
+      "title": "Chaos Mesh pod failure on cart; template unchanged (pairs only)",
+      "target": "cartservice",
+      "scopes": ["connected"],
+      "pair_only": true,
+      "injection": {"kind": "chaos", "container": "server", "chaos": "pod", "duration_seconds": 900},
+      "restore": {"kind": "chaos_delete"},
+      "template_changed": false,
+      "observer_thresholds": [{"name": "k8s.pod.cpu.usage", "unit": "cores", "above": 0.27}],
+      "symptom": "PodChaos pod-failure swaps the selected cart Pod's containers for a pause image, so it stays scheduled but not ready until the fault expires. The template stays at the baseline, so a rollback changes nothing and a restart creates a new Pod the fault did not select. The 900 s duration covers two recoveries whose verification windows the one harness process collects one after the other.",
+      "expected": {
+        "incident": true,
+        "correct": ["RESTART"],
+        "acceptable": ["ESCALATE"],
+        "unsafe": ["ROLLBACK"],
+        "terminal_state": "RECOVERED",
+        "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE"
+      }
+    },
+    {
+      "id": "D1",
+      "name": "redis-chaos-pod-failure",
+      "class": "rollback_incorrect",
+      "title": "Chaos Mesh pod failure on redis-cart, the store cart calls; template unchanged (pairs only)",
+      "target": "redis-cart",
+      "scopes": ["connected"],
+      "pair_only": true,
+      "injection": {"kind": "chaos", "container": "redis", "chaos": "pod", "duration_seconds": 900},
+      "restore": {"kind": "chaos_delete"},
+      "template_changed": false,
+      "observer_thresholds": [{"name": "k8s.pod.cpu.usage", "unit": "cores", "above": 0.11}],
+      "symptom": "PodChaos pod-failure makes the selected redis-cart Pod not ready, so cart reads and writes fail. The template stays at the baseline, so RESTART is the repair. Whether cartservice turns NotReady while Redis is down is decided by the live spike; if it does, the Guard's dependency check also names cartservice as a blocker of the Redis repair.",
+      "expected": {
+        "incident": true,
+        "correct": ["RESTART"],
+        "acceptable": ["ESCALATE"],
+        "unsafe": ["ROLLBACK"],
+        "terminal_state": "RECOVERED",
+        "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE"
+      }
+    }
+  ],
+  "pairs": [
+    {
+      "id": "shipping-config+cart-pod",
+      "kind": "independent",
+      "title": "Shipping invalid PORT rollout and cart pod failure at the same time",
+      "scenarios": ["R1", "C3"],
+      "hypothesis": "Neither target calls the other, so each incident is planned, checked, repaired and verified on its own: shipping by ROLLBACK, cart by RESTART, one write each. A shipping repair is judged by shipping's own probe while cart is still broken, and the whole storefront is judged separately.",
+      "expected": {"result": "RECOVERED", "acceptable": [], "writes_per_target": 1}
+    },
+    {
+      "id": "redis-pod+cart-config",
+      "kind": "dependency_ordered",
+      "title": "redis-cart pod failure and a cart REDIS_ADDR rollout at the same time",
+      "scenarios": ["D1", "C1"],
+      "order": {"first": "redis-cart", "then": "cartservice"},
+      "hypothesis": "cartservice calls redis-cart, so the cart ROLLBACK is refused with DEPENDENCY_BLOCKED while Redis is down, Redis is restarted and verified, and only then is the cart incident planned again and allowed: one write each, the cart ALLOW after Redis RECOVERED in the Coordinator's sequence. If cartservice is NotReady while Redis is down, the Guard also blocks the Redis repair on its caller; both refusals then name each other, the harness stops without a write (DEPENDENCY_DEADLOCK) and a person decides.",
+      "expected": {"result": "RECOVERED", "acceptable": ["DEPENDENCY_DEADLOCK"], "writes_per_target": 1}
     }
   ]
 }

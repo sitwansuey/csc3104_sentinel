@@ -304,5 +304,144 @@ class DependencyRevalidationTests(unittest.TestCase):
         self.assertEqual(flow.store.action(flow.aid)["state"], "VERIFYING")
 
 
+def cart_redis_lab(test, *, cart_ready=True):
+    """redis-cart pod failure and a cart bad rollout (P4.05); cart calls redis-cart.
+
+    cart_ready is whether cartservice stays Ready while Redis is down, which
+    the live spike decides; it matters only to the check of the Redis repair.
+    """
+    from tests.support.pair_lab import PairLab
+    directory = test.enterContext(tempfile.TemporaryDirectory())
+    lab = PairLab(directory, {"redis-cart": "pod", "cartservice": "config"},
+                  edges=[("frontend", "cartservice"), ("cartservice", "redis-cart")])
+    test.addCleanup(lab.close)
+    lab.health["cartservice"] = cart_ready
+    return lab
+
+
+class PairDependencyRevalidationTests(unittest.TestCase):
+    """The dependency-ordered pair: a BLOCKED callee refuses the caller's repair until it recovers."""
+
+    def replan(self, lab, name, attempt=1):
+        from experiments.boutique.harness.multi_fault import replan
+        from services.planner.core import mock_provider, retrieve_runbooks
+        live = lab.cluster.read(lab.incidents[name]["target"])["deployment"]
+        proposal = replan(lab.incidents[name], baselines=[lab.baselines[name]], retriever=retrieve_runbooks,
+                          provider=mock_provider, live_template=live["spec"]["template"],
+                          resource_version=live["metadata"]["resourceVersion"], attempt=attempt)
+        handle(proposal, lab.store, lab.bus)
+        return proposal
+
+    def to_ready(self, lab, proposal):
+        lab.assess(proposal)
+        decision = lab.guard()
+        self.assertEqual(lab.store.action(proposal["action_id"])["state"], "AWAITING_APPROVAL", decision)
+        lab.approve(proposal, None)
+        lab.assess(proposal)
+        lab.guard()
+        self.assertEqual(lab.store.action(proposal["action_id"])["state"], "READY")
+
+    def test_blocked_redis_rejects_the_cart_repair_then_clear_allows_exactly_one_write(self):
+        from experiments.boutique.harness.multi_fault import cross_incident_transitions, ordering_proof
+        lab = cart_redis_lab(self)
+        ids = lab.open()
+        proposals = {proposal["target"]["name"]: proposal for proposal in lab.plan()}
+        self.assertEqual({name: proposal["action"] for name, proposal in proposals.items()},
+                         {"redis-cart": "RESTART", "cartservice": "ROLLBACK"})
+        cart = proposals["cartservice"]
+        lab.assess(cart)
+        finding = lab.store.dependency_result(cart["action_id"])
+        self.assertEqual((finding["status"], finding["blockers"]), ("BLOCKED", ["redis-cart"]))
+        decision = next(item for item in lab.guard() if item["action_id"] == cart["action_id"])
+        self.assertEqual((decision["verdict"], decision["reason_codes"]), ("REJECT", ["DEPENDENCY_BLOCKED"]))
+        self.assertEqual(lab.state("cartservice"), "REJECTED")
+        # The refusal is final for that action: newer CLEAR evidence cannot revive it.
+        lab.health["redis-cart"] = True
+        with self.assertRaises(CoordinatorError):
+            handle(lab.dependency(cart), lab.store, lab.bus)
+        lab.health["redis-cart"] = False
+
+        self.to_ready(lab, proposals["redis-cart"])
+        lab.execute()
+        lab.verify()
+        self.assertEqual(lab.state("redis-cart"), "RECOVERED")
+        self.assertEqual((lab.writes("redis-cart"), lab.writes("cartservice")), (1, 0))
+
+        again = self.replan(lab, "cartservice")
+        self.assertNotEqual(again["action_id"], cart["action_id"])
+        self.assertEqual(lab.state("cartservice"), "VALIDATING")
+        self.to_ready(lab, again)
+        self.assertEqual(lab.store.dependency_result(again["action_id"])["status"], "CLEAR")
+        lab.execute()
+        lab.verify()
+        self.assertEqual((lab.state("redis-cart"), lab.state("cartservice")), ("RECOVERED", "RECOVERED"))
+        self.assertEqual((lab.writes("redis-cart"), lab.writes("cartservice")), (1, 1))
+        proof = ordering_proof(lab.store.transitions(), first_incident=ids["redis-cart"],
+                               then_incident=ids["cartservice"])
+        self.assertTrue(proof["passed"], proof)
+        self.assertEqual(cross_incident_transitions(lab.store), [])
+
+    def test_the_ordering_proof_fails_without_a_recovery_or_with_an_early_allow(self):
+        from experiments.boutique.harness.multi_fault import ordering_proof
+        rows = [{"incident_id": "INC-R", "to_state": "RECOVERED", "seq": 5, "recorded_at": "t5"},
+                {"incident_id": "INC-C", "to_state": "READY", "seq": 7, "recorded_at": "t7"}]
+        self.assertTrue(ordering_proof(rows, first_incident="INC-R", then_incident="INC-C")["passed"])
+        early = rows + [{"incident_id": "INC-C", "to_state": "READY", "seq": 3, "recorded_at": "t3"}]
+        proof = ordering_proof(early, first_incident="INC-R", then_incident="INC-C")
+        self.assertFalse(proof["passed"])
+        self.assertEqual(proof["then_ready_before_first_recovered"], [3])
+        self.assertFalse(ordering_proof(rows[1:], first_incident="INC-R", then_incident="INC-C")["passed"])
+        self.assertFalse(ordering_proof(rows[:1], first_incident="INC-R", then_incident="INC-C")["passed"])
+
+    def run_pair(self, lab, advance=None):
+        from experiments.boutique.harness.multi_fault import PairRunner
+        ids = lab.open()
+        order = {"redis-cart": ids["redis-cart"], "cartservice": ids["cartservice"]}
+        runner = PairRunner(lab.store, order, advance=advance or lab.advance,
+                            replan=lambda name, incident_id, attempt: self.replan(lab, name, attempt),
+                            clock=lambda: lab.now.timestamp(), sleep=lab.tick)
+        return ids, runner.run()
+
+    def test_the_runner_waits_for_redis_then_replans_the_cart_once(self):
+        lab = cart_redis_lab(self)
+        ids, run = self.run_pair(lab)
+        self.assertEqual(run["states"], {"redis-cart": "RECOVERED", "cartservice": "RECOVERED"})
+        self.assertEqual(run["stops"], {})
+        self.assertEqual((len(run["replans"]["redis-cart"]), len(run["replans"]["cartservice"])), (0, 1))
+        self.assertEqual((lab.writes("redis-cart"), lab.writes("cartservice")), (1, 1))
+        replanned = next(event for event in run["events"] if event["event"] == "replanned")
+        self.assertEqual(replanned["after_recovered"], ["redis-cart"])
+
+    def test_refusals_that_name_each_other_stop_both_without_a_write(self):
+        from experiments.boutique.harness import scenarios
+        from experiments.boutique.harness.multi_fault import pair_result, shop_outcome
+        lab = cart_redis_lab(self, cart_ready=False)
+        ids, run = self.run_pair(lab)
+        self.assertEqual(run["stops"], {"redis-cart": "DEPENDENCY_DEADLOCK", "cartservice": "DEPENDENCY_DEADLOCK"})
+        self.assertEqual(run["states"], {"redis-cart": "REJECTED", "cartservice": "REJECTED"})
+        self.assertEqual((lab.writes("redis-cart"), lab.writes("cartservice"), lab.approvals), (0, 0, []))
+        self.assertFalse(run["budget_exhausted"])
+        pair = scenarios.pair("redis-pod+cart-config")
+        graded = pair_result(pair, shop=shop_outcome(run["states"], []), stops=run["stops"], writes={})
+        self.assertEqual(graded["result"], "DEPENDENCY_DEADLOCK")
+        self.assertTrue(graded["acceptable"])
+        self.assertFalse(graded["matched_expected"])
+
+    def test_a_dependency_that_fails_again_ends_after_one_replan(self):
+        lab = cart_redis_lab(self)
+
+        def advance(name, incident_id):
+            state = lab.advance(name, incident_id)
+            if name == "redis-cart" and state == "RECOVERED":
+                lab.health["redis-cart"] = False  # Redis drops again after its verified repair.
+            return state
+
+        ids, run = self.run_pair(lab, advance)
+        self.assertEqual(run["stops"], {"cartservice": "REPLAN_BUDGET_EXHAUSTED"})
+        self.assertEqual(len(run["replans"]["cartservice"]), 1)
+        self.assertEqual(lab.writes("cartservice"), 0)
+        self.assertEqual(lab.state("redis-cart"), "RECOVERED")
+
+
 if __name__ == "__main__":
     unittest.main()
