@@ -78,6 +78,16 @@ by Coordinator sequence numbers rather than clocks, and where a measured clock
 skew bound still applies. The [threat model](threat-model.md) maps trust boundaries to
 controls and residual risks.
 
+Recoveries are serialised per workload, not globally: a second incident on
+the same Deployment waits for the first (`planning_blocker`), while incidents
+on different Deployments proceed side by side, each with its own action,
+Guard decision, Executor write and Verifier outcome. One incident's messages
+never change another incident's state. A repair whose callee is not ready is
+refused (DEPENDENCY_BLOCKED) and planned again only after that callee
+recovers. [Two simultaneous faults](dual-fault.md) describes the pair runs
+that exercise this (tested offline only), including per-target verification
+and the separate ShopOutcome.
+
 ## Guard, approval and execution
 
 Both initial routing and actual execution validate current policy, baseline,

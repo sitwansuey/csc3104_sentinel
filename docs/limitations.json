@@ -107,16 +107,16 @@
       "impact": "Fixed in code for the four live harness paths: the Executor experiment, Boutique walkthrough, provider mode and agent mode now create approvals through the authenticated approval API, served per run by a child process with generated tokens, and the Executor's final pre-write lookup reads them through ApprovalClient. Revocation, expiry or a stopped authority therefore fails closed with zero writes, and agent mode no longer records a pre-authorised approval. An interactive run needs a person to type the exact action ID; an unattended run must opt in to auto-lab approval, recorded under the automated-lab identity and never as a person. Agent and provider modes plan through the durable Planner journal and approve through the same session, and an agent run with --expect escalated asks for no approval and starts no authority. A Boutique run with the dashboard's lab controls can instead use ui approval: the dashboard shows the pending action, the operator types its action ID and clicks Approve or Revoke, and the dashboard server relays the decision with the run's operator credential (dashboard-operator by default); the browser holds only the lab session token, which any local process can also read, so it does not identify a person. This is proven offline with the real child process and a fake Kubernetes API, for agent mode and, since P2.04, for provider mode (run_provider_case with a real provider subprocess). Live on one host from 4139385, automated only: the connected walkthrough and the agent runs approved through the authenticated approval API in auto-lab mode, recorded under the automated-lab identity with human false (C-CONNECTED-HARNESS-AUTOLAB, C-AGENT-AUTOLAB-4139385, C-AGENT-AUTOLAB-5409092), and a reject-mode negative test stopped with one refusal, no approval and no Executor record for the refused action (C-APPROVAL-REJECT). Still no evidence shows a person approving: interactive and ui approval have not run live, and live bundles before 4139385 used pre-authorised lab approval. The file-backed negative cases still give the Executor a fixed approval record that never reaches the Coordinator; they prove refusals only. The Executor experiment's rival-process check reads a file copy of the managed record, not through ApprovalClient; the target lock refuses it before it reads the approval. The Verifier acceptance script (scripts/validation/test_verifier_connected_live.py) still calls the local approve() and reads the record straight from the store; it is outside this fix. Identities are bearer tokens over loopback HTTP, not a per-person login.",
       "workaround": "Treat committed live results as pre-authorised or automated lab approval, never a person's. For new evidence of a person deciding, run with -Approval interactive (the default) and check operator_approval in summary.json.",
       "cites": [
-        {"at": "experiments/recovery/live.py:423", "text": "record = self.request_approval(proposal, first)"},
-        {"at": "experiments/recovery/live.py:437", "text": "approval_reader=self.approval_authority().executor_client() if coordinator else None"},
-        {"at": "runtime/approval_session.py:96", "text": "secrets.token_urlsafe(48)"},
-        {"at": "runtime/approval_session.py:315", "text": "no person decided"},
-        {"at": "experiments/recovery/live.py:413", "text": "record if approval and not coordinator else None"},
-        {"at": "experiments/recovery/live.py:492", "text": "\"runtime.live_executor\""},
+        {"at": "experiments/recovery/live.py:435", "text": "record = self.request_approval(proposal, first)"},
+        {"at": "experiments/recovery/live.py:449", "text": "approval_reader=self.approval_authority().executor_client() if coordinator else None"},
+        {"at": "runtime/approval_session.py:106", "text": "secrets.token_urlsafe(48)"},
+        {"at": "runtime/approval_session.py:325", "text": "no person decided"},
+        {"at": "experiments/recovery/live.py:425", "text": "record if approval and not coordinator else None"},
+        {"at": "experiments/recovery/live.py:504", "text": "\"runtime.live_executor\""},
         {"at": "scripts/validation/verifier_connected_lab.py:198", "text": "approve(proposal[\"action_id\"], \"live-lab-operator\", store)"},
-        {"at": "tests/test_approval_session.py:346", "text": "def test_authority_down_after_allow_gives_zero_writes"},
-        {"at": "tests/test_approval_session.py:383", "text": "def test_tokens_never_reach_run_folder_logs_or_argv"},
-        {"at": "tests/test_approval_session.py:527", "text": "def test_crash_restart_passes_the_executor_token_only_through_the_worker_environment"},
+        {"at": "tests/test_approval_session.py:361", "text": "def test_authority_down_after_allow_gives_zero_writes"},
+        {"at": "tests/test_approval_session.py:398", "text": "def test_tokens_never_reach_run_folder_logs_or_argv"},
+        {"at": "tests/test_approval_session.py:542", "text": "def test_crash_restart_passes_the_executor_token_only_through_the_worker_environment"},
         {"at": "experiments/boutique/harness/agent_live.py:375", "text": "return self.request_approval(proposal, decision)"},
         {"at": "scripts/boutique_provider.py:30", "text": "approve=lab.request_approval"},
         {"at": "tests/test_live_agent.py:496", "text": "def test_agent_success_approves_through_the_session_and_records_the_strategy"},
@@ -476,14 +476,23 @@
     },
     {
       "id": "L-OVERLAPPING-FAULTS",
-      "title": "Only one fault at a time has been verified",
+      "title": "Two simultaneous faults are implemented and tested offline only",
       "kind": "limitation",
-      "status": "open",
+      "status": "mitigated",
       "since": "2026-11-10",
-      "impact": "Concurrent incidents queue per workload in code, but two simultaneous faults and dependency-safe recovery have never been run live.",
-      "workaround": "Inject one fault per run.",
+      "impact": "Fixed in code; live verification pending. Concurrent incidents queue per workload, and P4.05 adds two catalog pairs run with --pair on the connected lab: an independent pair (shipping invalid PORT, ROLLBACK, and a cart Chaos Mesh pod failure, RESTART) and a dependency-ordered pair (a redis-cart pod failure, RESTART, and a cart REDIS_ADDR rollout, ROLLBACK). Each pair target is verified by its own probe and the readiness of the services it calls, never by its callers or the storefront, so one broken service can no longer mark the other target's correct repair NOT_RECOVERED; the storefront is judged separately as a ShopOutcome (RECOVERED, PARTIAL, FAILED or UNKNOWN) that never changes an incident's state. Single-target runs keep the whole-shop verification. A repair the Guard refuses with DEPENDENCY_BLOCKED because the other pair target is down is planned again once, only after that target is RECOVERED; refusals that name each other stop both incidents with no write (DEPENDENCY_DEADLOCK), and any other refusal, escalation or refused approval stops that incident only. Offline, with the real Coordinator, Guard, Executor and Verifier against fake Deployments, both incidents reach READY together with one write each, the blocked cart repair is REJECTED and then ALLOWed after Redis RECOVERED with exactly one write, and no incident changes state because of the other. Nothing has run on a cluster: the live recipe (docs/dual-fault.md), including the Executor-kill variant and the timing comparison with single-fault runs, is not run, the pair labels need sign-off, and whether cartservice stays Ready while Redis is down (which decides between an ordered recovery and DEPENDENCY_DEADLOCK) is unknown until the spike. redis-cart is a third, pair-only target: its pair's Executor Role, allowlist and approval authority name it, and a Redis restart empties the lab's cart data. One harness process drives both incidents and collects one target's verification window at a time, on one host, so pair timings do not measure independent workers. The cart and Redis pod failures have no single-run form to compare against. Arbitrary N-fault recovery is not claimed.",
+      "workaround": "Quote no pair result until the live recipe in docs/dual-fault.md has run with signed-off labels; until then inject one fault per run for live claims.",
       "cites": [
-        {"at": "docs/planner.md", "text": "single-case `-Agent`"}
+        {"at": "docs/planner.md", "text": "single-case `-Agent`"},
+        {"at": "experiments/boutique/harness/multi_fault.py", "text": "def shop_outcome(states, journeys, *, required_passes=SHOP_PASSES):"},
+        {"at": "experiments/boutique/harness/multi_fault.py", "text": "class PairRunner:"},
+        {"at": "experiments/boutique/harness/connected.py", "text": "def verification_dependencies(graph, name):"},
+        {"at": "experiments/boutique/catalog.json", "text": "\"id\": \"redis-pod+cart-config\""},
+        {"at": "tests/test_dependency_revalidation.py", "text": "def test_blocked_redis_rejects_the_cart_repair_then_clear_allows_exactly_one_write"},
+        {"at": "tests/test_overlapping_recovery.py", "text": "def test_both_incidents_reach_ready_together_and_each_gets_one_write"},
+        {"at": "tests/test_coordinator.py", "text": "def test_an_outcome_for_one_incident_never_transitions_the_other"},
+        {"at": "tests/test_boutique_connected.py", "text": "def test_target_scope_ignores_the_storefront_and_unrelated_services"},
+        {"at": "docs/dual-fault.md", "text": "## Live recipe (not yet run)"}
       ],
       "planned": ["P4.05"],
       "issues": [77, 87]
@@ -722,7 +731,7 @@
       "impact": "A single transient read error ended verification with no outcome.",
       "workaround": "Not needed.",
       "cites": [
-        {"at": "tests/test_verifier_pipeline.py:482", "text": "def test_sampler_skips_a_failed_cluster_read_and_stops_after_three_in_a_row"}
+        {"at": "tests/test_verifier_pipeline.py:549", "text": "def test_sampler_skips_a_failed_cluster_read_and_stops_after_three_in_a_row"}
       ],
       "planned": [],
       "issues": []

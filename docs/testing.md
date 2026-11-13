@@ -288,6 +288,16 @@ true-negative proof. They are tested offline only; the install, spikes and
 trials are in [Chaos Mesh in guarded recovery](chaos.md#chaos-mesh-in-guarded-recovery),
 and the labels need sign-off before a scored trial.
 
+Two simultaneous faults (P4.05) run as catalog pairs with `--pair`: an
+independent pair (shipping PORT rollout and cart pod failure) and a
+dependency-ordered pair (redis-cart pod failure and a cart REDIS_ADDR
+rollout). Each target is verified by its own probe and callees, and the
+storefront is judged separately as a ShopOutcome. The offline checks are
+`tests/test_overlapping_recovery.py`, `tests/test_dependency_revalidation.py`,
+`tests/test_coordinator.py` (`CrossIncidentTests`) and
+`tests/test_boutique_connected.py`; the live recipe, not yet run, is in
+[Two simultaneous faults](dual-fault.md#live-recipe-not-yet-run).
+
 ## Agent-mode acceptance
 
 This needs a reachable Ollama server and a model you installed; see
