@@ -624,6 +624,13 @@ def time_skew(name, apps, offset_seconds, seconds):
 ALL_CHECKS = ("I1", "I2", "I3", "I4", "I5", "I6", "X1", "X2", "X3", "X4", "I7")
 
 
+# Scenario.options["auto_approve"]: True (the default) approves each action waiting for approval from the
+# injection on, False never, and AFTER_FAULT only once the scenario's runner has returned (its fault
+# removed). S6 approves its first action by hand during the partition; a re-plan after a stale refusal
+# (the sentinel-dist Coordinator runs with --stale-replans) then still gets its operator.
+AFTER_FAULT = "after_fault"
+
+
 @dataclass(frozen=True)
 class Scenario:
     name: str
@@ -665,7 +672,7 @@ SCENARIOS = {item.name: item for item in (
     Scenario("S6", "Partition the Coordinator from every worker for three leases",
              "NetworkChaos partition Coordinator<->all workers while an approval is pending", "S6",
              "0 template writes during the partition, every incident terminal after it",
-             options={"auto_approve": False}),
+             options={"auto_approve": AFTER_FAULT}),
     Scenario("S7", "Both Executors' clocks 300 s behind (TimeChaos)",
              "TimeChaos -300 s on executor-a and executor-b", "S7", "FAILED, none RECOVERED, 0 Sentinel template "
              "writes"),
@@ -817,10 +824,14 @@ def coordinator_recovery(fault_at, ready_at, access, transitions):
 
 
 def private_file(directory, prefix, text):
-    """A new file in directory, readable by the owner only, holding text; the caller deletes it."""
+    """A new file in directory holding text; the caller deletes it.
+
+    mkstemp creates it with mode 0600 on POSIX; on Windows it takes the
+    directory's ACL, so the run directory is what keeps it private there.
+    """
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    descriptor, name = tempfile.mkstemp(prefix=prefix, suffix=".json", dir=directory)  # Created with mode 0600.
+    descriptor, name = tempfile.mkstemp(prefix=prefix, suffix=".json", dir=directory)
     with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
         stream.write(text)
     return Path(name)

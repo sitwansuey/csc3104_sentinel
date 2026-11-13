@@ -8,6 +8,7 @@ from copy import deepcopy
 import json
 
 from shared import log, tracing
+from shared.actions import STALE_READ_SPEC
 from shared.contracts import validate_message
 from services.coordinator.store import (
     CoordinatorError, LOG, SQLiteStore, SupersededResult, _digest, _json, _require, _time,
@@ -274,6 +275,49 @@ STALE_REPLAN_CAUSE = "stale_replan"
 MAX_STALE_REPLANS = 5
 
 
+def _replan_declined(message, store, action):
+    """Why a stale-only refusal of the active ROLLBACK must stand; None when a re-plan may be queued.
+
+    A re-plan is only for status churn on the spec the incident observed,
+    inside the proposal's first approval cycle:
+    - SPEC_CHANGED / SPEC_UNKNOWN: the Guard's report must show the live
+      metadata.generation it read equal to the incident's observed_generation.
+      A status write moves the resourceVersion and leaves the generation; a
+      change to the spec (an operator's fix, a new deploy, another
+      controller's write) moves both, and a ROLLBACK planned from the older
+      evidence would overwrite it. Without the report's record the refusal
+      stands.
+    - APPROVAL_REVOKED: the operator withdrew an approval of the action.
+      The re-check after a revocation must not turn into new work.
+    - ALLOWED_BEFORE / SEALED: the action was ALLOWed once (an Executor
+      command existed) or a seal was required for it. Such an action ends
+      as P3.04 says: the version it was planned on is gone.
+    """
+    action_id = message["action_id"]
+    report = store.guard_report(_digest(message), action_id) or {}
+    records = [check for check in report.get("checks", []) if isinstance(check, dict)
+               and check.get("code") == STALE_READ_SPEC] if isinstance(report, dict) else []
+    live = records[0].get("actual") if len(records) == 1 else None
+    generation = live.get("generation") if isinstance(live, dict) else None
+    observed = store.message_payload(_json(["incident", message["incident_id"], ""]))
+    _require(observed is not None, "The incident message must be recorded first")
+    expected = json.loads(observed)["observed_generation"]
+    if type(generation) is not int:
+        return "SPEC_UNKNOWN"
+    if generation != expected:
+        return "SPEC_CHANGED"
+    if any(entry["revocation"] for entry in store.approval_history(action_id)):
+        return "APPROVAL_REVOKED"
+    if store.db.execute("SELECT 1 FROM transitions WHERE action_id=? AND to_state='READY' LIMIT 1",
+                        (action_id,)).fetchone():
+        return "ALLOWED_BEFORE"
+    owner = store.target_ownership(action["proposal"]["target"])
+    if (owner is not None and owner["seal_action_id"] == action_id) or store.db.execute(
+            "SELECT 1 FROM outbox WHERE topic='executor.seal' AND action_id=? LIMIT 1", (action_id,)).fetchone():
+        return "SEALED"
+    return None
+
+
 def replan_after_stale(message, store, *, limit):
     """Queue a re-plan after a Guard REJECT whose only reason is STALE_RESOURCE_VERSION; True when queued.
 
@@ -294,9 +338,11 @@ def replan_after_stale(message, store, *, limit):
     the proposal's digest). Nothing is retried around the check: the refused
     action stays REJECTED and its decision is kept. Only a ROLLBACK is re-planned
     (a second RESTART for one incident is refused by the restart budget), only
-    the incident's active action, and at most limit times per incident
-    (counted durably in the transitions journal); after that the stale REJECT
-    stands. limit is 0 by default (record_message, the worker transport and
+    the incident's active action, only while the live spec is the one the
+    incident observed and only inside the action's first approval cycle
+    (_replan_declined), and at most limit times per incident (counted durably
+    in the transitions journal); otherwise the stale REJECT stands. limit is 0
+    by default (record_message, the worker transport and
     runtime/coordinator_server.py --stale-replans), so nothing changes unless
     the Coordinator is configured for it.
     """
@@ -311,10 +357,12 @@ def replan_after_stale(message, store, *, limit):
             or message["validated_resource_version"] == action["proposal"]["based_on_resource_version"]):
         return False
     attempt = store.reopenings(incident_id, STALE_REPLAN_CAUSE) + 1
-    if attempt > min(limit, MAX_STALE_REPLANS):
+    declined = "LIMIT_REACHED" if attempt > min(limit, MAX_STALE_REPLANS) else _replan_declined(message, store, action)
+    if declined is not None:
+        store.after_commit(lambda: log.emit(LOG, "coordinator.replan.declined", incident_id=incident_id,
+                                            action_id=action_id, reason=declined))
         return False
     observed = store.message_payload(_json(["incident", incident_id, ""]))
-    _require(observed is not None, "The incident message must be recorded first")
     store.reopen_incident(incident_id, action_id, STALE_REPLAN_CAUSE)
     store.enqueue("planner.request", {"incident": json.loads(observed), "replan": {
         "attempt": attempt, "after_action_id": action_id,

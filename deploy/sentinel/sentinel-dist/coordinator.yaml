@@ -9,8 +9,9 @@
 # --stale-replans=3: the lab Planner has no Kubernetes token, so after a Guard
 # refusal for a stale resourceVersion alone the Coordinator sends the version
 # the Guard read back to the Planner for a new proposal, at most 3 times per
-# incident; each one is checked by the Guard and approved again
-# (services/coordinator/core.py::replan_after_stale).
+# incident, only while the target's generation is the incident's and before
+# any ALLOW, revocation or seal of that action; each one is checked by the
+# Guard and approved again (services/coordinator/core.py::replan_after_stale).
 apiVersion: v1
 kind: ServiceAccount
 metadata:

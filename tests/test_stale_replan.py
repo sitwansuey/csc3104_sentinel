@@ -11,7 +11,11 @@ API whose version moves (FakeDeploymentAPI.external_write, a write that is not
 Sentinel's). With the Coordinator's default (stale_replans=0) the refusal is
 final, as before; with the sentinel-dist setting the Guard's live read goes
 back to the Planner as a bounded re-plan, which the Guard checks again and the
-operator approves again.
+operator approves again. A re-plan is only for status churn inside the
+proposal's first approval cycle: a change to the target's spec, a revoked
+approval, an earlier ALLOW or a seal leaves the stale refusal final, as in
+S8 (revoke, the other Executor's seal moves the version) and when an
+operator's fix lands between planning and the Guard.
 """
 from contextlib import ExitStack, redirect_stderr
 from datetime import timedelta
@@ -35,10 +39,14 @@ from services.coordinator.core import (
     MAX_STALE_REPLANS, STALE_REPLAN_CAUSE, LocalEventBus, dispatch_pending, record_message, replan_after_stale,
 )
 from services.coordinator.store import SQLiteStore
+from services.guard.common import json_sha256
+from services.guard.core import evaluate_with_report
+from services.guard.decisions import STALE_READ_SPEC
 from services.observer.core import detect
 from services.planner.core import mock_provider, retrieve_runbooks
 from services.planner.store import PlannerStore
 from services.planner.worker import ReplanProvider, planning_request, prepare, replan_key
+from runtime.planner_pipeline import process_planner_requests
 from services.verifier.core import inspect_dependencies
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -114,6 +122,30 @@ class StaleReplanFlow(unittest.TestCase):
         before = self.f.cluster.read(self.incident["target"])["deployment"]["spec"]["template"]
         self.f.cluster.external_write()
         self.assertEqual(self.f.cluster.read(self.incident["target"])["deployment"]["spec"]["template"], before)
+
+    def spec_change(self, image="registry.example/demo-api:operator-hotfix"):
+        """Someone else's change to the spec (an operator's fix, a deploy): the template and generation move."""
+        def hotfix(deployment):
+            deployment["spec"]["template"]["spec"]["containers"][0]["image"] = image
+            deployment["metadata"]["generation"] += 1
+        self.f.cluster.external_write(hotfix)
+
+    def revoke(self, proposal):
+        """Revoke the latest approval through the approval API, as Lab.revoke does in S8."""
+        latest = self.f.store.approval_row(proposal["action_id"])["id"]
+        self.approval_client("operator").post("revoke", {
+            "action_id": proposal["action_id"], "proposal_sha256": digest(proposal),
+            "approval_id": latest, "reason": "withdrawn by the operator"})
+
+    def assert_final(self, refused):
+        """The stale refusal stands: no re-plan, the incident stays REJECTED, nothing written or queued."""
+        self.assertEqual(self.state(), "REJECTED")
+        self.assertEqual(self.active()["action_id"], refused["action_id"])
+        self.assertEqual(self.f.store.reopenings(self.incident["incident_id"], STALE_REPLAN_CAUSE), 0)
+        self.assertEqual(self.planner.once()["status"], "idle")
+        self.assertEqual(self.guard.once()["status"], "idle")
+        self.assertEqual(len(self.f.store.actions_for_incident(self.incident["incident_id"])), 1)
+        self.assertEqual(self.f.cluster.write_attempts, [])
 
     def finding(self, proposal):
         """The Verifier's dependency finding for the proposal on the current live state, a second later."""
@@ -211,6 +243,83 @@ class SentinelDistSettingTests(StaleReplanFlow):
         self.assertEqual(self.executor.once()["status"], "accepted")
         self.assertEqual(len(self.f.cluster.writes), 1)
 
+    def test_the_guard_records_the_generation_its_stale_read_saw_without_changing_the_decision(self):
+        RemoteIngress(WorkerClient(self.url, "observer", self.services["observer"][1], timeout=2))(self.incident)
+        self.plan()
+        self.status_write()
+        refusal = self.guard_pass()
+        report = self.f.store.guard_report(digest(refusal), refusal["action_id"])
+        [record] = [check for check in report["checks"] if check["code"] == STALE_READ_SPEC]
+        self.assertEqual(record["status"], "SKIP")
+        self.assertEqual(record["actual"]["generation"], self.incident["observed_generation"])
+        self.assertEqual(refusal["reason_codes"], ["STALE_RESOURCE_VERSION"])
+
+    def test_a_spec_change_between_planning_and_the_guard_is_not_replanned(self):
+        """A ROLLBACK planned from the incident's evidence must not overwrite someone's later change."""
+        RemoteIngress(WorkerClient(self.url, "observer", self.services["observer"][1], timeout=2))(self.incident)
+        first = self.plan()
+        self.spec_change()
+        refusal = self.guard_pass()
+        self.assertEqual((refusal["verdict"], refusal["reason_codes"]), ("REJECT", ["STALE_RESOURCE_VERSION"]))
+        self.assert_final(first)
+
+    def test_a_spec_change_between_approval_and_the_recheck_is_not_replanned(self):
+        RemoteIngress(WorkerClient(self.url, "observer", self.services["observer"][1], timeout=2))(self.incident)
+        first = self.plan()
+        self.assertEqual(self.guard_pass()["reason_codes"], ["OPERATOR_APPROVAL_REQUIRED"])
+        self.approve(first)
+        self.spec_change()
+        self.assertEqual(self.guard_pass()["reason_codes"], ["STALE_RESOURCE_VERSION"])
+        self.assert_final(first)
+
+    def test_a_spec_change_after_a_replan_ends_the_replans(self):
+        RemoteIngress(WorkerClient(self.url, "observer", self.services["observer"][1], timeout=2))(self.incident)
+        self.plan()
+        self.status_write()
+        self.assertEqual(self.guard_pass()["reason_codes"], ["STALE_RESOURCE_VERSION"])
+        second = self.plan()
+        self.spec_change()
+        self.assertEqual(self.guard_pass()["reason_codes"], ["STALE_RESOURCE_VERSION"])
+        self.assertEqual(self.state(), "REJECTED")
+        self.assertEqual(self.active()["action_id"], second["action_id"])
+        self.assertEqual(self.planner.once()["status"], "idle")
+        self.assertEqual(self.f.store.reopenings(self.incident["incident_id"], STALE_REPLAN_CAUSE), 1)
+        self.assertEqual(self.f.cluster.write_attempts, [])
+
+    def test_s8_a_revoked_approval_then_a_moved_version_is_final(self):
+        """S8: revoke while READY, the other Executor's seal moves the version, the re-check refuses it stale."""
+        RemoteIngress(WorkerClient(self.url, "observer", self.services["observer"][1], timeout=2))(self.incident)
+        first = self.plan()
+        self.assertEqual(self.guard_pass()["reason_codes"], ["OPERATOR_APPROVAL_REQUIRED"])
+        self.approve(first)
+        self.assertEqual(self.guard_pass()["verdict"], "ALLOW")
+        self.assertEqual(self.state(), "READY")
+        self.revoke(first)
+        self.status_write()  # The seal's annotation PATCH, or the Recreate status write.
+        self.assertEqual(self.guard_pass()["reason_codes"], ["STALE_RESOURCE_VERSION"])
+        self.assert_final(first)
+
+    def test_a_revocation_before_the_recheck_is_final_even_without_an_allow(self):
+        RemoteIngress(WorkerClient(self.url, "observer", self.services["observer"][1], timeout=2))(self.incident)
+        first = self.plan()
+        self.assertEqual(self.guard_pass()["reason_codes"], ["OPERATOR_APPROVAL_REQUIRED"])
+        self.approve(first)
+        self.revoke(first)
+        self.status_write()
+        self.assertEqual(self.guard_pass()["reason_codes"], ["STALE_RESOURCE_VERSION"])
+        self.assert_final(first)
+
+    def test_a_stale_recheck_after_an_allow_is_final(self):
+        """New dependency evidence after the ALLOW: the version the action was allowed on is gone (P3.04)."""
+        RemoteIngress(WorkerClient(self.url, "observer", self.services["observer"][1], timeout=2))(self.incident)
+        first = self.plan()
+        self.assertEqual(self.guard_pass()["reason_codes"], ["OPERATOR_APPROVAL_REQUIRED"])
+        self.approve(first)
+        self.assertEqual(self.guard_pass()["verdict"], "ALLOW")
+        self.status_write()
+        self.assertEqual(self.guard_pass()["reason_codes"], ["STALE_RESOURCE_VERSION"])
+        self.assert_final(first)
+
     def test_replans_are_bounded_and_the_last_stale_refusal_stands(self):
         RemoteIngress(WorkerClient(self.url, "observer", self.services["observer"][1], timeout=2))(self.incident)
         proposal = self.plan()
@@ -245,6 +354,15 @@ class DefaultSettingTests(StaleReplanFlow):
         self.assertEqual(self.f.cluster.write_attempts, [])
 
 
+def stale_report(message, generation):
+    """The Guard's report record of a stale read (services/guard/decisions.py::STALE_READ_SPEC)."""
+    return {"schema_version": "1.0", "kind": "guard_report", "decision_sha256": digest(message), "checks": [
+        {"code": "STALE_RESOURCE_VERSION", "status": "FAIL", "path": "live_state.deployment.metadata.resourceVersion",
+         "actual": message["validated_resource_version"], "expected": "x", "message": "x"},
+        {"code": STALE_READ_SPEC, "status": "SKIP", "path": "live_state.deployment.metadata.generation",
+         "actual": {"generation": generation, "template_sha256": "0" * 64}, "expected": "x", "message": "x"}]}
+
+
 def guard_result(proposal, verdict, reasons, version):
     return {"schema_version": "1.0", "kind": "guard_result", "incident_id": proposal["incident_id"],
             "action_id": proposal["action_id"], "target": proposal["target"], "verdict": verdict,
@@ -277,11 +395,20 @@ class CoordinatorRuleTests(unittest.TestCase):
         return prepare(incident, journal=journal, baseline_reader=lambda _: [self.f.baseline],
                        retriever=retrieve_runbooks, provider=provider)
 
-    def refused(self, reasons=("STALE_RESOURCE_VERSION",), limit=2):
+    def refused(self, reasons=("STALE_RESOURCE_VERSION",), limit=2, generation="observed", report=True,
+                before=None):
+        """Record the incident, a proposal and the Guard's refusal; before(proposal) runs ahead of the refusal."""
         self.record(self.incident, limit)
         proposal = self.proposal()
         self.record(proposal, limit)
-        self.record(guard_result(proposal, "REJECT", list(reasons), "rv-live"), limit)
+        if before is not None:
+            before(proposal)
+        message = guard_result(proposal, "REJECT", list(reasons), "rv-live")
+        if report:
+            with self.store.transaction():
+                self.store.save_guard_report(proposal["action_id"], stale_report(
+                    message, self.incident["observed_generation"] if generation == "observed" else generation))
+        self.record(message, limit)
         return proposal
 
     def planner_requests(self):
@@ -290,6 +417,28 @@ class CoordinatorRuleTests(unittest.TestCase):
 
     def test_only_a_refusal_for_staleness_alone_is_replanned(self):
         self.refused(("STALE_RESOURCE_VERSION", "TARGET_UID_MISMATCH"))
+        self.assertEqual(self.store.incident(self.incident["incident_id"])["state"], "REJECTED")
+        self.assertEqual(len(self.planner_requests()), 1)
+
+    def test_a_refusal_without_the_guards_record_of_the_spec_is_final(self):
+        for options in ({"report": False}, {"generation": None}, {"generation": "3"}):
+            with self.subTest(**options):
+                self.setUp()
+                self.refused(**options)
+                self.assertEqual(self.store.incident(self.incident["incident_id"])["state"], "REJECTED")
+                self.assertEqual(len(self.planner_requests()), 1)
+
+    def test_a_refusal_after_the_spec_moved_is_final(self):
+        self.refused(generation=self.incident["observed_generation"] + 1)
+        self.assertEqual(self.store.incident(self.incident["incident_id"])["state"], "REJECTED")
+        self.assertEqual(len(self.planner_requests()), 1)
+
+    def test_a_refusal_of_an_action_sealed_once_is_final(self):
+        def sealed(proposal):
+            with self.store.transaction():
+                self.store.require_seal(self.store.action(proposal["action_id"]))
+                self.store.finish_seal(proposal["target"], 0, release=True)
+        self.refused(before=sealed)
         self.assertEqual(self.store.incident(self.incident["incident_id"])["state"], "REJECTED")
         self.assertEqual(len(self.planner_requests()), 1)
 
@@ -354,6 +503,68 @@ class CoordinatorRuleTests(unittest.TestCase):
         with self.assertRaises(SystemExit), redirect_stderr(io.StringIO()):
             main(["--db", "x", "--identities", "x", "--approval-identities", "x", "--approval-permissions", "x",
                   "--stale-replans", str(MAX_STALE_REPLANS + 1)])
+
+
+class GuardRecordTests(unittest.TestCase):
+    """The Guard's report records the spec a stale read saw (STALE_READ_SPEC); the decision is unchanged."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.f = OfflineFlow(directory.name)
+        self.addCleanup(self.f.close)
+        incident = detect(fixture("observations.json")["failed-rollout"], self.f.policy)
+        journal = PlannerStore(":memory:", clock=lambda: self.f.now)
+        self.addCleanup(journal.close)
+        self.proposal = prepare(incident, journal=journal, baseline_reader=lambda _: [self.f.baseline],
+                                retriever=retrieve_runbooks, provider=mock_provider)
+
+    def evaluate(self):
+        live = self.f.cluster.read(self.proposal["target"])
+        dependencies = inspect_dependencies(self.proposal, self.f.graph, live, now=self.f.now)
+        decision, report = evaluate_with_report(self.proposal, live, self.f.policy, self.f.baseline, dependencies,
+                                                now=self.f.now)
+        return live, decision, [check for check in report["checks"] if check["code"] == STALE_READ_SPEC]
+
+    def test_only_a_stale_read_is_recorded_and_it_never_becomes_a_reason(self):
+        _, decision, records = self.evaluate()
+        self.assertEqual(records, [])
+        self.assertNotIn(STALE_READ_SPEC, decision["reason_codes"])
+        self.f.cluster.external_write()
+        live, decision, [record] = self.evaluate()
+        self.assertEqual(decision["reason_codes"], ["STALE_RESOURCE_VERSION"])
+        self.assertEqual(record["status"], "SKIP")
+        self.assertEqual(record["actual"], {"generation": live["deployment"]["metadata"]["generation"],
+                                            "template_sha256": json_sha256(live["deployment"]["spec"]["template"])})
+
+    def test_a_missing_or_malformed_generation_is_recorded_as_unknown(self):
+        for value in ("2", 0, True, None):
+            with self.subTest(generation=value):
+                def change(deployment, value=value):
+                    deployment["metadata"]["generation"] = value
+                self.f.cluster.external_write(change)
+                _, decision, [record] = self.evaluate()
+                self.assertIsNone(record["actual"]["generation"])
+
+
+class LocalPipelineTests(unittest.TestCase):
+    def test_the_local_pipeline_refuses_a_replan_request_in_both_modes(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        f = OfflineFlow(directory.name)
+        self.addCleanup(f.close)
+        incident = detect(fixture("observations.json")["failed-rollout"], f.policy)
+        with f.store.transaction():
+            record_message(incident, f.store)
+            f.store.db.execute("UPDATE outbox SET delivered=1 WHERE topic='planner.request'")
+            f.store.enqueue("planner.request", {"incident": incident, "replan": {
+                "attempt": 1, "after_action_id": "ACT-1", "resource_version": "rv-live"}})
+        journal = PlannerStore(":memory:", clock=lambda: f.now)
+        self.addCleanup(journal.close)
+        for options in ({}, {"journal": journal}):
+            with self.subTest(durable=bool(options)), self.assertRaisesRegex(ValueError, "re-plan"):
+                process_planner_requests(f.store, LocalEventBus(), baseline_reader=lambda _: [f.baseline],
+                                         retriever=retrieve_runbooks, provider=mock_provider, **options)
 
 
 class PlannerRequestTests(unittest.TestCase):

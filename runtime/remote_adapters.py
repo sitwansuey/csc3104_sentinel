@@ -111,12 +111,16 @@ class AgentPlannerAdapter(PlannerAdapter):
     def process(self, delivery, lease):
         if delivery["topic"] != "planner.request":
             raise ValueError("Planner received an incompatible request")
-        incident, key, _ = planning_request(delivery["payload"])
-        # A re-plan diagnoses again in its own workspace; its finalize hook rebinds to its own live read.
+        incident, key, attempt = planning_request(delivery["payload"])
+        # A re-plan diagnoses again in its own workspace; its finalize hook rebinds to its own live read,
+        # and its rationale says it is a re-plan, as in provider mode.
         name = incident["incident_id"] if key is None else key
         planner = self.last = self.planner(self.folder / ("incident-" + json_sha256(name)[:24]))
+        options = planner.options()
+        if key is not None:
+            options["provider"] = ReplanProvider(options["provider"], attempt)
         proposal = prepare(incident, journal=self.journal, max_attempts=self.max_attempts,
-                           retry_seconds=self.retry_seconds, key=key, **planner.options())
+                           retry_seconds=self.retry_seconds, key=key, **options)
         return (proposal, None) if proposal is not None else None
 
 

@@ -7,6 +7,20 @@ from services.planner.core import propose
 from services.planner.worker import prepare
 
 
+def _first_request(payload):
+    """The incident of a first planner.request; a re-plan request is refused.
+
+    Re-plans after a stale Guard refusal are queued only by a Coordinator
+    configured with --stale-replans, which only the worker transport passes
+    (services/coordinator/core.py::replan_after_stale); this local pipeline
+    records with the default 0. Planning one here as a first request would
+    return the incident's first saved proposal again, so it fails loudly.
+    """
+    if "replan" in payload:
+        raise ValueError("The local Planner pipeline does not handle re-plan requests; use the remote Planner worker")
+    return payload["incident"]
+
+
 def process_planner_requests(store, bus, *, baseline_reader, retriever, provider,
                              journal=None, max_attempts=3, retry_seconds=5, lease_seconds=120,
                              diagnoser=None, finalize=None, template_reader=None):
@@ -28,7 +42,7 @@ def process_planner_requests(store, bus, *, baseline_reader, retriever, provider
         request = store.route(row[0])
         if request['delivered']:
             continue
-        incident = json.loads(request['payload'])['incident']
+        incident = _first_request(json.loads(request['payload']))
         current = store.incident(incident['incident_id'])
         if current and current['state'] == 'OPEN' and not store.planning_blocker(incident['incident_id']):
             # Inference and external reads can take minutes. Never hold the
@@ -64,7 +78,7 @@ def _process_durable(store, bus, *, baseline_reader, retriever, provider, journa
         if action and action["proposal"] == saved["proposal"]:
             journal.delivered(saved["incident_id"])
     for row in store.pending_routes("planner.request"):
-        incident = json.loads(row["payload"])["incident"]
+        incident = _first_request(json.loads(row["payload"]))
         current = store.incident(incident["incident_id"])
         if not current or current["state"] != "OPEN":
             with store.transaction():

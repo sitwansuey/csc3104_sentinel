@@ -9,9 +9,11 @@ from datetime import UTC, datetime
 import io
 import json
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -633,6 +635,42 @@ class LabTests(unittest.TestCase):
         with self.assertRaises(acceptance.AcceptanceError):
             live.overlay_without_workload(overlay)
 
+    def test_deploy_applies_sentinel_without_the_workload_and_refuses_a_moved_baseline(self):
+        template = {"spec": {"containers": [{"name": "demo-api", "image": "demo-api@sha256:" + "a" * 64}]}}
+
+        class Shell:
+            def __init__(self, manifests):
+                self.manifests, self.calls, self.applied = manifests, [], None
+
+            def kubectl(self, *args, **options):
+                self.calls.append(args)
+                if args[0] == "apply":
+                    self.applied = (self.manifests / "kustomization.yaml").read_text(encoding="utf-8")
+
+        class Lab:
+            def __init__(self, live):
+                self.live = live
+
+            def target(self):
+                return {"spec": {"template": self.live}}
+        for current, raises in ((template, False), ({"spec": {"containers": [{"name": "demo-api"}]}}, True)):
+            with self.subTest(raises=raises), tempfile.TemporaryDirectory() as directory:
+                manifests = Path(directory) / "manifests"
+                shutil.copytree(acceptance.MANIFESTS, manifests)
+                shell = Shell(manifests)
+                if raises:
+                    with self.assertRaises(acceptance.AcceptanceError):
+                        live.apply_sentinel(shell, Lab(current), manifests, template)
+                else:
+                    live.apply_sentinel(shell, Lab(current), manifests, template)
+                self.assertEqual(shell.calls[0], ("apply", "--kustomize=" + str(manifests)))
+                self.assertNotIn("workload.yaml", shell.applied)
+                self.assertIn("- coordinator.yaml", shell.applied)
+                self.assertEqual(len(shell.calls), 1 + len(acceptance.DEPLOYMENTS))
+                # The repository's overlay is untouched: only the run directory's copy changed.
+                self.assertIn("- workload.yaml", (acceptance.MANIFESTS / "kustomization.yaml").read_text(
+                    encoding="utf-8"))
+
     def test_teardown_deletes_nothing_through_a_context_that_names_another_cluster(self):
         elsewhere = done(json.dumps({"clusters": [{"name": "kind-sentinel-dist", "cluster": {
             "server": "https://10.0.0.5:6443"}}]}))
@@ -948,6 +986,20 @@ class RunOneTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, self.assertRaises(acceptance.AcceptanceError):
             live.run_one(lab, acceptance.SCENARIOS["S0"], 1, self.deployed, {}, self.tokens, Path(directory))
         self.assertEqual(lab.steps[-1], "restore")
+
+    def test_s6_approves_by_hand_during_the_partition_and_waiting_actions_only_after_it(self):
+        """S6 with --stale-replans: a re-plan after the partition waits for approval and still gets its operator."""
+        self.assertEqual(acceptance.SCENARIOS["S6"].options["auto_approve"], acceptance.AFTER_FAULT)
+        for name, expected in (("S6", ["runner", "approver"]), ("S0", ["approver", "runner"]),
+                               ("S9", ["runner"])):
+            with self.subTest(scenario=name):
+                lab = FakeLab(self.rows)
+                with tempfile.TemporaryDirectory() as directory, \
+                        patch.object(live, "git_revision", lambda: "abc123"), \
+                        patch.object(live, "_operator", lambda lab, version, stopping: lab.steps.append("approver")), \
+                        patch.dict(live.RUNNERS, {name: lambda run: (time.sleep(0.2), run.lab.steps.append("runner"))}):
+                    live.run_one(lab, acceptance.SCENARIOS[name], 1, self.deployed, {}, self.tokens, Path(directory))
+                self.assertEqual([step for step in lab.steps if step in ("runner", "approver")], expected)
 
     def test_s9_neither_injects_nor_restores(self):
         lab = FakeLab([])

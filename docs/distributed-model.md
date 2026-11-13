@@ -247,7 +247,7 @@ sequence number of its newest accepted message.
 In this **sequence mode** a result is accepted only when it answers the newest
 request of its kind for the action, and that request was issued after the
 previous result of the same kind was accepted
-(`services/coordinator/core.py:160::_apply::_answers_current_request(message, store, answers)`).
+(`services/coordinator/core.py:161::_apply::_answers_current_request(message, store, answers)`).
 Its own timestamp is never compared with another process's. A result that
 answers an older request is refused even if it is stamped later, and the
 transport answers it with HTTP 409
@@ -263,17 +263,17 @@ so their tests are unchanged.
 
 | Check | Before P3.03 | Sequence mode (worker transport) | What still depends on time |
 | --- | --- | --- | --- |
-| Execution after the Guard ALLOW | Executor clock vs Guard clock (`recorded_at >= checked_at`) | The answered executor request was issued after the current Guard result was accepted (`services/coordinator/core.py:235::_apply::_issued_after(store, answers, "guard_result"`) | Nothing |
+| Execution after the Guard ALLOW | Executor clock vs Guard clock (`recorded_at >= checked_at`) | The answered executor request was issued after the current Guard result was accepted (`services/coordinator/core.py:236::_apply::_issued_after(store, answers, "guard_result"`) | Nothing |
 | Execution newer than the stored one | Executor vs Executor | The answered request is the newest executor request or reconcile command, issued after the stored execution was accepted (row above `_answers_current_request`) | Nothing |
-| Guard result newer than the stored one | Guard vs Guard (`services/coordinator/core.py:185::_apply::if previous and not sequenced:`) | The answered guard request is the newest one | Nothing |
-| Guard ALLOW not older than the latest finding | Guard vs Verifier | The answered guard request was issued after the latest finding was accepted (`services/coordinator/core.py:192::_apply::_issued_after(store, answers, "dependency_result"`); the binding of the Guard report to that finding is unchanged | Nothing |
-| Finding newer than the stored one | Verifier vs Verifier | A finding answering a dependency request: that request is the newest. A finding pushed through `ingest`: timestamps are compared only when the same identity produced both (one clock); across identities the later acceptance wins (`services/coordinator/core.py:168::_apply::previous["producer"] == producer`) | One producer's clock must not step back |
-| Health window after the write | Verifier vs Executor (`window_start >= recorded_at`) | The answered verifier request was issued after the current execution was accepted (`services/coordinator/core.py:259::_apply::_issued_after(store, answers, "execution_result"`) | See the Verifier below |
-| Approval not before the Guard decision | Coordinator vs Guard | Not compared for a sequenced decision: AWAITING_APPROVAL already proves the decision was accepted first (`services/coordinator/core.py:411::approve::meta["answers"] is None`) | Nothing |
+| Guard result newer than the stored one | Guard vs Guard (`services/coordinator/core.py:186::_apply::if previous and not sequenced:`) | The answered guard request is the newest one | Nothing |
+| Guard ALLOW not older than the latest finding | Guard vs Verifier | The answered guard request was issued after the latest finding was accepted (`services/coordinator/core.py:193::_apply::_issued_after(store, answers, "dependency_result"`); the binding of the Guard report to that finding is unchanged | Nothing |
+| Finding newer than the stored one | Verifier vs Verifier | A finding answering a dependency request: that request is the newest. A finding pushed through `ingest`: timestamps are compared only when the same identity produced both (one clock); across identities the later acceptance wins (`services/coordinator/core.py:169::_apply::previous["producer"] == producer`) | One producer's clock must not step back |
+| Health window after the write | Verifier vs Executor (`window_start >= recorded_at`) | The answered verifier request was issued after the current execution was accepted (`services/coordinator/core.py:260::_apply::_issued_after(store, answers, "execution_result"`) | See the Verifier below |
+| Approval not before the Guard decision | Coordinator vs Guard | Not compared for a sequenced decision: AWAITING_APPROVAL already proves the decision was accepted first (`services/coordinator/core.py:459::approve::meta["answers"] is None`) | Nothing |
 | Approval not from the future | Coordinator vs Guard or Executor | `approved_at > checked_at + ε` (`services/guard/core.py:159::_approval_reasons::approved_at > checked_at + skew`) | Skew up to ε is tolerated |
-| Approval expiry | Coordinator or operator vs Guard or Executor | Expired once `checked_at + ε >= expires_at` (`services/guard/core.py:161::_approval_reasons::checked_at + skew >= expires_at`), and a decision's `valid_until` ends ε before the expiry (`services/guard/decisions.py:289::_valid_until::-skew`) | An approval can end up to 2ε early, never late |
+| Approval expiry | Coordinator or operator vs Guard or Executor | Expired once `checked_at + ε >= expires_at` (`services/guard/core.py:161::_approval_reasons::checked_at + skew >= expires_at`), and a decision's `valid_until` ends ε before the expiry (`services/guard/decisions.py:314::_valid_until::-skew`) | An approval can end up to 2ε early, never late |
 | Finding not from the future | Verifier vs Guard or Executor | `checked_at > now + ε` is UNKNOWN (`services/guard/core.py:249::_evaluate_core::dependency_at > checked_at + skew`) | Skew up to ε is tolerated |
-| Finding not too old | Verifier vs Guard or Executor | Age counts ε as well (`services/guard/core.py:252::_evaluate_core::checked_at + skew - dependency_at`), and so does `valid_until` (`services/guard/decisions.py:271::_valid_until::policy[key] - margin`) | Evidence can look up to 2ε older, never younger |
+| Finding not too old | Verifier vs Guard or Executor | Age counts ε as well (`services/guard/core.py:252::_evaluate_core::checked_at + skew - dependency_at`), and so does `valid_until` (`services/guard/decisions.py:296::_valid_until::policy[key] - margin`) | Evidence can look up to 2ε older, never younger |
 
 The issued-after checks in the rows for the Guard ALLOW, the execution and the
 health window are implied by the newest-request check

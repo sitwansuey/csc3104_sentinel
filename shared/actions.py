@@ -28,6 +28,10 @@ TEMPLATE_ACTIONS = IMPLEMENTED_ACTIONS
 RESTART_ANNOTATION = "sentinel.io/restart-token"
 RESTART_TOKEN_PREFIX = "RST-"
 RESTART_TOKEN_HEX = 16
+# The Guard report's record, beside a STALE_RESOURCE_VERSION failure, of the spec its live read saw
+# (services/guard/decisions.py::_core_findings); the Coordinator's re-plan rule reads it
+# (services/coordinator/core.py::_replan_declined). Here so the Coordinator image needs no Guard module.
+STALE_READ_SPEC = "STALE_READ_SPEC"
 # The most restart-history entries the Executor supplies and the Guard accepts.
 # The ledger returns only the newest ones: a budget allows at most 100 restarts,
 # so if every one of them falls in the window the budget is already exhausted.

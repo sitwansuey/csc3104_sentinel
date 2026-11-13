@@ -171,11 +171,17 @@ provider-mode Planner has no Kubernetes credential, so it cannot read a
 newer one. Start the Coordinator with `--stale-replans N` (0 to 5, default
 0) to let a Guard REJECT whose only reason is `STALE_RESOURCE_VERSION`, for a
 ROLLBACK, reopen the incident and send the resourceVersion the Guard read
-back to the Planner, at most N times per incident. Each re-plan is a new
+back to the Planner, at most N times per incident. That happens only when
+the Guard's report shows the live `metadata.generation` still equal to the
+incident's `observed_generation` (a status write moved the version, not a
+change to the spec), and only before any ALLOW, revoked approval or seal of
+the refused action; otherwise the refusal is final. Each re-plan is a new
 proposal with a new action ID, planned under its own `planner.db` key
 (`<incident>/replan-<n>`), checked by the Guard again and approved again;
 the refused action keeps its decision
 ([distributed acceptance](distributed-acceptance.md#first-live-attempts)).
+Only the remote Planner worker handles a re-plan request; the local
+pipeline (`runtime/planner_pipeline.py`) refuses one.
 
 After a pass that completed the worker waits `--poll-seconds`
 (2 by default); a pass that refused to claim because of a store change or

@@ -27,7 +27,7 @@ from runtime.worker_health import PreflightFailed, WorkerHealth
 from runtime.worker_http import WorkerClient
 from services.observer.core import detect
 from services.planner.store import PlannerStore
-from services.planner.worker import escalation
+from services.planner.worker import ReplanProvider, escalation, replan_key
 from tests.support.fake_ollama import MODEL, FakeOllama, Reply, chat_reply
 from tests.support.file_cluster import FileCluster
 from tests.support.vocabulary import STARTUP, cite_supporting
@@ -160,6 +160,26 @@ class AgentAdapterTests(unittest.TestCase):
         self.assertNotIn(self.inputs.incident["incident_id"], str(agent.folder))
         self.assertEqual(agent.config["base_url"], "http://127.0.0.1:9")
         self.assertIs(agent.config["allow_abstention"], True)
+
+    def test_an_agent_replan_has_its_own_workspace_key_and_says_it_is_a_replan(self):
+        planner = self.adapter()
+        incident = self.inputs.incident
+        delivery = {"topic": "planner.request", "payload": {"incident": deepcopy(incident), "replan": {
+            "attempt": 2, "after_action_id": "ACT-1", "resource_version": "rv-live"}}}
+        with patch("runtime.remote_adapters.prepare", return_value=None) as prepare:
+            self.assertIsNone(planner.process(delivery, None))
+        (bound,), options = prepare.call_args.args, prepare.call_args.kwargs
+        agent = planner.last
+        self.assertEqual(bound["observed_resource_version"], "rv-live")
+        self.assertEqual(options["key"], replan_key(incident["incident_id"], 2))
+        self.assertIsInstance(options["provider"], ReplanProvider)
+        self.assertIs(options["provider"].provider, agent)
+        self.assertEqual(options["finalize"], agent.rebind)
+        self.assertIn("Re-planned (attempt 2)", options["provider"].note)
+        with patch("runtime.remote_adapters.prepare", return_value=None) as prepare:
+            planner.process(self.delivery(), None)
+        self.assertIs(prepare.call_args.kwargs["provider"], planner.last)
+        self.assertIsNone(prepare.call_args.kwargs["key"])
 
     def scripted(self, model, **options):
         self.cluster = self.stack.enter_context(FileCluster(str(self.inputs.cluster_path)))
