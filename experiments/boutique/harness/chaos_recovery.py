@@ -81,6 +81,10 @@ FORCED = {
     ("cpu", "RESTART"): "RESTART_NOT_JUSTIFIED",
     ("drift", "RESTART"): "RESTART_TEMPLATE_DRIFT",
 }
+# A forced proposal whose resourceVersion went stale before the Executor read it (a rollout in
+# progress) gets CONFLICT with no Guard decision; it is retried with a fresh proposal this many times.
+FORCED_STALE_RETRIES = 3
+FORCED_STALE_WAIT_SECONDS = 2
 
 
 def owner_label(name):
@@ -526,33 +530,54 @@ class ChaosRecoveryMixin(ScenarioScoringMixin):
         own check can refuse it, and a check that unexpectedly passes escalates
         for an operator instead of writing. No Coordinator route is made: the
         real incident's state is untouched.
+
+        A rollout still in progress (the drift cell's) can change the
+        Deployment's resourceVersion between the proposal's read and the
+        Executor's. The Executor then answers CONFLICT before any Guard check,
+        so nothing was refused or decided. Only that answer, with no Guard
+        result and no write, is retried with a fresh proposal, at most
+        FORCED_STALE_RETRIES more times; each stale attempt is kept in the proof.
         """
         folder = self.directory / label
         folder.mkdir()
-        proposal = self.forced_proposal(incident, action, incident_id)
-        before = self.deployment()
-        dependencies = self.dependency_result(proposal)
-        # No approval for a wrong action: a REJECT still outranks the missing approval, and anything else escalates.
-        for name, value in (("proposal.json", proposal), ("dependencies.json", dependencies),
-                            ("approval.json", None)):
-            save(folder / name, value)
-        adapters = self.adapters(folder)
-        try:
-            started = adapters.cluster.stats["write_attempts"]
-            result = execute(proposal, adapters)
-            entry = adapters.ledger.get(proposal["action_id"])
-            stats = {"write_attempts": adapters.cluster.stats["write_attempts"] - started}
-        finally:
-            adapters.ledger.close()
-        after = self.deployment()
-        guard = (entry or {}).get("guard_result") or {}
+        stale = []
+        for attempt in range(FORCED_STALE_RETRIES + 1):
+            proposal = self.forced_proposal(incident, action, incident_id)
+            before = self.deployment()
+            dependencies = self.dependency_result(proposal)
+            # No approval for a wrong action: a REJECT still outranks the missing approval, and anything else escalates.
+            for name, value in (("proposal.json", proposal), ("dependencies.json", dependencies),
+                                ("approval.json", None)):
+                save(folder / name, value)
+            adapters = self.adapters(folder)
+            try:
+                started = adapters.cluster.stats["write_attempts"]
+                result = execute(proposal, adapters)
+                entry = adapters.ledger.get(proposal["action_id"])
+                stats = {"write_attempts": adapters.cluster.stats["write_attempts"] - started}
+            finally:
+                adapters.ledger.close()
+            after = self.deployment()
+            guard = (entry or {}).get("guard_result") or {}
+            unchanged = fingerprint(before["spec"]["template"]) == fingerprint(after["spec"]["template"])
+            if (result["status"] == "CONFLICT" and not guard and stats["write_attempts"] == 0 and unchanged
+                    and attempt < FORCED_STALE_RETRIES):
+                stale.append({"action_id": proposal["action_id"], "executor_status": result["status"],
+                              "based_on_resource_version": proposal["based_on_resource_version"],
+                              "resource_version_at_executor": result.get("resource_version"),
+                              "details": result.get("details")})
+                save(folder / f"stale-proposal-{attempt + 1}.json", proposal)
+                time.sleep(FORCED_STALE_WAIT_SECONDS)
+                continue
+            break
         proof = {"label": label, "action": action, "expected_reason": expected_code,
                  "action_id": proposal["action_id"], "executor_status": result["status"],
                  "guard_verdict": guard.get("verdict"), "guard_reason_codes": guard.get("reason_codes", []),
                  "executor_patch_attempts": stats.get("write_attempts"),
                  "executor_journal_attempts": (entry or {}).get("attempts"),
-                 "template_unchanged": fingerprint(before["spec"]["template"]) == fingerprint(after["spec"]["template"]),
-                 "generation_unchanged": before["metadata"]["generation"] == after["metadata"]["generation"]}
+                 "template_unchanged": unchanged,
+                 "generation_unchanged": before["metadata"]["generation"] == after["metadata"]["generation"],
+                 "stale_resource_version_attempts": stale}
         save(folder / "proof.json", proof)
         self.summary.setdefault("forced_refusals", []).append(proof)
         require(proof["executor_patch_attempts"] == 0 and proof["executor_journal_attempts"] == 0

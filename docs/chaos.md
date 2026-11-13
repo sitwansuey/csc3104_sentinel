@@ -163,7 +163,14 @@ What the harness (`experiments/boutique/harness/chaos_recovery.py`) does:
   fails readiness), the Guard escalates for approval instead, nothing is
   written, and the run fails as "not refused". The correct diagonal is
   RESTART for the pod failure (N2) and ROLLBACK for the configuration fault
-  (R1). Each refusal is in `<label>/proof.json`.
+  (R1). Each refusal is in `<label>/proof.json`. The drift's rollout can
+  move the Deployment's resourceVersion between the forced proposal's read
+  and the Executor's. The Executor then answers CONFLICT before any Guard
+  check, so nothing was refused. This happened in the first live N2 trial.
+  Only that answer (CONFLICT with no Guard result and no write) is retried
+  with a fresh proposal, at most three more times, 2 s apart. Each stale
+  attempt is kept under `stale_resource_version_attempts` in the proof. A
+  version that keeps moving still fails the cell.
 - **True negative (T1, and N3 without an incident).** No incident passes
   only with a proof in `true-negative.json`: the fault confirmed injected,
   Observer samples spanning the detection window, at least one reading with
