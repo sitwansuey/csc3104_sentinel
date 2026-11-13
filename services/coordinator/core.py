@@ -271,8 +271,14 @@ def _apply(message, store, answers=None, producer=None):
 
 
 STALE_REPLAN_CAUSE = "stale_replan"
-# The most re-plans after stale refusals one incident may get, whatever the configuration asks for.
+CONFLICT_REPLAN_CAUSE = "conflict_replan"
+# The most re-plans one incident may get, for both causes together, whatever the configuration asks for.
 MAX_STALE_REPLANS = 5
+
+
+def _replans(store, incident_id):
+    """Re-plans the incident has had, either cause: one budget, and attempt n keys the Planner's row n."""
+    return sum(store.reopenings(incident_id, cause) for cause in (STALE_REPLAN_CAUSE, CONFLICT_REPLAN_CAUSE))
 
 
 def _replan_declined(message, store, action):
@@ -341,10 +347,10 @@ def replan_after_stale(message, store, *, limit):
     the incident's active action, only while the live spec is the one the
     incident observed and only inside the action's first approval cycle
     (_replan_declined), and at most limit times per incident (counted durably
-    in the transitions journal); otherwise the stale REJECT stands. limit is 0
-    by default (record_message, the worker transport and
-    runtime/coordinator_server.py --stale-replans), so nothing changes unless
-    the Coordinator is configured for it.
+    in the transitions journal, shared with replan_after_conflict); otherwise
+    the stale REJECT stands. limit is 0 by default (record_message, the worker
+    transport and runtime/coordinator_server.py --stale-replans), so nothing
+    changes unless the Coordinator is configured for it.
     """
     if (not limit or message["kind"] != "guard_result" or message["verdict"] != "REJECT"
             or message["reason_codes"] != ["STALE_RESOURCE_VERSION"]):
@@ -356,7 +362,7 @@ def replan_after_stale(message, store, *, limit):
             or action["guard_result"] != message or action["proposal"]["action"] != "ROLLBACK"
             or message["validated_resource_version"] == action["proposal"]["based_on_resource_version"]):
         return False
-    attempt = store.reopenings(incident_id, STALE_REPLAN_CAUSE) + 1
+    attempt = _replans(store, incident_id) + 1
     declined = "LIMIT_REACHED" if attempt > min(limit, MAX_STALE_REPLANS) else _replan_declined(message, store, action)
     if declined is not None:
         store.after_commit(lambda: log.emit(LOG, "coordinator.replan.declined", incident_id=incident_id,
@@ -372,6 +378,104 @@ def replan_after_stale(message, store, *, limit):
     return True
 
 
+def _conflict_replan_declined(message, store, action):
+    """Why a CONFLICT of the active ROLLBACK must stand; None when a re-plan may be queued.
+
+    - NO_EVIDENCE: the result does not carry the Executor's conflict record
+      (services/executor/core.py::_conflict), which it gives only when its
+      own read after the refusal shows that no write of the action committed
+      or can commit. A write that went in doubt (reconciled later, FENCED
+      included) or landed and was overwritten never carries it.
+    - VERSION_UNMOVED: the version read is the proposal's or the incident's.
+    - SPEC_CHANGED: the generation the Executor read is not the incident's
+      observed_generation, so the spec changed after the incident (an
+      operator's fix, a new deploy, or a write of this action); a ROLLBACK
+      planned from the older evidence would overwrite it.
+    - EARLIER_RESULT: the Executor reported on this action before (for
+      example NEEDS_RECONCILIATION): the write was in doubt at some point.
+    - APPROVAL_REVOKED / NOT_FIRST_CYCLE: an approval was revoked, or the
+      action was approved more than once or ALLOWed more than once; a
+      re-plan belongs to the first approval cycle only.
+    - SEALED: a seal was required for the action (P3.04).
+    """
+    action_id, incident_id = message["action_id"], message["incident_id"]
+    evidence = message.get("conflict")
+    if not isinstance(evidence, dict):
+        return "NO_EVIDENCE"
+    incident = json.loads(store.message_payload(_json(["incident", incident_id, ""])))
+    if evidence["resource_version"] in {action["proposal"]["based_on_resource_version"],
+                                        incident["observed_resource_version"]}:
+        return "VERSION_UNMOVED"
+    if evidence["generation"] != incident["observed_generation"]:
+        return "SPEC_CHANGED"
+    if store.db.execute("SELECT 1 FROM messages WHERE kind='execution_result' AND action_id=? LIMIT 1",
+                        (action_id,)).fetchone():
+        return "EARLIER_RESULT"
+    approvals = store.approval_history(action_id)
+    if any(entry["revocation"] is not None for entry in approvals):
+        return "APPROVAL_REVOKED"
+    allowed = store.db.execute("SELECT count(*) FROM transitions WHERE action_id=? AND to_state='READY'",
+                               (action_id,)).fetchone()[0]
+    if len(approvals) > 1 or allowed != 1:
+        return "NOT_FIRST_CYCLE"
+    owner = store.target_ownership(action["proposal"]["target"])
+    if (owner is not None and owner["seal_action_id"] == action_id) or store.db.execute(
+            "SELECT 1 FROM outbox WHERE topic='executor.seal' AND action_id=? LIMIT 1", (action_id,)).fetchone():
+        return "SEALED"
+    return None
+
+
+def replan_after_conflict(message, store, *, limit):
+    """Queue a re-plan after an Executor CONFLICT that provably wrote nothing; True when queued.
+
+    On sentinel-dist the Deployment controller writes the target's status
+    (the Recreate rollout, its progress condition) at any moment, so the
+    resourceVersion can move between the Guard's ALLOW and the Executor's
+    conditional patch, which must then refuse: the Executor's own read
+    already shows another version (NOT_SENT), or the adapter's precondition
+    is refused (REFUSED). The Executor is right to refuse, but the incident
+    ended FAILED with nothing repaired
+    (docs/distributed-acceptance.md#third-deployment-recreate-and-conflicts).
+
+    This gives such a CONFLICT the stale re-plan's path: the action stays
+    FAILED with its result, the incident goes back to OPEN (journal cause
+    conflict_replan) and a planner.request carries the version the Executor
+    read, so the Planner makes a new proposal with a new action ID, which the
+    Guard checks against live state and the operator approves again. Nothing
+    is retried around the Guard, the approval or the Executor's precondition.
+    Only a ROLLBACK is re-planned (a RESTART keeps its per-incident budget of
+    one), only the incident's active action, only when the Executor's record
+    proves nothing was written and the spec is the incident's, and only in the
+    action's first approval cycle with no revocation or seal
+    (_conflict_replan_declined). limit is the same budget as
+    replan_after_stale (--stale-replans), counted over both causes; 0, the
+    default, leaves every CONFLICT final as before.
+    """
+    if (not limit or message["kind"] != "execution_result" or message["status"] != "CONFLICT"):
+        return False
+    incident_id, action_id = message["incident_id"], message["action_id"]
+    incident, action = store.incident(incident_id), store.action(action_id)
+    if (incident is None or action is None or incident["active_action_id"] != action_id
+            or incident["state"] != "FAILED" or action["state"] != "FAILED"
+            or action["execution_result"] != message or action["proposal"]["action"] != "ROLLBACK"):
+        return False
+    attempt = _replans(store, incident_id) + 1
+    declined = ("LIMIT_REACHED" if attempt > min(limit, MAX_STALE_REPLANS)
+                else _conflict_replan_declined(message, store, action))
+    if declined is not None:
+        store.after_commit(lambda: log.emit(LOG, "coordinator.replan.declined", incident_id=incident_id,
+                                            action_id=action_id, reason=declined))
+        return False
+    observed = store.message_payload(_json(["incident", incident_id, ""]))
+    store.reopen_incident(incident_id, action_id, CONFLICT_REPLAN_CAUSE)
+    store.enqueue("planner.request", {"incident": json.loads(observed), "replan": {
+        "attempt": attempt, "after_action_id": action_id,
+        "resource_version": message["conflict"]["resource_version"], "cause": "EXECUTOR_CONFLICT"}})
+    store.after_commit(lambda: log.emit(LOG, "coordinator.replan.queued", incident_id=incident_id,
+                                        action_id=action_id, attempt=attempt, reason="EXECUTOR_CONFLICT"))
+    return True
+
+
 def record_message(message: dict, store: SQLiteStore, *, answers=None, producer=None, stale_replans=0) -> bool:
     """Record within an existing transaction, without committing or publishing.
 
@@ -380,8 +484,9 @@ def record_message(message: dict, store: SQLiteStore, *, answers=None, producer=
     passes answers (the outbox id of the request answered) and producer (the
     authenticated identity), so lifecycle order is checked by Coordinator
     sequence numbers instead of the producers' clocks. stale_replans above 0
-    lets a Guard refusal for a stale resource version queue that many re-plans
-    per incident (replan_after_stale).
+    lets a Guard refusal for a stale resource version (replan_after_stale), or
+    an Executor CONFLICT that provably wrote nothing (replan_after_conflict),
+    queue up to that many re-plans per incident in all.
     """
     _require(store.in_transaction, "record_message requires an active transaction")
     validate_message(message)
@@ -402,6 +507,7 @@ def record_message(message: dict, store: SQLiteStore, *, answers=None, producer=
             "coordinator.record", parent=parent, defer=store.after_commit, **ids):
         _apply(message, store, answers, producer)
         replan_after_stale(message, store, limit=stale_replans)
+        replan_after_conflict(message, store, limit=stale_replans)
     store.add_message(key, payload, high_water=high_water, answers=answers, producer=producer,
                       incident_id=message["incident_id"])
     store.after_commit(lambda: log.emit(LOG, "coordinator.message.recorded", **ids))

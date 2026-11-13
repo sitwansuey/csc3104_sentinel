@@ -180,6 +180,13 @@ proposal with a new action ID, planned under its own `planner.db` key
 (`<incident>/replan-<n>`), checked by the Guard again and approved again;
 the refused action keeps its decision
 ([distributed acceptance](distributed-acceptance.md#first-live-attempts)).
+The same N, shared over both causes, also covers an Executor CONFLICT after
+the ALLOW whose result carries the Executor's `conflict` record (nothing of
+the action committed or can), when the generation in it is the incident's,
+in the action's first approval cycle, with no revocation or seal; the
+re-plan request then names the cause `EXECUTOR_CONFLICT` and the version the
+Executor read
+([third deployment](distributed-acceptance.md#third-deployment-recreate-and-conflicts)).
 Only the remote Planner worker handles a re-plan request; the local
 pipeline (`runtime/planner_pipeline.py`) refuses one.
 

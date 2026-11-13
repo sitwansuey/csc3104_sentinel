@@ -893,12 +893,20 @@ class AuditReadTests(unittest.TestCase):
 class FakeLab:
     """The Lab surface run_one uses, recording the order of operator steps."""
 
-    def __init__(self, rows, *, fail_collect=False, generations=(1, 4, 4), first_at="2026-11-13T09:00:00Z",
-                 offset=0.0):
-        self.rows, self.fail_collect, self.steps = rows, fail_collect, []
+    def __init__(self, rows, *, fail_collect=False, fail_wait=False, generations=(1, 4, 4),
+                 first_at="2026-11-13T09:00:00Z", offset=0.0):
+        self.rows, self.fail_collect, self.fail_wait, self.steps = rows, fail_collect, fail_wait, []
         self.ticks = iter(range(0, 100000, 5))
         self.generations, self.first_at, self.offset = iter(generations), first_at, offset
-        self.window = None
+        self.window, self.approvals = None, []
+
+    def begin_run(self, baseline, policy=None):
+        self.steps.append("begin")
+        return frozenset({"INC-EARLIER"})
+
+    def settle(self, baseline):
+        self.steps.append("settle")
+        return {"settled": True, "seconds": 20.0, "target": [], "open": []}
 
     def clock_offset(self):
         self.steps.append("offset")
@@ -928,6 +936,8 @@ class FakeLab:
 
     def wait_terminal(self, timeout):
         self.steps.append("wait")
+        if self.fail_wait:
+            raise acceptance.AcceptanceError("the Coordinator Pod is not running")
         return True
 
     def copy_database(self, identity, path, destination):
@@ -966,9 +976,14 @@ class RunOneTests(unittest.TestCase):
                               "versions.json"])
             self.assertFalse((Path(directory) / "copied" / "S0-r1").exists())
             written = json.loads((folder / "summary.json").read_text(encoding="utf-8"))
-        self.assertEqual(lab.steps[:3], ["offset", "target", "inject"])
-        # The generation is read before the restore and after it, and the log is read after both.
-        self.assertEqual(lab.steps[-5:], ["target", "restore", "target", "offset", "audit"])
+        self.assertEqual(lab.steps[:4], ["offset", "target", "begin", "inject"])
+        # The generation is read before the restore; the lab settles before anything is copied; the generation
+        # is read again after the settle, and the log is read last.
+        self.assertEqual(lab.steps[lab.steps.index("wait"):lab.steps.index("wait") + 4],
+                         ["wait", "target", "restore", "settle"])
+        self.assertLess(lab.steps.index("settle"), lab.steps.index("copy"))
+        self.assertEqual(lab.steps[-4:], ["copy", "target", "offset", "audit"])
+        self.assertEqual((written["earlier_incidents"], written["settle"]["settled"]), (1, True))
         self.assertEqual(written["scenario"], "S0")
         self.assertEqual(written["audit_completeness"]["complete"], True)
         self.assertEqual(written["audit_completeness"]["generation"], {"before": 1, "before_restore": 4, "after": 4})
@@ -981,11 +996,15 @@ class RunOneTests(unittest.TestCase):
         self.assertEqual(summary["audit"]["sentinel_template_writes_per_action"], {"ACT-1": 1})
         self.assertEqual(summary["operator_actions"], [{"operator_action": "inject"}, {"operator_restore": True}])
 
-    def test_the_target_is_restored_even_when_collecting_fails(self):
-        lab = FakeLab(self.rows, fail_collect=True)
-        with tempfile.TemporaryDirectory() as directory, self.assertRaises(acceptance.AcceptanceError):
-            live.run_one(lab, acceptance.SCENARIOS["S0"], 1, self.deployed, {}, self.tokens, Path(directory))
-        self.assertEqual(lab.steps[-1], "restore")
+    def test_the_target_is_restored_even_when_waiting_or_collecting_fails(self):
+        for options in ({"fail_collect": True}, {"fail_wait": True}):
+            with self.subTest(**options):
+                lab = FakeLab(self.rows, **options)
+                with tempfile.TemporaryDirectory() as directory, self.assertRaises(acceptance.AcceptanceError):
+                    live.run_one(lab, acceptance.SCENARIOS["S0"], 1, self.deployed, {}, self.tokens,
+                                 Path(directory))
+                self.assertIn("restore", lab.steps)
+                self.assertNotIn("copy", lab.steps)
 
     def test_s6_approves_by_hand_during_the_partition_and_waiting_actions_only_after_it(self):
         """S6 with --stale-replans: a re-plan after the partition waits for approval and still gets its operator."""

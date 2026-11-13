@@ -67,8 +67,17 @@ its baseline template when Sentinel did not (an operator write, recorded).
 Each run writes summary.json, timeline.jsonl, audit-extract.jsonl,
 records.json and versions.json under <run-dir>/<date>/<scenario>-r<n>-<time>z/,
 after checking that none holds a Secret name, a credential or key material.
-One Coordinator store serves every run, so the invariants are narrowed to the
-incidents each run opened (scope_records).
+
+The Coordinator, the Observer and the workers are long-lived Deployments
+with PVCs, so their stores outlive each run. A run starts only on a settled
+lab (Lab.begin_run, run_unsettled: no earlier incident still open or still
+in the Observer's outbox, no seal required, the target healthy at its
+baseline, the baseline young enough for the Guard) and remembers the incidents the store already holds. Waiting,
+approving, terminal detection and the invariants then cover only the
+incidents it opened (Lab.incidents, scope_records); after the restore it
+waits, with the operator still approving, until the target has stayed
+healthy and every incident it opened has ended (Lab.settle), so an incident
+opened by the restore's own rollout ends in that run and not in the next.
 
 Measured, not assumed: takeover latency (fault to the other Executor's first
 claim) and Coordinator recovery (kill to Pod Ready, to its first answered
@@ -77,11 +86,14 @@ the cluster's clock by the measured offset. These are four containers on one
 Docker host: they share one kernel, one clock and one disk, and are not
 separate machines.
 
-Status: tested offline (tests/test_kind_acceptance.py, with a fake kubectl,
-docker and helm) and deployed live once, on 13 Nov 2026. Its first S0 runs
-repaired nothing: the Guard refused each proposal as stale, and the restore
-after them failed (docs/distributed-acceptance.md#first-live-attempts). No run
-has passed yet.
+Status: tested offline (tests/test_kind_acceptance.py and
+tests/test_kind_acceptance_repeats.py, with a fake kubectl, docker and helm
+and local Coordinator and Observer databases) and deployed live twice, on
+13 Nov 2026. The first deployment's S0 runs repaired nothing (stale proposals, a failed
+restore). In the second, one S0 run passed and the S0 runs after it in the
+same deployment opened no incident, because the harness counted the first
+run's RECOVERED incident as theirs; that is fixed here and not yet re-run
+(docs/distributed-acceptance.md#first-live-attempts).
 """
 import argparse
 from contextlib import suppress
@@ -785,6 +797,77 @@ def expectation(name, *, incidents, rows, notes=None, stalled=None, takeover=Non
     return failures
 
 
+# Between runs --------------------------------------------------------------------------------------------
+
+# After its restore a run waits up to SETTLE_SECONDS for the lab to settle (Lab.settle): the target healthy at
+# its baseline for SETTLE_QUIET_SECONDS, longer than an Observer poll (2 s) plus its delivery, so an incident the
+# restore's own Recreate rollout opens is already recorded, and every incident the run opened terminal.
+SETTLE_SECONDS = 240
+SETTLE_QUIET_SECONDS = 20
+
+
+def target_unsettled(deployment, baseline):
+    """Why the target is not healthy at its baseline template; [] when it is.
+
+    deployment is the live Deployment, baseline the recorded baseline.json
+    (its template_sha256). Healthy means the rollout is observed and every
+    desired replica is updated, ready and available, as the Observer reads
+    the Deployment's status.
+    """
+    from services.executor.store import fingerprint
+    metadata, spec = deployment.get("metadata") or {}, deployment.get("spec") or {}
+    status = deployment.get("status") or {}
+    reasons = []
+    expected = (baseline or {}).get("template_sha256")
+    if not expected or spec.get("template") is None or fingerprint(spec["template"]) != expected:
+        reasons.append("its template is not the baseline's")
+    if status.get("observedGeneration") != metadata.get("generation"):
+        reasons.append("its latest generation is not observed yet")
+    desired = spec.get("replicas", 1)
+    counts = [status.get(key, 0) for key in ("replicas", "updatedReplicas", "readyReplicas", "availableReplicas")]
+    if any(count != desired for count in counts) or status.get("unavailableReplicas"):
+        reasons.append(f"not every one of its {desired} replica(s) is updated, ready and available")
+    return reasons
+
+
+def run_unsettled(incidents, ownership, deployment, baseline, *, policy=None, now=None, undelivered=()):
+    """Why a new run may not start on this lab; [] when it may (Lab.begin_run).
+
+    incidents and ownership are every row of the Coordinator's incidents and
+    target_ownership tables, deployment the live target, baseline its
+    recorded baseline, policy the deployed policy.json, now the harness's
+    clock and undelivered the incident IDs still waiting in the Observer's
+    outbox. The stores outlive each run (one PVC per role), so what an
+    earlier run left behind is checked, never reset by hand: an incident
+    still open holds this run's incident on the same workload (the
+    Coordinator's planning_blocker) and its pending action could be approved
+    by this run's operator; an incident the Observer has not delivered yet
+    would reach the Coordinator during this run and count as its own; a seal
+    still required blocks every incident on the target; and a target off its
+    baseline is not the fault this run injects. The baseline's health
+    evidence ages from deploy on, and the Guard
+    refuses a baseline older than the policy's max_age_seconds, so a run that
+    could cross that age part way through is refused before it starts.
+    """
+    problems = [f"earlier incident {row['incident_id']} is {row['state']}, not terminal: it holds this run's "
+                "incident (planning_blocker); let it end, or deploy again into a new run directory"
+                for row in incidents if row["state"] not in invariants.TERMINAL]
+    problems += [f"the Observer has not yet delivered incident {incident_id} to the Coordinator: it would be "
+                 "counted as this run's" for incident_id in undelivered]
+    problems += [f"a seal is still required on the target (epoch {row['epoch']})"
+                 for row in ownership if row.get("seal_required")]
+    problems += ["the target: " + reason for reason in target_unsettled(deployment, baseline)]
+    max_age = ((policy or {}).get("baseline_constraints") or {}).get("max_age_seconds")
+    healthy = (baseline or {}).get("healthy_observed_at")
+    if max_age is not None and healthy and now is not None:
+        ends = now + timedelta(seconds=DEADLINE_SECONDS + SETTLE_SECONDS)
+        if (ends - datetime.fromisoformat(healthy.replace("Z", "+00:00"))).total_seconds() > max_age:
+            problems.append(f"the baseline's health evidence ({healthy}) would be older than the policy's "
+                            f"max_age_seconds ({max_age}) before this run ends, and the Guard would refuse it; "
+                            "deploy again into a new run directory")
+    return problems
+
+
 # Measurements --------------------------------------------------------------------------------------------
 
 
@@ -847,6 +930,8 @@ class Lab:
         self._forward = None
         self._forward_lock = threading.Lock()
         self.approved = set()
+        self.approvals = []  # {"action_id", "at"} of each approval the operator gave, in order.
+        self.prior = frozenset()  # Incidents the store held before this run (begin_run).
 
     # Reading the cluster --------------------------------------------------------------------------------
 
@@ -881,17 +966,115 @@ class Lab:
         return self.shell.kubectl("exec", pod, "--container=" + container, "--", "python", "-c", script, *args,
                                   namespace=NAMESPACE, binary=binary, timeout=timeout)
 
-    def query(self, sql, parameters=()):
-        """Read-only rows from the Coordinator's database; [] while the Coordinator is down."""
+    def query(self, sql, parameters=(), *, strict=False, identity="coordinator"):
+        """Read-only rows from a database in a Pod; [] while its Pod is down, unless strict.
+
+        identity is "coordinator" (the Coordinator's database, the default) or
+        "observer-1" (the Observer's episode store and outbox).
+        """
+        path = "/data/coordinator.sqlite3" if identity == "coordinator" else "/data/observer.sqlite3"
         try:
-            result = self.exec_python("sentinel-coordinator", "coordinator", QUERY_HELPER,
-                                      "/data/coordinator.sqlite3", sql, json.dumps(list(parameters)))
+            result = self.exec_python(self._deployment(identity), self._container(identity), QUERY_HELPER,
+                                      path, sql, json.dumps(list(parameters)))
         except (AcceptanceError, subprocess.SubprocessError):
+            if strict:
+                owner = "Coordinator" if identity == "coordinator" else "Observer"
+                raise AcceptanceError(f"The {owner}'s database could not be read") from None
             return []
         return json.loads(result.stdout or "[]")
 
-    def incidents(self):
-        return self.query("SELECT incident_id, state, active_action_id FROM incidents")
+    def undelivered(self, *, strict=False):
+        """IDs of incidents the Observer has opened and not yet delivered to the Coordinator (its outbox).
+
+        The Observer's outbox outlives each run too: an incident still in it
+        when a run begins would reach the Coordinator during that run and be
+        counted as the run's own.
+        """
+        rows = self.query("SELECT incident_id FROM observer_outbox WHERE delivered = 0", strict=strict,
+                          identity="observer-1")
+        return [row["incident_id"] for row in rows]
+
+    def all_incidents(self, *, strict=False):
+        """Every incident in the Coordinator's store, earlier runs' included."""
+        return self.query("SELECT incident_id, state, active_action_id FROM incidents", strict=strict)
+
+    def incidents(self, *, strict=False):
+        """This run's incidents: those the store did not hold when begin_run was called.
+
+        The Coordinator, the Observer and the workers keep their stores across
+        runs (their PVCs), so the store still holds every earlier run's
+        incidents. Waiting, approving and terminal detection look only at the
+        ones this run opened; otherwise an earlier RECOVERED incident makes a
+        new run terminal at once (13 Nov 2026,
+        docs/distributed-acceptance.md#first-live-attempts).
+        """
+        return [row for row in self.all_incidents(strict=strict) if row["incident_id"] not in self.prior]
+
+    def ownership(self, *, strict=False):
+        """The Coordinator's target_ownership rows (fence epochs and seals), kept across runs."""
+        return self.query("SELECT uid, epoch, holder, seal_required, sealed_epoch FROM target_ownership",
+                          strict=strict)
+
+    def begin_run(self, baseline, policy=None):
+        """Check that the lab is settled for a new run, then remember the incidents already in the store.
+
+        AcceptanceError when it is not (run_unsettled): an earlier incident
+        still open holds this run's incident (the Coordinator's
+        planning_blocker), and this run's operator must not approve it; an
+        incident the Observer has not delivered yet would count as this run's;
+        a seal still required blocks the target; a target off its baseline is not the
+        fault this run injects; and a baseline about to age past the policy's
+        max_age_seconds would be refused by the Guard part way through. Returns
+        the earlier incidents' IDs, which incidents() and scope_records leave out.
+        """
+        rows = self.all_incidents(strict=True)
+        problems = run_unsettled(rows, self.ownership(strict=True), self.target(), baseline, policy=policy,
+                                 now=self.clock(), undelivered=self.undelivered(strict=True))
+        if problems:
+            raise AcceptanceError("The lab is not settled for a new run: " + "; ".join(problems))
+        self.prior = frozenset(row["incident_id"] for row in rows)
+        return self.prior
+
+    def settle(self, baseline, *, timeout=None, quiet=None, interval=2.0):
+        """After the restore: wait until the target has stayed healthy at its baseline and this run's incidents ended.
+
+        The operator's restore (and Sentinel's own rollback) rolls the target
+        out with Recreate, and when its Pod-less window outlasts the
+        Observer's failure window that rollout opens an incident of its own,
+        a little after the rollout. So the target must stay healthy at its
+        baseline for quiet seconds (longer than an Observer poll and its
+        delivery), every incident this run opened must be terminal, no seal
+        may still be required and the Observer's outbox must hold no
+        undelivered incident. Returns what was seen; settled is False
+        at the deadline. Run with the operator still approving, so an incident
+        the Guard escalated before the restore is decided on live state.
+        """
+        timeout = SETTLE_SECONDS if timeout is None else timeout
+        quiet = SETTLE_QUIET_SECONDS if quiet is None else quiet
+        start = self.monotonic()
+        healthy_since, reasons, open_incidents = None, [], []
+        while True:
+            now = self.monotonic()
+            try:
+                reasons = target_unsettled(self.target(), baseline)
+            except (AcceptanceError, subprocess.SubprocessError, ValueError, KeyError) as error:
+                reasons = [f"the target could not be read ({type(error).__name__})"]
+            healthy_since = None if reasons else (now if healthy_since is None else healthy_since)
+            try:
+                open_incidents = [f"{row['incident_id']}: {row['state']}" for row in self.incidents(strict=True)
+                                  if row["state"] not in invariants.TERMINAL]
+                open_incidents += [f"a seal is still required (epoch {row['epoch']})"
+                                   for row in self.ownership(strict=True) if row["seal_required"]]
+                open_incidents += [f"{incident_id}: not yet delivered by the Observer"
+                                   for incident_id in self.undelivered(strict=True)]
+            except AcceptanceError as error:
+                open_incidents = [str(error)]
+            if healthy_since is not None and now - healthy_since >= quiet and not open_incidents:
+                return {"settled": True, "seconds": round(now - start, 1), "target": [], "open": []}
+            if now - start >= timeout:
+                return {"settled": False, "seconds": round(now - start, 1), "target": reasons,
+                        "open": open_incidents}
+            self.sleep(interval)
 
     def wait(self, check, timeout, what, interval=1.0):
         deadline = self.monotonic() + timeout
@@ -903,18 +1086,19 @@ class Lab:
         raise TimeoutError(what)
 
     def terminal(self):
+        """Whether this run has an incident and every one of them is terminal."""
         states = [row["state"] for row in self.incidents()]
         return bool(states) and all(state in invariants.TERMINAL for state in states)
 
     def wait_terminal(self, timeout):
-        """True once every incident is terminal; False at the deadline."""
+        """True once this run has an incident and every one it opened is terminal; False at the deadline."""
         try:
             return bool(self.wait(self.terminal, timeout, "every incident terminal"))
         except TimeoutError:
             return False
 
     def wait_state(self, states, timeout):
-        """The first incident row in one of states."""
+        """The first of this run's incident rows in one of states."""
         def found():
             return next((row for row in self.incidents() if row["state"] in states), None)
         return self.wait(found, timeout, "an incident in " + "/".join(sorted(states)))
@@ -1013,6 +1197,7 @@ class Lab:
             "action_id": action_id, "proposal_sha256": digest(json.loads(row["proposal"])),
             "policy_version": policy_version, "expires_at": expires.isoformat()})
         self.approved.add(action_id)
+        self.approvals.append({"action_id": action_id, "at": stamp(self.clock())})
 
     def revoke(self, action_id):
         from runtime.worker_transport import digest
@@ -1143,21 +1328,28 @@ class RunView:
                           for name in ("coordinator", *IDENTITIES)}
 
 
-def scope_records(records, since):
-    """records narrowed to the incidents this run opened (first journal entry at or after since).
+def scope_records(records, since, prior=()):
+    """records narrowed to the incidents this run opened: journal opened at or after since, and not in prior.
 
     The Coordinator keeps one store for every run of a deployment, so that
     ownership epochs stay monotonic for the admission policy, and its tables
-    hold earlier runs too. Incidents, their actions, transitions and outbox
-    rows, and revocations of those actions, are kept for this run only;
-    receipts, worker results and the access log are left whole, so I4, I5,
-    X1 and X3 check the store's whole history, which is stricter.
+    hold earlier runs too. prior holds the incidents the store already had
+    when the run began (Lab.begin_run), so an incident of an earlier run is
+    never counted however close the clocks put it to since. Incidents, their
+    actions, transitions and outbox rows, and revocations of those actions,
+    are kept for this run only. Receipts, worker results, message digests,
+    Executor ledgers and the Observer's outbox are left whole, so I4, I5, I6
+    and X3 check the store's whole history, which is stricter; X3 therefore
+    compares the Observer's acknowledged incidents with every incident the
+    Coordinator recorded (recorded_incident_ids), not only this run's.
     """
-    start = _seconds(since)
+    start, prior = _seconds(since), set(prior)
     opened = {row["incident_id"] for row in records.get("transitions", [])
-              if row.get("from_state") is None and _seconds(row["recorded_at"]) >= start}
+              if row.get("from_state") is None and _seconds(row["recorded_at"]) >= start
+              and row["incident_id"] not in prior}
     actions = {row["action_id"] for row in records.get("actions", []) if row["incident_id"] in opened}
     scoped = dict(records)
+    scoped["recorded_incident_ids"] = sorted({row["incident_id"] for row in records.get("incidents", [])})
     scoped["incidents"] = [row for row in records.get("incidents", []) if row["incident_id"] in opened]
     scoped["actions"] = [row for row in records.get("actions", []) if row["incident_id"] in opened]
     scoped["transitions"] = [row for row in records.get("transitions", []) if row["incident_id"] in opened]

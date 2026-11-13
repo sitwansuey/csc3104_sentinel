@@ -201,9 +201,16 @@ and every other context refused before any command, each preflight refusal
 audit log), chaos object bounds and evidence refused when it names a Secret,
 each scenario's expectation failing on records the write invariants pass,
 and a run with an empty, partial or rotated audit extract failing.
+`tests/test_kind_acceptance_repeats.py` runs the real `Lab` over local
+Coordinator and Observer databases to check that repeated runs in one
+deployment are independent: each waits for, approves and checks only its
+own incidents, settles after its restore, and refuses to start on a lab an
+earlier run left unsettled (the 13 Nov 2026 symptom, in which runs after a passing S0 took
+its RECOVERED incident as theirs).
 `tests/test_distributed_audit.py` checks the audit sanitiser, I7 and the
 extract's completeness checks on the fixtures in
-`tests/fixtures/distributed_audit/`. None of it has run against a cluster.
+`tests/fixtures/distributed_audit/`. The harness has run against the cluster
+only for S0 so far ([first live attempts](distributed-acceptance.md#first-live-attempts)).
 `tests/test_lab_lock.py` covers the shared heavy-lab lock
 (`experiments/lab_lock.py`) and the three harnesses that take it (P4.01
 `deploy` and `run`, the P4.03 install and chaos scenario runs, the P4.05

@@ -51,6 +51,11 @@ MAX_REPLAN_ATTEMPT = 5
 REPLAN_FIELDS = {"attempt", "after_action_id", "resource_version"}
 REPLAN_NOTE = (" Re-planned (attempt {attempt}) after the Guard refused the previous proposal because the "
                "target's resourceVersion had moved since the incident; bound to the version the Guard read.")
+# A re-plan after an Executor CONFLICT (services/coordinator/core.py::replan_after_conflict) also names
+# its cause; a re-plan without one follows a stale Guard refusal, as before.
+REPLAN_NOTES = {None: REPLAN_NOTE, "EXECUTOR_CONFLICT": (
+    " Re-planned (attempt {attempt}) after the Executor wrote nothing for the previous proposal because the "
+    "target's resourceVersion had moved after the Guard's check; bound to the version the Executor read.")}
 
 
 class PlanningError(Exception):
@@ -93,7 +98,9 @@ def planning_request(payload):
     A first request plans the incident under its own ID (key and attempt are
     None). A re-plan request (services/coordinator/core.py::replan_after_stale)
     names the attempt, the refused action and the resourceVersion the Guard
-    read in its STALE_RESOURCE_VERSION refusal. The incident is then planned
+    read in its STALE_RESOURCE_VERSION refusal; one after an Executor CONFLICT
+    (replan_after_conflict) names the version the Executor read and its cause,
+    EXECUTOR_CONFLICT (replan_cause). The incident is then planned
     with that version as observed_resource_version, so the proposal is bound
     to it; everything else in the incident, its signals included, is the
     Observer's. A Planner without Kubernetes access thus binds to a version
@@ -107,7 +114,8 @@ def planning_request(payload):
     replan = payload.get("replan")
     if replan is None:
         return incident, None, None
-    if (not isinstance(replan, dict) or set(replan) != REPLAN_FIELDS
+    if (not isinstance(replan, dict) or set(replan) - {"cause"} != REPLAN_FIELDS
+            or ("cause" in replan and (not isinstance(replan["cause"], str) or replan["cause"] not in REPLAN_NOTES))
             or type(replan["attempt"]) is not int or not 1 <= replan["attempt"] <= MAX_REPLAN_ATTEMPT
             or not all(isinstance(replan[key], str) and replan[key].strip() and len(replan[key]) <= 256
                        for key in ("after_action_id", "resource_version"))
@@ -118,16 +126,22 @@ def planning_request(payload):
     return bound, replan_key(incident["incident_id"], replan["attempt"]), replan["attempt"]
 
 
+def replan_cause(payload):
+    """The cause a re-plan request names (None for a stale Guard refusal); call after planning_request."""
+    replan = payload.get("replan")
+    return replan.get("cause") if isinstance(replan, dict) else None
+
+
 class ReplanProvider:
     """The configured provider with the re-plan note appended to its rationale.
 
-    The note says the proposal is a re-plan, so the operator approving it can
-    tell it from the refused one. usage is the wrapped provider's, so the
+    The note says the proposal is a re-plan, and why, so the operator approving
+    it can tell it from the refused one. usage is the wrapped provider's, so the
     journal keeps its record (the synthetic label of the lab planner included).
     """
 
-    def __init__(self, provider, attempt):
-        self.provider, self.note = provider, REPLAN_NOTE.format(attempt=attempt)
+    def __init__(self, provider, attempt, cause=None):
+        self.provider, self.note = provider, REPLAN_NOTES[cause].format(attempt=attempt)
 
     @property
     def usage(self):

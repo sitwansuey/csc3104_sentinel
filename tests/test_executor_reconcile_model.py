@@ -337,7 +337,7 @@ def _no_adoption_after_write_conflict():
     adopt = core._adopted_write
 
     def variant(proposal, adapters, snapshot=None):
-        # Only the ConditionalWriteConflict path calls this without a snapshot.
+        # Only the ConditionalWriteConflict path calls this without a snapshot (with core._current withheld).
         return None if snapshot is None else adopt(proposal, adapters, snapshot)
     return variant
 
@@ -468,7 +468,8 @@ class ModelCheckerTests(unittest.TestCase):
 
     def test_conflict_while_a_peer_commit_is_still_on_the_object_is_caught(self):
         # The host's own write never committed, so I1-I5 all hold; only P1 sees the missed adoption.
-        with mock.patch.object(core, "_adopted_write", _no_adoption_after_write_conflict()):
+        with mock.patch.object(core, "_adopted_write", _no_adoption_after_write_conflict()), \
+                mock.patch.object(core, "_current", lambda proposal, adapters: None):
             report = model.check(range(600))
             self.assertGreater(report.failures["P1"], 0)
             self.assertHolds(report, model.SAFETY)

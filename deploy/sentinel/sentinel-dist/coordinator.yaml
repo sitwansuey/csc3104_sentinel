@@ -12,6 +12,9 @@
 # incident, only while the target's generation is the incident's and before
 # any ALLOW, revocation or seal of that action; each one is checked by the
 # Guard and approved again (services/coordinator/core.py::replan_after_stale).
+# The same budget, shared, covers an Executor CONFLICT after the ALLOW that
+# provably wrote nothing, on the incident's generation, in the action's first
+# approval cycle (replan_after_conflict).
 apiVersion: v1
 kind: ServiceAccount
 metadata:

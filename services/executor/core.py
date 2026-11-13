@@ -137,7 +137,7 @@ def _identity(snapshot):
             "namespace": metadata["namespace"], "name": metadata["name"], "uid": metadata["uid"]}
 
 
-def _finish(proposal, adapters, status, version, details):
+def _finish(proposal, adapters, status, version, details, *, conflict=None):
     # Coordinator accepts only newer follow-up results. Preserve exact results on
     # DONE replay; advance a fixed or coarse clock for a new reconciliation result.
     row = adapters.ledger.get(proposal["action_id"])
@@ -151,8 +151,49 @@ def _finish(proposal, adapters, status, version, details):
               "target": deepcopy(proposal["target"]), "status": status,
               "resource_version": version, "recorded_at": recorded.isoformat().replace("+00:00", "Z"),
               "details": details}
+    if conflict is not None:
+        result["conflict"] = conflict
     validate_message(result)
     return adapters.ledger.finish(proposal["action_id"], result)
+
+
+def _current(proposal, adapters):
+    """A fresh read of the target after a refused write, or None when it cannot be read."""
+    try:
+        return _read(proposal, adapters)
+    except Exception as error:  # noqa: BLE001 - an unread target only withholds the conflict evidence
+        log.failure(LOG, "executor.conflict.unread", error, action_id=_action_id(proposal))
+        return None
+
+
+def _conflict(basis, proposal, adapters, snapshot):
+    """The evidence a CONFLICT result gives the Coordinator for a re-plan, or None.
+
+    basis is NOT_SENT (this host sent no write: its own read already showed
+    another version) or REFUSED (the adapter refused the write's
+    preconditions, which it guarantees did not commit). Evidence is given
+    only when snapshot, a read made after that, shows by the decision table
+    that no write of this action committed or ever can: the same UID at a
+    version other than the proposal's, without this action's evidence or
+    fence (ADVANCED_WITHOUT_EVIDENCE). It names that version and the
+    Deployment's metadata.generation, which the Coordinator compares with the
+    incident's (services/coordinator/core.py::replan_after_conflict): equal
+    means no spec change at all since the incident, so the version moved by a
+    status write. Anything else (unreadable, another UID, a version still at
+    the proposal's, evidence of this action, no valid generation) gives None,
+    and the CONFLICT stays final.
+    """
+    if snapshot is None:
+        return None
+    row = adapters.ledger.get(proposal["action_id"])
+    decision = _classify(row, proposal, observe(snapshot, proposal["target"]), adapters)
+    deployment = snapshot.get("deployment") if isinstance(snapshot, dict) else None
+    metadata = deployment.get("metadata") if isinstance(deployment, dict) else None
+    generation = metadata.get("generation") if isinstance(metadata, dict) else None
+    if (decision.basis is not Basis.ADVANCED_WITHOUT_EVIDENCE or type(generation) is not int or generation < 1
+            or not isinstance(decision.version, str) or len(decision.version) > 256):
+        return None
+    return {"basis": basis, "resource_version": decision.version, "generation": generation}
 
 
 def _matches_write(proposal, row, snapshot):
@@ -533,7 +574,8 @@ def execute(proposal: dict, adapters: ExecutionAdapters) -> dict:
                 if adopted is not None:
                     return adopted
                 return _finish(proposal, adapters, "CONFLICT", version,
-                               "Target identity or resource version changed; obtain a new proposal and validation.")
+                               "Target identity or resource version changed; obtain a new proposal and validation.",
+                               conflict=_conflict("NOT_SENT", proposal, adapters, snapshot))
             check = adapters.authorizer.validate(deepcopy(proposal), _restart_history(proposal, adapters, snapshot),
                                                  now=_now(adapters))
             validate_message(check.decision)
@@ -565,11 +607,13 @@ def execute(proposal: dict, adapters: ExecutionAdapters) -> dict:
             )
         except ConditionalWriteConflict:
             # Ours did not commit; another attempt of this same action still may have.
-            adopted = _adopted_write(proposal, adapters)
+            current = _current(proposal, adapters)
+            adopted = _adopted_write(proposal, adapters, current)
             if adopted is not None:
                 return adopted
             return _finish(proposal, adapters, "CONFLICT", version,
-                           "Conditional write was refused without committing; refresh state and create a new proposal.")
+                           "Conditional write was refused without committing; refresh state and create a new proposal.",
+                           conflict=_conflict("REFUSED", proposal, adapters, current))
         except Exception as error:  # noqa: BLE001 - an unknown write error may have committed; reconcile
             # Timeouts/transport errors cannot distinguish rejection from commit.
             log.failure(LOG, "executor.write.indeterminate", error, action_id=_action_id(proposal))
