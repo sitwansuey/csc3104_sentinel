@@ -403,11 +403,14 @@ passes). A Coordinator that is down or refusing the worker still turns it
 not ready one window later.
 
 Before this, only the end of a polling pass counted:
-in a live run on 12 Nov 2026 an agent Planner container was reported unhealthy
-by Docker twice during one 128 s planning pass while it was renewing its lease
-normally (`tests/test_remote_workers.py::RemoteWorkerTests.test_lease_renewals_keep_a_pass_longer_than_the_readiness_window_ready`
+in a live run on 12 Nov 2026 an agent Planner container failed two of Docker's
+health checks during one 128.7 s planning pass while it was renewing its lease
+normally; Docker never marked it unhealthy, because three failures in a row are
+needed (`C-WORKER-READINESS-BEFORE-FIX`). `tests/test_remote_workers.py::RemoteWorkerTests.test_lease_renewals_keep_a_pass_longer_than_the_readiness_window_ready`
 and `test_a_pass_whose_renewals_fail_turns_not_ready_after_the_readiness_window`
-cover both cases offline; the fix has not run in a container yet).
+cover both cases offline, and the fix has run once in a container, an image
+built at be6e636 that stayed ready through an 89.6 s pass
+(`C-WORKER-CONTAINER-READINESS`).
 
 A Planner configuration may set `"provider": "deterministic"` with an optional
 `"attempt_lease_seconds"`, but only in a lab fault run (below). It plans with
@@ -505,12 +508,14 @@ finding. The Unknown one (CVE-2026-97054) is in the Go standard library
 compiled into the kubectl binary, from the build stage shared with the demo
 runner, and has a fix in Go 1.27.4; it is not in a Sentinel layer. The gate
 passed. These counts are not a committed evidence bundle, and no container
-was started from the image.
+was started from that scanned image; the container run below used a separate
+image, built later at be6e636.
 
 **Live check partly done.** On 12 Nov 2026 an agent-mode Planner ran from
 the image built at be6e636 as a container on Docker Desktop against a
 Coordinator on the host (started by an operator script, not the topology),
-saved a ROLLBACK proposal from qwen3:14b and stayed ready through an 89.6 s pass
+saved a ROLLBACK proposal from qwen3:14b, reached on the host's Ollama over
+plain HTTP with `allow_insecure_remote` set, and stayed ready through an 89.6 s pass
 (`C-WORKER-CONTAINER-READINESS`); no Guard, Executor or Verifier ran. Still
 needed: run the
 [multi-process topology](../experiments/distributed/README.md) with the

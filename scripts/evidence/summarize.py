@@ -633,9 +633,11 @@ def admission_probes(bundles):
     parts = []
     for bundle in bundles:
         record = admission_record(bundle)
+        named = record["policy_named_unchanged"]
+        named = f"all {named}" if named == record["policy"] else f"{named} of them"
         parts.append(f"{ratio(record['passed'], len(record['probes']))} probes as expected on Kubernetes "
                      f"{record['server'] or 'unknown'} ({record['allowed']} allowed, {record['policy']} denied by the "
-                     f"policy, {record['policy_named_unchanged']} of them with the rule named and the object "
+                     f"policy, {named} with the rule named and the object "
                      f"unchanged, {record['rbac']} denied by RBAC); namespace, policy and private credentials "
                      f"{'removed' if record['cleaned'] else 'NOT all removed'}")
     return "; ".join(parts) or "no admission runs"
@@ -684,6 +686,9 @@ def container_record(bundle):
         if first is not None else []
     good = [sample for sample in window if sample.get("health") == "healthy"
             and str(sample.get("readyz") or "").startswith("200")]
+    # Every sample taken while the Coordinator was up, including any before Docker's first healthy check.
+    up = [sample for sample in health if stopped and str(sample.get("utc")) < stopped]
+    ready_up = [sample for sample in up if str(sample.get("readyz") or "").startswith("200")]
     ages = [age for age in (_contact_age(sample) for sample in window) if isinstance(age, (int, float))]
     passes = _planning_passes(bundle)
     after_503 = (by_event.get("readyz_503") or {}).get("after_stop_seconds")
@@ -691,6 +696,7 @@ def container_record(bundle):
     passed = ("result" in by_event and bool(window) and len(good) == len(window) and bool(passes)
               and after_503 is not None and after_unhealthy is not None)
     return {"outcome": "PASS" if passed else "FAILED", "window": len(window), "good": len(good),
+            "up": len(up), "ready_up": len(ready_up),
             "max_age": max(ages) if ages else None, "longest_pass": max(passes) if passes else None,
             "after_503": after_503, "after_unhealthy": after_unhealthy}
 
@@ -727,6 +733,7 @@ def container_rows(bundles):
         value = lambda key: "n/a" if record.get(key) is None else f"{record[key]:.1f}"
         rows.append([bundle.bundle_id, short(bundle.entry.get("source_revision")), record["outcome"],
                      ratio(record["good"], record["window"]) if "window" in record else "not recorded",
+                     ratio(record["ready_up"], record["up"]) if "up" in record else "not recorded",
                      value("longest_pass"), value("max_age"), value("after_503"), value("after_unhealthy"),
                      docker_states(bundle)])
     return rows
@@ -741,9 +748,10 @@ def container_readiness(bundles):
             continue
         fmt = lambda key: "n/a" if record.get(key) is None else f"{record[key]:.1f} s"
         parts.append(f"{ratio(record['good'], record['window'])} health samples Docker healthy with /readyz 200 "
-                     f"while the Coordinator was up (longest planning pass {fmt('longest_pass')}, highest contact "
-                     f"age {fmt('max_age')}); /readyz 503 {fmt('after_503')} and Docker unhealthy "
-                     f"{fmt('after_unhealthy')} after the Coordinator stopped")
+                     f"from the first Docker-healthy one until the Coordinator stopped ({record['up']} taken while "
+                     f"it was up, {ratio(record['ready_up'], record['up'])} answering /readyz 200; longest planning "
+                     f"pass {fmt('longest_pass')}, highest contact age {fmt('max_age')}); /readyz 503 "
+                     f"{fmt('after_503')} and Docker unhealthy {fmt('after_unhealthy')} after the Coordinator stopped")
     return "; ".join(parts) or "no container runs"
 
 
@@ -1241,7 +1249,9 @@ def render_blocks(root):
                                     "Restore check"], lab_session_rows(bundles)),
         "executor-admission": table(["Bundle", "Revision", "Provenance", "Outcome", "Probes as expected", "Allowed",
                                      "Denied by policy", "Denied by RBAC", "Cleaned up"], admission_rows(bundles)),
-        "worker-container": table(["Bundle", "Revision", "Outcome", "Healthy samples while the Coordinator was up",
+        "worker-container": table(["Bundle", "Revision", "Outcome",
+                                   "Docker-healthy samples, first healthy one to Coordinator stop",
+                                   "/readyz 200 while the Coordinator was up",
                                    "Longest planning pass s", "Highest contact age s", "/readyz 503 after stop s",
                                    "Docker unhealthy after stop s", "Docker health when saved"],
                                   container_rows(bundles)),
