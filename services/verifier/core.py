@@ -313,6 +313,24 @@ def _assess(execution, samples, policy):
     return result
 
 
+WINDOW_CHECKS = frozenset({"sample_count", "stable_window", "sample_gaps"})
+
+
+def reading_status(execution: dict, sample: dict, policy: dict) -> str:
+    """One reading judged alone by the unchanged rules: "healthy", "unhealthy" or "incomplete".
+
+    For audit records only (when the target first read healthy, say); a
+    verdict always comes from verify() over the whole window. The checks
+    that need more than one reading (count, stable window, gaps) are left
+    out; every other check must pass for "healthy".
+    """
+    alone = _assess(execution, [sample], policy)
+    if alone["status"] == "NOT_RECOVERED":
+        return "unhealthy"
+    passed = all(check["passed"] for check in alone["checks"] if check["name"] not in WINDOW_CHECKS)
+    return "healthy" if passed else "incomplete"
+
+
 def verify(execution: dict, samples: list[dict], policy: dict, *, final: bool = True) -> dict:
     """Assess one ordered post-action window; missing evidence is UNKNOWN.
 

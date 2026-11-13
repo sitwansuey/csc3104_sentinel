@@ -34,6 +34,9 @@ class Scenario:
     options: dict = field(default_factory=dict)
     expected_failures: frozenset = frozenset()
     known_defect: str = ""
+    # When set, the run matches its expectation only if every verifier.request command was delivered at
+    # most this many times: the Verifier samples within one pass (L-VERIFIER-RETRY-BACKOFF).
+    max_verifier_attempts: int | None = None
 
 
 def _wait(condition, timeout, what):
@@ -289,13 +292,13 @@ def _sealed(topology):
 
 
 SCENARIOS = {scenario.name: scenario for scenario in (
-    Scenario("S0", "No fault (baseline)", s0),
+    Scenario("S0", "No fault (baseline)", s0, max_verifier_attempts=2),
     Scenario("S1a", "Kill the Planner mid-inference", s1a),
     Scenario("S1b", "Kill an Executor after the write intent, before the patch", s1b),
     Scenario("S1c", "Kill an Executor after the patch, before the result is saved", s1c),
     Scenario("S1d", "Kill the Verifier mid-collection", s1d),
     Scenario("S1e", "Kill an Executor after the write intent; only it comes back", s1e),
-    Scenario("S2", "Stall the lease-holding Executor past its lease", s2),
+    Scenario("S2", "Stall the lease-holding Executor past its lease", s2, max_verifier_attempts=2),
     Scenario("S3", "Partition the lease-holding Executor from the Coordinator", s3),
     Scenario("S4", "Drop the response to the Executor's result", s4),
     Scenario("S5", "Restart the Coordinator between commit and reply, and again later", s5),

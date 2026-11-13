@@ -132,6 +132,18 @@ When a known failure is fixed, the matching test in
 `tests/test_distributed_processes.py` fails until the scenario's
 `expected_failures` is updated, so a fix cannot go unrecorded.
 
+Each `summary.json` also gives `verifier_attempts`, the most deliveries of
+any `verifier.request` command, and `verification`: for each action the
+Verifier checked, its readings as seconds after the execution with each
+reading's status judged alone (healthy, unhealthy or incomplete), the first
+healthy one, the deadline and the outcome, read from the Verifier's own store.
+The remote Verifier samples within one claimed pass at most half the
+policy's `max_sample_gap_seconds` apart, until an outcome or the deadline
+([distributed model](../../docs/distributed-model.md#the-verifier-samples-within-one-claimed-pass)),
+so a run normally needs one Verifier delivery. S0 and S2 set
+`max_verifier_attempts` to 2: a run with more does not match its expectation
+(in file mode they take 1).
+
 ## Kind mode
 
 `--mode kind` accepts only `--context kind-sentinel-boutique-connected` and
@@ -250,9 +262,11 @@ the deadline), so a duplicate the Observer would open after that is not seen.
 Kind-mode defaults that differ from file mode:
 
 - **Deadline.** `--deadline` (kind mode only, 30-1800 s) replaces the
-  scenario's own 60 s; the default is 180 s. The live Verifier takes one
-  sample per pass and the Coordinator's retry back-off spaces those passes,
-  so the strict health policy needs up to its 90 s timeout after the write.
+  scenario's own 60 s; the default is 180 s, since the strict health policy
+  alone may take up to its 90 s timeout after the write. Up to be6e636 the
+  live Verifier took one sample per pass and the Coordinator's retry back-off
+  spaced those passes; it now samples every 10 s within one pass under this
+  policy (fixed in code; not yet re-run in kind mode).
 - **Observer failure window.** 15 s
   (`topology.py::OBSERVER_FAILURE_SECONDS`), written to the run's own Observer
   policy whatever the bundle says. With 2 s, the Recreate rollout after the
@@ -279,6 +293,15 @@ incident, and S2 r2 failed I5 after its Verifier command was delivered 8 times
 (`C-DISTRIBUTED-KIND-BE6E636`; the suspected cause, the retry back-off
 spacing the Verifier's samples past the policy's 20 s gap, is in
 [L-VERIFIER-RETRY-BACKOFF](../../docs/limitations.md#l-verifier-retry-backoff)).
+The Verifier now samples within one pass instead; that is fixed in code and
+tested offline only. To re-check it live, prepare a fresh bundle as above and
+run S2 and S8 twice each, then read `verifier_attempts` and `verification` in
+each `summary.json`:
+
+```powershell
+python -m experiments.distributed.run_scenarios --mode kind --context kind-sentinel-boutique-connected --kind-bundle <bundle> --scenarios S2,S8 --repeat 2 --out runs/distributed-kind-recheck
+```
+
 Each session left the fence annotations of its S8 runs
 (`sentinel.io/fence`, `sentinel.io/fence-epoch`) on the Deployment; the
 restore puts back the template only, and leaves those metadata annotations

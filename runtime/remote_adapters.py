@@ -1,7 +1,7 @@
 """Existing component algorithms bound to remote delivery and owned journals."""
 from copy import deepcopy
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import math
 from pathlib import Path
 import time
@@ -11,6 +11,8 @@ from services.guard.common import json_sha256
 from services.guard.core import assert_decision_usable, evaluate_with_report
 from services.planner.core import mock_provider, retrieve_runbooks
 from services.planner.worker import prepare
+from services.verifier.core import reading_status
+from services.verifier.store import sampling_interval
 from runtime.worker_health import PreflightFailed
 from shared import log
 from shared.contracts import validate_message
@@ -183,11 +185,57 @@ class ExecutorAdapter:
         return closed
 
 
+# The longest one Verifier pass keeps sampling under its claim. It stays below
+# worker_service's default --live-seconds (900), which no pass may outlast.
+VERIFIER_MAX_PASS_SECONDS = 600
+# While a pass waits for its next reading it looks at its lease at least this often.
+LEASE_CHECK_SECONDS = 1.0
+
+
+def _instant(text):
+    return datetime.fromisoformat(text.replace("Z", "+00:00"))
+
+
 class VerifierAdapter:
-    def __init__(self, journal, *, policy_reader, sample_reader, dependency_reader=None, clock=utc_now):
+    """The Verifier as a remote worker: dependency findings, and health after an action.
+
+    A verifier.request pass keeps its claim and samples the target until the
+    evidence is conclusive. Each reading is merged into the durable
+    VerificationStore and judged at once. While the verdict is not yet
+    conclusive the pass waits until sampling_interval(policy) seconds (at
+    most half the policy's max_sample_gap_seconds) after the start of the
+    previous reading and samples again. It ends with an outcome, which the
+    store freezes at the latest at the fixed verification deadline, or, if
+    max_pass_seconds would pass first, gives the delivery back and the next
+    pass carries on from the saved readings. Before this, one pass took one
+    reading and gave the delivery back, so the Coordinator's doubling retry
+    back-off set the cadence and a target that turned healthy late could not
+    collect readings close enough together (L-VERIFIER-RETRY-BACKOFF).
+
+    The lease is checked before every reading and at least every
+    LEASE_CHECK_SECONDS while waiting: a lost or replaced lease raises, so
+    sampling stops and RemoteWorker posts no result. Readings already merged
+    stay in the store, so a re-delivered command, after a crash included,
+    continues from them against the same deadline. A collector failure
+    still ends the pass and the delivery is retried; the deadline does not
+    move. A wall clock that does not move forward across a wait also ends
+    the pass, since no new reading could be stamped, and so does stopping
+    (worker_service's shutdown event) once it is set: the delivery goes
+    back and the readings stay for the next holder. Each reading is logged
+    as verifier.sample with its status judged alone (reading_status), and
+    the store keeps the readings themselves, so a run can show when the
+    target first read healthy.
+    """
+
+    def __init__(self, journal, *, policy_reader, sample_reader, dependency_reader=None, clock=utc_now,
+                 sleep=time.sleep, max_pass_seconds=VERIFIER_MAX_PASS_SECONDS, stopping=None):
+        if (type(max_pass_seconds) not in (int, float) or not math.isfinite(max_pass_seconds)
+                or not 0 < max_pass_seconds <= 3600):
+            raise ValueError("max_pass_seconds must be positive and at most one hour")
         self.journal, self.policy_reader = journal, policy_reader
         self.sample_reader, self.clock = sample_reader, clock
         self.dependency_reader = dependency_reader
+        self.sleep, self.max_pass_seconds, self.stopping = sleep, max_pass_seconds, stopping
 
     def process(self, delivery, lease):
         if delivery["topic"] == "dependency.request":
@@ -211,14 +259,70 @@ class VerifierAdapter:
             job = self.journal.start(execution, policy, now=self.clock())
         elif job["execution"] != execution:
             raise ValueError("Verifier action identity reused with changed execution")
+        # Deadline evaluation precedes collection so an outage can become UNKNOWN.
         outcome = self.journal.evaluate(execution["action_id"], now=self.clock())
         if outcome is None:
-            # Collector failures leave the fixed deadline intact. Deadline
-            # evaluation precedes collection so an outage can become UNKNOWN.
-            samples = self.sample_reader(deepcopy(execution))
-            self.journal.record_samples(execution["action_id"], samples, now=self.clock())
-            outcome = self.journal.evaluate(execution["action_id"], now=self.clock())
+            outcome = self._sample(execution, job, lease)
         return (outcome, None) if outcome is not None else None
+
+    def _sample(self, execution, job, lease):
+        """Sample until an outcome is frozen; None hands the delivery back (see the class docstring)."""
+        action_id = execution["action_id"]
+        interval = sampling_interval(job["policy"]["health"])
+        deadline = _instant(job["deadline"])
+        started, waited = self.clock(), 0.0
+        while True:
+            lease.ensure_current()  # A lost lease stops sampling before the next reading.
+            taken = self.clock()
+            # A collector failure raises here: the delivery is retried and the fixed deadline stays.
+            samples = self.sample_reader(deepcopy(execution))
+            saved = self.journal.record_samples(action_id, samples, now=self.clock())
+            self._log(saved, samples)
+            outcome = self.journal.evaluate(action_id, now=self.clock())
+            if outcome is not None:
+                return outcome
+            due = min(taken + timedelta(seconds=interval), deadline)
+            pause = max(0.0, (due - self.clock()).total_seconds())
+            spent = max((self.clock() - started).total_seconds(), waited)
+            if spent + pause > self.max_pass_seconds:
+                return None
+            if not self._wait(pause, lease):
+                return None  # Shutting down: hand the delivery back.
+            waited += pause
+            now = self.clock()
+            if now <= taken:
+                return None  # The wall clock did not move: no new reading could be stamped.
+            if now >= deadline:
+                lease.ensure_current()
+                return self.journal.evaluate(action_id, now=now)  # Final: never None at the deadline.
+
+    def _wait(self, seconds, lease):
+        """Sleep seconds, looking at the lease's renewal error at least every LEASE_CHECK_SECONDS.
+
+        False when stopping is set before the time is up.
+        """
+        left = seconds
+        while left > 0:
+            if self.stopping is not None and self.stopping.is_set():
+                return False
+            step = min(LEASE_CHECK_SECONDS, left)
+            self.sleep(step)
+            left -= step
+            error = getattr(lease, "error", None)
+            if error is not None:
+                raise error
+        return self.stopping is None or not self.stopping.is_set()
+
+    def _log(self, job, samples):
+        """One verifier.sample line per reading: its status alone, never its content."""
+        for sample in samples:
+            try:
+                status = reading_status(job["execution"], sample, job["policy"])
+            except Exception as error:  # noqa: BLE001 - an audit line must never stop sampling
+                log.failure(LOG, "verifier.sample.unjudged", error, action_id=job["action_id"])
+                continue
+            log.emit(LOG, "verifier.sample", action_id=job["action_id"], status=status,
+                     http_status=sample.get("http_status") if type(sample.get("http_status")) is int else None)
 
     def acknowledge(self, outcome):
         if outcome["kind"] == "outcome":

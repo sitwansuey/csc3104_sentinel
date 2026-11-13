@@ -216,7 +216,7 @@ Each drill then cleared the workers with `--accept-store`:
   claimed the replayed request first and reported a result of its own (an
   adopted write, with its own timestamp), and the Verifier's job store
   refuses a second execution for the same action
-  (`services/verifier/store.py:84::VerificationStore.start::Action ID reused with changed execution or policy`).
+  (`services/verifier/store.py:102::VerificationStore.start::Action ID reused with changed execution or policy`).
   Hence the order in the procedure; the check prints it.
 
 The reports are in `experiments/distributed/measurements/p3-06/`.
@@ -304,7 +304,7 @@ the skew between two processes:
   cannot complete an approved action; only a peer within the bound can (S7b).
 - The Verifier starts a job only once its clock has passed the Executor's
   `recorded_at`, and counts only readings stamped after it
-  (`services/verifier/store.py:78::VerificationStore.start::Monitoring cannot start before execution`).
+  (`services/verifier/store.py:96::VerificationStore.start::Monitoring cannot start before execution`).
   By reading the code, a Verifier clock behind the Executor's should delay
   verification by up to the skew, with retries and back-off in between,
   rather than wedge. No test or scenario covers it: the Verifier is level
@@ -426,6 +426,60 @@ and the in-flight-write model checker `tests/test_executor_reconcile_model.py::M
 
 Together these give effectively-once state transitions at the Coordinator.
 Delivery to workers is at least once, and receivers deduplicate by action id.
+
+### The Verifier samples within one claimed pass
+
+A remote Verifier keeps its claim on a `verifier.request` and samples the
+target until the evidence is conclusive
+(`runtime/remote_adapters.py::VerifierAdapter._sample`). Each reading is
+merged into its own `VerificationStore` and judged at once; while the verdict
+is still open the pass waits until `sampling_interval` seconds after the start
+of the previous reading and samples again. That interval is half the policy's
+`max_sample_gap_seconds`, or the stable window divided over the minimum
+samples when that is shorter, and never under 0.5 s
+(`services/verifier/store.py::sampling_interval`); under the kind policy it is
+10 s. The pass ends with an outcome, which the store freezes at the latest at
+the fixed verification deadline, or gives the delivery back if it would run
+past 600 s (`VERIFIER_MAX_PASS_SECONDS`, below the worker's default 900 s
+liveness window), and the next pass carries on from the saved readings.
+
+Before this change one pass took one reading and gave the delivery back, so
+the Coordinator's retry back-off (1, 2, 4, ... up to 60 s) set the sampling
+cadence. In kind mode at be6e636 that spaced the readings past the policy's
+20 s gap and S2 r2 ended FAILED after 8 deliveries of its Verifier command
+([L-VERIFIER-RETRY-BACKOFF](limitations.md#l-verifier-retry-backoff)).
+
+What is kept:
+
+- Lease fencing: the lease is checked before every reading and at least once
+  a second while waiting, and the renewal thread keeps renewing it; a lost or
+  replaced lease raises, sampling stops, and no result is posted.
+- Crash safety: readings already merged stay in the store, so a re-delivered
+  command, after a crash included, continues from them against the same
+  deadline. A Verifier that stays down longer than about the gap minus the
+  interval (10 s under the kind policy) after the target turned healthy
+  breaks the gap rule between the readings before and after; the verdict then
+  fails closed (FAILED, or NEEDS_REVIEW when no unhealthy reading came first)
+  at the deadline instead of confirming recovery.
+- The deadline: a collector failure still ends the pass and the delivery is
+  retried with back-off, and the deadline does not move; unhealthy readings
+  outside the convergence grace still end FAILED.
+- An audit trail: each reading is logged as `verifier.sample` with its status
+  judged alone (`services/verifier/core.py::reading_status`), and a
+  distributed run's summary.json gives the Verifier's readings as seconds
+  after the execution with that status (`verification`) and the most
+  deliveries of any Verifier command (`verifier_attempts`).
+
+Tests: `tests/test_verifier_sampling.py` drives the real `Delivery`,
+`RemoteWorker` and `VerifierAdapter` on a simulated clock under the kind
+policy. The be6e636 timeline (rollback committed, target healthy from +40 s)
+ends RECOVERED after one delivery at about +51 s; on the code before this
+change the same test ends FAILED after 8 deliveries. The file also covers a
+target that never turns healthy (FAILED by the deadline), evidence that never
+becomes conclusive (UNKNOWN frozen at the deadline), a lease lost mid-sampling
+(no result posted) and a Verifier killed mid-sampling (re-delivered once,
+RECOVERED). File-mode S0 and S2 assert at most 2 Verifier deliveries
+(`max_verifier_attempts`). None of this has run in kind mode yet.
 
 ## Fencing limits
 
@@ -770,7 +824,7 @@ on one Docker host.
 | --- | --- |
 | P2.06 | Done: the fenced abort ran live in the wedge harness `admission-deny` at 4139385 and 5409092 (`C-EXECUTOR-WEDGE-FENCE`); fencing stays off by default |
 | P3.02 | Done in file mode on one host: trace context across outbox rows, deliveries and worker requests, and the offline viewer, are in the code ([traces](observability.md#traces)), and two file-mode runs (fake cluster, synthetic planner, separate processes on one host) each rebuilt into one connected trace across six processes (`C-TRACE-FILE-679EF29`). Left: a trace from a kind-mode or multi-node run |
-| P3.01 | Done in file mode (above). Kind mode is reproducible in code: `experiments/distributed/kind_bundle.py` prepares the bundle (allowlisted lab contexts only, `sentinel-lab` always refused, a short-lived restricted `sentinel-executor` token in a temporary directory outside the repository), and kind mode injects the bundle's catalog fault (R1 by default) before every run and restores and re-checks the baseline after it (a failure after the injection is followed by a restore attempt, and the run stops naming the `kind_bundle restore` command when the baseline is not verified healthy), with a 180 s default deadline (`--deadline`), a 15 s Observer failure window and duplicate incidents counted in each run's summary ([recipe](../experiments/distributed/README.md#a-reproducible-kind-mode-run)). Two operator sessions on 12 Nov 2026 ran S1b, S1c, S2, S4, S5 and S8 twice each against `kind-sentinel-boutique-connected`, with the deterministic synthetic planner, all now committed evidence bundles: with scratch versions of these tools at 0a8d4d7, all 12 matched their expectation after the health policy was relaxed (the stricter one failed I3 at the 60 s deadline), and two opened a duplicate incident that the Guard rejected (`C-DISTRIBUTED-KIND-0A8D4D7`); with the committed tools at be6e636, 11 of 12 matched, and S2 r2 failed I5 after its Verifier command was delivered 8 times (`C-DISTRIBUTED-KIND-BE6E636`, `L-VERIFIER-RETRY-BACKOFF`). Left: that I5 failure. P4.01's four-node lab has its own harness (below), so these tools' allowlists stay as they are. Kind mode counts a template write by its effect, as file mode does: a change of the whole pod template's fingerprint between successive reads of the Deployment (a RESTART token change included), or a new evidence annotation for the template in place. It does not count `metadata.generation`, which an Executor fence also raises (`C-EXECUTOR-WEDGE-FENCE`), so a fence counts no write. Its reads are polled; when generation rose by more than the changes two reads show, a write may be hidden and I1 fails on an `unobserved` row instead of passing |
+| P3.01 | Done in file mode (above). Kind mode is reproducible in code: `experiments/distributed/kind_bundle.py` prepares the bundle (allowlisted lab contexts only, `sentinel-lab` always refused, a short-lived restricted `sentinel-executor` token in a temporary directory outside the repository), and kind mode injects the bundle's catalog fault (R1 by default) before every run and restores and re-checks the baseline after it (a failure after the injection is followed by a restore attempt, and the run stops naming the `kind_bundle restore` command when the baseline is not verified healthy), with a 180 s default deadline (`--deadline`), a 15 s Observer failure window and duplicate incidents counted in each run's summary ([recipe](../experiments/distributed/README.md#a-reproducible-kind-mode-run)). Two operator sessions on 12 Nov 2026 ran S1b, S1c, S2, S4, S5 and S8 twice each against `kind-sentinel-boutique-connected`, with the deterministic synthetic planner, all now committed evidence bundles: with scratch versions of these tools at 0a8d4d7, all 12 matched their expectation after the health policy was relaxed (the stricter one failed I3 at the 60 s deadline), and two opened a duplicate incident that the Guard rejected (`C-DISTRIBUTED-KIND-0A8D4D7`); with the committed tools at be6e636, 11 of 12 matched, and S2 r2 failed I5 after its Verifier command was delivered 8 times (`C-DISTRIBUTED-KIND-BE6E636`, `L-VERIFIER-RETRY-BACKOFF`). The Verifier now samples within one pass ([above](#the-verifier-samples-within-one-claimed-pass)); that is fixed in code and tested offline only. Left: re-running kind mode (S2 and S8, `--repeat 2`) to confirm it. P4.01's four-node lab has its own harness (below), so these tools' allowlists stay as they are. Kind mode counts a template write by its effect, as file mode does: a change of the whole pod template's fingerprint between successive reads of the Deployment (a RESTART token change included), or a new evidence annotation for the template in place. It does not count `metadata.generation`, which an Executor fence also raises (`C-EXECUTOR-WEDGE-FENCE`), so a fence counts no write. Its reads are polled; when generation rose by more than the changes two reads show, a write may be hidden and I1 fails on an `unobserved` row instead of passing |
 | P3.03 | Done in the code above. Left: S7 in kind mode, and a real clock offset per Pod (Chaos Mesh TimeChaos, P4.01) instead of the gated test offset. With operator approval required, an Executor whose clock is 5 min off cannot reach RECOVERED: its own Guard re-check refuses the Coordinator-stamped approval. So P4.01 should expect what S7 and S7b show (FAILED with no write without a bound; with a bound, that Executor stops claiming and an in-bound peer recovers the action), unless the owners change the re-check |
 | P3.04 | Done in the code above and in file mode on one host (ownership epochs, the seal, the ledger settle), and S8 ran in kind mode against the real shippingservice Deployment four times, twice with scratch tools at 0a8d4d7 and twice with the committed tools at be6e636, on one kind node on one host with the synthetic planner (`C-SEAL-LIVE`). Left: the audit-log proof that the paused PATCH was refused (P4.01), a run across separate machines, and the Executor owner's sign-off on the mechanism (#58) |
 | P3.05 | Done: an admission policy limiting which fields the Executor identity may change, with a monotonic fence epoch (`deploy/sentinel/executor-admission.yaml`), checked structurally offline and run live once in a disposable namespace (`scripts/validation/test_executor_admission_live.py`, 24 of 24 probes as expected, including a seal from a fresh store denied by a higher stored epoch; `C-ADMISSION-POLICY-LIVE`). Left: installing it in the lab namespaces, which nothing does yet; the owners' choice between seeding a store's epoch from the annotation and fencing by resourceVersion only; and their sign-off on the choices listed in `L-EXECUTOR-FIELD-LIMITS` (no epoch required on a template change, the identity matched in any namespace, a malformed stored epoch failing closed, evidence changeable without a template change, no resourceNames on the binding) |

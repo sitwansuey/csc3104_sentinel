@@ -133,6 +133,13 @@ cluster, and checks invariants from their records and logs. The default subset
 takes about 90 s; set `SENTINEL_DISTRIBUTED_ALL=1` for every scenario. These are
 processes on one host, not separate machines; see the
 [harness guide](../experiments/distributed/README.md).
+S0 and S2 there also assert that the Verifier command was delivered at most
+twice. `tests/test_verifier_sampling.py` runs the real `Delivery`,
+`RemoteWorker` and `VerifierAdapter` in one process on a simulated clock under
+the kind health policy: the be6e636 S2 r2 timeline (target healthy from about
++40 s) must end RECOVERED after one delivery, and a never-healthy target, a
+lost lease and a Verifier killed mid-sampling are checked too
+([L-VERIFIER-RETRY-BACKOFF](limitations.md#l-verifier-retry-backoff)).
 `tests/test_kind_bundle.py` covers the harness's kind mode offline, with a
 fake lab Deployment: bundle preparation (the token only in the private
 kubeconfig, never in another file or the summary; every context but the

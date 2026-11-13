@@ -37,7 +37,18 @@ with role-scoped `/v1/dependencies`, bound to the exact active proposal. No shar
 dependency file or private Verifier database is needed.
 
 Verifier retains its fixed deadline and samples across polls/restarts; missing
-evidence becomes UNKNOWN/NEEDS_REVIEW at that deadline. A successful patch remains
+evidence becomes UNKNOWN/NEEDS_REVIEW at that deadline. A `verifier.request`
+pass keeps its claim and samples until the evidence is conclusive: one reading
+at least every `sampling_interval` seconds (at most half the policy's
+`max_sample_gap_seconds`; 10 s under the kind policy), each merged into
+`verifier.db` and logged as `verifier.sample` with its status alone, with the
+lease checked before every reading and at least once a second while waiting.
+A lost lease stops sampling with no result posted; a collector failure ends the
+pass and the delivery is retried. A pass gives the delivery back after at most
+600 s, below the default `--live-seconds` (900), or at its next wait once the
+worker is stopping. Before this one pass took one
+reading, so the Coordinator's retry back-off set the cadence
+([L-VERIFIER-RETRY-BACKOFF](limitations.md#l-verifier-retry-backoff)). A successful patch remains
 VERIFYING until an independent outcome. Executor uses its existing conditional
 write/reconciliation ledger and obtains fresh approval plus live delivery
 authority under its target lock, including the post-journal final check.
@@ -364,7 +375,7 @@ runs it again and sees no second model call. That is one host. No live model, co
 `/healthz` answers 200 while the polling loop is not stopping and started a
 pass within `--live-seconds` (900 by default), so a loop stuck inside one pass
 turns unhealthy; set it above the longest pass you expect, such as a Planner's
-model call. `/readyz` answers 200 once
+model call or a Verifier pass (at most 600 s). `/readyz` answers 200 once
 the configuration was accepted, the worker's preflight passed (only the agent
 Planner has one, see [Agent mode](#agent-mode)), the worker had a successful
 exchange with the Coordinator within `--ready-seconds` (60 by default), when a

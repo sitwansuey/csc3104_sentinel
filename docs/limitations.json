@@ -40,7 +40,7 @@
         {"at": "tests/test_executor_reconciliation_table.py:420", "text": "def test_peer_adoption_gives_applied_with_zero_writes_on_host_b"},
         {"at": "tests/test_executor_reconciliation_table.py:475", "text": "def test_reconcile_on_a_host_with_no_row_returns_a_result"},
         {"at": "services/executor/store.py:3", "text": "Every worker must use the same ledger and lock directory"},
-        {"at": "tests/test_distributed_processes.py:45", "text": "def test_s1c_executor_killed_after_the_patch_is_adopted_by_the_peer_with_one_write"}
+        {"at": "tests/test_distributed_processes.py:58", "text": "def test_s1c_executor_killed_after_the_patch_is_adopted_by_the_peer_with_one_write"}
       ],
       "planned": ["P3.01", "P4.01"],
       "issues": [18, 58]
@@ -61,8 +61,8 @@
         {"at": "services/guard/core.py:159", "text": "if approved_at > checked_at + skew:"},
         {"at": "runtime/worker_http.py:320", "text": "self.samples.clear()"},
         {"at": "runtime/live_executor.py:126", "text": "now=self.clock()"},
-        {"at": "services/verifier/store.py:78", "text": "Monitoring cannot start before execution"},
-        {"at": "tests/test_distributed_processes.py:71", "text": "def test_s7_executor_clocks_300_s_behind_end_failed_without_a_write_or_a_wedge"},
+        {"at": "services/verifier/store.py:96", "text": "Monitoring cannot start before execution"},
+        {"at": "tests/test_distributed_processes.py:90", "text": "def test_s7_executor_clocks_300_s_behind_end_failed_without_a_write_or_a_wedge"},
         {"at": "tests/test_clock_skew.py:738", "text": "def test_per_role_clocks_300_s_apart_reach_recovered"}
       ],
       "planned": ["P3.03", "P4.01"],
@@ -144,7 +144,7 @@
         {"at": "agent/tools.py:205", "text": "**quote(r[message])"},
         {"at": "experiments/boutique/harness/agent_live.py:90", "text": "csv_cell(cleaned)"},
         {"at": "services/planner/agent_provider.py:361", "text": "raise PlanningError(\"SUSPECTED_INJECTION\", terminal=True)"},
-        {"at": "runtime/remote_adapters.py:288", "text": "raise PlanningError(\"SUSPECTED_INJECTION\", terminal=True)"},
+        {"at": "runtime/remote_adapters.py:392", "text": "raise PlanningError(\"SUSPECTED_INJECTION\", terminal=True)"},
         {"at": "runtime/remote_adapters.py", "text": "json.dumps(quoted)"},
         {"at": "tests/test_untrusted_telemetry.py:524", "text": "def test_every_attack_in_an_incident_signal_is_gated_and_never_reaches_a_prompt"},
         {"at": "tests/test_untrusted_telemetry.py:559", "text": "def test_benign_logs_still_reach_rollback_and_recovered"},
@@ -370,16 +370,23 @@
     },
     {
       "id": "L-VERIFIER-RETRY-BACKOFF",
-      "title": "In kind mode the Coordinator's retry back-off can space the Verifier's samples past the health policy's gap",
+      "title": "In kind mode the Coordinator's retry back-off spaced the Verifier's samples past the health policy's gap",
       "kind": "defect",
-      "status": "open",
+      "status": "mitigated",
       "since": "2026-11-12",
-      "impact": "Found live in kind mode at be6e636 (S2 r2, C-DISTRIBUTED-KIND-BE6E636): the Executor's rollback committed and the template went back to baseline, but the Verifier ended FAILED and invariant I5 failed because its command was delivered 8 times, above MAX_ATTEMPTS (6). The live Verifier takes one sample per pass and gives the delivery back while the target is not yet healthy; the Coordinator then offers it again after a back-off that doubles per attempt (1, 2, 4, ... up to 60 s), so passes came at about +1, +2.6, +5.1, +9.7, +18.3, +34.9, +67.5 and +127.7 s after the write. The kind policy distributed-kind-lab-2 needs 2 samples no more than 20 s apart within a 60 s convergence grace and a 90 s timeout, so once the gaps pass 20 s a target that becomes healthy late cannot be confirmed. The cause is inferred: the run kept no record of when the rollout became Available or of the Verifier's own samples. I5 also has no margin in kind mode: the Verifier command took 5 or 6 attempts in each of the 9 passing non-S8 runs, so any slower rollout trips it. The first kind attempt at 0a8d4d7, under a stricter policy (3 samples, 10 s gap, 60 s deadline), failed I3 with the incident still VERIFYING at the deadline, which is why the policy was relaxed; that it failed through the same back-off is inferred, because its records show only the I3 failure and at most 6 attempts per command. Seen with a single kind node on one host while other test sessions shared it; not seen in file mode.",
-      "workaround": "Read a kind-mode Verifier FAILED after a committed rollback as possibly a sampling artefact: check the target's rollout and health directly before treating it as a failed recovery. A Verifier monitoring cadence that does not depend on the delivery back-off, or a policy whose max_sample_gap covers the back-off, would remove it; neither is implemented.",
+      "impact": "Fixed in code; live verification pending. Found live in kind mode at be6e636 (S2 r2, C-DISTRIBUTED-KIND-BE6E636): the Executor's rollback committed and the template went back to baseline, but the Verifier ended FAILED and invariant I5 failed because its command was delivered 8 times, above MAX_ATTEMPTS (6). The live Verifier then took one sample per pass and gave the delivery back while the target was not yet healthy; the Coordinator offered it again after a back-off that doubles per attempt (1, 2, 4, ... up to 60 s), so passes came at about +1, +2.6, +5.1, +9.7, +18.3, +34.9, +67.5 and +127.7 s after the write. The kind policy distributed-kind-lab-2 needs 2 samples no more than 20 s apart within a 60 s convergence grace and a 90 s timeout, so once the gaps passed 20 s a target that became healthy late could not be confirmed. The cause is inferred: the run kept no record of when the rollout became Available or of the Verifier's own samples. I5 also had no margin in kind mode: the Verifier command took 5 or 6 attempts in each of the 9 passing non-S8 runs. The first kind attempt at 0a8d4d7, under a stricter policy (3 samples, 10 s gap, 60 s deadline), failed I3 with the incident still VERIFYING at the deadline, which is why the policy was relaxed; that it failed through the same back-off is inferred, because its records show only the I3 failure and at most 6 attempts per command. Seen with a single kind node on one host while other test sessions shared it; not seen in file mode. The fix: a remote Verifier pass now keeps its claim and samples until the evidence is conclusive, one reading every sampling_interval seconds (at most half of max_sample_gap_seconds; 10 s under distributed-kind-lab-2, which is unchanged), checking its lease before every reading and at least once a second while waiting, until the store freezes an outcome, at the latest at the fixed deadline; a pass gives the delivery back after at most 600 s. A lost lease stops sampling and posts no result, and readings survive a crash, so a re-delivered command continues from them against the same deadline. Offline, on a simulated clock with the real delivery layer and the kind policy, the be6e636 timeline (target healthy from +40 s) now ends RECOVERED after one delivery at about +51 s; the same test on the code before the fix ends FAILED after 8 deliveries. File-mode S0 and S2 now require at most 2 Verifier deliveries (1 observed), and each run's summary.json records the Verifier's readings (seconds after the write and each one's status) and verifier_attempts. Not re-run in kind mode. Residual: a Verifier down for longer than about the gap minus the interval (10 s here) after the target turned healthy leaves a gap the rules count, and the verdict then fails closed (FAILED, or NEEDS_REVIEW) at the deadline instead of confirming recovery.",
+      "workaround": "Until kind mode has been re-run (S2 and S8, --repeat 2), read a kind-mode Verifier FAILED after a committed rollback against that run's summary.json: verification gives when each Verifier reading was taken and its status, and verifier_attempts how often the command was delivered. On a build before this fix, treat such a FAILED as possibly a sampling artefact and check the target's rollout and health directly before treating it as a failed recovery.",
       "cites": [
+        {"at": "runtime/remote_adapters.py:268", "text": "def _sample(self, execution, job, lease):"},
+        {"at": "runtime/remote_adapters.py:275", "text": "lease.ensure_current()  # A lost lease stops sampling before the next reading."},
+        {"at": "services/verifier/store.py:40", "text": "def sampling_interval(health):"},
         {"at": "runtime/worker_transport.py:280", "text": "delay = min(60, 2 ** min(row[\"attempts\"] - 1, 6))"},
-        {"at": "experiments/distributed/kind_bundle.py:93", "text": "\"max_sample_gap_seconds\": 20"},
+        {"at": "experiments/distributed/kind_bundle.py:97", "text": "\"max_sample_gap_seconds\": 20"},
         {"at": "experiments/distributed/invariants.py:44", "text": "MAX_ATTEMPTS = 6"},
+        {"at": "experiments/distributed/scenarios.py:301", "text": "max_verifier_attempts=2"},
+        {"at": "tests/test_verifier_sampling.py:190", "text": "def test_be6e636_timeline_a_target_healthy_from_40_s_is_confirmed_in_one_delivery"},
+        {"at": "tests/test_verifier_sampling.py:252", "text": "def test_a_lease_lost_mid_sampling_stops_sampling_and_posts_no_result"},
+        {"at": "tests/test_verifier_sampling.py:287", "text": "def test_a_verifier_killed_mid_sampling_is_redelivered_and_still_verifies"},
         {"claim": "C-DISTRIBUTED-KIND-BE6E636"},
         {"claim": "C-DISTRIBUTED-KIND-ALL"}
       ],

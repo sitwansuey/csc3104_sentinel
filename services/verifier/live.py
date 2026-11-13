@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 from services.verifier.core import _reachable, inspect_dependencies, verify
 from services.verifier.http import EvidenceHTTP, validate_url
+from services.verifier.store import sampling_interval
 from services.guard.common import json_sha256
 from services.verifier.traces import stamp, trace_edges, utc_time
 from shared.contracts import validate_message
@@ -219,8 +220,7 @@ def collect_window(collector, execution, policy, *, interval_seconds=None, count
     verify(execution, [], policy)
     rules = policy["health"]
     if interval_seconds is None:
-        interval_seconds = min(rules["max_sample_gap_seconds"] / 2,
-                               rules["stable_window_seconds"] / max(1, rules["minimum_samples"] - 1))
+        interval_seconds = sampling_interval(rules)  # The remote Verifier's in-pass cadence too.
     if (type(interval_seconds) not in (float, int) or not math.isfinite(interval_seconds)
             or not 0 < interval_seconds <= min(60, rules["max_sample_gap_seconds"])):
         raise ValueError("Collection interval must be positive and within the policy gap limit")

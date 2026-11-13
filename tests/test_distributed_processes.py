@@ -5,9 +5,10 @@ own processes (experiments/distributed/topology.py), injects one fault and
 checks invariants I1-I6 and X1-X4 from the durable records and logs. These
 are processes on one host, not separate machines.
 
-The plan's CI subset (S1b, S1c, S2, S4, S5), S7 and S8 run by default, in
+S0, the plan's CI subset (S1b, S1c, S2, S4, S5), S7 and S8 run by default, in
 about a minute and a half. Set SENTINEL_DISTRIBUTED_ALL=1 to run every scenario,
-including S7b.
+including S7b. A scenario with max_verifier_attempts (S0, S2) also asserts that
+the Verifier command was delivered at most that many times.
 Known defects on this code base are asserted exactly (expected_failures), so a
 fix makes the test fail until the expectation is updated with the fix.
 """
@@ -31,7 +32,19 @@ class ScenarioMixin:
         self.assertEqual(failed, set(SCENARIOS[name].expected_failures), details)
         self.assertTrue(summary["single_host"] and summary["synthetic_planner"])
         self.assertLessEqual(summary["committed_writes"], 1)
+        bound = SCENARIOS[name].max_verifier_attempts
+        if bound is not None:  # The Verifier samples within one pass (L-VERIFIER-RETRY-BACKOFF).
+            self.assertIsNotNone(summary["verifier_attempts"])
+            self.assertLessEqual(summary["verifier_attempts"], bound, summary["verification"])
+        self.assertTrue(summary["matches_expectation"])
         return summary
+
+    def assert_verified_from_its_own_readings(self, summary):
+        (job,) = summary["verification"]
+        self.assertEqual(job["outcome"], "RECOVERED")
+        self.assertIsNotNone(job["first_healthy_after_execution_seconds"])
+        self.assertTrue(job["readings"])
+        self.assertTrue(all(set(item) == {"after_execution_seconds", "status"} for item in job["readings"]))
 
 
 class DistributedProcessTests(ScenarioMixin, unittest.TestCase):
@@ -57,6 +70,12 @@ class DistributedProcessTests(ScenarioMixin, unittest.TestCase):
         summary = self.run_scenario("S2")
         self.assertEqual(summary["notes"]["stall"], "block+blackhole" if os.name == "nt" else "suspend")
         self.assertEqual((summary["states"], summary["committed_writes"]), (["RECOVERED"], 1))
+        self.assert_verified_from_its_own_readings(summary)
+
+    def test_s0_no_fault(self):
+        summary = self.run_scenario("S0")
+        self.assertEqual((summary["states"], summary["committed_writes"]), (["RECOVERED"], 1))
+        self.assert_verified_from_its_own_readings(summary)
 
     def test_s4_a_dropped_result_response_is_recovered_by_replaying_the_saved_body(self):
         summary = self.run_scenario("S4")
@@ -82,9 +101,6 @@ class DistributedProcessTests(ScenarioMixin, unittest.TestCase):
 
 @unittest.skipUnless(ALL, "set SENTINEL_DISTRIBUTED_ALL=1 to run every scenario")
 class AllDistributedScenarioTests(ScenarioMixin, unittest.TestCase):
-    def test_s0_no_fault(self):
-        self.run_scenario("S0")
-
     def test_s1a_planner_killed_mid_inference(self):
         self.run_scenario("S1a")
 

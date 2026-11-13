@@ -134,6 +134,19 @@ class LabWorkerTests(unittest.TestCase):
                 worker_service.adapter(self.config(role), state, self.stack, answered=answered)
                 self.assertIs(made.call_args.kwargs["answered"], answered)
 
+    def test_the_verifier_gets_the_shutdown_event_to_end_a_sampling_pass(self):
+        stopping = threading.Event()
+        with patch.dict(os.environ, self.gate):
+            state = self.directory / "verifier-stop"
+            state.mkdir()
+            verifier = worker_service.adapter(self.config("verifier"), state, self.stack, stopping=stopping)
+        self.assertIs(verifier.stopping, stopping)
+        self.assertEqual(verifier.sleep, stopping.wait)
+        with patch.dict(os.environ, self.gate):
+            state = self.directory / "verifier-plain"
+            state.mkdir()
+            self.assertIsNone(worker_service.adapter(self.config("verifier"), state, self.stack).stopping)
+
     def test_lab_executor_uses_the_production_adapter_with_stop_points_and_the_test_clock(self):
         with patch("runtime.approval_http.ApprovalClient"):
             executor = self.adapter(self.config("executor"), **{fault_points.ENV_CLOCK_OFFSET: "-300"})
