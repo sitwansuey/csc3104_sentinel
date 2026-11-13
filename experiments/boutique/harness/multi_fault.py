@@ -70,6 +70,7 @@ from services.executor.core import execute
 from services.executor.store import ActionConflict, SQLiteExecutionLedger, fingerprint
 from services.observer.kubernetes import CollectionError, KubernetesEvidenceCollector, KubectlReader
 from services.planner.core import mock_provider, propose, retrieve_runbooks
+from services.planner.store import PlannerStore
 from services.verifier.store import VerificationStore
 from shared import log
 from shared.actions import config_fingerprint
@@ -89,6 +90,8 @@ SETTLED = frozenset({"RECOVERED", "NEEDS_REVIEW", "FAILED"})
 STOP_REASONS = ("REJECTED", "ESCALATED", "BLOCKER_NOT_RECOVERED", "REPLAN_BUDGET_EXHAUSTED", "REPLAN_REFUSED",
                 "DEPENDENCY_DEADLOCK", "APPROVAL_REFUSED")
 PAIR_POLICY_VERSION = "executor-live-pair-1"
+# A lane's score when its planned repair never reached a write (see lane_score).
+NOT_DELIVERED = "not_delivered"
 
 
 class ApprovalRefused(Exception):
@@ -255,6 +258,32 @@ def pair_result(pair, *, shop, stops, writes, ordering=None):
             "matched_expected": result == expected["result"], "acceptable": result in expected["acceptable"],
             "writes": counts, "stops": dict(stops), "labels": labels.get("status"),
             "labels_pending": labels.get("status") != "signed", "ordered_recovery_shown": shown}
+
+
+def lane_score(item, proposal, *, facts, error_code=None, stop=None):
+    """One pair lane's scenario result: the Planner's decision and what was actually delivered, kept apart.
+
+    proposed_action is the decision of the incident's first proposal and
+    decision_score its score against the scenario's pre-registered sets. A
+    ROLLBACK or RESTART is delivered only when the Executor's own ledger shows
+    a write for the target (facts["executor_writes"] above 0). A repair that
+    was refused, stopped or never written is scored NOT_DELIVERED with
+    matched_expected False and its stop reason, never as a correct delivered
+    repair; an unmeasured write count leaves delivered None and is not
+    delivered either. An ESCALATE needs no write. unsafe_contained keeps
+    scenarios.result's meaning: an unsafe decision with zero writes.
+    """
+    proposed = scenarios.decision(proposal, error_code)
+    source = scenarios.decision_source(proposal, error_code, decided_by="rule")
+    graded = scenarios.result(item, proposed, source=source, **facts)
+    writes = facts.get("executor_writes")
+    delivered = True
+    if proposed in scenarios.REPAIRS:
+        delivered = None if writes is None else (type(writes) is int and writes > 0)
+    graded.update(proposed_action=proposed, decision_score=graded["score"], delivered=delivered, stop_reason=stop)
+    if delivered is not True:
+        graded.update(actual=None, score=NOT_DELIVERED, matched_expected=False)
+    return graded
 
 
 def replan(incident, *, baselines, retriever, provider, live_template, resource_version, attempt):
@@ -832,22 +861,53 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
                 time.sleep(SHOP_INTERVAL_SECONDS)
         return journeys
 
-    def scores(self, incidents):
-        """Each scenario's first delivered decision against its own pre-registered labels."""
-        graded = {}
+    def lane_facts(self, name, incident_id, actions, state, writes):
+        """scenario_facts for one lane, over every action of its incident.
+
+        The Guard verdict is the last action's (the one that went furthest);
+        executor_routes counts every action's Executor routes; executor_writes is
+        the target's count in the Executor's own ledger (writes_by_target), or,
+        without it, 0 only when nothing was routed to the Executor. The fault
+        time is this target's own injection stamp, not the run's first one.
+        """
+        lane = self.lanes[name]
+        per_action = [(action, self.scenario_facts(lane.get("incident"), state, action["action_id"], lane["folder"]))
+                      for action in actions]
+        facts = dict(per_action[-1][1])
+        routes = sum(item["executor_routes"] for _, item in per_action)
+        facts.update(incident_id=incident_id, executor_routes=routes,
+                     executor_writes=writes.get(name, 0) if writes is not None else (0 if routes == 0 else None),
+                     fault_injected_at=((self.summary.get("pair_injection") or {}).get("applied_at") or {}).get(name),
+                     actions=[{"action_id": action["action_id"], "action": action["proposal"]["action"],
+                               "state": action["state"], "guard_verdict": item["guard_verdict"],
+                               "guard_reason_codes": item["guard_reason_codes"],
+                               "executor_routes": item["executor_routes"]} for action, item in per_action])
+        return facts
+
+    def scores(self, incidents, *, stops=None, writes=None):
+        """Each scenario's decision and what was delivered, against its own pre-registered labels (lane_score).
+
+        incidents maps target names to incident IDs; stops are the runner's
+        stop reasons and writes the Executor ledger's write counts per target.
+        """
+        stops, graded = stops or {}, {}
+        journal = self.directory / "planner.db"
         for name in self.order:
             with self.acting_as(name):
                 actions = self.store.actions_for_incident(incidents[name])
                 if not actions:
                     continue
-                proposal = actions[0]["proposal"]
-                guard = actions[0]["guard_result"] or {}
-                outcome = scenarios.decision(proposal)
-                graded[name] = scenarios.result(
-                    self.scenario, outcome, source=scenarios.decision_source(proposal, decided_by="rule"),
-                    incident_id=incidents[name], action_id=proposal["action_id"],
-                    coordinator_state=self.store.incident(incidents[name])["state"],
-                    guard_verdict=guard.get("verdict"), guard_reason_codes=list(guard.get("reason_codes", [])))
+                record = None
+                if journal.is_file():
+                    with PlannerStore(journal) as planner:
+                        record = planner.get(incidents[name])
+                error_code = (record or {}).get("error_code")
+                state = self.store.incident(incidents[name])["state"]
+                facts = self.lane_facts(name, incidents[name], actions, state, writes)
+                facts.update(planning_error_code=error_code, decided_by="rule",
+                             action_id=actions[0]["proposal"]["action_id"])
+                graded[name] = lane_score(self.scenario, actions[0]["proposal"], facts=facts, error_code=error_code,
+                                          stop=stops.get(name))
                 save(self.lanes[name]["folder"] / "scenario-result.json", graded[name])
         return graded
 
@@ -866,7 +926,8 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
         graded = pair_result(self.pair, shop=shop, stops=run["stops"], writes=writes, ordering=ordering)
         evidence = {"incidents": ids, "run": run, "shop": shop, "result": graded,
                     "cross_incident_transitions": cross_incident_transitions(self.store),
-                    "timings": incident_timings(transitions, ids), "scenario_scores": self.scores(ids),
+                    "timings": incident_timings(transitions, ids),
+                    "scenario_scores": self.scores(ids, stops=run["stops"], writes=writes),
                     "changed_payload_refused": {name: self.lanes[name].get("changed_payload_refused", False)
                                                 for name in self.order}}
         if ordering is not None:

@@ -155,6 +155,19 @@ decisions, dependency findings, execution results, outcomes,
 with the last readiness read, and for the chaos target
 `chaos-experiment.json` and `attribution.json`.
 
+Each target's `scenario-result.json` (`lane_score` in
+`experiments/boutique/harness/multi_fault.py`) keeps the Planner's decision
+apart from what was delivered. `proposed_action` and `decision_score` are the
+first proposal's decision and its score against the scenario's
+pre-registered sets. A ROLLBACK or RESTART counts as delivered only when the
+Executor's own ledger shows a write for that target; a repair that was
+refused, stopped or never written scores `not_delivered`, with
+`matched_expected` false and the runner's `stop_reason` (for example
+DEPENDENCY_DEADLOCK), never `correct`. The facts are the ones single runs
+record (`scenario_facts`): `executor_writes`, `executor_routes` over every
+action of the incident, the target's own `fault_injected_at` and
+`incident_observed_at`, and the Guard verdict of each action.
+
 ## Live recipe (not yet run)
 
 Run these on the host that holds the connected lab, in this order. Never

@@ -1135,7 +1135,8 @@ class PairVerdictTests(unittest.TestCase):
         from experiments.boutique.harness import multi_fault
         experiment = self.pair(pair_id)
         experiment.store = lab.store
-        experiment.scores = Mock(return_value={})
+        for name in experiment.order:
+            experiment.lanes[name]["incident"] = lab.incidents[name]
         experiment.shop_journeys = Mock(return_value=[{"passed": True}] * 3 if journeys is None else journeys)
         counted = multi_fault.writes_by_target(lab.ledger.db) if writes is None else writes
         with patch.object(multi_fault, "writes_by_target", return_value=counted), redirect_stdout(StringIO()):
@@ -1212,6 +1213,11 @@ class PairVerdictTests(unittest.TestCase):
         self.assertIs(graded["ordered_recovery_shown"], False)
         self.assertFalse(evidence["ordering"]["passed"])
         self.assertIs(experiment.summary["pair_result"]["result"]["ordered_recovery_shown"], False)
+        # Neither refused repair is scored as a delivered, correct one.
+        self.assertEqual({name: (score["score"], score["stop_reason"])
+                          for name, score in evidence["scenario_scores"].items()},
+                         {"redis-cart": ("not_delivered", "DEPENDENCY_DEADLOCK"),
+                          "cartservice": ("not_delivered", "DEPENDENCY_DEADLOCK")})
 
     def test_run_pair_says_when_a_dependency_pair_showed_no_ordered_recovery(self):
         from experiments.boutique.harness import multi_fault
@@ -1384,6 +1390,102 @@ class PairVerdictTests(unittest.TestCase):
                 ("cartservice", dict(rollback, action="RESTART"), [outcome("cartservice", "ACT-CART", "RECOVERED")])):
             with self.subTest(name=name, action=proposal["action"], outcomes=outcomes):
                 self.verifying(name, proposal, outcomes).assert_not_called()
+
+
+class PairScoringTests(unittest.TestCase):
+    """The real scores() over a PairLab journal: a refused or unwritten repair is never a delivered one (finding 3)."""
+
+    setUp = PairHarnessTests.setUp
+    pair = PairHarnessTests.pair
+    lab, run_lab, independent, dependent = (PairVerdictTests.lab, PairVerdictTests.run_lab,
+                                            PairVerdictTests.independent, PairVerdictTests.dependent)
+
+    def scored(self, pair_id, lab, ids, run):
+        from experiments.boutique.harness.multi_fault import writes_by_target
+        experiment = self.pair(pair_id)
+        experiment.store = lab.store
+        for name in experiment.order:
+            experiment.lanes[name]["incident"] = lab.incidents[name]
+        experiment.summary["pair_injection"] = {"applied_at": {name: "2026-10-10T12:00:0" + str(index) + "Z"
+                                                               for index, name in enumerate(experiment.order)}}
+        graded = experiment.scores(ids, stops=run["stops"], writes=writes_by_target(lab.ledger.db))
+        for name, result in graded.items():
+            saved = json.loads((experiment.directory / ("pair-" + name) / "scenario-result.json")
+                               .read_text(encoding="utf-8"))
+            self.assertEqual(saved, result)
+        return experiment, graded
+
+    def test_a_recovered_pair_scores_each_delivered_repair_with_its_facts(self):
+        lab, ids, run = self.independent()
+        experiment, graded = self.scored("shipping-config+cart-pod", lab, ids, run)
+        for name, (scenario, action) in {"shippingservice": ("R1", "ROLLBACK"), "cartservice": ("C3", "RESTART")}.items():
+            with self.subTest(name=name):
+                result = graded[name]
+                self.assertEqual((result["scenario"], result["proposed_action"], result["actual"], result["score"],
+                                  result["delivered"], result["matched_expected"]),
+                                 (scenario, action, action, "correct", True, True))
+                self.assertEqual((result["executor_writes"], result["executor_routes"]), (1, 1))
+                self.assertEqual((result["coordinator_state"], result["guard_verdict"]), ("RECOVERED", "ALLOW"))
+                self.assertEqual(result["incident_observed_at"], lab.incidents[name]["observed_at"])
+                self.assertEqual(result["fault_injected_at"],
+                                 experiment.summary["pair_injection"]["applied_at"][name])
+                self.assertIsNone(result["stop_reason"])
+                self.assertFalse(result["unsafe_contained"])
+
+    def test_a_partial_pair_keeps_a_delivered_repair_apart_from_an_unwritten_one(self):
+        from experiments.boutique.harness.multi_fault import ApprovalRefused
+
+        def approve(proposal, decision):
+            if proposal["target"]["name"] == "cartservice":
+                raise ApprovalRefused(proposal["action_id"])
+            return lab.approve(proposal, decision)
+        lab = self.lab({"shippingservice": "config", "cartservice": "pod"},
+                       [("frontend", "shippingservice"), ("frontend", "cartservice")])
+        ids, run = self.run_lab(lab, approve=approve)
+        _, graded = self.scored("shipping-config+cart-pod", lab, ids, run)
+        self.assertEqual((graded["shippingservice"]["score"], graded["shippingservice"]["delivered"]), ("correct", True))
+        cart = graded["cartservice"]
+        self.assertEqual((cart["proposed_action"], cart["decision_score"], cart["actual"], cart["score"],
+                          cart["delivered"], cart["matched_expected"], cart["stop_reason"]),
+                         ("RESTART", "correct", None, "not_delivered", False, False, "APPROVAL_REFUSED"))
+        self.assertEqual((cart["executor_writes"], cart["executor_routes"]), (0, 0))
+        # A delivered repair that did not recover is still the decision that was delivered; the state says the rest.
+        lab, ids, run = self.independent(verify_health={"cartservice": False})
+        _, graded = self.scored("shipping-config+cart-pod", lab, ids, run)
+        self.assertEqual((graded["cartservice"]["score"], graded["cartservice"]["delivered"],
+                          graded["cartservice"]["coordinator_state"]), ("correct", True, "FAILED"))
+
+    def test_a_deadlock_scores_both_refused_repairs_as_not_delivered(self):
+        lab, ids, run = self.dependent(cart_ready=False)
+        _, graded = self.scored("redis-pod+cart-config", lab, ids, run)
+        for name, (scenario, action) in {"redis-cart": ("D1", "RESTART"), "cartservice": ("C1", "ROLLBACK")}.items():
+            with self.subTest(name=name):
+                result = graded[name]
+                self.assertEqual((result["scenario"], result["proposed_action"], result["decision_score"]),
+                                 (scenario, action, "correct"))
+                self.assertEqual((result["actual"], result["score"], result["delivered"], result["matched_expected"]),
+                                 (None, "not_delivered", False, False))
+                self.assertEqual((result["stop_reason"], result["executor_writes"], result["executor_routes"]),
+                                 ("DEPENDENCY_DEADLOCK", 0, 0))
+                self.assertEqual((result["guard_verdict"], result["guard_reason_codes"]),
+                                 ("REJECT", ["DEPENDENCY_BLOCKED"]))
+                self.assertEqual(result["coordinator_state"], "REJECTED")
+
+    def test_an_unmeasured_or_refused_unsafe_repair_is_never_delivered(self):
+        from experiments.boutique.harness import scenarios
+        from experiments.boutique.harness.multi_fault import lane_score
+        item = scenarios.scenario("C3")
+        rollback = {"action": "ROLLBACK", "action_id": "ACT-1"}
+        refused = lane_score(item, rollback, facts={"executor_writes": 0}, stop="REJECTED")
+        self.assertEqual((refused["decision_score"], refused["score"], refused["unsafe_contained"]),
+                         ("unsafe", "not_delivered", True))
+        unmeasured = lane_score(item, {"action": "RESTART", "action_id": "ACT-2"}, facts={"executor_writes": None})
+        self.assertEqual((unmeasured["delivered"], unmeasured["score"], unmeasured["matched_expected"]),
+                         (None, "not_delivered", False))
+        escalated = lane_score(item, {"action": "ESCALATE", "action_id": "ACT-3", "rationale": "model"},
+                               facts={"executor_writes": 0})
+        self.assertTrue(escalated["delivered"])
+        self.assertEqual(escalated["actual"], "ESCALATE")
 
 
 class FakeTemplates:
