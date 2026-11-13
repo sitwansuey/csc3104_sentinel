@@ -31,12 +31,13 @@ The live collector records with each reading the Deployment's `generation`,
 as the readiness counts, and none of them when that read failed. Inside the
 grace, a reading with no response (no HTTP status, no gRPC status and check, no
 Redis reply), 0 ready and 0 available replicas and counts that show the new
-template not yet in place (`observed_generation` below `generation`, or
-`updated_replicas` below `desired_replicas`, which includes no Pod at all) is
-judged as an unhealthy reading rather than missing evidence
-(`core.py::_awaiting_rollout`). A silent reading once the generation is
-observed and every desired Pod of the new template exists stays missing
-evidence: that Pod is there and does not answer. Everything else about it must still be complete (identity,
+template not yet in place or not yet available (`observed_generation` below
+`generation`, `updated_replicas` below `desired_replicas`, which includes no
+Pod at all, or `available_replicas` below `updated_replicas`, the test
+`kubectl rollout status` uses) is judged as an unhealthy reading rather than
+missing evidence (`core.py::_awaiting_rollout`). Setting it aside cannot by
+itself give RECOVERED: the readings after it must still pass every rule.
+Everything else about it must still be complete (identity,
 timestamp, approved template, `configuration_stable`, dependency evidence), and
 the rule above is otherwise unchanged; the outcome names the cause `service not
 answering during rollout`. Readings without the counts, from any other

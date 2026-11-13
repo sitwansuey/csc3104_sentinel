@@ -355,9 +355,11 @@ def _awaiting_rollout(sample, rules, limit):
     no Redis reply), and the reading's own Deployment read says why: no
     replica is ready or available, and the rollout counts (ROLLOUT_FIELDS,
     non-negative integers the collector records only from a whole,
-    consistent Deployment read) show the new template not yet in place:
+    consistent Deployment read) show the rollout not finished, in the sense
+    `kubectl rollout status` uses:
 
         observed_generation < generation  or  updated_replicas < desired_replicas
+        or  available_replicas < updated_replicas
 
     The first means the controller has not yet acted on the write, so every
     count still describes the old spec. The second means fewer Pods of the
@@ -365,16 +367,19 @@ def _awaiting_rollout(sample, rules, limit):
     (total_replicas 0), since updatedReplicas counts a subset of
     status.replicas and desired is at least 1. A Recreate rollout leaves the
     target with no Pod for some seconds after the write (updated 0, total 0),
-    so the first reading can fall there. Once the generation is observed and
-    every desired Pod of the new template exists, a silent reading is about
-    a Pod that is there and does not answer (still starting, failing its
-    probe, crash-looping): that stays missing evidence, which is why the
-    test `kubectl rollout status` also applies (available below updated) is
-    left out. Counts that contradict each other (more updated Pods than
-    Pods) never qualify. Every other fact is still checked by _assess
-    (identity, timestamps, template, configuration_stable, dependencies). A
-    reading whose Deployment read failed has no counts and never qualifies,
-    nor does a silent target with a ready or available replica.
+    so the first reading can fall there. The third means a Pod of the new
+    template exists but is not yet available: found live (sentinel-dist S0 r3
+    at 614c4aa, first reading +5 s: updated 1, total 1, ready 0, no HTTP
+    response), the new container had not yet started serving. Setting such a
+    reading aside cannot by itself give RECOVERED: verify() still needs the
+    readings after it to pass every rule over the stable window, readings
+    after the grace always count, and a relapse always counts, so a Pod that
+    never starts serving still ends UNKNOWN or NOT_RECOVERED. Counts that
+    contradict each other (more updated Pods than Pods) never qualify. Every
+    other fact is still checked by _assess (identity, timestamps, template,
+    configuration_stable, dependencies). A reading whose Deployment read
+    failed has no counts and never qualifies, nor does a silent target with
+    a ready or available replica.
     """
     if not isinstance(sample, dict) or sample.get("protocol", "http") != rules["protocol"]:
         return False
@@ -396,7 +401,7 @@ def _awaiting_rollout(sample, rules, limit):
     desired, ready, generation, observed, updated, total = counts
     if desired < 1 or generation < 1 or ready != 0 or available != 0 or updated > total:
         return False
-    return observed < generation or updated < desired
+    return observed < generation or updated < desired or available < updated
 
 
 def verify(execution: dict, samples: list[dict], policy: dict, *, final: bool = True) -> dict:

@@ -524,19 +524,25 @@ and inside the convergence grace a reading with no response, no ready or
 available replica and counts that show the new template not yet in place
 counts as unhealthy, not as missing evidence
 (`services/verifier/core.py::_awaiting_rollout`). The test is
-`observed_generation < generation` or `updated_replicas < desired_replicas`.
+`observed_generation < generation`, `updated_replicas < desired_replicas` or
+`available_replicas < updated_replicas`: the rollout is not finished, in the
+sense `kubectl rollout status` uses.
 The first says the controller has not yet acted on the write, so every count
 still describes the old spec. The second says fewer Pods of the new template
 exist than the spec asks for; it includes no Pod at all, because
 `updatedReplicas` counts a subset of `status.replicas` and the desired count
 is at least 1, and that is what a Recreate rollout reports between the old
-Pod going and the new one starting (updated 0, total 0). Once the generation
-is observed and every desired Pod of the new template exists, a silent
-reading is about a Pod that is there and does not answer (still starting,
-failing its probe, crash-looping), so it stays missing evidence; that is why
-the remaining test of `kubectl rollout status` (available below updated) is
-left out, at the cost that a first reading landing in a new Pod's start-up
-seconds still leaves the window UNKNOWN. Counts that contradict each other
+Pod going and the new one starting (updated 0, total 0). The third says a Pod
+of the new template exists but is not yet available. A first version left it
+out, so a silent reading taken while the new container was still starting
+counted as missing evidence; live, S0 r3 at 614c4aa caught exactly that
+(+5 s: updated 1, total 1, ready 0, no HTTP response) and ended NEEDS_REVIEW
+after eight healthy readings. Including it is safe for the same reason as
+the other two: setting a leading reading aside cannot by itself give
+RECOVERED, because the readings after it must still pass every rule over the
+stable window, readings after the grace always count and a relapse always
+counts, so a Pod that never starts serving still ends UNKNOWN or
+NOT_RECOVERED. Counts that contradict each other
 (more updated Pods than Pods) never qualify. A qualifying reading can then
 be set aside like any leading unhealthy reading, under the same conditions:
 leading, inside the grace, the rest of the window trustworthy, the readings

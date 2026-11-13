@@ -634,12 +634,14 @@ What changed (offline):
   on the write) or `updated_replicas` below `desired_replicas` (fewer Pods of
   the new template than the spec asks for, which includes no Pod at all, the
   updated 0 / total 0 a Recreate rollout reports before the new Pod starts)
-  (`services/verifier/core.py::_awaiting_rollout`). Once the generation is
-  observed and every desired Pod of the new template exists, a silent reading
-  is about a Pod that is there and does not answer, so it stays missing
-  evidence; the remaining test of `kubectl rollout status` (available below
-  updated) is left out for that reason, and counts that contradict each other
-  never qualify. Every other fact of that
+  or `available_replicas` below `updated_replicas` (a new Pod exists but is
+  not yet available: the rollout is not finished in the sense `kubectl
+  rollout status` uses) (`services/verifier/core.py::_awaiting_rollout`).
+  The third test was added after the fourth deployment's S0 r3 (614c4aa)
+  ended NEEDS_REVIEW on a first reading taken while the new container was
+  still starting (+5 s: updated 1, total 1, ready 0, no HTTP response); it
+  cannot by itself give RECOVERED, because the readings after it must still
+  pass every rule. Counts that contradict each other never qualify. Every other fact of that
   reading must still be complete and right (target identity, timestamp,
   approved template, `configuration_stable`, dependency evidence); the rest
   of the grace rule is unchanged: only a leading run inside the grace is set
