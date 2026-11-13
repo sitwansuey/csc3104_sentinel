@@ -49,7 +49,13 @@ harness approves on the operator's behalf with the operator's credential: no
 person reads or types an approval, so a run is not evidence of a human in the
 loop), and applies the scenario's fault: Chaos Mesh PodChaos, NetworkChaos or TimeChaos
 objects in sentinel-dist only, docker pause of one executor node, a fault
-point armed inside a worker Pod, or a Pod deletion. It then copies the
+point armed inside a worker Pod, or a Pod deletion. Each fault is confirmed
+in effect from the cluster before the scenario goes on (chaos_effect: the
+selected Pod's UID gone for a pod-kill, Injected records for every selected
+Pod otherwise; State.Paused for docker pause), a fault that is not is a
+harness error, and whatever is still in place when the scenario ends is
+undone and recorded as operator actions (kind_acceptance_live.Run.cleanup),
+with Lab.settle reporting anything left. It then copies the
 Coordinator's and every worker's databases out of their Pods (read-only
 SQLite backups through python in the container, which has no shell or tar),
 reads the Pods' logs and the API server audit log, and computes I1-I6 and
@@ -86,13 +92,16 @@ the cluster's clock by the measured offset. These are four containers on one
 Docker host: they share one kernel, one clock and one disk, and are not
 separate machines.
 
-Status: tested offline (tests/test_kind_acceptance.py and
-tests/test_kind_acceptance_repeats.py, with a fake kubectl, docker and helm
-and local Coordinator and Observer databases) and deployed live twice, on
-13 Nov 2026. The first deployment's S0 runs repaired nothing (stale proposals, a failed
+Status: tested offline (tests/test_kind_acceptance.py,
+tests/test_kind_acceptance_repeats.py and tests/test_kind_chaos_confirmation.py,
+with a fake kubectl, docker and helm, a fake Chaos Mesh and local Coordinator
+and Observer databases) and deployed live several times on 13 Nov 2026. The
+first deployment's S0 runs repaired nothing (stale proposals, a failed
 restore). In the second, one S0 run passed and the S0 runs after it in the
 same deployment opened no incident, because the harness counted the first
-run's RECOVERED incident as theirs; that is fixed here and not yet re-run
+run's RECOVERED incident as theirs. The first matrix, at 1adcfe3, passed 4
+of 5 S0 runs and stopped in S1a r1, because the harness deleted its PodChaos
+before Chaos Mesh acted on it. Both are fixed here and not yet re-run
 (docs/distributed-acceptance.md#first-live-attempts).
 """
 import argparse
@@ -631,6 +640,130 @@ def time_skew(name, apps, offset_seconds, seconds):
                                      "duration": _duration(seconds)})
 
 
+# Confirming a fault ----------------------------------------------------------------------------------------
+#
+# Creating a chaos object is a request, not a fault. On 13 Nov 2026 (S1a r1 at 1adcfe3) the harness created
+# PodChaos s1a-r1-planner and deleted it about 0.6 s later in its cleanup, before Chaos Mesh's controller had
+# acted on it, so the Planner was never killed and stayed blocked at its fault point
+# (docs/distributed-acceptance.md#first-live-attempts). Every fault is therefore confirmed from the cluster
+# before the run goes on (Lab.confirm_chaos, chaos_effect) and removed only after its window.
+
+CHAOS_CONFIRM_SECONDS = 60  # How long Chaos Mesh may take to carry out a chaos object before the run stops.
+REPLACEMENT_SECONDS = 180  # How long a killed Pod's replacement may take to be Ready.
+PAUSE_CONFIRM_SECONDS = 10  # docker pause and unpause are synchronous; this only absorbs a slow inspect.
+INJECT_ANNOTATION = "chaos-mesh.org/inject"  # With enableFilterNamespace, Chaos Mesh injects only where this is "enabled".
+_POD_NAME = re.compile(r"[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?\Z")
+
+
+def chaos_selectors(document):
+    """{selector key: selector} as Chaos Mesh 2.8.2 keys its records: "." for spec.selector, ".Target" for a target."""
+    spec = document["spec"]
+    selectors = {".": spec["selector"]}
+    if spec.get("target"):
+        selectors[".Target"] = spec["target"]["selector"]
+    return selectors
+
+
+def selector_apps(selector):
+    """The app label values a harness selector names: labelSelectors {app} or an In expression on app."""
+    labels = selector.get("labelSelectors") or {}
+    if set(labels) - {"app"}:
+        raise AcceptanceError("Chaos selects Pods by their app label only")
+    apps = list(labels.values())
+    for expression in selector.get("expressionSelectors") or []:
+        if expression.get("key") != "app" or expression.get("operator") != "In":
+            raise AcceptanceError("Chaos selects Pods by their app label only")
+        apps.extend(expression.get("values") or [])
+    if not apps:
+        raise AcceptanceError("A chaos selector must name at least one app")
+    for app in apps:
+        _selector(app)
+    return sorted(set(apps))
+
+
+def record_pod(record_id):
+    """(Pod name, container or None) from a record id "<namespace>/<pod>" or "<namespace>/<pod>/<container>".
+
+    Any other shape, or another namespace, raises: a record the harness cannot
+    place must stop the run, never be ignored.
+    """
+    parts = str(record_id).split("/")
+    if len(parts) not in (2, 3) or parts[0] != NAMESPACE or not _POD_NAME.fullmatch(parts[1]):
+        raise AcceptanceError("Unexpected Chaos Mesh record id: " + str(record_id)[:120])
+    return parts[1], (parts[2] if len(parts) == 3 else None)
+
+
+def pod_facts(item):
+    """What confirmation needs about one Pod document: name, UID, node, phase, readiness and containers."""
+    metadata, status = item.get("metadata") or {}, item.get("status") or {}
+    ready = any(condition.get("type") == "Ready" and condition.get("status") == "True"
+                for condition in status.get("conditions") or [])
+    containers = {entry.get("name"): {"id": entry.get("containerID"), "running": "running" in (entry.get("state") or {}),
+                                      "restarts": entry.get("restartCount")}
+                  for entry in status.get("containerStatuses") or []}
+    return {"name": metadata.get("name"), "uid": metadata.get("uid"), "node": (item.get("spec") or {}).get("nodeName"),
+            "phase": status.get("phase"), "deleting": bool(metadata.get("deletionTimestamp")), "ready": ready,
+            "containers": containers}
+
+
+def chaos_effect(document, current, targets, pods_now):
+    """Whether document is in effect: {"in_effect", "waiting": [reasons], "evidence"}; AcceptanceError on a wrong target.
+
+    current is the chaos object read from the cluster (None when absent),
+    targets {selector key: [pod_facts]} the Pods its selectors matched just
+    before it was created, and pods_now {app: [pod_facts]} the Pods of its
+    apps now (read for PodChaos only). In effect means, for pod-kill, that no
+    Pod it selected is still running (its UID is gone or being deleted); for
+    every other action that desiredPhase is Run and every selected Pod has a
+    record Injected (both ends of a partition), and for pod-failure also that
+    the container that ran in the selected Pod is no longer running. A record
+    for a Pod the harness did not select, in another namespace or for another
+    container is an error, not a reason to wait.
+    """
+    kind, spec, name = document["kind"], document["spec"], document["metadata"]["name"]
+    if current is None:
+        return {"in_effect": False, "waiting": [f"{kind} {name} is not in the cluster"], "evidence": {}}
+    experiment = (current.get("status") or {}).get("experiment") or {}
+    desired = experiment.get("desiredPhase")
+    expected = {pod["name"] for pods in targets.values() for pod in pods}
+    containers = spec.get("containerNames")
+    records = []
+    for record in experiment.get("containerRecords") or []:
+        pod, container = record_pod((record or {}).get("id"))
+        if pod not in expected:
+            raise AcceptanceError(f"{kind} {name} has a record for Pod {pod}, which is not one of the Pods its "
+                                  "selector matched before it was created")
+        if container is not None and containers and container not in containers:
+            raise AcceptanceError(f"{kind} {name} has a record for container {container}, not one it names")
+        records.append({"id": record.get("id"), "selector_key": record.get("selectorKey"), "phase": record.get("phase")})
+    evidence = {"desired_phase": desired, "records": records}
+    waiting = []
+    if kind == "PodChaos" and spec.get("action") == "pod-kill":
+        victims = {pod["uid"]: pod["name"] for pod in targets.get(".", [])}
+        alive = sorted(pod["name"] for pods in pods_now.values() for pod in pods
+                       if pod["uid"] in victims and not pod["deleting"])
+        waiting += [f"Pod {pod} (selected) is still running" for pod in alive]
+        evidence["killed"] = [{"pod": victims[uid], "uid": uid} for uid in sorted(victims)]
+        return {"in_effect": not waiting, "waiting": waiting, "evidence": evidence}
+    if desired != "Run":
+        waiting.append(f"desiredPhase is {desired or 'not set yet'}")
+    injected = {record_pod(record["id"])[0] for record in records if record["phase"] == "Injected"}
+    waiting += [f"no Injected record for Pod {pod}" for pod in sorted(expected - injected)]
+    if kind == "PodChaos" and spec.get("action") == "pod-failure":
+        now = {pod["uid"]: pod for pods in pods_now.values() for pod in pods}
+        replaced = []
+        for pod in targets.get(".", []):
+            later = now.get(pod["uid"])
+            for container, before in sorted(pod["containers"].items()):
+                after = (later or {}).get("containers", {}).get(container) or {}
+                if after.get("running") and after.get("id") == before.get("id"):
+                    waiting.append(f"container {container} of Pod {pod['name']} is still the one that was running")
+                replaced.append({"pod": pod["name"], "uid": pod["uid"], "container": container,
+                                 "container_before": before.get("id"), "container_after": after.get("id")})
+        evidence["replaced"] = replaced
+    return {"in_effect": not waiting, "waiting": waiting, "evidence": evidence}
+
+
 # Scenarios -----------------------------------------------------------------------------------------------
 
 ALL_CHECKS = ("I1", "I2", "I3", "I4", "I5", "I6", "X1", "X2", "X3", "X4", "I7")
@@ -1035,7 +1168,7 @@ class Lab:
         self.prior = frozenset(row["incident_id"] for row in rows)
         return self.prior
 
-    def settle(self, baseline, *, timeout=None, quiet=None, interval=2.0):
+    def settle(self, baseline, *, timeout=None, quiet=None, interval=2.0, leftovers=None):
         """After the restore: wait until the target has stayed healthy at its baseline and this run's incidents ended.
 
         The operator's restore (and Sentinel's own rollback) rolls the target
@@ -1045,14 +1178,18 @@ class Lab:
         baseline for quiet seconds (longer than an Observer poll and its
         delivery), every incident this run opened must be terminal, no seal
         may still be required and the Observer's outbox must hold no
-        undelivered incident. Returns what was seen; settled is False
+        undelivered incident. leftovers, when given, returns what the run's
+        faults left behind (kind_acceptance_live.Run.leftovers: a chaos
+        object still in the cluster, a node still paused, a fault point still
+        held or armed); the lab is not settled while it returns anything, and
+        the last answer is reported. Returns what was seen; settled is False
         at the deadline. Run with the operator still approving, so an incident
         the Guard escalated before the restore is decided on live state.
         """
         timeout = SETTLE_SECONDS if timeout is None else timeout
         quiet = SETTLE_QUIET_SECONDS if quiet is None else quiet
         start = self.monotonic()
-        healthy_since, reasons, open_incidents = None, [], []
+        healthy_since, reasons, open_incidents, left = None, [], [], []
         while True:
             now = self.monotonic()
             try:
@@ -1069,11 +1206,12 @@ class Lab:
                                    for incident_id in self.undelivered(strict=True)]
             except AcceptanceError as error:
                 open_incidents = [str(error)]
-            if healthy_since is not None and now - healthy_since >= quiet and not open_incidents:
-                return {"settled": True, "seconds": round(now - start, 1), "target": [], "open": []}
+            left = list(leftovers()) if leftovers is not None else []
+            if healthy_since is not None and now - healthy_since >= quiet and not open_incidents and not left:
+                return {"settled": True, "seconds": round(now - start, 1), "target": [], "open": [], "leftovers": []}
             if now - start >= timeout:
                 return {"settled": False, "seconds": round(now - start, 1), "target": reasons,
-                        "open": open_incidents}
+                        "open": open_incidents, "leftovers": left}
             self.sleep(interval)
 
     def wait(self, check, timeout, what, interval=1.0):
@@ -1143,6 +1281,103 @@ class Lab:
     def delete_chaos(self, document):
         self.shell.kubectl("delete", document["kind"].lower(), document["metadata"]["name"], "--wait=true",
                            "--timeout=90s", "--ignore-not-found=true", namespace=NAMESPACE, timeout=120)
+
+    def app_pods(self, app):
+        """pod_facts of every Pod labelled app=<app> in sentinel-dist, terminating ones included."""
+        items = self.shell.json("get", "pods", "--selector=app=" + app, namespace=NAMESPACE)["items"]
+        return [pod_facts(item) for item in items]
+
+    def holder_facts(self, identity):
+        """The Pod, UID and container ID of the process of identity that holds a fault point now."""
+        running = [pod for pod in self.app_pods(self._deployment(identity))
+                   if pod["phase"] == "Running" and not pod["deleting"]]
+        if len(running) != 1:
+            raise AcceptanceError(f"{self._deployment(identity)} has {len(running)} running Pods")
+        container = running[0]["containers"].get(self._container(identity)) or {}
+        return {"pod": running[0]["name"], "uid": running[0]["uid"], "container_id": container.get("id")}
+
+    def injectable(self, namespace):
+        """Whether namespace carries chaos-mesh.org/inject=enabled (Chaos Mesh runs with enableFilterNamespace)."""
+        document = self.shell.json("get", "namespace", namespace)
+        return ((document.get("metadata") or {}).get("annotations") or {}).get(INJECT_ANNOTATION) == "enabled"
+
+    def chaos_targets(self, document):
+        """{selector key: [pod_facts]}: the running Pods each selector of document matches, read before it is created.
+
+        AcceptanceError when a selector names a namespace other than
+        sentinel-dist, the namespace is not annotated for injection (Chaos Mesh
+        would select nothing), an app it names has no running Pod, or a
+        mode-one fault has more than one candidate (the harness must know
+        which Pod it faults).
+        """
+        targets = {}
+        for key, selector in chaos_selectors(document).items():
+            if selector.get("namespaces") != [NAMESPACE]:
+                raise AcceptanceError("Chaos selects Pods in " + NAMESPACE + " only")
+            if not self.injectable(NAMESPACE):
+                raise AcceptanceError(f"{NAMESPACE} is not annotated {INJECT_ANNOTATION}=enabled, so Chaos Mesh "
+                                      "(enableFilterNamespace) would inject nothing")
+            pods = []
+            for app in selector_apps(selector):
+                running = [pod for pod in self.app_pods(app) if pod["phase"] == "Running" and not pod["deleting"]]
+                if not running:
+                    raise AcceptanceError(f"{document['kind']} {document['metadata']['name']} selects no running "
+                                          f"Pod of {app}")
+                pods += running
+            targets[key] = pods
+        if document["spec"].get("mode") == "one" and len(targets["."]) != 1:
+            raise AcceptanceError("A mode-one fault needs exactly one candidate Pod, so the harness knows which it faults")
+        return targets
+
+    def chaos_object(self, document):
+        """The chaos object as the cluster holds it now, or None when it is gone."""
+        text = self.shell.kubectl("get", document["kind"].lower(), document["metadata"]["name"],
+                                  "--ignore-not-found=true", "--output=json", namespace=NAMESPACE).stdout.strip()
+        return json.loads(text) if text else None
+
+    def chaos_state(self, document, targets):
+        """chaos_effect of document now, read from the cluster."""
+        pods_now = {}
+        if document["kind"] == "PodChaos":
+            apps = sorted({app for selector in chaos_selectors(document).values() for app in selector_apps(selector)})
+            pods_now = {app: self.app_pods(app) for app in apps}
+        return chaos_effect(document, self.chaos_object(document), targets, pods_now)
+
+    def confirm_chaos(self, document, targets, timeout=CHAOS_CONFIRM_SECONDS, interval=1.0):
+        """Wait until document is in effect (chaos_effect); its evidence, or AcceptanceError at the deadline."""
+        start = self.monotonic()
+        while True:
+            state = self.chaos_state(document, targets)
+            if state["in_effect"]:
+                return {**state["evidence"], "confirmed_at": stamp(self.clock()),
+                        "waited_seconds": round(self.monotonic() - start, 1)}
+            if self.monotonic() - start >= timeout:
+                raise AcceptanceError(f"{document['kind']} {document['metadata']['name']} was not confirmed in effect "
+                                      f"within {timeout} s: " + "; ".join(state["waiting"]))
+            self.sleep(interval)
+
+    def wait_replacement(self, app, gone, timeout=REPLACEMENT_SECONDS):
+        """The Ready Pod of app that replaced the UIDs in gone; TimeoutError at the deadline."""
+        def ready():
+            pods = [pod for pod in self.app_pods(app) if pod["uid"] not in gone and pod["phase"] == "Running"
+                    and pod["ready"] and not pod["deleting"]]
+            return pods[0] if len(pods) == 1 else None
+        pod = self.wait(ready, timeout, f"no Ready replacement Pod of {app} within {timeout} s", interval=2)
+        return {"pod": pod["name"], "uid": pod["uid"], "ready_at": stamp(self.clock())}
+
+    def labelled_chaos(self):
+        """Names of chaos objects of any kind this harness labels that are in sentinel-dist now."""
+        selector = ",".join(f"{key}={value}" for key, value in CHAOS_LABEL.items())
+        result = self.shell.kubectl("get", ",".join(CHAOS_KINDS), "--selector=" + selector, "--ignore-not-found=true",
+                                    "--output=name", namespace=NAMESPACE)
+        return [line for line in result.stdout.split() if line]
+
+    def node_paused(self, node):
+        """Whether docker reports the node container paused."""
+        text = self.shell.docker("inspect", "--format", "{{.State.Paused}}", node).stdout.strip()
+        if text not in {"true", "false"}:
+            raise AcceptanceError("Unreadable paused state of " + node)
+        return text == "true"
 
     def pause_node(self, node):
         if not node.startswith(CLUSTER + "-worker"):
