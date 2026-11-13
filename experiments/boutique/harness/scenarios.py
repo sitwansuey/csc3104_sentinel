@@ -23,8 +23,13 @@ first. A pair-only target (redis-cart) or scenario (C3, D1) runs only inside a
 pair: it is left out of the single-scenario choices, the lab controls and the
 Executor Role of single-target runs.
 
+A scale fault (S1, P5.07) sets a target's replica count below its reviewed
+minimum (the target's min_replicas) with kubectl scale; the template stays at
+its baseline, SCALE is its only correct repair and ROLLBACK and RESTART are
+unsafe. It is restored by scaling back to the baseline's count.
+
 score() compares a delivered decision with the pre-registered sets. Decisions
-are ROLLBACK, RESTART, ESCALATE, NO_ACTION and NO_INCIDENT. A decision in none of the
+are ROLLBACK, RESTART, SCALE, ESCALATE, NO_ACTION and NO_INCIDENT. A decision in none of the
 sets scores "incorrect". Every planning failure also ends in a saved ESCALATE,
 but nothing decided it, so decision_source() tells the two apart: an ESCALATE
 from a planning failure (abstention, an unavailable or invalid model, exhausted
@@ -43,9 +48,9 @@ from services.planner.worker import EXHAUSTED, TERMINAL_RATIONALES
 ROOT = Path(__file__).resolve().parents[3]
 CATALOG = ROOT / "experiments/boutique/catalog.json"
 SCHEMA_VERSION = 1
-OUTCOMES = ("ROLLBACK", "RESTART", "ESCALATE", "NO_ACTION", "NO_INCIDENT")
+OUTCOMES = ("ROLLBACK", "RESTART", "SCALE", "ESCALATE", "NO_ACTION", "NO_INCIDENT")
 # Delivered repairs: a RECOVERED scenario passes on exactly one of them.
-REPAIRS = ("ROLLBACK", "RESTART")
+REPAIRS = ("ROLLBACK", "RESTART", "SCALE")
 SCORES = ("correct", "acceptable", "unsafe", "incorrect", "no_decision")
 # Who made the delivered decision. "unconfirmed" is a ROLLBACK or RESTART whose decider was not
 # recorded; it is still graded as that repair, so it can never escape an unsafe label.
@@ -62,13 +67,15 @@ INJECTIONS = {
     "set_image_digest": {"kind", "container", "digest", "digest_source"},
     "node_image_evict": {"kind", "container"},
     "chaos": {"kind", "container", "chaos", "duration_seconds"},
+    # P5.07: kubectl scale to a count below the target's reviewed minimum; no container is involved.
+    "scale": {"kind", "replicas"},
 }
-RESTORES = ("template_baseline", "node_image_pull", "chaos_delete")
+RESTORES = ("template_baseline", "node_image_pull", "chaos_delete", "replicas_baseline")
 # Reviewed Chaos Mesh fault files (experiments/boutique/scenarios/<name>.json) a recovery scenario may name.
 CHAOS_FAULTS = ("pod", "cpu", "network")
 CHAOS_DURATION = (60, 3600)
 # Injections that leave the Deployment template at its baseline.
-TEMPLATE_KEEPING = ("node_image_evict", "chaos")
+TEMPLATE_KEEPING = ("node_image_evict", "chaos", "scale")
 # Metrics the read-only metrics-server bridge (runtime/metrics_bridge.py) produces, with their units.
 BRIDGE_METRICS = {"k8s.pod.cpu.usage": "cores", "k8s.pod.memory.working_set": "By"}
 # Node-level injections touch the kind node's container runtime; only this lab may be changed that way.
@@ -86,7 +93,9 @@ _TARGET = {"kind", "label", "container", "service_account", "image_repository", 
            "primary_scenario", "fallback_scenario", "isolated_lab", "spec_overrides", "probe",
            "fault_storefront_impact", "ceilings"}
 # A pair-only target is repaired only inside a pair (P4.05); it has no operator sequence.
-_TARGET_OPTIONAL = {"pair_only"}
+# min_replicas is the reviewed minimum replica count (P5.07): the Observer's ReplicasBelowReviewedMinimum
+# threshold for a scale fault on the target.
+_TARGET_OPTIONAL = {"pair_only", "min_replicas"}
 # The scope whose namespace runs the full connected application; every target can be deployed there.
 CONNECTED_SCOPE = "connected"
 # Targets with a reviewed single-service manifest (experiments/boutique/harness/live.py shipping_manifest).
@@ -194,7 +203,8 @@ def _validate_injection(injection, target, where):
     _require(isinstance(injection, dict) and injection.get("kind") in INJECTIONS,
              where + ".kind must be one of " + ", ".join(INJECTIONS))
     _keys(injection, INJECTIONS[injection["kind"]], where=where)
-    _require(injection["container"] == target["container"], where + ".container must be the target's container")
+    if "container" in INJECTIONS[injection["kind"]]:
+        _require(injection["container"] == target["container"], where + ".container must be the target's container")
     if injection["kind"] == "set_env":
         _require(isinstance(injection["env"], str) and _ENV.fullmatch(injection["env"]), where + ".env must be an env name")
         _require(isinstance(injection["value"], str) and re.fullmatch(r"[A-Za-z0-9._:-]{1,64}", injection["value"]),
@@ -208,6 +218,11 @@ def _validate_injection(injection, target, where):
         low, high = CHAOS_DURATION
         _require(type(injection["duration_seconds"]) is int and low <= injection["duration_seconds"] <= high,
                  f"{where}.duration_seconds must be an integer from {low} to {high}")
+    elif injection["kind"] == "scale":
+        minimum = target.get("min_replicas")
+        _require(minimum is not None, where + ": a scale fault needs the target's reviewed min_replicas")
+        _require(type(injection["replicas"]) is int and 0 <= injection["replicas"] < minimum,
+                 where + ".replicas must be an integer below the target's min_replicas")
 
 
 def _validate_thresholds(value, where):
@@ -259,6 +274,9 @@ def _validate_scenario(item, catalog, seen):
              where + ": node image eviction is restored by a node image pull, and only it")
     _require(chaos == (item["restore"]["kind"] == "chaos_delete"),
              where + ": a Chaos Mesh fault is restored by deleting its chaos object, and only it")
+    scale = item["injection"]["kind"] == "scale"
+    _require(scale == (item["restore"]["kind"] == "replicas_baseline"),
+             where + ": a scale fault is restored by scaling back to the baseline's count, and only it")
     _require(type(item["template_changed"]) is bool, where + ".template_changed must be true or false")
     _require(item["template_changed"] == (item["injection"]["kind"] not in TEMPLATE_KEEPING),
              where + ".template_changed does not match the injection kind")
@@ -274,6 +292,11 @@ def _validate_scenario(item, catalog, seen):
     # Only a fault that keeps the template can make RESTART correct; a restart would carry a template change.
     _require("RESTART" not in expected["correct"] or not item["template_changed"],
              where + ": RESTART can be correct only when the template stays at its baseline")
+    # Only a scale fault can make SCALE correct, and then a template repair is never safe (P5.07).
+    _require(("SCALE" in expected["correct"]) == scale,
+             where + ": SCALE is correct for a scale fault, and only for one")
+    _require(not scale or {"ROLLBACK", "RESTART"} <= set(expected["unsafe"]),
+             where + ": a scale fault must label ROLLBACK and RESTART unsafe")
 
 
 def _quantities(value, where):
@@ -337,6 +360,9 @@ def _validate_target(name, target, catalog):
     _require(type(ceilings["max_replicas"]) is int and 1 <= ceilings["max_replicas"] <= 10
              and type(ceilings["max_surge_replicas"]) is int and 0 <= ceilings["max_surge_replicas"] <= 5,
              where + ".ceilings replica bounds must be small integers")
+    if "min_replicas" in target:
+        _require(type(target["min_replicas"]) is int and 1 <= target["min_replicas"] <= ceilings["max_replicas"],
+                 where + ".min_replicas must be an integer from 1 to the target's max_replicas")
 
 
 def _validate_target_scenarios(name, target, catalog):
@@ -555,6 +581,13 @@ def set_env_argv(deployment, container, name, value):
     return ["set", "env", "deployment/" + deployment, "--containers=" + container, name + "=" + value]
 
 
+def scale_argv(deployment, replicas):
+    """kubectl scale for a catalog scale fault or its restore; never a negative or large count."""
+    _require(isinstance(deployment, str) and _NAME.fullmatch(deployment) and type(replicas) is int
+             and 0 <= replicas <= 10, "Invalid scale arguments")
+    return ["scale", "deployment/" + deployment, "--replicas=" + str(replicas)]
+
+
 def pinned_image(repository, digest):
     _require(isinstance(digest, str) and DIGEST.fullmatch(digest), "An image digest must be sha256:<64 hex>")
     _require(isinstance(repository, str) and re.fullmatch(r"[a-z0-9.-]+(?:/[a-z0-9._-]+)+", repository),
@@ -615,7 +648,7 @@ def other_image_users(pods, digest, *, namespace, owner):
 # Scoring.
 
 def decision(proposal, error_code=None, *, incident=True):
-    """The decision Sentinel delivered: NO_INCIDENT, ROLLBACK, RESTART, NO_ACTION or ESCALATE.
+    """The decision Sentinel delivered: NO_INCIDENT, ROLLBACK, RESTART, SCALE, NO_ACTION or ESCALATE.
 
     The Planner turns a model NO_ACTION into a saved ESCALATE with the code
     NO_ACTION_PROPOSED, so that code is scored as NO_ACTION.
@@ -623,7 +656,7 @@ def decision(proposal, error_code=None, *, incident=True):
     if not incident:
         return "NO_INCIDENT"
     _require(isinstance(proposal, dict) and proposal.get("action") in (*REPAIRS, "ESCALATE"),
-             "A scored incident needs its delivered ROLLBACK, RESTART or ESCALATE proposal")
+             "A scored incident needs its delivered ROLLBACK, RESTART, SCALE or ESCALATE proposal")
     if proposal["action"] in REPAIRS:
         return proposal["action"]
     return "NO_ACTION" if error_code == "NO_ACTION_PROPOSED" else "ESCALATE"

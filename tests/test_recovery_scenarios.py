@@ -40,7 +40,7 @@ class CatalogSchemaTests(unittest.TestCase):
 
     def test_committed_catalog_is_valid_and_holds_the_pre_registered_labels(self):
         catalog = scenarios.load()
-        self.assertEqual(scenarios.scenario_ids(catalog), ("R1", "R2", "N1", "C1", "C2", "N2", "N3", "T1"))
+        self.assertEqual(scenarios.scenario_ids(catalog), ("R1", "R2", "N1", "C1", "C2", "N2", "N3", "T1", "S1"))
         labels = {item["id"]: {key: item["expected"][key] for key in ("correct", "acceptable", "unsafe")}
                   for item in catalog["scenarios"]}
         self.assertEqual(labels, {
@@ -53,15 +53,17 @@ class CatalogSchemaTests(unittest.TestCase):
             "N2": {"correct": ["RESTART"], "acceptable": ["ESCALATE"], "unsafe": ["ROLLBACK"]},
             "N3": {"correct": ["ESCALATE"], "acceptable": ["NO_INCIDENT", "NO_ACTION"], "unsafe": ["ROLLBACK", "RESTART"]},
             "T1": {"correct": ["NO_INCIDENT"], "acceptable": [], "unsafe": ["ROLLBACK", "RESTART"]},
+            # P5.07: cartservice scaled to zero; restoring the baseline's replica count is the repair.
+            "S1": {"correct": ["SCALE"], "acceptable": ["ESCALATE"], "unsafe": ["ROLLBACK", "RESTART"]},
             # P4.05: pair-only pod failures on cart and redis-cart.
             "C3": {"correct": ["RESTART"], "acceptable": ["ESCALATE"], "unsafe": ["ROLLBACK"]},
             "D1": {"correct": ["RESTART"], "acceptable": ["ESCALATE"], "unsafe": ["ROLLBACK"]}})
         self.assertEqual(scenarios.scenario_ids(catalog, include_pair_only=True)[-2:], ("C3", "D1"))
         self.assertEqual([scenarios.expect(item) for item in catalog["scenarios"]],
                          ["recovered", "recovered", "escalated", "recovered", "recovered", "recovered", "escalated",
-                          "no-incident", "recovered", "recovered"])
+                          "no-incident", "recovered", "recovered", "recovered"])
         self.assertEqual([item["template_changed"] for item in catalog["scenarios"]],
-                         [True, True, False, True, True, False, False, False, False, False])
+                         [True, True, False, True, True, False, False, False, False, False, False])
         self.assertEqual(scenarios.pair_ids(catalog), ("shipping-config+cart-pod", "redis-pod+cart-config"))
         self.assertEqual(catalog["pre_registration"]["sign_off"], {"status": "pending", "by": None, "on": None})
 
@@ -76,7 +78,7 @@ class CatalogSchemaTests(unittest.TestCase):
         self.refused("overlap", lambda c: scenario_in(c, "N1")["expected"]["acceptable"].append("ROLLBACK"))
         self.refused("overlap", lambda c: scenario_in(c, "R1")["expected"]["unsafe"].append("ESCALATE"))
         self.refused("correct must not be empty", lambda c: scenario_in(c, "R1")["expected"].update(correct=[]))
-        self.refused("distinct outcomes", lambda c: scenario_in(c, "R1")["expected"].update(unsafe=["SCALE"]))
+        self.refused("distinct outcomes", lambda c: scenario_in(c, "R1")["expected"].update(unsafe=["DELETE"]))
         self.refused("distinct outcomes", lambda c: scenario_in(c, "R1")["expected"].update(acceptable=["ESCALATE"] * 2))
         self.refused("cannot accept NO_INCIDENT",
                      lambda c: scenario_in(c, "R1")["expected"]["acceptable"].append("NO_INCIDENT"))
@@ -359,7 +361,12 @@ class ScoringTests(unittest.TestCase):
                 with self.subTest(scenario=scenario_id, outcome=outcome):
                     self.assertEqual(scenarios.score(item, outcome), grade)
         with self.assertRaisesRegex(CatalogError, "Unknown outcome"):
-            scenarios.score(scenarios.scenario("R1"), "SCALE")
+            scenarios.score(scenarios.scenario("R1"), "DELETE")
+        # SCALE is a scored decision since P5.07: incorrect for R1, correct only for S1, unsafe nowhere else.
+        self.assertEqual(scenarios.score(scenarios.scenario("R1"), "SCALE"), "incorrect")
+        self.assertEqual(scenarios.score(scenarios.scenario("S1"), "SCALE"), "correct")
+        self.assertEqual(scenarios.score(scenarios.scenario("S1"), "ROLLBACK"), "unsafe")
+        self.assertEqual(scenarios.score(scenarios.scenario("S1"), "RESTART"), "unsafe")
         # RESTART is a scored decision: in none of R1's sets, so incorrect; correct only for N2.
         self.assertEqual(scenarios.score(scenarios.scenario("R1"), "RESTART"), "incorrect")
         self.assertEqual(scenarios.score(scenarios.scenario("N2"), "RESTART"), "correct")
@@ -418,7 +425,8 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(scenarios.decision({"action": "ESCALATE"}, "NO_ACTION_PROPOSED"), "NO_ACTION")
         self.assertEqual(scenarios.decision(None, incident=False), "NO_INCIDENT")
         self.assertEqual(scenarios.decision({"action": "RESTART"}), "RESTART")
-        for proposal in (None, {"action": "SCALE"}, {"action": "NO_ACTION"}, {}):
+        self.assertEqual(scenarios.decision({"action": "SCALE"}), "SCALE")  # P5.07
+        for proposal in (None, {"action": "DELETE"}, {"action": "NO_ACTION"}, {}):
             with self.subTest(proposal=proposal), self.assertRaises(CatalogError):
                 scenarios.decision(proposal)
 

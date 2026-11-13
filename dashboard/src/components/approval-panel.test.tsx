@@ -64,6 +64,15 @@ describe("dashboard approval panel", () => {
     show([request({action: "RESTART"})])
     expect(screen.getByText("RESTART")).toBeInTheDocument()
     expect(screen.getByText(/replaces every Pod\. No configuration change\./)).toBeInTheDocument()
+    expect(screen.queryByText("Replica count")).not.toBeInTheDocument()
+  })
+
+  it("shows the replica count a SCALE would write", () => {
+    show([request({action: "SCALE", desired_replicas: 2})])
+    expect(screen.getByText("SCALE")).toBeInTheDocument()
+    expect(screen.getByText("Replica count")).toBeInTheDocument()
+    expect(screen.getByText("2")).toBeInTheDocument()
+    expect(screen.getByText(/Restores the replica count recorded with the reviewed baseline/)).toBeInTheDocument()
   })
 
   it("keeps the model's text literal, so a script payload is shown and never run", () => {

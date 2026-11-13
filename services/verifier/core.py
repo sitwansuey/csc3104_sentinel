@@ -72,6 +72,10 @@ def _health_policy(policy):
     if rules.get("require_template_match") and not re.fullmatch(
             r"[a-f0-9]{64}", str(rules.get("expected_template_sha256", ""))):
         raise VerifierInputError("A verified expected template SHA-256 is required")
+    # P5.07: a SCALE's verification also needs the replica count it restored, bound from the proposal.
+    if "expected_desired_replicas" in rules and (type(rules["expected_desired_replicas"]) is not int
+                                                 or not 1 <= rules["expected_desired_replicas"] <= 10):
+        raise VerifierInputError("policy.health.expected_desired_replicas must be an integer from 1 to 10")
     required = rules.get("required_dependencies", [])
     if not isinstance(required, list) or any(
         not isinstance(name, str) or not name.strip() for name in required
@@ -191,7 +195,8 @@ def _assess(execution, samples, policy):
     stamps, rows = [], []
     identity_ok = timestamps_ok = health_complete = dependencies_complete = True
     configuration_complete = True
-    unhealthy_service = unhealthy_dependency = unhealthy_template = False
+    unhealthy_service = unhealthy_dependency = unhealthy_template = unhealthy_replicas = False
+    replica_target = rules.get("expected_desired_replicas")
     required_dependencies = set(rules.get("required_dependencies", []))
     for sample in samples:
         if not isinstance(sample, dict):
@@ -230,6 +235,9 @@ def _assess(execution, samples, policy):
         if rules.get("require_available_replicas"):
             complete = complete and type(available) is int and available >= 0
         health_complete = health_complete and complete
+        if complete and replica_target is not None:
+            # The Deployment must keep the restored count; ready >= desired below then means ready >= the target.
+            unhealthy_replicas |= desired != replica_target
         if complete:
             unhealthy_service |= not response_healthy or ready < desired
             if rules.get("require_available_replicas"):
@@ -288,6 +296,10 @@ def _assess(execution, samples, policy):
         checks[-1]["detail"] += "; latest reading: " + ", ".join(f"{k}={v}" for k, v in observed.items())
     checks.append(_check("dependency_health", bool(rows) and dependencies_complete and not unhealthy_dependency,
                          "Every required/observed dependency must be present and healthy in every reading"))
+    if replica_target is not None:
+        checks.append(_check("replica_target", bool(rows) and health_complete and not unhealthy_replicas,
+                             f"Every reading must keep desired_replicas={replica_target}, the restored reviewed "
+                             "count, with that many replicas ready"))
     if rules.get("require_template_match"):
         checks.append(_check("sample_configuration", bool(rows) and configuration_complete and not unhealthy_template,
                              "Each reading must retain the approved template and a stable observation identity"))
@@ -301,7 +313,7 @@ def _assess(execution, samples, policy):
     trustworthy = (usable_execution and identity_ok and timestamps_ok
                    and health_complete and dependencies_complete and configuration_complete)
     status = "UNKNOWN"
-    if trustworthy and (unhealthy_service or unhealthy_dependency or unhealthy_template):
+    if trustworthy and (unhealthy_service or unhealthy_dependency or unhealthy_template or unhealthy_replicas):
         status = "NOT_RECOVERED"
     elif all(check["passed"] for check in checks):
         status = "RECOVERED"
@@ -357,7 +369,7 @@ def verify(execution: dict, samples: list[dict], policy: dict, *, final: bool = 
             alone = _assess(execution, [sample], policy)
             failed = {check["name"] for check in alone["checks"] if not check["passed"]}
             if (_timestamp(sample["at"]) > limit or alone["status"] != "NOT_RECOVERED"
-                    or "sample_configuration" in failed):
+                    or "sample_configuration" in failed or "replica_target" in failed):
                 break
             if "service_health" in failed:
                 causes.add("service")

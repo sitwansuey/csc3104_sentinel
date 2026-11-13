@@ -142,6 +142,9 @@ class ApprovalRelay:
             "action": _text(proposal.get("action", ""), FIELD_LIMIT),
             "baseline_id": _text(str(parameters.get("baseline_id", "")), FIELD_LIMIT),
             "template_sha256_prefix": _text(str(parameters.get("template_sha256", ""))[:12], 12),
+            # P5.07: the replica count a SCALE would write; null for every other action.
+            "desired_replicas": (parameters.get("desired_replicas") if proposal.get("action") == "SCALE"
+                                 and type(parameters.get("desired_replicas")) is int else None),
             "proposal_sha256": entry["digest"],
             "policy_version": _text(str(decision.get("policy_version", "")), FIELD_LIMIT),
             "guard": {"verdict": _text(decision.get("verdict", ""), FIELD_LIMIT),

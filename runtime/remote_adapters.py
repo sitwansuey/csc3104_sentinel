@@ -270,10 +270,12 @@ class VerifierAdapter:
                 from shared.contracts import validate_message
                 proposal = delivery["payload"].get("proposal")
                 validate_message(proposal)
-                if (proposal["kind"] != "proposal" or proposal["action"] not in ("ROLLBACK", "RESTART")
+                if (proposal["kind"] != "proposal" or proposal["action"] not in ("ROLLBACK", "RESTART", "SCALE")
                         or any(proposal[k] != execution[k] for k in ("action_id", "incident_id", "target"))):
-                    raise ValueError("Verification requires the exact executed rollback or restart proposal")
+                    raise ValueError("Verification requires the exact executed rollback, restart or scale proposal")
                 policy["health"]["expected_template_sha256"] = proposal["parameters"]["template_sha256"]
+                if proposal["action"] == "SCALE":  # P5.07: the restored count must hold too (replica_target).
+                    policy["health"]["expected_desired_replicas"] = proposal["parameters"]["desired_replicas"]
             job = self.journal.start(execution, policy, now=self.clock())
         elif job["execution"] != execution:
             raise ValueError("Verifier action identity reused with changed execution")

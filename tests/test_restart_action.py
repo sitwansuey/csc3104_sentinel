@@ -113,7 +113,9 @@ class RestartContractTests(unittest.TestCase):
         validate_message(rollback)
         with self.assertRaises(ContractError):
             validate_message({**rollback, "parameters": {**rollback["parameters"], "restart_token": "RST-" + "0" * 16}})
-        for action, parameters in (("SCALE", {"desired_replicas": 2}), ("ESCALATE", {}), ("NO_ACTION", {})):
+        scale = {"baseline_id": rollback["parameters"]["baseline_id"], "desired_replicas": 2,
+                 "template_sha256": rollback["parameters"]["template_sha256"]}
+        for action, parameters in (("SCALE", scale), ("ESCALATE", {}), ("NO_ACTION", {})):
             validate_message({**rollback, "action": action, "parameters": parameters})
         with self.assertRaises(ContractError):
             validate_message({**rollback, "action": "ESCALATE", "parameters": {"desired_replicas": 1}})
@@ -314,10 +316,11 @@ class RestartGuardTests(unittest.TestCase):
         self.assertEqual(decision["verdict"], "REJECT")
         self.assertIn("ROLLBACK_ALREADY_AT_BASELINE", decision["reason_codes"])
 
-    def test_scale_is_still_not_implemented(self):
+    def test_an_action_without_a_handler_is_still_not_implemented(self):
+        # SCALE has its own checks since P5.07 (tests/test_scale_action.py); NO_ACTION has no Executor handler.
         policy = deepcopy(self.inputs["policy"])
-        policy["allowed_actions"].append("SCALE")
-        proposal = bind({**self.inputs["proposal"], "action": "SCALE", "parameters": {"desired_replicas": 2}})
+        policy["allowed_actions"].append("NO_ACTION")
+        proposal = bind({**self.inputs["proposal"], "action": "NO_ACTION", "parameters": {}})
         self.assert_verdict("REJECT", "ACTION_NOT_IMPLEMENTED", **with_proposal(self.inputs, proposal) | {"policy": policy})
 
     def test_restart_policy_block_is_validated(self):
@@ -834,7 +837,7 @@ class RestartAdapterAndSampleTests(unittest.TestCase):
             with patch.object(module, "ROOT", root), contextlib.redirect_stdout(io.StringIO()) as out:
                 module.main()
             return out.getvalue()
-        self.assertIn("Validated 8 example messages", run())
+        self.assertIn("Validated 9 example messages", run())
         path = samples / "messages/restart-proposal.json"
         sample = json.loads(path.read_text(encoding="utf-8"))
         sample["parameters"]["restart_token"] = restart_token("INC-OTHER", sample["parameters"]["baseline_id"])

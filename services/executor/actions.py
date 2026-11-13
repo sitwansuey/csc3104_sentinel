@@ -1,17 +1,20 @@
-"""Executor action handlers: the exact Pod template each typed action writes.
+"""Executor action handlers: the exact change each typed action writes.
 
-Pure functions, no I/O. Every implemented action writes through the same
+Pure functions, no I/O. ROLLBACK and RESTART write a Pod template through one
 conditional JSON Patch (UID and resourceVersion tests, the full template and
-the evidence annotation), so reconciliation in reconciliation.py treats them
-alike. A handler only decides which template is written and refuses anything
-that does not match the proposal, the trusted baseline and the live template.
+the evidence annotation). SCALE (P5.07) writes spec.replicas through the same
+tests and evidence, and leaves the template alone. Reconciliation in
+reconciliation.py treats them alike. A handler only decides what is written and
+refuses anything that does not match the proposal, the trusted baseline and the
+live object.
 """
 
 from copy import deepcopy
 
 from services.executor.store import fingerprint
 from shared.actions import (
-    IMPLEMENTED_ACTIONS, config_fingerprint, current_restart_token, restart_template, restart_token,
+    IMPLEMENTED_ACTIONS, TEMPLATE_ACTIONS, baseline_replicas, config_fingerprint, current_restart_token,
+    restart_template, restart_token,
 )
 from shared.contracts import ContractError
 
@@ -68,30 +71,65 @@ def _restart(proposal, live_template, baseline):
 
 
 HANDLERS = {"ROLLBACK": _rollback, "RESTART": _restart}
-assert set(HANDLERS) == IMPLEMENTED_ACTIONS
+assert set(HANDLERS) == TEMPLATE_ACTIONS and TEMPLATE_ACTIONS | {"SCALE"} == IMPLEMENTED_ACTIONS
 
 
 def implemented(proposal):
-    return proposal.get("action") in HANDLERS
+    return proposal.get("action") in IMPLEMENTED_ACTIONS
 
 
 def candidate_template(proposal, live_template, baseline):
-    """The exact template this action writes; ContractError refuses the write."""
+    """The exact template a template action writes; ContractError refuses the write."""
     handler = HANDLERS.get(proposal["action"])
     if handler is None:
-        raise ContractError("Action is not implemented by the Executor")
+        raise ContractError("Action does not write a Pod template")
     return handler(proposal, live_template, baseline)
 
 
-def evidence(proposal, proposal_sha256, attempt_id):
-    """The action evidence written with the template.
+def scale_replicas(proposal, live_deployment, baseline):
+    """The replica count a SCALE writes: the reviewed baseline's, and nothing else changes.
 
-    A RESTART names its action. A ROLLBACK keeps the five-field form it has
-    always written, so annotations written before RESTART existed still match.
+    The live configuration must equal the baseline's and the live template must
+    be the one the proposal names, so the new Pods run the reviewed template.
+    The live count must be below the reviewed one: a SCALE never removes
+    replicas and never repeats a count already in place.
+    """
+    if proposal.get("action") != "SCALE":
+        raise ContractError("Action is not a SCALE")
+    template = _baseline(proposal, baseline)
+    parameters = proposal["parameters"]
+    desired = parameters["desired_replicas"]
+    if baseline_replicas(baseline) != desired:
+        raise ContractError("The requested replica count is not the reviewed baseline's")
+    try:
+        spec = live_deployment["spec"]
+        live_template, current = spec["template"], spec["replicas"]
+        unchanged = config_fingerprint(live_template) == config_fingerprint(template)
+        bound = fingerprint(live_template) == parameters["template_sha256"]
+    except (KeyError, TypeError, ValueError, RecursionError) as exc:
+        raise ContractError("Live Deployment is unavailable for a scale") from exc
+    if not unchanged:
+        raise ContractError("Live configuration differs from the reviewed baseline; scaling up would run it")
+    if not bound:
+        raise ContractError("Live template is not the one the proposal names")
+    if type(current) is not int or current >= desired:
+        raise ContractError("The live replica count is not below the reviewed count")
+    return desired
+
+
+def evidence(proposal, proposal_sha256, attempt_id):
+    """The action evidence written with the change.
+
+    A RESTART or SCALE names its action; a SCALE also records its replica count,
+    and its template_sha256 is the live template it leaves in place. A ROLLBACK
+    keeps the five-field form it has always written, so annotations written
+    before other actions existed still match.
     """
     record = {"action_id": proposal["action_id"], "proposal_sha256": proposal_sha256,
               "target_uid": proposal["target"]["uid"],
               "template_sha256": proposal["parameters"]["template_sha256"], "attempt_id": attempt_id}
     if proposal["action"] != "ROLLBACK":
         record["action"] = proposal["action"]
+    if proposal["action"] == "SCALE":
+        record["replicas"] = proposal["parameters"]["desired_replicas"]
     return record

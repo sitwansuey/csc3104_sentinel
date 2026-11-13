@@ -146,6 +146,11 @@ def _apply(message, store, answers=None, producer=None):
         _require(message["action"] != "RESTART" or not any(
                      action["proposal"]["action"] == "RESTART" for action in store.actions_for_incident(incident_id)),
                  "Restart budget for this incident is exhausted; ESCALATE instead")
+        # One SCALE per incident (P5.07), for the same reason: a refused or failed
+        # restore of the reviewed count is not retried by planning it again.
+        _require(message["action"] != "SCALE" or not any(
+                     action["proposal"]["action"] == "SCALE" for action in store.actions_for_incident(incident_id)),
+                 "A SCALE was already proposed for this incident; ESCALATE instead")
         next_state = "NEEDS_REVIEW" if message["action"] == "ESCALATE" else "VALIDATING"
         store.add_action(action_id, incident_id, message, next_state)
         store.activate_action(incident_id, action_id, next_state)

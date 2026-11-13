@@ -129,6 +129,19 @@ code rule planning, unscored (claims `C-CHAOS-RECOVERY-C9A44CA` and
 patch had reached an API server, accepted once on a disposable Deployment in
 the admission check (claim `C-ADMISSION-POLICY-LIVE`).
 
+`tests/test_scale_action.py` covers SCALE (P5.07), all offline: the Observer's
+ReplicasBelowReviewedMinimum signal (and no incident for zero replicas without
+a reviewed minimum), the Planner's bound SCALE, each Guard check
+(SCALE_NOT_BASELINE, SCALE_NO_CHANGE, SCALE_WOULD_REDUCE, SCALE_TEMPLATE_DRIFT,
+SCALE_BINDING_MISMATCH, a count over the policy ceiling, an autoscaler present
+or unknown), the SCALE server preview, the kubectl adapter's conditional scale
+patch and autoscaler read, the Executor's one write, its replay, a moved
+resourceVersion with zero writes, reconciliation through the replica count and
+evidence after a lost reply, the fence for a write lost before commit, the
+Verifier's replica_target check, one end-to-end recovery with exactly one
+write, the catalog scenario S1 and the harness helpers. SCALE has not run
+against a cluster; the live recipe is [below](#scale-recovery-live-recipe).
+
 `tests/test_distributed_processes.py` runs fault scenarios with the Coordinator
 and every worker as separate processes on one host, against a file-backed test
 cluster, and checks invariants from their records and logs. The default subset
@@ -574,6 +587,61 @@ Redis; this is harmless in the lab. The live checks, in order:
    `allowed-targets.json` name both targets. Check that `policy.json` still
    has the 100m request ceiling and names shippingservice only, and that
    `baselines/shippingservice.json` exists and holds the restored template.
+
+### SCALE recovery live recipe
+
+Written, not run (P5.07, `L-SCALE-OFFLINE-ONLY`). Catalog scenario S1 scales
+cartservice to 0 replicas on `kind-sentinel-boutique-connected`, below its
+reviewed minimum of 1 (`min_replicas` in the catalog). Its labels (SCALE
+correct, ESCALATE acceptable, ROLLBACK and RESTART unsafe) are pre-registered
+and pending sign-off, so a run before sign-off is not a scored trial. The run
+holds the heavy-lab lock, so it waits for P4.01, P4.03 and P4.05 runs; never
+point it at another cluster, and never at `sentinel-lab`.
+
+1. **Preflight (read only).** Check that the connected lab is up, that
+   cartservice runs one ready replica and that nothing autoscales it:
+
+   ```powershell
+   kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected get deployment cartservice -o jsonpath="{.spec.replicas} {.status.readyReplicas}"
+   kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected get horizontalpodautoscalers.autoscaling
+   ```
+
+   Expect `1 1` and no autoscaler. With an autoscaler on cartservice the
+   Guard escalates (SCALE_AUTOSCALER_PRESENT) and the run does not pass.
+2. **The run.**
+
+   ```powershell
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Connected -Target cartservice -Scenario S1 -Approval interactive
+   ```
+
+   The harness measures a baseline that also records `replicas: 1`, gives the
+   run's Executor Role list on horizontalpodautoscalers (read only, and no
+   deployments/scale), checks with `kubectl auth can-i` that it can list them,
+   then runs `kubectl scale deployment/cartservice --replicas=0`.
+   Expected: the storefront home, cart and checkout fail; the Observer opens an
+   incident with a ReplicasBelowReviewedMinimum signal; the code rule plans
+   SCALE with `desired_replicas` 1 and the live template's hash; the Guard asks
+   for approval and then ALLOWs with SCALE_RESTORES_BASELINE and
+   SCALE_NO_AUTOSCALER; the Executor sends one patch (`transport-stats.json`
+   `write_attempts` 1) that replaces only spec.replicas; the Verifier reports
+   RECOVERED with `replica_target` passed; `scenario-result.json` scores SCALE
+   correct (labels pending). Then a forced SCALE to 5, with no approval, must
+   be refused: `forced-scale/proof.json` with REJECT,
+   WORKLOAD_REPLICAS_EXCEED_POLICY and SCALE_NOT_BASELINE, zero patch attempts
+   and the Deployment unchanged.
+3. **Admission (optional, a disposable namespace).** The SCALE exception in
+   `deploy/sentinel/executor-admission.yaml` has not been evaluated by an API
+   server. Install the policy for a disposable namespace as
+   `scripts/validation/test_executor_admission_live.py` does, then check with
+   the restricted Executor token that the production adapter's
+   `conditional_scale` from 0 to 1 is allowed, that a replicas patch without
+   evidence, a scale down, a scale to 11, and a scale with RESTART evidence are
+   each denied by the replicas rule, and that `kubectl scale` is denied by
+   RBAC. Add these probes to that harness before a run; they are not in it yet.
+4. **Cleanup.** A failed run scales cartservice back to the baseline's count
+   as the administrator (`replicas_restored_by_administrator` in the summary);
+   that is never counted as Sentinel's recovery. By hand:
+   `kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected scale deployment/cartservice --replicas=1`.
 
 ## Specialised role checks
 

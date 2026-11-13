@@ -1,11 +1,13 @@
-"""Restricted typed actions (ROLLBACK, RESTART) with a durable journal and table-driven reconciliation.
+"""Restricted typed actions (ROLLBACK, RESTART, SCALE) with a durable journal and table-driven reconciliation.
 
 Adapters provide trusted authorization and a conditional Deployment API. Runtime
 wiring lives outside this service; there is no shell or relative revision undo.
-Each implemented action writes one exact Pod template chosen by its handler in
-actions.py, through the same conditional write. APPLIED confirms a write, never
-sustained health or incident recovery. Reconciliation decisions come from the
-pure table in reconciliation.py, for every action alike.
+ROLLBACK and RESTART write one exact Pod template chosen by their handler in
+actions.py, through the same conditional write. SCALE writes the reviewed
+replica count through a conditional scale write with the same UID and
+resourceVersion tests and evidence. APPLIED confirms a write, never sustained
+health or incident recovery. Reconciliation decisions come from the pure table
+in reconciliation.py, for every action alike.
 """
 
 from copy import deepcopy
@@ -13,7 +15,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from services.executor.actions import candidate_template, evidence as action_evidence, implemented
+from services.executor.actions import (
+    candidate_template, evidence as action_evidence, implemented, scale_replicas,
+)
 from services.executor.reconciliation import (
     ABSENT, ACTION_ANNOTATION, Basis, classify, fence_marker, fence_nonce, observe,
 )
@@ -90,6 +94,11 @@ class ExecutionAdapters:
     ledger follows SQLiteExecutionLedger, including record_fence, confirm_fence
     and fences; classifying a journaled action calls fences() even with fencing off.
     A RESTART also calls restart_history(target), the persisted restart budget input.
+    A SCALE calls cluster.autoscalers(target), a read-only list of the
+    HorizontalPodAutoscalers that target the Deployment (the Guard escalates when
+    it is missing), and cluster.conditional_scale(target, version, replicas,
+    evidence), which must commit spec.replicas and evidence together under the
+    same UID/version tests, or explicitly refuse the precondition.
     """
 
     ledger: object
@@ -167,6 +176,8 @@ def _matches_write(proposal, row, snapshot):
             and _version(snapshot) != row["expected_version"]
             and annotations.get(ACTION_ANNOTATION) == encode_evidence(row["evidence"])
             and fingerprint(snapshot["deployment"]["spec"]["template"]) == proposal["parameters"]["template_sha256"]
+            and (proposal["action"] != "SCALE"
+                 or snapshot["deployment"]["spec"]["replicas"] == proposal["parameters"]["desired_replicas"])
         )
     except (AttributeError, KeyError, TypeError, ValueError, RecursionError):
         return False
@@ -327,6 +338,18 @@ def _restart_history(proposal, adapters, snapshot):
     """
     if proposal["action"] == "RESTART":
         snapshot["restart_history"] = adapters.ledger.restart_history(proposal["target"])
+    return snapshot
+
+
+def _autoscalers(proposal, adapters, snapshot):
+    """Give the Guard the HorizontalPodAutoscalers that target a SCALE's Deployment.
+
+    Only a SCALE needs it, so other inputs are unchanged. An adapter without the
+    read leaves it out, and the Guard escalates (SCALE_AUTOSCALER_UNKNOWN).
+    """
+    reader = getattr(adapters.cluster, "autoscalers", None)
+    if proposal["action"] == "SCALE" and reader is not None:
+        snapshot["autoscalers"] = deepcopy(reader(deepcopy(proposal["target"])))
     return snapshot
 
 
@@ -521,7 +544,8 @@ def execute(proposal: dict, adapters: ExecutionAdapters) -> dict:
         if row["phase"] in {"WRITE_STARTED", "UNCERTAIN"}:
             return _reconcile(proposal, adapters)
         if not implemented(proposal):
-            return _finish(proposal, adapters, "FAILED", None, "Only explicit baseline ROLLBACK and RESTART are implemented.")
+            return _finish(proposal, adapters, "FAILED", None,
+                           "Only explicit baseline ROLLBACK, RESTART and SCALE are implemented.")
 
         version = None
         try:
@@ -534,14 +558,18 @@ def execute(proposal: dict, adapters: ExecutionAdapters) -> dict:
                     return adopted
                 return _finish(proposal, adapters, "CONFLICT", version,
                                "Target identity or resource version changed; obtain a new proposal and validation.")
-            check = adapters.authorizer.validate(deepcopy(proposal), _restart_history(proposal, adapters, snapshot),
-                                                 now=_now(adapters))
+            live_state = _autoscalers(proposal, adapters, _restart_history(proposal, adapters, snapshot))
+            check = adapters.authorizer.validate(deepcopy(proposal), live_state, now=_now(adapters))
             validate_message(check.decision)
             adapters.ledger.record_validation(proposal["action_id"], check.decision)
             if check.decision["verdict"] != "ALLOW":
                 return _finish(proposal, adapters, "FAILED", version,
                                "Fresh Guard validation refused execution: " + ", ".join(check.decision["reason_codes"]))
-            template = candidate_template(proposal, snapshot["deployment"]["spec"]["template"], check.baseline)
+            if proposal["action"] == "SCALE":
+                template, replicas = None, scale_replicas(proposal, snapshot["deployment"], check.baseline)
+            else:
+                template, replicas = candidate_template(
+                    proposal, snapshot["deployment"]["spec"]["template"], check.baseline), None
             adapters.authorizer.assert_usable(check, now=_now(adapters))
         except Exception as error:  # noqa: BLE001 - fail closed: any pre-write error refuses the write
             log.failure(LOG, "executor.prewrite.refused", error, action_id=_action_id(proposal))
@@ -559,10 +587,16 @@ def execute(proposal: dict, adapters: ExecutionAdapters) -> dict:
             return _finish(proposal, adapters, "FAILED", version,
                            "Authorization expired or was withdrawn before the API call; no write was attempted.")
         try:
-            applied = adapters.cluster.conditional_restore(
-                target=deepcopy(proposal["target"]), version=version,
-                template=template, evidence=deepcopy(evidence),
-            )
+            if replicas is not None:
+                applied = adapters.cluster.conditional_scale(
+                    target=deepcopy(proposal["target"]), version=version,
+                    replicas=replicas, evidence=deepcopy(evidence),
+                )
+            else:
+                applied = adapters.cluster.conditional_restore(
+                    target=deepcopy(proposal["target"]), version=version,
+                    template=template, evidence=deepcopy(evidence),
+                )
         except ConditionalWriteConflict:
             # Ours did not commit; another attempt of this same action still may have.
             adopted = _adopted_write(proposal, adapters)

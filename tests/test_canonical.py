@@ -305,6 +305,17 @@ class CheckContractsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exact saved baseline template"):
             self.run_main()
 
+    def test_a_scale_sample_bound_to_another_template_or_baseline_is_rejected(self):
+        # P5.07: the SCALE sample must name the saved baseline and the template it leaves in place.
+        path = self.samples / "messages/scale-proposal.json"
+        original = json.loads(path.read_text(encoding="utf-8"))
+        for change in ({"template_sha256": "b" * 64}, {"baseline_id": "BASE-OTHER"}):
+            with self.subTest(change=change):
+                path.write_text(json.dumps({**original, "parameters": {**original["parameters"], **change}}),
+                                encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "SCALE sample is not bound"):
+                    self.run_main()
+
 
 class DockerfileCopyTests(unittest.TestCase):
     """Images that copy explicit files must include shared/canonical.py when their code imports it."""

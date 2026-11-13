@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from services.guard.common import json_sha256, utc_timestamp
-from shared.actions import config_fingerprint, restart_parameters
+from shared.actions import baseline_replicas, config_fingerprint, restart_parameters, scale_parameters
 from shared.contracts import ContractError, validate_message
 
 # Signal sources that show Pods themselves failing (not ready, crashing, killed).
@@ -13,6 +13,8 @@ _POD_FAILURE_SOURCES = frozenset({"pod_status"})
 # Signal sources that show the workload failing: Deployment replica status or Pod status.
 _WORKLOAD_FAILURE_SOURCES = frozenset({"deployment_status", "pod_status"})
 METRIC_ALERT_SOURCE = "otel_metric_alert"
+# The Observer's signal for a Deployment scaled below its reviewed minimum (P5.07).
+REPLICAS_BELOW_MINIMUM = "ReplicasBelowReviewedMinimum"
 # The fixed rationale of the metric-only rule; a code rule, never a provider, writes it.
 METRIC_ONLY_RATIONALE = ("Only metric alerts show a problem: the Deployment and its Pods report no failure, so no "
                          "repair is justified. Decided by a code rule, not a provider. Operator review is required "
@@ -40,18 +42,33 @@ def retrieve_runbooks(incident):
         selected.append("pod-failure")
     if any(signal["source"] == METRIC_ALERT_SOURCE for signal in incident["signals"]):
         selected.append("resource-saturation")
+    if any(signal["reason"] == REPLICAS_BELOW_MINIMUM for signal in incident["signals"]):
+        selected.append("replicas-below-minimum")
     return [{"id": name, "content": (folder / (name + ".md")).read_text(encoding="utf-8")} for name in selected]
+
+
+def _below_minimum(incident):
+    return any(signal["source"] == "deployment_status" and signal["reason"] == REPLICAS_BELOW_MINIMUM
+               for signal in incident["signals"])
 
 
 def mock_provider(context):
     """Deterministic offline provider; does not claim LLM or RCA capability.
 
-    It proposes RESTART only when the Planner's trusted read shows the live
-    configuration unchanged from a reviewed baseline and the incident has
-    Pod-level failure evidence: then a ROLLBACK would change nothing, and new
-    Pods are the remaining repair. It leaves RESTART parameters empty; the
-    Planner binds them. Otherwise it proposes the saved-template ROLLBACK.
+    It proposes SCALE only when the Observer reported the Deployment below its
+    reviewed minimum replica count and the Planner's trusted read shows the live
+    configuration unchanged from a reviewed baseline that records a replica
+    count: then the repair is restoring that count. It proposes RESTART only
+    when the configuration is unchanged and the incident has Pod-level failure
+    evidence: then a ROLLBACK would change nothing, and new Pods are the
+    remaining repair. It leaves SCALE and RESTART parameters empty; the Planner
+    binds them. Otherwise it proposes the saved-template ROLLBACK.
     """
+    if context.get("template_unchanged") and context.get("baseline_replicas") and _below_minimum(context["incident"]):
+        return {"action": "SCALE", "parameters": {},
+                "rationale": ("The Deployment was scaled below its reviewed minimum while its configuration equals "
+                              "the reviewed healthy baseline; restore the replica count recorded with that baseline."),
+                "evidence_refs": [item["evidence_id"] for item in context["incident"]["signals"]]}
     if context.get("template_unchanged") and any(
             signal["source"] in _POD_FAILURE_SOURCES for signal in context["incident"]["signals"]):
         return {"action": "RESTART", "parameters": {},
@@ -131,6 +148,22 @@ def _bind_restart(answer, incident, unchanged):
     return {**answer, "parameters": restart_parameters(incident["incident_id"], unchanged[0])}
 
 
+def _bind_scale(answer, unchanged, live_template):
+    """A provider names SCALE with empty parameters; only the Planner binds them, to the baseline's count."""
+    if answer.get("action") != "SCALE":
+        return answer
+    if answer.get("parameters") != {}:
+        raise ContractError("SCALE parameters are bound by the Planner; the provider must leave them empty")
+    restorable = [item for item in unchanged if baseline_replicas(item) is not None]
+    if not restorable:
+        raise ContractError("SCALE requires a trusted live template whose configuration equals a reviewed baseline "
+                            "that records a replica count")
+    try:
+        return {**answer, "parameters": scale_parameters(restorable[0], live_template)}
+    except (TypeError, ValueError) as error:
+        raise ContractError("SCALE parameters cannot be bound to the reviewed baseline") from error
+
+
 def propose(incident: dict, baselines: list[dict], retriever, provider, *, diagnosis=None,
             live_template=None) -> dict:
     """Return a bound action, preserving offline and diagnosis-based providers.
@@ -140,7 +173,9 @@ def propose(incident: dict, baselines: list[dict], retriever, provider, *, diagn
     bound by the planner and diagnosis remains advisory to the provider.
     live_template, when given, is a trusted read of the target's current Pod
     template. The context then says whether its configuration is unchanged from
-    a suitable baseline, and only then may a provider choose RESTART.
+    a suitable baseline, and only then may a provider choose RESTART or SCALE
+    (SCALE also needs that baseline to record its replica count; the Planner
+    binds the count, never the provider).
 
     A metric-only incident (metric_only()) is escalated by a code rule before
     any provider call: when every Pod is ready, neither a rollback nor a restart
@@ -170,6 +205,9 @@ def propose(incident: dict, baselines: list[dict], retriever, provider, *, diagn
         context = {"incident": incident, "baselines": suitable, "runbooks": runbooks}
         if live_template is not None:
             context["template_unchanged"] = bool(unchanged)
+            reviewed = next((baseline_replicas(item) for item in unchanged if baseline_replicas(item) is not None), None)
+            if reviewed is not None:  # Only a baseline that records its count adds this, so other contexts stay as they were.
+                context["baseline_replicas"] = reviewed
         if diagnosis is not None:
             context["diagnosis"] = diagnosis
         answer = provider(deepcopy(context))
@@ -178,7 +216,7 @@ def propose(incident: dict, baselines: list[dict], retriever, provider, *, diagn
             fields.add("evidence_refs")
         if not isinstance(answer, dict) or set(answer) != fields:
             raise ContractError("Provider response must contain only typed proposal fields")
-        answer = _bind_restart(deepcopy(answer), incident, unchanged)
+        answer = _bind_scale(_bind_restart(deepcopy(answer), incident, unchanged), unchanged, live_template)
         if diagnosis is not None:
             answer["evidence_refs"] = evidence
     message = {"schema_version": "1.0", "kind": "proposal",
@@ -186,8 +224,8 @@ def propose(incident: dict, baselines: list[dict], retriever, provider, *, diagn
                "based_on_resource_version": incident["observed_resource_version"], **deepcopy(answer)}
     message["action_id"] = "ACT-" + json_sha256(message)[:24]
     validate_message(message)
-    if diagnosis is None and message["action"] not in {"ROLLBACK", "RESTART", "ESCALATE"}:
-        raise ContractError("Offline Planner supports only saved-template rollback, restart or escalation")
+    if diagnosis is None and message["action"] not in {"ROLLBACK", "RESTART", "SCALE", "ESCALATE"}:
+        raise ContractError("Offline Planner supports only saved-template rollback, restart, scale or escalation")
     if message["action"] == "ROLLBACK" and not any(
             message["parameters"] == {key: item[key] for key in ("baseline_id", "template_sha256")}
             for item in suitable):

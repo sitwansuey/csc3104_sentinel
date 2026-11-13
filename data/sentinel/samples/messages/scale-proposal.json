@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "incident_id": "INC-DEMO-003",
+  "target": {
+    "cluster_id": "sentinel-lab",
+    "namespace": "sentinel-demo",
+    "kind": "Deployment",
+    "name": "demo-api",
+    "uid": "synthetic-demo-uid-001"
+  },
+  "kind": "proposal",
+  "action_id": "ACT-DEMO-003",
+  "action": "SCALE",
+  "parameters": {
+    "baseline_id": "BASE-DEMO-001",
+    "desired_replicas": 1,
+    "template_sha256": "a9091159ce70bcf4679f6fa7a70c33ce7169e8dd3296ec647d9bfee47c9445bb"
+  },
+  "based_on_resource_version": "201",
+  "rationale": "The Deployment was scaled below its reviewed minimum while its configuration equals the reviewed healthy baseline; restore the replica count recorded with that baseline.",
+  "evidence_refs": [
+    "E-REPLICAS-1"
+  ]
+}

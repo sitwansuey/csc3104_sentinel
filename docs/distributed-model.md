@@ -247,7 +247,7 @@ sequence number of its newest accepted message.
 In this **sequence mode** a result is accepted only when it answers the newest
 request of its kind for the action, and that request was issued after the
 previous result of the same kind was accepted
-(`services/coordinator/core.py:161::_apply::_answers_current_request(message, store, answers)`).
+(`services/coordinator/core.py:166::_apply::_answers_current_request(message, store, answers)`).
 Its own timestamp is never compared with another process's. A result that
 answers an older request is refused even if it is stamped later, and the
 transport answers it with HTTP 409
@@ -263,17 +263,17 @@ so their tests are unchanged.
 
 | Check | Before P3.03 | Sequence mode (worker transport) | What still depends on time |
 | --- | --- | --- | --- |
-| Execution after the Guard ALLOW | Executor clock vs Guard clock (`recorded_at >= checked_at`) | The answered executor request was issued after the current Guard result was accepted (`services/coordinator/core.py:236::_apply::_issued_after(store, answers, "guard_result"`) | Nothing |
+| Execution after the Guard ALLOW | Executor clock vs Guard clock (`recorded_at >= checked_at`) | The answered executor request was issued after the current Guard result was accepted (`services/coordinator/core.py:241::_apply::_issued_after(store, answers, "guard_result"`) | Nothing |
 | Execution newer than the stored one | Executor vs Executor | The answered request is the newest executor request or reconcile command, issued after the stored execution was accepted (row above `_answers_current_request`) | Nothing |
-| Guard result newer than the stored one | Guard vs Guard (`services/coordinator/core.py:186::_apply::if previous and not sequenced:`) | The answered guard request is the newest one | Nothing |
-| Guard ALLOW not older than the latest finding | Guard vs Verifier | The answered guard request was issued after the latest finding was accepted (`services/coordinator/core.py:193::_apply::_issued_after(store, answers, "dependency_result"`); the binding of the Guard report to that finding is unchanged | Nothing |
-| Finding newer than the stored one | Verifier vs Verifier | A finding answering a dependency request: that request is the newest. A finding pushed through `ingest`: timestamps are compared only when the same identity produced both (one clock); across identities the later acceptance wins (`services/coordinator/core.py:169::_apply::previous["producer"] == producer`) | One producer's clock must not step back |
-| Health window after the write | Verifier vs Executor (`window_start >= recorded_at`) | The answered verifier request was issued after the current execution was accepted (`services/coordinator/core.py:260::_apply::_issued_after(store, answers, "execution_result"`) | See the Verifier below |
-| Approval not before the Guard decision | Coordinator vs Guard | Not compared for a sequenced decision: AWAITING_APPROVAL already proves the decision was accepted first (`services/coordinator/core.py:459::approve::meta["answers"] is None`) | Nothing |
-| Approval not from the future | Coordinator vs Guard or Executor | `approved_at > checked_at + ε` (`services/guard/core.py:159::_approval_reasons::approved_at > checked_at + skew`) | Skew up to ε is tolerated |
-| Approval expiry | Coordinator or operator vs Guard or Executor | Expired once `checked_at + ε >= expires_at` (`services/guard/core.py:161::_approval_reasons::checked_at + skew >= expires_at`), and a decision's `valid_until` ends ε before the expiry (`services/guard/decisions.py:314::_valid_until::-skew`) | An approval can end up to 2ε early, never late |
-| Finding not from the future | Verifier vs Guard or Executor | `checked_at > now + ε` is UNKNOWN (`services/guard/core.py:249::_evaluate_core::dependency_at > checked_at + skew`) | Skew up to ε is tolerated |
-| Finding not too old | Verifier vs Guard or Executor | Age counts ε as well (`services/guard/core.py:252::_evaluate_core::checked_at + skew - dependency_at`), and so does `valid_until` (`services/guard/decisions.py:296::_valid_until::policy[key] - margin`) | Evidence can look up to 2ε older, never younger |
+| Guard result newer than the stored one | Guard vs Guard (`services/coordinator/core.py:191::_apply::if previous and not sequenced:`) | The answered guard request is the newest one | Nothing |
+| Guard ALLOW not older than the latest finding | Guard vs Verifier | The answered guard request was issued after the latest finding was accepted (`services/coordinator/core.py:198::_apply::_issued_after(store, answers, "dependency_result"`); the binding of the Guard report to that finding is unchanged | Nothing |
+| Finding newer than the stored one | Verifier vs Verifier | A finding answering a dependency request: that request is the newest. A finding pushed through `ingest`: timestamps are compared only when the same identity produced both (one clock); across identities the later acceptance wins (`services/coordinator/core.py:174::_apply::previous["producer"] == producer`) | One producer's clock must not step back |
+| Health window after the write | Verifier vs Executor (`window_start >= recorded_at`) | The answered verifier request was issued after the current execution was accepted (`services/coordinator/core.py:265::_apply::_issued_after(store, answers, "execution_result"`) | See the Verifier below |
+| Approval not before the Guard decision | Coordinator vs Guard | Not compared for a sequenced decision: AWAITING_APPROVAL already proves the decision was accepted first (`services/coordinator/core.py:464::approve::meta["answers"] is None`) | Nothing |
+| Approval not from the future | Coordinator vs Guard or Executor | `approved_at > checked_at + ε` (`services/guard/core.py:160::_approval_reasons::approved_at > checked_at + skew`) | Skew up to ε is tolerated |
+| Approval expiry | Coordinator or operator vs Guard or Executor | Expired once `checked_at + ε >= expires_at` (`services/guard/core.py:162::_approval_reasons::checked_at + skew >= expires_at`), and a decision's `valid_until` ends ε before the expiry (`services/guard/decisions.py:317::_valid_until::-skew`) | An approval can end up to 2ε early, never late |
+| Finding not from the future | Verifier vs Guard or Executor | `checked_at > now + ε` is UNKNOWN (`services/guard/core.py:250::_evaluate_core::dependency_at > checked_at + skew`) | Skew up to ε is tolerated |
+| Finding not too old | Verifier vs Guard or Executor | Age counts ε as well (`services/guard/core.py:253::_evaluate_core::checked_at + skew - dependency_at`), and so does `valid_until` (`services/guard/decisions.py:299::_valid_until::policy[key] - margin`) | Evidence can look up to 2ε older, never younger |
 
 The issued-after checks in the rows for the Guard ALLOW, the execution and the
 health window are implied by the newest-request check
@@ -294,7 +294,7 @@ the skew between two processes:
 
 - The Executor's local Guard re-check runs with its own clock against an
   approval stamped by the Coordinator and a finding stamped by the Verifier
-  (`services/executor/core.py:537::execute::authorizer.validate`, which reads
+  (`services/executor/core.py:562::execute::authorizer.validate`, which reads
   the host clock in `runtime/live_executor.py::LiveGuardAuthorizer.validate`). With more than ε of
   skew it refuses, and the Executor reports FAILED with no write. The
   Coordinator now accepts that FAILED result in order, so the action ends
@@ -311,7 +311,7 @@ the skew between two processes:
   with the Executor in the loopback test and at offset 0 in S7.
 - An Executor host decides whether its own uncertain reconcile result is
   newer than a peer's by comparing their `recorded_at`
-  (`services/executor/core.py:502::unchanged_uncertainty::return mine <= theirs`). A wrong
+  (`services/executor/core.py:525::unchanged_uncertainty::return mine <= theirs`). A wrong
   answer only makes it retry the command or report one more uncertain
   result, which the Coordinator orders by sequence.
 
@@ -415,7 +415,7 @@ hour off.
 | A worker result and its acknowledgment commit together; a resend is a replay | Result digest stored on the receipt | `runtime/worker_transport.py::Delivery.finish` |
 | A worker never redoes finished work after a lost response | Result saved before it is sent | `runtime/remote_worker.py::RemoteWorker.once` |
 | Only the current lease holder can renew or report | Owner, role and lease token must match; renewal cannot revive finished or expired work | `runtime/worker_transport.py::Delivery.renew` |
-| The Kubernetes write happens at most once per action on one ledger | Write intent is journalled before the call; an unclear outcome is reconciled by reading, never by writing again, through a pure decision table | `services/executor/core.py:552-565::execute::start_write`, `services/executor/reconciliation.py::classify` |
+| The Kubernetes write happens at most once per action on one ledger | Write intent is journalled before the call; an unclear outcome is reconciled by reading, never by writing again, through a pure decision table | `services/executor/core.py:580-593::execute::start_write`, `services/executor/reconciliation.py::classify` |
 
 Tests: `tests/test_coordinator.py::CoordinatorTests.test_changed_payload_under_stable_id_is_rejected`,
 `tests/test_worker_transport.py::TransportTests.test_lost_result_response_recovers_exact_receipt_after_restart`,
@@ -514,13 +514,23 @@ in kind mode yet.
 - A lease is a work-distribution hint held at the Coordinator. It is not a
   fence at Kubernetes: a worker whose lease has expired can still be inside its
   kubectl call, which may take up to 15 s
-  (`services/executor/kubernetes_adapter.py:33::PROCESS_TIMEOUT_SECONDS::= 15`).
+  (`services/executor/kubernetes_adapter.py:36::PROCESS_TIMEOUT_SECONDS::= 15`).
 - The UID and resourceVersion test in every patch is checked by the API
   server inside the update it guards
-  (`services/executor/kubernetes_adapter.py:179-181::KubectlDeploymentAPI.conditional_restore::/metadata/uid`).
+  (`services/executor/kubernetes_adapter.py:204-206::KubectlDeploymentAPI.conditional_restore::/metadata/uid`).
   On its own it stops a write based on a stale read, but not a writer whose
   read is still current and whose lease expired or whose approval was revoked
   after its last check. The seal below closes that gap.
+- A SCALE (P5.07) writes through the same conditional patch: the same UID and
+  resourceVersion tests and a fresh evidence annotation, with a replace of
+  spec.replicas instead of the Pod template
+  (`services/executor/kubernetes_adapter.py::KubectlDeploymentAPI.conditional_scale`).
+  So the write-intent journal, the decision table, the fence and the seal
+  apply to it unchanged. Its evidence also names the replica count, and
+  reconciliation reports APPLIED only while the Deployment still has that
+  count and the template the proposal named; a later change to either is
+  SUPERSEDED (`services/executor/reconciliation.py::_write_still_in_place`).
+  This is tested offline only; no SCALE has reached an API server.
 - The per-target lock is an OS file lock on one host
   (`services/executor/store.py::LocalTargetCoordinator.hold`); it still
   separates the processes of one host. Across hosts the Coordinator now gives
@@ -529,7 +539,7 @@ in kind mode yet.
   resourceVersion test lets only one write land, and the loser finds this
   action's evidence annotation on the Deployment and reports APPLIED without
   writing
-  (`services/executor/core.py:531::execute::Another host may already have committed`).
+  (`services/executor/core.py:555::execute::Another host may already have committed`).
   The multi-process scenarios S1c and S2 run two Executor processes with
   separate ledgers and locks on one host and show this adoption; no run has
   used two Executors on separate machines.
@@ -538,7 +548,7 @@ in kind mode yet.
   the patch can never commit, so the result is SUPERSEDED and the Coordinator
   records the action FAILED. While the UID and resourceVersion are unchanged
   the request could still commit, so the action stays NEEDS_RECONCILIATION
-  (`services/executor/reconciliation.py:233::classify::Basis.UNCHANGED_IN_DOUBT`),
+  (`services/executor/reconciliation.py:267::classify::Basis.UNCHANGED_IN_DOUBT`),
   even when the API server in fact rejected it. The argument assumes
   resourceVersions never return to an earlier value, so an etcd restore must
   use `--bump-revision`.
@@ -546,7 +556,7 @@ in kind mode yet.
   the settle delay, a reconcile pass journals a fresh nonce and then sends a
   patch with the same UID and resourceVersion tests that only adds this
   action's fence annotation (sentinel.io/fence)
-  (`services/executor/kubernetes_adapter.py:214-216::KubectlDeploymentAPI.fence::/metadata/uid`).
+  (`services/executor/kubernetes_adapter.py:287-289::KubectlDeploymentAPI.fence::/metadata/uid`).
   etcd commits at most one request conditioned on V0. If the fence commits,
   its own test proves our write had not committed before it, and the moved
   version means it never can: CONFLICT with basis FENCED, and the workload is

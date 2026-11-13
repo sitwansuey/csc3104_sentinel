@@ -9,7 +9,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import re
 
-from shared.actions import IMPLEMENTED_ACTIONS, TEMPLATE_ACTIONS
+from shared.actions import BASELINE_ACTIONS, IMPLEMENTED_ACTIONS
 from shared.contracts import ACTION_TYPES, ContractError, validate_message
 from services.guard.common import (
     GuardInputError, mapping as _mapping, string as _string,
@@ -116,7 +116,8 @@ def _baseline_reasons(proposal, baseline, checked_at):
     if baseline["baseline_id"] != proposal["parameters"]["baseline_id"]:
         reasons.append("BASELINE_ID_MISMATCH")
     # A ROLLBACK writes the baseline itself. A RESTART writes the baseline plus a
-    # token; services/guard/restart.py binds its resulting hash.
+    # token; services/guard/restart.py binds its resulting hash. A SCALE writes no
+    # template; services/guard/scale.py binds the live template it leaves in place.
     if digest != baseline["template_sha256"] or (
             proposal["action"] == "ROLLBACK" and digest != proposal["parameters"]["template_sha256"]):
         reasons.append("BASELINE_HASH_MISMATCH")
@@ -212,7 +213,7 @@ def assess_state_policy(proposal, live_state, policy, *, now=None) -> list[str]:
 def _evaluate_core(proposal: dict, live_state: dict, policy: dict,
              baseline: dict | None, dependencies: dict, approval: dict | None = None,
              *, now: datetime | None = None, _trace=None) -> dict:
-    """Validate one typed ROLLBACK or RESTART without performing Kubernetes writes.
+    """Validate one typed ROLLBACK, RESTART or SCALE without performing Kubernetes writes.
 
     Malformed wire inputs raise ContractError. Invalid policy/live-state inputs
     raise GuardInputError; no resource version is invented for unavailable state.
@@ -231,7 +232,7 @@ def _evaluate_core(proposal: dict, live_state: dict, policy: dict,
     rejected = _state_policy_reasons(proposal, policy, live_target,
                                      resource_version, captured_at, checked_at)
     escalated = []
-    if proposal["action"] in TEMPLATE_ACTIONS:
+    if proposal["action"] in BASELINE_ACTIONS:
         rejected.extend(_baseline_reasons(proposal, baseline, checked_at))
 
     dependency_unknowns = []

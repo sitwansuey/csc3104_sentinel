@@ -27,7 +27,7 @@ def process_planner_requests(store, bus, *, baseline_reader, retriever, provider
     """Plan pending incidents. diagnoser and finalize need the durable journal (see prepare()).
 
     template_reader(incident), when given, is a trusted read of the target's
-    current Pod template; without it the Planner never proposes RESTART.
+    current Pod template; without it the Planner never proposes RESTART or SCALE.
     """
     if journal is not None:
         return _process_durable(store, bus, baseline_reader=baseline_reader, retriever=retriever,

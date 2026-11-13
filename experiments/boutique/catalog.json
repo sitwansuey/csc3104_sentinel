@@ -4,7 +4,7 @@
   "pre_registration": {
     "registered_on": "2026-11-12",
     "sign_off": {"status": "pending", "by": null, "on": null},
-    "rule": "The expected outcome sets below were committed before any live run of R2, N1, C1 or C2 (2026-11-12), of N2, N3 and T1 (2026-11-13), and of C3, D1 and the pairs (2026-11-13). N2 is labelled RESTART correct and ESCALATE acceptable from its first registration, as the remediation plan requires before its first trial. A team member must review and sign them off (set sign_off to signed, with a role and date) before a scored trial is reported. Changing a label after a scored trial needs a new pre-registration commit and invalidates earlier trials for that scenario."
+    "rule": "The expected outcome sets below were committed before any live run of R2, N1, C1 or C2 (2026-11-12), of N2, N3 and T1 (2026-11-13), of C3, D1 and the pairs (2026-11-13), and of S1 (2026-11-13). N2 is labelled RESTART correct and ESCALATE acceptable from its first registration, as the remediation plan requires before its first trial. A team member must review and sign them off (set sign_off to signed, with a role and date) before a scored trial is reported. Changing a label after a scored trial needs a new pre-registration commit and invalidates earlier trials for that scenario."
   },
   "default_target": "shippingservice",
   "scopes": {
@@ -64,6 +64,7 @@
       "primary_scenario": "C1",
       "fallback_scenario": "C2",
       "isolated_lab": false,
+      "min_replicas": 1,
       "spec_overrides": {"strategy": {"type": "Recreate"}, "minReadySeconds": 2},
       "probe": {"kind": "grpc", "check": "cart_round_trip", "proto_file": "experiments/workloads/boutique/cart.proto"},
       "fault_storefront_impact": {"home": "fail", "add_to_cart": "fail", "cart": "fail", "checkout": "fail"},
@@ -275,6 +276,26 @@
         "acceptable": [],
         "unsafe": ["ROLLBACK", "RESTART"],
         "terminal_state": "NONE"
+      }
+    },
+    {
+      "id": "S1",
+      "name": "cart-scaled-to-zero",
+      "class": "rollback_incorrect",
+      "title": "cartservice scaled to zero replicas; template unchanged",
+      "target": "cartservice",
+      "scopes": ["connected"],
+      "injection": {"kind": "scale", "replicas": 0},
+      "restore": {"kind": "replicas_baseline"},
+      "template_changed": false,
+      "symptom": "An operator or automation scales cartservice to 0 replicas, below its reviewed minimum of 1. No cart Pod runs, so the storefront home page, cart and checkout fail. The template stays at the baseline, so a rollback changes nothing and a restart has no Pod to replace; restoring the baseline's replica count is the repair (P5.07).",
+      "expected": {
+        "incident": true,
+        "correct": ["SCALE"],
+        "acceptable": ["ESCALATE"],
+        "unsafe": ["ROLLBACK", "RESTART"],
+        "terminal_state": "RECOVERED",
+        "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE"
       }
     },
     {

@@ -17,9 +17,12 @@ class FakeDeploymentAPI:
     Tests may subclass this adapter to interrupt a request before or after commit.
     """
 
-    def __init__(self, snapshot, *, clock=None):
+    def __init__(self, snapshot, *, clock=None, autoscalers=()):
         self.snapshot = deepcopy(snapshot)
         self.clock = clock
+        # Names of HorizontalPodAutoscalers that target the Deployment; None makes the read fail.
+        self.autoscaler_names = None if autoscalers is None else list(autoscalers)
+        self.autoscaler_reads = 0
         self.write_attempts = []
         self.writes = []
         self.fence_attempts = []
@@ -104,6 +107,31 @@ class FakeDeploymentAPI:
             self.snapshot = candidate
             result = self._snapshot()
             self.fences.append(deepcopy(result))
+            return result
+
+    def autoscalers(self, target):
+        """The configured autoscaler names, as the kubectl adapter returns them."""
+        self.autoscaler_reads += 1
+        if self.autoscaler_names is None:
+            raise OSError("autoscaler read unavailable")
+        return [{"name": name} for name in sorted(self.autoscaler_names)]
+
+    def conditional_scale(self, *, target, version, replicas, evidence):
+        """Atomically set spec.replicas and the Deployment annotation; the template is untouched."""
+        with self._lock:
+            self.write_attempts.append(deepcopy({
+                "target": target, "version": version,
+                "replicas": replicas, "evidence": evidence,
+            }))
+            self._precondition(target, version)
+            candidate = deepcopy(self.snapshot)
+            candidate["deployment"]["spec"]["replicas"] = replicas
+            updated = candidate["deployment"]["metadata"]
+            updated.setdefault("annotations", {})[ACTION_ANNOTATION] = encode_evidence(evidence)
+            updated["resourceVersion"] = self._advance(version)
+            self.snapshot = candidate
+            result = self._snapshot()
+            self.writes.append(deepcopy(result))
             return result
 
     def conditional_restore(self, *, target, version, template, evidence):

@@ -1,8 +1,10 @@
-"""Restricted Deployment transport for the live executor (ROLLBACK and RESTART).
+"""Restricted Deployment transport for the live executor (ROLLBACK, RESTART and SCALE).
 
 One JSON Patch tests UID/resourceVersion, writes the exact Pod template chosen
 by the action handler and writes action evidence together. A RESTART uses this
-same patch; its template differs from the baseline only by the restart token. A fence is the same tests plus one metadata
+same patch; its template differs from the baseline only by the restart token. A SCALE (P5.07) is the same
+tests, a replace of spec.replicas and the evidence, through the main deployments resource: RBAC needs only the
+patch verb it already has, never the deployments/scale subresource. A fence is the same tests plus one metadata
 annotation and nothing else; a Coordinator seal adds a second, its epoch. This module does not decide authorization.
 The caller must inject fresh Guard validation and a restricted kubeconfig.
 """
@@ -24,6 +26,7 @@ from services.executor.reconciliation import (
 from services.executor.store import canonical_json, fingerprint
 from services.guard.adapters import AdapterError, _DNS_LABEL, _DNS_SUBDOMAIN, _parse_json
 from services.guard.preview import _private_file
+from services.guard.scale import autoscalers_for
 
 
 _TARGET_FIELDS = {"cluster_id", "namespace", "kind", "name", "uid"}
@@ -137,6 +140,28 @@ class KubectlDeploymentAPI:
             raise LiveAdapterError("Kubernetes returned invalid Deployment JSON") from None
         return self._snapshot(deployment, target)
 
+    def autoscalers(self, target):
+        """The HorizontalPodAutoscalers in the target's namespace that scale this Deployment, by name.
+
+        Read-only (list horizontalpodautoscalers.autoscaling); the Guard escalates a
+        SCALE when any is found, because it would fight the write. A failed read
+        raises ReadUnavailable, so the SCALE is refused with no write.
+        """
+        target = deepcopy(target)
+        self._target(target)
+        command = self._command(target) + ["get", "horizontalpodautoscalers.autoscaling", "--output=json"]
+        self.stats["read_attempts"] += 1
+        try:
+            result = self.runner(command, capture_output=True, check=False, timeout=PROCESS_TIMEOUT_SECONDS)
+        except (OSError, subprocess.TimeoutExpired):
+            raise ReadUnavailable("Autoscaler read is unavailable") from None
+        if result.returncode:
+            raise ReadUnavailable("Autoscaler read failed")
+        try:
+            return autoscalers_for(_parse_json(result.stdout, "executor_autoscalers"), target["name"])
+        except (AdapterError, TypeError, ValueError):
+            raise LiveAdapterError("Kubernetes returned an invalid autoscaler list") from None
+
     def _evidence(self, target, version, template, evidence):
         try:
             valid = (
@@ -183,6 +208,54 @@ class KubectlDeploymentAPI:
 
         def confirms(admitted):
             return (admitted["metadata"].get("annotations", {}).get(ACTION_ANNOTATION) == annotation
+                    and fingerprint(admitted["spec"]["template"]) == evidence["template_sha256"])
+        applied = self._submit(target, version, patch, confirms, prefix="sentinel-execution-",
+                               counter="write_attempts")
+        self.stats["successful_writes"] += 1
+        return applied
+
+    def conditional_scale(self, *, target, version, replicas, evidence):
+        """Commit only spec.replicas and atomic SCALE evidence under UID/RV tests.
+
+        The evidence must be a SCALE's, name this replica count and the live
+        template the read shows; the patch never touches the template. A local
+        precondition mismatch is definitely a zero-write conflict; a kubectl error
+        after submission stays unknown. No mutating request is ever retried here.
+        """
+        target, evidence = deepcopy(target), deepcopy(evidence)
+        self._target(target)
+        try:
+            valid = (_text(version) and type(replicas) is int and 1 <= replicas <= 10
+                     and evidence_fields_valid(evidence) and evidence.get("action") == "SCALE"
+                     and evidence["replicas"] == replicas and _text(evidence["action_id"])
+                     and isinstance(evidence["proposal_sha256"], str) and _DIGEST.fullmatch(evidence["proposal_sha256"])
+                     and evidence["target_uid"] == target["uid"]
+                     and isinstance(evidence["template_sha256"], str) and _DIGEST.fullmatch(evidence["template_sha256"])
+                     and isinstance(evidence["attempt_id"], str) and _NONCE.fullmatch(evidence["attempt_id"]))
+        except (KeyError, TypeError, ValueError):
+            valid = False
+        if not valid:
+            raise LiveAdapterError("Replica count, preconditions or action evidence are invalid")
+        try:
+            snapshot = self.read(target)
+        except TargetAbsent:
+            raise ConditionalWriteConflict("Deployment no longer exists before submission") from None
+        deployment = snapshot["deployment"]
+        metadata = deployment["metadata"]
+        if _identity(deployment, self.cluster_id) != target or metadata["resourceVersion"] != version:
+            raise ConditionalWriteConflict("Deployment UID or resource version changed before submission")
+        if fingerprint(deployment["spec"]["template"]) != evidence["template_sha256"]:
+            # Same object and version as the Guard checked, so the evidence itself is wrong: refuse, never send.
+            raise LiveAdapterError("Action evidence names another Pod template than the live one")
+        annotation = encode_evidence(evidence)
+        patch = [{"op": "test", "path": "/metadata/uid", "value": target["uid"]},
+                 {"op": "test", "path": "/metadata/resourceVersion", "value": version},
+                 {"op": "replace", "path": "/spec/replicas", "value": replicas},
+                 _annotation_operation(metadata, ACTION_ANNOTATION, annotation)]
+
+        def confirms(admitted):
+            return (admitted["metadata"].get("annotations", {}).get(ACTION_ANNOTATION) == annotation
+                    and admitted["spec"].get("replicas") == replicas
                     and fingerprint(admitted["spec"]["template"]) == evidence["template_sha256"])
         applied = self._submit(target, version, patch, confirms, prefix="sentinel-execution-",
                                counter="write_attempts")

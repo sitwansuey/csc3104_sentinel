@@ -54,6 +54,8 @@ export interface ApprovalRequest {
   status: "PENDING" | "DECIDING" | "APPROVED" | "REVOKING" | "REVOKED" | "EXPIRED" | "CLOSED";
   mode: "ui"; operator_id: string; target: Target; action: string; baseline_id: string;
   template_sha256_prefix: string; proposal_sha256: string; policy_version: string;
+  /** The replica count a SCALE would write; null (or absent from an older relay) for every other action. */
+  desired_replicas?: number | null;
   guard: {verdict: string; reason_codes: string[]};
   rationale: string; rationale_truncated: boolean; requested_at: string; expires_at: string;
   approval: {approval_id: number; operator_id: string; approved_at: string; expires_at: string} | null;

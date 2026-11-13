@@ -21,6 +21,13 @@ API server linearizes the two requests, so at most one commits. A fence marker
 on the object, with a nonce this host journaled before sending it, proves that
 our write had not committed when the fence did, and it can never commit after.
 
+A SCALE (P5.07) is the same kind of write: its patch replaces spec.replicas
+instead of the Pod template, under the same tests and with the same fresh
+evidence annotation, so facts 1-3 and the fence hold for it unchanged. Its
+evidence also records the replica count, and its write is APPLIED only while
+the object still has that count and the template it named; a later change to
+either is COMMITTED_THEN_OVERWRITTEN.
+
 The module has no I/O. DEFINITE_REJECTION is reserved for a later
 rejection-classification stage; production code does not supply it.
 """
@@ -44,7 +51,9 @@ FENCE_EPOCH_ANNOTATION = "sentinel.io/fence-epoch"
 _EVIDENCE_FIELDS = frozenset({"action_id", "proposal_sha256", "target_uid", "template_sha256", "attempt_id"})
 # Actions whose evidence names the action. A ROLLBACK keeps the five-field form
 # written before other actions existed, so the absence of "action" means ROLLBACK.
-_NAMED_ACTIONS = frozenset({"RESTART"})
+# A SCALE's evidence also carries "replicas", the count it wrote.
+_NAMED_ACTIONS = frozenset({"RESTART", "SCALE"})
+_MAX_REPLICAS = 10  # shared/actions.py SCALE_MAX_REPLICAS; this module imports nothing from shared.actions.
 _FENCE_FIELDS = frozenset({"action_id", "nonce"})
 _NONCE = re.compile(r"[a-f0-9]{32}\Z")
 _IDENTITY_FIELDS = ("cluster_id", "kind", "namespace", "name")
@@ -75,6 +84,7 @@ class Observation:
     evidence_annotation: Optional[str] = None
     fence_annotation: Optional[str] = None
     template_sha256: Optional[str] = None
+    replicas: Optional[int] = None
 
 
 ABSENT = Observation(present=False)
@@ -108,12 +118,14 @@ def observe(snapshot: Any, target: Mapping[str, Any]) -> Optional[Observation]:
         fence = annotations.get(FENCE_ANNOTATION) if isinstance(annotations, dict) else None
         template = deployment.get("spec", {}).get("template")
         digest = fingerprint(template) if isinstance(template, dict) else None
+        replicas = deployment.get("spec", {}).get("replicas")
     except (AttributeError, KeyError, TypeError, ValueError, RecursionError):
         return None
     return Observation(present=True, uid=uid, resource_version=version,
                        evidence_annotation=evidence if isinstance(evidence, str) else None,
                        fence_annotation=fence if isinstance(fence, str) else None,
-                       template_sha256=digest)
+                       template_sha256=digest,
+                       replicas=replicas if type(replicas) is int else None)
 
 
 def fence_marker(action_id: str, nonce: str, epoch: Optional[int] = None) -> dict[str, Any]:
@@ -149,13 +161,17 @@ def fence_nonce(annotation: Optional[str], action_id: str) -> Optional[str]:
 
 
 def evidence_fields_valid(evidence: Any) -> bool:
-    """True for the five-field ROLLBACK form, or those fields plus a named action type."""
+    """True for the five-field ROLLBACK form, those fields plus RESTART, or plus SCALE and its replica count."""
     if not isinstance(evidence, dict):
         return False
     fields = set(evidence)
     if fields == _EVIDENCE_FIELDS:
         return True
-    return fields == _EVIDENCE_FIELDS | {"action"} and evidence["action"] in _NAMED_ACTIONS
+    if fields == _EVIDENCE_FIELDS | {"action"}:
+        return evidence["action"] in _NAMED_ACTIONS - {"SCALE"}
+    replicas = evidence.get("replicas")
+    return (fields == _EVIDENCE_FIELDS | {"action", "replicas"} and evidence["action"] == "SCALE"
+            and type(replicas) is int and 1 <= replicas <= _MAX_REPLICAS)
 
 
 def _evidence_action(evidence: Mapping[str, Any]) -> Any:
@@ -166,8 +182,9 @@ def action_attempt(annotation: Optional[str], proposal: Mapping[str, Any]) -> Op
     """Return the attempt nonce if the annotation is exact evidence for this action.
 
     Matching is at action level: action ID, action type, proposal hash, target
-    UID and template hash must all match, so a peer's attempt of the same action
-    counts. A copied marker for another action or a changed proposal does not.
+    UID and template hash (and a SCALE's replica count) must all match, so a
+    peer's attempt of the same action counts. A copied marker for another action
+    or a changed proposal does not.
     """
     if not isinstance(annotation, str) or len(annotation) > 4096:
         return None
@@ -181,10 +198,27 @@ def action_attempt(annotation: Optional[str], proposal: Mapping[str, Any]) -> Op
                    and evidence["proposal_sha256"] == fingerprint(proposal)
                    and evidence["target_uid"] == proposal["target"]["uid"]
                    and evidence["template_sha256"] == proposal["parameters"]["template_sha256"]
+                   and evidence.get("replicas") == _written_replicas(proposal)
                    and isinstance(attempt, str) and _NONCE.fullmatch(attempt) is not None)
     except (KeyError, TypeError, ValueError, RecursionError):
         return None
     return attempt if matches else None
+
+
+def _written_replicas(proposal: Mapping[str, Any]) -> Optional[int]:
+    """The replica count a SCALE writes; None for every other action."""
+    if proposal["action"] != "SCALE":
+        return None
+    value = proposal["parameters"]["desired_replicas"]
+    return value if type(value) is int else None
+
+
+def _write_still_in_place(proposal: Mapping[str, Any], observation: Observation) -> bool:
+    """The object still shows what this action wrote: its template, and a SCALE's replica count."""
+    if observation.template_sha256 != proposal["parameters"]["template_sha256"]:
+        return False
+    replicas = _written_replicas(proposal)
+    return replicas is None or observation.replicas == replicas
 
 
 def classify(row: Optional[Mapping[str, Any]], proposal: Mapping[str, Any],
@@ -216,7 +250,7 @@ def classify(row: Optional[Mapping[str, Any]], proposal: Mapping[str, Any],
             return Decision("NEEDS_RECONCILIATION", Basis.INCONSISTENT, version)
         own = row is not None and isinstance(row.get("evidence"), dict) and row["evidence"].get("attempt_id") == attempt
         writer = "own" if own else "peer:" + attempt
-        if observation.template_sha256 == proposal["parameters"]["template_sha256"]:
+        if _write_still_in_place(proposal, observation):
             return Decision("APPLIED", Basis.EVIDENCE_MATCH, version, writer=writer)
         return Decision("SUPERSEDED", Basis.COMMITTED_THEN_OVERWRITTEN, version, writer=writer)
     if fence_confirmed or fence_nonce(observation.fence_annotation, proposal["action_id"]) in fence_nonces:  # R4

@@ -482,10 +482,14 @@ class BoutiqueExperiment(Experiment):
         self.write_executor_rbac()
         return image
 
+    def observer_policy(self):
+        """Role 2's detection policy; it must stay the same for the whole run (the checkpoint is bound to it)."""
+        return {"detection": {"failure_duration_seconds": 5, "max_sample_gap_seconds": 45}}
+
     def observe(self, label):
         """Use Role 2's full collector, durable checkpoint/outbox and Role 1 sink."""
         observation = self.observer_collector.collect()
-        policy = {"detection": {"failure_duration_seconds": 5, "max_sample_gap_seconds": 45}}
+        policy = self.observer_policy()
         with ObserverStore(self.directory / "observer.sqlite", policy, self.observer_collector.target) as store:
             incident = store.observe(observation)
             delivery = store.flush(LocalCoordinatorSink(self.directory / "coordinator.sqlite"))
@@ -742,7 +746,7 @@ class BoutiqueExperiment(Experiment):
                 # Role 2 correctly rejects that sample; reset its timer and retry
                 # bounded read-only collection, never the recovery mutation.
                 consecutive_errors += 1
-                policy = {"detection": {"failure_duration_seconds": 5, "max_sample_gap_seconds": 45}}
+                policy = self.observer_policy()
                 with ObserverStore(self.directory / "observer.sqlite", policy, self.observer_collector.target) as store:
                     store.collection_failed(error)
                 self.event(2, "error", "Role 2 rejected an inconsistent rollout sample; retrying collection")
@@ -873,12 +877,20 @@ def _main(held):
         parser.error(f"--target {args.target} is offered only in the " + ", ".join(profile.scopes)
                      + " scope; add --connected")
     chaos_scenario = scenario["injection"]["kind"] == "chaos"
+    # P5.07: a scale fault (S1) plans with the code rule provider like a chaos run; it takes the same lock.
+    scale_scenario = scenario["injection"]["kind"] == "scale"
     if args.scenario not in profile.operator_scenarios:
         # The other scenarios are scored decisions on the connected lab, outside the fixed UI sequence.
-        if chaos_scenario and not args.connected:
-            parser.error("--scenario " + args.scenario + " (Chaos Mesh) requires --connected")
-        if not chaos_scenario and not (args.agent and args.connected):
+        if (chaos_scenario or scale_scenario) and not args.connected:
+            parser.error("--scenario " + args.scenario + (" (Chaos Mesh)" if chaos_scenario else " (scale)")
+                         + " requires --connected")
+        if scale_scenario and args.agent:
+            parser.error("--scenario " + args.scenario + " (scale) plans with the code rule provider; drop --agent")
+        if not (chaos_scenario or scale_scenario) and not (args.agent and args.connected):
             parser.error("--scenario " + args.scenario + " requires --agent --connected")
+    if scale_scenario and (args.guard_rejection or args.provider_script or args.dashboard or args.expect):
+        parser.error("A scale scenario runs its own planning, refusal and checks; drop --guard-rejection, "
+                     "--provider-script, --dashboard and --expect")
     if chaos_scenario and (args.guard_rejection or args.provider_script or args.dashboard):
         # The dashboard's end-of-run check verifies the operator walkthrough or an agent case, not a chaos run.
         parser.error("A Chaos Mesh scenario runs its own planning, refusals and checks; drop --guard-rejection, "
@@ -935,12 +947,12 @@ def _main(held):
         parser.error("Connected mode requires its host lab; the old packaged bootstrap is single-service")
     if not 1 <= args.storefront_port <= 65535 or (args.connected and args.dashboard and args.storefront_port == args.dashboard_port):
         parser.error("Storefront port must be valid and separate from the dashboard port")
-    if args.break_stale_lock and not chaos_scenario:
-        parser.error(lab_lock.BREAK_OPTION + " applies only to a Chaos Mesh scenario or --pair")
-    if chaos_scenario:
+    if args.break_stale_lock and not (chaos_scenario or scale_scenario):
+        parser.error(lab_lock.BREAK_OPTION + " applies only to a Chaos Mesh or scale scenario or --pair")
+    if chaos_scenario or scale_scenario:
         # P4.03: the whole live run holds the heavy-lab lock, so P4.01 and P4.05 never run alongside it.
-        lock = lab_lock.HeavyLabLock(holder="P4.03 chaos scenario " + args.scenario,
-                                     break_stale=args.break_stale_lock)
+        lock = lab_lock.HeavyLabLock(holder=("P4.03 chaos scenario " if chaos_scenario else "P5.07 scale scenario ")
+                                     + args.scenario, break_stale=args.break_stale_lock)
         try:
             lock.acquire()
         except lab_lock.LabLockError as error:
@@ -962,6 +974,9 @@ def _main(held):
     if chaos_scenario:
         from experiments.boutique.harness.chaos_recovery import ChaosRecoveryMixin
         experiment_type = type("ChaosBoutiqueExperiment", (ChaosRecoveryMixin, experiment_type), {})
+    if scale_scenario:
+        from experiments.boutique.harness.scale_recovery import ScaleRecoveryMixin
+        experiment_type = type("ScaleBoutiqueExperiment", (ScaleRecoveryMixin, experiment_type), {})
     experiment = experiment_type(directory, **({"storefront_port": args.storefront_port} if args.connected else {}))
     experiment.select_target(args.target)
     if chaos_scenario:
@@ -1082,8 +1097,12 @@ def _main(held):
                 experiment.credentials.unlink(missing_ok=True)
                 save(experiment.directory / "summary.json", experiment.summary)
                 signal.signal(signal.SIGTERM, previous_term)
+    if scale_scenario:
+        from experiments.boutique.harness.scale_recovery import scale_pass_line
     print(chaos_pass_line(args.scenario, expect, experiment.summary)
           if chaos_scenario else
+          scale_pass_line(args.scenario, experiment.summary)
+          if scale_scenario else
           "PASS: agent planning ended in a saved ESCALATE; incident NEEDS_REVIEW with no repair"
           if args.agent and expect == "escalated" else
           "PASS: live agent diagnosed the fault, proposed rollback, and Coordinator verified RECOVERED"

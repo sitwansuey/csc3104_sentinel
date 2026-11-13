@@ -167,7 +167,8 @@ class GuardNecessityTests(unittest.TestCase):
 
     def test_nonrollback_action_does_not_run_template_comparison(self):
         self.same_template()
-        self.proposal.update(action="SCALE", parameters={"desired_replicas": 2})
+        self.proposal.update(action="SCALE", parameters={"baseline_id": self.proposal["parameters"]["baseline_id"],
+                                                         "desired_replicas": 2, "template_sha256": "a" * 64})
         self.approval["proposal_sha256"] = proposal_fingerprint(self.proposal)
         decision, report = self.decide()
         self.assertEqual(decision["verdict"], "REJECT")
