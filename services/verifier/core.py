@@ -173,8 +173,15 @@ def inspect_dependencies(proposal: dict, graph: dict, live_state: dict,
     return result
 
 
-def _assess(execution, samples, policy):
-    """Legacy strict assessment of one window; verify() adds the opt-in convergence rule."""
+def _assess(execution, samples, policy, *, unanswered=frozenset()):
+    """Legacy strict assessment of one window; verify() adds the opt-in convergence rule.
+
+    unanswered holds the indexes of readings that verify() found waiting for a
+    rollout (_awaiting_rollout): their missing response counts as an answer
+    that is not healthy instead of as missing evidence. Only verify() passes
+    it, to judge a leading run inside the convergence grace; it is empty for
+    every verdict on the readings as they are.
+    """
     validate_message(execution)
     if execution["kind"] != "execution_result":
         raise VerifierInputError("Expected an execution_result")
@@ -193,7 +200,7 @@ def _assess(execution, samples, policy):
     configuration_complete = True
     unhealthy_service = unhealthy_dependency = unhealthy_template = False
     required_dependencies = set(rules.get("required_dependencies", []))
-    for sample in samples:
+    for index, sample in enumerate(samples):
         if not isinstance(sample, dict):
             identity_ok = timestamps_ok = health_complete = dependencies_complete = False
             continue
@@ -224,6 +231,8 @@ def _assess(execution, samples, policy):
             status = sample.get("http_status")
             response_complete = type(status) is int and 100 <= status <= 599
             response_healthy = status == rules["required_http_status"]
+        if index in unanswered:
+            response_complete, response_healthy = True, False
         complete = (protocol_matches and response_complete and type(ready) is int and ready >= 0
                     and type(desired) is int and desired > 0)
         available = sample.get("available_replicas")
@@ -331,6 +340,70 @@ def reading_status(execution: dict, sample: dict, policy: dict) -> str:
     return "healthy" if passed else "incomplete"
 
 
+# The Deployment facts a reading must carry before its missing response may be
+# read as a rollout still under way (_awaiting_rollout). The live collector
+# records them (services/verifier/live.py::LiveEvidenceCollector._snapshot); a
+# reading without them, from any other collector, is judged as before.
+ROLLOUT_FIELDS = ("generation", "observed_generation", "updated_replicas", "total_replicas")
+AWAITING_ROLLOUT_CAUSE = "service not answering during rollout"
+
+
+def _awaiting_rollout(sample, rules, limit):
+    """True for a reading inside the grace whose only gap is a response no Pod was there to give.
+
+    The service gave no response (no HTTP status, no gRPC status and check,
+    no Redis reply), and the reading's own Deployment read says why: no
+    replica is ready or available, and the rollout counts (ROLLOUT_FIELDS,
+    non-negative integers the collector records only from a whole,
+    consistent Deployment read) show the rollout not finished, in the sense
+    `kubectl rollout status` uses:
+
+        observed_generation < generation  or  updated_replicas < desired_replicas
+        or  available_replicas < updated_replicas
+
+    The first means the controller has not yet acted on the write, so every
+    count still describes the old spec. The second means fewer Pods of the
+    new template exist than the spec asks for; it also covers no Pod at all
+    (total_replicas 0), since updatedReplicas counts a subset of
+    status.replicas and desired is at least 1. A Recreate rollout leaves the
+    target with no Pod for some seconds after the write (updated 0, total 0),
+    so the first reading can fall there. The third means a Pod of the new
+    template exists but is not yet available: found live (sentinel-dist S0 r3
+    at 614c4aa, first reading +5 s: updated 1, total 1, ready 0, no HTTP
+    response), the new container had not yet started serving. Setting such a
+    reading aside cannot by itself give RECOVERED: verify() still needs the
+    readings after it to pass every rule over the stable window, readings
+    after the grace always count, and a relapse always counts, so a Pod that
+    never starts serving still ends UNKNOWN or NOT_RECOVERED. Counts that
+    contradict each other (more updated Pods than Pods) never qualify. Every
+    other fact is still checked by _assess (identity, timestamps, template,
+    configuration_stable, dependencies). A reading whose Deployment read
+    failed has no counts and never qualifies, nor does a silent target with
+    a ready or available replica.
+    """
+    if not isinstance(sample, dict) or sample.get("protocol", "http") != rules["protocol"]:
+        return False
+    try:
+        if _timestamp(sample.get("at")) > limit:
+            return False
+    except VerifierInputError:
+        return False
+    if rules["protocol"] == "grpc":
+        silent = sample.get("grpc_status") is None and sample.get("application_check_passed") is None
+    elif rules["protocol"] == "redis":
+        silent = sample.get("redis_reply") is None
+    else:
+        silent = sample.get("http_status") is None
+    counts = [sample.get(key) for key in ("desired_replicas", "ready_replicas", *ROLLOUT_FIELDS)]
+    available = sample.get("available_replicas", 0 if not rules.get("require_available_replicas") else None)
+    if not silent or any(type(value) is not int or value < 0 for value in (*counts, available)):
+        return False
+    desired, ready, generation, observed, updated, total = counts
+    if desired < 1 or generation < 1 or ready != 0 or available != 0 or updated > total:
+        return False
+    return observed < generation or updated < desired or available < updated
+
+
 def verify(execution: dict, samples: list[dict], policy: dict, *, final: bool = True) -> dict:
     """Assess one ordered post-action window; missing evidence is UNKNOWN.
 
@@ -338,6 +411,9 @@ def verify(execution: dict, samples: list[dict], policy: dict, *, final: bool = 
     With policy.health.convergence_grace_seconds, a leading run of complete,
     approved-template, known-unhealthy readings inside that grace may be set
     aside, but only when the readings after it alone pass every unchanged rule.
+    A reading inside the grace with no response, no ready Pod and an
+    unfinished rollout (_awaiting_rollout) counts in that run as unhealthy,
+    not as missing evidence; everything else about it must still be complete.
     Relapse, template drift, missing evidence and later readings always count.
     final=False is only for a ledger that will keep collecting: it defers that
     leading run instead of deciding on it and can never by itself give RECOVERED.
@@ -349,17 +425,23 @@ def verify(execution: dict, samples: list[dict], policy: dict, *, final: bool = 
     if grace is None:
         return strict
     limit = _timestamp(execution["recorded_at"]) + timedelta(seconds=grace)
+    rules = _health_policy(policy)
+    waiting = frozenset(index for index, sample in enumerate(samples) if _awaiting_rollout(sample, rules, limit))
+    # With no reading waiting for a rollout this is the strict verdict itself.
+    judged = _assess(execution, samples, policy, unanswered=waiting) if waiting else strict
     lead, causes = 0, set()
     # NOT_RECOVERED means the whole window is trustworthy: object readings,
     # valid ordered stamps and complete evidence. Only then is a start judged.
-    if strict["status"] == "NOT_RECOVERED":
-        for sample in samples:
-            alone = _assess(execution, [sample], policy)
+    if judged["status"] == "NOT_RECOVERED":
+        for index, sample in enumerate(samples):
+            alone = _assess(execution, [sample], policy, unanswered=frozenset({0} if index in waiting else ()))
             failed = {check["name"] for check in alone["checks"] if not check["passed"]}
             if (_timestamp(sample["at"]) > limit or alone["status"] != "NOT_RECOVERED"
                     or "sample_configuration" in failed):
                 break
-            if "service_health" in failed:
+            if index in waiting:
+                causes.add(AWAITING_ROLLOUT_CAUSE)
+            elif "service_health" in failed:
                 causes.add("service")
             causes.update("dependency " + name for name, healthy in sample["dependencies"].items()
                           if healthy is False)

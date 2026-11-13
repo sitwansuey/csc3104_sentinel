@@ -63,9 +63,10 @@ class Delivery:
     """max_clock_skew (seconds), when set, refuses claims from a worker whose
     latest reported clock estimate is missing or outside the bound.
     stale_replans, when above 0, lets a Guard refusal whose only reason is
-    STALE_RESOURCE_VERSION queue up to that many re-plans per incident
-    (services/coordinator/core.py::replan_after_stale); 0 keeps a stale
-    refusal final."""
+    STALE_RESOURCE_VERSION, or an Executor CONFLICT that provably wrote
+    nothing, queue up to that many re-plans per incident in all
+    (services/coordinator/core.py::replan_after_stale and
+    replan_after_conflict); 0 keeps both final."""
 
     def __init__(self, store, *, clock=time.time, lease_seconds=30, retention_seconds=86400,
                  dependency_requests=False, max_clock_skew=None, stale_replans=0):
