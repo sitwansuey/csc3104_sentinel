@@ -15,7 +15,12 @@ applies both faults within 5 seconds of each other on the connected lab
 same Observer, Coordinator, Planner, Guard, Executor and Verifier as a single
 run. Planning uses the code rule provider with a trusted read of the live
 template: a changed template gives ROLLBACK, failing Pods on an unchanged
-template give RESTART.
+template give RESTART. As in single runs (`run_durable_case`), planning goes
+through the durable Planner journal (`planner.db` in the run folder): a
+transient kubectl read error or a contract error is retried, three attempts
+with a backoff from 5 seconds, and then saved as an ESCALATE, so that
+incident ends in NEEDS_REVIEW and the other one carries on. Each target's
+`planning-status.json` records its attempts and error code.
 
 | Pair | Kind | Faults | Expected |
 |---|---|---|---|

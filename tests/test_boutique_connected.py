@@ -1488,6 +1488,66 @@ class PairScoringTests(unittest.TestCase):
         self.assertEqual(escalated["actual"], "ESCALATE")
 
 
+class PairPlanningTests(unittest.TestCase):
+    """Pair planning goes through the durable Planner journal: retried, then escalated, never aborting (finding 6)."""
+
+    setUp = PairHarnessTests.setUp
+    pair = PairHarnessTests.pair
+
+    def planning(self, failed_reads):
+        from tests.support.pair_lab import PairLab
+        lab = PairLab(self.enterContext(tempfile.TemporaryDirectory()),
+                      {"shippingservice": "config", "cartservice": "pod"},
+                      edges=[("frontend", "shippingservice"), ("frontend", "cartservice")])
+        self.addCleanup(lab.close)
+        experiment = self.pair("shipping-config+cart-pod")
+        experiment.store, experiment.bus, experiment.planner_clock = lab.store, lab.bus, lambda: lab.now
+        for name, lane in experiment.lanes.items():
+            lane.update(incident=lab.incidents[name], baseline=lab.baselines[name])
+        failures = {"cartservice": failed_reads}
+
+        def deployment():
+            if failures.get(experiment.name):
+                # A transient read error of the trusted live template, as kubectl gives it.
+                failures[experiment.name] -= 1
+                raise RuntimeError("kubectl operation failed: get")
+            return lab.cluster.read(lab.incidents[experiment.name]["target"])["deployment"]
+        experiment.deployment = deployment
+        return lab, experiment, lab.open()
+
+    def status(self, experiment, name):
+        return json.loads((experiment.directory / ("pair-" + name) / "planning-status.json").read_text(encoding="utf-8"))
+
+    def test_a_transient_read_error_is_retried_after_the_backoff_without_aborting_the_pair(self):
+        lab, experiment, ids = self.planning(1)
+        experiment.plan_pending()
+        self.assertEqual((lab.state("shippingservice"), lab.state("cartservice")), ("VALIDATING", "OPEN"))
+        status = self.status(experiment, "cartservice")
+        self.assertEqual((status["attempts"], status["delivered"], status["proposal"]), (1, False, None))
+        self.assertIsNotNone(status["error_code"])
+        experiment.plan_pending()  # Still inside the backoff: nothing is planned.
+        self.assertEqual(lab.state("cartservice"), "OPEN")
+        lab.tick(6)
+        experiment.plan_pending()
+        self.assertEqual(lab.state("cartservice"), "VALIDATING")
+        proposal = lab.store.action(lab.store.incident(ids["cartservice"])["active_action_id"])["proposal"]
+        self.assertEqual(proposal["action"], "RESTART")
+        self.assertTrue((experiment.directory / "pair-cartservice" / ("proposal-" + proposal["action_id"] + ".json"))
+                        .is_file())
+        self.assertEqual(self.status(experiment, "cartservice")["attempts"], 2)
+        self.assertTrue((experiment.directory / "planner.db").is_file())
+
+    def test_a_read_that_keeps_failing_ends_in_a_saved_escalation_for_that_target_only(self):
+        lab, experiment, ids = self.planning(3)
+        for _ in range(3):
+            experiment.plan_pending()
+            lab.tick(11)
+        self.assertEqual((lab.state("shippingservice"), lab.state("cartservice")), ("VALIDATING", "NEEDS_REVIEW"))
+        escalation = lab.store.action(lab.store.incident(ids["cartservice"])["active_action_id"])["proposal"]
+        self.assertEqual(escalation["action"], "ESCALATE")
+        self.assertEqual(self.status(experiment, "cartservice")["attempts"], 3)
+
+
 class PairShopWindowTests(unittest.TestCase):
     """The storefront gets the single-run convergence grace after both incidents recover (finding 4)."""
 

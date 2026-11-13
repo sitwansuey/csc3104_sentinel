@@ -58,6 +58,9 @@ from experiments import lab_lock
 from experiments.boutique.harness import chaos, scenarios, targets
 from experiments.boutique.harness.chaos_recovery import RESTART_BUDGET, ChaosRecoveryMixin, preflight
 from experiments.boutique.harness.connected import ConnectedBoutiqueExperiment
+from experiments.boutique.harness.durable_case import MAX_ATTEMPTS as PLANNING_ATTEMPTS
+from experiments.boutique.harness.durable_case import RETRY_SECONDS as PLANNING_RETRY_SECONDS
+from experiments.boutique.harness.durable_case import planning_status
 from experiments.boutique.harness.live import PROBE_PROTO_CONFIGMAP, ROOT
 from experiments.recovery.live import Experiment, require, save
 from experiments.recovery.live import utc as live_utc
@@ -488,6 +491,8 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
     """
 
     verification_scope = "target"
+    # The Planner journal's clock; None is the wall clock (tests inject one).
+    planner_clock = None
 
     def __init__(self, directory, *, pair_id, storefront_port=8080, executor_kill=False,
                  budget_seconds=DEFAULT_BUDGET_SECONDS):
@@ -751,9 +756,25 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
     # One incident's steps (runtime.recovery_runner.advance).
 
     def plan_pending(self):
-        proposals = process_planner_requests(self.store, self.bus, baseline_reader=self.lane_baselines,
-                                             retriever=retrieve_runbooks, provider=mock_provider,
-                                             template_reader=self.lane_template)
+        """Plan every pending incident through the durable Planner journal (<run>/planner.db), as single runs do.
+
+        The journal, attempt limit and backoff are run_durable_case's: a
+        transient kubectl read error or a ContractError is retried
+        (MAX_ATTEMPTS attempts, RETRY_SECONDS doubling backoff) and then saved
+        as an ESCALATE, so that incident ends in NEEDS_REVIEW instead of
+        aborting the pair; while a retry waits, the incident stays OPEN and the
+        runner polls it again. Each target's planning status is saved in its
+        folder (planning-status.json, no exception text).
+        """
+        with PlannerStore(self.directory / "planner.db", clock=self.planner_clock) as journal:
+            proposals = process_planner_requests(self.store, self.bus, baseline_reader=self.lane_baselines,
+                                                 retriever=retrieve_runbooks, provider=mock_provider,
+                                                 template_reader=self.lane_template, journal=journal,
+                                                 max_attempts=PLANNING_ATTEMPTS, retry_seconds=PLANNING_RETRY_SECONDS)
+            for lane in self.lanes.values():
+                status = planning_status(journal, lane["incident"]["incident_id"]) if lane.get("incident") else None
+                if status:
+                    save(lane["folder"] / "planning-status.json", status)
         for proposal in proposals:
             save(self.lane_of(proposal)["folder"] / ("proposal-" + proposal["action_id"] + ".json"), proposal)
             self.phase("proposal_saved", proposal["target"]["name"])
