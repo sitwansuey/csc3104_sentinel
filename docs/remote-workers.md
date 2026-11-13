@@ -39,7 +39,8 @@ dependency file or private Verifier database is needed.
 Verifier retains its fixed deadline and samples across polls/restarts; missing
 evidence becomes UNKNOWN/NEEDS_REVIEW at that deadline. A `verifier.request`
 pass keeps its claim and samples until the evidence is conclusive: one reading
-at least every `sampling_interval` seconds (at most half the policy's
+about every `sampling_interval` seconds, start to start, so a slow reading
+lengthens the gap by its own duration (at most half the policy's
 `max_sample_gap_seconds`; 10 s under the kind policy), each merged into
 `verifier.db` and logged as `verifier.sample` with its status alone, with the
 lease checked before every reading and at least once a second while waiting.
@@ -48,7 +49,13 @@ pass and the delivery is retried. A pass gives the delivery back after at most
 600 s, below the default `--live-seconds` (900), or at its next wait once the
 worker is stopping. Before this one pass took one
 reading, so the Coordinator's retry back-off set the cadence
-([L-VERIFIER-RETRY-BACKOFF](limitations.md#l-verifier-retry-backoff)). A successful patch remains
+([L-VERIFIER-RETRY-BACKOFF](limitations.md#l-verifier-retry-backoff)). The
+cost: a Verifier worker handles one delivery at a time and also answers
+`dependency.request`, which an action's `guard.request` waits for, so with a
+single Verifier other actions' dependency checks (and so their Guard step)
+and their verification wait for the whole pass, up to 90 s under the kind
+policy and at most 600 s
+([L-VERIFIER-PASS-BLOCKS-WORKER](limitations.md#l-verifier-pass-blocks-worker)). A successful patch remains
 VERIFYING until an independent outcome. Executor uses its existing conditional
 write/reconciliation ledger and obtains fresh approval plus live delivery
 authority under its target lock, including the post-journal final check.

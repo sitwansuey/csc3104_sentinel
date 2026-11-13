@@ -644,6 +644,68 @@ class KindRunTests(unittest.TestCase):
         self.assertIn("lab.json", errors.getvalue())
 
 
+class VerifierAttemptsTests(unittest.TestCase):
+    """A scenario with max_verifier_attempts matches its expectation only within that bound.
+
+    The bound is what reports a live run whose Verifier went back to many
+    deliveries (L-VERIFIER-RETRY-BACKOFF) as not matching. File mode cannot
+    exceed it on either cadence, so it is checked here on fake records.
+    """
+
+    def setUp(self):
+        self.directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        FakeTopology.cluster, FakeTopology.started, FakeTopology.stopped, FakeTopology.deadlines = \
+            FakeKindLab(), [], 0, []
+        self.enterContext(patch.object(run_scenarios, "Topology", FakeTopology))
+        self.enterContext(patch.object(run_scenarios.invariants, "check", return_value=[]))
+        self.receipts = []
+        self.enterContext(patch.object(run_scenarios.invariants, "collect", side_effect=lambda _topology, **_: {
+            **records(False), "receipts": list(self.receipts),
+            "outbox": [{"id": 1, "topic": "verifier.request", "action_id": "ACT-1", "delivered": 1},
+                       {"id": 2, "topic": "dependency.request", "action_id": "ACT-1", "delivered": 1},
+                       {"id": 3, "topic": "verifier.request", "action_id": "ACT-2", "delivered": 1}]}))
+
+    def run_with(self, bound, *receipts):
+        self.receipts = [{"event_id": event_id, "attempts": attempts} for event_id, attempts in receipts]
+        scenario = replace(scenarios.SCENARIOS["S8"], run=lambda _topology: {}, max_verifier_attempts=bound)
+        with patch.dict(run_scenarios.SCENARIOS, {"S8": scenario}):
+            return run_scenarios.run_once("S8")
+
+    def test_more_verifier_deliveries_than_the_bound_do_not_match_the_expectation(self):
+        summary = self.run_with(2, (1, 3), (2, 1))
+        self.assertEqual((summary["verifier_attempts"], summary["max_verifier_attempts"]), (3, 2))
+        self.assertTrue(summary["passed"])  # Every invariant passed: only the bound fails the run.
+        self.assertFalse(summary["matches_expectation"])
+        # The most deliveries of any verifier.request command counts, not the first one's.
+        summary = self.run_with(2, (1, 1), (3, 3))
+        self.assertEqual(summary["verifier_attempts"], 3)
+        self.assertFalse(summary["matches_expectation"])
+
+    def test_a_bound_with_no_verifier_command_does_not_match_the_expectation(self):
+        summary = self.run_with(2, (2, 1))  # Only the dependency.request was delivered.
+        self.assertIsNone(summary["verifier_attempts"])
+        self.assertFalse(summary["matches_expectation"])
+
+    def test_deliveries_within_the_bound_match_the_expectation(self):
+        for attempts in (1, 2):
+            with self.subTest(attempts=attempts):
+                summary = self.run_with(2, (1, attempts), (2, 5))  # Other topics do not count.
+                self.assertEqual(summary["verifier_attempts"], attempts)
+                self.assertTrue(summary["matches_expectation"])
+
+    def test_a_scenario_without_a_bound_is_unaffected(self):
+        summary = self.run_with(None, (1, 7))
+        self.assertEqual((summary["verifier_attempts"], summary["max_verifier_attempts"]), (7, None))
+        self.assertTrue(summary["matches_expectation"])
+        summary = self.run_with(None)
+        self.assertIsNone(summary["verifier_attempts"])
+        self.assertTrue(summary["matches_expectation"])
+
+    def test_s0_and_s2_carry_the_bound(self):
+        self.assertEqual({name: scenario.max_verifier_attempts for name, scenario in scenarios.SCENARIOS.items()
+                          if scenario.max_verifier_attempts is not None}, {"S0": 2, "S2": 2})
+
+
 class StorefrontStatusTests(unittest.TestCase):
     def test_a_storefront_that_does_not_answer_http_is_no_status_never_an_error(self):
         from http.client import BadStatusLine, RemoteDisconnected

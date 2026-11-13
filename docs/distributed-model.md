@@ -470,6 +470,25 @@ What is kept:
   after the execution with that status (`verification`) and the most
   deliveries of any Verifier command (`verifier_attempts`).
 
+What it costs: the topology has one Verifier (`verifier-1`, and one replica
+in `deploy/sentinel/sentinel-dist/verifier.yaml`), and a worker handles one
+delivery at a time. The same role also answers `dependency.request`, and the
+Coordinator does not hand out an action's `guard.request` while that
+action's `dependency.request` is undelivered
+(`runtime/worker_transport.py::Delivery._claim`). So while one pass samples,
+other actions wait: their dependency checks, and through them their Guard
+step, and their own verification. The wait lasts up to the length of the
+pass: about 50 s for the be6e636 timeline, up to the 90 s timeout under the
+kind policy, and never more than `VERIFIER_MAX_PASS_SECONDS` (600 s). Before
+this change a pass took one reading and ended within seconds. A duplicate
+incident opened during a pass (S1b and S2 opened some in kind mode) therefore
+gets its Guard rejection only after the pass ends; that should still fit the
+180 s kind deadline, but it has not been run live
+([L-VERIFIER-PASS-BLOCKS-WORKER](limitations.md#l-verifier-pass-blocks-worker)).
+`tests/test_verifier_sampling.py::HeadOfLineTests` measures it offline: a
+dependency check queued 5 s into a pass is claimed only once the pass has
+given its verdict, more than 30 s later.
+
 Tests: `tests/test_verifier_sampling.py` drives the real `Delivery`,
 `RemoteWorker` and `VerifierAdapter` on a simulated clock under the kind
 policy. The be6e636 timeline (rollback committed, target healthy from +40 s)
@@ -479,7 +498,13 @@ target that never turns healthy (FAILED by the deadline), evidence that never
 becomes conclusive (UNKNOWN frozen at the deadline), a lease lost mid-sampling
 (no result posted) and a Verifier killed mid-sampling (re-delivered once,
 RECOVERED). File-mode S0 and S2 assert at most 2 Verifier deliveries
-(`max_verifier_attempts`). None of this has run in kind mode yet.
+(`max_verifier_attempts`), but that bound cannot tell the old cadence from the
+new one: the file-mode collector returns a whole window of readings per call,
+so file mode needs one delivery either way, and `tests/test_verifier_sampling.py`
+is the regression guard. `tests/test_kind_bundle.py::VerifierAttemptsTests`
+checks the bound itself on fake records: more deliveries than the bound, or no
+Verifier command at all, does not match the expectation. None of this has run
+in kind mode yet.
 
 ## Fencing limits
 

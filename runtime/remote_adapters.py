@@ -221,8 +221,8 @@ class VerifierAdapter:
     move. A wall clock that does not move forward across a wait also ends
     the pass, since no new reading could be stamped, and so does stopping
     (worker_service's shutdown event) once it is set: the delivery goes
-    back and the readings stay for the next holder. Each reading is logged
-    as verifier.sample with its status judged alone (reading_status), and
+    back and the readings stay for the next holder. Each reading the store
+    kept is logged as verifier.sample with its status judged alone (reading_status), and
     the store keeps the readings themselves, so a run can show when the
     target first read healthy.
     """
@@ -314,8 +314,16 @@ class VerifierAdapter:
         return self.stopping is None or not self.stopping.is_set()
 
     def _log(self, job, samples):
-        """One verifier.sample line per reading: its status alone, never its content."""
+        """One verifier.sample line per reading the store kept: its status alone, never its content.
+
+        A reading record_samples did not merge (one returned after the
+        deadline, or after an outcome was frozen) is not logged, so the log
+        lists exactly the readings the verdict was judged on.
+        """
+        kept = {row.get("at") for row in job["samples"]}
         for sample in samples:
+            if sample.get("at") not in kept:
+                continue
             try:
                 status = reading_status(job["execution"], sample, job["policy"])
             except Exception as error:  # noqa: BLE001 - an audit line must never stop sampling

@@ -141,8 +141,16 @@ The remote Verifier samples within one claimed pass at most half the
 policy's `max_sample_gap_seconds` apart, until an outcome or the deadline
 ([distributed model](../../docs/distributed-model.md#the-verifier-samples-within-one-claimed-pass)),
 so a run normally needs one Verifier delivery. S0 and S2 set
-`max_verifier_attempts` to 2: a run with more does not match its expectation
-(in file mode they take 1).
+`max_verifier_attempts` to 2: a run with more, or with no Verifier command at
+all, does not match its expectation (in file mode they take 1). In file mode
+that bound does not tell the old one-reading pass from the new cadence: the
+file-mode collector (`tests/support/file_cluster.py`) returns a whole window
+of readings per call, so one delivery is enough either way. The regression
+guard for the cadence is `tests/test_verifier_sampling.py`; the bound itself
+is tested on fake records in `tests/test_kind_bundle.py`. While a pass
+samples, the single Verifier claims nothing else, so other actions'
+dependency checks, Guard steps and verification wait for it
+([L-VERIFIER-PASS-BLOCKS-WORKER](../../docs/limitations.md#l-verifier-pass-blocks-worker)).
 
 ## Kind mode
 

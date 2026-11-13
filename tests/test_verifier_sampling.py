@@ -20,6 +20,7 @@ import threading
 import unittest
 from unittest.mock import Mock, patch
 
+from experiments.distributed import invariants
 from experiments.distributed.invariants import MAX_ATTEMPTS
 from experiments.distributed.kind_bundle import HEALTH as KIND_HEALTH
 from experiments.validation.demo_offline_flow import OfflineFlow
@@ -59,7 +60,7 @@ class SimLab:
         self.template = self.f.store.action(self.action_id)["proposal"]["parameters"]["template_sha256"]
         self.t0 = self.t = self.f.now.timestamp()  # The execution's recorded_at.
         self.delivery = Delivery(self.f.store, clock=lambda: self.t, lease_seconds=LEASE_SECONDS)
-        self.leases, self.calls, self.crash_at = [], [], None
+        self.leases, self.calls, self.claims, self.crash_at = [], [], [], None
         self.policy = deepcopy(self.f.policy)
         self.policy["health"] = deepcopy(KIND_HEALTH)
 
@@ -174,7 +175,10 @@ class SimClient:
         self.lab.calls.append(operation)
         delivery, ids = self.lab.delivery, (body.get("delivery_id"), body.get("lease_token"))
         if operation == "claim":
-            return delivery.claim("verifier-1", "verifier")
+            claimed = delivery.claim("verifier-1", "verifier")
+            if claimed["delivery"] is not None:  # (seconds after the write, topic) of each claim.
+                self.lab.claims.append((self.lab.after(), claimed["delivery"]["topic"]))
+            return claimed
         if operation == "clock":
             return {}
         if operation == "renew":
@@ -310,6 +314,114 @@ class InPassSamplingTests(unittest.TestCase):
                             for left, right in zip(times, times[1:], strict=False)), times)
 
 
+class HeadOfLineTests(unittest.TestCase):
+    """The cost of sampling within the claim: one Verifier claims nothing else while a pass samples."""
+
+    def test_a_dependency_check_queued_during_a_pass_is_claimed_only_after_the_pass_ends(self):
+        lab = SimLab(self, healthy_from=40)
+        reading, queued = lab.reading, []
+
+        def queue_at_5_s(execution):
+            if not queued and lab.after() >= 5:
+                # Stands for another incident's dependency check (no action: it is never obsolete here).
+                lab.f.store.enqueue("dependency.request", {"proposal": lab.f.store.action(lab.action_id)["proposal"]})
+                queued.append(lab.after())
+            return reading(execution)
+        lab.reading = queue_at_5_s
+        worker = lab.worker()
+        worker.adapter.sample_reader = queue_at_5_s
+        checked = []
+
+        def dependencies(_proposal):
+            checked.append(lab.after())
+            raise VerifierCrash()  # Stop here: the claim time is what is measured.
+        worker.adapter.dependency_reader = dependencies
+        lab.advance(1)
+        self.assertEqual(lab.run(worker), "RECOVERED")
+        ended = lab.after()
+        with patch("runtime.remote_worker.Lease", lab.lease_class()), self.assertRaises(VerifierCrash):
+            while not checked:
+                worker.once()
+                lab.advance(POLL_SECONDS)
+        self.assertEqual([topic for _, topic in lab.claims], ["verifier.request", "dependency.request"])
+        (claimed, _), = [item for item in lab.claims if item[1] == "dependency.request"]
+        self.assertLess(queued[0], 15)
+        self.assertGreaterEqual(claimed, ended - POLL_SECONDS)  # Not before the pass gave its verdict.
+        # About 40 s of waiting under the kind policy for a target healthy from +40 s.
+        self.assertGreater(claimed - queued[0], 30)
+
+
+class AuditRecordTests(unittest.TestCase):
+    """What a run keeps of the Verifier's readings: the store, the log and the run's records."""
+
+    def test_only_readings_the_store_kept_are_logged(self):
+        lab = SimLab(self, healthy_from=0, incomplete=True)  # Never conclusive: the deadline decides.
+        reading = lab.reading
+
+        def slow_near_the_deadline(execution):
+            samples = reading(execution)
+            if lab.after() >= 80:
+                lab.advance(15)  # Stamped before the 90 s deadline, returned after it: the store drops it.
+            return samples
+        adapter = lab.adapter()
+        adapter.sample_reader = slow_near_the_deadline
+        delivery = {"topic": "verifier.request", "payload": {
+            "execution": lab.execution, "proposal": lab.f.store.action(lab.action_id)["proposal"]}}
+        stream = io.StringIO()
+        with log.configured("test", level="DEBUG", stream=stream):
+            outcome, _report = adapter.process(delivery, Mock(error=None))
+        self.assertEqual(outcome["status"], "UNKNOWN")
+        lines = [json.loads(line) for line in stream.getvalue().splitlines() if '"verifier.sample"' in line]
+        kept = lab.readings()
+        self.assertEqual(len(lines), len(kept))
+        self.assertEqual([line["status"] for line in lines], [status for _, status in kept])
+
+    def test_the_run_records_give_each_reading_after_the_execution(self):
+        lab = SimLab(self, healthy_from=40)
+        worker = lab.worker()
+        lab.advance(1)
+        self.assertEqual(lab.run(worker), "RECOVERED")
+        (job,) = invariants.verification(lab.f.path / "verifier.db", "verifier-1")
+        self.assertEqual((job["identity"], job["action_id"], job["outcome"]), ("verifier-1", lab.action_id, "RECOVERED"))
+        self.assertEqual(job["started_after_execution_seconds"], 1)
+        self.assertEqual(job["deadline_after_execution_seconds"], 1 + KIND_HEALTH["verification_timeout_seconds"])
+        self.assertEqual([(item["after_execution_seconds"], item["status"]) for item in job["readings"]],
+                         lab.readings())
+        self.assertEqual(job["first_healthy_after_execution_seconds"],
+                         next(at for at, status in lab.readings() if status == "healthy"))
+        self.assertEqual(invariants.verification(lab.f.path / "missing.db", "verifier-1"), [])
+
+    def test_a_reading_the_saved_policy_cannot_judge_is_invalid(self):
+        lab = SimLab(self, healthy_from=0)
+        worker = lab.worker()
+        self.assertEqual(lab.run(worker), "RECOVERED")
+        policy = json.loads(lab.f.verification.db.execute("SELECT policy FROM verification_jobs").fetchone()[0])
+        policy["health"]["protocol"] = "ftp"
+        lab.f.verification.db.execute("UPDATE verification_jobs SET policy=?", (json.dumps(policy),))
+        (job,) = invariants.verification(lab.f.path / "verifier.db", "verifier-1")
+        self.assertTrue(job["readings"])
+        self.assertEqual({item["status"] for item in job["readings"]}, {"invalid"})
+        self.assertIsNone(job["first_healthy_after_execution_seconds"])
+
+    def test_command_attempts_are_counted_per_command_of_one_topic(self):
+        lab = SimLab(self, healthy_from=40)
+        worker = lab.worker()
+        lab.advance(1)
+        self.assertEqual(lab.run(worker), "RECOVERED")
+        db = lab.f.store.db
+        records = {"outbox": [dict(row) for row in db.execute("SELECT id, topic FROM outbox")],
+                   "receipts": [dict(row) for row in db.execute("SELECT event_id, attempts FROM transport_receipts")]}
+        (event_id,) = [row["id"] for row in records["outbox"] if row["topic"] == "verifier.request"]
+        self.assertEqual(invariants.command_attempts(records, "verifier.request"), {event_id: lab.attempts()})
+        self.assertEqual(invariants.command_attempts(records, "dependency.request"), {})
+        fake = {"outbox": [{"id": 1, "topic": "verifier.request"}, {"id": 2, "topic": "guard.request"}],
+                "receipts": [{"event_id": 1, "attempts": 3}, {"event_id": 2, "attempts": 5},
+                             {"event_id": 9, "attempts": 7}]}  # 9: a receipt with no outbox row counts for no topic.
+        self.assertEqual(invariants.command_attempts(fake, "verifier.request"), {1: 3})
+        self.assertEqual(invariants.command_attempts(fake, "guard.request"), {2: 5})
+        self.assertEqual(invariants.command_attempts({}, "verifier.request"), {})
+
+
 class PassBoundTests(unittest.TestCase):
     def setUp(self):
         self.lab = SimLab(self, healthy_from=40)
@@ -330,11 +442,39 @@ class PassBoundTests(unittest.TestCase):
         self.assertEqual((outcome["status"], report), ("RECOVERED", None))
 
     def test_a_wall_clock_that_does_not_move_ends_the_pass(self):
-        frozen = self.lab.now()
+        frozen, read = self.lab.now(), []
+
+        def reading(execution):
+            read.append(True)
+            return self.lab.reading(execution)
         adapter = VerifierAdapter(self.lab.f.verification, policy_reader=lambda _: deepcopy(self.lab.policy),
-                                  sample_reader=self.lab.reading, clock=lambda: frozen, sleep=lambda _s: None)
+                                  sample_reader=reading, clock=lambda: frozen, sleep=lambda _s: None)
         self.assertIsNone(adapter.process(self.delivery, self.lease))
         self.assertEqual(len(self.lab.readings()), 1)
+        # One reading, then the pass ends: it does not loop on same-timestamp readings until max_pass_seconds.
+        self.assertEqual(len(read), 1)
+
+    def test_the_lease_is_checked_before_the_verdict_frozen_at_the_deadline(self):
+        lab = SimLab(self, healthy_from=0, incomplete=True)  # Never conclusive: the deadline decides.
+        adapter = lab.adapter()
+        lost = ProtocolError(409, "Delivery retired or lease expired/replaced")
+
+        def deadline():
+            job = lab.f.verification.get(lab.action_id)
+            return datetime.fromisoformat(job["deadline"].replace("Z", "+00:00")).timestamp()
+
+        def ensure_current():
+            if lab.t >= deadline():  # The lease is lost just as the deadline comes.
+                raise lost
+        lease = Mock(error=None)
+        lease.ensure_current.side_effect = ensure_current
+        delivery = {"topic": "verifier.request", "payload": {
+            "execution": lab.execution, "proposal": lab.f.store.action(lab.action_id)["proposal"]}}
+        with self.assertRaises(ProtocolError):
+            adapter.process(delivery, lease)
+        self.assertGreaterEqual(lab.t, deadline())
+        self.assertGreater(len(lab.readings()), 1)
+        self.assertIsNone(lab.f.verification.get(lab.action_id)["outcome"])  # No verdict frozen without the lease.
 
     def test_a_lease_error_from_the_renewal_thread_interrupts_the_wait(self):
         adapter = VerifierAdapter(self.lab.f.verification, policy_reader=lambda _: deepcopy(self.lab.policy),
