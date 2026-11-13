@@ -252,6 +252,11 @@ with these limits:
 - Mostly one fault type (from 870aa7d also the unscored catalog runs R2 and
   N1), on one host, one model (`qwen3:14b`) and runs from several revisions.
   These are not independent trials.
+- Scenario-pair runs are not in this table. The latency tools read a single
+  run's `primary` phases, and a pair run records its phases per target, so
+  pair latency comes from `pair-result.json` instead: `timings` (per
+  incident, from the Coordinator journal) and `lane_wall_times` (per lane,
+  from the one harness process). See [dual-fault.md](dual-fault.md).
 
 <!-- BEGIN GENERATED:latency -->
 - agent: 40 runs, 27 PASS; stopped at: planning x11; verification x2.

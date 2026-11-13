@@ -193,7 +193,10 @@ Timings therefore measure this one process on one host, not two independent
 workers or machines. `pair-result.json` records each lane's wall time
 (`lane_wall_times`: runner steps, seconds inside them, in approval and in
 verification, and the first and last step) beside the Coordinator journal
-timings. The Executor runs one target's request at a time; each
+timings. Those two are the pair's latency record: the per-stage latency
+ledger (`scripts/latency_report.py`, `experiments/analysis/timeline.py`)
+reads a single run's `primary` phases and only the agent and
+connected-harness classes, so it leaves scenario-pair bundles out. The Executor runs one target's request at a time; each
 target uses its own policy file (ceilings, registry, service account and
 health rules), while the allowlist, the Role and the approval authority name
 both targets.
