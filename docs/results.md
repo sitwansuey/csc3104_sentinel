@@ -37,7 +37,7 @@ Read each number with its limits:
 | --- | --- | --- | --- | --- | --- | --- |
 | agent | 41 | 28 | 13 | 0 | 0 | 21 recorded, 20 inferred |
 | chaos-batch | 17 | 3 | 13 | 0 | 1 | 0 recorded, 17 inferred |
-| chaos-recovery | 12 | 7 | 5 | 0 | 0 | 12 recorded, 0 inferred |
+| chaos-recovery | 13 | 8 | 5 | 0 | 0 | 13 recorded, 0 inferred |
 | connected-harness | 12 | 10 | 2 | 0 | 0 | 8 recorded, 4 inferred |
 | distributed-scenario | 39 | 37 | 2 | 0 | 0 | 0 recorded, 39 inferred |
 | executor-admission | 1 | 1 | 0 | 0 | 0 | 0 recorded, 1 inferred |
@@ -164,7 +164,7 @@ these rows are not scored trials.
 | chaos-n2-r4-c9a44ca | N2 | c9a44ca | FAILED | RESTART | decided by the rule | 1 | RECOVERED | action matched; run FAILED: drift cell not refused (no Guard verdict, Executor CONFLICT) | pending |
 | chaos-n2-r5-c9a44ca | N2 | c9a44ca | FAILED | RESTART | decided by the rule | 1 | RECOVERED | action matched; run FAILED: drift cell not refused (no Guard verdict, Executor CONFLICT) | pending |
 | chaos-n3-r1-c9a44ca | N3 | c9a44ca | PASS | ESCALATE | decided by the rule | 0 | NEEDS_REVIEW | yes | pending |
-| chaos-t1-r1-c9a44ca | T1 | c9a44ca | PASS | NO_INCIDENT | from observer | 0 | no incident | yes | pending |
+| chaos-t1-r1-c9a44ca-v2 | T1 | c9a44ca | PASS | NO_INCIDENT | from observer | 0 | no incident | yes | pending |
 | chaos-n2-r1-29e41f8 | N2 | 29e41f8 | PASS | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
 | chaos-n2-r2-29e41f8 | N2 | 29e41f8 | PASS | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
 | chaos-n2-r3-29e41f8 | N2 | 29e41f8 | PASS | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
@@ -362,7 +362,7 @@ scored trials.
 | chaos-n2-r4-c9a44ca | N2 | PodChaos | c9a44ca | FAILED | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART no Guard verdict, Executor CONFLICT, 0 writes | yes |
 | chaos-n2-r5-c9a44ca | N2 | PodChaos | c9a44ca | FAILED | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART no Guard verdict, Executor CONFLICT, 0 writes | yes |
 | chaos-n3-r1-c9a44ca | N3 | StressChaos | c9a44ca | PASS | ESCALATE | 0 | n/a | RESTART REJECT RESTART_NOT_JUSTIFIED, 0 writes | yes |
-| chaos-t1-r1-c9a44ca | T1 | NetworkChaos | c9a44ca | PASS | NO_INCIDENT | 0 | n/a | none | yes |
+| chaos-t1-r1-c9a44ca-v2 | T1 | NetworkChaos | c9a44ca | PASS | NO_INCIDENT | 0 | n/a | none | yes |
 | chaos-n2-r1-29e41f8 | N2 | PodChaos | 29e41f8 | PASS | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_BUDGET_EXHAUSTED, RESTART_TEMPLATE_DRIFT, 0 writes | yes |
 | chaos-n2-r2-29e41f8 | N2 | PodChaos | 29e41f8 | PASS | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_BUDGET_EXHAUSTED, RESTART_TEMPLATE_DRIFT, 0 writes | yes |
 | chaos-n2-r3-29e41f8 | N2 | PodChaos | 29e41f8 | PASS | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_BUDGET_EXHAUSTED, RESTART_TEMPLATE_DRIFT, 0 writes | yes |

@@ -1048,7 +1048,8 @@ def chaos_recovery_rows(bundles):
     Agent runs of a chaos scenario are listed too. Attribution reads "n/a"
     when the run made no RESTART to attribute.
     """
-    members = sorted((b for b in bundles if b.run_class in SCENARIO_CLASSES and summary_of(b).get("chaos")),
+    members = sorted((b for b in bundles if b.run_class in SCENARIO_CLASSES and summary_of(b).get("chaos")
+                      and not superseded(b)),
                      key=lambda b: (b.entry.get("captured_at") or "", b.bundle_id))
     rows = []
     for bundle in members:
@@ -1114,8 +1115,14 @@ def scenario_parts(bundle):
             match_text(bundle, result), labels]
 
 
+def superseded(bundle):
+    """A superseded bundle has a current replacement for the same run; per-run tables list the run once."""
+    return bundle.entry.get("status") == "superseded"
+
+
 def scenario_rows(bundles):
-    members = sorted((b for b in bundles if b.run_class in SCENARIO_CLASSES and scenario_result(b)),
+    members = sorted((b for b in bundles if b.run_class in SCENARIO_CLASSES and scenario_result(b)
+                      and not superseded(b)),
                      key=lambda b: (b.entry.get("captured_at") or "", b.bundle_id))
     return [[bundle.bundle_id, *scenario_parts(bundle)] for bundle in members]
 

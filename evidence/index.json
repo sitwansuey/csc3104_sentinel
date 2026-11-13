@@ -1438,8 +1438,8 @@
       "captured_at": "2026-11-13T09:03:34.261476Z",
       "source_revision": "c9a44cacc004350f25bd3d76ddf85296d1af84e2",
       "provenance": "recorded",
-      "status": "current",
-      "reason": null
+      "status": "superseded",
+      "reason": "Re-collected as chaos-t1-r1-c9a44ca-v2 after the chaos-recovery profile gained true-negative.json, the true-negative proof the docs cite; this copy lacks it. Same run."
     },
     {
       "bundle_id": "chaos-n2-r1-29e41f8",
@@ -1648,6 +1648,16 @@
       "captured_at": null,
       "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
       "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "chaos-t1-r1-c9a44ca-v2",
+      "class": "chaos-recovery",
+      "path": "2026-11-13/chaos-t1-r1-c9a44ca-v2",
+      "captured_at": "2026-11-13T09:03:34.261476Z",
+      "source_revision": "c9a44cacc004350f25bd3d76ddf85296d1af84e2",
+      "provenance": "recorded",
       "status": "current",
       "reason": null
     }

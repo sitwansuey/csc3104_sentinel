@@ -396,6 +396,19 @@ class Phase2DerivationTests(unittest.TestCase):
         self.assertEqual(rows["r2-fail"], ["R2", "8888888", "FAILED", "ESCALATE", "from a planning failure (ABSTAINED)",
                                            "0", "NEEDS_REVIEW", "no", "pending"])
 
+    def test_a_superseded_bundle_leaves_the_per_run_tables_to_its_replacement(self):
+        bundle = self.bundles["r2-fail"]
+        listed = [row[0] for row in summarize.scenario_rows([bundle])]
+        self.assertEqual(listed, ["r2-fail"])
+        old_entry = dict(bundle.entry)
+        try:
+            bundle.entry["status"] = "superseded"
+            self.assertEqual(summarize.scenario_rows([bundle]), [])
+            self.assertEqual(summarize.chaos_recovery_rows([bundle]), [])
+        finally:
+            bundle.entry.clear()
+            bundle.entry.update(old_entry)
+
     def test_recovered_ratio_never_counts_an_expected_escalation(self):
         self.assertEqual(summarize.recovered_ratio(self.pick("r2-fail", "r2-pass", "n1-pass")), "1/3")
         self.assertEqual(summarize.pass_ratio(self.pick("r2-fail", "r2-pass", "n1-pass")), "2/3")

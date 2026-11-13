@@ -105,7 +105,7 @@ is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.
 | --- | --- | --- | --- | --- | --- |
 | agent | 41 | 21 | 20 | 0 | 0 |
 | chaos-batch | 17 | 0 | 17 | 0 | 0 |
-| chaos-recovery | 12 | 12 | 0 | 0 | 0 |
+| chaos-recovery | 13 | 13 | 0 | 1 | 0 |
 | connected-harness | 12 | 8 | 4 | 0 | 0 |
 | distributed-scenario | 39 | 0 | 39 | 0 | 0 |
 | executor-admission | 1 | 0 | 1 | 0 | 0 |
