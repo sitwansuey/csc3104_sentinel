@@ -1488,6 +1488,48 @@ class PairScoringTests(unittest.TestCase):
         self.assertEqual(escalated["actual"], "ESCALATE")
 
 
+class PairShopWindowTests(unittest.TestCase):
+    """The storefront gets the single-run convergence grace after both incidents recover (finding 4)."""
+
+    setUp = PairHarnessTests.setUp
+    pair = PairHarnessTests.pair
+
+    def shopping(self, results, states):
+        from experiments.boutique.harness.multi_fault import shop_outcome
+        experiment = self.pair("shipping-config+cart-pod")
+        results, now = iter(results), [0.0]
+        experiment.storefront = SimpleNamespace(journey=lambda: {"passed": next(results)})
+        experiment.record_shopping = Mock()
+
+        def sleep(seconds):
+            now[0] += seconds
+        journeys = experiment.shop_journeys(states, clock=lambda: now[0], sleep=sleep)
+        stages = {call.args[0] for call in experiment.record_shopping.call_args_list}
+        self.assertEqual((stages, experiment.record_shopping.call_count), ({"pair-shop"}, len(journeys)))
+        return journeys, shop_outcome(states, journeys) if states else None, experiment.summary["pair_shop_window"]
+
+    def test_journeys_continue_through_reconnect_backoff_until_three_pass_in_a_row(self):
+        recovered = {"shippingservice": "RECOVERED", "cartservice": "RECOVERED"}
+        journeys, shop, window = self.shopping([False, False, True, False, True, True, True], recovered)
+        self.assertEqual(len(journeys), 7)
+        self.assertEqual(shop["status"], "RECOVERED")
+        self.assertEqual((window["window_seconds"], window["seconds_to_passing_tail"], window["journeys"]),
+                         (150, 30.0, 7))
+
+    def test_a_storefront_that_never_recovers_stops_at_the_end_of_the_window(self):
+        recovered = {"shippingservice": "RECOVERED", "cartservice": "RECOVERED"}
+        journeys, shop, window = self.shopping([False] * 100, recovered)
+        self.assertEqual(len(journeys), 31)  # One at 0 s, then every 5 s until 150 s.
+        self.assertEqual((shop["status"], window["seconds_to_passing_tail"]), ("FAILED", None))
+
+    def test_an_incident_that_did_not_recover_takes_only_three_journeys(self):
+        stopped = {"redis-cart": "REJECTED", "cartservice": "REJECTED"}
+        journeys, _, window = self.shopping([False] * 100, stopped)
+        self.assertEqual((len(journeys), window["window_seconds"]), (3, 0))
+        journeys, _, _ = self.shopping([False] * 100, None)
+        self.assertEqual(len(journeys), 3)
+
+
 class FakeTemplates:
     """The pair's Deployments behind deployment() and kubectl: conditional JSON patches and rollouts, offline."""
 

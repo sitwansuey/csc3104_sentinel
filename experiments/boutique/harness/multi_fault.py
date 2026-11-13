@@ -851,14 +851,37 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
 
     # The verdict.
 
-    def shop_journeys(self):
-        journeys = []
-        for index in range(SHOP_PASSES):
+    def shop_journeys(self, states=None, *, clock=time.monotonic, sleep=time.sleep):
+        """Storefront journeys after both incidents settled, each recorded as pair-shop; shop_outcome judges the tail.
+
+        When every incident is RECOVERED, the frontend's and checkout's gRPC
+        reconnect backoff after a long outage can still fail the first
+        journeys, as in single runs (the Verifier's convergence grace). So
+        journeys continue, SHOP_INTERVAL_SECONDS apart, until SHOP_PASSES pass
+        in a row or a window of the single-run convergence_grace_seconds ends
+        (at least SHOP_PASSES are taken). Otherwise the storefront cannot
+        change the ShopOutcome and exactly SHOP_PASSES are taken as evidence.
+        summary["pair_shop_window"] records the window and the seconds to the
+        first passing tail (None when there was none).
+        """
+        recovered = bool(states) and all(state == "RECOVERED" for state in states.values())
+        window = self.health_rules()["convergence_grace_seconds"] if recovered else 0
+        started = clock()
+        journeys, streak, tail_seconds = [], 0, None
+        while True:
             journey = self.storefront.journey()
             self.record_shopping("pair-shop", journey)
             journeys.append(journey)
-            if index < SHOP_PASSES - 1:
-                time.sleep(SHOP_INTERVAL_SECONDS)
+            streak = streak + 1 if journey.get("passed") is True else 0
+            if streak >= SHOP_PASSES:
+                tail_seconds = round(clock() - started, 1)
+                break
+            if len(journeys) >= SHOP_PASSES and clock() - started >= window:
+                break
+            sleep(SHOP_INTERVAL_SECONDS)
+        self.summary["pair_shop_window"] = {"window_seconds": window, "journeys": len(journeys),
+                                            "seconds_to_passing_tail": tail_seconds,
+                                            "required_passes": SHOP_PASSES}
         return journeys
 
     def lane_facts(self, name, incident_id, actions, state, writes):
@@ -914,7 +937,7 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
     def judge(self, incidents, run):
         """Score the pair, save its evidence, and fail unless it ended in an expected or acceptable result."""
         ids = {name: incidents[name]["incident_id"] for name in self.order}
-        journeys = [] if run["budget_exhausted"] else self.shop_journeys()
+        journeys = [] if run["budget_exhausted"] else self.shop_journeys(run["states"])
         shop = shop_outcome(run["states"], journeys, stopped=run["stops"])
         with SQLiteExecutionLedger(self.directory / "executor.sqlite") as ledger:
             writes = writes_by_target(ledger.db)
@@ -928,6 +951,7 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
                     "cross_incident_transitions": cross_incident_transitions(self.store),
                     "timings": incident_timings(transitions, ids),
                     "scenario_scores": self.scores(ids, stops=run["stops"], writes=writes),
+                    "shop_window": self.summary.get("pair_shop_window"),
                     "changed_payload_refused": {name: self.lanes[name].get("changed_payload_refused", False)
                                                 for name in self.order}}
         if ordering is not None:

@@ -44,8 +44,18 @@ repair NOT_RECOVERED. A pair run therefore verifies each target in the
   redis-cart: none), never its callers or an unrelated service.
 
 The storefront is still recorded in every reading. After both incidents
-settle, the harness collects three more journeys and judges the shop
-separately (`shop_outcome` in `experiments/boutique/harness/multi_fault.py`):
+settle, the harness collects more journeys, each journaled as `pair-shop`,
+and judges the shop separately (`shop_outcome` in
+`experiments/boutique/harness/multi_fault.py`). When both incidents are
+RECOVERED, the frontend's and checkout's gRPC reconnect backoff after a
+minutes-long cart outage can still fail the first journeys, so the harness
+keeps taking a journey every 5 seconds until three pass in a row or 150
+seconds end, the same convergence grace a single run's Verifier gives
+(`convergence_grace_seconds`). `pair_shop_window` in `summary.json` and
+`shop_window` in `pair-result.json` record the window and the seconds to the
+first passing tail. When an incident did not recover, the storefront cannot
+change the ShopOutcome, so only three journeys are taken, as evidence. The
+ShopOutcome is judged on the last three journeys:
 
 | ShopOutcome | When |
 |---|---|
