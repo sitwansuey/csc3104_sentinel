@@ -41,8 +41,8 @@ stops that incident.
 The pure functions and PairRunner run offline in tests/test_overlapping_recovery.py
 and tests/test_dependency_revalidation.py. PairBoutiqueExperiment wires them
 to the connected lab for python scripts/test_boutique_live.py --connected
---pair <id>; the live recipe is in docs/dual-fault.md, and no pair run has
-completed on a cluster yet.
+--pair <id>; the live recipe and its results at dca7369 are in
+docs/dual-fault.md (C-DUAL-FAULT-PAIRS-DCA7369).
 """
 from contextlib import contextmanager
 from copy import deepcopy
