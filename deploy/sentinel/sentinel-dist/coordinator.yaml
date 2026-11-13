@@ -6,6 +6,11 @@
 # UID are created by experiments/distributed/kind_acceptance.py deploy, never
 # committed. The fault-point gate (runtime/fault_points.py) is on, so the
 # acceptance harness can stop the Coordinator between a commit and its reply.
+# --stale-replans=3: the lab Planner has no Kubernetes token, so after a Guard
+# refusal for a stale resourceVersion alone the Coordinator sends the version
+# the Guard read back to the Planner for a new proposal, at most 3 times per
+# incident; each one is checked by the Guard and approved again
+# (services/coordinator/core.py::replan_after_stale).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -110,6 +115,7 @@ spec:
             - "--lease-seconds=15"
             - "--retention-seconds=86400"
             - "--request-timeout=15"
+            - "--stale-replans=3"
           ports:
             - name: https
               containerPort: 8766

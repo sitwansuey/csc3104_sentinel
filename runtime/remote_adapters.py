@@ -10,12 +10,11 @@ from services.executor.core import execute, reconcile, seal, settle, unchanged_u
 from services.guard.common import json_sha256
 from services.guard.core import assert_decision_usable, evaluate_with_report
 from services.planner.core import mock_provider, retrieve_runbooks
-from services.planner.worker import prepare
+from services.planner.worker import ReplanProvider, planning_request, prepare
 from services.verifier.core import reading_status
 from services.verifier.store import sampling_interval
 from runtime.worker_health import PreflightFailed
 from shared import log
-from shared.contracts import validate_message
 
 LOG = log.get_logger("remote_adapters")
 
@@ -25,6 +24,15 @@ def utc_now():
 
 
 class PlannerAdapter:
+    """The provider-mode Planner as a remote worker.
+
+    A planner.request carries the incident, and for a re-plan after a stale
+    Guard refusal also the resourceVersion the Guard read
+    (services/planner/worker.py::planning_request). A re-plan is planned
+    under its own journal key, so it is a new proposal with a new action ID,
+    and its rationale says it is a re-plan.
+    """
+
     def __init__(self, journal, *, baseline_reader, provider, retriever=retrieve_runbooks,
                  max_attempts=3, retry_seconds=5, lease_seconds=900):
         self.journal = journal
@@ -35,11 +43,16 @@ class PlannerAdapter:
     def process(self, delivery, lease):
         if delivery["topic"] != "planner.request":
             raise ValueError("Planner received an incompatible request")
-        proposal = prepare(delivery["payload"]["incident"], journal=self.journal, **self.options)
+        incident, key, attempt = planning_request(delivery["payload"])
+        options = dict(self.options)
+        if key is not None:
+            options.update(key=key, provider=ReplanProvider(options["provider"], attempt))
+        proposal = prepare(incident, journal=self.journal, **options)
         return (proposal, None) if proposal is not None else None
 
     def acknowledge(self, proposal):
-        self.journal.delivered(proposal["incident_id"])
+        # By the exact saved proposal, so a re-plan's row is marked too (its key is not the incident ID).
+        self.journal.delivered_proposal(proposal)
 
 
 class AgentPlannerAdapter(PlannerAdapter):
@@ -98,11 +111,12 @@ class AgentPlannerAdapter(PlannerAdapter):
     def process(self, delivery, lease):
         if delivery["topic"] != "planner.request":
             raise ValueError("Planner received an incompatible request")
-        incident = delivery["payload"]["incident"]
-        validate_message(incident)
-        planner = self.last = self.planner(self.folder / ("incident-" + json_sha256(incident["incident_id"])[:24]))
+        incident, key, _ = planning_request(delivery["payload"])
+        # A re-plan diagnoses again in its own workspace; its finalize hook rebinds to its own live read.
+        name = incident["incident_id"] if key is None else key
+        planner = self.last = self.planner(self.folder / ("incident-" + json_sha256(name)[:24]))
         proposal = prepare(incident, journal=self.journal, max_attempts=self.max_attempts,
-                           retry_seconds=self.retry_seconds, **planner.options())
+                           retry_seconds=self.retry_seconds, key=key, **planner.options())
         return (proposal, None) if proposal is not None else None
 
 

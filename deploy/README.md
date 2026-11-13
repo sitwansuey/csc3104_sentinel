@@ -12,8 +12,8 @@ it has been built and scanned locally, but no container has run from it. No work
 Kubernetes acceptance has been run: the networked layer has only run on one
 host (`L-SINGLE-HOST-DISTRIBUTION` in [limitations](../docs/limitations.md)).
 `sentinel/sentinel-dist/` and `kind/kind-dist.yaml` are the complete rollout for
-the four-node P4.01 lab, written and tested offline only
-([distributed acceptance](../docs/distributed-acceptance.md)).
+the four-node P4.01 lab, tested offline and deployed once (13 Nov 2026), with no
+acceptance run passed yet ([distributed acceptance](../docs/distributed-acceptance.md)).
 
 | Directory | Contents |
 | --- | --- |

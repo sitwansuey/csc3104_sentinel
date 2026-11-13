@@ -166,6 +166,17 @@ bound: the Guard then tolerates findings and approvals stamped up to that many
 seconds in its future and counts it against their age and expiry. Leave all
 three out to measure without enforcing, as before.
 
+A Planner binds each proposal to the incident's resourceVersion; a
+provider-mode Planner has no Kubernetes credential, so it cannot read a
+newer one. Start the Coordinator with `--stale-replans N` (0 to 5, default
+0) to let a Guard REJECT whose only reason is `STALE_RESOURCE_VERSION`, for a
+ROLLBACK, reopen the incident and send the resourceVersion the Guard read
+back to the Planner, at most N times per incident. Each re-plan is a new
+proposal with a new action ID, planned under its own `planner.db` key
+(`<incident>/replan-<n>`), checked by the Guard again and approved again;
+the refused action keeps its decision
+([distributed acceptance](distributed-acceptance.md#first-live-attempts)).
+
 After a pass that completed the worker waits `--poll-seconds`
 (2 by default); a pass that refused to claim because of a store change or
 the clock completed. After failed passes in a row (a failed preflight, or a

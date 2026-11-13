@@ -269,14 +269,71 @@ def _apply(message, store, answers=None, producer=None):
         store.enqueue("incident.outcome", {"outcome": message}, action_id)
 
 
-def record_message(message: dict, store: SQLiteStore, *, answers=None, producer=None) -> bool:
+STALE_REPLAN_CAUSE = "stale_replan"
+# The most re-plans after stale refusals one incident may get, whatever the configuration asks for.
+MAX_STALE_REPLANS = 5
+
+
+def replan_after_stale(message, store, *, limit):
+    """Queue a re-plan after a Guard REJECT whose only reason is STALE_RESOURCE_VERSION; True when queued.
+
+    The Planner binds a proposal to the incident's observed_resource_version.
+    A Planner with no Kubernetes access (the deterministic lab planner) cannot
+    read a newer one, and a Deployment's resourceVersion moves with status
+    writes the controller makes after the Observer's snapshot: on sentinel-dist
+    the Recreate rollout scales up the new ReplicaSet about 30 s after the
+    fault, after the incident opened, and again at the progress deadline. The
+    Guard then refuses the proposal as stale, before or after an approval
+    (docs/distributed-acceptance.md#first-live-attempts).
+
+    The Guard's refusal carries the version it read from the live target
+    (validated_resource_version). This sends that version back to the Planner
+    in a new planner.request and reopens the incident: the Planner makes a new
+    proposal bound to it, with a new action ID, which the Guard checks against
+    live state again and which needs its own approval (an approval is bound to
+    the proposal's digest). Nothing is retried around the check: the refused
+    action stays REJECTED and its decision is kept. Only a ROLLBACK is re-planned
+    (a second RESTART for one incident is refused by the restart budget), only
+    the incident's active action, and at most limit times per incident
+    (counted durably in the transitions journal); after that the stale REJECT
+    stands. limit is 0 by default (record_message, the worker transport and
+    runtime/coordinator_server.py --stale-replans), so nothing changes unless
+    the Coordinator is configured for it.
+    """
+    if (not limit or message["kind"] != "guard_result" or message["verdict"] != "REJECT"
+            or message["reason_codes"] != ["STALE_RESOURCE_VERSION"]):
+        return False
+    incident_id, action_id = message["incident_id"], message["action_id"]
+    incident, action = store.incident(incident_id), store.action(action_id)
+    if (incident is None or action is None or incident["active_action_id"] != action_id
+            or incident["state"] != "REJECTED" or action["state"] != "REJECTED"
+            or action["guard_result"] != message or action["proposal"]["action"] != "ROLLBACK"
+            or message["validated_resource_version"] == action["proposal"]["based_on_resource_version"]):
+        return False
+    attempt = store.reopenings(incident_id, STALE_REPLAN_CAUSE) + 1
+    if attempt > min(limit, MAX_STALE_REPLANS):
+        return False
+    observed = store.message_payload(_json(["incident", incident_id, ""]))
+    _require(observed is not None, "The incident message must be recorded first")
+    store.reopen_incident(incident_id, action_id, STALE_REPLAN_CAUSE)
+    store.enqueue("planner.request", {"incident": json.loads(observed), "replan": {
+        "attempt": attempt, "after_action_id": action_id,
+        "resource_version": message["validated_resource_version"]}})
+    store.after_commit(lambda: log.emit(LOG, "coordinator.replan.queued", incident_id=incident_id,
+                                        action_id=action_id, attempt=attempt, reason="STALE_RESOURCE_VERSION"))
+    return True
+
+
+def record_message(message: dict, store: SQLiteStore, *, answers=None, producer=None, stale_replans=0) -> bool:
     """Record within an existing transaction, without committing or publishing.
 
     Runtime adapters use this to commit a result and its input acknowledgment
     together. Most callers should use handle instead. The worker transport
     passes answers (the outbox id of the request answered) and producer (the
     authenticated identity), so lifecycle order is checked by Coordinator
-    sequence numbers instead of the producers' clocks.
+    sequence numbers instead of the producers' clocks. stale_replans above 0
+    lets a Guard refusal for a stale resource version queue that many re-plans
+    per incident (replan_after_stale).
     """
     _require(store.in_transaction, "record_message requires an active transaction")
     validate_message(message)
@@ -296,6 +353,7 @@ def record_message(message: dict, store: SQLiteStore, *, answers=None, producer=
     with store.transition_cause(key, message["kind"]), tracing.start_span(
             "coordinator.record", parent=parent, defer=store.after_commit, **ids):
         _apply(message, store, answers, producer)
+        replan_after_stale(message, store, limit=stale_replans)
     store.add_message(key, payload, high_water=high_water, answers=answers, producer=producer,
                       incident_id=message["incident_id"])
     store.after_commit(lambda: log.emit(LOG, "coordinator.message.recorded", **ids))

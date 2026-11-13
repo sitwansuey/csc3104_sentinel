@@ -45,6 +45,12 @@ DECISION_FIELDS = ("citations", "change_evidence", "eligibility")
 # Proposal fields that finalize() may change: the live version it binds to, and the
 # identity that version is part of. Everything else stays as propose() validated it.
 REBINDABLE = {"based_on_resource_version", "action_id"}
+# The highest re-plan attempt a planner.request may carry (services/coordinator/core.py::replan_after_stale
+# bounds it lower by configuration). Each re-plan is a new proposal with a new action identity.
+MAX_REPLAN_ATTEMPT = 5
+REPLAN_FIELDS = {"attempt", "after_action_id", "resource_version"}
+REPLAN_NOTE = (" Re-planned (attempt {attempt}) after the Guard refused the previous proposal because the "
+               "target's resourceVersion had moved since the incident; bound to the version the Guard read.")
 
 
 class PlanningError(Exception):
@@ -74,6 +80,64 @@ def escalation(incident, code=None):
     message["action_id"] = "ACT-" + json_sha256(message)[:24]
     validate_message(message)
     return message
+
+
+def replan_key(incident_id, attempt):
+    """The Planner journal key of a re-plan: its own row, so the first saved proposal never changes."""
+    return f"{incident_id}/replan-{attempt}"
+
+
+def planning_request(payload):
+    """(incident to plan, journal key, re-plan attempt) for a planner.request payload.
+
+    A first request plans the incident under its own ID (key and attempt are
+    None). A re-plan request (services/coordinator/core.py::replan_after_stale)
+    names the attempt, the refused action and the resourceVersion the Guard
+    read in its STALE_RESOURCE_VERSION refusal. The incident is then planned
+    with that version as observed_resource_version, so the proposal is bound
+    to it; everything else in the incident, its signals included, is the
+    Observer's. A Planner without Kubernetes access thus binds to a version
+    from a trusted read it did not make; the Guard checks the new proposal
+    against live state again, and the operator approves it again.
+    """
+    incident = payload["incident"]
+    validate_message(incident)
+    if incident["kind"] != "incident":
+        raise ValueError("Planner requires an incident")
+    replan = payload.get("replan")
+    if replan is None:
+        return incident, None, None
+    if (not isinstance(replan, dict) or set(replan) != REPLAN_FIELDS
+            or type(replan["attempt"]) is not int or not 1 <= replan["attempt"] <= MAX_REPLAN_ATTEMPT
+            or not all(isinstance(replan[key], str) and replan[key].strip() and len(replan[key]) <= 256
+                       for key in ("after_action_id", "resource_version"))
+            or replan["resource_version"] == incident["observed_resource_version"]):
+        raise ValueError("Re-plan request must name its attempt, the refused action and a newer resource version")
+    bound = dict(deepcopy(incident), observed_resource_version=replan["resource_version"])
+    validate_message(bound)
+    return bound, replan_key(incident["incident_id"], replan["attempt"]), replan["attempt"]
+
+
+class ReplanProvider:
+    """The configured provider with the re-plan note appended to its rationale.
+
+    The note says the proposal is a re-plan, so the operator approving it can
+    tell it from the refused one. usage is the wrapped provider's, so the
+    journal keeps its record (the synthetic label of the lab planner included).
+    """
+
+    def __init__(self, provider, attempt):
+        self.provider, self.note = provider, REPLAN_NOTE.format(attempt=attempt)
+
+    @property
+    def usage(self):
+        return getattr(self.provider, "usage", None)
+
+    def __call__(self, context):
+        answer = self.provider(context)
+        if isinstance(answer, dict) and isinstance(answer.get("rationale"), str):
+            answer = {**answer, "rationale": answer["rationale"] + self.note}
+        return answer
 
 
 def diagnosis_summary(diagnosis):
@@ -118,8 +182,11 @@ def _rebound(proposal, finalize):
 
 def prepare(incident, *, journal, baseline_reader, retriever, provider,
             max_attempts=3, retry_seconds=5, lease_seconds=120, diagnoser=None, finalize=None,
-            template_reader=None):
+            template_reader=None, key=None):
     """Return the exact saved proposal, or None until the next eligible attempt.
+
+    key, when given, is the journal row this planning uses instead of the
+    incident ID (a re-plan: replan_key()).
 
     diagnoser(incident, attempt=n), when given, diagnoses inside the claimed
     attempt. Its summary is saved as the attempt context, and an abstention ends
@@ -135,16 +202,17 @@ def prepare(incident, *, journal, baseline_reader, retriever, provider,
     if (isinstance(retry_seconds, bool) or not isinstance(retry_seconds, (int, float))
             or not math.isfinite(retry_seconds) or not 0 < retry_seconds <= 3600):
         raise ValueError("Planner retry_seconds must be positive and at most one hour")
-    saved = journal.get(incident["incident_id"])
+    incident_id = incident["incident_id"] if key is None else key  # The journal row; the log names the incident.
+    saved = journal.get(incident_id)
     if saved and saved["incident"] != incident:
         raise ValueError("Planner incident identity reused with changed payload")
     if saved and saved["proposal"] is not None:
         return saved["proposal"]
-    claim = journal.claim(incident, max_attempts=max_attempts, lease_seconds=lease_seconds)
+    claim = journal.claim(incident, max_attempts=max_attempts, lease_seconds=lease_seconds,
+                          **({} if key is None else {"key": key}))
     if claim is None:
         return None
     token, exhausted = claim
-    incident_id = incident["incident_id"]
     error_code = None
     if exhausted:
         error_code, proposal = "ATTEMPTS_EXHAUSTED", escalation(incident)
@@ -182,7 +250,7 @@ def prepare(incident, *, journal, baseline_reader, retriever, provider,
         except Exception as error:  # noqa: BLE001 - model and provider errors are retried, then escalated
             attempt = journal.get(incident_id)["attempts"]
             error_code, terminal = _classify(error, diagnoser is not None)
-            log.failure(LOG, "planner.attempt.failed", error, incident_id=incident_id,
+            log.failure(LOG, "planner.attempt.failed", error, incident_id=incident["incident_id"],
                         attempt=attempt, reason=error_code)
             if diagnoser is not None:
                 # Keep the attempt's model usage, even when it failed before a context was saved.

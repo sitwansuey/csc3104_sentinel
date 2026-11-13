@@ -69,7 +69,7 @@ is active for a workload, when an action is READY, and which command a worker
 may claim. Every change runs inside `BEGIN IMMEDIATE`, so SQLite admits one
 writer at a time (`services/coordinator/store.py:501-515::SQLiteStore.transaction::@contextmanager`).
 Each claim, renew and result also replays the outbox revocation rules inside
-the same transaction (`runtime/worker_transport.py:86-115::Delivery.transaction::@contextmanager`).
+the same transaction (`runtime/worker_transport.py:93-122::Delivery.transaction::@contextmanager`).
 
 If two writable Coordinators existed during a partition, each could admit a
 different proposal for the same workload, or move the same action to READY on
@@ -251,7 +251,7 @@ previous result of the same kind was accepted
 Its own timestamp is never compared with another process's. A result that
 answers an older request is refused even if it is stamped later, and the
 transport answers it with HTTP 409
-(`runtime/worker_transport.py:318::Delivery.finish::Result answers a superseded request`),
+(`runtime/worker_transport.py:326::Delivery.finish::Result answers a superseded request`),
 so the worker releases the delivery instead of resending it. Most such
 results never get that far: `services/coordinator/core.py::dispatch_pending`
 already retires a superseded request, and `finish` then answers 409.
@@ -269,7 +269,7 @@ so their tests are unchanged.
 | Guard ALLOW not older than the latest finding | Guard vs Verifier | The answered guard request was issued after the latest finding was accepted (`services/coordinator/core.py:192::_apply::_issued_after(store, answers, "dependency_result"`); the binding of the Guard report to that finding is unchanged | Nothing |
 | Finding newer than the stored one | Verifier vs Verifier | A finding answering a dependency request: that request is the newest. A finding pushed through `ingest`: timestamps are compared only when the same identity produced both (one clock); across identities the later acceptance wins (`services/coordinator/core.py:168::_apply::previous["producer"] == producer`) | One producer's clock must not step back |
 | Health window after the write | Verifier vs Executor (`window_start >= recorded_at`) | The answered verifier request was issued after the current execution was accepted (`services/coordinator/core.py:259::_apply::_issued_after(store, answers, "execution_result"`) | See the Verifier below |
-| Approval not before the Guard decision | Coordinator vs Guard | Not compared for a sequenced decision: AWAITING_APPROVAL already proves the decision was accepted first (`services/coordinator/core.py:353::approve::meta["answers"] is None`) | Nothing |
+| Approval not before the Guard decision | Coordinator vs Guard | Not compared for a sequenced decision: AWAITING_APPROVAL already proves the decision was accepted first (`services/coordinator/core.py:411::approve::meta["answers"] is None`) | Nothing |
 | Approval not from the future | Coordinator vs Guard or Executor | `approved_at > checked_at + ε` (`services/guard/core.py:159::_approval_reasons::approved_at > checked_at + skew`) | Skew up to ε is tolerated |
 | Approval expiry | Coordinator or operator vs Guard or Executor | Expired once `checked_at + ε >= expires_at` (`services/guard/core.py:161::_approval_reasons::checked_at + skew >= expires_at`), and a decision's `valid_until` ends ε before the expiry (`services/guard/decisions.py:289::_valid_until::-skew`) | An approval can end up to 2ε early, never late |
 | Finding not from the future | Verifier vs Guard or Executor | `checked_at > now + ε` is UNKNOWN (`services/guard/core.py:249::_evaluate_core::dependency_at > checked_at + skew`) | Skew up to ε is tolerated |
@@ -356,7 +356,7 @@ The bound is enforced, and fails closed, only where it is configured:
   `runtime/worker_service.py::poll`).
 - A Coordinator started with `--max-clock-skew-seconds` refuses a claim, with
   HTTP 409, from a worker whose latest reported estimate is missing or
-  outside the bound (`runtime/worker_transport.py:188::Delivery.claim::Worker clock skew exceeds the bound`).
+  outside the bound (`runtime/worker_transport.py:195::Delivery.claim::Worker clock skew exceeds the bound`).
 
 Without the setting, workers and the Coordinator measure and record the
 offset but do not refuse. What is guaranteed after a clock step: the worker
@@ -379,7 +379,7 @@ share one clock, so the only offset it has measured is the simulated one.
 **Leases use one clock.** Lease expiry and retry back-off are computed only
 from the Coordinator's clock (`runtime/worker_transport.py::Delivery.claim`).
 A claim and a renewal also answer `expires_in`, the lease length as a
-duration (`runtime/worker_transport.py:259::Delivery.renew::"expires_in": self.lease`), and the worker
+duration (`runtime/worker_transport.py:266::Delivery.renew::"expires_in": self.lease`), and the worker
 schedules renewal from it (`runtime/remote_worker.py::lease_duration`), so no
 lease decision compares the Coordinator's clock with a worker's. Only a
 Coordinator from before this change, which sends no `expires_in`, makes the

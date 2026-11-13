@@ -10,11 +10,13 @@ inside a Pod, Pod deletion and RBAC, admission and network policy denials).
 Template writes are counted from the API server's audit log, which Sentinel
 does not write, as invariant I7.
 
-**Status: written and tested offline only.** The manifests, the cluster
-configuration, the audit policy and the harness exist and are checked by
-unit tests. No `sentinel-dist` cluster has been created, nothing here has run
-against an API server, and the results table below is empty. A later live run
-fills it.
+**Status: deployed once, no run passed yet.** The manifests, the cluster
+configuration, the audit policy and the harness are checked by unit tests.
+The `sentinel-dist` cluster was created and deployed on 13 Nov 2026, and its
+first S0 runs repaired nothing: the Guard refused every proposal as stale and
+the restore after them failed ([first live attempts](#first-live-attempts)).
+Both are fixed in code and not yet run live. The results table below is
+empty; a later live run fills it.
 
 These are four containers on one Docker host. Each node has its own network
 namespace and kubelet, but they share one kernel, one clock and one disk.
@@ -69,6 +71,14 @@ The workers use the [worker image](remote-workers.md#worker-image).
 - **Lab gate.** Every Sentinel Pod runs with the fault-point gate bound to
   cluster `sentinel-dist` (the deterministic planner is accepted only there).
   This is a lab deployment, not a production one.
+- **Stale re-plans.** The Coordinator runs with `--stale-replans=3`. The
+  tokenless Planner binds each proposal to the incident's resourceVersion,
+  which the target's own rollout can move before the Guard checks it. When
+  the Guard refuses a ROLLBACK for `STALE_RESOURCE_VERSION` and nothing else,
+  the Coordinator reopens the incident and sends the version the Guard read
+  back to the Planner, at most three times per incident
+  ([first live attempts](#first-live-attempts)). The default is 0, so file
+  and kind mode (`run_scenarios`) keep a stale refusal final.
 
 ### Network policy
 
@@ -319,6 +329,82 @@ Coordinator still works during the S6 partition, that the audit log
 carries the Pod name of each ServiceAccount request, and that `date
 +%s.%N` and `find` run in the control-plane container.
 
+## First live attempts
+
+On 13 Nov 2026 the cluster was created, `deploy` ran (10:50-10:52 UTC), and
+the first S0 runs began. No repair happened. The Coordinator's journal, the
+Observer's outbox, the target's events and ReplicaSets and the Pods' logs,
+all read without writing, show two incidents, both ending REJECTED with
+`STALE_RESOURCE_VERSION`:
+
+| Incident | Opened (UTC) | Planned on | Guard read | Guard verdicts |
+| --- | --- | --- | --- | --- |
+| first | 10:52:09, generation 3 | resourceVersion 4949 | 5342 at 10:52:16 | REJECT `STALE_RESOURCE_VERSION` |
+| second | 10:52:36, generation 4 | resourceVersion 5363 | 5363 at 10:52:41, then 5428 at 10:52:56 | ESCALATE `OPERATOR_APPROVAL_REQUIRED`, approved at 10:52:50, then REJECT `STALE_RESOURCE_VERSION` |
+
+Why the proposals went stale. The Planner binds `based_on_resource_version`
+to the incident's `observed_resource_version`
+(`services/planner/core.py::propose`). The agent Planner reads the target
+again before it saves a proposal (its `finalize` hook), but the lab Planner
+has no Kubernetes token by design, so nothing rebinds it, and the Guard
+compares it with its own live read
+(`services/guard/core.py::_state_policy_reasons`), as it must. `demo-api`
+rolls out with `Recreate`: the old ReplicaSet goes to 0 first, and the new
+Pod is created only once the old one has gone, about 30 s later here (the
+Pod's termination grace period). The Observer's 15 s failure window
+therefore opened each incident while no Pod existed. The Deployment
+controller then wrote the Deployment's status again when it scaled up the
+new ReplicaSet (replicas, updatedReplicas, unavailableReplicas and the
+Progressing condition), and would again at the 90 s progress deadline. A
+crash-looping Pod alone changes Pod status, not the Deployment. For the
+second incident that write came at 10:52:49, after the Guard's first pass
+and before its re-check after the approval. The Phase 3 kind runs against
+the Boutique's `shippingservice` did not meet this: that Deployment uses the
+default RollingUpdate, so its new Pod already existed when the incident
+opened (not re-checked live).
+
+The first incident was not the operator's fault injection. `deploy` applied
+the whole overlay last, `workload.yaml` included, at 10:51:41, after it had
+pinned the demo image by digest and recorded the baseline. That apply put
+the tag image back, so the target left its baseline and rolled out again,
+and the Observer, started by the same apply, opened an incident for that
+rollout. The operator's injection followed at 10:52:19, on the tag-image
+template.
+
+The operator's restore after the runs never happened: `Lab.restore` sent its
+JSON patch with `kubectl patch --patch-file=-` and the patch on standard
+input, and kubectl on Windows looked for a file named `-`.
+
+What changed:
+
+- The Coordinator can re-plan after a stale refusal
+  (`services/coordinator/core.py::replan_after_stale`, `--stale-replans`,
+  3 on this lab, 0 by default). It acts only on a Guard REJECT whose only
+  reason is `STALE_RESOURCE_VERSION`, for the incident's active ROLLBACK. It
+  keeps the refused action REJECTED with its decision, moves the incident
+  back to OPEN (journal cause `stale_replan`) and queues a `planner.request`
+  that carries the recorded incident and the resourceVersion the Guard read.
+  The Planner plans it under its own journal key, so it is a new proposal
+  with a new action ID and a rationale that says it is a re-plan. The Guard
+  checks it against live state again, the Executor's patch still tests that
+  version, and the operator must approve it again, because an approval is
+  bound to the proposal's digest. After the last re-plan a stale refusal is
+  final. The Planner still has no Kubernetes token, and the Guard's check is
+  unchanged.
+- `deploy` applies the overlay without `workload.yaml`, which it applied and
+  pinned first, and stops if the target's template changed after its
+  baseline was recorded.
+- `Lab.restore` writes the patch, which holds no credential, to a private
+  file in the run directory, passes that path and deletes the file
+  afterwards. No other harness command reads a patch from `-`; `kubectl
+  apply` and `create` read `--filename=-` from standard input on every
+  platform.
+
+Still to run live: rebuild the Coordinator and worker images, deploy into a
+new run directory and run S0 again. A second incident may open after a
+successful rollback, while the rollback's own `Recreate` rollout has no Pod;
+that has not been seen here yet.
+
 ## Results
 
 Generated by `python -m experiments.distributed.kind_acceptance table`;
@@ -366,6 +452,18 @@ quoted. P4.02 adds the measured RTO and RPO table to the
   the window moved onto the cluster's clock; `run` refusing a target with
   another UID; and `teardown` deleting nothing through a context that names
   another cluster.
+- `tests/test_stale_replan.py`: the live symptom over loopback HTTP, with the
+  real Planner, Guard and Executor workers and a fake API server whose
+  resourceVersion moves after planning (before the Guard's first pass, and
+  between the approval and the re-check). With the lab's `--stale-replans`
+  the incident is re-planned on the Guard's read, approved again and
+  repaired with one write; with the default the stale refusal stays final.
+  Also: re-plans are bounded, only a refusal for staleness alone and only a
+  ROLLBACK is re-planned, and a malformed re-plan request is refused. With
+  the rule disabled, the three symptom tests fail.
+- `tests/test_kind_acceptance.py` also checks that the restore patch goes in
+  a file kubectl can open (never `-`), removed afterwards, and that `deploy`
+  applies the overlay without the workload.
 - `tests/test_distributed_audit.py`: with the fixtures in
   `tests/fixtures/distributed_audit/` (written for the tests, not captured):
   one template write passes I7, two successful template PATCHes for one action

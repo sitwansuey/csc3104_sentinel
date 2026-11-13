@@ -528,6 +528,16 @@ class SQLiteStore:
         self.db.execute("UPDATE incidents SET active_action_id=?,state=? WHERE incident_id=?",
                         (action_id, state, incident_id))
 
+    def reopen_incident(self, incident_id, action_id, cause):
+        """Put the incident back to OPEN for planning; the refused action keeps its own state."""
+        self._journal(incident_id, action_id, "OPEN", cause)
+        self.db.execute("UPDATE incidents SET state='OPEN' WHERE incident_id=?", (incident_id,))
+
+    def reopenings(self, incident_id, cause):
+        """How many times the transitions journal reopened the incident for cause."""
+        return self.db.execute("SELECT count(*) FROM transitions WHERE incident_id=? AND cause=? AND to_state='OPEN'",
+                               (incident_id, cause)).fetchone()[0]
+
     def required_dependency_hash(self, action_id):
         row = self.db.execute("SELECT dependency_sha256 FROM dependency_revalidations WHERE action_id=?",
                               (action_id,)).fetchone()
