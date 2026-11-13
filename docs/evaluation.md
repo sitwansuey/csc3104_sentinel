@@ -34,6 +34,8 @@ value that no bundle records is shown as "not recorded".
 | Host class | windows-amd64 x51; 122 bundles record no provenance block |
 | Tools | docker 29.4.3; helm 4.3.1+gc0d08d0; kind 0.33.0; kubectl 1.34.1; ollama 0.40.16 |
 | Python | 3.12.3 x2, 3.13.2 x49 |
+| Chaos Mesh (chaos-batch attempts) | 2.8.2 x13 |
+| Kubernetes server (chaos-batch attempts) | v1.37.0 x13 |
 | Models loaded (runs) | qwen3:14b bdbd181c33f2 Q4_K_M on Ollama 0.40.16 x20 |
 <!-- END GENERATED:evaluation-setup -->
 
@@ -125,7 +127,7 @@ Guard rejection runs. Per-run tables, with every bundle id, are in
 and [two simultaneous faults](dual-fault.md).
 
 <!-- BEGIN GENERATED:evaluation-live -->
-**All live runs by class.** PASS means the run's own checks passed; an expected escalation passes without a repair.
+**Live recovery runs by class.** PASS means the run's own checks passed; an expected escalation passes without a repair. Only these classes are counted here and in the live-run lines of the threats to validity; current bundles of other classes, counted in [runs by class](results.md#runs-by-class) only: executor-admission x1, executor-wedge x7, kind-lab-session x3, observer-acceptance x3, ui-session x7, worker-container x2.
 
 | Class | Runs | PASS | Other outcomes | Passed as an expected escalation | Revisions | Planner | Approval |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -138,7 +140,7 @@ and [two simultaneous faults](dual-fault.md).
 | packaged | 9 | 5/9 | INCOMPLETE x3, INTERRUPTED x1 | 0 | 3 | not recorded x3, operator-authored proposal, no model x6 | not recorded x9 |
 | provider-recovery | 1 | 0/1 | FAILED x1 | 0 | 1 | not recorded x1 | not recorded x1 |
 
-**Catalog scenarios.** Matched means the run scored correct against its pre-registered outcome (decision, Guard and rule checks) and passed.
+**Catalog scenarios.** Matched means the run matched its pre-registered expected outcome (decision, Guard and rule checks) and passed; it is provisional while the labels are pending.
 
 | Scenario | Class | Planner | Runs | PASS | Decisions | Matched | Executor writes | Coordinator state | Labels |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -169,6 +171,12 @@ The networked Coordinator and workers under injected faults: file mode
 (separate processes on one host), kind mode (the connected kind lab) and the
 four-node `sentinel-dist` acceptance
 ([recipe](distributed-acceptance.md), [model](distributed-model.md)).
+`sentinel-dist` has been deployed and attempted live, but no run has passed
+and none of its runs is committed as a bundle yet: the first S0 attempts were
+refused as stale and repaired nothing
+([first live attempts](distributed-acceptance.md#first-live-attempts)). Until
+a distributed-acceptance bundle is committed, the block below counts no
+`sentinel-dist` run, which is not the same as it never having been tried.
 
 <!-- BEGIN GENERATED:evaluation-distributed -->
 **File and kind modes (P3.01, P3.06).** Matched means the run met its scenario's expectation.
@@ -184,7 +192,7 @@ four-node `sentinel-dist` acceptance
 | kind | S5 | 6 | 6/6 | 6/6 | 1 | 0 | one host x6 | synthetic x6 | 3 |
 | kind | S8 | 6 | 6/6 | 6/6 | 0 | 0 | one host x6 | synthetic x6 | 3 |
 
-**sentinel-dist (four kind nodes, P4.01).** _Not yet run._ No distributed-acceptance bundle is committed.
+**sentinel-dist (four kind nodes, P4.01).** No distributed-acceptance bundle is committed, so no sentinel-dist run is counted here; the first live attempts are described, not bundled, in [distributed acceptance](distributed-acceptance.md#first-live-attempts).
 <!-- END GENERATED:evaluation-distributed -->
 
 ## Security lab
@@ -246,15 +254,18 @@ From `evidence/evaluation/latency/2026-11-13b/timings.json`. A stage with no dat
 
 ## Threats to validity
 
-Each caveat below is counted from the evidence, so it changes when the
-evidence does. The [limitations register](limitations.md) has the full list of
-known limitations and open defects.
+The counts in each caveat below come from the evidence, so they change when
+the evidence does; the sentences around them are fixed text. A caveat whose
+evidence is not committed says "not yet run" rather than a zero. The live-run
+counts cover the classes in the live table above. The
+[limitations register](limitations.md) has the full list of known limitations
+and open defects.
 
 <!-- BEGIN GENERATED:evaluation-threats -->
 - **Labels are pending.** Catalog pre-registration sign-off: pending. Replay label sets signed: 0/74. Catalog scenario runs by label status: pending x22. Pair runs by label status: pending x8. Guard fixture evaluation: PRELIMINARY_NOT_FROZEN. RCAEval freeze file: not committed. A row whose labels are not signed is unscored: it says what happened, not whether it was right.
-- **One host.** 46/89 live runs name a single-node cluster in their scope. Host classes recorded: windows-amd64 x51 (38 live runs record no provenance block). A host class is not a machine identity, and no committed run shows a second machine. File and kind distributed runs recording single_host true: 39/39. sentinel-dist: not yet run.
-- **Planner.** Live runs by planner: code rule, no model x19, model qwen3:14b x36, model qwen3:does-not-exist x1, model sentinel-not-installed:latest x2, not recorded x23, operator-authored proposal, no model x8. Distributed runs with the synthetic planner: file and kind 39/39, sentinel-dist not yet run; those runs test coordination and fencing, not planning.
-- **Approvals.** Live runs by approval: auto-lab x37, not recorded x28, not-requested x7, pre-authorised x16, reject x1. auto-lab is the harness approving through the authenticated API under the automated-lab identity: no person decides. Live runs that record a person approving: 0.
+- **One host.** Live runs naming a single-node cluster in their scope: 46/89. Host classes recorded by live runs: windows-amd64 x51 (38 of 89 record no provenance block). A host class is not a machine identity. No committed distributed run records single_host false (a second machine). File and kind distributed runs recording single_host true: 39/39. sentinel-dist: none counted. No distributed-acceptance bundle is committed, so no sentinel-dist run is counted here; the first live attempts are described, not bundled, in [distributed acceptance](distributed-acceptance.md#first-live-attempts).
+- **Planner.** Live runs by planner: code rule, no model x19, model qwen3:14b x36, model qwen3:does-not-exist x1, model sentinel-not-installed:latest x2, not recorded x23, operator-authored proposal, no model x8. Distributed runs with the synthetic planner: file and kind 39/39, sentinel-dist none counted; those runs test coordination and fencing, not planning.
+- **Approvals.** Live runs by approval: auto-lab x37, not recorded x28, not-requested x7, pre-authorised x16, reject x1. auto-lab is the harness approving through the authenticated API under the automated-lab identity: no person decides. Live runs that record a person approving: 0/89.
 - **Small n, correlated repetitions.** Catalog scenarios run live: 6, at most 11 runs each. Repeated runs share the host, the cluster, the model and often the revision, so they are not independent trials; where an interval is given, read it rather than the point value.
 - **Provenance.** 120/173 current bundles have inferred provenance: their source revision is a best guess, not a recorded commit.
 - **Replay inputs.** Of 74 replay cases, 10 derived and 12 adversarial ones are synthetic, and every case's cluster state is reconstructed, not recorded. Replay judges decisions only; recovery comes from live runs.

@@ -6,6 +6,7 @@ page number fails summarize --check, and that evidence which is not
 committed renders as "not yet run" and never as a zero count.
 """
 
+import json
 from pathlib import Path
 import re
 import tempfile
@@ -47,7 +48,12 @@ def acceptance_run(scenario, *, passed=True):
             "synthetic_planner": True, "limits": "Four kind nodes on one Docker host."}
 
 
-def build(root, *, evaluation=True):
+SENTINEL_DIST_NONE = ("**sentinel-dist (four kind nodes, P4.01).** No distributed-acceptance bundle is committed, so "
+                      "no sentinel-dist run is counted here; the first live attempts are described, not bundled, in "
+                      "[distributed acceptance](distributed-acceptance.md#first-live-attempts).")
+
+
+def build(root, *, evaluation=True, distributed=True):
     """A fixture tree with live, distributed and security bundles; evaluation adds a replay run and its corpus."""
     root, runs = Path(root), Path(root) / "source"
     evidence = root / "evidence"
@@ -60,7 +66,8 @@ def build(root, *, evaluation=True):
     add(fx.chaos_recovery_run(runs, "n2", refusals=[fx.forced("ROLLBACK", codes=("ROLLBACK_ALREADY_AT_BASELINE",))]),
         "chaos-recovery", "chaos-n2")
     add(fx.pair_run(runs, "pair"), "scenario-pair", "pair-dep")
-    add(fx.distributed_run(runs, "s1b"), "distributed-scenario", "kind-s1b")
+    if distributed:
+        add(fx.distributed_run(runs, "s1b"), "distributed-scenario", "kind-s1b")
     add(fx.security_run(runs, "s1"), "security-lab", "security-s1")
     if evaluation:
         fx.write(root / ABLATION, ablation_results())
@@ -130,6 +137,7 @@ class EvaluationPageTests(unittest.TestCase):
         rcaeval = block(page, "evaluation-rcaeval")
         self.assertTrue(rcaeval.startswith("_Not yet run._ No RCAEval report is committed"), rcaeval)
         self.assertTrue(rcaeval.rstrip().endswith("; no rcaeval bundle collected."), rcaeval)
+        self.assertIn("Pre-registration: sample manifest not committed, freeze file not committed;", rcaeval)
         self.assertNotIn("0 rcaeval", rcaeval)
         replay = block(page, "evaluation-replay")
         self.assertIn("Corpus: not built", replay)
@@ -137,17 +145,35 @@ class EvaluationPageTests(unittest.TestCase):
             self.assertRegex(replay, rf"\| {name} \| [^\n]*\| not yet run \| - \| - \| - \|")
         latency = block(page, "evaluation-latency")
         self.assertTrue(latency.startswith("_Not yet run._ No latency ledger"), latency)
-        self.assertIn("**sentinel-dist (four kind nodes, P4.01).** _Not yet run._",
-                      block(page, "evaluation-distributed"))
+        distributed = block(page, "evaluation-distributed")
+        self.assertIn(SENTINEL_DIST_NONE, distributed)
         threats = block(page, "evaluation-threats")
-        self.assertIn("sentinel-dist: not yet run.", threats)
+        self.assertIn("sentinel-dist: none counted. No distributed-acceptance bundle is committed", threats)
+        self.assertIn("file and kind 0/1, sentinel-dist none counted;", threats)
+        # sentinel-dist was attempted live (docs/distributed-acceptance.md), so the page never calls it unrun.
+        for text in (distributed, threats):
+            self.assertNotRegex(text, r"sentinel-dist[^.\n]*not yet run", text)
+            self.assertNotRegex(text, r"sentinel-dist[^\n]*_Not yet run\._", text)
         self.assertIn("RCAEval reports committed: not yet run.", threats)
         self.assertIn("Replay label sets signed: no corpus.", threats)
         self.assertIn("No replay corpus is committed.", threats)
         self.assertIn("Guard fixture evaluation: not yet run.", threats)
-        for name in ("evaluation-rcaeval", "evaluation-replay", "evaluation-latency"):
+        # Live, distributed and security evidence is committed here, so a zero there is a real count.
+        for name in ("evaluation-rcaeval", "evaluation-replay", "evaluation-latency", "evaluation-threats"):
             self.assertIsNone(ZERO.search(block(page, name)), name)
         self.assertIn("Pre-registered replay runs committed: 0/5.", threats)
+
+    def test_missing_file_and_kind_runs_render_not_yet_run_never_zero(self):
+        root = build(Path(self.temp.name) / "nodist", distributed=False)
+        self.assertEqual(run(root)[0], 0)
+        page = self.page(root)
+        distributed = block(page, "evaluation-distributed")
+        self.assertEqual(distributed.split("\n\n")[1], "_Not yet run._", distributed)
+        threats = block(page, "evaluation-threats")
+        self.assertIn("File and kind distributed runs recording single_host true: not yet run.", threats)
+        self.assertIn("synthetic planner: file and kind not yet run, sentinel-dist none counted;", threats)
+        for name in ("evaluation-distributed", "evaluation-threats"):
+            self.assertIsNone(ZERO.search(block(page, name)), name)
 
     def test_empty_evidence_tree_renders_every_section_as_not_yet_run(self):
         root = Path(self.temp.name) / "empty"
@@ -158,7 +184,45 @@ class EvaluationPageTests(unittest.TestCase):
         for name in ("evaluation-setup", "evaluation-rcaeval", "evaluation-guard", "evaluation-live",
                      "evaluation-security", "evaluation-latency"):
             self.assertTrue(block(page, name).startswith("_Not yet run._"), name)
+        for name in summarize.TARGETS[PAGE]:
             self.assertIsNone(ZERO.search(block(page, name)), name)
+        distributed = block(page, "evaluation-distributed")
+        self.assertEqual(distributed.split("\n\n")[1], "_Not yet run._", distributed)
+        self.assertIn(SENTINEL_DIST_NONE, distributed)
+        threats = block(page, "evaluation-threats")
+        for line in ("Catalog scenario runs by label status: not yet run.", "Pair runs by label status: not yet run.",
+                     "Live runs naming a single-node cluster in their scope: not yet run.",
+                     "Host classes recorded by live runs: not yet run.",
+                     "File and kind distributed runs recording single_host true: not yet run.",
+                     "sentinel-dist: none counted.", "Live runs by planner: not yet run.",
+                     "synthetic planner: file and kind not yet run, sentinel-dist none counted;",
+                     "Live runs by approval: not yet run.", "Live runs that record a person approving: not yet run.",
+                     "Catalog scenarios run live: not yet run.", "**Provenance.** No evidence bundle is committed.",
+                     "Models loaded in live runs: not yet run.", "Workloads named by live runs: not yet run."):
+            self.assertIn(line, threats)
+        self.assertNotRegex(threats, r":\s*none[.;,]", threats)
+
+    def test_setup_says_not_recorded_for_a_value_no_bundle_records(self):
+        runs = self.root / "source"
+        collect.collect(fx.agent_run(runs, "a1", provenance={"host_class": "linux-amd64", "tools": {"kind": "0.33.0"}}),
+                        "agent", "agent-a1", evidence_root=self.root / "evidence", context=fx.context(),
+                        inferred_revision=fx.REVISION, inferred_basis="fixture")
+        self.assertEqual(run(self.root)[0], 0)
+        setup = block(self.page(), "evaluation-setup")
+        self.assertIn("| Host class | linux-amd64 x1, not recorded x1; 4 bundles record no provenance block |", setup)
+        self.assertIn("| Python | not recorded |", setup)
+        self.assertIn("| Chaos Mesh (chaos-batch attempts) | not recorded |", setup)
+        self.assertNotRegex(setup, r"\| none \|", setup)
+
+    def test_setup_records_chaos_mesh_and_kubernetes_versions_from_batch_attempts(self):
+        batch = fx.chaos_run(self.root / "source", "batch", faults=("pod",))
+        fx.write(batch / "0001-pod-abc/manifest.json", {"versions": {"chaos_mesh": "2.8.2", "kubernetes": "v1.37.0"}})
+        collect.collect(batch, "chaos-batch", "chaos-batch-1", evidence_root=self.root / "evidence",
+                        context=fx.context(), inferred_revision=fx.REVISION, inferred_basis="fixture")
+        self.assertEqual(run(self.root)[0], 0)
+        setup = block(self.page(), "evaluation-setup")
+        self.assertIn("| Chaos Mesh (chaos-batch attempts) | 2.8.2 x1 |", setup)
+        self.assertIn("| Kubernetes server (chaos-batch attempts) | v1.37.0 x1 |", setup)
 
     def test_a_committed_model_run_and_report_replace_not_yet_run(self):
         fx.write(self.root / summarize.ABLATION_DIR / "v1-model-14b-16k/results.json",
@@ -195,6 +259,16 @@ class EvaluationPageTests(unittest.TestCase):
                       "without a Guard refusal and with no write, 0 with an Executor write, 0 unmeasured.", live)
         self.assertIn("Chaos Mesh injection-only batches: not yet run.", live)
 
+    def test_a_guard_reject_followed_by_an_executor_write_is_not_counted_as_refused(self):
+        collect.collect(fx.chaos_recovery_run(self.root / "source", "n2-write", started="2026-11-13T09:40:00Z",
+                                              refusals=[fx.forced("ROLLBACK", writes=1)]),
+                        "chaos-recovery", "chaos-n2-write", evidence_root=self.root / "evidence", context=fx.context(),
+                        inferred_revision=fx.REVISION, inferred_basis="fixture")
+        self.assertEqual(run(self.root)[0], 0)
+        self.assertIn("Forced wrong actions in catalog runs: 1/2 refused by the Guard with no Executor write, 0 stopped "
+                      "without a Guard refusal and with no write, 1 with an Executor write, 0 unmeasured.",
+                      block(self.page(), "evaluation-live"))
+
     def test_threats_count_the_caveats_from_the_evidence(self):
         self.assertEqual(run(self.root)[0], 0)
         threats = block(self.page(), "evaluation-threats")
@@ -202,9 +276,55 @@ class EvaluationPageTests(unittest.TestCase):
         self.assertIn("Pair runs by label status: pending x1.", threats)
         self.assertIn("Catalog scenario runs by label status: pending x1.", threats)
         self.assertIn("File and kind distributed runs recording single_host true: 0/1.", threats)
-        self.assertIn("Live runs that record a person approving: 0.", threats)
+        self.assertIn("Live runs that record a person approving: 0/3.", threats)
         self.assertIn("Live runs by approval: not recorded x3.", threats)
+        self.assertIn("Live runs naming a single-node cluster in their scope: ", threats)
+        self.assertIn("No committed distributed run records single_host false (a second machine).", threats)
         self.assertIn("Of 3 replay cases, 1 derived and 1 adversarial ones are synthetic", threats)
+
+    def test_a_distributed_run_on_several_hosts_is_named_not_hidden(self):
+        folder = fx.distributed_run(self.root / "source", "s2", scenario="S2")
+        summary = json.loads((folder / "summary.json").read_text(encoding="utf-8"))
+        fx.write(folder / "summary.json", {**summary, "single_host": False})
+        collect.collect(folder, "distributed-scenario", "kind-s2", evidence_root=self.root / "evidence",
+                        context=fx.context(), inferred_revision=fx.REVISION, inferred_basis="fixture")
+        self.assertEqual(run(self.root)[0], 0)
+        threats = block(self.page(), "evaluation-threats")
+        self.assertIn("1 distributed runs record single_host false (a second machine).", threats)
+        self.assertNotIn("No committed distributed run records single_host false", threats)
+        self.assertIn("File and kind distributed runs recording single_host true: 0/2.", threats)
+
+    def test_approval_by_a_person_is_counted_apart_from_auto_lab(self):
+        class Stub:
+            run_class, bundle_id, entry, manifest = "agent", "stub", {}, {"files": []}
+
+            def __init__(self, approval):
+                self.approval = approval
+
+            def json(self, relative):
+                return {"operator_approval": self.approval} if relative == "summary.json" else None
+
+        self.assertEqual(summarize.approval_kind(Stub({"mode": "manual", "human": True})), "a person (manual)")
+        self.assertEqual(summarize.approval_kind(Stub({"mode": "auto-lab", "human": False})), "auto-lab")
+        self.assertEqual(summarize.approval_kind(Stub({"mode": "auto-lab"})), "auto-lab")
+        self.assertEqual(summarize.approval_kind(Stub("approved in advance")), "pre-authorised")
+        self.assertEqual(summarize.approval_kind(Stub(None)), "not recorded")
+
+    def test_other_live_classes_are_named_under_the_live_table(self):
+        collect.collect(fx.observer_run(self.root / "source", "o1"), "observer-acceptance", "observer-o1",
+                        evidence_root=self.root / "evidence", context=fx.context(), inferred_revision=fx.REVISION,
+                        inferred_basis="fixture")
+        self.assertEqual(run(self.root)[0], 0)
+        live = block(self.page(), "evaluation-live")
+        self.assertIn("**Live recovery runs by class.**", live)
+        self.assertIn("counted in [runs by class](results.md#runs-by-class) only: observer-acceptance x1.", live)
+        self.assertNotIn("| observer-acceptance |", live)
+
+    def test_committed_preregistration_files_are_reported_as_committed(self):
+        fx.write(self.root / summarize.RCAEVAL_DOCS / "sample-ob-v1.json", {})
+        self.assertEqual(run(self.root)[0], 0)
+        self.assertIn("Pre-registration: sample manifest committed, freeze file not committed;",
+                      block(self.page(), "evaluation-rcaeval"))
 
 
 class SentinelDistTests(unittest.TestCase):
@@ -221,7 +341,7 @@ class SentinelDistTests(unittest.TestCase):
                                            "started_at": "2026-11-13T15:00:00Z",
                                            "provenance": {"source_revision": fx.REVISION}, "runs": len(runs)})
         for index, summary in enumerate(runs, 1):
-            fx.write(folder / f"2026-11-13/{summary['scenario']}-r{index}-150000z/summary.json", summary)
+            fx.write(folder / f"2026-11-13/{summary.get('scenario', 'S3')}-r{index}-150000z/summary.json", summary)
         collect.collect(folder, "distributed-acceptance", bundle_id, evidence_root=self.root / "evidence",
                         context=fx.context())
 
@@ -246,6 +366,30 @@ class SentinelDistTests(unittest.TestCase):
                     if b.run_class == "distributed-acceptance"}
         self.assertEqual(outcomes, {"sentinel-dist-pass": "PASS", "sentinel-dist-fail": "FAILED",
                                     "sentinel-dist-empty": "INCOMPLETE"})
+
+    def test_a_partial_run_summary_counts_as_not_passed_instead_of_vanishing(self):
+        self.add("sentinel-dist-crash", [acceptance_run("S0"), {"started_at": "2026-11-13T15:05:00Z"}])
+        outcomes = {b.bundle_id: summarize.outcome(b) for b in summarize.load_bundles(self.root)
+                    if b.run_class == "distributed-acceptance"}
+        self.assertEqual(outcomes, {"sentinel-dist-crash": "FAILED"})
+        self.assertEqual(run(self.root)[0], 0)
+        page = (self.root / PAGE).read_text(encoding="utf-8")
+        distributed = block(page, "evaluation-distributed")
+        self.assertIn("2 runs from 1 bundles;", distributed)
+        self.assertIn("1 run summaries name no scenario: they are left out of the table and count as not passed.",
+                      distributed)
+        self.assertIn("| S0 | 1 | 1/1 |", distributed)
+        self.assertIn("sentinel-dist: 2 runs,", block(page, "evaluation-threats"))
+
+    def test_a_bundle_with_no_run_summary_counts_no_run(self):
+        self.add("sentinel-dist-empty", [])
+        self.assertEqual(run(self.root)[0], 0)
+        page = (self.root / PAGE).read_text(encoding="utf-8")
+        self.assertIn("**sentinel-dist (four kind nodes, P4.01).** 1 distributed-acceptance bundles are committed with "
+                      "no per-run summary; no run is counted.", block(page, "evaluation-distributed"))
+        threats = block(page, "evaluation-threats")
+        self.assertIn("sentinel-dist: none counted; its bundles are committed with no per-run summary.", threats)
+        self.assertIsNone(ZERO.search(threats), threats)
 
     def test_a_run_summary_missing_a_table_field_is_an_evidence_error(self):
         broken = acceptance_run("S0")
