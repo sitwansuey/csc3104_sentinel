@@ -7,7 +7,9 @@ tracked with `PRAGMA user_version` and applied in order when a store opens, so
 older databases keep working. Every state change also appends a `transitions`
 row in the same transaction ([observability](../../docs/observability.md)). `read.py` is the bounded public read-only projection used
 by the dashboard. Existing public imports are re-exported by `__init__.py`.
-`db.py` is the Database port every Coordinator statement goes through: SQLite
+`db.py` is the Database port that every statement of the store, the lifecycle
+rules, the approval service and the worker transport goes through (the
+executor delivery reviews and `read.py` still use SQLite directly): SQLite
 is the default and the only backend that runs, and it receives the same SQL
 as before the port. Postgres is a SQL dialect only; its adapter refuses to
 open until the owners decide on a Postgres driver (P5.01, see the

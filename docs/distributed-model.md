@@ -67,7 +67,7 @@ What is single-host today:
 The Coordinator is the authorisation state machine. It decides which proposal
 is active for a workload, when an action is READY, and which command a worker
 may claim. Every change runs inside `BEGIN IMMEDIATE`, so SQLite admits one
-writer at a time (`services/coordinator/store.py:518-532::SQLiteStore.transaction::@contextmanager`).
+writer at a time (`services/coordinator/store.py:522-536::SQLiteStore.transaction::@contextmanager`).
 Each claim, renew and result also replays the outbox revocation rules inside
 the same transaction (`runtime/worker_transport.py:93-122::Delivery.transaction::@contextmanager`).
 
@@ -848,12 +848,13 @@ on one Docker host.
 
 ### The Coordinator's Database port (P5.01 stage 8.1), offline only
 
-Every Coordinator statement now goes through a Database port
-(`services/coordinator/db.py::Database`): the store, the lifecycle rules in
-`services/coordinator/core.py`, the approval service
+Most Coordinator statements now go through a Database port
+(`services/coordinator/db.py::Database`): those of the store, the lifecycle
+rules in `services/coordinator/core.py`, the approval service
 (`services/coordinator/approvals.py::ApprovalAccess.call`), the worker
 transport (`runtime/worker_transport.py::Delivery.transaction`) and the two
-readiness checks. SQLite is the default and the only backend that runs
+readiness checks. The ones that do not are listed under "Not done" below.
+SQLite is the default and the only backend that runs
 (`services/coordinator/db.py::SQLiteDatabase`). Postgres exists only as a SQL
 dialect (`services/coordinator/db.py::PostgresDialect`). Its adapter refuses
 to open (`services/coordinator/db.py::PostgresDatabase`), because no Postgres
@@ -867,7 +868,7 @@ SQLite statements.
 rests on three facts: every change runs in one `BEGIN IMMEDIATE` transaction
 that holds SQLite's single writer, the transaction commits or rolls back as a
 whole, and the statements inside it are the reviewed ones. The port keeps all
-three:
+three, and leaves the migrations alone:
 
 1. `SQLiteDatabase` opens the connection exactly as `SQLiteStore` did:
    autocommit mode, a 10 s busy timeout, rows readable by name and position,
@@ -904,24 +905,45 @@ IMMEDIATE` into `BEGIN ISOLATION LEVEL SERIALIZABLE`, `INSERT OR IGNORE` into
 `ON CONFLICT DO NOTHING`, `IS ?` into `IS NOT DISTINCT FROM`, and SQLite's
 two-argument `max()` and `min()` into `GREATEST` and `LEAST`. It marks SQLSTATE
 40001 (serialization failure) and 40P01 (deadlock) as retryable; nothing
-retries yet. It refuses, naming the reason, what has no mechanical
-translation: PRAGMAs, schema statements, `rowid`, `last_insert_rowid()`,
-`INSERT OR REPLACE` and SQLite-only functions. A test passes every statement
-the three flows send through it and pins the result: 37 PRAGMA and schema
-statements, three migration statements and five runtime queries cannot be
-translated (row order by `rowid` in `SQLiteStore.planning_blocker` and
+retries yet. It refuses, naming every reason that applies, what has no
+mechanical translation: PRAGMAs, schema statements, `rowid`,
+`last_insert_rowid()`, `INSERT OR REPLACE`, SQLite-only functions, the column
+name `offset` (a reserved word in Postgres, so it must be quoted or renamed in
+a Postgres schema) and a column read without a table qualifier inside `ON
+CONFLICT ... DO UPDATE` (Postgres has both the target table and `EXCLUDED` in
+scope there and rejects the bare name as ambiguous). The rewrite is textual,
+done with regular expressions; no Postgres parser has checked any statement
+it produces, so "translates" means only that none of these rules found a
+problem. A test passes every statement the three flows send through it and
+pins the result: 37 PRAGMA and schema statements, three migration
+statements and seven runtime queries are refused. The seven are row order by
+`rowid` in `SQLiteStore.planning_blocker` and
 `SQLiteStore.actions_for_incident`, `last_insert_rowid()` in the transport's
-dependency requests, and `INSERT OR REPLACE` for dependency revalidations),
-and the rest translate. A new SQLite-only statement fails that test.
+dependency requests, `INSERT OR REPLACE` for dependency revalidations,
+`epoch=epoch+1` in the upsert of `SQLiteStore.claim_target`, and the upsert of
+`SQLiteStore.record_worker_clock`, which writes the column `offset` and reads
+`max_abs_offset` and `reports` without a qualifier. A new statement of a kind
+these rules know fails that test, and another test checks that `offset` is
+the only Postgres reserved word the schema uses as a name. The list is a
+lower bound, not the whole work list: statements the three flows do not send
+are not classified, and a Postgres server may reject statements the dialect
+let through.
 
 **Not done, and gated.** P5.01 starts properly only after P4.01 is accepted,
 and the backend needs the owners' go/no-go on a new dependency
 ([limitation](limitations.md#l-coordinator-postgres)). Left for stage 8.1 on
 Postgres: a locked driver as an optional extra, the Postgres adapter, a
-Postgres migration set with explicit sequence columns, rewrites of the five
-queries above, a retry loop at the transaction boundary, and the existing
-Coordinator, transport and remote-worker suites run against both backends
-with a pinned Postgres service container in CI. The executor delivery
+Postgres migration set with explicit sequence columns and `offset` quoted or
+renamed, rewrites of the seven queries above (and of any others a Postgres
+parser rejects), a retry loop at the transaction boundary, and a pinned
+Postgres service container in CI. The plan's first stage 8.1 verification
+item is also unmet: the existing Coordinator, transport and remote-worker
+suites are not parameterised over the backends. They run on SQLite only,
+through the port, because `SQLiteStore(path)` opens a `SQLiteDatabase`; they
+have no Postgres row, skipped or otherwise. Only the port's own contract
+tests in `tests/test_coordinator_db.py` have a Postgres row, and it is
+skipped. Parameterising those suites waits, with the adapter it would run
+against, for the owners' go/no-go. The executor delivery
 reviews (`services/executor/delivery_store.py`), the read-only projection
 (`services/coordinator/read.py`) and some harness and Verifier readers still
 use the SQLite connection directly. Stages 8.2 (SKIP LOCKED claims, advisory
