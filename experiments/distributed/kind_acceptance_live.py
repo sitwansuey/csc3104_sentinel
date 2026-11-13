@@ -6,7 +6,8 @@ kind_acceptance.Shell, so the context is always kind-sentinel-dist and the
 offline tests can drive it with a fake kubectl, docker and helm. The scenario
 functions follow experiments/distributed/scenarios.py, with Chaos Mesh, docker
 pause and fault points armed inside the Pods in place of local processes,
-proxies and signals. Not yet run against a cluster.
+proxies and signals. deploy and the first S0 runs have run against the lab
+once (13 Nov 2026); no run has passed yet.
 """
 import base64
 from contextlib import suppress
@@ -145,6 +146,22 @@ def rbac_checks(shell):
     return rows
 
 
+def overlay_without_workload(text):
+    """The overlay's kustomization.yaml without workload.yaml, which deploy applies (and pins) first.
+
+    Applying the full overlay after pin_demo_image re-applied the workload's
+    tag-image template (kubectl apply patches every field that differs from
+    the manifest), so on 13 Nov 2026 the target left its recorded baseline
+    and rolled out again before the first run, and that rollout opened an
+    incident of its own (docs/distributed-acceptance.md#first-live-attempts).
+    """
+    lines = text.splitlines(keepends=True)
+    kept = [line for line in lines if line.strip() != "- workload.yaml"]
+    if len(kept) != len(lines) - 1:
+        raise AcceptanceError("The overlay must list workload.yaml exactly once")
+    return "".join(kept)
+
+
 def _write(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(value if isinstance(value, str) else json.dumps(value, indent=2), encoding="utf-8")
@@ -197,9 +214,13 @@ def deploy(shell, run_dir, *, min_free_gib, lock, lab=None):
     shell.apply(config_map("sentinel-dist-approval-permissions", {"permissions.json": approval_permissions(target)}))
     for name, value in inputs.items():
         _write(run_dir / "inputs" / name, value)
+    overlay = manifests / "kustomization.yaml"
+    overlay.write_text(overlay_without_workload(overlay.read_text(encoding="utf-8")), encoding="utf-8")
     shell.kubectl("apply", "--kustomize=" + str(manifests))
     for name in DEPLOYMENTS:
         shell.kubectl("rollout", "status", "deployment/" + name, "--timeout=300s", namespace=NAMESPACE, timeout=320)
+    if lab.target()["spec"]["template"] != deployment["spec"]["template"]:
+        raise AcceptanceError("The target's template changed after its baseline was recorded; deploy again")
     placement = lab.placement()
     if not placement["pinned_on_distinct_nodes"]:
         raise AcceptanceError("The Coordinator and the two Executors are not on their three pinned nodes")

@@ -77,20 +77,25 @@ the cluster's clock by the measured offset. These are four containers on one
 Docker host: they share one kernel, one clock and one disk, and are not
 separate machines.
 
-Status: written and tested offline only (tests/test_kind_acceptance.py, with
-a fake kubectl, docker and helm). Nothing here has run against a cluster.
+Status: tested offline (tests/test_kind_acceptance.py, with a fake kubectl,
+docker and helm) and deployed live once, on 13 Nov 2026. Its first S0 runs
+repaired nothing: the Guard refused each proposal as stale, and the restore
+after them failed (docs/distributed-acceptance.md#first-live-attempts). No run
+has passed yet.
 """
 import argparse
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 import json
+import os
 from pathlib import Path
 import re
 import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -811,6 +816,16 @@ def coordinator_recovery(fault_at, ready_at, access, transitions):
 # The lab -------------------------------------------------------------------------------------------------
 
 
+def private_file(directory, prefix, text):
+    """A new file in directory, readable by the owner only, holding text; the caller deletes it."""
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    descriptor, name = tempfile.mkstemp(prefix=prefix, suffix=".json", dir=directory)  # Created with mode 0600.
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        stream.write(text)
+    return Path(name)
+
+
 class Lab:
     """The deployed sentinel-dist lab, driven through one Shell."""
 
@@ -1024,8 +1039,14 @@ class Lab:
         patch = [{"op": "test", "path": "/metadata/uid", "value": baseline["target"]["uid"]},
                  {"op": "test", "path": "/metadata/resourceVersion", "value": current["metadata"]["resourceVersion"]},
                  {"op": "replace", "path": "/spec/template", "value": baseline["pod_template"]}]
-        self.shell.kubectl("patch", "deployment", TARGET, "--type=json", "--patch-file=-", namespace=WORKLOAD,
-                           stdin=json.dumps(patch))
+        # kubectl patch reads --patch-file as a path and has no "-" for standard input (on Windows it
+        # looked for a file named "-"), so the patch, which holds no credential, goes to a private file.
+        path = private_file(self.run_dir, "restore-patch-", json.dumps(patch))
+        try:
+            self.shell.kubectl("patch", "deployment", TARGET, "--type=json", "--patch-file=" + str(path),
+                               namespace=WORKLOAD)
+        finally:
+            path.unlink(missing_ok=True)
         self.shell.kubectl("rollout", "status", "deployment/" + TARGET, "--timeout=180s", namespace=WORKLOAD,
                            timeout=200)
         return {"operator_restore": True, "at": stamp(self.clock())}
