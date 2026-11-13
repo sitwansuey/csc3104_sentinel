@@ -111,6 +111,21 @@ class ApprovedImagesPolicyTests(unittest.TestCase):
         self.assertEqual((selector["key"], selector["operator"], selector["values"]),
                          ("kubernetes.io/metadata.name", "In", ["sentinel-boutique-connected"]))
 
+    def test_docs_state_what_the_guard_preview_does_with_a_denial(self):
+        # services/guard/preview.py maps any non-zero kubectl exit, a denial
+        # included, to UNKNOWN (SERVER_DRY_RUN_FAILED), and the Guard then
+        # escalates (tests/test_guard_preview.py, tests/test_guard_decisions.py).
+        # Neither the policy comment nor the security doc may say it rejects.
+        security = " ".join((ROOT / "docs/security.md").read_text(encoding="utf-8").split())
+        comment = " ".join(line.lstrip("# ") for line in VAP.read_text(encoding="utf-8").splitlines()
+                           if line.startswith("#"))
+        for name, text in (("docs/security.md", security), ("approved-images-vap.yaml", comment)):
+            with self.subTest(name=name):
+                for claim in ("SERVER_DRY_RUN_REJECTED", "two layers agree"):
+                    self.assertFalse(claim in text, f"{name} still says {claim}")
+                for code in ("SERVER_DRY_RUN_UNKNOWN", "SERVER_DRY_RUN_FAILED"):
+                    self.assertTrue(code in text, f"{name} does not name {code}")
+
 
 class ScanReaderTests(Workspace):
     def test_newest_completed_scan_wins_and_failures_never_hide_it(self):

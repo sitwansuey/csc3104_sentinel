@@ -321,6 +321,22 @@ class LiveExecutorTests(unittest.TestCase):
         self.assertEqual(check.decision["verdict"], "REJECT")
         self.assertIn("IMAGE_CVE_REGRESSION", check.decision["reason_codes"])
 
+    def test_cve_gate_regression_is_not_applied_and_writes_nothing(self):
+        image = self.enable_cve_gate()
+        worse = "demo/sentinel@sha256:" + "d" * 64
+        scans = self.directory / "scans"
+        scans.mkdir()
+        (scans / "current.json").write_text(json.dumps(gate_scan(image, ("CVE-1", "HIGH"))), encoding="utf-8")
+        (scans / "worse.json").write_text(json.dumps(gate_scan(worse, ("CVE-1", "HIGH"), ("CVE-9", "CRITICAL"))),
+                                          encoding="utf-8")
+        self.baseline["pod_template"]["spec"]["containers"][0]["image"] = worse
+        self.bind_template()
+        self.save_inputs()
+        result = execute(self.proposal, self.build(image_scans=scans))
+        self.assertNotEqual(result["status"], "APPLIED")
+        self.assertIn("IMAGE_CVE_REGRESSION", json.dumps(result))
+        self.assertEqual(self.cluster.writes, [])
+
     def test_cli_passes_the_scan_directory_and_exceptions(self):
         scans, exceptions = self.directory / "scans", self.directory / "cve-exceptions.json"
         with patch("runtime.live_executor.build_adapters", side_effect=GuardInputError("stop")) as build:

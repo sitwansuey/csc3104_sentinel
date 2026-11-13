@@ -9,11 +9,16 @@
 # writes that ConfigMap from passing gate results: repository@sha256 references
 # only, never a tag, so a workload pinned by tag is denied. Pod UPDATEs are not
 # matched, so Chaos Mesh pod-failure (which swaps a running Pod's image) is not
-# blocked. A missing ConfigMap denies (parameterNotFoundAction: Deny).
+# blocked, and neither is an ephemeral container added later through the
+# pods/ephemeralcontainers subresource (kubectl debug). A missing ConfigMap
+# denies (parameterNotFoundAction: Deny).
 #
-# This layer and the Guard's gate share services/image_security.gate: the
-# Guard's server dry-run (services/guard/preview.py) then reports a denial here
-# as SERVER_DRY_RUN_REJECTED, so the two layers agree.
+# The approved list comes from services/image_security.gate, the same gate the
+# Guard uses. With Deny on, the Guard's server dry-run (services/guard/preview.py)
+# of a template naming an unapproved digest fails; kubectl does not tell an
+# admission denial apart from other failures, so the preview reports UNKNOWN
+# (detail SERVER_DRY_RUN_FAILED) and the Guard escalates on
+# SERVER_DRY_RUN_UNKNOWN rather than rejecting.
 #
 # The binding ships with Audit and Warn, which reject nothing. The connected
 # lab has no API server audit log, so Warn is what shows a would-be denial: as

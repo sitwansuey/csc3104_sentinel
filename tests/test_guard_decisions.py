@@ -351,6 +351,16 @@ class GuardDecisionTests(unittest.TestCase):
                 self.assertEqual(decision["verdict"], "ESCALATE")
                 self.assertIn("SERVER_DRY_RUN_STALE", decision["reason_codes"])
 
+    def test_failed_preview_such_as_an_admission_denial_escalates(self):
+        # preview.py reports any non-zero kubectl exit, an admission denial
+        # included, as UNKNOWN with SERVER_DRY_RUN_FAILED.
+        self.require_preview()
+        self.preview.update(status="UNKNOWN", details_code="SERVER_DRY_RUN_FAILED", admitted_template_sha256=None)
+        decision, _ = self.decide()
+        self.assertEqual(decision["verdict"], "ESCALATE")
+        self.assertIn("SERVER_DRY_RUN_UNKNOWN", decision["reason_codes"])
+        self.assertNotIn("SERVER_DRY_RUN_REJECTED", decision["reason_codes"])
+
     def test_admission_mutation_or_rejection_is_a_hard_failure(self):
         self.require_preview()
         self.preview["admitted_template_sha256"] = "b" * 64

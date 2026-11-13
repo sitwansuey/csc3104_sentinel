@@ -244,15 +244,28 @@ Three places use it:
   (`runtime/image_scans.py`) in `LiveGuardAuthorizer`, the Guard worker and
   `services/guard/cli.py --context --image-scans`. They are therefore part of
   `inputs_sha256`: a changed scan voids an earlier ALLOW. SCALE creates Pods
-  from the current template, so it is not gated.
+  from the current template, so it is not gated. In `non_regression` mode this
+  changes nothing, since the current image's findings count as inherited; in
+  strict mode (P5.03) SCALE of a vulnerable current image would still be
+  allowed, so P5.03 must decide whether to gate SCALE too.
 - **Admission.** `deploy/security/approved-images-vap.yaml` is a
   ValidatingAdmissionPolicy that admits a Deployment CREATE or UPDATE, or a
   Pod CREATE, in `sentinel-boutique-connected` only when every container image
   is listed in the ConfigMap `sentinel-admission/sentinel-approved-images`.
   `gate_images.py vap-params` writes that ConfigMap from passing gate results:
   `repository@sha256` references only, never a tag. Pod UPDATEs are not
-  matched, so Chaos Mesh pod-failure is not blocked. With Deny on, the Guard's
-  server dry-run reports a denial as `SERVER_DRY_RUN_REJECTED`.
+  matched, so Chaos Mesh pod-failure is not blocked, and neither is an
+  ephemeral container added later through the `pods/ephemeralcontainers`
+  subresource (`kubectl debug`): ephemeral containers are checked only when a
+  Pod is created with them. With Deny on, a server dry-run of a template that
+  names an unapproved digest fails, but kubectl does not tell an admission
+  denial apart from other failures, so the Guard's preview
+  (`services/guard/preview.py`) reports it as UNKNOWN with detail
+  `SERVER_DRY_RUN_FAILED`, and the Guard escalates on
+  `SERVER_DRY_RUN_UNKNOWN` rather than rejecting. The preview rejects only
+  when admission changes the template (`ADMISSION_TEMPLATE_MUTATED`). A
+  REJECT for a worse image comes from the Guard's own gate
+  (`IMAGE_CVE_REGRESSION`), not from admission.
 - **CI.** The `test` job runs `gate_images.py check-exceptions` on
   `deploy/security/cve-exceptions.json` and fails on a malformed or expired
   exception. Sentinel's own images are scanned and gated in the release
@@ -276,7 +289,7 @@ cannot be weakened by a typo.
 | `IMAGE_SCANNER_UNTRUSTED` | FAIL | The scan does not name the pinned scanner digest |
 | `IMAGE_CVE_REGRESSION` | FAIL | A blocked finding that the same container's current image does not have |
 | `IMAGE_CVE_INHERITED` | PASS (non_regression), FAIL (strict) | A blocked finding the current image already has |
-| `IMAGE_CURRENT_SCAN_UNAVAILABLE` | UNKNOWN | Inheritance cannot be shown: the current image has no usable scan |
+| `IMAGE_CURRENT_SCAN_UNAVAILABLE` | UNKNOWN | Inheritance cannot be shown: the current image has no usable scan. An image-fault recovery (R2, C2: the current template runs an unscanned or nonexistent digest) to a baseline with High or Critical findings therefore escalates |
 | `IMAGE_CVE_BLOCKED` | FAIL | Strict mode, blocked findings, current image unknown |
 | `IMAGE_CVE_EXCEPTED` | PASS | Covered by a reviewed, unexpired exception for this digest and id |
 | `IMAGE_EXCEPTION_EXPIRED` | FAIL | The exception that covered a needed finding has expired |
@@ -321,11 +334,28 @@ regression, malformed scans are invalid, duplicate container names cannot hide
 an image), `tests/test_guard.py` (a changed `image_scans` changes
 `inputs_sha256` and voids the decision), `tests/test_live_executor.py` (the
 authorizer asks for every image of both templates, a reader failure
-escalates, caller-supplied scans are ignored, a worse digest is refused) and
+escalates, caller-supplied scans are ignored, a worse digest is refused and
+`execute()` makes no write) and
 `tests/test_cve_gate_admission.py` (the admission policy's shape, the
 parameters hold digests only, unscanned digests are not approved, the
 inventory never guesses a digest, and the Guard image holds every module
-the Guard imports, the gate's included).
+the Guard imports, the gate's included). Two tests pin what the Guard
+already did with a failed server dry-run, so the admission text above stays
+true: `tests/test_guard_preview.py` (a policy denial is UNKNOWN,
+`SERVER_DRY_RUN_FAILED`) and `tests/test_guard_decisions.py` (that preview
+escalates).
+
+What the gate does not show. Non-regression is measured against the image
+the same container runs now, not against an approved set. If the current
+template is itself the faulty or attacker-written one, a vulnerable but
+scanned current digest makes the same findings in a baseline look inherited;
+and an image swapped in out of band while admission is still Audit and Warn
+counts the same way. Admission in Deny mode is what limits who can make the
+current template worse. The trust roots are write access, not signatures:
+`scanner_image` is a field each scan file declares about itself, so whoever
+can write the `--image-scans` directory decides what the Guard sees, and
+whoever can write the ConfigMap `sentinel-admission/sentinel-approved-images`
+can approve an image for admission. Both must stay with the operator.
 
 ### Live inventory
 
@@ -355,7 +385,14 @@ it. Use a new folder; `$run` below is that folder.
    python scripts/security/image_inventory.py --context kind-sentinel-boutique-connected --scans $run/scans --output $run/inventory.json --scan-queue $run/queue.json
    ```
 
-   Stop if the server is older than 1.30 or any container is UNKNOWN.
+   Stop if the server is older than 1.30 or any container is UNKNOWN. Stop
+   too if any container's `image` in `inventory.json` is not a plain
+   `repository@sha256:` reference (a tag, or `repository:tag@sha256:`):
+   admission compares the spec string exactly, while the inventory resolved
+   it to a digest, so under Deny that workload's next update would be denied.
+   One way to list them:
+   `(Get-Content $run/inventory.json | ConvertFrom-Json).workloads | Where-Object { $_.image -notmatch '^([^/@]+/)*[^/:@]+@sha256:[a-f0-9]{64}$' }`
+   must print nothing.
 
 2. Scan every running digest with the pinned Trivy (about 2-5 minutes each):
    `python scripts/security/watch_security.py --inventory $run/queue.json --journal $run/security.db --directory $run/scans --once`.
@@ -370,7 +407,12 @@ it. Use a new folder; `$run` below is that folder.
    python scripts/security/gate_images.py vap-params --scans $run/scans --rules deploy/security/cve-gate.json --exceptions deploy/security/cve-exceptions.json --inventory $run/inventory.json --extra-image <probe repository@sha256> --output $run/approved-images.json --report $run/vap-report.json
    ```
 
-4. Apply in Audit and Warn mode and check the policy compiled:
+4. Steps 4 to 8 change the connected lab and do not take the heavy-lab lock
+   themselves. Before step 4, check that no other heavy-lab run holds it
+   (`Test-Path (Join-Path ([IO.Path]::GetTempPath()) sentinel-heavy-lab.lock)`
+   must print False) and that any P4.01 run on `kind-sentinel-dist` has
+   finished, and start no other heavy-lab run until step 8 is done.
+   Apply in Audit and Warn mode and check the policy compiled:
 
    ```powershell
    kubectl --context kind-sentinel-boutique-connected create namespace sentinel-admission
@@ -397,14 +439,27 @@ it. Use a new folder; `$run` below is that folder.
    `--report` must ALLOW with `IMAGE_CVE_INHERITED` PASS in the report. With a
    crafted baseline naming a scanned, more vulnerable digest, the same command
    must exit 2 with `IMAGE_CVE_REGRESSION`; the Deployment's resourceVersion
-   must be unchanged afterwards (0 writes).
+   must be unchanged afterwards (0 writes). Last, the admission denial as the
+   Guard sees it: a crafted baseline naming a digest that has a fresh,
+   passing scan in `$run/scans` but is not in the approved ConfigMap (for
+   example one scanned after step 3), with the policy's
+   `require_server_dry_run` on and `--server-dry-run` added, must exit 3 with
+   ESCALATE and `SERVER_DRY_RUN_UNKNOWN` in the report (detail
+   `SERVER_DRY_RUN_FAILED`), never ALLOW. The CLI runs the dry-run only when
+   every other check passes, so a baseline the gate already refuses never
+   reaches admission here.
 
 7. Rerun with the gate on:
    `python scripts/test_boutique_live.py --connected --target cartservice --approval auto-lab --image-scans $run/scans --cve-exceptions deploy/security/cve-exceptions.json`
    (P3.09), and the same with `--scenario N2`, `N3` and `T1` (P4.03). R2 and
    C2 inject an image digest that names no published image, so with Deny on
    their injection is refused by admission: run them only in Audit and Warn
-   mode, or report them as blocked by the gate.
+   mode, or report them as blocked by the gate. Even in Audit and Warn mode
+   the Guard will not ALLOW their recovery when the upstream baseline image
+   has High or Critical findings: the faulty current digest has no scan, so
+   inheritance cannot be shown and the Guard escalates with
+   `IMAGE_CURRENT_SCAN_UNAVAILABLE`. That is the gate failing closed; report
+   it as such, not as a recovery.
 
 8. Clean up: delete the binding, the policy and the `sentinel-admission`
    namespace, then collect the run with `scripts/evidence/collect.py`.
@@ -415,6 +470,8 @@ These are safety-critical and wait for an owner:
 
 - the Guard change: the gate block, its codes and the argument above, before
   any live policy sets it;
+- the Guard image change: `deploy/docker/guard.Dockerfile` now copies
+  `services/image_security.py` and `runtime/image_scans.py`;
 - the admission policy, before step 5 switches it to Deny;
 - non-regression as the default mode, and which targets move to strict mode
   (P5.03);
