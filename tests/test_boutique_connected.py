@@ -860,6 +860,8 @@ class RedisProbeTests(unittest.TestCase):
                          (self.template["spec"]["containers"][0]["image"], "Never"))
         self.assertEqual(container["securityContext"]["capabilities"], {"drop": ["ALL"]})
         self.assertIs(pod["spec"]["automountServiceAccountToken"], False)
+        # The grpcurl probe's labels: the graph-derived NetworkPolicies admit it to redis-cart only.
+        self.assertEqual(pod["metadata"]["labels"], {"app": "sentinel-probe", "sentinel.io/probe-target": "redis-cart"})
         self.experiment.baseline["pod_template"]["spec"]["containers"][0]["image"] = "redis:alpine"
         with self.assertRaisesRegex(RuntimeError, "pinned by digest"):
             self.experiment.redis_probe_pod("redis-probe-2")

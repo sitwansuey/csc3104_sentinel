@@ -303,11 +303,34 @@ class GraphPolicyTests(unittest.TestCase):
                          {"ingress-" + name for name in callees})
 
     def test_reachability_is_exactly_the_graph_plus_probes_and_storefront_traffic(self):
+        # redis-cart is probed only in its scenario pair (P4.05), with a Redis PING on its own port.
         expected = graph_edges() | {("sentinel-traffic", "frontend", 8080), ("probe:cartservice", "cartservice", 7070),
-                                    ("probe:shippingservice", "shippingservice", 50051)}
+                                    ("probe:shippingservice", "shippingservice", 50051),
+                                    ("probe:redis-cart", "redis-cart", 6379)}
         found = reachable(self.items, "sentinel-boutique-connected",
-                          identities=("sentinel-intruder", "sentinel-traffic", *sorted(APPLICATIONS)))
+                          identities=("sentinel-intruder", "sentinel-traffic", *sorted(APPLICATIONS)),
+                          probes=("cartservice", "redis-cart", "shippingservice"))
         self.assertEqual(found, expected)
+
+    def test_the_redis_probe_pod_reaches_only_redis_cart_on_its_port(self):
+        from experiments.boutique.harness import targets
+        lab = SimpleNamespace(name="redis-cart", namespace="sentinel-boutique-connected",
+                              profile=targets.profile("redis-cart"), baseline={"pod_template": {"spec": {
+                                  "containers": [{"name": "redis", "image": "docker.io/library/redis@sha256:" + "a" * 64}]}}})
+        pod = BoutiqueExperiment.redis_probe_pod(lab, "redis-probe-test")
+        source = {"namespace": "sentinel-boutique-connected", "labels": pod["metadata"]["labels"]}
+        self.assertEqual(source["labels"], {"app": "sentinel-probe", "sentinel.io/probe-target": "redis-cart"})
+        graph = network_policy.load_graph()
+        for destination, value in graph["ports"].items():
+            with self.subTest(destination=destination):
+                self.assertIs(network_policy.allowed(self.items, source, {
+                    "namespace": "sentinel-boutique-connected", "labels": {"app": destination}}, value["target"]),
+                    destination == "redis-cart")
+        # Without its labels the same Pod is refused, as every Redis PING was before.
+        self.assertFalse(network_policy.allowed(self.items, {**source, "labels": {}}, {
+            "namespace": "sentinel-boutique-connected", "labels": {"app": "redis-cart"}}, 6379))
+        self.assertIn("redis-cart", network_policy.connected_probe_targets())
+        self.assertNotIn("redis-cart", network_policy.probe_targets())  # The security lab never runs a pair.
 
     def test_each_graph_edge_is_allowed_exactly_once_in_each_direction(self):
         for key, peers, side in (("ingress", "from", "callee"), ("egress", "to", "caller")):
@@ -342,9 +365,15 @@ class GraphPolicyTests(unittest.TestCase):
         for items, namespace in ((self.items, "sentinel-boutique-connected"), (lab_items(), NAMESPACE)):
             sources = {source for source, destination, _ in reachable(items, namespace) if destination == "redis-cart"}
             self.assertEqual(sources, {"cartservice"})
+        # Besides cartservice, only the redis-cart probe Pod of a scenario-pair run, on the same port.
         policy = next(item for item in self.items if item["metadata"]["name"] == "ingress-redis-cart")
-        self.assertEqual(policy["spec"]["ingress"], [{"from": [{"podSelector": {"matchLabels": {"app": "cartservice"}}}],
-                                                      "ports": [{"protocol": "TCP", "port": 6379}]}])
+        self.assertEqual(policy["spec"]["ingress"], [
+            {"from": [{"podSelector": {"matchLabels": {"app": "cartservice"}}}],
+             "ports": [{"protocol": "TCP", "port": 6379}]},
+            {"from": [{"podSelector": {"matchLabels": {"app": "sentinel-probe", "sentinel.io/probe-target": "redis-cart"}}}],
+             "ports": [{"protocol": "TCP", "port": 6379}]}])
+        lab_policy = next(item for item in lab_items() if item["metadata"]["name"] == "ingress-redis-cart")
+        self.assertEqual(len(lab_policy["spec"]["ingress"]), 1)
 
     def test_regeneration_is_byte_stable_and_the_committed_file_is_current(self):
         shuffled = dict(self.graph, edges=list(reversed(self.graph["edges"])), nodes=list(reversed(self.graph["nodes"])))

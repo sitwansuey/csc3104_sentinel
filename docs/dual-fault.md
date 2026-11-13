@@ -48,6 +48,12 @@ repair NOT_RECOVERED. A pair run therefore verifies each target in the
 - the readiness of the services it calls (cart: redis-cart; shipping and
   redis-cart: none), never its callers or an unrelated service.
 
+The Redis probe Pod carries the same `app=sentinel-probe` and
+`sentinel.io/probe-target` labels as the grpcurl probes, so the
+graph-derived NetworkPolicies for the connected namespace admit it to
+redis-cart's port and nothing else
+([security](security.md#graph-derived-networkpolicies)).
+
 The storefront is still recorded in every reading. After both incidents
 settle, the harness collects more journeys, each journaled as `pair-shop`,
 and judges the shop separately (`shop_outcome` in

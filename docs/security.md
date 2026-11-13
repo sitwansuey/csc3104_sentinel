@@ -57,7 +57,8 @@ The set contains:
   only DNS to kube-dns (UDP and TCP 53), apart from the edges below.
 - `ingress-<service>`: exactly the service's callers, on its Pod port. Each
   graph edge appears once here and once in the caller's `egress-<service>`.
-  redis-cart accepts only cartservice on 6379.
+  redis-cart accepts only cartservice on 6379 (and, in the connected
+  namespace's set, the redis-cart probe; see below).
 - frontend accepts only in-cluster storefront traffic Pods labelled
   `app=sentinel-traffic`. The lab reaches the storefront through
   `kubectl port-forward`, which enters the Pod through the container runtime
@@ -66,7 +67,12 @@ The set contains:
   `sentinel.io/probe-target=<target>`, and each may reach only its own
   target's port. In the lab only the cartservice probe is allowed: shipping
   keeps its existing `protect-*` policies, so it still accepts only the mTLS
-  gateway, and a Sentinel probe of shipping is refused there.
+  gateway, and a Sentinel probe of shipping is refused there. The plain set
+  for the connected namespace (`graph_policies`) also admits the redis-cart
+  probe on 6379, because a scenario-pair run ([dual-fault.md](dual-fault.md))
+  checks redis-cart with a Redis PING from a Pod with the same two labels
+  (`connected_probe_targets`); the security lab never runs a pair, so its
+  committed set is unchanged.
 
 In the lab, frontend and checkoutservice reach shipping only through
 `security-gateway:8443`, and only the gateway reaches shippingservice, on
