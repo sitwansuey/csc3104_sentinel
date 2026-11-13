@@ -255,9 +255,9 @@
       "workaround": "Use the SQLite default; nothing selects Postgres. A deployment that needs a second Coordinator still has none (L-SINGLE-COORDINATOR).",
       "cites": [
         {"at": "services/coordinator/db.py:293", "text": "raise BackendUnavailable(POSTGRES_DEFERRED)"},
-        {"at": "tests/test_coordinator_db.py:98", "text": "def test_each_flow_leaves_the_same_file_and_sends_the_same_statements"},
-        {"at": "tests/test_coordinator_db.py:371", "text": "def test_postgres_refuses_without_echoing_the_url"},
-        {"at": "tests/test_coordinator_db.py:504", "text": "def test_what_a_postgres_store_still_needs_is_listed"},
+        {"at": "tests/test_coordinator_db.py:102", "text": "def test_each_flow_leaves_the_same_file_and_sends_the_same_statements"},
+        {"at": "tests/test_coordinator_db.py:375", "text": "def test_postgres_refuses_without_echoing_the_url"},
+        {"at": "tests/test_coordinator_db.py:508", "text": "def test_what_a_postgres_store_still_needs_is_listed"},
         {"at": "services/coordinator/read.py"}
       ],
       "planned": ["P5.01"],
