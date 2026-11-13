@@ -656,7 +656,7 @@
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-13",
-      "impact": "Since P5.04 the security lab's inspector runs at most 16 inspections at once and starts at most 200 per second; a request over either bound is answered 503 before inspection, Envoy keeps failure_mode_allow false and caps its connections to the inspector at 32, and /readyz answers 503 while every slot is taken or the journal cannot take a write, with the gateway's inspector container gated on it. Offline tests against the real inspector on loopback show overload and an unwritable journal deny with 503 and never allow, and /readyz flips and recovers; the 200-call burst, the inspector kill and resource measurements in the live recipe have not run, and the limits are defaults, not measured against storefront latency. One gateway Deployment with one replica carries both protected routes, so its outage, or a flood that fills its slots, denies every shipping and cart call (fail closed, an availability loss rather than a bypass).",
+      "impact": "Since P5.04 the security lab's inspector runs at most 16 inspections at once and starts at most 200 per second; a request over either bound is answered 503 before inspection, Envoy keeps failure_mode_allow false and caps its connections to the inspector at 32, and /readyz answers 503 while every slot is taken or the journal cannot take a write, with the gateway's inspector container gated on it. Offline tests against the real inspector on loopback show overload and an unwritable journal deny with 503 and never allow, and /readyz flips and recovers; the live recipe's storefront load through the gateway (with invalid probes and a log check that nothing reached cartservice without an inspector ALLOW), its 200-call burst straight to the inspector, the inspector kill and the resource measurements have not run. The recipe loads the gateway through the storefront rather than with 200 concurrent grpcurl calls as the design asks, because the reviewed grpcurl image has no shell (an owner sign-off item), and the limits are defaults, not measured against storefront latency. One gateway Deployment with one replica carries both protected routes, so its outage, or a flood that fills its slots, denies every shipping and cart call (fail closed, an availability loss rather than a bypass).",
       "workaround": "Describe the bound as offline-tested and the gateway as a single replica; never claim high availability or measured capacity. Run the P5.04 live recipe in docs/security.md before quoting latency or resource numbers.",
       "cites": [
         {"at": "runtime/security_inspector.py", "text": "def admit(self):"},
@@ -664,6 +664,7 @@
         {"at": "scripts/security/security_lab.py", "text": "INSPECTOR_CONNECTIONS = 32"},
         {"at": "tests/test_security_lab_serve.py", "text": "def test_exhausted_inflight_denies_with_503_and_readyz_flips_and_recovers(self):"},
         {"at": "tests/test_security_lab_serve.py", "text": "def test_unwritable_journal_denies_with_503_and_readyz_flips_and_recovers(self):"},
+        {"at": "scripts/security/inspector_burst.py", "text": "def compare_logs(inspector_log, upstream_log):"},
         {"at": "docs/security.md", "text": "### Live recipe (not run yet)"}
       ],
       "planned": ["P5.04"],

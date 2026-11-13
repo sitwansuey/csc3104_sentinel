@@ -956,9 +956,10 @@ class FakeLab:
 
 
 class SecurityLabValidationTests(unittest.TestCase):
-    def validate(self, matrix_status, *, probe=None):
+    def validate(self, matrix_status, *, probe=None, fake=None):
         from scripts.security import boutique_security as lab
-        fake = FakeLab()
+        # A probe built on its own FakeLab must share this one, or it never sees the outage.
+        fake = fake or FakeLab()
         storefront = SimpleNamespace(journey=lambda: {"passed": True}, _request=lambda opener, path: (200, "", None))
         with tempfile.TemporaryDirectory() as folder, \
                 patch.object(lab.provenance, "collect", return_value={"captured_by": "test"}), \
@@ -999,10 +1000,53 @@ class SecurityLabValidationTests(unittest.TestCase):
             if kwargs == {"route": "cart", "target": "cartservice:7070", "secure": False}:
                 return {"succeeded": True, "output": ""}  # plaintext cart reachable: the route is not protected
             return result
-        fake_lab, saved, error = self.validate("PASS", probe=probe)
+        fake_lab, saved, error = self.validate("PASS", probe=probe, fake=fake)
         self.assertIsInstance(error, RuntimeError)
         self.assertIs(saved["passed"], False)
         self.assertTrue(saved["cart_direct_service_bypass"]["succeeded"])
+
+    def numbered_probe(self, fake, flip=None):
+        """fake.probe, numbering each call in its result; the call numbered flip succeeds."""
+        calls = []
+
+        def probe(directory, **kwargs):
+            result = dict(fake.probe(directory, **kwargs), call=len(calls))
+            calls.append(kwargs)
+            if result["call"] == flip:
+                result["succeeded"] = True
+            return result
+        return probe
+
+    def test_every_probe_validate_saves_is_in_the_verdict_exactly_once(self):
+        from scripts.security import boutique_security as lab
+        fake = FakeLab()
+        _, saved, error = self.validate("PASS", probe=self.numbered_probe(fake), fake=fake)
+        self.assertIsNone(error)
+        probed = {key for key, value in saved.items() if isinstance(value, dict) and "call" in value}
+        verdict = lab.ALLOWED_PROBES + lab.DENIED_PROBES
+        self.assertEqual(len(verdict), len(set(verdict)))
+        self.assertEqual(probed, set(verdict))
+        self.assertEqual(len(probed), len(fake.probes))
+
+    def test_any_denied_probe_that_succeeds_fails_the_validation(self):
+        # Find which call fills each saved key; two probes may send the same arguments
+        # (the plaintext cart call before and during the outage), so match by call number.
+        # The denied probes are read from what validate() saves, not from DENIED_PROBES,
+        # so a probe left out of that tuple is still checked here.
+        fake = FakeLab()
+        _, baseline, error = self.validate("PASS", probe=self.numbered_probe(fake), fake=fake)
+        self.assertIsNone(error)
+        denied = [key for key, value in baseline.items()
+                  if isinstance(value, dict) and "call" in value and not value["succeeded"]]
+        self.assertEqual(len(denied), 16)
+        for key in denied:
+            with self.subTest(probe=key):
+                fake = FakeLab()
+                _, saved, error = self.validate("PASS", probe=self.numbered_probe(fake, baseline[key]["call"]),
+                                                fake=fake)
+                self.assertIsInstance(error, RuntimeError)
+                self.assertIs(saved["passed"], False)
+                self.assertEqual([name for name in denied if saved[name]["succeeded"]], [key])
 
     def test_a_cart_route_that_refuses_valid_calls_fails_the_validation(self):
         fake = FakeLab()
@@ -1010,7 +1054,7 @@ class SecurityLabValidationTests(unittest.TestCase):
         def probe(directory, **kwargs):
             result = fake.probe(directory, **kwargs)
             return {"succeeded": False, "output": ""} if kwargs == {"route": "cart"} else result
-        fake_lab, saved, error = self.validate("PASS", probe=probe)
+        fake_lab, saved, error = self.validate("PASS", probe=probe, fake=fake)
         self.assertIsInstance(error, RuntimeError)
         self.assertIs(saved["passed"], False)
         self.assertTrue(saved["valid_mtls_quote"]["succeeded"])

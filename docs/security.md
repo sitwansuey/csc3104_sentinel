@@ -109,7 +109,8 @@ installs none of them.
 `test` (and `start`) runs the matrix right after the first storefront journey.
 One short-lived tester Pod runs for each identity: an intruder with no
 reviewed role, storefront traffic, each of the 11 services, the gateway, the
-existing `security-test` probe identity and the cartservice Sentinel probe.
+existing `security-test` probe identity and the cartservice Sentinel probe
+(still a tester identity, so the matrix shows the lab refuses it since P5.04).
 Each tries a TCP connection, with a 3 s timeout, to every Service in the
 namespace: 16 identities by 15 Services since P5.04 (13 before: the cart
 route adds `security-cart-gateway` and `security-cart-upstream`), with 20
@@ -272,9 +273,15 @@ the reasons `journal_unwritable` or `inflight_exhausted`. The inspector serves
 127.0.0.1 only, so the kubelet cannot reach it with an `httpGet` probe; the
 inspector container's readiness probe runs Python inside the container to
 fetch `/readyz` (every 5 s, unready after 2 failures). While it fails, the
-gateway Pod leaves both gateway Services, and callers are refused. The
-defaults are not measured against storefront latency yet. One gateway replica
-is a single point of failure; nothing here makes it highly available.
+gateway Pod leaves both gateway Services, and callers are refused. The two
+routes share fate: one gateway Pod serves both, so a cart flood that keeps
+all 16 slots busy at two probe checks in a row also takes shipping (and so
+checkout) out of service for at least one probe period. That fails closed, as
+E10 asks, but it widens an outage; whether a busy inspector should mark the
+Pod unready at all, or only an unwritable journal should, is an owner
+decision. The defaults are not measured against storefront latency yet. One
+gateway replica is a single point of failure; nothing here makes it highly
+available.
 
 The smaller `security_lab.py` compose lab still protects shipping only.
 
@@ -306,6 +313,17 @@ need an owner's review before merge. The argument, with the tests that hold it:
 - In the lab the Sentinel cartservice probe can no longer reach cartservice,
   because only the gateway can. Nothing in the security lab runs recovery, so
   nothing used that probe there; P5.05 adds the authenticated probe.
+- The live recipe departs from E10 in how it loads the gateway. E10 asks for
+  200 concurrent grpcurl `GetCart` calls through the gateway. The reviewed
+  grpcurl image has no shell, so one test Pod makes one call, and 200 test
+  Pods at once would not fit on the one kind node. Step 1 below therefore
+  loads the cart route through the storefront instead (every cart page load
+  is a `GetCart` through the gateway), runs the invalid probes through the
+  gateway while that load runs, and compares the inspector's ALLOW events
+  with the requests that reached cartservice
+  (`tests/test_security_lab_serve.py::GatewayLoadRecipeTests.test_bypass_check_fails_on_an_uninspected_request_or_an_allowed_add_item`).
+  Step 2's 200 concurrent calls go straight to the inspector and skip Envoy.
+  The owner should accept this or ask for a load client image with a shell.
 
 ### Live recipe (not run yet)
 
@@ -334,44 +352,95 @@ checkout through both routes) passed; the matrix is PASS with 20 allowed
 cells and 16 by 15 rows. The run folder's `telemetry.sqlite3` holds
 CartService inspection events.
 
-Burst and inspector outage, with the lab still running:
+Load, burst and inspector outage, with the lab still running:
 
 ```powershell
 $ctx = "--context=kind-sentinel-boutique-security"; $ns = "--namespace=sentinel-boutique-security"
-# 1. 200 concurrent cart checks against the inspector itself. port-forward enters the gateway
-#    Pod's own network namespace, where the inspector listens on 127.0.0.1:9001.
+$run = "data/experimentation/runs/protected-boutique-cart"
+# 1. Load through the whole cart route for 90 s: 200 workers load the storefront's cart page over
+#    and over, so each load sends GetCart through frontend's egress sidecar, the gateway's Envoy
+#    (32-connection circuit breaker, ext_authz with failure_mode_allow false) and the inspector.
+#    While the load runs, invalid cart and shipping calls go through the gateway from test Pods.
+$t0 = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+$front = Start-Process kubectl -ArgumentList $ctx,$ns,"port-forward","service/frontend","18081:80" -PassThru -NoNewWindow
+Start-Sleep 3
+$load = Start-Process python -ArgumentList "scripts/security/inspector_burst.py","--storefront-port","18081","--workers","200","--seconds","90" -RedirectStandardOutput "$run/gateway-load.json" -PassThru -NoNewWindow
+Start-Sleep 10
+foreach ($i in 1..3) { python scripts/security/boutique_security.py probe --route cart --quantity 11 --directory $run; "cart quantity 11: exit $LASTEXITCODE" }
+python scripts/security/boutique_security.py probe --route shipping --quantity 101 --directory $run; "shipping quantity 101: exit $LASTEXITCODE"
+python scripts/security/boutique_security.py probe --route cart --directory $run; "valid cart call under load: exit $LASTEXITCODE"
+kubectl $ctx $ns exec deployment/security-gateway -c inspector -- python -c "import http.client as h; c = h.HTTPConnection('127.0.0.1', 9001, timeout=2); c.request('GET', '/readyz'); r = c.getresponse(); print(r.status, r.read().decode())"
+$load.WaitForExit(); Stop-Process -Id $front.Id
+Get-Content "$run/gateway-load.json"
+kubectl $ctx $ns logs deployment/security-gateway -c inspector --since-time=$t0 | Out-File -Encoding utf8 "$run/inspector-window.log"
+kubectl $ctx $ns logs deployment/cartservice -c cart-ingress --since-time=$t0 | Out-File -Encoding utf8 "$run/cart-ingress-window.log"
+kubectl $ctx $ns logs deployment/security-gateway -c envoy --since-time=$t0 | Out-File -Encoding utf8 "$run/gateway-window.log"
+python scripts/security/inspector_burst.py --compare "$run/inspector-window.log" "$run/cart-ingress-window.log"
+Get-Content "$run/gateway-window.log" | Where-Object { $_ -like '{*' } | ConvertFrom-Json | Group-Object route, status, flags | Select-Object Count, Name
+# 2. 200 concurrent cart checks straight to the inspector, to see its own bound. This skips
+#    Envoy. port-forward enters the gateway Pod's own network namespace, where the inspector
+#    listens on 127.0.0.1:9001.
 $forward = Start-Process kubectl -ArgumentList $ctx,$ns,"port-forward","deployment/security-gateway","19001:9001" -PassThru -NoNewWindow
+Start-Sleep 3
 python scripts/security/inspector_burst.py --port 19001 --count 200
 kubectl $ctx $ns top pod -l app=security-gateway --containers
 Stop-Process -Id $forward.Id
-# 2. During and after the burst, an invalid cart call through the gateway is still refused (exit 1)
-#    and a valid one succeeds again (exit 0).
-python scripts/security/boutique_security.py probe --route cart --quantity 11 --directory data/experimentation/runs/protected-boutique-cart
-python scripts/security/boutique_security.py probe --route cart --directory data/experimentation/runs/protected-boutique-cart
-# 3. Stop the inspector process (SIGINT ends serve_forever; the container restarts). Until /readyz
+# 3. After the load and the burst, an invalid cart call through the gateway is still refused
+#    (exit 1) and a valid one succeeds again (exit 0).
+python scripts/security/boutique_security.py probe --route cart --quantity 11 --directory $run
+python scripts/security/boutique_security.py probe --route cart --directory $run
+# 4. Stop the inspector process (SIGINT ends serve_forever; the container restarts). Until /readyz
 #    answers again, cart and shipping calls through the gateway are refused.
 kubectl $ctx $ns exec deployment/security-gateway -c inspector -- python -c "import os, signal; os.kill(1, signal.SIGINT)"
-python scripts/security/boutique_security.py probe --route cart --directory data/experimentation/runs/protected-boutique-cart
-python scripts/security/boutique_security.py probe --route shipping --directory data/experimentation/runs/protected-boutique-cart
+python scripts/security/boutique_security.py probe --route cart --directory $run
+python scripts/security/boutique_security.py probe --route shipping --directory $run
 kubectl $ctx $ns rollout status deployment/security-gateway --timeout=120s
 kubectl $ctx $ns wait pod -l app=security-gateway --for=condition=Ready --timeout=120s
-python scripts/security/boutique_security.py probe --route cart --directory data/experimentation/runs/protected-boutique-cart
+python scripts/security/boutique_security.py probe --route cart --directory $run
 ```
 
-Expected: `inspector_burst.py` prints `passed: true`, `allowed_invalid: 0`,
-some 503s under `denied_overload`, and p50 and p95 latencies; `kubectl top`
-shows the inspector inside its 200m CPU and 96Mi memory limits. `kubectl top`
+Expected, step 1: `gateway-load.json` has `completed: true` and a mix of
+200 and 500 answers (the frontend answers 500 when its `GetCart` is denied);
+it measures and does not judge. Connection errors through `kubectl
+port-forward` are possible at 200 workers; record their count, they are
+neither a pass nor a fail. All four invalid probes exit 1. The valid probe
+under load may exit 0 or 1 (overload may deny it); record which. The
+`/readyz` line shows the inspector's `shed` counts. `--compare` prints
+`passed: true` with `allowed_add_item: 0`: no more cart requests reached
+cartservice (status 200 in the cart-ingress log) than the inspector allowed,
+so none passed uninspected. A request just before `$t0` can, rarely, show in
+one log and not the other; if `--compare` fails by one, repeat the step and
+look at both logs before calling it a bypass. The gateway log grouping shows
+how Envoy answered: 403 and 503 entries (flag `UAEX` for an ext_authz denial
+or error) next to the 200s. If both `shed` counts are 0 and there are no
+503s, the load never reached the bound through the gateway (the frontend or
+port-forward limited it first): say so, and step 1 then shows only that
+nothing bypassed the inspector at the load reached.
+
+Step 2: `inspector_burst.py` prints `passed: true`, `allowed_invalid: 0`,
+some 503s under `denied_overload`, and p50 and p95 latencies. 200
+connections at once through port-forward against a listen backlog of 64 can
+produce connection errors, which fail this step without saying anything
+about the bound; repeat once and record both runs. `kubectl top` shows the
+inspector inside its 200m CPU and 96Mi memory limits (the readiness probe
+starts a Python process every 5 s inside the same limit). `kubectl top`
 needs metrics-server, which the lab does not install; without it, record
 `docker stats --no-stream sentinel-boutique-security-control-plane` (the
-whole node) and the inspector container's restart count instead, and say so. The invalid
-probe exits 1, the valid one 0. After the SIGINT, the first two probes exit
-1 (the inspector is restarting) and the last exits 0. Record the timings and
-`kubectl top` output with the run, then collect evidence as in the NetworkPolicy
-recipe above and stop the lab. One kind node on one host, so this shows the
-bound and the fail-closed behaviour on that host, not capacity on real
-machines. The step-3 probes race the container restart: a probe that starts
-after the inspector is back can succeed, so repeat step 3 if both probes
-succeeded and note it.
+whole node) and the inspector container's restart count instead, and say so.
+
+Step 3: the invalid probe exits 1, the valid one 0. Step 4: after the SIGINT
+the first two probes exit 1 (the inspector is restarting) and the last exits
+0. These probes race the container restart: a probe that starts after the
+inspector is back can succeed, so repeat step 4 if both succeeded and note
+it.
+
+Record the outputs and timings with the run, then collect evidence as in the
+NetworkPolicy recipe above and stop the lab. What this can show, on one kind
+node on one host: step 1, how Envoy answered cart calls at the load the
+storefront reached, and that no request reached cartservice without an
+inspector ALLOW in that window; step 2, the inspector's own bound; step 4,
+that calls are refused while the inspector restarts. It is not a capacity
+figure for real machines.
 
 Image scan/candidate workflows remain explicit. A candidate needs reviewed
 metadata and adjacent passing scan evidence; a scan does not grant repair
