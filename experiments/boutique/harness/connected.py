@@ -146,6 +146,31 @@ def verification_dependencies(graph, name):
     return sorted({edge["to"] for edge in graph.get("edges", []) if edge.get("from") == name and edge.get("to") != name})
 
 
+def service_ports(manifest):
+    """Each application's one Service port and Pod targetPort, read from the manifest's Services.
+
+    NetworkPolicy matches the Pod port (targetPort), while a client dials the
+    Service port; emailservice (5000 -> 8080) and frontend (80 -> 8080) differ.
+    """
+    ports = {}
+    for item in manifest["items"]:
+        if item["kind"] != "Service":
+            continue
+        selector = item.get("spec", {}).get("selector") or {}
+        app = selector.get("app")
+        if app not in APPLICATIONS or item["metadata"]["name"] != app:
+            continue
+        entries = item["spec"].get("ports") or []
+        require(len(entries) == 1, "Each application Service needs exactly one port")
+        port, target = entries[0].get("port"), entries[0].get("targetPort", entries[0].get("port"))
+        require(all(type(value) is int and 0 < value < 65536 for value in (port, target)),
+                "Application Service ports must be numeric")
+        require(app not in ports, "Duplicate application Service")
+        ports[app] = {"service": port, "target": target}
+    require(set(ports) == APPLICATIONS, "Every application needs its Service")
+    return dict(sorted(ports.items()))
+
+
 def readiness(deployments, target=None):
     """Readiness of every application except the recovery target (the catalog default when None)."""
     result = {}

@@ -8,6 +8,11 @@ from scripts.security.security_lab import envoy_config, tls_context
 
 NAMESPACE = "sentinel-boutique-security"
 CALLERS = ("frontend", "checkoutservice")
+# The shipping route: callers' sidecars dial the gateway, which dials
+# shippingservice's own TLS sidecar. scripts/security/network_policy.py
+# rewrites the graph's shipping edges to this chain.
+GATEWAY = ("security-gateway", 8443)
+UPSTREAM_PORT = 8444
 
 
 def _address(cluster, host, port):
@@ -114,11 +119,16 @@ def overlay(base, *, envoy_image, inspector_image):
                      "ports": [{"name": "grpc-tls", "port": port, "targetPort": port}]}))
     items.append(resource("PersistentVolumeClaim", "security-audit", spec={"accessModes": ["ReadWriteOnce"],
         "resources": {"requests": {"storage": "1Gi"}}}))
-    for target, sources, port in (("shippingservice", ["security-gateway"], 8444),
-                                  ("security-gateway", [*CALLERS, "security-test"], 8443)):
-        items.append({"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
-            "metadata": {"name": "protect-" + target, "namespace": NAMESPACE},
-            "spec": {"podSelector": {"matchLabels": {"app": target}}, "policyTypes": ["Ingress"],
-                     "ingress": [{"from": [{"podSelector": {"matchLabels": {"app": source}}} for source in sources],
-                                  "ports": [{"protocol": "TCP", "port": port}]}]}})
+    items.extend(protect_policies())
     return result
+
+
+def protect_policies():
+    """The reviewed ingress chain for the shipping route: callers -> gateway -> shipping's TLS sidecar."""
+    return [{"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+             "metadata": {"name": "protect-" + target, "namespace": NAMESPACE},
+             "spec": {"podSelector": {"matchLabels": {"app": target}}, "policyTypes": ["Ingress"],
+                      "ingress": [{"from": [{"podSelector": {"matchLabels": {"app": source}}} for source in sources],
+                                   "ports": [{"protocol": "TCP", "port": port}]}]}}
+            for target, sources, port in (("shippingservice", [GATEWAY[0]], UPSTREAM_PORT),
+                                          (GATEWAY[0], [*CALLERS, "security-test"], GATEWAY[1]))]

@@ -523,8 +523,11 @@ class BoutiqueExperiment(Experiment):
         if proto:
             container["volumeMounts"] = [{"name": "proto", "mountPath": "/proto", "readOnly": True}]
             spec["volumes"] = [{"name": "proto", "configMap": {"name": PROBE_PROTO_CONFIGMAP}}]
-        return {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": name, "namespace": self.namespace},
-                "spec": spec}
+        # The labels let a graph-derived NetworkPolicy admit this probe to its
+        # target's port only (scripts/security/network_policy.py).
+        labels = {"app": "sentinel-probe", "sentinel.io/probe-target": self.name}
+        return {"apiVersion": "v1", "kind": "Pod",
+                "metadata": {"name": name, "namespace": self.namespace, "labels": labels}, "spec": spec}
 
     def install_probe_schema(self):
         """Publish the target's vendored proto for its probe Pods (administrator context); no-op with reflection."""
