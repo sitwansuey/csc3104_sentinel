@@ -684,6 +684,7 @@ class PodFailureRecoveryTests(OfflineChaosLab, unittest.TestCase):
         # Cleanup is the run's own chaos object, then the administrator removed the drift.
         self.assertEqual(self.chaos.removed, [("PodChaos", "sentinel-pod-test")])
         self.assertTrue(lab.summary["chaos_cleanup_confirmed"] and lab.summary["drift_cell_restored"])
+        self.assertTrue(lab.summary["drift_settle"]["settled"])
         self.assertEqual(self.cluster.snapshot["deployment"]["spec"]["template"], self.baseline["pod_template"])
 
     def test_the_guard_reads_the_restart_budget_from_the_executor_ledger(self):
@@ -820,6 +821,135 @@ class PodFailureRecoveryTests(OfflineChaosLab, unittest.TestCase):
             lab.administrator_restore("drift-restore-patch.json")
         self.assertNotIn("drift_cell_restored", lab.summary)
         self.assertEqual(self.patch_conflicts, 2)
+
+    def bump_resource_version_during(self, lab, times):
+        """A rollout in progress: the resourceVersion moves between the proposal's read and the Executor's."""
+        real, left = lab.dependency_result, [times]
+
+        def moving(proposal):
+            if left[0]:
+                left[0] -= 1
+                metadata = self.cluster.snapshot["deployment"]["metadata"]
+                metadata["resourceVersion"] = str(int(metadata["resourceVersion"]) + 1)
+            return real(proposal)
+        lab.dependency_result = moving
+
+    def test_a_stale_resource_version_from_a_rollout_is_retried_until_the_guard_refuses(self):
+        """Found live (P4.03 N2 trial 1): the drift's rollout moved the resourceVersion, the Executor answered
+        CONFLICT before any Guard check, and the cell failed with no verdict. That answer is retried."""
+        from experiments.boutique.harness import chaos_recovery
+        lab = self.lab()
+        self.cluster.snapshot["deployment"]["spec"]["template"]["metadata"].setdefault("labels", {})["drift"] = "1"
+        self.bump_resource_version_during(lab, 2)
+        pause = Mock()
+        with patch.object(chaos_recovery, "time", SimpleNamespace(sleep=pause, monotonic=Mock(return_value=0.0))):
+            lab.forced_refusal(self.incident, "RESTART", chaos_recovery.FORCED[("drift", "RESTART")],
+                               "forced-restart-drift")
+        proof = self.proof(lab, "forced-restart-drift")
+        self.assertEqual((proof["executor_status"], proof["guard_verdict"], proof["executor_patch_attempts"]),
+                         ("FAILED", "REJECT", 0))
+        self.assertIn("RESTART_TEMPLATE_DRIFT", proof["guard_reason_codes"])
+        self.assertEqual(len(proof["stale_resource_version_attempts"]), 2)
+        self.assertTrue(all(item["executor_status"] == "CONFLICT" and item["action_id"] != proof["action_id"]
+                            for item in proof["stale_resource_version_attempts"]))
+        self.assertTrue((lab.directory / "forced-restart-drift" / "stale-proposal-2.json").exists())
+        self.assertEqual(pause.call_count, 2)
+        self.assertEqual((self.cluster.write_attempts, self.cluster.writes), ([], []))
+
+    def test_a_resource_version_that_keeps_moving_still_fails_the_cell(self):
+        from experiments.boutique.harness import chaos_recovery
+        lab = self.lab()
+        self.bump_resource_version_during(lab, chaos_recovery.FORCED_STALE_RETRIES + 1)
+        with patch.object(chaos_recovery, "time", SimpleNamespace(sleep=Mock(), monotonic=Mock(return_value=0.0))), \
+                self.assertRaisesRegex(RuntimeError, r"Forced RESTART was not refused with RESTART_TEMPLATE_DRIFT: "
+                                                     r"None \[\]"):
+            lab.forced_refusal(self.incident, "RESTART", chaos_recovery.FORCED[("drift", "RESTART")],
+                               "forced-restart-drift")
+        proof = self.proof(lab, "forced-restart-drift")
+        self.assertEqual(proof["executor_status"], "CONFLICT")
+        self.assertEqual(len(proof["stale_resource_version_attempts"]), chaos_recovery.FORCED_STALE_RETRIES)
+        # The final, failing attempt is the proof's own; it is not also counted as a stale one.
+        self.assertNotIn(proof["action_id"], [item["action_id"] for item in proof["stale_resource_version_attempts"]])
+        self.assertEqual((self.cluster.write_attempts, self.cluster.writes), ([], []))
+
+    def test_a_conflict_after_a_guard_decision_is_not_retried(self):
+        """Only a CONFLICT with no Guard result is a stale read; a refused conditional write is never retried."""
+        from experiments.boutique.harness import chaos_recovery
+        lab = self.lab()
+        real = chaos_recovery.execute
+        calls = []
+
+        def decided_then_conflict(proposal, adapters):
+            calls.append(proposal["action_id"])
+            result = real(proposal, adapters)
+            return dict(result, status="CONFLICT")
+        with patch.object(chaos_recovery, "execute", side_effect=decided_then_conflict), \
+                patch.object(chaos_recovery, "time", SimpleNamespace(sleep=Mock(), monotonic=Mock(return_value=0.0))), \
+                self.assertRaisesRegex(RuntimeError, "was not refused"):
+            lab.forced_refusal(self.incident, "ROLLBACK", chaos_recovery.FORCED[("pod", "ROLLBACK")],
+                               "forced-rollback")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.proof(lab, "forced-rollback")["stale_resource_version_attempts"], [])
+
+    def test_only_a_pre_guard_conflict_on_a_moved_version_with_no_write_is_retried(self):
+        """Each clause of the retry rule holds on its own: no Guard result, no write attempt, an unchanged
+        template, a CONFLICT status and a resourceVersion that really moved."""
+        from experiments.boutique.harness import chaos_recovery
+        real = chaos_recovery.execute
+
+        def undecided(status=None, wrote=False, changed=False, same_version=False):
+            def fake(proposal, adapters):
+                result = real(proposal, adapters)
+                adapters.ledger.db.execute("UPDATE executor_actions SET guard_result = NULL WHERE action_id = ?",
+                                           (proposal["action_id"],))
+                if wrote:
+                    self.cluster.write_attempts.append({"action_id": proposal["action_id"]})
+                if changed:
+                    self.cluster.snapshot["deployment"]["spec"]["template"]["metadata"].setdefault(
+                        "labels", {})["changed"] = "1"
+                version = (proposal["based_on_resource_version"] if same_version
+                           else str(int(proposal["based_on_resource_version"]) + 1))
+                return dict(result, status=status or "CONFLICT", resource_version=version)
+            return fake
+        cases = {"a FAILED status": undecided(status="FAILED"), "a write attempt": undecided(wrote=True),
+                 "a changed template": undecided(changed=True), "the same version": undecided(same_version=True)}
+        for name, fake in cases.items():
+            with self.subTest(case=name):
+                self.root = Path(tempfile.mkdtemp(dir=self.root))
+                lab = self.lab()
+                calls = Mock(side_effect=fake)
+                with patch.object(chaos_recovery, "execute", calls), \
+                        patch.object(chaos_recovery, "time", SimpleNamespace(sleep=Mock(),
+                                                                             monotonic=Mock(return_value=0.0))), \
+                        self.assertRaises(RuntimeError):
+                    lab.forced_refusal(self.incident, "ROLLBACK", chaos_recovery.FORCED[("pod", "ROLLBACK")],
+                                       "forced-rollback")
+                self.assertEqual(calls.call_count, 1)
+                self.assertEqual(self.proof(lab, "forced-rollback")["stale_resource_version_attempts"], [])
+
+    def test_the_drift_cell_waits_for_the_deployment_to_settle_before_the_forced_proposal(self):
+        from experiments.boutique.harness import chaos_recovery
+        lab = self.lab()
+        metadata = self.cluster.snapshot["deployment"]["metadata"]
+        moves = [2]
+
+        def read(lab_):
+            if moves[0]:
+                moves[0] -= 1
+                metadata["resourceVersion"] = str(int(metadata["resourceVersion"]) + 1)
+            return self.cluster.read(lab_.target)["deployment"]
+        lab.deployment = lambda: read(lab)
+        pause = Mock()
+        with patch.object(chaos_recovery, "time", SimpleNamespace(sleep=pause, monotonic=Mock(return_value=0.0))):
+            settled = lab.settle_deployment()
+        self.assertEqual((settled["settled"], settled["reads"]), (True, 3))
+        self.assertEqual(settled["resource_version"], metadata["resourceVersion"])
+        # A version that never settles stops at the bound and is recorded, not hidden.
+        moves[0] = 10 ** 6
+        clock = Mock(side_effect=[0.0] + [chaos_recovery.DRIFT_SETTLE_SECONDS + 1] * 5)
+        with patch.object(chaos_recovery, "time", SimpleNamespace(sleep=Mock(), monotonic=clock)):
+            unsettled = lab.settle_deployment()
+        self.assertEqual((unsettled["settled"], unsettled["reads"]), (False, 2))
 
 
 class CpuStressTests(OfflineChaosLab, unittest.TestCase):
