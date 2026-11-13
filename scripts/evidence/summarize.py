@@ -1586,22 +1586,37 @@ def evaluation_rcaeval(root, bundles):
         relative = path.relative_to(root).as_posix()
         report = read_optional(root, relative) or {}
         methods = report.get("methods") or {}
+        # A method that returns one service (rcaeval_report.TOP1_METHODS) has AC@3, AC@5 and Avg@5 equal to AC@1
+        # by construction; the report says so and the page must too, cell by cell and beside every pairing.
+        top1 = sorted(label for label, metrics in methods.items() if (metrics or {}).get("top1_only") is True)
         rows = []
         for label, metrics in sorted(methods.items()):
             rate_count = lambda key, metrics=metrics: str((metrics.get(key) or {}).get("count", "n/a"))
-            rows.append([label, str(metrics.get("n", "n/a"))]
-                        + [rcaeval_report.with_ci(metrics.get(key) or {}) for key in ("AC@1", "AC@3", "AC@5", "Avg@5")]
-                        + [rate_count("abstention_rate"), rate_count("error_rate")])
-        paired = [[item.get("a"), item.get("b"), str(item.get("n")), str(item.get("only_a_correct")),
-                   str(item.get("only_b_correct")), rcaeval_report.number(item.get("mcnemar_p_holm")),
-                   rcaeval_report.with_ci(item.get("delta_Avg@5") or {})] for item in report.get("paired") or []]
+            mark = " (equals AC@1)" if label in top1 else ""
+            rows.append([label, str(metrics.get("n", "n/a")), rcaeval_report.with_ci(metrics.get("AC@1") or {})]
+                        + [rcaeval_report.with_ci(metrics.get(key) or {}) + mark for key in ("AC@3", "AC@5", "Avg@5")]
+                        + [str(metrics.get("missing", "n/a")), rate_count("abstention_rate"), rate_count("error_rate")])
+        paired = []
+        for item in report.get("paired") or []:
+            narrow = [name for name in (item.get("a"), item.get("b")) if name in top1]
+            paired.append([item.get("a"), item.get("b"), str(item.get("n")), str(item.get("only_a_correct")),
+                           str(item.get("only_b_correct")), rcaeval_report.number(item.get("mcnemar_p_holm")),
+                           rcaeval_report.with_ci(item.get("delta_Avg@5") or {})
+                           + (f" ({' and '.join(narrow)} {'is' if len(narrow) == 1 else 'are'} top-1 only)"
+                              if narrow else "")])
+        notes = ["Missing rows count as misses in AC@k and Avg@5."]
+        if top1:
+            notes.append(f"{', '.join(top1)} returns one service, so AC@3, AC@5 and Avg@5 equal AC@1 by construction; "
+                         "an Avg@5 difference against it credits the ranked method for ranks 2-5 that a single "
+                         "answer cannot earn.")
         deviations = report.get("deviations") or []
         parts += [f"**`{relative}`**: split {report.get('split', 'unknown')}, sample {report.get('sample', 'unknown')}, "
                   f"{report.get('level', 'unknown')} level, 95% intervals.",
-                  table(["Method", "n", "AC@1", "AC@3", "AC@5", "Avg@5", "Abstained", "Errors"], rows,
+                  table(["Method", "n", "AC@1", "AC@3", "AC@5", "Avg@5", "Missing", "Abstained", "Errors"], rows,
                         "_The report lists no method._"),
                   table(["A", "B", "n", "Only A correct", "Only B correct", "Holm McNemar p", "Avg@5 difference"],
                         paired, "_No paired comparison in the report._"),
+                  " ".join(notes),
                   "Deviations: " + ("; ".join(map(str, deviations)) if deviations else "none found in the result files")
                   + "."]
     return "\n\n".join(parts)
@@ -1857,6 +1872,8 @@ def evaluation_threats(root, bundles):
     synthetic = lambda runs: (f"{sum(run.get('synthetic_planner') is True for run in runs)}/{len(runs)}" if runs
                               else "not yet run")
     of_live = lambda text: text if live else "not yet run"
+    # A corpus manifest that records no count for a group says so rather than printing a zero.
+    recorded = lambda found, name: str(found[name]) if name in found else "an unrecorded number of"
     pairs = [row[9] for row in pair_rows(bundles)]
     # A distributed run that records single_host false is the only evidence of a second machine.
     several = sum(s.get("single_host") is False for s in dist) + sum(r.get("single_host") is False for r in accepted)
@@ -1875,7 +1892,8 @@ def evaluation_threats(root, bundles):
         + f". Guard fixture evaluation: {', '.join(guard) or 'not yet run'}. RCAEval freeze file: {freeze}. "
         "A row whose labels are not signed is unscored: it says what happened, not whether it was right.",
         "- **One host.** Live runs naming a single-node cluster in their scope: "
-        + of_live(ratio(sum('single-node' in str(summary_of(b).get('scope') or '') for b in live), len(live)))
+        + of_live(ratio(sum('single-node' in str(summary_of(b).get('scope') or '') for b in live), len(live))
+                  + " (a run whose scope names no single-node cluster is not thereby on several machines)")
         + ". Host classes recorded by live runs: "
         + of_live((tally(str(p.get("host_class") or "not recorded") for p in provenance) if provenance
                    else "not recorded")
@@ -1893,7 +1911,8 @@ def evaluation_threats(root, bundles):
         + "; those runs test coordination and fencing, not planning.",
         f"- **Approvals.** Live runs by approval: {of_live(tally(approval_kind(b) for b in live))}. auto-lab is the "
         "harness approving through the authenticated API under the automated-lab identity: no person decides. "
-        "Live runs that record a person approving: "
+        "pre-authorised is a run whose summary records approval given in advance for the whole run, not a person "
+        "approving each action. Live runs that record a person approving: "
         + of_live(ratio(sum(approval_kind(b).startswith('a person') for b in live), len(live))) + ".",
         "- **Small n, correlated repetitions.** Catalog scenarios run live: "
         + (f"{len(per_scenario)}, at most {max(per_scenario.values())} runs each" if per_scenario
@@ -1904,8 +1923,8 @@ def evaluation_threats(root, bundles):
         + (f"{inferred}/{len(current)} current bundles have inferred provenance: their source revision is a best "
            "guess, not a recorded commit." if current else "No evidence bundle is committed."),
         "- **Replay inputs.** "
-        + (f"Of {len((corpus or {}).get('cases') or [])} replay cases, {counts.get('derived', 0)} derived and "
-           f"{counts.get('adversarial', 0)} adversarial ones are synthetic, and every case's cluster state is "
+        + (f"Of {len((corpus or {}).get('cases') or [])} replay cases, {recorded(counts, 'derived')} derived and "
+           f"{recorded(counts, 'adversarial')} adversarial ones are synthetic, and every case's cluster state is "
            "reconstructed, not recorded. Replay judges decisions only; recovery comes from live runs."
            if corpus is not None else "No replay corpus is committed."),
         f"- **One model family, one application.** Models loaded in live runs: "

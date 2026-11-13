@@ -226,7 +226,7 @@ class EvaluationPageTests(unittest.TestCase):
 
     def test_a_committed_model_run_and_report_replace_not_yet_run(self):
         fx.write(self.root / summarize.ABLATION_DIR / "v1-model-14b-16k/results.json",
-                 {**ablation_results(), "identity": {"policies": ["P2", "P3", "P4"]}})
+                 {**ablation_results(), "identity": {"policies": ["P2", "P3", "P4"]}, "labels_pending_review": 60})
         fx.write(self.root / REPORT, {
             "split": "eval", "sample": "sample-ob-v1", "level": "service", "deviations": [],
             "methods": {"baro": {"n": 40, "AC@1": {"value": 0.5, "count": 20, "ci95": [0.35, 0.65]},
@@ -237,12 +237,45 @@ class EvaluationPageTests(unittest.TestCase):
         self.assertEqual(run(self.root)[0], 0)
         page = self.page()
         self.assertIn("| v1-model-14b-16k | P2, P3, P4 | qwen3:14b, context 16384, seeds 42 43 44 | committed | 64 | "
-                      "0 | 64 |", block(page, "evaluation-replay"))
+                      "0 | 60 |", block(page, "evaluation-replay"))
         rcaeval = block(page, "evaluation-rcaeval")
-        self.assertIn("| baro | 40 | 0.500 [0.350, 0.650] | 0.700 [0.550, 0.820] | 0.800 | 0.660 [0.550, 0.760] | 0 "
-                      "| 1 |", rcaeval)
+        self.assertIn("| baro | 40 | 0.500 [0.350, 0.650] | 0.700 [0.550, 0.820] | 0.800 | 0.660 [0.550, 0.760] | n/a "
+                      "| 0 | 1 |", rcaeval)
         self.assertIn("Deviations: none found in the result files.", rcaeval)
         self.assertIn("RCAEval reports committed: 1.", block(page, "evaluation-threats"))
+
+    def test_a_top1_only_method_carries_the_by_construction_caveat(self):
+        def metrics(ac1, ac3, ac5, avg5, *, top1_only, missing):
+            return {"n": 40, "AC@1": {"value": ac1, "count": int(ac1 * 40), "ci95": None},
+                    "AC@3": {"value": ac3, "ci95": None}, "AC@5": {"value": ac5, "ci95": None},
+                    "Avg@5": {"value": avg5, "ci95": None}, "abstention_rate": {"count": 2},
+                    "error_rate": {"count": 0}, "missing": missing, "top1_only": top1_only}
+        fx.write(self.root / REPORT, {
+            "split": "eval", "sample": "sample-ob-v1", "level": "service", "deviations": [],
+            "methods": {"baro": metrics(0.5, 0.7, 0.8, 0.66, top1_only=False, missing=0),
+                        "sentinel": metrics(0.6, 0.6, 0.6, 0.6, top1_only=True, missing=3)},
+            "paired": [{"a": "sentinel", "b": "baro", "n": 40, "only_a_correct": 6, "only_b_correct": 2,
+                        "mcnemar_p_holm": 0.29, "delta_Avg@5": {"value": -0.06, "ci95": None}}]})
+        self.assertEqual(run(self.root)[0], 0)
+        rcaeval = block(self.page(), "evaluation-rcaeval")
+        self.assertIn("| Method | n | AC@1 | AC@3 | AC@5 | Avg@5 | Missing | Abstained | Errors |", rcaeval)
+        self.assertIn("| sentinel | 40 | 0.600 | 0.600 (equals AC@1) | 0.600 (equals AC@1) | 0.600 (equals AC@1) | 3 | 2 "
+                      "| 0 |", rcaeval)
+        self.assertIn("| baro | 40 | 0.500 | 0.700 | 0.800 | 0.660 | 0 | 2 | 0 |", rcaeval)
+        self.assertIn("| sentinel | baro | 40 | 6 | 2 | 0.290 | -0.060 (sentinel is top-1 only) |", rcaeval)
+        self.assertIn("sentinel returns one service, so AC@3, AC@5 and Avg@5 equal AC@1 by construction", rcaeval)
+        self.assertIn("Missing rows count as misses in AC@k and Avg@5.", rcaeval)
+        # A ranked method is never marked as top-1 only, and a report with none prints no caveat.
+        self.assertNotIn("| baro | 40 | 0.500 | 0.700 (equals", rcaeval)
+
+    def test_a_report_with_no_top1_only_method_prints_no_caveat(self):
+        fx.write(self.root / REPORT, {
+            "split": "eval", "sample": "sample-ob-v1", "level": "service", "deviations": [], "paired": [],
+            "methods": {"baro": {"n": 4, "AC@1": {"value": 0.5, "ci95": None}, "top1_only": False}}})
+        self.assertEqual(run(self.root)[0], 0)
+        rcaeval = block(self.page(), "evaluation-rcaeval")
+        self.assertNotIn("equal AC@1 by construction", rcaeval)
+        self.assertNotIn("(equals AC@1)", rcaeval)
 
     def test_live_matrix_keeps_failures_and_counts_forced_refusals(self):
         runs = self.root / "source"
@@ -281,6 +314,19 @@ class EvaluationPageTests(unittest.TestCase):
         self.assertIn("Live runs naming a single-node cluster in their scope: ", threats)
         self.assertIn("No committed distributed run records single_host false (a second machine).", threats)
         self.assertIn("Of 3 replay cases, 1 derived and 1 adversarial ones are synthetic", threats)
+        self.assertIn("(a run whose scope names no single-node cluster is not thereby on several machines)", threats)
+        self.assertIn("pre-authorised is a run whose summary records approval given in advance for the whole run, "
+                      "not a person approving each action.", threats)
+
+    def test_a_corpus_without_group_counts_never_prints_a_zero(self):
+        fx.write(self.root / summarize.REPLAY_MANIFEST, {"schema": "sentinel-replay-corpus-v1", "cases": [{}] * 3,
+                                                         "labels": {"cases": 3, "signed": 0, "status": "pending"}})
+        self.assertEqual(run(self.root)[0], 0)
+        threats = block(self.page(), "evaluation-threats")
+        self.assertIn("Of 3 replay cases, an unrecorded number of derived and an unrecorded number of adversarial "
+                      "ones are synthetic", threats)
+        self.assertNotIn(" 0 derived", threats)
+        self.assertNotIn(" 0 adversarial", threats)
 
     def test_a_distributed_run_on_several_hosts_is_named_not_hidden(self):
         folder = fx.distributed_run(self.root / "source", "s2", scenario="S2")
