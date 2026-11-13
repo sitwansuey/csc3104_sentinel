@@ -422,8 +422,10 @@ The operator records around each kind session: the six Executor-token RBAC
 checks made when the lab bundle was prepared and, at be6e636, a restore check
 that injected R1 with the committed tool and restored the baseline. Each
 session left the S8 fence annotations and a changed `sentinel.io/execution` on
-`shippingservice`, which the restore does not touch; the operator removed them
-with a uid- and resourceVersion-tested metadata patch kept in the bundle.
+`shippingservice`, which the restore at those revisions did not touch; the
+operator removed them with a uid- and resourceVersion-tested metadata patch
+kept in the bundle. The restore now resets those annotations itself (tested
+offline only, not yet run against the lab).
 
 <!-- BEGIN GENERATED:kind-lab-sessions -->
 | Bundle | Revision | Outcome | Executor RBAC checks as expected | Restore check |

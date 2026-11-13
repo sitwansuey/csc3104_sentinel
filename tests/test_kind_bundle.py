@@ -15,6 +15,7 @@ from unittest.mock import patch
 from experiments.distributed import kind_bundle, run_scenarios, scenarios
 from experiments.distributed.kind_bundle import KindLab, LabError
 from experiments.distributed.topology import OBSERVER_FAILURE_SECONDS, ROOT, Topology
+from services.executor.reconciliation import ACTION_ANNOTATION, FENCE_ANNOTATION, FENCE_EPOCH_ANNOTATION
 from tests.test_topology import FakeLabDeployment
 
 CONTEXT = "kind-sentinel-boutique-connected"
@@ -110,11 +111,37 @@ class FakeKindLab(FakeLabDeployment):
             metadata = self.deployment["metadata"]
             if any(op["op"] == "test" and op["value"] != metadata[op["path"].rsplit("/", 1)[1]] for op in patch_ops):
                 return done(code=1)
-            self.writes.append("restore")
-            (replace_op,) = [op for op in patch_ops if op["op"] == "replace"]
-            self.set_template(replace_op["value"])
+            changes = [op for op in patch_ops if op["op"] != "test"]
+            if all(op["path"] == "/spec/template" for op in changes):
+                self.writes.append("restore")
+                (replace_op,) = changes
+                self.set_template(replace_op["value"])
+                return done()
+            # Otherwise a metadata-only patch: every change is to the annotations, never the spec.
+            assert all(op["path"].startswith("/metadata/annotations") for op in changes), changes
+            self.writes.append("annotations")
+            self._commit(lambda deployment: apply_annotation_ops(deployment["metadata"], changes))
             return done()
         raise AssertionError("Unexpected kubectl command: " + " ".join(command))
+
+
+def apply_annotation_ops(metadata, operations):
+    """Apply JSON patch add, replace and remove operations on metadata.annotations as the API server does."""
+    for op in operations:
+        if op["path"] == "/metadata/annotations":
+            assert op["op"] == "add", op
+            metadata["annotations"] = dict(op["value"])
+            continue
+        key = op["path"].removeprefix("/metadata/annotations/").replace("~1", "/").replace("~0", "~")
+        annotations = metadata["annotations"]
+        if op["op"] == "remove":
+            del annotations[key]  # A remove of a missing key fails the whole patch on a real server too.
+        elif op["op"] == "replace":
+            assert key in annotations, key
+            annotations[key] = op["value"]
+        else:
+            assert op["op"] == "add", op
+            annotations[key] = op["value"]
 
 
 def prepare(lab, directory, **options):
@@ -280,10 +307,12 @@ class KindLabTests(unittest.TestCase):
         self.assertTrue(record["after"]["template_is_baseline"])
         self.assertEqual(self.cluster.writes, ["inject", "restore"])
         lab.inject()
-        self.cluster.rollback("ACT-1", HEALTHY)  # Sentinel recovered it.
+        self.cluster.rollback("ACT-1", HEALTHY)  # Sentinel recovered it, with its evidence annotation.
         record = lab.restore()
         self.assertEqual((record["operator_restore"], record["healthy"]), (False, True))
-        self.assertEqual(self.cluster.writes, ["inject", "restore", "inject"])
+        # The template is left alone; the evidence annotation goes back to its prepared state (none).
+        self.assertEqual(self.cluster.writes, ["inject", "restore", "inject", "annotations"])
+        self.assertEqual(list(record["annotations"]["removed"]), [ACTION_ANNOTATION])
 
     def test_restore_retests_a_moved_resource_version_and_reports_a_target_that_stays_unhealthy(self):
         lab = self.lab()
@@ -294,7 +323,7 @@ class KindLabTests(unittest.TestCase):
         def racing(command, **options):
             if "patch" in command and not moved:
                 moved.append(True)
-                self.cluster.annotate("other", "change")  # Someone commits between the read and the patch.
+                self.cluster.label("other", "change")  # Someone commits between the read and the patch.
             return original(command, **options)
         lab.runner = racing
         self.cluster.storefront_up = False
@@ -437,6 +466,197 @@ class KindLabTests(unittest.TestCase):
                 "R1", kind_bundle.lab_scope(CONTEXT)), STOREFRONT, runner=self.cluster.runner).deployment()
 
 
+PREPARED_EVIDENCE = json.dumps({"action_id": "ACT-prepared", "template_sha256": "b" * 64})
+LAST_APPLIED = "kubectl.kubernetes.io/last-applied-configuration"
+REVISION = "deployment.kubernetes.io/revision"
+
+
+class AnnotationRestoreTests(unittest.TestCase):
+    """The restore returns Sentinel's annotations to their prepared values and never touches another one."""
+
+    def setUp(self):
+        self.directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.cluster = FakeKindLab()
+        # The lab as the live sessions found it: evidence of an earlier action and annotations not Sentinel's.
+        self.cluster.annotate(ACTION_ANNOTATION, PREPARED_EVIDENCE)
+        self.cluster.annotate(LAST_APPLIED, '{"kind":"Deployment"}')
+        self.cluster.annotate(REVISION, "137")
+        self.summary = prepare(self.cluster, self.directory)
+        self.prepared = dict(self.cluster.deployment["metadata"]["annotations"])
+        self.bundle = self.directory / "bundle"
+        self.clock = Clock()
+        self.lab = KindLab.from_bundle(self.bundle, CONTEXT, runner=self.cluster.runner, status=self.cluster.status,
+                                       sleep=self.clock.sleep, monotonic=self.clock.monotonic)
+
+    def annotations(self):
+        return self.cluster.deployment["metadata"]["annotations"]
+
+    def patches(self):
+        return [json.loads(next(item for item in call if item.startswith("--patch=")).split("=", 1)[1])
+                for call in self.cluster.calls if "--type=json" in call]
+
+    def lab_options(self, runner=None):
+        return {"runner": runner or self.cluster.runner, "status": self.cluster.status, "sleep": self.clock.sleep,
+                "monotonic": self.clock.monotonic}
+
+    def after_s8(self):
+        """S8 as it ran live: the fault stays, the other Executor seals at epoch 2, the controller moves on."""
+        self.lab.inject()
+        self.cluster.seal("ACT-8", 2)
+        self.cluster.annotate(REVISION, "138")
+
+    def test_prepare_records_the_target_annotations_in_the_bundle(self):
+        lab = json.loads((self.bundle / "lab.json").read_text(encoding="utf-8"))
+        self.assertEqual(lab["target_annotations"], self.prepared)
+        self.assertEqual(self.summary["sentinel_annotations_at_prepare"], [ACTION_ANNOTATION])
+
+    def test_a_seal_left_after_s8_is_removed_in_one_tested_metadata_only_patch(self):
+        self.after_s8()
+        sealed = dict(self.annotations())
+        record = self.lab.restore()
+        self.assertTrue(record["healthy"])
+        self.assertEqual(self.cluster.writes, ["inject", "restore", "annotations"])
+        self.assertEqual(record["annotations"]["status"], "reset")
+        self.assertEqual(record["annotations"]["removed"], {FENCE_ANNOTATION: sealed[FENCE_ANNOTATION],
+                                                            FENCE_EPOCH_ANNOTATION: "2"})
+        self.assertNotIn("reset", record["annotations"])
+        self.assertNotIn("added", record["annotations"])
+        self.assertEqual(self.annotations(), dict(self.prepared, **{REVISION: "138"}))  # The revision is left.
+        template_patch, annotation_patch = self.patches()
+        uid, version = annotation_patch[:2]
+        self.assertEqual(uid, {"op": "test", "path": "/metadata/uid", "value": TARGET["uid"]})
+        self.assertEqual((version["op"], version["path"]), ("test", "/metadata/resourceVersion"))
+        self.assertEqual(annotation_patch[2:], [
+            {"op": "remove", "path": "/metadata/annotations/sentinel.io~1fence"},
+            {"op": "remove", "path": "/metadata/annotations/sentinel.io~1fence-epoch"}])
+        self.assertEqual(template_patch[-1]["path"], "/spec/template")  # The template step is unchanged.
+        operator = [call for call in self.cluster.calls if "--type=json" in call]
+        self.assertTrue(all(f"--context={CONTEXT}" in call and not any("--kubeconfig" in item for item in call)
+                            for call in operator))  # The operator's kubeconfig, never the Executor's token.
+
+    def test_a_changed_evidence_annotation_is_reset_to_its_prepared_value(self):
+        self.lab.inject()
+        self.cluster.rollback("ACT-3", HEALTHY)
+        changed = self.annotations()[ACTION_ANNOTATION]
+        record = self.lab.restore()
+        self.assertTrue(record["healthy"])
+        self.assertEqual(record["annotations"]["reset"], {ACTION_ANNOTATION: {"from": changed,
+                                                                              "to": PREPARED_EVIDENCE}})
+        self.assertEqual(self.annotations()[ACTION_ANNOTATION], PREPARED_EVIDENCE)
+        self.assertEqual(self.patches()[-1][2:], [{"op": "replace", "value": PREPARED_EVIDENCE,
+                                                   "path": "/metadata/annotations/sentinel.io~1execution"}])
+
+    def test_nothing_is_written_when_the_annotations_are_already_prepared(self):
+        record = self.lab.restore()
+        self.assertEqual(record["annotations"], {"status": "unchanged"})
+        self.assertTrue(record["healthy"])
+        self.assertEqual((self.cluster.writes, self.patches()), ([], []))
+        self.after_s8()
+        self.lab.restore()
+        version = self.cluster.deployment["metadata"]["resourceVersion"]
+        again = self.lab.restore()  # Idempotent: a second restore finds nothing to do.
+        self.assertEqual(again["annotations"], {"status": "unchanged"})
+        self.assertEqual(self.cluster.writes, ["inject", "restore", "annotations"])
+        self.assertEqual(self.cluster.deployment["metadata"]["resourceVersion"], version)
+
+    def test_a_foreign_annotation_changed_since_prepare_refuses_and_writes_no_annotation(self):
+        def drop(deployment):
+            deployment["metadata"]["annotations"].pop(LAST_APPLIED)
+        changes = (("changed", lambda: self.cluster.annotate(LAST_APPLIED, "{}"), [LAST_APPLIED]),
+                   ("added", lambda: self.cluster.annotate("team.example/owner", "shop"), ["team.example/owner"]),
+                   ("removed", lambda: self.cluster._commit(drop), [LAST_APPLIED]))
+        for name, change, keys in changes:
+            with self.subTest(name):
+                self.setUp()
+                self.after_s8()
+                change()
+                record = self.lab.restore()
+                self.assertFalse(record["healthy"])  # The template is back, but the lab is not at prepare.
+                self.assertTrue(record["after"]["template_is_baseline"])
+                self.assertEqual(record["annotations"]["status"], "refused")
+                self.assertEqual(record["annotations"]["foreign_changed"], keys)
+                self.assertIn("not Sentinel's", record["error"])
+                self.assertEqual(self.cluster.writes, ["inject", "restore"])  # No annotation write.
+                self.assertEqual(self.annotations()[FENCE_EPOCH_ANNOTATION], "2")
+
+    def test_a_conflict_on_the_conditional_patch_reads_again_and_resets_what_it_then_finds(self):
+        self.after_s8()
+        original, conflicts = self.cluster.runner, []
+
+        def conflicting(command, **options):
+            if "patch" in command and any("/metadata/annotations" in item for item in command) and not conflicts:
+                conflicts.append(command)
+                self.cluster.seal("ACT-9", 3)  # Another seal commits first: the server answers 409.
+                return subprocess.CompletedProcess(command, 1, "", "Error from server (Conflict): 409")
+            return original(command, **options)
+        self.lab.runner = conflicting
+        record = self.lab.restore()
+        self.assertEqual(len(conflicts), 1)
+        self.assertTrue(record["healthy"])
+        self.assertEqual(record["annotations"]["removed"][FENCE_EPOCH_ANNOTATION], "3")  # What the re-read saw.
+        self.assertEqual(self.annotations(), dict(self.prepared, **{REVISION: "138"}))
+        self.assertNotIn("Conflict", json.dumps(record))  # kubectl's error text is never kept.
+
+    def test_a_patch_refused_every_time_is_reported_and_leaves_the_restore_unhealthy(self):
+        self.after_s8()
+        original = self.cluster.runner
+
+        def refusing(command, **options):
+            if "patch" in command and any("/metadata/annotations" in item for item in command):
+                return subprocess.CompletedProcess(command, 1, "", "Error from server (Conflict): 409")
+            return original(command, **options)
+        self.lab.runner = refusing
+        record = self.lab.restore()
+        self.assertFalse(record["healthy"])
+        self.assertEqual(record["annotations"]["status"], "failed")
+        self.assertIn("refused 3 times", record["error"])
+        self.assertEqual(self.annotations()[FENCE_EPOCH_ANNOTATION], "2")
+        output = io.StringIO()
+        with redirect_stdout(output):  # The restore command exits 1 and prints the record.
+            self.assertEqual(kind_bundle.main(["restore", "--context", CONTEXT, "--bundle", str(self.bundle)],
+                                              lab_options=self.lab_options(refusing)), 1)
+        self.assertEqual(json.loads(output.getvalue())["status"], "not healthy")
+
+    def test_the_restore_command_resets_the_annotations_and_prints_what_it_removed(self):
+        self.after_s8()
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(kind_bundle.main(["restore", "--context", CONTEXT, "--bundle", str(self.bundle)],
+                                              lab_options=self.lab_options()), 0)
+        printed = json.loads(output.getvalue())
+        self.assertEqual(sorted(printed["annotations"]["removed"]), [FENCE_ANNOTATION, FENCE_EPOCH_ANNOTATION])
+        self.assertNotIn(FENCE_ANNOTATION, self.annotations())
+
+    def test_a_bundle_from_before_the_reset_restores_the_template_and_says_annotations_were_left(self):
+        lab_json = self.bundle / "lab.json"
+        old = json.loads(lab_json.read_text(encoding="utf-8"))
+        del old["target_annotations"]
+        lab_json.write_text(json.dumps(old), encoding="utf-8")
+        lab = KindLab.from_bundle(self.bundle, CONTEXT, **self.lab_options())
+        lab.inject()
+        self.cluster.seal("ACT-8", 2)
+        record = lab.restore()
+        self.assertTrue(record["healthy"])
+        self.assertEqual(record["annotations"]["status"], "not recorded")
+        self.assertEqual(self.cluster.writes, ["inject", "restore"])
+        self.assertEqual(self.annotations()[FENCE_EPOCH_ANNOTATION], "2")
+
+    def test_prepared_annotations_that_are_not_a_map_of_strings_are_refused(self):
+        fault = kind_bundle.catalog_fault("R1", kind_bundle.lab_scope(CONTEXT))
+        for bad in (["x"], {"a": 1}, "text"):
+            with self.subTest(bad=bad), self.assertRaises(LabError):
+                KindLab(CONTEXT, TARGET, HEALTHY, fault, STOREFRONT, prepared_annotations=bad)
+
+    def test_annotation_changes_add_the_map_when_the_target_has_none_and_escape_keys(self):
+        self.assertEqual(kind_bundle.annotation_path("a~b/c"), "/metadata/annotations/a~0b~1c")
+        lab = KindLab(CONTEXT, TARGET, HEALTHY, kind_bundle.catalog_fault("R1", kind_bundle.lab_scope(CONTEXT)),
+                      STOREFRONT, prepared_annotations={ACTION_ANNOTATION: "e"})
+        operations, changes, foreign = lab.annotation_changes({"metadata": {}})
+        self.assertEqual(operations, [{"op": "add", "path": "/metadata/annotations",
+                                       "value": {ACTION_ANNOTATION: "e"}}])
+        self.assertEqual((changes["added"], foreign), ({ACTION_ANNOTATION: "e"}, []))
+
+
 class FakeTopology:
     """Stands in for the process topology: Sentinel's part of a run is the scenario function below."""
 
@@ -487,7 +707,7 @@ class KindRunTests(unittest.TestCase):
         FakeTopology.cluster, FakeTopology.started, FakeTopology.stopped, FakeTopology.deadlines = \
             self.cluster, [], 0, []
         recovers = replace(scenarios.SCENARIOS["S1b"], run=lambda _topology: self.cluster.rollback("ACT-1", HEALTHY))
-        seals = replace(scenarios.SCENARIOS["S8"], run=lambda _topology: {"sealed": True})
+        seals = replace(scenarios.SCENARIOS["S8"], run=lambda _topology: self.cluster.seal("ACT-8", 2))
         self.enterContext(patch.dict(run_scenarios.SCENARIOS, {"S1b": recovers, "S8": seals}))
         self.enterContext(patch.object(run_scenarios, "Topology", FakeTopology))
         self.enterContext(patch.object(run_scenarios.invariants, "collect",
@@ -510,7 +730,10 @@ class KindRunTests(unittest.TestCase):
     def test_every_run_of_every_scenario_gets_a_fresh_fault_and_a_verified_restore(self):
         code, lines = self.run_main("--scenarios", "S1b,S8", "--repeat", "2")
         self.assertEqual(code, 0, lines)
-        self.assertEqual(self.cluster.writes, ["inject", "inject", "inject", "restore", "inject", "restore"])
+        # S1b's rollback leaves its evidence annotation and S8's seal its fence: each restore resets them.
+        self.assertEqual(self.cluster.writes, ["inject", "annotations", "inject", "annotations", "inject", "restore",
+                                               "annotations", "inject", "restore", "annotations"])
+        self.assertEqual(self.cluster.deployment["metadata"]["annotations"], {})
         self.assertEqual(FakeTopology.started, [False] * 4)  # Each topology started on the injected fault.
         self.assertEqual(FakeTopology.stopped, 4)
         self.assertTrue(self.cluster.healthy())
@@ -522,6 +745,9 @@ class KindRunTests(unittest.TestCase):
             self.assertEqual(lab["fault"]["scenario"], "R1")
             self.assertTrue(lab["restore"]["healthy"])
             self.assertEqual(lab["restore"]["operator_restore"], summary["scenario"] == "S8")
+            self.assertEqual(sorted(lab["restore"]["annotations"]["removed"]),
+                             [FENCE_ANNOTATION, FENCE_EPOCH_ANNOTATION] if summary["scenario"] == "S8"
+                             else [ACTION_ANNOTATION])
             self.assertEqual((summary["deadline_seconds"], summary["deadline_source"]), (180, "kind default"))
             self.assertEqual(summary["observer_failure_window_seconds"], OBSERVER_FAILURE_SECONDS)
         self.assertTrue(all(remaining > 170 for remaining in FakeTopology.deadlines))
@@ -562,7 +788,7 @@ class KindRunTests(unittest.TestCase):
         code, lines = self.run_main("--scenarios", "S8", "--repeat", "3")
         self.assertEqual(code, 3)
         self.assertIn("did not return", lines[-1]["stopped"])
-        self.assertEqual(self.cluster.writes, ["inject", "restore"])
+        self.assertEqual(self.cluster.writes, ["inject", "restore", "annotations"])  # The seal is reset too.
         self.assertEqual(len(self.summaries()), 1)
 
     def test_a_fault_that_does_not_show_starts_no_topology(self):
