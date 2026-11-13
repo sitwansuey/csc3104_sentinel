@@ -177,19 +177,22 @@ def shop_outcome(states, journeys, *, stopped=(), required_passes=SHOP_PASSES):
     UNKNOWN when an incident has not settled. Then PARTIAL when some but not
     all incidents are RECOVERED, and FAILED when none is: the storefront
     cannot change either answer. When every incident is RECOVERED, the
-    storefront decides: UNKNOWN when its evidence is missing or incomplete
-    (fewer than required_passes journeys, or one whose result is not known),
-    RECOVERED when the last required_passes journeys all passed, FAILED when
-    one failed. The result is evidence only: it never changes an incident's
-    state.
+    storefront decides on its last required_passes journeys (the tail):
+    UNKNOWN when that evidence is missing or incomplete (fewer than
+    required_passes journeys, or one in the tail whose result is not known),
+    RECOVERED when the tail all passed, FAILED when one in it failed. Earlier
+    journeys, taken during the reconnect grace (shop_journeys), stay in the
+    counts as evidence but cannot decide the result: a timeout or refused
+    connection there is the backoff the grace exists for. The result is
+    evidence only: it never changes an incident's state.
     """
     if not isinstance(states, dict) or not states or type(required_passes) is not int or required_passes < 1:
         raise ValueError("shop_outcome needs the pair's incident states and a positive pass count")
     recovered = sorted(name for name, state in states.items() if state == "RECOVERED")
     others = sorted(name for name in states if name not in recovered)
     passed = [item.get("passed") if isinstance(item, dict) else None for item in journeys or []]
-    complete = len(passed) >= required_passes and all(type(value) is bool for value in passed)
     tail = passed[-required_passes:]
+    complete = len(passed) >= required_passes and all(type(value) is bool for value in tail)
     storefront = {"journeys": len(passed), "passed": sum(value is True for value in passed),
                   "required_passes": required_passes, "complete": complete,
                   "sustained": complete and all(tail)}

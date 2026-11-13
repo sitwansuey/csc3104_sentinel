@@ -66,7 +66,12 @@ seconds end, the same convergence grace a single run's Verifier gives
 `shop_window` in `pair-result.json` record the window and the seconds to the
 first passing tail. When an incident did not recover, the storefront cannot
 change the ShopOutcome, so only three journeys are taken, as evidence. The
-ShopOutcome is judged on the last three journeys:
+ShopOutcome is judged on the last three journeys only. Every earlier journey
+stays in the journal and in the counts in `pair-result.json`, but cannot
+decide the result: one that failed or timed out during the reconnect backoff
+(a journey whose result is not known) does not make the shop FAILED or
+UNKNOWN. A journey whose result is not known inside the last three still
+gives UNKNOWN:
 
 | ShopOutcome | When |
 |---|---|

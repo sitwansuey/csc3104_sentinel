@@ -711,6 +711,12 @@ class ShopOutcomeTests(unittest.TestCase):
         self.assertEqual(result["storefront"], {"journeys": 4, "passed": 3, "required_passes": 3, "complete": True,
                                                 "sustained": True})
         self.assertEqual(shop_outcome(both, [{"passed": True}] * 2 + [{"passed": False}])["status"], "FAILED")
+        # Only the last three decide: an unknown journey before them is grace evidence, one inside them is not.
+        before = shop_outcome(both, [{"passed": None}, "lost"] + [{"passed": True}] * 3)
+        self.assertEqual((before["status"], before["storefront"]["journeys"], before["storefront"]["complete"]),
+                         ("RECOVERED", 5, True))
+        self.assertEqual(shop_outcome(both, [{"passed": None}] + [{"passed": False}] * 3)["status"], "FAILED")
+        self.assertEqual(shop_outcome(both, [{"passed": True}] * 3 + [{"passed": None}])["status"], "UNKNOWN")
 
     def test_partial_when_one_target_recovers_and_the_other_fails(self):
         from experiments.boutique.harness.multi_fault import shop_outcome
@@ -1132,14 +1138,26 @@ class PairVerdictTests(unittest.TestCase):
                        [("frontend", "cartservice"), ("cartservice", "redis-cart")], cartservice=cart_ready)
         return (lab, *self.run_lab(lab))
 
-    def judge(self, pair_id, lab, ids, run, *, writes=None, journeys=None):
-        """PairBoutiqueExperiment.judge over the lab's real Coordinator journal and Executor ledger."""
+    def judge(self, pair_id, lab, ids, run, *, writes=None, journeys=None, storefront=None):
+        """PairBoutiqueExperiment.judge over the lab's real Coordinator journal and Executor ledger.
+
+        storefront, a list of journey results, drives the real shop_journeys
+        (on a fake clock) instead of a fixed journey list.
+        """
         from experiments.boutique.harness import multi_fault
         experiment = self.pair(pair_id)
         experiment.store = lab.store
         for name in experiment.order:
             experiment.lanes[name]["incident"] = lab.incidents[name]
-        experiment.shop_journeys = Mock(return_value=[{"passed": True}] * 3 if journeys is None else journeys)
+        if storefront is None:
+            experiment.shop_journeys = Mock(return_value=[{"passed": True}] * 3 if journeys is None else journeys)
+        else:
+            results, now = iter(storefront), [0.0]
+            experiment.storefront = SimpleNamespace(journey=lambda: {"passed": next(results)})
+            experiment.record_shopping = Mock()
+            real = experiment.shop_journeys
+            experiment.shop_journeys = lambda states: real(states, clock=lambda: now[0],
+                                                           sleep=lambda seconds: now.__setitem__(0, now[0] + seconds))
         counted = multi_fault.writes_by_target(lab.ledger.db) if writes is None else writes
         with patch.object(multi_fault, "writes_by_target", return_value=counted), redirect_stdout(StringIO()):
             evidence = experiment.judge({name: {"incident_id": value} for name, value in ids.items()}, run)
@@ -1166,6 +1184,26 @@ class PairVerdictTests(unittest.TestCase):
                                  (ids["cartservice"], shipping_message, "2026-10-10T12:30:00Z"))
         with self.assertRaisesRegex(RuntimeError, "changed state because of the other incident"):
             self.judge("shipping-config+cart-pod", lab, ids, run)
+
+    def test_judge_passes_a_pair_whose_storefront_reconnects_inside_the_grace_window(self):
+        # A transport failure (passed None) and a failed journey during the reconnect backoff, then three passes.
+        lab, ids, run = self.independent()
+        experiment, evidence = self.judge("shipping-config+cart-pod", lab, ids, run,
+                                          storefront=[None, False, True, True, True])
+        self.assertEqual((evidence["shop"]["status"], evidence["result"]["result"]), ("RECOVERED", "RECOVERED"))
+        self.assertEqual(evidence["shop"]["storefront"], {"journeys": 5, "passed": 3, "required_passes": 3,
+                                                          "complete": True, "sustained": True})
+        self.assertEqual(experiment.record_shopping.call_count, 5)  # Every grace journey stays as evidence.
+        self.assertEqual(evidence["shop_window"]["seconds_to_passing_tail"], 20.0)
+
+    def test_judge_fails_a_pair_whose_last_three_journeys_include_an_unknown_one(self):
+        lab, ids, run = self.independent()
+        with self.assertRaisesRegex(RuntimeError, "ended UNKNOWN; expected RECOVERED"):
+            self.judge("shipping-config+cart-pod", lab, ids, run, storefront=[False] * 28 + [True, None, True])
+        [saved] = self.directory.glob("*/pair-result.json")
+        shop = json.loads(saved.read_text(encoding="utf-8"))["shop"]
+        self.assertEqual((shop["status"], shop["storefront"]["journeys"], shop["storefront"]["complete"]),
+                         ("UNKNOWN", 31, False))
 
     def test_judge_fails_a_result_that_is_neither_expected_nor_acceptable(self):
         lab, ids, run = self.independent(verify_health={"cartservice": False})
@@ -1678,6 +1716,22 @@ class PairShopWindowTests(unittest.TestCase):
         self.assertEqual(shop["status"], "RECOVERED")
         self.assertEqual((window["window_seconds"], window["seconds_to_passing_tail"], window["journeys"]),
                          (150, 30.0, 7))
+
+    def test_an_unknown_journey_during_the_backoff_does_not_decide_the_shop(self):
+        # StorefrontProbe.journey gives passed None on a timeout or refused connection: the reconnect backoff.
+        recovered = {"shippingservice": "RECOVERED", "cartservice": "RECOVERED"}
+        journeys, shop, window = self.shopping([None, False, True, True, True], recovered)
+        self.assertEqual((len(journeys), shop["status"], window["seconds_to_passing_tail"]), (5, "RECOVERED", 20.0))
+        self.assertEqual((shop["storefront"]["journeys"], shop["storefront"]["passed"]), (5, 3))
+
+    def test_an_unknown_journey_in_the_last_three_leaves_the_shop_unknown(self):
+        recovered = {"shippingservice": "RECOVERED", "cartservice": "RECOVERED"}
+        for tail in ([True, None, True], [True, True, None], [None, True, True]):
+            with self.subTest(tail=tail):
+                journeys, shop, window = self.shopping([False] * 28 + tail, recovered)
+                self.assertEqual((len(journeys), shop["status"], window["seconds_to_passing_tail"]),
+                                 (31, "UNKNOWN", None))
+                self.assertFalse(shop["storefront"]["complete"])
 
     def test_a_storefront_that_never_recovers_stops_at_the_end_of_the_window(self):
         recovered = {"shippingservice": "RECOVERED", "cartservice": "RECOVERED"}
