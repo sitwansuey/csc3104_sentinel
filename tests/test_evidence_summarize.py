@@ -594,6 +594,67 @@ class PairBundleTests(unittest.TestCase):
         self.assertEqual(run(self.root, check=True)[0], 0)
 
 
+class PairOutcomeTests(unittest.TestCase):
+    """The pair_outcomes derivation says what each cited pair run showed and nothing more."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        runs, evidence = root / "source", root / "evidence"
+        chaos = {"chaos": {"kind": "PodChaos"}, "chaos_cleanup_confirmed": True}
+        cleaned = {"operator_cleanup": {"cartservice": {"restored": True, "by": "lab administrator"},
+                                        "redis-cart": {"restored": False, "reason": "configuration at baseline"}}}
+        killed = {"executor_kill": {"target": "cartservice", "worker_writes": 1, "reconcile_writes": 0,
+                                    "reconciled": "APPLIED", "worker_exit": 73},
+                  "attribution": {"attributed": True, "failed": []}}
+        specs = (("dead-1", {}, {**chaos, **cleaned}), ("dead-2", {}, {**chaos, **cleaned}),
+                 ("dead-kill", {"kill": "cartservice"}, {**chaos, **cleaned}),
+                 ("ok-kill", {"kill": "cartservice", "result": "RECOVERED", "shop": "RECOVERED"},
+                  {**chaos, **killed}),
+                 ("ok-unattributed", {"result": "RECOVERED", "shop": "RECOVERED"},
+                  {"attribution": {"attributed": False}, "chaos": {"kind": "PodChaos"},
+                   "chaos_cleanup_confirmed": False}),
+                 ("stopped", {"status": "FAILED", "judged": False}, {}))
+        for minute, (bundle_id, options, extra) in enumerate(specs):
+            run = fx.pair_run(runs, f"boutique-pair-20261113T1{minute}0000Z-{bundle_id}",
+                              started=f"2026-11-13T1{minute}:00:00Z", extra=extra, **options)
+            collect.collect(run, "scenario-pair", bundle_id, evidence_root=evidence, context=fx.context())
+        self.bundles = {bundle.bundle_id: bundle for bundle in summarize.load_bundles(root)}
+
+    def outcomes(self, *names):
+        return summarize.pair_outcomes([self.bundles[name] for name in names])
+
+    def test_identical_runs_are_counted_once_with_the_cleanup_named_as_not_a_repair(self):
+        self.assertEqual(self.outcomes("dead-1", "dead-2"),
+                         "redis-pod+cart-config at 0123456 PASS x2: DEPENDENCY_DEADLOCK, ShopOutcome FAILED, "
+                         "Executor writes cartservice 0 and redis-cart 0, ordered recovery shown: no, "
+                         "chaos cleaned up, administrator restored cartservice to baseline after scoring "
+                         "(not a repair), labels pending")
+
+    def test_a_kill_variant_says_whether_a_worker_was_killed(self):
+        self.assertEqual(self.outcomes("ok-kill"),
+                         "redis-pod+cart-config with an Executor kill on cartservice at 0123456 PASS: RECOVERED, "
+                         "ShopOutcome RECOVERED, Executor writes cartservice 1 and redis-cart 1, RESTART attributed, "
+                         "cartservice worker killed after 1 write, reconciled APPLIED with 0 further writes, "
+                         "ordered recovery shown: yes, chaos cleaned up, labels pending")
+        # A deadlock before any write leaves nothing to kill, and the claim must not read as a kill.
+        self.assertIn("with an Executor kill on cartservice at 0123456 PASS: DEPENDENCY_DEADLOCK",
+                      self.outcomes("dead-kill"))
+        self.assertIn("no cartservice write, so no worker was killed", self.outcomes("dead-kill"))
+        self.assertNotIn("worker killed after", self.outcomes("dead-kill"))
+
+    def test_failures_are_named_not_hidden(self):
+        said = self.outcomes("ok-unattributed", "stopped")
+        self.assertIn("RESTART not attributed", said)
+        self.assertIn("chaos cleanup not confirmed", said)
+        self.assertIn("redis-pod+cart-config at 0123456 FAILED: no pair result, labels pending", said)
+        self.assertEqual(summarize.pair_outcomes([]), "no pair runs")
+
+    def test_the_derivation_is_registered_for_claims(self):
+        self.assertIs(summarize.DERIVATIONS["pair_outcomes"], summarize.pair_outcomes)
+
+
 class Phase3DerivationTests(unittest.TestCase):
     """Distributed scenarios, the seal, traces, the admission check, worker containers and kind lab sessions."""
 

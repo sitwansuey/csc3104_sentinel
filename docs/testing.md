@@ -369,10 +369,14 @@ DEPENDENCY_DEADLOCK and no write. The live recipe is in
 [Two simultaneous faults](dual-fault.md#live-recipe); its first attempt on
 13 Nov 2026 ran the single-fault baselines (`C-DUAL-FAULT-BASELINES-29E41F8`),
 but every pair run stopped on a harness defect (fixed in 1941683) before any
-proposal, so no pair run has a result yet. The pair harness's later
-live-readiness fixes (`tests/test_boutique_connected.py`, including
-`PairScoringTests`) are tested offline only, and the pair runs have not been
-repeated.
+proposal. With that fix and the later live-readiness fixes
+(`tests/test_boutique_connected.py`, including `PairScoringTests`), the eight
+pair runs were repeated at dca7369 the same day and passed the harness's
+checks, unscored with labels pending (`C-DUAL-FAULT-PAIRS-DCA7369`): the
+independent pair recovered both targets, its Executor-kill variant included,
+and the dependency-ordered pair stopped with DEPENDENCY_DEADLOCK and no write,
+a safe stop that shows no ordered recovery. Its kill variant stopped before
+any write, so it killed nothing.
 
 ## Agent-mode acceptance
 

@@ -1140,7 +1140,7 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
         return restored
 
     def operator_cleanup(self):
-        """After a passing run, put back every target configuration still left faulted, as the administrator.
+        """After a passing run, restore every configuration still left faulted to its baseline, as the administrator.
 
         An accepted result that is not a recovery (DEPENDENCY_DEADLOCK, the
         predicted result for redis-pod+cart-config) leaves a configuration
@@ -1169,8 +1169,8 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
         self.summary["operator_cleanup"] = cleanup
         restored = sorted(name for name, item in cleanup.items() if item["restored"])
         if restored:
-            self.check("Administrator put the remaining faulted configuration back after scoring (not a repair)",
-                       targets=restored)
+            self.check("Administrator restored the remaining faulted configuration to its baseline after scoring "
+                       "(not a repair)", targets=restored)
         return cleanup
 
     def run(self):

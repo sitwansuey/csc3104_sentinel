@@ -1,16 +1,17 @@
 # Two simultaneous faults (P4.05)
 
-Status: implemented and tested offline only; no pair run has a result. The
-live recipe was started on 13 Nov 2026 at 29e41f8 ([live attempt](#live-attempt-2026-11-13)):
-its single-fault baselines and the Redis spike ran, but all eight pair runs
-stopped on a harness defect right after both faults were applied. That defect
-and the further live-readiness gaps found since are fixed and tested offline,
-and the pair runs have not been repeated. The pair labels in
-`experiments/boutique/catalog.json` still need sign-off. Do not quote a pair
-result until pair runs have completed and their `summary.json` files are
-committed. With the Guard's dependency rule
-as it stands, the dependency-ordered pair is not expected to show an ordered
-recovery live; see [Owner decision](#owner-decision-callers-block-a-callees-repair).
+Status: implemented, tested offline, and run live once on 13 Nov 2026,
+unscored. At dca7369 all eight pair runs of the recipe passed the harness's
+checks and are committed as `scenario-pair` bundles
+(`C-DUAL-FAULT-PAIRS-DCA7369`, [live results](#live-results-at-dca7369-2026-11-13)):
+the independent pair recovered both targets, and the dependency-ordered pair
+stopped safely with DEPENDENCY_DEADLOCK and no write, so it shows no ordered
+recovery. The first attempt, at 29e41f8, failed on a harness defect
+([live attempt](#live-attempt-at-29e41f8-2026-11-13)). The pair labels in
+`experiments/boutique/catalog.json` still need sign-off, so no pair run is a
+scored trial. Whether a NotReady caller should block its callee's repair is
+an [owner decision](#owner-decision-callers-block-a-callees-repair) that is
+still open.
 
 ## What a pair run checks
 
@@ -173,11 +174,27 @@ while its neighbours are unhealthy", but it has a cost: a callee whose outage
 makes its caller NotReady cannot be repaired until the caller is Ready again,
 which may need the callee first. In the dependency-ordered pair, the faulted
 cart blocks the Redis RESTART and Redis blocks the cart ROLLBACK, so neither
-repair can run. A Redis outage alone does not do this: in the spike of
-13 Nov 2026 (step 3 of the recipe) redis-cart stayed down for about 6 minutes
-and cartservice stayed Ready with no restart, so under the current rule a
-lone Redis repair would not be blocked by its caller. The deadlock comes from
-the C1 fault making the cart Pod NotReady.
+repair can run.
+
+Evidence for the decision, all from 13 Nov 2026:
+
+- **The Redis spike** (step 3 of the recipe, at 29e41f8, an operator log with
+  no Sentinel component running): redis-cart stayed down for about 6 minutes
+  and cartservice stayed Ready with no restart. So a Redis outage alone does
+  not make cartservice NotReady, and under the current rule a lone Redis
+  repair would not be blocked by its caller. The deadlock comes from the C1
+  fault making the cart Pod NotReady.
+- **The live dependency-ordered pair** (`C-DUAL-FAULT-PAIRS-DCA7369`): in all
+  four runs at dca7369, the Executor-kill variant included, the Guard refused
+  the Redis RESTART and the cart ROLLBACK with DEPENDENCY_BLOCKED, the
+  refusals named each other, and the run stopped with DEPENDENCY_DEADLOCK, no
+  write, `ordered_recovery_shown` false and ShopOutcome FAILED. That is the
+  predicted safe stop under the current rule. It is not evidence about
+  ordering either way: no Redis repair ran, so nothing shows whether the cart
+  ALLOW would have come after Redis RECOVERED.
+- **The live independent pair** (same claim): neither target calls the
+  other, and in all four runs the Guard allowed both repairs
+  (VALIDATION_PASSED) and each target recovered with one write.
 
 This branch does not change the rule. Changing it is a safety decision for
 the owner, with a written argument and a test that fails before and passes
@@ -197,7 +214,8 @@ after. Options:
 
 Until the owner decides, keep the P4.05 ordering item and the Phase 4 exit
 item "The dual-fault runs are committed" open
-(`L-CALLER-BLOCKS-CALLEE-REPAIR`).
+(`L-CALLER-BLOCKS-CALLEE-REPAIR`): the runs are now committed, but none of
+them shows the ordering.
 
 One harness process drives both incidents and collects one target's
 verification window at a time, so the other incident waits during it.
@@ -247,7 +265,7 @@ action of the incident, the target's own `fault_injected_at` and
 `scripts/evidence/summarize.py` reads a pair run's `pair-result.json` and
 `summary.json`, not these per-target files.
 
-## Live attempt (2026-11-13)
+## Live attempt at 29e41f8 (2026-11-13)
 
 At 29e41f8 on the connected lab (one Windows host, one kind node, Chaos Mesh
 and metrics-server installed as for [chaos](chaos.md#live-results-2026-11-13-unscored),
@@ -261,7 +279,7 @@ under the same owner-gate note), the recipe below ran in order:
 
 <!-- BEGIN GENERATED:claim-c-dual-fault-baselines-29e41f8 -->
 > **C-DUAL-FAULT-BASELINES-29E41F8:** Single-fault baselines for the P4.05 timing comparison (the connected walkthrough with shipping R1 and with cart C1 at 29e41f8) passed in 2/2 runs.
-> Scope: One run per target, harness-authored proposals, auto-lab approval (automated-lab identity, no person); R1 and C1 labels are pending, so these are not scored trials. They are the single-fault side of the P4.05 comparison; N2's single-fault timing comes from C-CHAOS-RECOVERY-29E41F8. No pair run has a result yet: all eight pair runs at this revision stopped on a harness defect right after both faults were applied (listed in evidence/exclusions.json). One Windows/amd64 host with Docker Desktop and one kind node (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 29e41f8, clean tree, 2026-11-13 UTC.
+> Scope: One run per target, harness-authored proposals, auto-lab approval (automated-lab identity, no person); R1 and C1 labels are pending, so these are not scored trials. They are the single-fault side of the P4.05 comparison; N2's single-fault timing comes from C-CHAOS-RECOVERY-29E41F8. No pair run at this revision has a result: all eight pair runs at 29e41f8 stopped on a harness defect right after both faults were applied (listed in evidence/exclusions.json); the pair runs were repeated at dca7369 (C-DUAL-FAULT-PAIRS-DCA7369). One Windows/amd64 host with Docker Desktop and one kind node (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 29e41f8, clean tree, 2026-11-13 UTC.
 <!-- END GENERATED:claim-c-dual-fault-baselines-29e41f8 -->
 
 - **Redis spike** (operator log, no Sentinel component running): a PodChaos
@@ -286,10 +304,65 @@ The live-readiness fixes described above (planning through the Planner
 journal, scoring what each lane delivered, the storefront grace, the
 stale-version re-plan, the chaos lane first with its window stop, the
 labelled Redis probe Pod, the administrator cleanup and the `scenario-pair`
-evidence class) were made after these runs and are tested offline only.
+evidence class) were made after these runs, merged in dca7369, and then run
+live as below.
 
-So steps 4 to 7 are still to be run, and the timing comparison and the
-Executor-kill variant have no result.
+## Live results at dca7369 (2026-11-13)
+
+Steps 4 to 7 of the recipe ran again at dca7369 on the same lab, between
+12:09 and 12:38 UTC, with auto-lab approval (the automated-lab identity, no
+person deciding) and harness-authored proposals from the code rule provider.
+All eight runs passed the harness's checks and are committed as
+`scenario-pair` bundles, listed in the "Scenario pairs" table of
+[results](results.md#scenario-pairs). Each run applied both faults within
+0.3 s of each other, found no cross-incident transition, and deleted its
+chaos object with the cleanup confirmed.
+
+<!-- BEGIN GENERATED:claim-c-dual-fault-pairs-dca7369 -->
+> **C-DUAL-FAULT-PAIRS-DCA7369:** P4.05 two-fault pair runs on the connected Boutique at dca7369, both faults applied within 0.3 s of each other: shipping-config+cart-pod at dca7369 PASS x3: RECOVERED, ShopOutcome RECOVERED, Executor writes cartservice 1 and shippingservice 1, RESTART attributed, chaos cleaned up, labels pending; shipping-config+cart-pod with an Executor kill on shippingservice at dca7369 PASS: RECOVERED, ShopOutcome RECOVERED, Executor writes cartservice 1 and shippingservice 1, RESTART attributed, shippingservice worker killed after 1 write, reconciled APPLIED with 0 further writes, chaos cleaned up, labels pending; redis-pod+cart-config at dca7369 PASS x3: DEPENDENCY_DEADLOCK, ShopOutcome FAILED, Executor writes cartservice 0 and redis-cart 0, ordered recovery shown: no, chaos cleaned up, administrator restored cartservice to baseline after scoring (not a repair), labels pending; redis-pod+cart-config with an Executor kill on cartservice at dca7369 PASS: DEPENDENCY_DEADLOCK, ShopOutcome FAILED, Executor writes cartservice 0 and redis-cart 0, no cartservice write, so no worker was killed, ordered recovery shown: no, chaos cleaned up, administrator restored cartservice to baseline after scoring (not a repair), labels pending.
+> Scope: Eight runs on 13 Nov 2026 between 12:09 and 12:38 UTC: three of each pair and one Executor-kill variant of each. The pair labels in experiments/boutique/catalog.json are not signed off (labels pending), so these runs are checked against the pre-registered expectations but are not scored trials. Proposals came from the code rule provider with a trusted live-template read (no model), and every approval was auto-lab (automated-lab identity, no person decided). One Windows/amd64 host with Docker Desktop, one kind node (cluster kind-sentinel-boutique-connected) and one harness process that drove both incidents and verified one target at a time, so the pair timings do not measure independent workers or machines. In all four redis-pod+cart-config runs the Guard refused both repairs with DEPENDENCY_BLOCKED, the refusals named each other and the run stopped with DEPENDENCY_DEADLOCK and no write: the catalog accepts that as a safe stop, but it shows no ordered recovery (ordered_recovery_shown false), and none of the three storefront journeys taken after it passed (ShopOutcome FAILED). After scoring, the harness's administrator cleanup returned cartservice's C1 configuration to its baseline in each of those runs; that is lab cleanup, not a Sentinel repair, and the check recorded in those bundles still uses the older wording 'put the remaining faulted configuration back'. The dependency pair's kill variant stopped before any write, so there was nothing to kill and it shows nothing about reconciliation; only the independent pair's kill variant killed a worker. Whether a NotReady caller should block its callee's repair is still an owner decision (L-CALLER-BLOCKS-CALLEE-REPAIR). The eight earlier pair runs at 29e41f8 failed on a harness defect and are in evidence/exclusions.json. Provenance recorded: dca7369, clean tree, 2026-11-13 UTC.
+<!-- END GENERATED:claim-c-dual-fault-pairs-dca7369 -->
+
+- **Independent pair, `shipping-config+cart-pod`, three runs**: RECOVERED,
+  one write per target, the cart RESTART attributed to Sentinel (new Pod not
+  selected by the chaos, recovered before the chaos expired), ShopOutcome
+  RECOVERED. From incident opened to RECOVERED, the cart took 70.8 to 74.8 s
+  and shippingservice 97.3 to 100.5 s; shippingservice's time includes
+  waiting while the harness collected the cart's verification window, because
+  one harness process verifies one target at a time (`timings` and
+  `lane_wall_times` in each `pair-result.json`). These are one process on one
+  host, not independent workers.
+- **Its Executor-kill variant, once**: the same result. The shippingservice
+  Executor worker was killed (exit 73) after its one write, and
+  reconciliation found the write APPLIED without writing again
+  (`executor_kill` in `summary.json`: one worker write, zero reconcile
+  writes).
+- **Dependency-ordered pair, `redis-pod+cart-config`, three runs**:
+  DEPENDENCY_DEADLOCK, as predicted under the current Guard rule. Both
+  proposals were REJECTED with DEPENDENCY_BLOCKED, the refusals named each
+  other, no write was made, `ordered_recovery_shown` is false and the
+  ShopOutcome FAILED. This is a safe stop, not ordering evidence.
+- **Its Executor-kill variant, once**: the same DEADLOCK before any write,
+  so there was nothing to kill; `summary.json` has no `executor_kill`. This
+  run shows nothing about reconciliation.
+
+After each dependency-ordered run was scored and saved, the administrator
+cleanup returned cartservice's C1 configuration to its baseline
+(`operator_cleanup` in `summary.json`, one conditional patch and a complete
+rollout). That is lab cleanup, not a Sentinel repair: it is not in the
+Executor ledger and does not change the pair result. The check line recorded
+in those four bundles reads "Administrator put the remaining faulted
+configuration back after scoring (not a repair)"; it means the configuration
+was returned to its baseline, and the harness now says so in those words.
+Bundles are append-only, so the recorded runs keep the older wording.
+
+Not shown by these runs: an ordered recovery of the dependency-ordered pair
+(see the [owner decision](#owner-decision-callers-block-a-callees-repair)),
+a person approving a pair repair (`--approval interactive` was not used),
+reconciliation after a killed cart worker, and a scored result, which needs
+the labels signed off. The timing comparison with single-fault runs is
+limited to the shipping R1 and cart C1 baselines at 29e41f8 and N2's
+single-fault runs; C3 and D1 have no single-run form.
 
 ## Live recipe
 
@@ -354,6 +427,9 @@ only.
    Record whether cartservice turns NotReady while only Redis is down, and
    attach the output to the owner decision above. Result on 13 Nov 2026:
    cartservice stayed Ready throughout (above).
+
+   Steps 4 to 7 ran at dca7369 on 13 Nov 2026 with the results
+   [above](#live-results-at-dca7369-2026-11-13).
 
 4. **Independent pair, three runs.**
 
@@ -443,14 +519,15 @@ call, so neither stamp is when the fault took effect.
 - C3 and D1 have no single-run form, so the timing comparison uses N2.
 - A pair run takes no `--dashboard` and has no launcher parameter.
 
-Cleanup is automatic: each run deletes its chaos object and, on failure, puts
-a changed template back as the administrator (never counted as a repair).
+Cleanup is automatic: each run deletes its chaos object and, on failure,
+restores a changed template to its baseline as the administrator (never
+counted as a repair).
 A run that passes can still leave a fault in place: DEPENDENCY_DEADLOCK, the
 predicted result for `redis-pod+cart-config`, writes nothing, so
 cartservice keeps its C1 `REDIS_ADDR=redis-cart:6390` and the storefront stays
 broken. So after the pair is judged and saved, and after the chaos object is
-deleted, the harness also puts back, as the administrator, every target whose
-configuration still differs from its baseline (`operator_cleanup` in
+deleted, the harness also restores to its baseline, as the administrator,
+every target whose configuration still differs from it (`operator_cleanup` in
 `experiments/boutique/harness/multi_fault.py`). It uses the drift cell's
 conditional patch (the UID and resourceVersion are tested), waits for the
 rollout and records the result in `summary.json` as `operator_cleanup`, apart

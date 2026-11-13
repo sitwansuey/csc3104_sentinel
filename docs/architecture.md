@@ -89,8 +89,10 @@ ready is refused (DEPENDENCY_BLOCKED), and a pair run plans it again only
 after the blocking pair target recovers. Because callers count too, a callee
 cannot be repaired while a caller it broke is NotReady; when both pair
 repairs block each other the run stops with no write. [Two simultaneous faults](dual-fault.md) describes the pair runs
-that exercise this (tested offline only), including per-target verification
-and the separate ShopOutcome.
+that exercise this, including per-target verification and the separate
+ShopOutcome. Live, unscored, the dependency-ordered pair stopped this way in
+every run, so its ordering has been shown offline only
+(`C-DUAL-FAULT-PAIRS-DCA7369`).
 
 ## Guard, approval and execution
 

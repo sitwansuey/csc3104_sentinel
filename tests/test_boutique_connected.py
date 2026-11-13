@@ -1829,7 +1829,11 @@ class PairCleanupTests(unittest.TestCase):
         self.assertNotIn("drift_cell_restored", experiment.summary)
         self.assertNotIn("pair_result", experiment.summary)  # Recorded apart from the scored result.
         self.assertFalse((experiment.directory / "executor.sqlite").exists())  # No Executor write.
-        self.assertIn("not a repair", experiment.summary["checks"][-1]["name"])
+        # The check says the fault was taken away, not applied again.
+        self.assertEqual(experiment.summary["checks"][-1]["name"],
+                         "Administrator restored the remaining faulted configuration to its baseline after scoring "
+                         "(not a repair)")
+        self.assertEqual(experiment.summary["checks"][-1]["targets"], ["cartservice"])
 
     def test_nothing_is_patched_when_both_configurations_are_at_baseline(self):
         experiment, fake = self.cleaning({"redis-cart": "restarted", "cartservice": "ok"})

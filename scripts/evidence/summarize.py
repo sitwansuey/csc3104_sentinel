@@ -495,6 +495,71 @@ def pair_rows(bundles):
     return [pair_row(bundle) for bundle in members]
 
 
+def pair_kill_text(summary, writes):
+    """What the Executor-kill variant did: the kill and its reconciliation, or why nothing was killed."""
+    planned = (summary.get("pair") or {}).get("executor_kill")
+    killed = summary.get("executor_kill")
+    if isinstance(killed, dict):
+        worker, again = killed.get("worker_writes"), killed.get("reconcile_writes")
+        return (f"{killed.get('target') or planned} worker killed after {worker} write{'' if worker == 1 else 's'}, "
+                f"reconciled {killed.get('reconciled') or 'unknown'} with {again} further "
+                f"write{'' if again == 1 else 's'}")
+    if (writes or {}).get(planned) == 0:
+        return f"no {planned} write, so no worker was killed"
+    return "kill not recorded"
+
+
+def pair_parts(bundle):
+    """One scenario-pair run as a heading (pair, kill variant, revision, outcome) and what it showed.
+
+    Only facts the bundle records: the pair result and ShopOutcome, Executor
+    writes per target, RESTART attribution, the Executor kill, whether an
+    ordered recovery was shown, the chaos cleanup, the administrator's
+    after-scoring cleanup (never a repair) and the label status.
+    """
+    _, pair, revision, status, result, shop, _, _, shown, labels = pair_row(bundle)
+    summary = summary_of(bundle)
+    graded = ((bundle.json("pair-result.json") or {}).get("result")
+              or (summary.get("pair_result") or {}).get("result") or {})
+    planned = (summary.get("pair") or {}).get("executor_kill")
+    head = f"{pair}{f' with an Executor kill on {planned}' if planned else ''} at {revision} {status}"
+    if not graded:
+        return head, f"no pair result, labels {labels}"
+    writes = graded.get("writes") or {}
+    said = [result, f"ShopOutcome {shop}",
+            "Executor writes " + (" and ".join(f"{name} {count}" for name, count in sorted(writes.items()))
+                                  or "unmeasured")]
+    attribution = summary.get("attribution")
+    if isinstance(attribution, dict):
+        said.append("RESTART attributed" if attribution.get("attributed") is True else "RESTART not attributed")
+    if planned:
+        said.append(pair_kill_text(summary, writes))
+    if shown != "n/a":
+        said.append(f"ordered recovery shown: {shown}")
+    if summary.get("chaos"):
+        said.append({True: "chaos cleaned up", False: "chaos cleanup not confirmed"}.get(
+            summary.get("chaos_cleanup_confirmed"), "chaos cleanup unknown"))
+    restored = sorted(name for name, item in (summary.get("operator_cleanup") or {}).items()
+                      if isinstance(item, dict) and item.get("restored") is True)
+    if restored:
+        said.append(f"administrator restored {' and '.join(restored)} to baseline after scoring (not a repair)")
+    said.append(f"labels {labels}")
+    return head, ", ".join(said)
+
+
+def pair_outcomes(bundles):
+    """Per cited scenario-pair run, in claim order, with consecutive identical runs counted once."""
+    groups = []
+    for bundle in bundles:
+        head, tail = pair_parts(bundle)
+        if groups and groups[-1][:2] == [head, tail]:
+            groups[-1][2] += 1
+        else:
+            groups.append([head, tail, 1])
+    return "; ".join(f"{head}{f' x{count}' if count > 1 else ''}: {tail}" for head, tail, count in groups) \
+        or "no pair runs"
+
+
 def security_lab(bundles):
     rows = []
     for bundle in bundles:
@@ -1192,6 +1257,7 @@ DERIVATIONS = {
     "approval_refusals": approval_refusals,
     "injection_free": injection_free,
     "scenario_outcomes": scenario_outcomes,
+    "pair_outcomes": pair_outcomes,
     "distributed_expectations": distributed_expectations,
     "seal_outcomes": seal_outcomes,
     "trace_shapes": trace_shapes,

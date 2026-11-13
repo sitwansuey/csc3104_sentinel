@@ -172,7 +172,7 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-NO-FENCING](docs/limitations.md#l-no-fencing): Abandoned or revoked Executor writes are fenced only by a seal, run live on one kind node (limitation, mitigated; planned P3.04, P3.05, P4.01)
 - [L-EXECUTOR-FIELD-LIMITS](docs/limitations.md#l-executor-field-limits): The Executor's field limits are an admission policy checked live once but installed nowhere by default (limitation, mitigated; planned P3.05, P4.01)
 - [L-ONE-FAULT-ONE-ACTION](docs/limitations.md#l-one-fault-one-action): One fault type, one repair action and one live target (limitation, mitigated; planned P2.08, P3.08, P3.09)
-- [L-OVERLAPPING-FAULTS](docs/limitations.md#l-overlapping-faults): Two simultaneous faults are implemented and tested offline only (limitation, mitigated; planned P4.05)
+- [L-OVERLAPPING-FAULTS](docs/limitations.md#l-overlapping-faults): Two simultaneous faults have run live only as two unscored lab pairs, and the dependency pair stopped without ordering (limitation, mitigated; planned P4.05)
 - [L-MODEL-LATENCY](docs/limitations.md#l-model-latency): Model cold loads make agent planning slow and variable (limitation, mitigated; planned P2.01)
 - [L-UNPINNED-BASE-IMAGES](docs/limitations.md#l-unpinned-base-images): Sentinel component images used unpinned base image tags (limitation, mitigated; planned P1.09)
 - [L-CHAOS-NOT-WIRED](docs/limitations.md#l-chaos-not-wired): Chaos Mesh recovery has run live in the connected lab only, unscored, and HTTP and DNS faults do not run on this host (limitation, mitigated; planned P4.03)

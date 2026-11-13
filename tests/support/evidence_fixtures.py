@@ -231,8 +231,12 @@ PAIR_RUN_JUDGED = (
 
 
 def pair_run(root, name, *, status="PASS", result="DEPENDENCY_DEADLOCK", shop="FAILED", started="2026-11-13T09:50:52Z",
-             judged=True, labels="pending"):
-    """A scenario-pair run folder with the real layout; judged adds what a run that reached judging writes."""
+             judged=True, labels="pending", kill=None, extra=None):
+    """A scenario-pair run folder with the real layout; judged adds what a run that reached judging writes.
+
+    kill names the Executor-kill variant's target; extra adds summary fields
+    (executor_kill, attribution, chaos, operator_cleanup) as the harness writes them.
+    """
     run = Path(root) / name
     for relative in PAIR_RUN_LAYOUT + (PAIR_RUN_JUDGED if judged else ()):
         write(run / relative, {"file": relative})
@@ -244,8 +248,9 @@ def pair_run(root, name, *, status="PASS", result="DEPENDENCY_DEADLOCK", shop="F
               "labels": labels, "labels_pending": labels != "signed",
               "ordered_recovery_shown": result == "RECOVERED"}
     summary = {"status": status, "started_at": started, "checks": [],
-               "pair": {"id": "redis-pod+cart-config", "kind": "dependency_ordered", "labels": labels},
-               "provenance": {"source_revision": REVISION, "dirty": False}}
+               "pair": {"id": "redis-pod+cart-config", "kind": "dependency_ordered", "labels": labels,
+                        "executor_kill": kill},
+               "provenance": {"source_revision": REVISION, "dirty": False}, **(extra or {})}
     if judged:
         summary["pair_result"] = {"result": graded, "shop": {"status": shop}}
         write(run / "pair-result.json", {"result": graded, "shop": {"status": shop}})
