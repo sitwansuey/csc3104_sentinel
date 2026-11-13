@@ -26,6 +26,14 @@ Scenarios (--scenario):
                    strategy counts annotation changes). The policy is then removed and a new proposal must
                    be admitted and APPLIED.
 
+--transport rest (P5.08) runs the same scenarios with the Executor's
+structured REST client instead of kubectl. It sees the HTTP status, so
+rv-race must end CONFLICT with basis DEFINITE_REJECTION (the 422 from the failed
+resourceVersion test) and admission-deny FAILED with basis DEFINITE_REJECTION
+at once, with no fence and no settle delay; delete-recreate is unchanged. Each
+summary records its transport, so the two runs of a scenario can be compared
+row by row.
+
 Safety rules: --context is required and must be in ALLOWED_CONTEXTS. Any
 context or cluster naming sentinel-lab is refused. The harness creates its own
 namespace with a zero-replica Deployment, makes every Executor read and patch
@@ -52,6 +60,7 @@ if str(ROOT) not in sys.path:
 
 from services.executor.core import ACTION_ANNOTATION, ExecutionAdapters, GuardCheck, execute, reconcile
 from services.executor.kubernetes_adapter import KubectlDeploymentAPI
+from services.executor.rest_adapter import KubernetesRESTDeploymentAPI
 from services.executor.reconciliation import FENCE_ANNOTATION
 from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedger, TargetBusy, fingerprint
 from services.guard.preview import _private_file
@@ -74,6 +83,11 @@ _SECRET_KEYS = frozenset({"token", "kubeconfig", "server", "certificate-authorit
 EXPECTED = {"rv-race": ("SUPERSEDED", "ADVANCED_WITHOUT_EVIDENCE"),
             "delete-recreate": ("SUPERSEDED", "TARGET_REPLACED"),
             "admission-deny": ("CONFLICT", "FENCED")}
+TRANSPORTS = ("kubectl", "rest")
+# With the REST transport a definite rejection is decided by the write's own answer (P5.08).
+EXPECTED_REST = {"rv-race": ("CONFLICT", "DEFINITE_REJECTION"),
+                 "delete-recreate": ("SUPERSEDED", "TARGET_REPLACED"),
+                 "admission-deny": ("FAILED", "DEFINITE_REJECTION")}
 
 
 class Refused(ValueError):
@@ -193,10 +207,13 @@ class HarnessAuthorizer:
 
 class WedgeHarness:
     def __init__(self, context, scenario, run_dir, *, runner=subprocess.run, kubectl="kubectl",
-                 clock=None, sleep=time.sleep):
+                 clock=None, sleep=time.sleep, transport="kubectl", rest_api=KubernetesRESTDeploymentAPI):
         self.context = check_context(context)
         if scenario not in SCENARIOS:
             raise Refused("Unknown scenario")
+        if transport not in TRANSPORTS:
+            raise Refused("Unknown transport")
+        self.transport, self.rest_api = transport, rest_api
         self.scenario, self.runner, self.kubectl_path = scenario, runner, kubectl
         self.clock, self.sleep = clock or (lambda: datetime.now(UTC)), sleep
         self.directory = Path(run_dir).resolve()
@@ -209,7 +226,7 @@ class WedgeHarness:
         self.namespace_created = False
         self.policy_created = False
         self.patch_processes = 0
-        self.summary = {"scenario": scenario, "context": context, "namespace": self.namespace,
+        self.summary = {"scenario": scenario, "transport": transport, "context": context, "namespace": self.namespace,
                         "started_at": utc(), "status": "RUNNING", "checks": [], "results": [],
                         "scope": ("one disposable namespace on a local kind cluster; containers on one host, "
                                   "not separate machines; Guard not under test")}
@@ -307,6 +324,7 @@ class WedgeHarness:
         with self.credentials.open("x", encoding="utf-8") as stream:
             _private_file(self.credentials)
             json.dump(config, stream)
+        self.restricted_config = config  # In memory only, for the REST transport.
 
     def fault(self):
         """An operator edit to the Pod template that the rollback will undo."""
@@ -326,10 +344,16 @@ class WedgeHarness:
                 "evidence_refs": ["wedge-harness"]}
 
     def adapters(self, target, runner):
-        """Fencing is on in every scenario, with the settle delay recommended for live runs."""
-        api = KubectlDeploymentAPI(context=RESTRICTED_CONTEXT, cluster_id=self.cluster_id,
-                                   kubeconfig=self.credentials, allowed_targets=[target], runner=runner,
-                                   kubectl=self.kubectl_path, clock=self.clock)
+        """Fencing is on in every scenario, with the settle delay recommended for live runs.
+
+        With --transport rest, runner's before_patch hook (if any) runs before each PATCH instead.
+        """
+        if self.transport == "rest":
+            api = self.rest_client(target, getattr(runner, "before_patch", None))
+        else:
+            api = KubectlDeploymentAPI(context=RESTRICTED_CONTEXT, cluster_id=self.cluster_id,
+                                       kubeconfig=self.credentials, allowed_targets=[target], runner=runner,
+                                       kubectl=self.kubectl_path, clock=self.clock)
         return ExecutionAdapters(ledger=self.ledger, coordination=self.locks, cluster=api,
                                  authorizer=HarnessAuthorizer(self.baseline), clock=self.clock,
                                  fence_after_seconds=FENCE_AFTER_SECONDS)
@@ -355,25 +379,46 @@ class WedgeHarness:
             self.patch_processes += 1
         return self.runner(command, **kwargs)
 
+    def rest_client(self, target, hook):
+        """The REST transport from the restricted credentials; hook runs before each PATCH, which counts as one."""
+        harness = self
+
+        class HarnessREST(self.rest_api):
+            def _submit(self, *args, **kwargs):
+                if hook is not None:
+                    hook()
+                harness.patch_processes += 1
+                return super()._submit(*args, **kwargs)
+        return HarnessREST.from_kubeconfig_data(self.restricted_config, context=RESTRICTED_CONTEXT,
+                                                cluster_id=self.cluster_id, allowed_targets=[target],
+                                                clock=self.clock)
+
     # Scenarios -------------------------------------------------------------
 
-    def scenario_runner(self):
+    def scenario_hook(self):
+        """What happens just before the first action's patch leaves this process, with either transport."""
         if self.scenario == "rv-race":
-            def race(command, **kwargs):
-                if "patch" in command:
-                    # Another writer moves the version between the Executor's pre-read and its patch.
-                    self.kubectl("annotate", "deployment", NAME, "sentinel.io/test-bump=" + uuid4().hex[:8],
-                                 "--overwrite")
-                return self.counted(command, **kwargs)
+            def race():
+                # Another writer moves the version between the Executor's pre-read and its patch.
+                self.kubectl("annotate", "deployment", NAME, "sentinel.io/test-bump=" + uuid4().hex[:8],
+                             "--overwrite")
             return race
         if self.scenario == "admission-deny":
-            return self.counted  # The API server itself rejects the write.
+            return None  # The API server itself rejects the write.
 
-        def stop(command, **kwargs):
-            if "patch" in command:
-                raise StopBeforeSend()
-            return self.counted(command, **kwargs)
+        def stop():
+            raise StopBeforeSend()
         return stop
+
+    def scenario_runner(self):
+        hook = self.scenario_hook()
+
+        def run(command, **kwargs):
+            if hook is not None and "patch" in command:
+                hook()
+            return self.counted(command, **kwargs)
+        run.before_patch = hook
+        return run
 
     def template_change_denied(self):
         """A server-side dry run of a Pod template change; it commits nothing."""
@@ -428,7 +473,11 @@ class WedgeHarness:
         started = self.clock()
         try:
             self.record("execute", execute(first, adapters), [adapters], 0)
-            if self.scenario == "admission-deny":
+            if self.scenario == "admission-deny" and self.transport == "rest":
+                truth = self.truth("after the denied write")
+                self.check("the denied write left the resource version unchanged",
+                           truth["resource_version"] == first["based_on_resource_version"])
+            elif self.scenario == "admission-deny":
                 self.await_settle(first)
         except StopBeforeSend:
             # The adapter counts the attempt before it starts kubectl, so write_attempts is 1 here
@@ -445,7 +494,7 @@ class WedgeHarness:
         self.summary["reconcile_pass_statuses"] = [item["status"] for item in reconciled]
         status, basis = self.record("reconcile", reconciled[-1], passes, patches_before)
         self.summary["time_to_resolution_seconds"] = round((self.clock() - started).total_seconds(), 3)
-        expected = EXPECTED[self.scenario]
+        expected = (EXPECTED_REST if self.transport == "rest" else EXPECTED)[self.scenario]
         self.check("first action resolves as " + "/".join(expected), (status, basis) == expected,
                    observed=[status, basis])
         self.check("ledger releases the workload", self.ledger.get(first["action_id"])["phase"] == "DONE")
@@ -453,9 +502,13 @@ class WedgeHarness:
         if self.scenario == "delete-recreate":
             self.check("no patch reached kubectl for the first action", self.patch_processes == 0)
         after = self.truth("after first action")
-        if self.scenario == "admission-deny":
+        if self.scenario == "admission-deny" and self.transport == "rest":
+            self.check("no fence was sent", sum(row["fence_attempts"] for row in self.summary["results"]) == 0)
+            self.check("no fence marker is on the Deployment", after["fence_action_id"] is None)
+        elif self.scenario == "admission-deny":
             self.check("exactly one fence was sent", self.summary["results"][-1]["fence_attempts"] == 1)
             self.check("the fence marker names the first action", after["fence_action_id"] == first["action_id"])
+        if self.scenario == "admission-deny":
             # A Deployment's generation also rises on annotation changes, so compare the spec instead.
             self.check("the spec is unchanged, so the fence started no rollout",
                        after["spec_sha256"] == before["spec_sha256"])
@@ -526,10 +579,12 @@ def parse_args(argv):
     parser.add_argument("--context", required=True, help="kubeconfig context: " + ", ".join(sorted(ALLOWED_CONTEXTS)))
     parser.add_argument("--scenario", required=True, choices=SCENARIOS)
     parser.add_argument("--run-dir", type=Path, help="new directory for the ledger and summary")
+    parser.add_argument("--transport", choices=TRANSPORTS, default="kubectl",
+                        help="the Executor's Deployment client: kubectl (default) or rest (P5.08)")
     return parser.parse_args(argv)
 
 
-def main(argv=None, *, runner=subprocess.run, clock=None, sleep=time.sleep):
+def main(argv=None, *, runner=subprocess.run, clock=None, sleep=time.sleep, rest_api=None):
     args = parse_args(argv)
     try:
         check_context(args.context)
@@ -537,8 +592,10 @@ def main(argv=None, *, runner=subprocess.run, clock=None, sleep=time.sleep):
         print("Refused: " + str(exc), file=sys.stderr)
         return 2
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    directory = args.run_dir or ROOT / "data/sentinel/runs" / f"executor-wedge-{stamp}-{args.scenario}"
-    harness = WedgeHarness(args.context, args.scenario, directory, runner=runner, clock=clock, sleep=sleep)
+    suffix = "-rest" if args.transport == "rest" else ""
+    directory = args.run_dir or ROOT / "data/sentinel/runs" / f"executor-wedge-{stamp}-{args.scenario}{suffix}"
+    harness = WedgeHarness(args.context, args.scenario, directory, runner=runner, clock=clock, sleep=sleep,
+                           transport=args.transport, **({"rest_api": rest_api} if rest_api is not None else {}))
     try:
         summary = harness.run()
     except Refused as exc:

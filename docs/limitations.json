@@ -7,13 +7,13 @@
       "kind": "defect",
       "status": "mitigated",
       "since": "2026-11-11",
-      "impact": "Fixed in code and verified live on one host: one run each for the moved-resourceVersion and replaced-target cases on 2026-11-11 and again at 4139385 (a plain delete was not run live), and the fence for an unchanged resourceVersion at 4139385 and 5409092 (C-EXECUTOR-WEDGE-FENCE). It stays mitigated because fencing is off by default. Reconciliation is a pure decision table: a deleted or recreated target, or a resourceVersion that moved without this action's evidence, ends SUPERSEDED, which the Coordinator records as FAILED so a new proposal can follow. The live wedge harness (C-EXECUTOR-WEDGE: one run per scenario on one Windows host with kind, 2026-11-11) showed main's Executor (d5b2ed9) staying NEEDS_RECONCILIATION over 5 reconcile passes with the workload still excluded, while 4afc879 resolved the moved-resourceVersion case (rv-race) as SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE and the replaced-target case (delete-recreate) as SUPERSEDED/TARGET_REPLACED, released the workload and applied a second proposal. kubectl error text is still not classified (the DEFINITE_REJECTION rows are reserved), so a rejection that leaves the same UID at the same resourceVersion, such as an admission denial, still looks like a request in flight. When fencing is configured (fence_after_seconds; off by default), a reconcile pass after the settle delay sends a metadata-only patch with the same UID and resourceVersion tests and this action's fence marker, journaled before the call. If it commits, the write never committed and never can, so the result is CONFLICT with basis FENCED and the workload is released; tests and the model checker cover it, and the model checker ends no run in doubt with fencing on. With fencing off, that action stays NEEDS_RECONCILIATION and after 600 s gets one 'Operator action required' result. Live verification of the fence (C-EXECUTOR-WEDGE-FENCE, one host, kind-sentinel-boutique-connected): in the admission-deny scenario a ValidatingAdmissionPolicy denied the template write with the same UID at the same resourceVersion; the action stayed NEEDS_RECONCILIATION before the settle delay, then one fence committed and it resolved as CONFLICT/FENCED on 5/5 reconcile passes, the workload was released and a second proposal was APPLIED. The first run (4139385) is FAILED on one harness check only, which wrongly expected metadata.generation to stay unchanged (a Deployment bumps it on an annotation change); 17d4532 fixed the check to compare the spec and the rerun at 5409092 passed every check. One run per revision; the wedge summaries carry no provenance block, so these revisions are inferred.",
+      "impact": "Fixed in code and verified live on one host: one run each for the moved-resourceVersion and replaced-target cases on 2026-11-11 and again at 4139385 (a plain delete was not run live), and the fence for an unchanged resourceVersion at 4139385 and 5409092 (C-EXECUTOR-WEDGE-FENCE). It stays mitigated because fencing is off by default. Reconciliation is a pure decision table: a deleted or recreated target, or a resourceVersion that moved without this action's evidence, ends SUPERSEDED, which the Coordinator records as FAILED so a new proposal can follow. The live wedge harness (C-EXECUTOR-WEDGE: one run per scenario on one Windows host with kind, 2026-11-11) showed main's Executor (d5b2ed9) staying NEEDS_RECONCILIATION over 5 reconcile passes with the workload still excluded, while 4afc879 resolved the moved-resourceVersion case (rv-race) as SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE and the replaced-target case (delete-recreate) as SUPERSEDED/TARGET_REPLACED, released the workload and applied a second proposal. With the default kubectl transport, error text is still not classified, so a rejection that leaves the same UID at the same resourceVersion, such as an admission denial, still looks like a request in flight. The optional REST transport (P5.08) decides such a rejection at once as FAILED with basis DEFINITE_REJECTION, offline only (L-REST-TRANSPORT-OFFLINE). When fencing is configured (fence_after_seconds; off by default), a reconcile pass after the settle delay sends a metadata-only patch with the same UID and resourceVersion tests and this action's fence marker, journaled before the call. If it commits, the write never committed and never can, so the result is CONFLICT with basis FENCED and the workload is released; tests and the model checker cover it, and the model checker ends no run in doubt with fencing on. With fencing off, that action stays NEEDS_RECONCILIATION and after 600 s gets one 'Operator action required' result. Live verification of the fence (C-EXECUTOR-WEDGE-FENCE, one host, kind-sentinel-boutique-connected): in the admission-deny scenario a ValidatingAdmissionPolicy denied the template write with the same UID at the same resourceVersion; the action stayed NEEDS_RECONCILIATION before the settle delay, then one fence committed and it resolved as CONFLICT/FENCED on 5/5 reconcile passes, the workload was released and a second proposal was APPLIED. The first run (4139385) is FAILED on one harness check only, which wrongly expected metadata.generation to stay unchanged (a Deployment bumps it on an annotation change); 17d4532 fixed the check to compare the spec and the rerun at 5409092 passed every check. One run per revision; the wedge summaries carry no provenance block, so these revisions are inferred.",
       "workaround": "Turn fencing on: fence_after_seconds in the Executor worker configuration, or --fence-after with runtime/live_executor.py --reconcile. With fencing off, an operator inspects the Deployment and clears the Executor ledger row by hand for the unchanged-version case. The deleted, recreated and moved-version cases need no workaround.",
       "cites": [
         {"at": "services/executor/kubernetes_adapter.py:321", "text": "Live write returned an error; reconcile its outcome"},
         {"at": "services/executor/reconciliation.py:267", "text": "Basis.UNCHANGED_IN_DOUBT, version, may_fence=True"},
-        {"at": "services/executor/core.py:51", "text": "Live state does not confirm this attempt"},
-        {"at": "services/executor/core.py:288-289", "text": "adapters.ledger.record_fence(action_id, nonce, _now(adapters))"},
+        {"at": "services/executor/core.py:52", "text": "Live state does not confirm this attempt"},
+        {"at": "services/executor/core.py:318-319", "text": "adapters.ledger.record_fence(action_id, nonce, _now(adapters))"},
         {"at": "services/executor/kubernetes_adapter.py:291", "text": "A fence may change metadata only"},
         {"at": "tests/test_executor_reconciliation_table.py:325", "text": "def test_external_version_bump_supersedes_and_releases_the_workload"},
         {"at": "tests/test_executor_reconciliation_table.py:357", "text": "def test_unchanged_version_stays_in_doubt_and_is_deduplicated"},
@@ -35,8 +35,8 @@
       "impact": "Fixed in code; live verification is left to P3.01 and P4.01. An Executor that finds the resourceVersion moved now looks for this action's evidence annotation on the Deployment and reports APPLIED for a peer's write without writing again. A host given a reconcile command with no ledger row journals the action as in doubt and reconciles from the proposal and live state, so it never starts that write. An execute command on a fresh host can still write, and the resourceVersion test in the patch lets at most one write for the action commit. Decision-table and integration tests cover both. One gap stays: if the peer's write was later overwritten, execute() reports CONFLICT where reconcile() reports SUPERSEDED; the Coordinator records both as FAILED. The P3.01 multi-process harness runs two Executor processes with separate ledgers and locks on one host: in S1c a peer adopted a write committed by a crashed Executor and in S2 a stalled Executor adopted its peer's write, each with one template write. That is still one machine and a file-backed test cluster; no live run has used two Executors.",
       "workaround": "Run one Executor with one ledger directory, as every documented run does, until a multi-host run verifies this.",
       "cites": [
-        {"at": "services/executor/core.py:555", "text": "# Another host may already have committed this same action."},
-        {"at": "services/executor/core.py:387", "text": "# Journal the action as in doubt here, so this host can never start it."},
+        {"at": "services/executor/core.py:586", "text": "# Another host may already have committed this same action."},
+        {"at": "services/executor/core.py:418", "text": "# Journal the action as in doubt here, so this host can never start it."},
         {"at": "tests/test_executor_reconciliation_table.py:420", "text": "def test_peer_adoption_gives_applied_with_zero_writes_on_host_b"},
         {"at": "tests/test_executor_reconciliation_table.py:475", "text": "def test_reconcile_on_a_host_with_no_row_returns_a_result"},
         {"at": "services/executor/store.py:3", "text": "Every worker must use the same ledger and lock directory"},
@@ -60,7 +60,7 @@
         {"at": "runtime/remote_worker.py:174", "text": "lease_duration(delivery, clock) / 3"},
         {"at": "services/guard/core.py:160", "text": "if approved_at > checked_at + skew:"},
         {"at": "runtime/worker_http.py:322", "text": "self.samples.clear()"},
-        {"at": "runtime/live_executor.py:126", "text": "now=self.clock()"},
+        {"at": "runtime/live_executor.py:129", "text": "now=self.clock()"},
         {"at": "services/verifier/store.py:96", "text": "Monitoring cannot start before execution"},
         {"at": "tests/test_distributed_processes.py:90", "text": "def test_s7_executor_clocks_300_s_behind_end_failed_without_a_write_or_a_wedge"},
         {"at": "tests/test_clock_skew.py:738", "text": "def test_per_role_clocks_300_s_apart_reach_recovered"}
@@ -199,7 +199,7 @@
         {"at": "shared/log.py:237", "text": "def entrypoint(component: str)"},
         {"at": "runtime/worker_http.py:529", "text": "@log.entrypoint(\"worker_http\")"},
         {"at": "shared/tracing.py:123", "text": "def start_span("},
-        {"at": "services/executor/core.py:251-252", "text": "any read failure leaves the outcome unknown"},
+        {"at": "services/executor/core.py:277-278", "text": "any read failure leaves the outcome unknown"},
         {"at": "docs/observability.md", "text": "only when their entrypoint configures logging"},
         {"at": "tests/test_except_audit.py:39", "text": "def test_repository_has_no_unjustified_broad_handler"},
         {"claim": "C-CONNECTED-HARNESS-AUTOLAB"},
@@ -555,6 +555,27 @@
       ],
       "planned": ["P5.07"],
       "issues": [74]
+    },
+    {
+      "id": "L-REST-TRANSPORT-OFFLINE",
+      "title": "The Executor's structured REST transport is tested offline only and is not the default",
+      "kind": "limitation",
+      "status": "open",
+      "since": "2026-11-14",
+      "impact": "P5.08 adds an optional REST transport for the Executor (\"transport\": \"rest\" in the worker configuration, --transport rest on runtime/live_executor.py and on the wedge harness). It sends the kubectl adapter's exact patches over HTTPS and reads the HTTP status, so a 400, 401, 403, 404, 409, 422 or 429, or a connection that failed before any byte was sent, is decided at once: CONFLICT with basis DEFINITE_REJECTION when the resourceVersion moved, FAILED with that basis when it did not, with no fence and no settle delay. Every other outcome stays unknown and goes through the decision table and the fence as before. It has run only against a fake API server over loopback HTTP and HTTPS in unit tests, on one host with no cluster; no REST request has reached a real kube-apiserver, so the rule that each of those 4xx answers means 'not persisted' rests on how the API server is documented to work and on the offline tests, not on a live run. kubectl stays the default and is still needed for the credential view and the Guard's optional reads, so the Executor image keeps kubectl. Only token, token-file and client-certificate credentials work; exec plugins and OIDC kubeconfigs are refused. The safety argument awaits the owner's sign-off.",
+      "workaround": "Keep the default kubectl transport, with fencing on (L-EXEC-WEDGE). Before relying on REST, run the REST transport live recipe in docs/testing.md on a disposable cluster.",
+      "cites": [
+        {"at": "services/executor/rest_adapter.py", "text": "DEFINITE_REJECTIONS = frozenset({400, 401, 403, 404, 409, 422, 429})"},
+        {"at": "services/executor/core.py", "text": "except WriteRejected as rejection:"},
+        {"at": "runtime/live_executor.py", "text": "TRANSPORTS = (\"kubectl\", \"rest\")"},
+        {"at": "runtime/worker_service.py", "text": "transport = config.get(\"transport\", \"kubectl\")"},
+        {"at": "tests/test_rest_executor_adapter.py", "text": "class TransportParityMixin:"},
+        {"at": "tests/support/fake_apiserver.py", "text": "class FakeAPIServer:"},
+        {"at": "scripts/validation/test_executor_wedge_live.py", "text": "EXPECTED_REST = "},
+        {"at": "docs/testing.md", "text": "### REST transport live recipe (P5.08)"}
+      ],
+      "planned": ["P5.08"],
+      "issues": [61, 60]
     },
     {
       "id": "L-NO-DIAGNOSIS-ACCURACY",

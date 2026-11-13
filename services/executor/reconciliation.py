@@ -28,8 +28,8 @@ evidence also records the replica count, and its write is APPLIED only while
 the object still has that count and the template it named; a later change to
 either is COMMITTED_THEN_OVERWRITTEN.
 
-The module has no I/O. DEFINITE_REJECTION is reserved for a later
-rejection-classification stage; production code does not supply it.
+The module has no I/O. DEFINITE_REJECTION applies only when a structured
+transport (P5.08, REST) reports that this attempt's own request never committed.
 """
 
 from dataclasses import dataclass
@@ -68,7 +68,7 @@ class Basis(str, Enum):
     TARGET_REPLACED = "TARGET_REPLACED"
     ADVANCED_WITHOUT_EVIDENCE = "ADVANCED_WITHOUT_EVIDENCE"
     FENCED = "FENCED"
-    DEFINITE_REJECTION = "DEFINITE_REJECTION"  # Reserved: no rejection classifier yet.
+    DEFINITE_REJECTION = "DEFINITE_REJECTION"  # Only from the REST transport's WriteRejected (P5.08).
     UNCHANGED_IN_DOUBT = "UNCHANGED_IN_DOUBT"
     READ_UNAVAILABLE = "READ_UNAVAILABLE"
     INCONSISTENT = "INCONSISTENT"

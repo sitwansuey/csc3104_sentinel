@@ -319,22 +319,29 @@ class KubectlDeploymentAPI:
                 raise WriteOutcomeUnknown("Live write response is unavailable; reconcile before any new mutation") from None
             if result.returncode:
                 raise WriteOutcomeUnknown("Live write returned an error; reconcile its outcome")
-            try:
-                admitted = _parse_json(result.stdout, "executor_write_response")
-                applied = self._snapshot(admitted, target)
-                valid = (_identity(admitted, self.cluster_id) == target
-                         and admitted["metadata"]["resourceVersion"] != version and confirms(admitted))
-            except (AdapterError, LiveAdapterError, AttributeError, KeyError, TypeError, ValueError, RecursionError):
-                raise WriteOutcomeUnknown("Live write response cannot confirm the exact requested state") from None
-            if not valid:
-                raise WriteOutcomeUnknown("Live write response does not match the requested change")
-            return applied
+            return self._confirmed(result.stdout, target, version, confirms)
         finally:
             if patch_path is not None:
                 try:
                     patch_path.unlink(missing_ok=True)
                 except OSError:
                     raise WriteOutcomeUnknown("Private execution patch could not be cleaned up") from None
+
+    def _confirmed(self, body, target, version, confirms):
+        """The snapshot from a success response, only if it shows exactly the requested change.
+
+        Shared by every transport: anything else is WriteOutcomeUnknown, so a fresh read decides.
+        """
+        try:
+            admitted = _parse_json(body, "executor_write_response")
+            applied = self._snapshot(admitted, target)
+            valid = (_identity(admitted, self.cluster_id) == target
+                     and admitted["metadata"]["resourceVersion"] != version and confirms(admitted))
+        except (AdapterError, LiveAdapterError, AttributeError, KeyError, TypeError, ValueError, RecursionError):
+            raise WriteOutcomeUnknown("Live write response cannot confirm the exact requested state") from None
+        if not valid:
+            raise WriteOutcomeUnknown("Live write response does not match the requested change")
+        return applied
 
 
 def _annotation_operation(metadata, key, value):

@@ -16,6 +16,8 @@ import tempfile
 import unittest
 from unittest import mock
 
+from services.executor.rest_adapter import KubernetesRESTDeploymentAPI
+from tests.support.fake_apiserver import FakeAPIServer
 from tests.support.sim_apiserver import SimAPIServer, SimKubectl
 
 
@@ -378,6 +380,83 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(summary["status"], "FAIL")
         self.assertTrue(summary["namespace_deleted"])
+
+
+class RESTTransportTests(unittest.TestCase):
+    """--transport rest (P5.08): the same scenarios through the REST client and a fake API server on loopback."""
+
+    rows = staticmethod(ScenarioTests.rows)
+    counts = staticmethod(ScenarioTests.counts)
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.run_dir = Path(temporary.name) / "run"
+
+    def run_harness(self, scenario, fake, **options):
+        server = FakeAPIServer(fake.server, token=TOKEN).start()
+        self.addCleanup(server.close)
+
+        class LoopbackREST(KubernetesRESTDeploymentAPI):
+            """The harness's restricted kubeconfig, pointed at the fake server over loopback http."""
+
+            @classmethod
+            def from_kubeconfig_data(cls, config, **values):
+                config = json.loads(json.dumps(config))
+                cluster = config["clusters"][0]["cluster"]
+                cluster["server"] = server.url
+                cluster.pop("certificate-authority-data")
+                return super().from_kubeconfig_data(config, **values)
+        argv = ["--context", CONTEXT, "--scenario", scenario, "--run-dir", str(self.run_dir), "--transport", "rest"]
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            code = harness.main(argv, runner=fake, rest_api=LoopbackREST, **options)
+        text = (self.run_dir / (scenario + ".json")).read_text(encoding="utf-8")
+        for secret in (TOKEN, SERVER, CA, "secret-key", server.url, str(self.run_dir)):
+            self.assertNotIn(secret, text)
+        self.assertFalse((self.run_dir / ".executor-kubeconfig.json").exists())
+        return code, json.loads(text), server
+
+    def test_rv_race_is_a_definite_conflict_with_one_patch(self):
+        fake = FakeCluster()
+        code, summary, server = self.run_harness("rv-race", fake)
+        self.assertEqual((code, summary["status"], summary["transport"]), (0, "PASS", "rest"), summary)
+        rows = self.rows(summary)
+        self.assertEqual((rows["execute"]["status"], rows["execute"]["basis"]), ("CONFLICT", "DEFINITE_REJECTION"))
+        self.assertEqual(self.counts(rows["execute"]), (1, 0, 1))
+        self.assertEqual(self.counts(rows["reconcile"]), (0, 0, 0))
+        self.assertEqual(rows["second execute"]["status"], "APPLIED")
+        self.assertEqual(server.count("PATCH"), 2)  # The rejected first write and the second action's.
+        self.assertFalse(any("patch" in command and "--context=" + harness.RESTRICTED_CONTEXT in command
+                             for command in fake.calls))
+
+    def test_admission_deny_fails_at_once_with_no_fence_and_no_settle_delay(self):
+        fake, time = FakeCluster(enforce_after=2), FakeTime()
+        code, summary, server = self.run_harness("admission-deny", fake, clock=time.clock, sleep=time.sleep)
+        self.assertEqual((code, summary["status"]), (0, "PASS"), summary)
+        rows = self.rows(summary)
+        self.assertEqual([row["label"] for row in summary["results"]], ["execute", "reconcile", "second execute"])
+        self.assertEqual((rows["execute"]["status"], rows["execute"]["basis"]), ("FAILED", "DEFINITE_REJECTION"))
+        self.assertEqual(sum(row["fence_attempts"] for row in summary["results"]), 0)
+        self.assertNotIn(harness.FENCE_AFTER_SECONDS + 1, time.sleeps)
+        self.assertEqual(len(fake.server.committed(kind="fence")), 0)
+        self.assertEqual(rows["second execute"]["status"], "APPLIED")
+        self.assertEqual(fake.policies, set())
+
+    def test_delete_recreate_sends_no_patch_for_the_first_action(self):
+        fake = FakeCluster()
+        code, summary, server = self.run_harness("delete-recreate", fake)
+        self.assertEqual((code, summary["status"]), (0, "PASS"), summary)
+        self.assertEqual(summary["patch_processes_for_first_action"], 0)
+        self.assertEqual(server.count("PATCH"), 1)  # Only the second action's write.
+
+    def test_an_unknown_transport_is_refused_before_any_command(self):
+        fake = FakeCluster()
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            harness.main(["--context", CONTEXT, "--scenario", "rv-race", "--run-dir", str(self.run_dir),
+                          "--transport", "grpc"], runner=fake)
+        with self.assertRaises(harness.Refused):
+            harness.WedgeHarness(CONTEXT, "rv-race", self.run_dir, runner=fake, transport="grpc")
+        self.assertEqual(fake.calls, [])
 
 
 class EntryPointTests(unittest.TestCase):

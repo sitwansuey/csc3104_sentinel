@@ -47,7 +47,8 @@ _SENTENCES = {
     Basis.FENCED: ("A metadata-only fence conditioned on the same resource version committed first, so this "
                    "write never committed and never can. No write was repeated; obtain a new proposal from "
                    "current state."),
-    Basis.DEFINITE_REJECTION: "The API server definitely rejected this write. No write was repeated.",
+    Basis.DEFINITE_REJECTION: ("The API server definitely rejected this write, or the request was never sent. "
+                               "No write was repeated."),
     Basis.UNCHANGED_IN_DOUBT: ("Live state does not confirm this attempt and the resource version is unchanged, "
                                "so a request in flight could still commit. Retain workload exclusion; "
                                "no write was repeated."),
@@ -67,6 +68,28 @@ class ReadUnavailable(OSError):
 
 class TargetAbsent(LookupError):
     """The API definitely reports that the named target does not exist."""
+
+
+class WriteRejected(RuntimeError):
+    """This one write request definitely did not commit, and it is never resent (P5.08).
+
+    Only a structured transport raises it (services/executor/rest_adapter.py):
+    the API server answered this exact request with a definite 4xx rejection,
+    or the connection failed before any byte of the request was sent. status
+    is the HTTP status code, or "not_sent"; reason is a short metav1
+    StatusReason word, or "Unknown". The server's message is never kept. The
+    kubectl transport never raises it, because kubectl's exit code and text
+    cannot tell a rejection from a lost response.
+    """
+
+    def __init__(self, status, reason="Unknown"):
+        # Anything else is a transport bug; the ValueError then makes the write's outcome unknown.
+        if status != "not_sent" and not (type(status) is int and 400 <= status <= 499):
+            raise ValueError("A definite rejection is a 4xx status or 'not_sent'")
+        if not (isinstance(reason, str) and reason.isascii() and reason.isalpha() and len(reason) <= 64):
+            reason = "Unknown"
+        super().__init__(f"Write definitely not committed (status {status}, reason {reason})")
+        self.status, self.reason = status, reason
 
 
 def encode_evidence(evidence):
@@ -99,6 +122,9 @@ class ExecutionAdapters:
     it is missing), and cluster.conditional_scale(target, version, replicas,
     evidence), which must commit spec.replicas and evidence together under the
     same UID/version tests, or explicitly refuse the precondition.
+    Any write (restore, scale or fence) may raise WriteRejected when the
+    transport knows the request definitely did not commit; reconciliation
+    still reads state first and state evidence wins.
     """
 
     ledger: object
@@ -253,10 +279,14 @@ def _observation(proposal, adapters, snapshot=None):
         return None
 
 
-def _classify(row, proposal, observation, adapters):
-    """Apply the table with the fence nonces this host journaled for the action."""
+def _classify(row, proposal, observation, adapters, rejection=None):
+    """Apply the table with the fence nonces this host journaled for the action.
+
+    rejection is a WriteRejected from this attempt's own write, or None.
+    """
     fences = adapters.ledger.fences(proposal["action_id"]) if row is not None else []
-    return classify(row, proposal, observation, fence_nonces=frozenset(fence["nonce"] for fence in fences),
+    return classify(row, proposal, observation, rejection,
+                    fence_nonces=frozenset(fence["nonce"] for fence in fences),
                     fence_confirmed=any(fence["committed_version"] is not None for fence in fences))
 
 
@@ -290,7 +320,7 @@ def _fence(proposal, adapters):
     try:
         fenced = adapters.cluster.fence(target=deepcopy(target), version=version,
                                         marker=fence_marker(action_id, nonce))
-    except ConditionalWriteConflict:
+    except (ConditionalWriteConflict, WriteRejected):
         log.emit(LOG, "executor.fence.refused", action_id=action_id)
     except Exception as error:  # noqa: BLE001 - an unknown fence outcome may have committed; a fresh read decides
         log.failure(LOG, "executor.fence.indeterminate", error, action_id=action_id)
@@ -305,16 +335,17 @@ def _fence(proposal, adapters):
     return _classify(row, proposal, _observation(proposal, adapters, snapshot), adapters)
 
 
-def _reconcile(proposal, adapters, snapshot=None, *, schedule=True):
+def _reconcile(proposal, adapters, snapshot=None, *, schedule=True, rejection=None):
     """No spec mutation, even if state is unchanged: an old request may still commit.
 
     The only write is a precondition-guarded metadata fence, when fencing is
     enabled and the write has stayed in doubt past the settle delay. schedule=False
     is for the attempt's own first check, which must not delay the first later
-    reconcile pass and never fences.
+    reconcile pass and never fences. rejection (the attempt's own WriteRejected)
+    is not journaled: if this read fails, later passes decide without it.
     """
     row = adapters.ledger.get(proposal["action_id"])
-    decision = _classify(row, proposal, _observation(proposal, adapters, snapshot), adapters)
+    decision = _classify(row, proposal, _observation(proposal, adapters, snapshot), adapters, rejection)
     if schedule and _fence_due(decision, row, adapters, _now(adapters)):
         decision = _fence(proposal, adapters)
         row = adapters.ledger.get(proposal["action_id"])
@@ -496,7 +527,7 @@ def seal(proposal: dict, epoch: int, adapters: ExecutionAdapters, *, check=None)
             try:
                 adapters.cluster.fence(target=deepcopy(target), version=base,
                                        marker=fence_marker(action_id, nonce, epoch))
-            except ConditionalWriteConflict:
+            except (ConditionalWriteConflict, WriteRejected):
                 log.emit(LOG, "executor.seal.refused", action_id=action_id, fence_epoch=epoch)
             except Exception as error:  # noqa: BLE001 - an unknown fence outcome may have committed; the next read decides
                 log.failure(LOG, "executor.seal.indeterminate", error, action_id=action_id, fence_epoch=epoch)
@@ -604,6 +635,13 @@ def execute(proposal: dict, adapters: ExecutionAdapters) -> dict:
                 return adopted
             return _finish(proposal, adapters, "CONFLICT", version,
                            "Conditional write was refused without committing; refresh state and create a new proposal.")
+        except WriteRejected as rejection:
+            # This one request definitely did not commit and is never resent. One fresh read still
+            # decides: a peer's committed write of this action is APPLIED, a moved version is CONFLICT
+            # and an unchanged one FAILED (rows R3, R5 and R6), with no fence and no settle delay.
+            # The transport already logged the status and reason (executor.rest.rejected); only the class here.
+            log.failure(LOG, "executor.write.rejected", rejection, action_id=_action_id(proposal))
+            return _reconcile(proposal, adapters, schedule=False, rejection=rejection)
         except Exception as error:  # noqa: BLE001 - an unknown write error may have committed; reconcile
             # Timeouts/transport errors cannot distinguish rejection from commit.
             log.failure(LOG, "executor.write.indeterminate", error, action_id=_action_id(proposal))

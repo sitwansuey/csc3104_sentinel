@@ -336,6 +336,66 @@ ran again at 5409092 after 17d4532 fixed its generation check; the fence
 committed both times (claim `C-EXECUTOR-WEDGE-FENCE`). Collect a run with
 `scripts/evidence/collect.py --class executor-wedge`; its summary has no
 provenance block, so pass `--inferred-revision` and `--inferred-basis`.
+`--transport rest` runs the same scenarios with the Executor's optional REST
+client (P5.08); its offline tests are in `tests/test_executor_wedge_harness.py`
+and the live comparison is the recipe below.
+
+### REST transport live recipe (P5.08)
+
+Written, not run (`L-REST-TRANSPORT-OFFLINE`). The wedge harness runs each
+scenario once with kubectl and once with `--transport rest`, and the six
+summaries go into one table. Run it only on a disposable cluster the harness
+allows, `kind-sentinel-wedge` (or `kind-sentinel-boutique-connected`), never
+`sentinel-lab`, and not while P4.01, P4.03 or P4.05 hold the shared Docker
+memory (the heavy-lab lock, `sentinel-heavy-lab.lock` in the system temp
+directory, must be free).
+
+1. **Preflight (read only).** Check the lock is free and the context is the
+   disposable cluster:
+
+   ```powershell
+   Test-Path (Join-Path $env:TEMP "sentinel-heavy-lab.lock")
+   kubectl config get-contexts kind-sentinel-wedge
+   kubectl --context kind-sentinel-wedge get nodes
+   ```
+
+   Expect `False`, one context and Ready nodes. Without the cluster, create
+   it first (`kind create cluster --name sentinel-wedge`), and delete it
+   afterwards (`kind delete cluster --name sentinel-wedge`).
+2. **The runs.** Each makes its own namespace and short-lived restricted
+   token and deletes them on exit:
+
+   ```powershell
+   foreach ($scenario in "rv-race", "admission-deny", "delete-recreate") {
+     foreach ($transport in "kubectl", "rest") {
+       .\.venv\Scripts\python.exe scripts/validation/test_executor_wedge_live.py --context kind-sentinel-wedge --scenario $scenario --transport $transport
+     }
+   }
+   ```
+
+   Expected for the first action:
+
+   | Scenario | kubectl | rest |
+   | --- | --- | --- |
+   | rv-race | SUPERSEDED / ADVANCED_WITHOUT_EVIDENCE, 1 patch | CONFLICT / DEFINITE_REJECTION, 1 PATCH, no fence |
+   | admission-deny | NEEDS_RECONCILIATION, then CONFLICT / FENCED after the 30 s settle delay, 1 fence | FAILED / DEFINITE_REJECTION at once, 0 fences, no settle delay |
+   | delete-recreate | SUPERSEDED / TARGET_REPLACED, 0 patches | the same |
+
+   In every run a second proposal must then be APPLIED, and the summary
+   `status` must be PASS.
+3. **One table.** Print the six summaries side by side:
+
+   ```powershell
+   .\.venv\Scripts\python.exe -c "import json,glob,os; names=('rv-race.json','admission-deny.json','delete-recreate.json'); runs=[json.load(open(p, encoding='utf-8')) for p in sorted(glob.glob('data/sentinel/runs/executor-wedge-*/*.json')) if os.path.basename(p) in names]; [print(s['scenario'], s.get('transport', 'kubectl'), s['status'], [(r['label'], r['status'], r['basis'], r['write_attempts'], r['fence_attempts'], r['patch_processes']) for r in s['results']], s.get('time_to_resolution_seconds')) for s in runs]"
+   ```
+
+   Runs from before this change have no `transport` key; they used kubectl.
+   With `--transport rest`, `patch_processes` counts PATCH requests.
+4. **Evidence.** Collect each run with
+   `scripts/evidence/collect.py --class executor-wedge`, passing
+   `--inferred-revision` and `--inferred-basis` (the summary has no
+   provenance block), then add a claim and update `L-REST-TRANSPORT-OFFLINE`
+   with what the runs showed, including any mismatch.
 
 ## Connected live acceptance
 
@@ -657,7 +717,7 @@ normal presentation run:
 | Timed Boutique detection/duplicate suppression | `scripts/validation/test_boutique_observer_acceptance.py` | Own dedicated cluster, created and deleted |
 | Observer deployed runtime | `scripts/validation/validate_observer_runtime.py` | Existing `sentinel-lab` (see below) |
 | Verifier connected telemetry/read-only permissions | `scripts/validation/test_verifier_connected_live.py --setup` | Existing `sentinel-lab` (see below) |
-| Executor wedge (rv-race, delete-recreate) | `scripts/validation/test_executor_wedge_live.py --context <ctx> --scenario <name>` | Existing `kind-sentinel-boutique-connected` or `kind-sentinel-wedge`; own namespace, deleted on exit; never `sentinel-lab` |
+| Executor wedge (rv-race, delete-recreate) | `scripts/validation/test_executor_wedge_live.py --context <ctx> --scenario <name> [--transport rest]` | Existing `kind-sentinel-boutique-connected` or `kind-sentinel-wedge`; own namespace, deleted on exit; never `sentinel-lab` |
 | Multi-process harness, kind mode (P3.01, P3.04; ran on 12 Nov 2026, `C-DISTRIBUTED-KIND-BE6E636`, `C-SEAL-LIVE`) | `python -m experiments.distributed.kind_bundle prepare --context kind-sentinel-boutique-connected --storefront <port-forward>`, then `experiments.distributed.run_scenarios --mode kind` ([recipe](../experiments/distributed/README.md#a-reproducible-kind-mode-run)) | Existing `kind-sentinel-boutique-connected` only; injects and restores the catalog fault on its target, mints one short-lived `sentinel-executor` token into a temporary bundle; never `sentinel-lab` |
 | Four-node distributed acceptance (P4.01; not yet run) | `python -m experiments.distributed.kind_acceptance preflight --context kind-sentinel-dist`, then `deploy` and `run --scenarios all --repeat 5` ([recipe](distributed-acceptance.md#live-recipe)) | Its own `kind-sentinel-dist` cluster, created from `deploy/kind/kind-dist.yaml` with Chaos Mesh 2.8.2; refused while the P4.03 lab runs; never `sentinel-lab` |
 | Executor admission policy (P3.05; ran once on 12 Nov 2026, `C-ADMISSION-POLICY-LIVE`) | `scripts/validation/test_executor_admission_live.py --context kind-sentinel-boutique-connected` | Existing `kind-sentinel-boutique-connected` only; own namespace, policy and binding, deleted on exit; never `sentinel-lab` |

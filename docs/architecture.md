@@ -174,6 +174,36 @@ its safety rests on these points, each tested offline in
    ROLLBACK and RESTART keep the older rule that a desired count of 0 is
    missing data.
 
+### REST transport safety argument (P5.08, owner sign-off pending)
+
+The optional REST transport changes how a failed write is classified, never
+what is written. Each point is tested offline in
+`tests/test_rest_executor_adapter.py`, and none has been shown against a
+cluster (`L-REST-TRANSPORT-OFFLINE`); kubectl stays the default.
+
+1. The same write. The REST adapter inherits the kubectl adapter's
+   allowlist, pre-read and exact JSON Patches for ROLLBACK, RESTART, SCALE
+   and the fence, so the UID and resourceVersion tests and the evidence are
+   unchanged, and the parity tests run one set of Executor scenarios over
+   both transports.
+2. One request, one answer. Each write is one PATCH on a new connection and
+   is never resent, so the answer to that request is the answer for the
+   attempt.
+3. Only a definite "not persisted" is a rejection: 400, 401, 403, 404, 409,
+   422 or 429 from the API server, or a connect (TCP and TLS) that failed
+   before any byte was sent. Everything else, 408 and 5xx included, stays
+   unknown and is settled by the decision table and the fence as before.
+4. State still wins. After a rejection the Executor reads the target once:
+   this action's evidence means APPLIED, a deleted or replaced target is
+   SUPERSEDED, and only then does the rejection give CONFLICT (version moved)
+   or FAILED (version unchanged), with no fence. If that read fails, the
+   action stays in doubt; the rejection is never used to release it later.
+5. Nothing new leaks or weakens. TLS verification is always on, plain http
+   is refused except to a loopback address, unsupported credential types and
+   proxies fail closed, and only the status and an allowlisted reason word
+   reach exceptions and logs. The written argument is in the
+   [distributed model](distributed-model.md#fencing-limits).
+
 
 ## Observation and outcome
 

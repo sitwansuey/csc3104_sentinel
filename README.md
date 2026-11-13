@@ -162,6 +162,7 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-VERIFIER-PASS-BLOCKS-WORKER](docs/limitations.md#l-verifier-pass-blocks-worker): While one Verifier pass samples, the single Verifier delays other actions' dependency checks, Guard steps and verification (limitation, open; planned P4.01)
 - [L-RESTART-BUDGET-LOCAL](docs/limitations.md#l-restart-budget-local): The restart budget is kept per Executor ledger, and only local wiring gives it to the Guard (limitation, open; planned P4.03)
 - [L-SCALE-OFFLINE-ONLY](docs/limitations.md#l-scale-offline-only): SCALE is implemented and tested offline only; its live run is written but has not run (limitation, open; planned P5.07)
+- [L-REST-TRANSPORT-OFFLINE](docs/limitations.md#l-rest-transport-offline): The Executor's structured REST transport is tested offline only and is not the default (limitation, open; planned P5.08)
 - [L-NO-DIAGNOSIS-ACCURACY](docs/limitations.md#l-no-diagnosis-accuracy): No diagnosis-accuracy evaluation (limitation, open; planned P2.07, P4.04)
 - [L-REPLAY-MODEL-ROWS](docs/limitations.md#l-replay-model-rows): The recovery decision ablation has no model rows yet, its labels are unreviewed and its state is reconstructed (limitation, open; planned P4.04, P4.07)
 - [L-CALLER-BLOCKS-CALLEE-REPAIR](docs/limitations.md#l-caller-blocks-callee-repair): A callee cannot be repaired while a caller it broke is NotReady, so the dependency-ordered pair cannot show its ordering (limitation, open; planned P4.05)
