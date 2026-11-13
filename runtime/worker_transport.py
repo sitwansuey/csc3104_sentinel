@@ -80,20 +80,20 @@ class Delivery:
         self.dependency_requests = dependency_requests
         self.max_clock_skew = max_clock_skew
         self.stale_replans = stale_replans
-        store.db.execute("""CREATE TABLE IF NOT EXISTS transport_receipts (
+        store.database.execute("""CREATE TABLE IF NOT EXISTS transport_receipts (
             event_id INTEGER PRIMARY KEY REFERENCES outbox(id),
             delivery_id TEXT UNIQUE NOT NULL, owner TEXT, lease_token TEXT,
             attempts INTEGER NOT NULL DEFAULT 0, expires REAL NOT NULL DEFAULT 0,
             available REAL NOT NULL DEFAULT 0, finished REAL, result_digest TEXT)""")
         if dependency_requests:
-            store.db.execute("""CREATE TABLE IF NOT EXISTS transport_dependencies (
+            store.database.execute("""CREATE TABLE IF NOT EXISTS transport_dependencies (
                 guard_event_id INTEGER PRIMARY KEY REFERENCES outbox(id),
                 dependency_event_id INTEGER NOT NULL REFERENCES outbox(id))""")
 
     @contextmanager
     def transaction(self):
-        db = self.store.db
-        db.execute("BEGIN IMMEDIATE")
+        db = self.store.database  # The Database port (services/coordinator/db.py).
+        db.begin()
         changes = db.total_changes
         self.store.discard_after_commit()
         try:
@@ -115,9 +115,9 @@ class Delivery:
             db.execute("DELETE FROM transport_receipts WHERE finished < ?", (now - self.retention,))
             yield db, now
             self.store.count_commit(changes)  # Restore detection: see SQLiteStore.position.
-            db.execute("COMMIT")
+            db.commit()
         except BaseException:
-            db.execute("ROLLBACK")
+            db.rollback()
             self.store.discard_after_commit()  # Rolled-back transitions are never logged.
             raise
         self.store.run_after_commit()

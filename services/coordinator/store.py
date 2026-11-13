@@ -1,4 +1,4 @@
-"""Coordinator SQLite persistence; lifecycle decisions live in coordinator.py.
+"""Coordinator persistence; lifecycle decisions live in coordinator.py.
 
 Mutations participate in the caller's transaction. They do not publish events,
 authorize execution, or start Kubernetes operations. The existing schema and
@@ -6,16 +6,21 @@ public SQLiteStore import remain compatible with stored runs and team workers.
 Schema changes are numbered migrations tracked by PRAGMA user_version, applied
 in order when a store opens. Every lifecycle state change also appends a row to
 the transitions journal in the same transaction.
+
+Every statement goes through a Database port (services/coordinator/db.py).
+SQLite is the default and the only backend that runs; through the port it
+receives the same statements as before. store.db stays the raw sqlite3
+connection for existing SQLite-only callers (backup, file identity checks).
 """
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import json
-import sqlite3
 
 # _json and _digest stay importable for approvals.py, core.py and approval_http.py.
 from shared.canonical import canonical_json as _json, sha256_hex as _digest
 
 from shared import log, tracing
+from services.coordinator.db import BackendUnavailable, SQLiteDatabase
 # The Executor's own workload key, so the Coordinator's ownership row and the Executor's lock agree.
 from services.executor.store import target_key
 
@@ -200,19 +205,31 @@ def _require(condition, reason):
 
 
 class SQLiteStore:
-    """Single-host durable records. Use one connection per worker."""
+    """Single-host durable records. Use one connection per worker.
 
-    def __init__(self, path=":memory:", *, clock=None):
+    path opens the default SQLite database; database passes an already open
+    Database instead (one of the two). Only a SQLite database is accepted:
+    the migrations above are SQLite statements, and a Postgres schema is part
+    of the deferred Postgres backend (P5.01, owners' go/no-go).
+    """
+
+    def __init__(self, path=None, *, clock=None, database=None):
         self.clock = clock or (lambda: datetime.now(timezone.utc))
-        self.db = sqlite3.connect(str(path), isolation_level=None, timeout=10)
-        self.db.row_factory = sqlite3.Row
-        self.db.execute("PRAGMA foreign_keys = ON")
+        if database is None:
+            database = SQLiteDatabase(":memory:" if path is None else path)
+        elif path is not None:
+            raise ValueError("Pass a path or a database, not both")
+        elif database.dialect.name != "sqlite":
+            raise BackendUnavailable("Coordinator migrations exist for SQLite only; "
+                                     "the Postgres schema is deferred (P5.01)")
+        self.database = database
+        self.db = database.connection
         self._after_commit = []
         self._cause = (None, None)
         try:
-            migrate(self.db)
+            migrate(self.database)
         except BaseException:
-            self.db.close()
+            self.database.close()
             raise
 
     def __enter__(self):
@@ -223,14 +240,14 @@ class SQLiteStore:
 
     def close(self):
         self._after_commit = []
-        self.db.close()
+        self.database.close()
 
     def after_commit(self, callback):
         """Run callback once the current transaction commits; drop it on rollback.
 
         Callbacks only emit logs. They must not raise or write to the store.
         """
-        if self.db.in_transaction:
+        if self.database.in_transaction:
             self._after_commit.append(callback)
         else:
             callback()
@@ -254,13 +271,13 @@ class SQLiteStore:
 
     def _journal(self, incident_id, action_id, to_state, cause=None):
         """Append the transition in the caller's transaction; log it after commit."""
-        row = self.db.execute("SELECT state FROM incidents WHERE incident_id=?", (incident_id,)).fetchone()
+        row = self.database.execute("SELECT state FROM incidents WHERE incident_id=?", (incident_id,)).fetchone()
         from_state = row[0] if row else None
         cause, kind = (cause, cause) if cause is not None else self._cause
-        high_water = self.db.execute("SELECT max(id) FROM outbox").fetchone()[0]
-        seq = self.db.execute("""INSERT INTO transitions(incident_id,action_id,from_state,to_state,cause,
+        high_water = self.database.execute("SELECT max(id) FROM outbox").fetchone()[0]
+        seq = self.database.insert("""INSERT INTO transitions(incident_id,action_id,from_state,to_state,cause,
             outbox_high_water,recorded_at) VALUES(?,?,?,?,?,?,?)""",
-            (incident_id, action_id, from_state, to_state, cause, high_water, self.now())).lastrowid
+            (incident_id, action_id, from_state, to_state, cause, high_water, self.now()), key="seq")
         # The line is written after commit, possibly outside this span: name it explicitly.
         span = tracing.current()
         trace = span or self.trace_context(incident_id=incident_id)
@@ -273,7 +290,7 @@ class SQLiteStore:
         query, parameters = "SELECT * FROM transitions", ()
         if incident_id is not None:
             query, parameters = query + " WHERE incident_id=?", (incident_id,)
-        return [dict(row) for row in self.db.execute(query + " ORDER BY seq", parameters)]
+        return [dict(row) for row in self.database.execute(query + " ORDER BY seq", parameters)]
 
     def now(self):
         value = self.clock()
@@ -282,8 +299,8 @@ class SQLiteStore:
         return value.isoformat().replace("+00:00", "Z")
 
     def incident(self, incident_id):
-        row = self.db.execute("SELECT * FROM incidents WHERE incident_id=?",
-                              (incident_id,)).fetchone()
+        row = self.database.execute("SELECT * FROM incidents WHERE incident_id=?",
+                                    (incident_id,)).fetchone()
         if row is None:
             return None
         result = dict(row)
@@ -291,7 +308,7 @@ class SQLiteStore:
         return result
 
     def action(self, action_id):
-        row = self.db.execute("SELECT * FROM actions WHERE action_id=?", (action_id,)).fetchone()
+        row = self.database.execute("SELECT * FROM actions WHERE action_id=?", (action_id,)).fetchone()
         if row is None:
             return None
         result = dict(row)
@@ -301,7 +318,7 @@ class SQLiteStore:
 
     def actions_for_incident(self, incident_id):
         """Every action proposed for the incident, oldest first."""
-        rows = self.db.execute("SELECT action_id FROM actions WHERE incident_id=? ORDER BY rowid", (incident_id,))
+        rows = self.database.execute("SELECT action_id FROM actions WHERE incident_id=? ORDER BY rowid", (incident_id,))
         return [self.action(row[0]) for row in rows.fetchall()]
 
     def planning_blocker(self, incident_id):
@@ -312,7 +329,7 @@ class SQLiteStore:
         A seal still required for the workload blocks every incident on it,
         this one included, until the seal reports (P3.04).
         """
-        current = self.db.execute("SELECT rowid,* FROM incidents WHERE incident_id=?", (incident_id,)).fetchone()
+        current = self.database.execute("SELECT rowid,* FROM incidents WHERE incident_id=?", (incident_id,)).fetchone()
         if current is None:
             raise CoordinatorError("Incident must be recorded first")
         target = json.loads(current["target"])
@@ -321,7 +338,7 @@ class SQLiteStore:
             sealed = self.action(owner["seal_action_id"])
             return sealed["incident_id"] if sealed else incident_id
         active = {"VALIDATING", "AWAITING_APPROVAL", "READY", "VERIFYING", "NEEDS_RECONCILIATION"}
-        for row in self.db.execute("SELECT rowid,* FROM incidents ORDER BY rowid"):
+        for row in self.database.execute("SELECT rowid,* FROM incidents ORDER BY rowid"):
             if row["incident_id"] == incident_id:
                 continue
             other = json.loads(row["target"])
@@ -333,7 +350,7 @@ class SQLiteStore:
 
     def target_ownership(self, target):
         """The ownership row of a workload (migration 6), or None before its first Executor claim."""
-        row = self.db.execute("SELECT * FROM target_ownership WHERE target_key=?", (target_key(target),)).fetchone()
+        row = self.database.execute("SELECT * FROM target_ownership WHERE target_key=?", (target_key(target),)).fetchone()
         return dict(row) if row else None
 
     def claim_target(self, target, holder, delivery_id, event_id):
@@ -344,11 +361,11 @@ class SQLiteStore:
         holder may still be inside its API call.
         """
         key = target_key(target)
-        self.db.execute("""INSERT INTO target_ownership(target_key,uid,epoch,holder,delivery_id,event_id)
+        self.database.execute("""INSERT INTO target_ownership(target_key,uid,epoch,holder,delivery_id,event_id)
             VALUES(?,?,1,?,?,?) ON CONFLICT(target_key) DO UPDATE SET uid=excluded.uid, epoch=epoch+1,
             holder=excluded.holder, delivery_id=excluded.delivery_id, event_id=excluded.event_id""",
             (key, target["uid"], holder, delivery_id, event_id))
-        return self.db.execute("SELECT epoch FROM target_ownership WHERE target_key=?", (key,)).fetchone()[0]
+        return self.database.execute("SELECT epoch FROM target_ownership WHERE target_key=?", (key,)).fetchone()[0]
 
     def require_seal(self, action):
         """Block the action's workload until an executor.seal for it reports; enqueue that seal once.
@@ -361,7 +378,7 @@ class SQLiteStore:
         if (owner is not None and owner["seal_required"] and owner["seal_action_id"] == action_id
                 and self.pending_routes("executor.seal", action_id=action_id)):
             return False
-        self.db.execute("""INSERT INTO target_ownership(target_key,uid,seal_required,seal_action_id)
+        self.database.execute("""INSERT INTO target_ownership(target_key,uid,seal_required,seal_action_id)
             VALUES(?,?,1,?) ON CONFLICT(target_key) DO UPDATE SET seal_required=1,
             seal_action_id=excluded.seal_action_id""", (target_key(target), target["uid"], action_id))
         self.enqueue("executor.seal", {"proposal": action["proposal"]}, action_id)
@@ -371,29 +388,29 @@ class SQLiteStore:
 
     def finish_seal(self, target, epoch, *, release):
         """Record a seal's answer at epoch; release unblocks the workload, otherwise it stays blocked."""
-        self.db.execute("UPDATE target_ownership SET sealed_epoch=?, seal_required=? WHERE target_key=?",
-                        (epoch, 0 if release else 1, target_key(target)))
+        self.database.execute("UPDATE target_ownership SET sealed_epoch=?, seal_required=? WHERE target_key=?",
+                              (epoch, 0 if release else 1, target_key(target)))
 
     def approval(self, action_id):
         row = self.approval_row(action_id)
-        if row is None or self.db.execute(
+        if row is None or self.database.execute(
                 "SELECT 1 FROM approval_revocations WHERE approval_id=?", (row["id"],)).fetchone():
             return None
         return json.loads(row["record"])
 
     def approval_row(self, action_id):
-        return self.db.execute("SELECT * FROM approvals WHERE action_id=? ORDER BY id DESC LIMIT 1",
-                               (action_id,)).fetchone()
+        return self.database.execute("SELECT * FROM approvals WHERE action_id=? ORDER BY id DESC LIMIT 1",
+                                     (action_id,)).fetchone()
 
     def has_managed_approval(self, action_id):
-        return self.db.execute("""SELECT 1 FROM managed_approvals m JOIN approvals a ON a.id=m.approval_id
+        return self.database.execute("""SELECT 1 FROM managed_approvals m JOIN approvals a ON a.id=m.approval_id
             WHERE a.action_id=? LIMIT 1""", (action_id,)).fetchone() is not None
 
     def current_approval(self, action_id, *, managed_only=False):
         """Read unrevoked, unexpired approval; expiry is exclusive."""
         if managed_only:
             row = self.approval_row(action_id)
-            if row is None or not self.db.execute(
+            if row is None or not self.database.execute(
                     "SELECT 1 FROM managed_approvals WHERE approval_id=?", (row["id"],)).fetchone():
                 return None
         record = self.approval(action_id)
@@ -404,7 +421,7 @@ class SQLiteStore:
     def approval_history(self, action_id):
         return [{"approval_id": row["id"], "approval": json.loads(row["record"]),
                  "revocation": json.loads(row["revocation"]) if row["revocation"] else None}
-                for row in self.db.execute("""SELECT a.id,a.record,r.record AS revocation FROM approvals a
+                for row in self.database.execute("""SELECT a.id,a.record,r.record AS revocation FROM approvals a
                     LEFT JOIN approval_revocations r ON r.approval_id=a.id
                     WHERE a.action_id=? ORDER BY a.id""", (action_id,))]
 
@@ -422,7 +439,7 @@ class SQLiteStore:
 
         Uses the messages(kind, action_id) index from migration 5.
         """
-        row = self.db.execute("""SELECT payload,seq,answers,high_water,producer FROM messages
+        row = self.database.execute("""SELECT payload,seq,answers,high_water,producer FROM messages
             WHERE kind=? AND action_id IS ? ORDER BY seq DESC LIMIT 1""", (kind, action_id)).fetchone()
         if row is None:
             return None
@@ -431,7 +448,7 @@ class SQLiteStore:
 
     def position(self):
         """(generation, commit_counter) of this database: which file it is, and how far it has got."""
-        row = self.db.execute("SELECT generation, commit_counter FROM store_meta WHERE id=1").fetchone()
+        row = self.database.execute("SELECT generation, commit_counter FROM store_meta WHERE id=1").fetchone()
         return (row[0], row[1]) if row else (None, None)
 
     def count_commit(self, changes_before):
@@ -440,28 +457,28 @@ class SQLiteStore:
         changes_before is the connection's total_changes when the transaction
         began, so a transaction that only read leaves the counter alone.
         """
-        if self.db.total_changes != changes_before:
-            self.db.execute("UPDATE store_meta SET commit_counter=commit_counter+1 WHERE id=1")
+        if self.database.total_changes != changes_before:
+            self.database.execute("UPDATE store_meta SET commit_counter=commit_counter+1 WHERE id=1")
 
     def outbox_high_water(self):
-        return self.db.execute("SELECT coalesce(max(id),0) FROM outbox").fetchone()[0]
+        return self.database.execute("SELECT coalesce(max(id),0) FROM outbox").fetchone()[0]
 
     def newest_request(self, action_id, *topics):
         """The id of the newest outbox request of topics for action_id, or None."""
         placeholders = ",".join("?" for _ in topics)
-        return self.db.execute(f"SELECT max(id) FROM outbox WHERE action_id=? AND topic IN ({placeholders})",
-                               (action_id, *topics)).fetchone()[0]
+        return self.database.execute(f"SELECT max(id) FROM outbox WHERE action_id=? AND topic IN ({placeholders})",
+                                     (action_id, *topics)).fetchone()[0]
 
     def record_worker_clock(self, identity, offset, uncertainty, reported_at):
         """Keep a worker's latest clock estimate and the largest offset it has reported."""
-        self.db.execute("""INSERT INTO worker_clocks(identity,offset,uncertainty,max_abs_offset,reports,reported_at)
+        self.database.execute("""INSERT INTO worker_clocks(identity,offset,uncertainty,max_abs_offset,reports,reported_at)
             VALUES(?,?,?,abs(?),1,?) ON CONFLICT(identity) DO UPDATE SET offset=excluded.offset,
             uncertainty=excluded.uncertainty, max_abs_offset=max(max_abs_offset, excluded.max_abs_offset),
             reports=reports+1, reported_at=excluded.reported_at""",
             (identity, offset, uncertainty, offset, reported_at))
 
     def worker_clocks(self):
-        return {row["identity"]: dict(row) for row in self.db.execute("SELECT * FROM worker_clocks ORDER BY identity")}
+        return {row["identity"]: dict(row) for row in self.database.execute("SELECT * FROM worker_clocks ORDER BY identity")}
 
     def trace_context(self, *, incident_id=None, action_id=None):
         """The trace context stored with an incident, found by incident or action id.
@@ -469,10 +486,10 @@ class SQLiteStore:
         It labels log lines only and is never used to decide anything.
         """
         if incident_id is not None:
-            row = self.db.execute("SELECT trace_context FROM incidents WHERE incident_id=?",
-                                  (incident_id,)).fetchone()
+            row = self.database.execute("SELECT trace_context FROM incidents WHERE incident_id=?",
+                                        (incident_id,)).fetchone()
         elif action_id is not None:
-            row = self.db.execute("""SELECT i.trace_context FROM actions a
+            row = self.database.execute("""SELECT i.trace_context FROM actions a
                 JOIN incidents i ON i.incident_id=a.incident_id WHERE a.action_id=?""", (action_id,)).fetchone()
         else:
             row = None
@@ -482,8 +499,8 @@ class SQLiteStore:
         # Rows written outside a span (local pipelines, approvals) join the incident's trace.
         span = tracing.current()
         trace = span or self.trace_context(action_id=action_id)
-        event_id = self.db.execute("INSERT INTO outbox(topic,payload,action_id,trace_context) VALUES(?,?,?,?)",
-                                   (topic, _json(payload), action_id, trace and trace.traceparent)).lastrowid
+        event_id = self.database.insert("INSERT INTO outbox(topic,payload,action_id,trace_context) VALUES(?,?,?,?)",
+                                        (topic, _json(payload), action_id, trace and trace.traceparent))
         # Logged after commit, possibly in another span: name this row's trace explicitly.
         ids = {"trace_id": trace and trace.trace_id, "span_id": span and span.span_id}
         self.after_commit(lambda: log.emit(LOG, "coordinator.outbox.enqueued", event_id=event_id,
@@ -491,61 +508,61 @@ class SQLiteStore:
 
     def set_state(self, incident_id, action_id, state, *, cause=None):
         self._journal(incident_id, action_id, state, cause)
-        self.db.execute("UPDATE incidents SET state=? WHERE incident_id=?", (state, incident_id))
-        self.db.execute("UPDATE actions SET state=? WHERE action_id=?", (state, action_id))
+        self.database.execute("UPDATE incidents SET state=? WHERE incident_id=?", (state, incident_id))
+        self.database.execute("UPDATE actions SET state=? WHERE action_id=?", (state, action_id))
 
     @property
     def in_transaction(self):
-        return self.db.in_transaction
+        return self.database.in_transaction
 
     @contextmanager
     def transaction(self):
         """Reserve the local writer; commit results and acknowledgments together."""
-        self.db.execute("BEGIN IMMEDIATE")
-        changes = self.db.total_changes
+        self.database.begin()
+        changes = self.database.total_changes
         self.discard_after_commit()
         try:
             yield
             self.count_commit(changes)
-            self.db.execute("COMMIT")
+            self.database.commit()
         except BaseException:
-            self.db.execute("ROLLBACK")
+            self.database.rollback()
             self.discard_after_commit()
             raise
         self.run_after_commit()
 
     def add_incident(self, incident_id, target, state):
         self._journal(incident_id, None, state)
-        self.db.execute("""INSERT INTO incidents(incident_id,target,state,active_action_id,trace_context)
+        self.database.execute("""INSERT INTO incidents(incident_id,target,state,active_action_id,trace_context)
             VALUES(?,?,?,NULL,?)""", (incident_id, _json(target), state, tracing.current_traceparent()))
 
     def add_action(self, action_id, incident_id, proposal, state):
-        self.db.execute("INSERT INTO actions(action_id,incident_id,proposal,state) VALUES(?,?,?,?)",
-                        (action_id, incident_id, _json(proposal), state))
+        self.database.execute("INSERT INTO actions(action_id,incident_id,proposal,state) VALUES(?,?,?,?)",
+                              (action_id, incident_id, _json(proposal), state))
 
     def activate_action(self, incident_id, action_id, state):
         self._journal(incident_id, action_id, state)
-        self.db.execute("UPDATE incidents SET active_action_id=?,state=? WHERE incident_id=?",
-                        (action_id, state, incident_id))
+        self.database.execute("UPDATE incidents SET active_action_id=?,state=? WHERE incident_id=?",
+                              (action_id, state, incident_id))
 
     def reopen_incident(self, incident_id, action_id, cause):
         """Put the incident back to OPEN for planning; the refused action keeps its own state."""
         self._journal(incident_id, action_id, "OPEN", cause)
-        self.db.execute("UPDATE incidents SET state='OPEN' WHERE incident_id=?", (incident_id,))
+        self.database.execute("UPDATE incidents SET state='OPEN' WHERE incident_id=?", (incident_id,))
 
     def reopenings(self, incident_id, cause):
         """How many times the transitions journal reopened the incident for cause."""
-        return self.db.execute("SELECT count(*) FROM transitions WHERE incident_id=? AND cause=? AND to_state='OPEN'",
-                               (incident_id, cause)).fetchone()[0]
+        return self.database.execute("SELECT count(*) FROM transitions WHERE incident_id=? AND cause=? AND to_state='OPEN'",
+                                     (incident_id, cause)).fetchone()[0]
 
     def required_dependency_hash(self, action_id):
-        row = self.db.execute("SELECT dependency_sha256 FROM dependency_revalidations WHERE action_id=?",
-                              (action_id,)).fetchone()
+        row = self.database.execute("SELECT dependency_sha256 FROM dependency_revalidations WHERE action_id=?",
+                                    (action_id,)).fetchone()
         return row[0] if row else None
 
     def require_dependency_revalidation(self, action_id, dependency_hash):
-        self.db.execute("INSERT OR REPLACE INTO dependency_revalidations VALUES(?,?)",
-                        (action_id, dependency_hash))
+        self.database.execute("INSERT OR REPLACE INTO dependency_revalidations VALUES(?,?)",
+                              (action_id, dependency_hash))
 
     def guard_report(self, decision_hash, action_id=None):
         query = "SELECT report FROM guard_reports WHERE decision_sha256=?"
@@ -553,38 +570,39 @@ class SQLiteStore:
         if action_id is not None:
             query += " AND action_id=?"
             parameters.append(action_id)
-        row = self.db.execute(query, parameters).fetchone()
+        row = self.database.execute(query, parameters).fetchone()
         return json.loads(row[0]) if row else None
 
     def save_guard_report(self, action_id, report):
-        self.db.execute("INSERT OR IGNORE INTO guard_reports(decision_sha256,action_id,report) VALUES(?,?,?)",
-                        (report["decision_sha256"], action_id, json.dumps(report, allow_nan=False)))
+        self.database.execute("INSERT OR IGNORE INTO guard_reports(decision_sha256,action_id,report) VALUES(?,?,?)",
+                              (report["decision_sha256"], action_id, json.dumps(report, allow_nan=False)))
 
     def save_guard_result(self, action_id, result):
-        self.db.execute("UPDATE actions SET guard_result=? WHERE action_id=?", (_json(result), action_id))
+        self.database.execute("UPDATE actions SET guard_result=? WHERE action_id=?", (_json(result), action_id))
 
     def save_execution_result(self, action_id, result):
-        self.db.execute("UPDATE actions SET execution_result=? WHERE action_id=?", (_json(result), action_id))
+        self.database.execute("UPDATE actions SET execution_result=? WHERE action_id=?", (_json(result), action_id))
 
     def message_payload(self, event_key):
-        row = self.db.execute("SELECT payload FROM messages WHERE event_key=?", (event_key,)).fetchone()
+        row = self.database.execute("SELECT payload FROM messages WHERE event_key=?", (event_key,)).fetchone()
         return row[0] if row else None
 
     def add_message(self, event_key, payload, *, high_water, answers=None, producer=None, incident_id=None):
         """Store an accepted message with the next Coordinator sequence number; return it."""
-        seq = self.db.execute("SELECT coalesce(max(seq),0)+1 FROM messages").fetchone()[0]
+        seq = self.database.execute("SELECT coalesce(max(seq),0)+1 FROM messages").fetchone()[0]
         message = json.loads(payload)
-        self.db.execute("""INSERT INTO messages(event_key,payload,seq,answers,high_water,producer,kind,action_id)
+        self.database.execute("""INSERT INTO messages(event_key,payload,seq,answers,high_water,producer,kind,action_id)
             VALUES(?,?,?,?,?,?,?,?)""", (event_key, payload, seq, answers, high_water, producer,
                                          message.get("kind"), message.get("action_id")))
         if incident_id is not None:
-            self.db.execute("UPDATE incidents SET high_water=? WHERE incident_id=?", (seq, incident_id))
+            self.database.execute("UPDATE incidents SET high_water=? WHERE incident_id=?", (seq, incident_id))
         return seq
 
     def add_approval(self, action_id, record, *, managed=False):
-        cursor = self.db.execute("INSERT INTO approvals(action_id,record) VALUES(?,?)", (action_id, _json(record)))
+        approval_id = self.database.insert("INSERT INTO approvals(action_id,record) VALUES(?,?)",
+                                           (action_id, _json(record)))
         if managed:
-            self.db.execute("INSERT INTO managed_approvals VALUES(?)", (cursor.lastrowid,))
+            self.database.execute("INSERT INTO managed_approvals VALUES(?)", (approval_id,))
 
     def pending_routes(self, *topics, action_id=None):
         query = "SELECT * FROM outbox WHERE delivered=0"
@@ -595,10 +613,10 @@ class SQLiteStore:
         if action_id is not None:
             query += " AND action_id=?"
             parameters.append(action_id)
-        return self.db.execute(query + " ORDER BY id", parameters).fetchall()
+        return self.database.execute(query + " ORDER BY id", parameters).fetchall()
 
     def route(self, event_id):
-        return self.db.execute("SELECT * FROM outbox WHERE id=?", (event_id,)).fetchone()
+        return self.database.execute("SELECT * FROM outbox WHERE id=?", (event_id,)).fetchone()
 
     def acknowledge_route(self, event_id):
-        self.db.execute("UPDATE outbox SET delivered=1 WHERE id=?", (event_id,))
+        self.database.execute("UPDATE outbox SET delivered=1 WHERE id=?", (event_id,))
