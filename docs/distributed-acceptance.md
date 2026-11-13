@@ -115,6 +115,37 @@ too, counted apart. The same rows feed I1 and I2, and the Coordinator's
 records, the copied ledgers and logs feed I3-I6 and X1-X4
 ([invariants](../experiments/distributed/README.md#invariants)).
 
+I7 counts only what the API server acknowledged. A successful change of a
+Deployment that the log holds without its request body (logged at a level
+other than RequestResponse, for example because the audit policy's level or
+namespaces are wrong) is `unclassified`, never a harmless metadata write, and
+I7 fails on one a Sentinel ServiceAccount made; the operator's are counted
+apart (`experiments/distributed/audit.py::classify`). A write the API server
+stored but answered with a 5xx or a timeout is `failed`, not a write; the
+generation check below is what notices it.
+
+An empty audit extract must not pass as "no writes", so I7 also fails when
+the extract may be short (`experiments/distributed/audit.py::completeness`):
+
+- the operator's fault injection is not in it (a positive control for every
+  run but S9);
+- the target's `metadata.generation`, read before the injection and after the
+  restore, rose by a value that no stored change in the extract (template
+  write, fence or seal, other metadata write, by anyone) accounts for, or went
+  down;
+- the earliest event in every audit file read is later than the start of the
+  run's window, so earlier events may have rotated out.
+
+The harness reads the live log and every backup the API server rotated it
+into (`--audit-log-maxbackup 3`). The window is taken on the cluster's clock:
+before and after each run the harness reads the control-plane container's
+clock with `docker exec ... date` and estimates the offset as Cristian's
+algorithm does (the reading is taken to be at the midpoint, with half the
+round trip as its error), then shifts the window by every offset measured and
+widens it by the errors (`experiments/distributed/kind_acceptance.py::control_plane_window`).
+The offsets are recorded in each run's `summary.json`. A completeness problem
+also adds an `unobserved` row to the writes I1 reads, so I1 fails with I7.
+
 ## Scenarios
 
 `python -m experiments.distributed.kind_acceptance plan` prints this matrix
@@ -122,38 +153,66 @@ and a sample of each Chaos Mesh object, offline.
 
 | Scenario | Fault | File-mode counterpart | Expected |
 | --- | --- | --- | --- |
-| S0 | none: the operator approves through the approval API | S0 | RECOVERED, 1 template write |
-| S1a | fault point `planner.mid_inference`, then PodChaos pod-kill of the Planner | S1a | RECOVERED, 1 write |
-| S1b | fault point `executor.after_start_write`, then PodChaos pod-failure of that Executor until the incident ends | S1b | RECOVERED, 1 write, takeover measured |
-| S1c | fault point `executor.after_patch_before_save`, then pod-failure as in S1b | S1c | RECOVERED, 1 write, takeover measured |
-| S2 | fault point `executor.before_patch`, then `docker pause` of the holder's node past its lease | S2 | RECOVERED, 1 write; the stale holder's patch refused |
-| S3 | fault point `executor.after_start_write`, then NetworkChaos partition between the holder and the Coordinator (the API server stays reachable) | S3 | terminal, at most 1 write |
-| S4 | fault point `executor.after_patch_before_save`, then NetworkChaos partition from the Coordinator to the holder until the result is recorded | S4 | RECOVERED, 1 write, saved result replayed |
-| S5 | fault point `coordinator.after_commit_before_reply` (exit), then `kubectl delete pod` of the Coordinator | S5 | RECOVERED, 1 write, Coordinator RTO measured |
-| S6 | NetworkChaos partition between the Coordinator and every worker for three leases, approval given meanwhile | S6 | 0 writes during the partition, progress after |
-| S7 | TimeChaos -300 s on both Executors | S7 | FAILED with 0 writes |
-| S8 | fault point `executor.before_patch`, revoke the approval, then 8 s NetworkChaos delay on the holder's API traffic | S8 | FAILED, 0 writes, 1 seal, the stale patch refused in the audit log |
-| S9 | the Executor reads a Secret, patches another Deployment, opens pods/exec and changes `spec.replicas`; the Guard patches the target; the Planner and an Executor open TCP connections they must not | design S9 | every request denied or timed out, the Verifier's allowed control open, 0 writes |
+| S0 | none: the harness approves on the operator's behalf through the approval API | S0 | RECOVERED, exactly 1 Sentinel template write |
+| S1a | fault point `planner.mid_inference`, then PodChaos pod-kill of the Planner | S1a | RECOVERED, exactly 1 write |
+| S1b | fault point `executor.after_start_write`, then PodChaos pod-failure of that Executor until the incident ends | S1b | RECOVERED, exactly 1 write, takeover measured |
+| S1c | fault point `executor.after_patch_before_save`, then pod-failure as in S1b | S1c | RECOVERED, exactly 1 write, takeover measured |
+| S2 | fault point `executor.before_patch`, then `docker pause` of the holder's node past its lease | S2 | RECOVERED, exactly 1 write, not from the paused holder's Pod |
+| S3 | fault point `executor.after_start_write`, then NetworkChaos partition between the holder and the Coordinator (the API server stays reachable) | S3 | every incident terminal, at most 1 write |
+| S4 | fault point `executor.after_patch_before_save`, then NetworkChaos partition from the Coordinator to the holder until the result is recorded | S4 | RECOVERED, exactly 1 write |
+| S5 | fault point `coordinator.after_commit_before_reply` (exit), then `kubectl delete pod` of the Coordinator | S5 | RECOVERED, exactly 1 write, Coordinator RTO to Ready measured |
+| S6 | NetworkChaos partition between the Coordinator and every worker for three leases, approval given meanwhile | S6 | 0 writes during the partition, every incident terminal after it |
+| S7 | TimeChaos -300 s on both Executors | S7 | FAILED, none RECOVERED, 0 writes |
+| S8 | fault point `executor.before_patch`, revoke the approval, then 8 s NetworkChaos delay on the holder's API traffic | S8 | not RECOVERED, 0 template writes, a seal (fence) from the other Executor's Pod, then a PATCH from the holder's Pod refused with 409 or 422, and no change to the target after the seal |
+| S9 | the Executor reads a Secret, patches another Deployment, opens pods/exec and changes `spec.replicas`; the Guard patches the target; the Planner and an Executor open TCP connections they must not | design S9 | every probe as expected (each request denied or timed out, the Verifier's allowed control open), 0 writes |
+
+The Expected column is checked, not just printed: each is a predicate over
+the run's incidents, its audit rows and its notes
+(`experiments/distributed/kind_acceptance.py::expectation`), and a run passes
+only when its invariants hold, its expectation is met, the audit extract is
+complete and the harness raised nothing. The invariants alone would let S0
+pass with the incident FAILED and no write, or S8 pass without any seal. A
+write here is a Sentinel template write in the audit log. S2 and S8 tell the
+two Executors apart by the Pod name the API server binds into each token
+(both use the `sentinel-executor` ServiceAccount), so without that audit
+field they fail rather than pass. In S8 the seal is an annotation change,
+which raises the Deployment's generation, so "no change after the seal"
+means the target's generation before the operator's restore equals the
+generation the seal stored.
 
 S2 here is the stall of the file-mode catalogue, done with `docker pause` of
 the holder's node, which is the A6 design's S3; S3 here is the network
 partition of the catalogue. S7 expects what file mode showed: with operator
 approval required, an Executor whose clock is 300 s behind refuses the
-Coordinator-stamped approval, so the action ends FAILED with no write.
+Coordinator-stamped approval, so the action ends FAILED with no write. S0
+has only the approved path; the A6 design's S0 also has a Guard-refused path
+and an unapproved path, each with no write, which are not in this harness.
+
+Approvals are scripted: in every scenario but S6 a harness thread approves
+each action waiting for approval, through the authenticated approval API with
+the operator's credential, and in S6 the harness approves once during the
+partition. No person reads or types an approval, so these runs show the
+approval API and its checks working under faults, not a human in the loop.
 
 Measured in each run: takeover latency (S1b, S1c, S2, S3: from the fault to
 the other Executor's first claim, from the Coordinator's access log) and, in
 S5, the Coordinator's recovery after the Pod deletion (to Pod Ready, to its
-first answered claim and to the next journal transition).
+first answered claim and to the next journal transition). The fault time is
+taken on the harness's clock and moved onto the cluster's by the offset
+measured at the start of the run, since the access log and the Pod's Ready
+time come from clocks inside the Docker VM; the result still carries that
+offset's error, recorded beside it.
 
 ## Live recipe
 
 Run from the repository root in PowerShell, with the project virtual
 environment active, Docker Desktop running Linux containers, and kind
 v0.33.0, kubectl, Helm and openssl on the path. Do not run it while the P4.03
-Chaos Mesh lab is running: `preflight` refuses while the shared lock
+Chaos Mesh lab is running: `preflight` refuses while the lock
 `sentinel-heavy-lab.lock` in the system temporary directory is held or Chaos
-Mesh experiments exist in `kind-sentinel-boutique-connected`. Every command
+Mesh experiments exist in `kind-sentinel-boutique-connected`. No P4.03
+harness exists yet to take that lock, so today the Chaos Mesh check is the
+guard that works; P4.03 is to take the same lock. Every command
 names `--context kind-sentinel-dist` (or `--name sentinel-dist`); none
 changes the current context except `kind create cluster`, which the first
 block puts back. The harness refuses any other context, and any context or
@@ -218,6 +277,12 @@ python -m experiments.distributed.kind_acceptance teardown --context kind-sentin
 python -m experiments.distributed.kind_acceptance teardown --context kind-sentinel-dist --delete-cluster
 ```
 
+`teardown` first checks that `kind-sentinel-dist` still names the local kind
+cluster `sentinel-dist` on a loopback server with its four labelled nodes,
+and deletes nothing otherwise, because the admission policy it removes shares
+its name with the shipped one. `run` also refuses to start when the target's
+UID is not the one `deploy` bound the approval permissions and baseline to.
+
 `run` writes, per scenario and repeat, `<date>/<scenario>-r<n>-<time>z/`
 holding `summary.json`, `timeline.jsonl`, `audit-extract.jsonl`,
 `records.json` and `versions.json`, and at the top `summary.json` and
@@ -228,36 +293,41 @@ Sentinel did not, under uid and resourceVersion tests, and records it as an
 operator write.
 
 Things a first live run must confirm rather than assume: that the node image
-digest in `kind-dist.yaml` is the one the kind v0.33.0 release notes list for
-`kindest/node:v1.37.0` (it was written down offline and has never been
-pulled; a wrong digest makes `kind create cluster` fail rather than run
-another image), that kindnet
+pulls (its digest in `kind-dist.yaml` matches the one the kind v0.33.0
+release notes list for `kindest/node:v1.37.0`, compared with the published
+notes on 13 Nov 2026, but it has never been pulled; a wrong digest makes
+`kind create cluster` fail rather than run another image), that `kind create
+cluster` accepts the `apiServer.extraArgs` map in `kind-dist.yaml` (kind may
+generate kubeadm v1beta4 configuration for this Kubernetes version, which
+takes `extraArgs` as a list of `name`/`value` pairs; if creation rejects the
+map, rewrite those four flags in the list form), that kindnet
 enforces the network policy (S9's TCP probes) while still letting the kubelet
 probe the Coordinator's `/readyz` over its Pod address, that Chaos Mesh's pod-failure
 pause image can be pulled into the cluster, that TimeChaos shifts the clock
 Python reads in the worker image, that `kubectl port-forward` to the
-Coordinator still works during the S6 partition, and that the audit log
-carries the Pod name of each ServiceAccount request.
+Coordinator still works during the S6 partition, that the audit log
+carries the Pod name of each ServiceAccount request, and that `date
++%s.%N` and `find` run in the control-plane container.
 
 ## Results
 
 Generated by `python -m experiments.distributed.kind_acceptance table`;
 replace the table with the one a live run prints.
 
-| Scenario | Runs | Invariants passed | Max template writes per action (audit) | Takeover latency (s) | Coordinator RTO to Ready / first claim (s) |
-|---|---|---|---|---|---|
-| S0 | not yet run | - | - | - | - |
-| S1a | not yet run | - | - | - | - |
-| S1b | not yet run | - | - | - | - |
-| S1c | not yet run | - | - | - | - |
-| S2 | not yet run | - | - | - | - |
-| S3 | not yet run | - | - | - | - |
-| S4 | not yet run | - | - | - | - |
-| S5 | not yet run | - | - | - | - |
-| S6 | not yet run | - | - | - | - |
-| S7 | not yet run | - | - | - | - |
-| S8 | not yet run | - | - | - | - |
-| S9 | not yet run | - | - | - | - |
+| Scenario | Runs | Runs passed | Invariants passed | Expectation met | Max template writes per action (audit) | Takeover latency (s) | Coordinator RTO to Ready / first claim (s) |
+|---|---|---|---|---|---|---|---|
+| S0 | not yet run | - | - | - | - | - | - |
+| S1a | not yet run | - | - | - | - | - | - |
+| S1b | not yet run | - | - | - | - | - | - |
+| S1c | not yet run | - | - | - | - | - | - |
+| S2 | not yet run | - | - | - | - | - | - |
+| S3 | not yet run | - | - | - | - | - | - |
+| S4 | not yet run | - | - | - | - | - | - |
+| S5 | not yet run | - | - | - | - | - | - |
+| S6 | not yet run | - | - | - | - | - | - |
+| S7 | not yet run | - | - | - | - | - | - |
+| S8 | not yet run | - | - | - | - | - | - |
+| S9 | not yet run | - | - | - | - | - | - |
 
 The owners review the evidence for #59, #61 and #63 before any of it is
 quoted. P4.02 adds the measured RTO and RPO table to the
@@ -280,10 +350,17 @@ quoted. P4.02 adds the measured RTO and RPO table to the
   memory, the shared lock held, P4.03 experiments present); rendering, chaos
   object bounds, the scenario matrix, takeover and RTO arithmetic, the
   results table, and evidence refused when it names a Secret or holds a
-  credential.
+  credential; each scenario's expectation failing on records the write
+  invariants pass; an empty, partial or rotated audit extract failing a
+  run; the rotated audit files read with the live one; the clock offset and
+  the window moved onto the cluster's clock; `run` refusing a target with
+  another UID; and `teardown` deleting nothing through a context that names
+  another cluster.
 - `tests/test_distributed_audit.py`: with the fixtures in
   `tests/fixtures/distributed_audit/` (written for the tests, not captured):
   one template write passes I7, two successful template PATCHes for one action
   fail it (and I1), a seal PATCH is a fence and not a write, denied, dry-run,
-  status and unfinished requests are not writes, and the extract drops bodies,
+  status and unfinished requests are not writes, a Sentinel change logged
+  without its body fails I7 and I1 while the operator's is reported apart,
+  the completeness checks, and the extract drops bodies,
   IPs, agents, credential IDs and Secret names.

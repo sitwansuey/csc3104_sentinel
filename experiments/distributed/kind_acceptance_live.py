@@ -24,9 +24,10 @@ from experiments.distributed.kind_acceptance import (
     ADMISSION, CHAOS_LABEL, CHAOS_VERSION, CLUSTER, CONTEXT, CONTROL_PLANE, DEADLINE_SECONDS, DEPLOYMENTS,
     EXECUTORS, IDENTITIES, LEASE_SECONDS, LOCAL_IMAGES, MANIFESTS, NAMESPACE, NODE_IMAGE, OPERATOR, PROBE_HELPER,
     SCENARIOS, TARGET, WORKLOAD, AcceptanceError, Lab, RunView, approval_permissions, certificate_names,
-    config_map, coordinator_recovery, credentials, delay_to_api_server, partition, pod_failure, pod_kill,
-    load_summaries, preflight, render_admission, render_api_server_policy, results_table, secret_documents,
-    scope_records, secret_name, stamp, takeover_seconds, target_inputs, time_skew)
+    cluster_identity, config_map, control_plane_window, coordinator_recovery, credentials, delay_to_api_server,
+    expectation, partition, pod_failure, pod_kill, load_summaries, preflight, render_admission,
+    render_api_server_policy, results_table, secret_documents, scope_records, secret_name, shift, stamp,
+    takeover_seconds, target_inputs, time_skew)
 
 BASELINE_SAMPLES, BASELINE_SPACING = 4, 10
 EXECUTOR_USER = "system:serviceaccount:sentinel-dist:sentinel-executor"
@@ -221,6 +222,7 @@ class Run:
         self.lab, self.scenario, self.index, self.policy_version = lab, scenario, index, policy_version
         self.chaos, self.paused, self.held = [], [], []
         self.since = None
+        self.offset = None  # The control-plane clock minus the harness's at the start (Lab.clock_offset).
         self.api_endpoint = None  # The API server endpoint address deploy recorded (S8's delay target).
         self.notes, self.fault_at, self.stalled = {}, None, None
         self.saved_logs = {}  # Logs of a Pod this run deletes, read before it goes.
@@ -241,8 +243,14 @@ class Run:
         self.chaos.remove(document)
 
     def mark(self):
+        """The fault time on the harness clock; every fault_at comes from here."""
         self.fault_at = stamp(self.lab.clock())
         return self.fault_at
+
+    def audit_rows(self, since):
+        """Audit rows from a harness stamp on, the window moved onto the API server's clock."""
+        window = control_plane_window(since, None, [self.offset] if self.offset else [])
+        return self.lab.audit_rows(*window)
 
     def cleanup(self):
         for node in list(self.paused):
@@ -310,7 +318,7 @@ def s1c(run):
 
 
 def _other_wrote(run, holder, since):
-    rows, _ = run.lab.audit_rows(since, None)
+    rows, _ = run.audit_rows(since)
     return any(row["effect"] == "template_write" and row["sentinel"] and row["pod"]
                and not row["pod"].startswith(_app(holder) + "-") for row in rows)
 
@@ -366,10 +374,11 @@ def s5(run):
     run.lab.first_reached(["coordinator"], stem, timeout=240)  # Read again once the container restarted.
     pod = _coordinator_pod(run.lab)
     status = (pod["status"].get("containerStatuses") or [{}])[0]
-    run.fault_at = status.get("lastState", {}).get("terminated", {}).get("finishedAt") or run.mark()
+    terminated = status.get("lastState", {}).get("terminated", {})
     run.lab.shell.kubectl("rollout", "status", "deployment/sentinel-coordinator", "--timeout=180s",
                           namespace=NAMESPACE, timeout=200)
-    run.notes["after_commit_exit"] = {"exit_code": status.get("lastState", {}).get("terminated", {}).get("exitCode"),
+    # Both stamps are on the cluster's clock; the RTO below is measured from the harness's mark of the delete.
+    run.notes["after_commit_exit"] = {"exit_code": terminated.get("exitCode"), "exited_at": terminated.get("finishedAt"),
                                       "ready_at": _ready_at(_coordinator_pod(run.lab))}
     run.lab.wait_state({"VERIFYING", *invariants.TERMINAL}, 150)
     name, _ = run.lab.pod("sentinel-coordinator")
@@ -389,7 +398,7 @@ def s6(run):
     cut = run.create(partition(run.name("all"), "sentinel-coordinator", workers, 3 * LEASE_SECONDS + 60))
     run.lab.approve(row["active_action_id"], run.policy_version)  # The operator reaches it over the port-forward.
     run.lab.sleep(3 * LEASE_SECONDS)
-    rows, _ = run.lab.audit_rows(since, None)
+    rows, _ = run.audit_rows(since)
     during = sum(1 for item in rows if item["effect"] == "template_write" and item["sentinel"])
     run.notes["during_partition"] = {"template_writes": during, "seconds": 3 * LEASE_SECONDS}
     run.remove(cut)
@@ -538,12 +547,31 @@ def write_evidence(folder, files, forbidden):
     return sorted(texts)
 
 
+def _generation(document):
+    value = (document or {}).get("metadata", {}).get("generation")
+    return value if type(value) is int else None
+
+
 def run_one(lab, scenario, index, deployed, baseline, tokens, out):
-    """One scenario run: inject, fault, wait, collect, check, restore, and write its evidence folder."""
+    """One scenario run: inject, fault, wait, collect, check, restore, and write its evidence folder.
+
+    Around the run it measures the control-plane clock against the harness's
+    (at the start and the end, Lab.clock_offset), so the audit window, the
+    log reads and the latencies are taken on the cluster's clock, and reads
+    the target's generation before the injection, before the restore and
+    after it, so audit.completeness can tell a short audit extract from a
+    quiet run. The run passes only when the invariants hold, the scenario's
+    expectation (kind_acceptance.expectation) is met, the extract is
+    complete and the harness raised nothing.
+    """
     from experiments.distributed.run_scenarios import timeline
     run = Run(lab, scenario, index, deployed["policy_version"])
+    offsets = [lab.clock_offset()]
+    run.offset = offsets[0]
+    generation_start = _generation(lab.target())
     started_at, started = lab.clock(), lab.monotonic()
-    since = run.since = stamp(started_at - timedelta(seconds=1))
+    since = stamp(started_at - timedelta(seconds=1))
+    run.since = control_plane_window(since, None, offsets)[0]  # For kubectl logs, which the cluster's clock stamps.
     policy_version = deployed["policy_version"]
     run.api_endpoint = deployed.get("api_server", {}).get("endpoint")
     operator_actions, error = [], None
@@ -567,27 +595,40 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out):
         stopping.set()
         if approver is not None:
             approver.join(5)
-    until = stamp(lab.clock() + timedelta(seconds=1))
     work = out / "copied" / f"{scenario.name}-r{index}"
     view = RunView(work, tokens)
+    generation_at_end = None
     try:
-        collect(lab, view, since, run.saved_logs)
-        rows, skipped = lab.audit_rows(since, until)
+        collect(lab, view, run.since, run.saved_logs)
+        generation_at_end = _generation(lab.target())
     finally:  # The target goes back to its baseline even when collecting failed.
         if scenario.name != "S9":
             operator_actions.append(lab.restore(baseline))
+    generations = (generation_start, _generation(lab.target()))
+    offsets.append(lab.clock_offset())
+    until = stamp(lab.clock() + timedelta(seconds=1))
+    window = control_plane_window(since, until, offsets)
+    log = lab.audit_log(*window)
+    rows, skipped = log["rows"], log["skipped"]
+    problems = audit.completeness(rows, injected=scenario.name != "S9", generations=generations,
+                                  first_at=log["first_at"], window_start=window[0])
     records = scope_records(invariants.collect(view, terminal_in_time=terminal,
-                                               cluster_writes=audit.template_writes(rows)), since)
-    records["audit"] = rows
+                                               cluster_writes=audit.template_writes(rows, problems)), window[0])
+    records["audit"], records["audit_completeness"] = rows, problems
     results = [item for item in [*invariants.check(records), invariants.i7(records)] if item["id"] in scenario.checks]
     access = records["access"]
-    takeover = (takeover_seconds(access, run.fault_at, run.stalled)
-                if scenario.name in {"S1b", "S1c", "S2", "S3"} and run.fault_at and run.stalled else None)
+    fault_at = shift(run.fault_at, run.offset["offset_seconds"]) if run.fault_at else None  # On the cluster's clock.
+    takeover = (takeover_seconds(access, fault_at, run.stalled)
+                if scenario.name in {"S1b", "S1c", "S2", "S3"} and fault_at and run.stalled else None)
     recovery = None
-    if scenario.name == "S5" and run.fault_at:
-        recovery = coordinator_recovery(run.fault_at, run.notes.get("pod_delete", {}).get("ready_at"), access,
+    if scenario.name == "S5" and fault_at:
+        recovery = coordinator_recovery(fault_at, run.notes.get("pod_delete", {}).get("ready_at"), access,
                                         records["transitions"])
-    passed = all(item["passed"] for item in results) and error is None
+    invariants_passed = all(item["passed"] for item in results)
+    failures = expectation(scenario.name, incidents=records["incidents"], rows=rows, notes=run.notes,
+                           stalled=run.stalled, takeover=takeover, recovery=recovery,
+                           generation_at_end=generation_at_end)
+    passed = invariants_passed and not failures and not problems and error is None
     summary = {"schema": "sentinel-dist-acceptance-run-v1", "scenario": scenario.name, "title": scenario.title,
                "fault": scenario.fault, "file_mode_counterpart": scenario.catalogue, "expect": scenario.expect,
                "repeat_index": index, "context": CONTEXT, "date": started_at.date().isoformat(),
@@ -595,7 +636,14 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out):
                "duration_seconds": round(lab.monotonic() - started, 1), "fault_at": run.fault_at,
                "notes": run.notes, "harness_error": error, "terminal_in_time": terminal,
                "states": sorted({row["state"] for row in records["incidents"]}), "invariants": results,
+               "invariants_passed": invariants_passed,
+               "expectation": {"expect": scenario.expect, "met": not failures, "failures": failures},
                "passed": passed, "audit": audit.summary(rows), "audit_lines_skipped": skipped,
+               "audit_completeness": {"complete": not problems, "problems": problems, "files": log["files"],
+                                      "first_event_at": log["first_at"], "window": list(window),
+                                      "generation": {"before": generations[0], "before_restore": generation_at_end,
+                                                     "after": generations[1]}},
+               "clock": {"control_plane_minus_harness": offsets, "fault_at_cluster_clock": fault_at},
                "takeover_seconds": takeover, "coordinator_recovery": recovery, "operator_actions": operator_actions,
                "synthetic_planner": True, "git_revision": git_revision(), "limits": LIMITS}
     folder = out / started_at.date().isoformat() / f"{scenario.name}-r{index}-{started_at:%H%M%S}z"
@@ -620,6 +668,16 @@ def read_tokens(shell):
     return tokens
 
 
+def check_target(lab, baseline):
+    """AcceptanceError unless the live target is the Deployment whose UID deploy bound the approvals to."""
+    expected = (baseline.get("target") or {}).get("uid")
+    live = lab.target()["metadata"].get("uid")
+    if not expected or live != expected:
+        raise AcceptanceError(f"{TARGET} is not the Deployment deploy recorded (its UID differs from the "
+                              "approval permissions and baseline); deploy again into a new run directory")
+    return live
+
+
 def run(shell, run_dir, names, *, repeat, min_free_gib, lock, lab=None):
     """Run each scenario repeat times after deploy; return the summaries and write results.md."""
     run_dir = Path(run_dir)
@@ -630,6 +688,7 @@ def run(shell, run_dir, names, *, repeat, min_free_gib, lock, lab=None):
     baseline = json.loads((run_dir / "inputs" / "baseline.json").read_text(encoding="utf-8"))
     preflight(shell, min_free_gib=min_free_gib, lock=lock)
     lab = lab or Lab(shell, run_dir)
+    check_target(lab, baseline)
     tokens = read_tokens(shell)
     lab.tokens = {OPERATOR: tokens[OPERATOR]["approval-token"]}
     summaries = []
@@ -662,7 +721,15 @@ def write_overview(run_dir, deployed, tokens):
 
 
 def teardown(shell, *, delete_cluster=False):
-    """Remove only what deploy created; delete the cluster sentinel-dist only when asked."""
+    """Remove only what deploy created; delete the cluster sentinel-dist only when asked.
+
+    The context's identity (cluster_identity: the local kind cluster
+    sentinel-dist on a loopback server, with its four labelled nodes) is
+    checked first, so nothing is deleted through a context that names
+    another cluster. The admission policy's name is shared with the shipped
+    policy, which this check keeps out of reach on any other cluster.
+    """
+    identity = cluster_identity(shell)
     removed = []
     for kind in ("podchaos", "networkchaos", "timechaos"):
         shell.kubectl("delete", kind, "--selector=" + ",".join(f"{k}={v}" for k, v in CHAOS_LABEL.items()),
@@ -675,5 +742,6 @@ def teardown(shell, *, delete_cluster=False):
     if delete_cluster:
         shell.run(["kind", "delete", "cluster", "--name", CLUSTER], timeout=300)
         removed.append("kind cluster " + CLUSTER)
-    return {"removed": removed, "control_plane": CONTROL_PLANE if not delete_cluster else None,
+    return {"removed": removed, "checked": identity["context"],
+            "control_plane": CONTROL_PLANE if not delete_cluster else None,
             "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}

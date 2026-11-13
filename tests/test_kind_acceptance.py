@@ -405,16 +405,21 @@ class EvidenceTests(unittest.TestCase):
     def test_the_results_table_starts_empty_and_fills_from_summaries(self):
         empty = acceptance.results_table([])
         self.assertEqual(empty.count("not yet run"), 12)
-        runs = [{"scenario": "S2", "passed": True, "audit": {"max_template_writes_per_action": 1},
-                 "takeover_seconds": 17.2, "coordinator_recovery": None},
-                {"scenario": "S2", "passed": False, "audit": {"max_template_writes_per_action": 2},
-                 "takeover_seconds": 19.0, "coordinator_recovery": None},
-                {"scenario": "S5", "passed": True, "audit": {"max_template_writes_per_action": 1},
-                 "takeover_seconds": None,
+        runs = [{"scenario": "S2", "passed": True, "invariants_passed": True, "expectation": {"met": True},
+                 "audit": {"max_template_writes_per_action": 1}, "takeover_seconds": 17.2,
+                 "coordinator_recovery": None},
+                {"scenario": "S2", "passed": False, "invariants_passed": False, "expectation": {"met": True},
+                 "audit": {"max_template_writes_per_action": 2}, "takeover_seconds": 19.0,
+                 "coordinator_recovery": None},
+                {"scenario": "S2", "passed": False, "invariants_passed": True, "expectation": {"met": False},
+                 "audit": {"max_template_writes_per_action": 1}, "takeover_seconds": None,
+                 "coordinator_recovery": None},
+                {"scenario": "S5", "passed": True, "invariants_passed": True, "expectation": {"met": True},
+                 "audit": {"max_template_writes_per_action": 1}, "takeover_seconds": None,
                  "coordinator_recovery": {"to_ready": 7.5, "to_first_claim": 9.25, "to_next_transition": 12}}]
         table = acceptance.results_table(runs)
-        self.assertIn("| S2 | 2 | 1/2 | 2 | 17.2-19.0 | - / - |", table)
-        self.assertIn("| S5 | 1 | 1/1 | 1 | - | 7.5-7.5 / 9.2-9.2 |", table)
+        self.assertIn("| S2 | 3 | 1/3 | 2/3 | 2/3 | 2 | 17.2-19.0 | - / - |", table)
+        self.assertIn("| S5 | 1 | 1/1 | 1/1 | 1/1 | 1 | - | 7.5-7.5 / 9.2-9.2 |", table)
         self.assertEqual(table.count("not yet run"), 10)
 
     def test_the_documented_table_is_the_empty_one(self):
@@ -564,10 +569,22 @@ class LabTests(unittest.TestCase):
         self.assertEqual(calls, [["docker", "pause", "sentinel-dist-worker2"], ["docker", "unpause",
                                                                                 "sentinel-dist-worker2"]])
 
+    def test_teardown_deletes_nothing_through_a_context_that_names_another_cluster(self):
+        elsewhere = done(json.dumps({"clusters": [{"name": "kind-sentinel-dist", "cluster": {
+            "server": "https://10.0.0.5:6443"}}]}))
+        for overrides in ({"view": elsewhere}, {"nodes": done(json.dumps({"items": NODES[:3]}))}):
+            with self.subTest(changed=list(overrides)):
+                runner = FakeRunner(**overrides)
+                with self.assertRaises(acceptance.AcceptanceError):
+                    live.teardown(acceptance.Shell("kind-sentinel-dist", runner=runner), delete_cluster=True)
+                self.assertFalse([command for command in runner.calls if "delete" in command])
+
     def test_teardown_removes_only_the_lab_and_deletes_the_cluster_only_when_asked(self):
         runner = FakeRunner()
         shell = acceptance.Shell("kind-sentinel-dist", runner=runner)
-        live.teardown(shell)
+        self.assertEqual(live.teardown(shell)["checked"]["cluster"], "kind-sentinel-dist")
+        self.assertLess(next(index for index, command in enumerate(runner.calls) if "view" in command),
+                        next(index for index, command in enumerate(runner.calls) if "delete" in command))
         self.assertFalse(any(command[0] == "kind" for command in runner.calls))
         [namespaces] = [command for command in runner.calls if "namespace" in command]
         self.assertEqual(namespaces[namespaces.index("namespace") + 1:namespaces.index("namespace") + 3],
@@ -585,12 +602,214 @@ class LabTests(unittest.TestCase):
             self.assertEqual(records["secret_scan"]["hits"], [])
 
 
+def audit_row(effect, *, pod="sentinel-executor-a-7c8d9e6f5-a1a1a", at="2026-11-13T10:00:31Z", code=200,
+              generation=None, action_id="ACT-1", sentinel=True):
+    return {"audit_id": "x", "at": at, "verb": "patch",
+            "user": acceptance.audit.EXECUTOR_USER if sentinel else "<operator>", "sentinel": sentinel, "pod": pod,
+            "node": None, "resource": "deployments", "subresource": None, "namespace": acceptance.WORKLOAD,
+            "name": acceptance.TARGET, "code": code, "reason": None, "decision": None, "admission_denied": False,
+            "dry_run": False, "effect": effect, "paths": [],
+            "marker": {"template_write": "write", "fence": "fence"}.get(effect, "none"), "action_id": action_id,
+            "fence_epoch": None, "resource_version": None, "generation": generation}
+
+
+B_POD = "sentinel-executor-b-5d6e7f8a9-b2b2b"
+
+
+class ExpectationTests(unittest.TestCase):
+    """Each scenario's expectation is checked, and fails on records that the write invariants pass."""
+
+    def check(self, name, states, rows, **observed):
+        return acceptance.expectation(name, incidents=[{"incident_id": f"I{index}", "state": state}
+                                                       for index, state in enumerate(states)], rows=rows, **observed)
+
+    def write_invariants_pass(self, states, rows):
+        records = {"audit": rows, "audit_completeness": [],
+                   "cluster_writes": acceptance.audit.template_writes(rows),
+                   "incidents": [{"incident_id": f"I{index}", "state": state} for index, state in enumerate(states)],
+                   "terminal_in_time": True}
+        for check in (acceptance.invariants.i1, acceptance.invariants.i3, acceptance.invariants.i7):
+            self.assertTrue(check(records)["passed"], check(records))
+
+    def test_a_recovery_scenario_needs_recovered_and_exactly_one_write(self):
+        one = [audit_row("template_write", generation=3)]
+        self.assertEqual(self.check("S0", ["RECOVERED"], one), [])
+        self.write_invariants_pass(["FAILED"], [])
+        self.assertEqual(self.check("S0", ["FAILED"], []),
+                         ["no incident RECOVERED (states: FAILED)", "0 Sentinel template write(s), expected exactly 1"])
+        self.write_invariants_pass(["RECOVERED", "REJECTED"], [])
+        self.assertEqual(self.check("S4", ["RECOVERED", "REJECTED"], []),
+                         ["0 Sentinel template write(s), expected exactly 1"])
+
+    def test_takeover_rto_and_the_paused_holder_are_checked(self):
+        one = [audit_row("template_write", generation=3)]
+        self.assertEqual(self.check("S1b", ["RECOVERED"], one, takeover=None),
+                         ["no claim by the other Executor after the fault: takeover not measured"])
+        self.assertEqual(self.check("S1c", ["RECOVERED"], one, takeover=4.2), [])
+        self.assertEqual(self.check("S5", ["RECOVERED"], one, recovery={"to_ready": None}),
+                         ["the Coordinator's return to Ready was not measured"])
+        self.assertEqual(self.check("S5", ["RECOVERED"], one, recovery={"to_ready": 6.0}), [])
+        self.write_invariants_pass(["RECOVERED"], one)
+        self.assertEqual(self.check("S2", ["RECOVERED"], one, stalled="executor-a"),
+                         ["the paused holder's Pod wrote the template"])
+        self.assertEqual(self.check("S2", ["RECOVERED"], [audit_row("template_write", pod=B_POD)],
+                                    stalled="executor-a"), [])
+
+    def test_s3_and_s6_need_every_incident_terminal(self):
+        self.assertEqual(self.check("S3", ["VERIFYING"], []), ["not every incident terminal (states: VERIFYING)"])
+        self.assertEqual(self.check("S3", ["FAILED"], []), [])
+        self.assertEqual(self.check("S6", ["RECOVERED"], [audit_row("template_write")]),
+                         ["template writes during the partition not recorded as 0"])
+        self.assertEqual(self.check("S6", ["RECOVERED"], [audit_row("template_write")],
+                                    notes={"during_partition": {"template_writes": 0}}), [])
+
+    def test_s7_needs_failed_and_no_write(self):
+        one = [audit_row("template_write")]
+        self.write_invariants_pass(["RECOVERED"], one)
+        self.assertEqual(self.check("S7", ["RECOVERED"], one),
+                         ["expected FAILED and none RECOVERED (states: RECOVERED)",
+                          "1 Sentinel template write(s), expected 0"])
+        self.assertEqual(self.check("S7", ["FAILED"], []), [])
+
+    def s8_rows(self):
+        return [audit_row("template_write", pod=None, sentinel=False, generation=2, at="2026-11-13T10:00:00Z"),
+                audit_row("fence", pod=B_POD, generation=3, at="2026-11-13T10:00:40Z", action_id="ACT-1"),
+                audit_row("denied", code=422, at="2026-11-13T10:00:49Z")]
+
+    def test_s8_needs_the_other_executors_seal_then_the_holders_refused_patch(self):
+        rows = self.s8_rows()
+        self.assertEqual(self.check("S8", ["FAILED"], rows, stalled="executor-a", generation_at_end=3), [])
+        cases = {
+            "no seal or fence from the other Executor's Pod in the audit log": [rows[0], rows[2]],
+            "no PATCH from the holder's Pod refused (409 or 422) after the seal": rows[:2],
+        }
+        for message, changed in cases.items():
+            with self.subTest(message=message):
+                self.write_invariants_pass(["FAILED"], changed)
+                self.assertEqual(self.check("S8", ["FAILED"], changed, stalled="executor-a", generation_at_end=3),
+                                 [message])
+        sealed_by_holder = [rows[0], dict(rows[1], pod="sentinel-executor-a-7c8d9e6f5-a1a1a"), rows[2]]
+        self.assertIn("no seal or fence from the other Executor's Pod in the audit log",
+                      self.check("S8", ["FAILED"], sealed_by_holder, stalled="executor-a", generation_at_end=3))
+        refused_first = [rows[0], rows[1], dict(rows[2], at="2026-11-13T10:00:39Z")]
+        self.assertEqual(self.check("S8", ["FAILED"], refused_first, stalled="executor-a", generation_at_end=3),
+                         ["no PATCH from the holder's Pod refused (409 or 422) after the seal"])
+        forbidden = [rows[0], rows[1], dict(rows[2], code=403)]
+        self.assertEqual(self.check("S8", ["FAILED"], forbidden, stalled="executor-a", generation_at_end=3),
+                         ["no PATCH from the holder's Pod refused (409 or 422) after the seal"])
+        self.assertEqual(self.check("S8", ["FAILED"], rows, stalled="executor-a", generation_at_end=4),
+                         ["the target's generation is 4 at the end and 3 after the seal: something changed it after "
+                          "the seal"])
+        self.assertEqual(self.check("S8", ["RECOVERED"], rows, stalled="executor-a", generation_at_end=3),
+                         ["expected not RECOVERED (states: RECOVERED)"])
+        self.assertEqual(self.check("S8", ["FAILED"], rows, stalled=None, generation_at_end=3),
+                         ["no seal or fence from the other Executor's Pod in the audit log"])
+
+    def test_s9_needs_every_probe_and_no_write(self):
+        self.assertEqual(self.check("S9", [], [], notes={"probes": []}), ["not every denial probe behaved as expected"])
+        self.assertEqual(self.check("S9", [], [], notes={"probes": [{"passed": True}, {"passed": False}]}),
+                         ["not every denial probe behaved as expected"])
+        self.assertEqual(self.check("S9", [], [], notes={"probes": [{"passed": True}]}), [])
+
+    def test_every_scenario_states_what_its_expectation_checks(self):
+        for name, scenario in acceptance.SCENARIOS.items():
+            with self.subTest(name=name):
+                self.assertTrue(acceptance.expectation(name, incidents=[], rows=[]), name)  # Nothing is never met.
+                self.assertNotIn("replayed", scenario.expect)
+
+
+class ClockTests(unittest.TestCase):
+    def test_the_offset_is_taken_at_the_midpoint_with_half_the_round_trip_as_error(self):
+        before = datetime(2026, 11, 13, 10, 0, 0, tzinfo=UTC)
+        after = datetime(2026, 11, 13, 10, 0, 0, 200000, tzinfo=UTC)
+        offset = acceptance.clock_offset(before, f"{before.timestamp() + 3.1:.3f}\n", after)
+        self.assertEqual((offset["offset_seconds"], offset["uncertainty_seconds"]), (3.0, 0.1))
+        for text in ("", "Thu Nov 13", None):
+            with self.subTest(text=text), self.assertRaises(acceptance.AcceptanceError):
+                acceptance.clock_offset(before, text, after)
+        with self.assertRaises(acceptance.AcceptanceError):
+            acceptance.clock_offset(after, "1", before)
+
+    def test_the_window_moves_onto_the_cluster_clock_and_widens_by_every_offset(self):
+        offsets = [{"offset_seconds": -2.0, "uncertainty_seconds": 0.1},
+                   {"offset_seconds": 1.0, "uncertainty_seconds": 0.2}]
+        self.assertEqual(acceptance.control_plane_window("2026-11-13T10:00:00Z", "2026-11-13T10:05:00Z", offsets),
+                         ("2026-11-13T09:59:57.900000Z", "2026-11-13T10:05:01.200000Z"))
+        self.assertEqual(acceptance.control_plane_window("2026-11-13T10:00:00Z", None, offsets[:1]),
+                         ("2026-11-13T09:59:57.900000Z", None))
+        self.assertEqual(acceptance.control_plane_window("a", "b", []), ("a", "b"))
+
+
+class AuditReadTests(unittest.TestCase):
+    def lab(self, listing, text="", date="1794563400.5\n"):
+        calls = []
+
+        def runner(command, **options):
+            calls.append(list(command))
+            if "find" in command:
+                return done(listing)
+            if "cat" in command:
+                return done(text)
+            if "date" in command:
+                return done(date)
+            return done()
+        clock = iter([datetime(2026, 11, 13, 10, 0, tzinfo=UTC), datetime(2026, 11, 13, 10, 0, 1, tzinfo=UTC)])
+        lab = acceptance.Lab(acceptance.Shell("kind-sentinel-dist", runner=runner), tempfile.gettempdir(),
+                             clock=lambda: next(clock))
+        return lab, calls
+
+    def test_the_rotated_backups_are_read_with_the_live_log_and_the_first_event_is_reported(self):
+        fixtures = Path(__file__).resolve().parent / "fixtures" / "distributed_audit"
+        listing = "\n".join(["/var/log/kubernetes/kube-apiserver-audit.log",
+                             "/var/log/kubernetes/kube-apiserver-audit-2026-11-13T10-00-00.000.log",
+                             "/var/log/kubernetes/kube-apiserver-audit-2026-11-13T09-00-00.000.log",
+                             "/var/log/kubernetes/kube-apiserver-audit.log; rm -rf /", "/etc/passwd"]) + "\n"
+        lab, calls = self.lab(listing, (fixtures / "one-write.jsonl").read_text(encoding="utf-8"))
+        found = lab.audit_log("2026-11-13T10:00:30Z", None)
+        [cat] = [command for command in calls if "cat" in command]
+        self.assertEqual(cat[cat.index("cat") + 1:], [
+            "/var/log/kubernetes/kube-apiserver-audit-2026-11-13T09-00-00.000.log",
+            "/var/log/kubernetes/kube-apiserver-audit-2026-11-13T10-00-00.000.log",
+            "/var/log/kubernetes/kube-apiserver-audit.log"])
+        self.assertEqual((found["files"], found["skipped"], found["first_at"]),
+                         (3, 1, "2026-11-13T10:00:00.100000Z"))
+        self.assertEqual([row["audit_id"][-2:] for row in found["rows"]], ["03", "04", "05", "06", "07", "08", "09"])
+
+    def test_without_the_live_log_nothing_is_read(self):
+        lab, calls = self.lab("/var/log/kubernetes/kube-apiserver-audit-2026-11-13T10-00-00.000.log\n")
+        with self.assertRaisesRegex(acceptance.AcceptanceError, "audit log is missing"):
+            lab.audit_rows("2026-11-13T10:00:00Z", None)
+        self.assertFalse([command for command in calls if "cat" in command])
+
+    def test_the_control_plane_clock_is_read_inside_its_container(self):
+        lab, calls = self.lab("")
+        offset = lab.clock_offset()
+        self.assertEqual(calls, [["docker", "exec", "sentinel-dist-control-plane", "date", "+%s.%N"]])
+        self.assertEqual(offset["uncertainty_seconds"], 0.5)
+
+
 class FakeLab:
     """The Lab surface run_one uses, recording the order of operator steps."""
 
-    def __init__(self, rows, *, fail_collect=False):
+    def __init__(self, rows, *, fail_collect=False, generations=(1, 4, 4), first_at="2026-11-13T09:00:00Z",
+                 offset=0.0):
         self.rows, self.fail_collect, self.steps = rows, fail_collect, []
         self.ticks = iter(range(0, 100000, 5))
+        self.generations, self.first_at, self.offset = iter(generations), first_at, offset
+        self.window = None
+
+    def clock_offset(self):
+        self.steps.append("offset")
+        return {"offset_seconds": self.offset, "uncertainty_seconds": 0.01, "at": "2026-11-13T10:00:00Z"}
+
+    def target(self):
+        self.steps.append("target")
+        return {"metadata": {"uid": "uid-demo", "generation": next(self.generations)}}
+
+    def audit_log(self, since, until):
+        self.steps.append("audit")
+        self.window = (since, until)
+        return {"rows": self.rows, "skipped": 0, "first_at": self.first_at, "files": 2}
 
     def clock(self):
         return datetime(2026, 11, 13, 10, 0, tzinfo=UTC)
@@ -619,10 +838,6 @@ class FakeLab:
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(prefix, encoding="utf-8")
 
-    def audit_rows(self, since, until):
-        self.steps.append("audit")
-        return self.rows, 0
-
     def restore(self, baseline):
         self.steps.append("restore")
         return {"operator_restore": True}
@@ -649,11 +864,16 @@ class RunOneTests(unittest.TestCase):
                               "versions.json"])
             self.assertFalse((Path(directory) / "copied" / "S0-r1").exists())
             written = json.loads((folder / "summary.json").read_text(encoding="utf-8"))
-        self.assertEqual(lab.steps[0], "inject")
-        self.assertLess(lab.steps.index("audit"), lab.steps.index("restore"))
+        self.assertEqual(lab.steps[:3], ["offset", "target", "inject"])
+        # The generation is read before the restore and after it, and the log is read after both.
+        self.assertEqual(lab.steps[-5:], ["target", "restore", "target", "offset", "audit"])
         self.assertEqual(written["scenario"], "S0")
+        self.assertEqual(written["audit_completeness"]["complete"], True)
+        self.assertEqual(written["audit_completeness"]["generation"], {"before": 1, "before_restore": 4, "after": 4})
         results = {item["id"]: item["passed"] for item in summary["invariants"]}
         self.assertTrue(results["I7"])
+        self.assertEqual(summary["expectation"]["met"], False)  # No incident RECOVERED in the fake Coordinator.
+        self.assertIn("no incident RECOVERED (states: none)", summary["expectation"]["failures"])
         self.assertFalse(results["I3"])  # The fake Coordinator recorded no incident: that fails, never passes.
         self.assertFalse(summary["passed"])
         self.assertEqual(summary["audit"]["sentinel_template_writes_per_action"], {"ACT-1": 1})
@@ -674,7 +894,75 @@ class RunOneTests(unittest.TestCase):
         self.assertNotIn("inject", lab.steps)
         self.assertNotIn("restore", lab.steps)
         self.assertEqual([item["id"] for item in summary["invariants"]], ["I7"])
-        self.assertTrue(summary["passed"])
+        self.assertEqual(summary["expectation"]["failures"], ["not every denial probe behaved as expected"])
+        self.assertFalse(summary["passed"])  # The stub recorded no probes: that is not a pass.
+
+    def test_s9_with_every_probe_as_expected_passes(self):
+        lab = FakeLab([], generations=(4, 4, 4))
+
+        def probes(run):
+            run.notes["probes"] = [{"probe": "p", "passed": True}]
+        with tempfile.TemporaryDirectory() as directory, patch.object(live, "git_revision", lambda: "abc123"), \
+                patch.dict(live.RUNNERS, {"S9": probes}):
+            summary = live.run_one(lab, acceptance.SCENARIOS["S9"], 1, self.deployed, {}, self.tokens,
+                                   Path(directory))
+        self.assertTrue(summary["passed"], summary)
+
+    def test_an_empty_or_short_audit_extract_fails_the_run_instead_of_counting_no_write(self):
+        cases = {"empty": FakeLab([], first_at=None), "a generation unexplained": FakeLab(self.rows,
+                                                                                          generations=(1, 6, 6)),
+                 "rotated": FakeLab(self.rows, first_at="2026-11-13T10:00:00Z")}
+        for label, lab in cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory, \
+                    patch.object(live, "git_revision", lambda: "abc123"):
+                summary = live.run_one(lab, acceptance.SCENARIOS["S0"], 1, self.deployed, {}, self.tokens,
+                                       Path(directory))
+                results = {item["id"]: item for item in summary["invariants"]}
+                self.assertFalse(summary["audit_completeness"]["complete"])
+                self.assertFalse(results["I7"]["passed"])
+                self.assertIn("audit extract incomplete", results["I7"]["detail"])
+                self.assertFalse(results["I1"]["passed"])
+                self.assertFalse(summary["passed"])
+
+    def test_the_window_and_the_fault_time_move_onto_the_clusters_clock(self):
+        lab = FakeLab(self.rows, offset=-2.5)
+
+        def fault(run):
+            run.stalled = "executor-a"
+            run.mark()
+        with tempfile.TemporaryDirectory() as directory, patch.object(live, "git_revision", lambda: "abc123"), \
+                patch.dict(live.RUNNERS, {"S1b": fault}):
+            summary = live.run_one(lab, acceptance.SCENARIOS["S1b"], 1, self.deployed, {}, self.tokens,
+                                   Path(directory))
+        self.assertEqual(summary["fault_at"], "2026-11-13T10:00:00Z")
+        self.assertEqual(summary["clock"]["fault_at_cluster_clock"], "2026-11-13T09:59:57.500000Z")
+        self.assertEqual(lab.window, ("2026-11-13T09:59:56.490000Z", "2026-11-13T09:59:58.510000Z"))
+        self.assertIn("no claim by the other Executor after the fault: takeover not measured",
+                      summary["expectation"]["failures"])
+
+    def test_run_refuses_a_target_whose_uid_is_not_the_one_deploy_bound(self):
+        class Target:
+            def __init__(self, uid):
+                self.uid = uid
+
+            def target(self):
+                return {"metadata": {"uid": self.uid}}
+        baseline = {"target": {"uid": "uid-demo"}}
+        self.assertEqual(live.check_target(Target("uid-demo"), baseline), "uid-demo")
+        for uid, recorded in (("uid-other", baseline), ("uid-demo", {}), (None, baseline)):
+            with self.subTest(uid=uid), self.assertRaisesRegex(acceptance.AcceptanceError, "UID differs"):
+                live.check_target(Target(uid), recorded)
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            (run_dir / "lab.json").write_text(json.dumps(self.deployed), encoding="utf-8")
+            (run_dir / "inputs").mkdir()
+            (run_dir / "inputs" / "baseline.json").write_text(json.dumps(baseline), encoding="utf-8")
+            runner = FakeRunner()
+            with patch.object(live, "preflight", lambda *args, **options: {}), \
+                    self.assertRaisesRegex(acceptance.AcceptanceError, "UID differs"):
+                live.run(acceptance.Shell("kind-sentinel-dist", runner=runner), run_dir, ["S0"], repeat=1,
+                         min_free_gib=1, lock=None, lab=Target("uid-recreated"))
+            self.assertFalse([command for command in runner.calls if "secret" in command])
 
 
 class CommandLineTests(unittest.TestCase):

@@ -41,15 +41,25 @@ the Guard admits only digest-pinned images.
 
 What run does per scenario and repeat: the operator injects the target's
 fault (STARTUP_FAILURE=true, an operator write recorded as such), approves
-each action through the authenticated approval API over a port-forward, and
-applies the scenario's fault: Chaos Mesh PodChaos, NetworkChaos or TimeChaos
+each action through the authenticated approval API over a port-forward (the
+harness approves on the operator's behalf with the operator's credential: no
+person reads or types an approval, so a run is not evidence of a human in the
+loop), and applies the scenario's fault: Chaos Mesh PodChaos, NetworkChaos or TimeChaos
 objects in sentinel-dist only, docker pause of one executor node, a fault
 point armed inside a worker Pod, or a Pod deletion. It then copies the
 Coordinator's and every worker's databases out of their Pods (read-only
 SQLite backups through python in the container, which has no shell or tar),
 reads the Pods' logs and the API server audit log, and computes I1-I6 and
 X1-X4 (experiments/distributed/invariants.py) and I7 from the audit log
-(experiments/distributed/audit.py). After each run the target is put back to
+(experiments/distributed/audit.py), reading the rotated audit files too. The
+audit window and the log reads are moved onto the cluster's clock by the
+offset measured against the control-plane container before and after the
+run (clock_offset). I7 fails when the extract may be short
+(audit.completeness): the operator's injection missing from it, a generation
+the target gained with no write in it, or a log that starts after the run
+began. Each scenario's expected outcome is checked too (expectation), and a
+run passes only when the invariants, its expectation and the extract's
+completeness all hold. After each run the target is put back to
 its baseline template when Sentinel did not (an operator write, recorded).
 Each run writes summary.json, timeline.jsonl, audit-extract.jsonl,
 records.json and versions.json under <run-dir>/<date>/<scenario>-r<n>-<time>z/,
@@ -59,7 +69,8 @@ incidents each run opened (scope_records).
 
 Measured, not assumed: takeover latency (fault to the other Executor's first
 claim) and Coordinator recovery (kill to Pod Ready, to its first answered
-claim and to the next journal transition). These are four containers on one
+claim and to the next journal transition), with the fault time moved onto
+the cluster's clock by the measured offset. These are four containers on one
 Docker host: they share one kernel, one clock and one disk, and are not
 separate machines.
 
@@ -99,8 +110,13 @@ CHAOS_VERSION = "2.8.2"
 CHAOS_NAMESPACE = "chaos-mesh"
 CONNECTED_CONTEXT = "kind-sentinel-boutique-connected"  # Where P4.03 runs Chaos Mesh; read here, never written.
 CHAOS_KINDS = ("podchaos", "networkchaos", "stresschaos", "timechaos")
-LOCK_NAME = "sentinel-heavy-lab.lock"  # Shared with the P4.03 harness: one heavy lab run at a time on this host.
+# Meant to be shared with the P4.03 harness, which does not exist yet and so does not take it: until it
+# does, the check for Chaos Mesh experiments in the connected lab (connected_chaos) is the real guard.
+LOCK_NAME = "sentinel-heavy-lab.lock"
 AUDIT_LOG = "/var/log/kubernetes/kube-apiserver-audit.log"
+AUDIT_DIR = "/var/log/kubernetes"
+# The live log and the backups the API server rotates it into (--audit-log-maxbackup in kind-dist.yaml).
+AUDIT_FILE = re.compile(r"/var/log/kubernetes/kube-apiserver-audit(-[0-9T:.-]+)?\.log\Z")
 CONTROL_PLANE = CLUSTER + "-control-plane"
 LOCAL_IMAGES = {"coordinator": "sentinel-coordinator:0.1.0", "observer": "sentinel-observer:0.2.0",
                 "worker": "sentinel-worker:local", "demo": "sentinel-demo:0.1.0"}
@@ -168,6 +184,45 @@ def utc_now():
 
 def stamp(moment):
     return moment.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def shift(text, seconds):
+    """The UTC stamp text moved by seconds."""
+    return stamp(datetime.fromisoformat(str(text).replace("Z", "+00:00")) + timedelta(seconds=seconds))
+
+
+def clock_offset(before, remote_text, after):
+    """The control plane's clock minus the harness's, from one reading taken between before and after.
+
+    remote_text is `date +%s.%N` run in the control-plane container. As in
+    Cristian's algorithm (runtime/worker_http.py::ClockEstimator), the reading
+    is taken to be at the midpoint of the exchange, so the error is at most
+    half its round trip. Every container on the Docker host reads the same
+    kernel clock, so this is also the offset of the Pods' and the API
+    server's stamps, except where TimeChaos shifts a container's own clock.
+    """
+    try:
+        remote = float(str(remote_text).strip())
+    except ValueError:
+        raise AcceptanceError("Unreadable control-plane clock") from None
+    span = (after - before).total_seconds()
+    if span < 0:
+        raise AcceptanceError("The harness clock went backwards while reading the control-plane clock")
+    return {"offset_seconds": round(remote - (before.timestamp() + span / 2), 3),
+            "uncertainty_seconds": round(span / 2, 3), "at": stamp(before)}
+
+
+def control_plane_window(since, until, offsets):
+    """(since, until) on the API server's clock: shifted by every measured offset and widened by its error.
+
+    since and until are harness stamps; until may be None (open). With no
+    offset measured the window is returned unchanged.
+    """
+    if not offsets:
+        return since, until
+    low = min(item["offset_seconds"] - item["uncertainty_seconds"] for item in offsets)
+    high = max(item["offset_seconds"] + item["uncertainty_seconds"] for item in offsets)
+    return shift(since, low), (shift(until, high) if until is not None else None)
 
 
 def check_context(context):
@@ -251,7 +306,7 @@ def memory_headroom(total_bytes, stats_lines):
 
 
 class LabLock:
-    """An exclusive lock file shared with the P4.03 harness, so the two heavy labs never run together."""
+    """An exclusive lock file for heavy lab runs; P4.03 is to take it too (LOCK_NAME), so the two never overlap."""
 
     def __init__(self, path=None, holder="P4.01 kind_acceptance"):
         self.path = Path(path) if path is not None else Path(tempfile.gettempdir()) / LOCK_NAME
@@ -341,6 +396,31 @@ def preflight(shell, *, min_free_gib=MIN_FREE_GIB, lock=None, before_create=Fals
         return {**checks, "cluster": "absent", **host_checks(shell, min_free_gib=min_free_gib, lock=lock)}
     if CLUSTER not in clusters:
         raise AcceptanceError(f"kind cluster {CLUSTER} does not exist; create it from {KIND_CONFIG.name}")
+    checks.update(cluster_identity(shell))
+    names = checks["nodes"]["names"]
+    images = {shell.docker("inspect", "--format", "{{.Config.Image}}", name).stdout.strip() for name in names}
+    if images != {NODE_IMAGE}:
+        raise AcceptanceError("A node does not run the pinned node image " + NODE_IMAGE)
+    checks["node_image"] = NODE_IMAGE
+    if shell.docker("exec", CONTROL_PLANE, "test", "-s", AUDIT_LOG, check=False).returncode:
+        raise AcceptanceError(f"The API server audit log is missing; create the cluster from {KIND_CONFIG.name}")
+    checks["audit_log"] = AUDIT_LOG
+    releases = json.loads(shell.helm("list", "--namespace", CHAOS_NAMESPACE, "--output", "json").stdout or "[]")
+    charts = [release.get("chart") for release in releases if release.get("name") == "chaos-mesh"]
+    if charts != ["chaos-mesh-" + CHAOS_VERSION]:
+        raise AcceptanceError(f"Chaos Mesh chart {CHAOS_VERSION} is not installed in {CHAOS_NAMESPACE}")
+    checks["chaos_mesh"] = CHAOS_VERSION
+    checks.update(host_checks(shell, min_free_gib=min_free_gib, lock=lock))
+    return checks
+
+
+def cluster_identity(shell):
+    """That kind-sentinel-dist names the local kind cluster sentinel-dist and its four labelled nodes.
+
+    Run by preflight and by teardown before it deletes anything, so neither
+    acts on a context that was renamed onto another cluster.
+    """
+    checks = {}
     view = json.loads(shell.kubectl("config", "view", "--minify", "--output=json").stdout)
     cluster_names = [item.get("name") for item in view.get("clusters", [])]
     server = (view.get("clusters") or [{}])[0].get("cluster", {}).get("server", "")
@@ -356,19 +436,6 @@ def preflight(shell, *, min_free_gib=MIN_FREE_GIB, lock=None, before_create=Fals
     versions = {node["status"]["nodeInfo"]["kubeletVersion"] for node in nodes}
     checks["nodes"] = {"names": names, "hosts": {key: value for key, value in hosts.items() if key},
                        "kubelet_versions": sorted(versions)}
-    images = {shell.docker("inspect", "--format", "{{.Config.Image}}", name).stdout.strip() for name in names}
-    if images != {NODE_IMAGE}:
-        raise AcceptanceError("A node does not run the pinned node image " + NODE_IMAGE)
-    checks["node_image"] = NODE_IMAGE
-    if shell.docker("exec", CONTROL_PLANE, "test", "-s", AUDIT_LOG, check=False).returncode:
-        raise AcceptanceError(f"The API server audit log is missing; create the cluster from {KIND_CONFIG.name}")
-    checks["audit_log"] = AUDIT_LOG
-    releases = json.loads(shell.helm("list", "--namespace", CHAOS_NAMESPACE, "--output", "json").stdout or "[]")
-    charts = [release.get("chart") for release in releases if release.get("name") == "chaos-mesh"]
-    if charts != ["chaos-mesh-" + CHAOS_VERSION]:
-        raise AcceptanceError(f"Chaos Mesh chart {CHAOS_VERSION} is not installed in {CHAOS_NAMESPACE}")
-    checks["chaos_mesh"] = CHAOS_VERSION
-    checks.update(host_checks(shell, min_free_gib=min_free_gib, lock=lock))
     return checks
 
 
@@ -575,42 +642,47 @@ class Scenario:
 
 SCENARIOS = {item.name: item for item in (
     Scenario("S0", "No fault: authorized recovery with operator approval through the approval API",
-             "none", "S0", "RECOVERED, 1 template write"),
+             "none", "S0", "RECOVERED, exactly 1 Sentinel template write"),
     Scenario("S1a", "Kill the Planner Pod mid-inference", "fault point planner.mid_inference (block), then "
-             "PodChaos pod-kill of the Planner", "S1a", "RECOVERED, 1 template write"),
+             "PodChaos pod-kill of the Planner", "S1a", "RECOVERED, exactly 1 Sentinel template write"),
     Scenario("S1b", "Kill an Executor after its write intent; the other takes over",
              "fault point executor.after_start_write (block), then PodChaos pod-failure of that Executor "
-             "until the incident ends", "S1b", "RECOVERED, 1 template write, takeover measured"),
+             "until the incident ends", "S1b", "RECOVERED, exactly 1 Sentinel template write, takeover measured"),
     Scenario("S1c", "Kill an Executor after its patch, before it saved the result",
              "fault point executor.after_patch_before_save (block), then PodChaos pod-failure of that "
-             "Executor until the incident ends", "S1c", "RECOVERED, 1 template write, takeover measured"),
+             "Executor until the incident ends", "S1c",
+             "RECOVERED, exactly 1 Sentinel template write, takeover measured"),
     Scenario("S2", "Stall the lease holder's node past its lease (docker pause)",
              "fault point executor.before_patch (block), then docker pause of the holder's node past the "
-             "lease, unpause after the other Executor wrote", "S2", "RECOVERED, 1 template write, stale holder "
-             "refused"),
+             "lease, unpause after the other Executor wrote", "S2", "RECOVERED, exactly 1 Sentinel template "
+             "write, not from the paused holder's Pod"),
     Scenario("S3", "Partition the lease holder from the Coordinator; it can still reach the API server",
              "fault point executor.after_start_write (block), then NetworkChaos partition holder<->Coordinator",
-             "S3", "terminal, at most 1 template write"),
+             "S3", "every incident terminal, at most 1 Sentinel template write"),
     Scenario("S4", "Lose the Coordinator's reply to the Executor's result",
              "fault point executor.after_patch_before_save (block), then NetworkChaos partition "
              "Coordinator->holder (direction from) until the result is recorded", "S4",
-             "RECOVERED, 1 template write, saved result replayed"),
+             "RECOVERED, exactly 1 Sentinel template write"),
     Scenario("S5", "Restart the Coordinator between commit and reply, then delete its Pod",
              "fault point coordinator.after_commit_before_reply@execution_result (exit), then kubectl delete "
-             "pod of the Coordinator", "S5", "RECOVERED, 1 template write, Coordinator RTO measured"),
+             "pod of the Coordinator", "S5", "RECOVERED, exactly 1 Sentinel template write, Coordinator RTO to "
+             "Ready measured"),
     Scenario("S6", "Partition the Coordinator from every worker for three leases",
              "NetworkChaos partition Coordinator<->all workers while an approval is pending", "S6",
-             "0 template writes during the partition, progress after it", options={"auto_approve": False}),
+             "0 template writes during the partition, every incident terminal after it",
+             options={"auto_approve": False}),
     Scenario("S7", "Both Executors' clocks 300 s behind (TimeChaos)",
-             "TimeChaos -300 s on executor-a and executor-b", "S7", "terminal (FAILED) with 0 template writes"),
+             "TimeChaos -300 s on executor-a and executor-b", "S7", "FAILED, none RECOVERED, 0 Sentinel template "
+             "writes"),
     Scenario("S8", "Revoke the approval while the holder is paused before its patch; the other Executor seals",
              "fault point executor.before_patch (block), revoke through the approval API, then the holder's "
              "traffic to the API server is delayed 8 s (NetworkChaos) when it is released", "S8",
-             "FAILED, 0 template writes, 1 seal, stale patch refused"),
+             "not RECOVERED, 0 template writes, a seal from the other Executor's Pod, then the holder's PATCH "
+             "refused (409 or 422), generation unchanged after the seal"),
     Scenario("S9", "RBAC, admission and network policy denials", "the Executor reads a Secret, patches "
              "another Deployment, asks for pods/exec and changes spec.replicas; the Planner opens a TCP "
              "connection to the API server; the Executor to the target's port", "design S9 (A6)",
-             "every request denied or timed out, 0 template writes", checks=("I7",)),
+             "every probe as expected, 0 Sentinel template writes", checks=("I7",)),
 )}
 ORDER = tuple(SCENARIOS)
 
@@ -624,6 +696,91 @@ def select(names):
     if unknown:
         raise AcceptanceError("Unknown scenario(s): " + ", ".join(unknown))
     return [name for name in ORDER if name in names]
+
+
+RECOVERS = frozenset({"S0", "S1a", "S1b", "S1c", "S2", "S4", "S5"})
+
+
+def _from_pod(row, identity):
+    """Whether an audit row was made from a Pod of the Deployment of identity (by its bound Pod name)."""
+    app = IDENTITIES[identity][0] if identity in IDENTITIES else None
+    return bool(app and row.get("pod") and row["pod"].startswith(app + "-"))
+
+
+def _on_target(row):
+    return row.get("namespace") == WORKLOAD and row.get("name") == TARGET and row.get("resource") == "deployments"
+
+
+def expectation(name, *, incidents, rows, notes=None, stalled=None, takeover=None, recovery=None,
+                generation_at_end=None):
+    """Failures of scenario name's expected outcome (Scenario.expect), from what the run recorded; [] when met.
+
+    incidents are the run's scoped incident rows, rows its audit extract,
+    notes the scenario's notes, stalled the Executor a fault point held,
+    takeover and recovery the measurements, and generation_at_end the
+    target's metadata.generation after the run and before the operator's
+    restore. The invariants cap writes and need a terminal state; this checks
+    what each scenario is for: S0, S1a-S1c, S2, S4 and S5 end RECOVERED with
+    exactly one Sentinel template write (S2's not from the paused holder's
+    Pod; S1b and S1c with a takeover measured; S5 with the Coordinator's
+    return to Ready measured); S3 and S6 end with every incident terminal and
+    at most one write (S6 with none during the partition); S7 ends FAILED,
+    none RECOVERED, with no write; S8 ends not RECOVERED with no template
+    write, a seal (fence) from the other Executor's Pod, after it a PATCH
+    from the holder's Pod refused with 409 or 422, and no change to the target
+    after the seal (its generation is the seal's); S9's probes all behave as
+    expected with no write.
+    """
+    notes, failures = notes or {}, []
+    states = sorted({row["state"] for row in incidents})
+    writes = [row for row in rows if row["effect"] == "template_write" and row["sentinel"]]
+
+    def need(condition, message):
+        if not condition:
+            failures.append(message)
+    if name in RECOVERS:
+        need("RECOVERED" in states, f"no incident RECOVERED (states: {', '.join(states) or 'none'})")
+        need(len(writes) == 1, f"{len(writes)} Sentinel template write(s), expected exactly 1")
+    if name in {"S1b", "S1c"}:
+        need(takeover is not None, "no claim by the other Executor after the fault: takeover not measured")
+    if name == "S2":
+        need(stalled in EXECUTORS, "no paused holder was recorded")
+        need(not any(_from_pod(row, stalled) for row in writes), "the paused holder's Pod wrote the template")
+    if name == "S5":
+        need((recovery or {}).get("to_ready") is not None, "the Coordinator's return to Ready was not measured")
+    if name in {"S3", "S6"}:
+        need(bool(states) and all(state in invariants.TERMINAL for state in states),
+             f"not every incident terminal (states: {', '.join(states) or 'none'})")
+        need(len(writes) <= 1, f"{len(writes)} Sentinel template writes, expected at most 1")
+    if name == "S6":
+        during = notes.get("during_partition") or {}
+        need(during.get("template_writes") == 0, "template writes during the partition not recorded as 0")
+    if name == "S7":
+        need("FAILED" in states and "RECOVERED" not in states,
+             f"expected FAILED and none RECOVERED (states: {', '.join(states) or 'none'})")
+        need(not writes, f"{len(writes)} Sentinel template write(s), expected 0")
+    if name == "S8":
+        need(bool(states) and "RECOVERED" not in states, f"expected not RECOVERED (states: {', '.join(states) or 'none'})")
+        need(not writes, f"{len(writes)} Sentinel template write(s), expected 0")
+        other = [identity for identity in EXECUTORS if identity != stalled]
+        seals = [row for row in rows if row["effect"] == "fence" and row["sentinel"] and _on_target(row)
+                 and stalled in EXECUTORS and any(_from_pod(row, identity) for identity in other) and row["at"]]
+        need(bool(seals), "no seal or fence from the other Executor's Pod in the audit log")
+        if seals:
+            sealed_at = min(_seconds(row["at"]) for row in seals)
+            refused = [row for row in rows if row["effect"] == "denied" and row["code"] in {409, 422}
+                       and row["verb"] == "patch" and _on_target(row) and _from_pod(row, stalled) and row["at"]
+                       and _seconds(row["at"]) > sealed_at]
+            need(bool(refused), "no PATCH from the holder's Pod refused (409 or 422) after the seal")
+            sealed = max((row["generation"] for row in seals if type(row["generation"]) is int), default=None)
+            need(sealed is not None and generation_at_end == sealed,
+                 f"the target's generation is {generation_at_end} at the end and {sealed} after the seal: "
+                 "something changed it after the seal")
+    if name == "S9":
+        probes = notes.get("probes") or []
+        need(bool(probes) and all(item.get("passed") for item in probes), "not every denial probe behaved as expected")
+        need(not writes, f"{len(writes)} Sentinel template write(s), expected 0")
+    return failures
 
 
 # Measurements --------------------------------------------------------------------------------------------
@@ -885,10 +1042,37 @@ class Lab:
 
     # Evidence -------------------------------------------------------------------------------------------
 
-    def audit_rows(self, since, until):
-        text = self.shell.docker("exec", CONTROL_PLANE, "cat", AUDIT_LOG, timeout=120).stdout
+    def audit_files(self):
+        """The live audit log and every backup the API server rotated it into, oldest first."""
+        listing = self.shell.docker("exec", CONTROL_PLANE, "find", AUDIT_DIR, "-maxdepth", "1", "-type", "f",
+                                    "-name", "kube-apiserver-audit*.log", timeout=60).stdout.split()
+        files = sorted(path for path in listing if AUDIT_FILE.match(path))
+        if AUDIT_LOG not in files:
+            raise AcceptanceError("The API server audit log is missing")
+        return [path for path in files if path != AUDIT_LOG] + [AUDIT_LOG]
+
+    def audit_log(self, since, until):
+        """The extract between since and until (API server clock) from every audit file, and how far back it reaches.
+
+        Returns {"rows", "skipped", "first_at", "files"}: first_at is the
+        earliest event in all files, which audit.completeness compares with
+        since, so a log that rotated past the run's start is noticed.
+        """
+        files = self.audit_files()
+        text = self.shell.docker("exec", CONTROL_PLANE, "cat", *files, timeout=180).stdout
         events, skipped = audit.parse(text)
-        return audit.extract(events, since=since, until=until), skipped
+        return {"rows": audit.extract(events, since=since, until=until), "skipped": skipped,
+                "first_at": audit.first_event_at(events), "files": len(files)}
+
+    def audit_rows(self, since, until):
+        found = self.audit_log(since, until)
+        return found["rows"], found["skipped"]
+
+    def clock_offset(self):
+        """The control-plane clock minus this harness's clock (clock_offset), measured now."""
+        before = self.clock()
+        reading = self.shell.docker("exec", CONTROL_PLANE, "date", "+%s.%N").stdout
+        return clock_offset(before, reading, self.clock())
 
     def copy_database(self, identity, path, destination):
         """A consistent copy of one SQLite file in a Pod, written to destination; False when it is absent."""
@@ -964,19 +1148,27 @@ def scope_records(records, since):
 
 
 def results_table(summaries):
-    """The results table of docs/distributed-acceptance.md from run summaries; a scenario not run says so."""
-    lines = ["| Scenario | Runs | Invariants passed | Max template writes per action (audit) | "
-             "Takeover latency (s) | Coordinator RTO to Ready / first claim (s) |",
-             "|---|---|---|---|---|---|"]
+    """The results table of docs/distributed-acceptance.md from run summaries; a scenario not run says so.
+
+    A run passes when its invariants hold, its expectation (expectation()) is
+    met, the audit extract was complete and the harness raised nothing; the
+    invariant and expectation columns count each part on its own.
+    """
+    lines = ["| Scenario | Runs | Runs passed | Invariants passed | Expectation met | "
+             "Max template writes per action (audit) | Takeover latency (s) | "
+             "Coordinator RTO to Ready / first claim (s) |",
+             "|---|---|---|---|---|---|---|---|"]
     by_name = {}
     for summary in summaries:
         by_name.setdefault(summary["scenario"], []).append(summary)
     for name in ORDER:
         runs = by_name.get(name, [])
         if not runs:
-            lines.append(f"| {name} | not yet run | - | - | - | - |")
+            lines.append(f"| {name} | not yet run | - | - | - | - | - | - |")
             continue
         passed = sum(1 for run in runs if run["passed"])
+        held = sum(1 for run in runs if run["invariants_passed"])
+        met = sum(1 for run in runs if run["expectation"]["met"])
         writes = max(run["audit"]["max_template_writes_per_action"] for run in runs)
         takeovers = [run["takeover_seconds"] for run in runs if run.get("takeover_seconds") is not None]
         rto = [run["coordinator_recovery"] for run in runs if run.get("coordinator_recovery")]
@@ -985,7 +1177,8 @@ def results_table(summaries):
             return f"{min(values):.1f}-{max(values):.1f}" if values else "-"
         ready = [item["to_ready"] for item in rto if item.get("to_ready") is not None]
         claim = [item["to_first_claim"] for item in rto if item.get("to_first_claim") is not None]
-        lines.append(f"| {name} | {len(runs)} | {passed}/{len(runs)} | {writes} | {span(takeovers)} | "
+        lines.append(f"| {name} | {len(runs)} | {passed}/{len(runs)} | {held}/{len(runs)} | {met}/{len(runs)} | "
+                     f"{writes} | {span(takeovers)} | "
                      f"{span(ready) if rto else '-'} / {span(claim) if rto else '-'} |")
     return "\n".join(lines) + "\n"
 
