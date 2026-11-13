@@ -1360,6 +1360,16 @@
       "provenance": "inferred",
       "status": "current",
       "reason": null
+    },
+    {
+      "bundle_id": "protected-boutique-netpol",
+      "class": "security-lab",
+      "path": "2026-11-13/protected-boutique-netpol",
+      "captured_at": "2026-11-13T10:21:35.325574Z",
+      "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
     }
   ]
 }

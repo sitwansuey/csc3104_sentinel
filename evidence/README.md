@@ -115,7 +115,7 @@ is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.
 | observer-acceptance | 3 | 0 | 3 | 0 | 0 |
 | packaged | 9 | 0 | 9 | 0 | 0 |
 | provider-recovery | 1 | 0 | 1 | 0 | 0 |
-| security-lab | 3 | 0 | 3 | 0 | 0 |
+| security-lab | 4 | 1 | 3 | 0 | 0 |
 | shipping-lab | 2 | 0 | 2 | 0 | 0 |
 | ui-session | 7 | 0 | 7 | 0 | 0 |
 | worker-container | 2 | 0 | 2 | 0 | 0 |
