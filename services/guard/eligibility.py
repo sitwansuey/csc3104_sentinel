@@ -9,6 +9,7 @@ this small compatibility checker and produce UNKNOWN instead of a safe result.
 
 import re
 
+from services import image_security
 from services.guard.common import GuardInputError, finding, mapping, string, utc_timestamp
 
 
@@ -18,7 +19,7 @@ _BASELINE_FIELDS = {
 }
 _SECURITY_FIELDS = {
     "deny_privileged", "deny_host_access", "allowed_image_registries",
-    "allowed_service_accounts", "forbid_service_account_change",
+    "allowed_service_accounts", "forbid_service_account_change", "image_vulnerability_gate",
 }
 _DIGEST_IMAGE = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._:/-]*@sha256:[0-9a-f]{64}")
 _REGISTRY = re.compile(r"(?:localhost|[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)(?::[0-9]+)?")
@@ -36,7 +37,12 @@ def validate_policy(policy):
             raise GuardInputError(f"policy.{block}: unexpected fields")
         for key, item in value.items():
             path = f"policy.{block}.{key}"
-            if key in {"max_age_seconds", "min_healthy_duration_seconds"}:
+            if key == "image_vulnerability_gate":
+                try:
+                    image_security.validate_gate_rules(item)
+                except ValueError as exc:
+                    raise GuardInputError(f"policy.{block}.{exc}") from exc
+            elif key in {"max_age_seconds", "min_healthy_duration_seconds"}:
                 if type(item) is not int or item < 0:
                     raise GuardInputError(f"{path}: expected a nonnegative integer")
             elif key in {"trusted_sources", "allowed_image_registries", "allowed_service_accounts"}:
@@ -373,6 +379,55 @@ def _security(spec, containers, live_state, rules):
     return output
 
 
+def _template_images(containers, path):
+    """{container name: image} for one Pod template; GuardInputError on a duplicate name or a missing image."""
+    images = {}
+    for container, _ in containers:
+        name, image = container.get("name"), container.get("image")
+        if name in images or not isinstance(image, str):
+            raise GuardInputError(f"{path}: container names must be unique and each needs an image")
+        images[name] = image
+    return images
+
+
+def _current_images(live_state):
+    """The current template's images, or None when the live template cannot be read."""
+    try:
+        deployment = mapping(live_state.get("deployment"), "live_state.deployment")
+        spec = mapping(mapping(mapping(deployment.get("spec"), "live_state.deployment.spec").get("template"),
+                               "live_state.deployment.spec.template").get("spec"), "live_state.deployment.spec.template.spec")
+        return _template_images(_containers(spec), "live_state.deployment.spec.template.spec")
+    except GuardInputError:
+        return None
+
+
+def _image_gate(containers, live_state, rules, checked_at):
+    """The P5.02 CVE gate over every image the action would (re)create Pods from.
+
+    Scans come only from the trusted reader as live_state.image_scans, so they
+    are part of inputs_sha256 and a changed scan voids an earlier ALLOW. The
+    candidate is the baseline template (a RESTART writes the same template plus
+    a token). Absent scans are UNKNOWN (ESCALATE), never a pass.
+    """
+    paths = {container["name"]: path + ".image" for container, path in containers}
+    try:
+        candidate = _template_images(containers, "baseline.pod_template.spec")
+    except GuardInputError as exc:
+        return [_invalid("baseline.pod_template.spec", str(exc))]
+    if "image_scans" not in live_state:
+        return [_result("IMAGE_SCANS_MISSING", "live_state.image_scans", None, "trusted scan summaries for every image",
+                        "No trusted image scan evidence was supplied; the CVE gate cannot pass.",
+                        "FAIL" if rules.get("unknown_result") == "REJECT" else "UNKNOWN")]
+    try:
+        results = image_security.gate(live_state["image_scans"], candidate, _current_images(live_state), rules, checked_at)
+    except ValueError as exc:
+        return [_invalid("live_state.image_scans", str(exc))]
+    return [_result(item["code"], paths.get(item["container"], "live_state.image_scans.exceptions"),
+                    {"image": item["image"], "ids": item["ids"], "id_count": item["id_count"]},
+                    {"mode": rules["mode"], "block_severities": rules["block_severities"]},
+                    item["message"], item["status"]) for item in results]
+
+
 def assess(proposal, live_state, baseline, policy, checked_at):
     """Return detailed PASS/FAIL/UNKNOWN/SKIP findings without performing I/O."""
     # A RESTART writes the baseline template plus a token, so new Pods are
@@ -411,4 +466,9 @@ def assess(proposal, live_state, baseline, policy, checked_at):
             output.extend(_security(spec, containers, live_state, security_rules))
         except GuardInputError as exc:
             output.append(_result("SECURITY_TEMPLATE_INVALID", "baseline.pod_template.spec", "malformed", "valid security-policy inputs", str(exc)))
+        # The CVE gate covers the actions that write the baseline template (P5.02). A SCALE starts
+        # Pods from the live template, which the gate leaves to P5.03 (docs/security.md).
+        if "image_vulnerability_gate" in security_rules and proposal.get("action") in ("ROLLBACK", "RESTART"):
+            output.extend(_image_gate(containers, live_state if isinstance(live_state, dict) else {},
+                                      security_rules["image_vulnerability_gate"], checked_at))
     return output or [_result("ROLLBACK_ELIGIBILITY", "policy", "no enabled rules", "optional constraints", "No additional checks were enabled.", "SKIP")]

@@ -276,6 +276,7 @@ def adapter(config, directory, stack, store=None, answered=None, stopping=None):
     if role not in {"guard", "executor"}:
         raise ValueError("Worker role must be planner, guard, executor or verifier")
     from runtime.approval_http import ApprovalClient
+    from runtime.image_scans import read_image_scans
     from runtime.live_executor import LiveGuardAuthorizer, build_adapters
     from services.guard.adapters import read_deployment
     approval_config = config["approvals"]
@@ -285,13 +286,15 @@ def adapter(config, directory, stack, store=None, answered=None, stopping=None):
     options = {key: config[key] for key in ("context", "cluster_id", "kubeconfig", "policy", "baseline")}
     options["dependencies"] = config.get("dependencies", directory / "remote-dependencies.json")
     options.update(approval_reader=approval, server_dry_run=config.get("server_dry_run", False))
+    # The CVE gate's trusted scans (P5.02); without image_scans a configured gate escalates.
+    scans = {key: config.get(key) for key in ("image_scans", "cve_exceptions")}
     if role == "executor":
         runner = {"runner": cluster.kubectl(config["identity"])} if cluster is not None else {}
         # P5.08: "transport": "rest" swaps the Executor's Deployment client; kubectl stays the default.
         transport = config.get("transport", "kubectl")
         if cluster is not None and transport != "kubectl":
             raise ValueError("A lab file cluster is driven only through the kubectl transport")
-        live = build_adapters(**options, allowed_targets=config["allowed_targets"],
+        live = build_adapters(**options, **scans, allowed_targets=config["allowed_targets"],
                               ledger=directory / "executor.db", locks=directory / "locks",
                               fence_after_seconds=config.get("fence_after_seconds"), clock=clock,
                               transport=transport, **runner)
@@ -303,7 +306,9 @@ def adapter(config, directory, stack, store=None, answered=None, stopping=None):
             connection = client(config, store=store, answered=answered)
             live.authorizer.dependency_reader = lambda p: connection.post("dependencies", {"proposal": p})["dependencies"]
         return ExecutorAdapter(live)
-    authorizer = LiveGuardAuthorizer(**options, approval=None, clock=clock)
+    authorizer = LiveGuardAuthorizer(**options, approval=None, clock=clock, scan_reader=(
+        None if scans["image_scans"] is None else
+        lambda images: read_image_scans(scans["image_scans"], images, scans["cve_exceptions"])))
     if config.get("remote_dependencies", True):
         connection = client(config, store=store, answered=answered)
         authorizer.dependency_reader = lambda p: connection.post("dependencies", {"proposal": p})["dependencies"]

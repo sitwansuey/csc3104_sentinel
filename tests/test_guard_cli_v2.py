@@ -324,6 +324,66 @@ class GuardCliV2Tests(unittest.TestCase):
         refs.assert_not_called()
         preview.assert_not_called()
 
+    def configure_cve_gate(self):
+        """P5.02: a live policy with the CVE gate, a config-only rollback, and a scan directory."""
+        self.configure_live()
+        image = self.baseline["pod_template"]["spec"]["containers"][0]["image"]
+        self.live["deployment"]["spec"]["template"]["spec"]["containers"][0]["image"] = image
+        scanner = "aquasec/trivy@sha256:" + "f" * 64
+        self.policy["security_constraints"]["image_vulnerability_gate"] = {
+            "block_severities": ["CRITICAL", "HIGH"], "mode": "non_regression", "max_scan_age_seconds": 3600,
+            "trusted_scanner_images": [scanner]}
+        self.write_inputs()
+        scans = self.directory / "scans"
+        scans.mkdir()
+
+        def write_scan(name, target, *findings):
+            (scans / name).write_text(json.dumps({
+                "image": target, "status": "FINDINGS" if findings else "NO_KNOWN_CVES", "scanner_image": scanner,
+                "scanned_at": timestamp(datetime.now(timezone.utc) - timedelta(seconds=60)),
+                "findings": [{"id": cve, "severity": level} for cve, level in findings]}), encoding="utf-8")
+        write_scan("current.json", image, ("CVE-1", "HIGH"))
+        return scans, write_scan
+
+    def test_live_cve_gate_reads_scans_records_inherited_and_rejects_a_worse_baseline(self):
+        scans, write_scan = self.configure_cve_gate()
+        report = self.directory / "report.json"
+        with patch("services.guard.cli.read_deployment", return_value=self.live):
+            code, stdout, stderr = self.run_cli([*self.args(live=True), "--image-scans", str(scans),
+                                                 "--report", str(report)])
+        self.assertEqual((code, stderr), (0, ""))
+        self.assertIn(("IMAGE_CVE_INHERITED", "PASS"),
+                      {(item["code"], item["status"]) for item in json.loads(report.read_text())["checks"]})
+        worse = "demo/sentinel@sha256:" + "b" * 64
+        write_scan("worse.json", worse, ("CVE-1", "HIGH"), ("CVE-9", "CRITICAL"))
+        self.baseline["pod_template"]["spec"]["containers"][0]["image"] = worse
+        self.bind_template()
+        self.write_inputs()
+        with patch("services.guard.cli.read_deployment", return_value=self.live):
+            code, stdout, stderr = self.run_cli([*self.args(live=True), "--image-scans", str(scans)])
+        self.assertEqual((code, json.loads(stdout)["reason_codes"]), (2, ["IMAGE_CVE_REGRESSION"]))
+
+    def test_live_cve_gate_without_scans_escalates_and_unreadable_scans_authorize_nothing(self):
+        scans, _ = self.configure_cve_gate()
+        with patch("services.guard.cli.read_deployment", return_value=self.live):
+            code, stdout, _ = self.run_cli(self.args(live=True))
+        self.assertEqual((code, json.loads(stdout)["reason_codes"]), (3, ["IMAGE_SCANS_MISSING"]))
+        bad = self.directory / "bad-exceptions.json"
+        bad.write_text("[]", encoding="utf-8")
+        with patch("services.guard.cli.read_deployment", return_value=self.live):
+            code, stdout, stderr = self.run_cli([*self.args(live=True), "--image-scans", str(scans),
+                                                 "--cve-exceptions", str(bad)])
+        self.assertEqual((code, stdout), (1, ""))
+        self.assertEqual(json.loads(stderr)["error"]["code"], "IMAGE_SCANS_UNAVAILABLE")
+
+    def test_scan_options_are_for_live_reads_only(self):
+        for extra in (["--image-scans", "scans"], ["--context", "c", "--cluster-id", "x", "--cve-exceptions", "e"]):
+            with self.subTest(extra=extra):
+                arguments = self.args() if "--context" not in extra else self.args()[:-4]
+                code, stdout, stderr = self.run_cli([*arguments, *extra])
+                self.assertEqual((code, stdout), (1, ""))
+                self.assertEqual(json.loads(stderr)["error"]["code"], "ARGUMENT_ERROR")
+
 
 if __name__ == "__main__":
     unittest.main()

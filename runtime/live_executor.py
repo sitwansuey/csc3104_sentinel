@@ -11,7 +11,9 @@ are no distributed leases. Reconciliation needs only retained scope,
 credentials and proposal (the local journal is optional); it never reauthorizes
 or starts a spec mutation. --baselines DIR replaces --baseline with one
 measured baseline per target, DIR/<target name>.json; a file whose target is
-not the proposal's target refuses execution. With --fence-after SECONDS it may send one
+not the proposal's target refuses execution. --image-scans DIR (and optionally
+--cve-exceptions PATH) supply the scans for a policy's CVE gate; without them
+that gate escalates. With --fence-after SECONDS it may send one
 metadata-only fence for a write still in doubt after that long (0 fences at
 once). --transport rest (P5.08) reads and writes the Deployment over HTTPS
 instead of kubectl; kubectl stays the default. Exit codes: 0 APPLIED/NOOP, 2 FAILED, 3 CONFLICT,
@@ -36,6 +38,7 @@ from services.guard.adapters import AdapterError, load_json, read_reference_vers
 from services.guard.decisions import validate_policy
 from services.guard.eligibility import referenced_objects
 from services.guard.preview import server_dry_run as collect_server_preview
+from runtime.image_scans import read_image_scans
 from shared import log
 from shared.contracts import ContractError, validate_message
 
@@ -76,10 +79,12 @@ class LiveGuardAuthorizer:
 
     def __init__(self, *, policy, baseline, dependencies, approval, context,
                  cluster_id, kubeconfig, server_dry_run=False, approval_reader=None, clock=None,
-                 baselines=None):
+                 baselines=None, scan_reader=None):
         self.paths = dict(policy=policy, baseline=baseline,
                           dependencies=dependencies, approval=approval)
         self.baselines = baselines
+        # images -> live_state.image_scans for the CVE gate; None supplies no scans (the gate escalates).
+        self.scan_reader = scan_reader
         self.clock = clock or (lambda: _utc_now())
         self.context, self.cluster_id, self.kubeconfig = context, cluster_id, kubeconfig
         self.dependency_reader = lambda proposal: load_json(self.paths["dependencies"], "dependencies")
@@ -110,6 +115,8 @@ class LiveGuardAuthorizer:
                 proposal["target"], references, context=self.context,
                 cluster_id=self.cluster_id, kubeconfig=self.kubeconfig,
             )
+        if "image_vulnerability_gate" in policy.get("security_constraints", {}):
+            self._attach_image_scans(snapshot, baseline)
         decision = evaluate(**inputs, now=self.clock())
         preview_only = (decision["verdict"] == "ESCALATE"
                         and set(decision["reason_codes"]) <= {"SERVER_DRY_RUN_REQUIRED"})
@@ -121,6 +128,30 @@ class LiveGuardAuthorizer:
             # Remote admission latency consumes the evidence/approval validity window.
             decision = evaluate(**inputs, now=self.clock())
         return GuardCheck(decision=decision, baseline=baseline, inputs=inputs)
+
+    def _attach_image_scans(self, snapshot, baseline):
+        """Add image_scans for every container and initContainer image of the candidate and current templates.
+
+        It goes into the same snapshot, so inputs_sha256 binds it. A reader
+        failure leaves it absent: the gate then gives UNKNOWN (ESCALATE), never ALLOW.
+        """
+        snapshot.pop("image_scans", None)
+        if self.scan_reader is None:
+            return
+        images = set()
+        templates = [baseline.get("pod_template", {}) if isinstance(baseline, dict) else {},
+                     snapshot["deployment"].get("spec", {}).get("template", {})]
+        for template in templates:
+            spec = template.get("spec", {}) if isinstance(template, dict) else {}
+            for group in ("containers", "initContainers"):
+                values = spec.get(group, []) if isinstance(spec, dict) else []
+                for container in values if isinstance(values, list) else []:
+                    if isinstance(container, dict) and isinstance(container.get("image"), str):
+                        images.add(container["image"])
+        try:
+            snapshot["image_scans"] = self.scan_reader(sorted(images))
+        except (AdapterError, OSError, ValueError, TypeError, KeyError) as exc:
+            log.failure(LOG, "executor.image_scans.unavailable", exc)
 
     def assert_usable(self, check, *, now):
         current = deepcopy(self.approval_reader(deepcopy(check.inputs["proposal"])))
@@ -163,7 +194,8 @@ def _protect_outputs(ledger, locks, inputs, allowed_targets, directories=()):
 def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, locks,
                    policy=None, baseline=None, dependencies=None, approval=None,
                    server_dry_run=False, reconcile_only=False, runner=None, approval_reader=None,
-                   fence_after_seconds=None, clock=None, baselines=None, transport="kubectl"):
+                   fence_after_seconds=None, clock=None, baselines=None, image_scans=None,
+                   cve_exceptions=None, transport="kubectl"):
     """Build the standard team ExecutionAdapters using an explicit live client.
 
     allowed_targets is a trusted list of complete target identities or its JSON
@@ -179,7 +211,12 @@ def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, 
     Deployment client: "kubectl" (the default) or "rest", which runs one
     read-only kubectl config view for the credentials and then speaks HTTPS
     itself. The Guard's optional reference reads and server dry run still
-    use kubectl either way. The caller owns and must close adapters.ledger.
+    use kubectl either way.
+    image_scans (a directory of scan summaries) and cve_exceptions (the
+    reviewed exceptions file) feed the CVE gate when the policy configures
+    security_constraints.image_vulnerability_gate; without image_scans the
+    gate escalates (runtime/image_scans.py).
+    The caller owns and must close adapters.ledger.
     """
     from services.executor.kubernetes_adapter import KubectlDeploymentAPI
 
@@ -195,7 +232,10 @@ def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, 
     paths = dict(policy=policy, baseline=baseline, dependencies=dependencies, approval=approval)
     if baseline is not None and baselines is not None:
         raise AdapterError("ARGUMENT_ERROR", "command_line", "Give either one baseline or a baselines directory")
-    _protect_outputs(ledger, locks, [*paths.values(), kubeconfig, scope_path], targets, [baselines])
+    if cve_exceptions is not None and image_scans is None:
+        raise AdapterError("ARGUMENT_ERROR", "command_line", "CVE exceptions need an image scans directory")
+    _protect_outputs(ledger, locks, [*paths.values(), kubeconfig, scope_path, cve_exceptions], targets,
+                     [baselines, image_scans])
     if not reconcile_only:
         if (any(paths[key] is None for key in ("policy", "dependencies")) or (baseline is None and baselines is None)
                 or (approval is None and approval_reader is None)):
@@ -212,7 +252,9 @@ def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, 
         cluster = KubectlDeploymentAPI(**options)
     authorizer = LiveGuardAuthorizer(**paths, context=context, cluster_id=cluster_id,
                                      kubeconfig=kubeconfig, server_dry_run=server_dry_run,
-                                     approval_reader=approval_reader, clock=clock, baselines=baselines)
+                                     approval_reader=approval_reader, clock=clock, baselines=baselines,
+                                     scan_reader=(None if image_scans is None else
+                                                  lambda images: read_image_scans(image_scans, images, cve_exceptions)))
     coordination = LocalTargetCoordinator(locks)
     store = SQLiteExecutionLedger(ledger)
     return ExecutionAdapters(ledger=store, coordination=coordination, cluster=cluster,
@@ -239,6 +281,9 @@ def _parser():
         parser.add_argument(f"--{name}", metavar="PATH", help="Trusted JSON input; required for new execution")
     parser.add_argument("--baselines", metavar="DIR",
                         help="Trusted per-target baselines (DIR/<target name>.json), instead of --baseline")
+    parser.add_argument("--image-scans", metavar="DIR",
+                        help="Trusted scan summaries for the policy's CVE gate (image_vulnerability_gate)")
+    parser.add_argument("--cve-exceptions", metavar="PATH", help="Reviewed CVE exceptions file; needs --image-scans")
     parser.add_argument("--context", required=True, help="Explicit restricted kubectl context")
     parser.add_argument("--cluster-id", required=True, help="Trusted Sentinel cluster identity")
     parser.add_argument("--server-dry-run", action="store_true", help="Obtain optional server admission evidence before execution")
@@ -261,8 +306,8 @@ def main(argv=None):
             raise ContractError("Expected a proposal")
         _protect_outputs(args.ledger, args.locks,
                          [args.proposal, args.policy, args.baseline, args.dependencies,
-                          args.approval, args.kubeconfig, args.allowed_targets],
-                         [proposal["target"]], [args.baselines])
+                          args.approval, args.kubeconfig, args.allowed_targets, args.cve_exceptions],
+                         [proposal["target"]], [args.baselines, args.image_scans])
         adapters = build_adapters(
             context=args.context, cluster_id=args.cluster_id, kubeconfig=args.kubeconfig,
             allowed_targets=args.allowed_targets, ledger=args.ledger, locks=args.locks,
@@ -270,6 +315,7 @@ def main(argv=None):
             approval=args.approval, server_dry_run=args.server_dry_run,
             reconcile_only=args.reconcile, fence_after_seconds=args.fence_after, baselines=args.baselines,
             transport=args.transport,
+            image_scans=args.image_scans, cve_exceptions=args.cve_exceptions,
         )
         result = (reconcile if args.reconcile else execute)(proposal, adapters)
     except Exception as exc:  # noqa: BLE001 - top-level boundary: print one error code and exit 1

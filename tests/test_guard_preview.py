@@ -162,6 +162,19 @@ class GuardPreviewTests(unittest.TestCase):
                 self.assertFalse(Path(run.call_args.args[0][-3]).exists())
                 self.assertEqual(run.call_count, 1)
 
+    def test_an_admission_policy_denial_is_unknown_not_rejected(self):
+        # A ValidatingAdmissionPolicy in Deny mode (deploy/security/approved-images-vap.yaml)
+        # makes the dry-run exit non-zero. kubectl's text cannot be trusted to
+        # tell a denial from other failures, so the preview stays UNKNOWN.
+        stderr = (b"The deployments \"checkout\" is invalid: : ValidatingAdmissionPolicy "
+                  b"'sentinel-approved-images' with binding 'sentinel-approved-images' denied request: "
+                  b"Every container image must be an approved repository@sha256 digest")
+        failure = subprocess.CompletedProcess([], 1, b"", stderr)
+        with patch("services.guard.preview.subprocess.run", return_value=failure):
+            result = self.preview()
+        self.assertEqual((result["status"], result["details_code"]), ("UNKNOWN", "SERVER_DRY_RUN_FAILED"))
+        self.assertIsNone(result["admitted_template_sha256"])
+
     def test_timeout_and_unavailable_kubectl_cleanup_without_fallback(self):
         for failure, detail in (
             (subprocess.TimeoutExpired(["private-command"], 15, stderr=b"secret"), "SERVER_DRY_RUN_TIMEOUT"),

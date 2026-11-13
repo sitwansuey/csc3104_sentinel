@@ -52,7 +52,8 @@ one. It escalates when the baseline records no count
 the list of them is missing (SCALE_AUTOSCALER_PRESENT, SCALE_AUTOSCALER_UNKNOWN):
 an autoscaler would fight the write. `live_state.autoscalers` comes from the
 Executor's read-only list (`KubectlDeploymentAPI.autoscalers`). The eligibility
-and security checks run for SCALE against the baseline template, and the
+and security checks run for SCALE against the baseline template (the P5.02
+CVE gate does not: it covers ROLLBACK and RESTART only), and the
 resource checks price the requested count. A SCALE server preview patches
 spec.replicas only and must come back with the same count and template.
 

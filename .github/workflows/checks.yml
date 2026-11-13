@@ -83,5 +83,7 @@ jobs:
       - run: python scripts/check_doc_citations.py
       - name: Instructions steps name existing scripts and flags
         run: python scripts/instructions/extract_commands.py --check
+      - name: CVE gate exceptions are reviewed and none has expired
+        run: python scripts/security/gate_images.py check-exceptions deploy/security/cve-exceptions.json
       - run: bash -n scripts/run-sentinel.sh
         if: runner.os == 'Linux'

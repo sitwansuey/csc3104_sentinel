@@ -857,9 +857,17 @@ def _main(held):
     parser.add_argument(lab_lock.BREAK_OPTION, action="store_true",
                         help="With a Chaos Mesh scenario or --pair: remove a heavy-lab lock whose process is no "
                              "longer running, then take it (experiments/lab_lock.py)")
+    parser.add_argument("--image-scans", type=Path,
+                        help="With --connected: turn on the CVE gate (deploy/security/cve-gate.json) and read its "
+                             "scans from this directory of scan summaries (P5.02)")
+    parser.add_argument("--cve-exceptions", type=Path, help="With --image-scans: the reviewed CVE exceptions file")
     args = parser.parse_args()
     if args.executor_kill and not args.pair:
         parser.error("--executor-kill requires --pair")
+    if (args.image_scans or args.cve_exceptions) and (args.pair or not args.connected):
+        parser.error("--image-scans applies to one connected scenario, not --pair or the isolated lab")
+    if args.cve_exceptions and not args.image_scans:
+        parser.error("--cve-exceptions requires --image-scans")
     if args.pair:
         return pair_main(parser, args)
     args.target = args.target or targets.default_target()
@@ -979,6 +987,9 @@ def _main(held):
         experiment_type = type("ScaleBoutiqueExperiment", (ScaleRecoveryMixin, experiment_type), {})
     experiment = experiment_type(directory, **({"storefront_port": args.storefront_port} if args.connected else {}))
     experiment.select_target(args.target)
+    if args.image_scans:  # P5.02: the run's policy gets the CVE gate; Guard and Executor read these scans
+        experiment.image_scans = args.image_scans.resolve()
+        experiment.cve_exceptions = args.cve_exceptions.resolve() if args.cve_exceptions else None
     if chaos_scenario:
         experiment.agent_mode = args.agent
         experiment.expect = expect

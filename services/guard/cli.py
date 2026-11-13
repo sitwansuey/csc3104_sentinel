@@ -50,6 +50,9 @@ def _parser() -> argparse.ArgumentParser:
     preview.add_argument("--server-dry-run", action="store_true", help="Preview a bound rollback using server admission; requires --context and patch authorization")
     preview.add_argument("--preview", metavar="PATH", help="Trusted server-preview snapshot JSON for offline fixture evaluation only")
     parser.add_argument("--report", metavar="PATH", help="Atomically write the bounded explanation report before emitting a decision")
+    parser.add_argument("--image-scans", metavar="DIR",
+                        help="With --context: trusted scan summaries for the policy's CVE gate (image_vulnerability_gate)")
+    parser.add_argument("--cve-exceptions", metavar="PATH", help="With --image-scans: the reviewed CVE exceptions file")
     return parser
 
 
@@ -69,7 +72,7 @@ def _report_destination(args):
     try:
         destination = Path(args.report).resolve()
         for name in ("proposal", "policy", "baseline", "dependencies", "approval",
-                     "live_state", "preview", "kubeconfig"):
+                     "live_state", "preview", "kubeconfig", "cve_exceptions"):
             value = getattr(args, name)
             if value is None:
                 continue
@@ -111,6 +114,24 @@ def _write_report(destination, report):
                                    "The Guard report temporary file could not be removed") from exc
 
 
+def _image_scans(args, baseline, live_state):
+    """live_state.image_scans for every image of the baseline and current templates (P5.02)."""
+    from runtime.image_scans import read_image_scans
+
+    images = set()
+    for template in (baseline.get("pod_template") if isinstance(baseline, dict) else None,
+                     live_state["deployment"].get("spec", {}).get("template")):
+        spec = template.get("spec") if isinstance(template, dict) else None
+        for group in ("containers", "initContainers"):
+            for container in (spec.get(group) or []) if isinstance(spec, dict) else []:
+                if isinstance(container, dict) and isinstance(container.get("image"), str):
+                    images.add(container["image"])
+    try:
+        return read_image_scans(args.image_scans, sorted(images), args.cve_exceptions)
+    except (OSError, ValueError) as exc:
+        raise AdapterError("IMAGE_SCANS_UNAVAILABLE", "image_scans", "Image scan evidence could not be read") from exc
+
+
 def main(argv: list[str] | None = None) -> int:
     """Emit exactly one JSON result, or a JSON error with no authorisation."""
     try:
@@ -125,6 +146,10 @@ def main(argv: list[str] | None = None) -> int:
             raise AdapterError("ARGUMENT_ERROR", "command_line", "--server-dry-run requires --context")
         if args.preview is not None and args.context is not None:
             raise AdapterError("ARGUMENT_ERROR", "command_line", "--preview is only allowed with --live-state fixtures")
+        if (args.image_scans is not None and args.context is None) or (
+                args.cve_exceptions is not None and args.image_scans is None):
+            # A fixture's live_state already carries any image_scans; the reader is for live reads only.
+            raise AdapterError("ARGUMENT_ERROR", "command_line", "--image-scans requires --context; --cve-exceptions requires --image-scans")
         report_destination = _report_destination(args)
         proposal = load_json(args.proposal, "proposal")
         validate_message(proposal)
@@ -156,6 +181,8 @@ def main(argv: list[str] | None = None) -> int:
                     proposal["target"], refs, context=args.context,
                     cluster_id=args.cluster_id, kubeconfig=args.kubeconfig,
                 ) if refs else []
+            if matching_live and args.image_scans is not None:
+                live_state["image_scans"] = _image_scans(args, baseline, live_state)
         else:
             live_state = load_json(args.live_state, "live_state")
         result, report = evaluate_with_report(

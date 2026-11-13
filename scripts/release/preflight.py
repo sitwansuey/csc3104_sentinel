@@ -64,6 +64,7 @@ GATE = (
     ("doc links", ["scripts/check_doc_links.py"]),
     ("doc citations", ["scripts/check_doc_citations.py"]),
     ("instruction steps", ["scripts/instructions/extract_commands.py", "--check"]),
+    ("cve exceptions", ["scripts/security/gate_images.py", "check-exceptions", "deploy/security/cve-exceptions.json"]),
 )
 GATE_TIMEOUT = 3600
 
