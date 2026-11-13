@@ -5,7 +5,10 @@ baselines, retrieves bounded guidance and validates a provider's typed action.
 It binds incident/target/version/evidence and assigns a proposal-content action
 ID. Invented evidence/baselines, future/tampered templates and malformed
 responses are rejected. Missing evidence/baselines or diagnosis abstention yield
-an escalation proposal; the model is never execution authority.
+an escalation proposal; the model is never execution authority. A metric-only
+incident (a metric alert while no Deployment or Pod status signal shows a
+failure) is escalated by a code rule before any provider or model call, with a
+fixed rationale that names `runbooks/resource-saturation.md`.
 
 `services/rca/core.py` adapts incidents to the read-only `agent/` engine.
 `experiments/boutique/harness/agent_live.py` connects actual Observer CSV exports,

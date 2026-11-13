@@ -698,5 +698,690 @@ class StorefrontHTTPTests(unittest.TestCase):
                 StorefrontProbe(url)
 
 
+class ShopOutcomeTests(unittest.TestCase):
+    """The whole-storefront aggregate of a pair (P4.05) is separate from each incident's outcome."""
+
+    def test_recovered_needs_both_incidents_and_three_passing_journeys_in_a_row(self):
+        from experiments.boutique.harness.multi_fault import shop_outcome
+        both = {"shippingservice": "RECOVERED", "cartservice": "RECOVERED"}
+        result = shop_outcome(both, [{"passed": False}] + [{"passed": True}] * 3)
+        self.assertEqual(result["status"], "RECOVERED")
+        self.assertEqual(result["storefront"], {"journeys": 4, "passed": 3, "required_passes": 3, "complete": True,
+                                                "sustained": True})
+        self.assertEqual(shop_outcome(both, [{"passed": True}] * 2 + [{"passed": False}])["status"], "FAILED")
+
+    def test_partial_when_one_target_recovers_and_the_other_fails(self):
+        from experiments.boutique.harness.multi_fault import shop_outcome
+        for journeys in ([{"passed": True}] * 3, [{"passed": False}] * 3, []):
+            with self.subTest(journeys=len(journeys)):
+                result = shop_outcome({"shippingservice": "RECOVERED", "cartservice": "FAILED"}, journeys)
+                self.assertEqual((result["status"], result["not_recovered"]), ("PARTIAL", ["cartservice"]))
+        self.assertEqual(shop_outcome({"shippingservice": "REJECTED", "cartservice": "NEEDS_REVIEW"},
+                                      [{"passed": True}] * 3)["status"], "FAILED")
+
+    def test_unknown_on_missing_storefront_samples_or_an_unsettled_incident(self):
+        from experiments.boutique.harness.multi_fault import shop_outcome
+        both = {"shippingservice": "RECOVERED", "cartservice": "RECOVERED"}
+        for journeys in ([], [{"passed": True}] * 2, [{"passed": True}, {"passed": None}, {"passed": True}],
+                         [{"passed": True}, "lost", {"passed": True}]):
+            with self.subTest(journeys=journeys):
+                self.assertEqual(shop_outcome(both, journeys)["status"], "UNKNOWN")
+        result = shop_outcome({"shippingservice": "RECOVERED", "cartservice": "VERIFYING"}, [{"passed": True}] * 3)
+        self.assertEqual((result["status"], result["reason"]), ("UNKNOWN", "incident not settled: cartservice"))
+        for states, passes in (({}, 3), (both, 0), (both, "3")):
+            with self.subTest(states=states, passes=passes), self.assertRaises(ValueError):
+                shop_outcome(states, [], required_passes=passes)
+
+    def test_an_incident_the_runner_stopped_counts_as_settled_and_not_recovered(self):
+        from experiments.boutique.harness.multi_fault import shop_outcome
+        # An escalated or refused approval leaves the Coordinator at AWAITING_APPROVAL; the runner never acts again.
+        states = {"shippingservice": "RECOVERED", "cartservice": "AWAITING_APPROVAL"}
+        self.assertEqual(shop_outcome(states, [{"passed": True}] * 3)["status"], "UNKNOWN")
+        result = shop_outcome(states, [{"passed": True}] * 3, stopped={"cartservice": "ESCALATED"})
+        self.assertEqual((result["status"], result["not_recovered"]), ("PARTIAL", ["cartservice"]))
+        result = shop_outcome({"shippingservice": "AWAITING_APPROVAL", "cartservice": "AWAITING_APPROVAL"}, [],
+                              stopped={"shippingservice": "APPROVAL_REFUSED", "cartservice": "ESCALATED"})
+        self.assertEqual(result["status"], "FAILED")
+        # A stop of the other target does not settle one still in progress.
+        result = shop_outcome({"shippingservice": "VERIFYING", "cartservice": "AWAITING_APPROVAL"}, [],
+                              stopped={"cartservice": "ESCALATED"})
+        self.assertEqual((result["status"], result["reason"]), ("UNKNOWN", "incident not settled: shippingservice"))
+
+
+GRAPH = {"edge_direction": "caller_to_callee", "nodes": sorted(APPLICATIONS),
+         "edges": [{"from": "frontend", "to": "cartservice"}, {"from": "frontend", "to": "shippingservice"},
+                   {"from": "checkoutservice", "to": "cartservice"}, {"from": "cartservice", "to": "redis-cart"}]}
+
+
+class TargetVerificationScopeTests(unittest.TestCase):
+    """A pair verifies each target by its own probe and callees; single-target runs keep the shop scope."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        for patcher in (patch("shared.provenance.collect", return_value={"source_revision": "test"}),
+                        patch("subprocess.run", side_effect=AssertionError("cluster command attempted"))):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.experiment = connected_lab(temporary.name, "cartservice")
+        self.addCleanup(self.experiment.store.close)
+        self.experiment.graph = deepcopy(GRAPH)
+
+    def test_verification_dependencies_are_the_direct_callees(self):
+        from experiments.boutique.harness.connected import verification_dependencies
+        self.assertEqual(verification_dependencies(GRAPH, "cartservice"), ["redis-cart"])
+        self.assertEqual(verification_dependencies(GRAPH, "frontend"), ["cartservice", "shippingservice"])
+        self.assertEqual(verification_dependencies(GRAPH, "redis-cart"), [])
+        with self.assertRaises(ValueError):
+            verification_dependencies(dict(GRAPH, edge_direction="callee_to_caller"), "cartservice")
+        self.assertEqual(ConnectedBoutiqueExperiment.verification_scope, "shop")
+
+    def samples(self, *, shipping_ready, redis_ready, storefront):
+        experiment = self.experiment
+        deployments = [item for item in resources() if item.get("kind") == "Deployment"
+                       and item["metadata"]["name"] in APPLICATIONS]
+        for item in deployments:
+            name = item["metadata"]["name"]
+            if (name == "shippingservice" and not shipping_ready) or (name == "redis-cart" and not redis_ready):
+                item["status"]["readyReplicas"] = item["status"]["availableReplicas"] = 0
+        target = next(item for item in deployments if item["metadata"]["name"] == "cartservice")
+        target["metadata"]["uid"] = "cart-uid"
+        identity = {"cluster_id": experiment.cluster_id, "namespace": experiment.namespace,
+                    "kind": "Deployment", "name": "cartservice", "uid": "cart-uid"}
+        digest = fingerprint(target["spec"]["template"])
+        execution = {"schema_version": "1.0", "kind": "execution_result", "incident_id": "INC-1",
+                     "action_id": "ACT-1", "target": identity, "status": "APPLIED", "resource_version": "2",
+                     "recorded_at": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat().replace("+00:00", "Z"),
+                     "details": "Offline test execution"}
+        sample = {"target": identity, "service": "cartservice", "protocol": "grpc", "grpc_status": 0,
+                  "application_check_passed": True, "ready_replicas": 1, "available_replicas": 1,
+                  "desired_replicas": 1, "template_sha256": digest, "configuration_stable": True}
+        experiment.kubectl = Mock(return_value=SimpleNamespace(stdout=json.dumps({"items": deployments})))
+        experiment.storefront = Mock()
+        experiment.storefront.journey.return_value = {"passed": storefront}
+        with patch.object(BoutiqueExperiment, "verification_samples",
+                          return_value=iter([deepcopy(sample) for _ in range(3)])):
+            measured = list(experiment.verification_samples(execution))
+        start = datetime.fromisoformat(execution["recorded_at"].replace("Z", "+00:00"))
+        for index, reading in enumerate(measured):  # Readings one second apart, so the window is measurable.
+            reading["at"] = (start + timedelta(seconds=index + 1)).isoformat().replace("+00:00", "Z")
+        policy = {"health": {"protocol": "grpc", "required_grpc_status": 0, "minimum_samples": 3,
+                             "stable_window_seconds": 1, "max_sample_gap_seconds": 90,
+                             "required_dependencies": experiment.required_dependencies(),
+                             "require_template_match": True, "expected_template_sha256": digest,
+                             "require_target_identity": True}}
+        return execution, measured, policy
+
+    def test_target_scope_ignores_the_storefront_and_unrelated_services(self):
+        self.experiment.verification_scope = "target"
+        execution, measured, policy = self.samples(shipping_ready=False, redis_ready=True, storefront=False)
+        self.assertEqual(policy["health"]["required_dependencies"], ["redis-cart"])
+        self.assertEqual(measured[0]["dependencies"], {"redis-cart": True})
+        self.assertIs(measured[0]["storefront"]["passed"], False)  # Still recorded, for the ShopOutcome.
+        self.assertEqual(verify(execution, measured, policy)["status"], "RECOVERED")
+
+    def test_the_shop_scope_still_fails_the_same_repair(self):
+        execution, measured, policy = self.samples(shipping_ready=False, redis_ready=True, storefront=False)
+        self.assertIn("storefront-checkout", policy["health"]["required_dependencies"])
+        self.assertIs(measured[0]["dependencies"]["shippingservice"], False)
+        self.assertEqual(verify(execution, measured, policy)["status"], "NOT_RECOVERED")
+
+    def test_target_scope_still_fails_when_a_callee_is_not_ready(self):
+        self.experiment.verification_scope = "target"
+        execution, measured, policy = self.samples(shipping_ready=True, redis_ready=False, storefront=True)
+        self.assertEqual(measured[0]["dependencies"], {"redis-cart": False})
+        self.assertEqual(verify(execution, measured, policy)["status"], "NOT_RECOVERED")
+
+
+class RedisProbeTests(unittest.TestCase):
+    """redis-cart (pair only): a redis-cli PING from the target's own pinned image."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        for patcher in (patch("shared.provenance.collect", return_value={"source_revision": "test"}),
+                        patch("subprocess.run", side_effect=AssertionError("cluster command attempted"))):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.experiment = connected_lab(temporary.name, "redis-cart")
+        self.addCleanup(self.experiment.store.close)
+        image = "docker.io/library/redis@sha256:" + "c" * 64
+        self.template = {"metadata": {"labels": {"app": "redis-cart"}},
+                         "spec": {"containers": [{"name": "redis", "image": image}]}}
+        self.experiment.baseline = {"pod_template": deepcopy(self.template)}
+
+    def test_the_probe_pod_pings_the_service_from_the_pinned_image(self):
+        pod = self.experiment.redis_probe_pod("redis-probe-1")
+        container = pod["spec"]["containers"][0]
+        self.assertEqual(container["command"], ["redis-cli", "-h", "redis-cart", "-p", "6379", "PING"])
+        self.assertEqual((container["image"], container["imagePullPolicy"]),
+                         (self.template["spec"]["containers"][0]["image"], "Never"))
+        self.assertEqual(container["securityContext"]["capabilities"], {"drop": ["ALL"]})
+        self.assertIs(pod["spec"]["automountServiceAccountToken"], False)
+        self.experiment.baseline["pod_template"]["spec"]["containers"][0]["image"] = "redis:alpine"
+        with self.assertRaisesRegex(RuntimeError, "pinned by digest"):
+            self.experiment.redis_probe_pod("redis-probe-2")
+
+    def test_the_reply_is_kept_as_measured_and_only_pong_is_healthy(self):
+        from experiments.boutique.harness.live import REDIS_REPLY_LIMIT, validate_redis
+        run = Mock(side_effect=lambda name, pod, parse: parse(self.reply))
+        self.experiment.run_probe_pod = run
+        for self.reply, expected in (("PONG\n", "PONG"), ("x" * 200, "x" * (REDIS_REPLY_LIMIT + 1))):
+            self.assertEqual(self.experiment.redis_response(), expected)
+        self.assertEqual(validate_redis("PONG"), "PONG")
+        for reply in ("pong", "PONG ", "", None):
+            with self.subTest(reply=reply), self.assertRaises(RuntimeError):
+                validate_redis(reply)
+        rules = self.experiment.health_rules()
+        self.assertEqual((rules["protocol"], rules["required_redis_reply"]), ("redis", "PONG"))
+        self.assertNotIn("required_grpc_status", rules)
+
+    def test_a_verification_reading_carries_the_reply_or_a_collection_error(self):
+        deployment = {"metadata": {"uid": "redis-uid", "resourceVersion": "5", "generation": 1},
+                      "spec": {"replicas": 1, "template": deepcopy(self.template)},
+                      "status": {"observedGeneration": 1, "readyReplicas": 1, "availableReplicas": 1}}
+        experiment = self.experiment
+        experiment.policy = {"health": experiment.health_rules()}
+        experiment.deployment = Mock(return_value=deployment)
+        experiment.observe = Mock()
+        execution = {"target": {"name": "redis-cart"}, "incident_id": "INC-1", "action_id": "ACT-1"}
+        for response, reply, error in ((Mock(return_value="PONG"), "PONG", None),
+                                       (Mock(side_effect=RuntimeError("Redis RPC failed")), None, "RuntimeError")):
+            experiment.probe_response = response
+            with self.subTest(reply=reply), patch("time.sleep"):
+                sample = next(BoutiqueExperiment.verification_samples(experiment, execution))
+            self.assertEqual((sample["protocol"], sample["redis_reply"], sample.get("collection_error")),
+                             ("redis", reply, error))
+            self.assertNotIn("grpc_status", sample)
+
+
+class PairHarnessTests(unittest.TestCase):
+    """The live pair harness offline: lanes, routing, policies and refusals; nothing reaches a cluster."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.directory = Path(temporary.name)
+        for patcher in (patch("shared.provenance.collect", return_value={"source_revision": "test"}),
+                        patch("subprocess.run", side_effect=AssertionError("cluster command attempted"))):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def pair(self, pair_id="redis-pod+cart-config", **options):
+        from experiments.boutique.harness.multi_fault import PairBoutiqueExperiment
+        experiment = PairBoutiqueExperiment(self.directory / (pair_id + str(len(list(self.directory.iterdir())))),
+                                            pair_id=pair_id, **options)
+        self.addCleanup(experiment.store.close)
+        experiment.graph = deepcopy(GRAPH)
+        for name, lane in experiment.lanes.items():
+            lane["target"] = {"cluster_id": experiment.cluster_id, "namespace": experiment.namespace,
+                              "kind": "Deployment", "name": name, "uid": name + "-uid"}
+        return experiment
+
+    def test_lanes_follow_the_catalog_pair_and_its_order(self):
+        dependency, independent = self.pair(), self.pair("shipping-config+cart-pod")
+        self.assertEqual(dependency.order, ["redis-cart", "cartservice"])
+        self.assertEqual({name: lane["scenario_id"] for name, lane in dependency.lanes.items()},
+                         {"redis-cart": "D1", "cartservice": "C1"})
+        self.assertEqual(independent.order, ["shippingservice", "cartservice"])
+        # redis-cart joins the Executor Role only in its own pair.
+        self.assertEqual(dependency.executor_names(), ["cartservice", "redis-cart", "shippingservice"])
+        self.assertEqual(independent.executor_names(), ["cartservice", "shippingservice"])
+        self.assertEqual(dependency.summary["pair"]["labels"], "pending")
+        self.assertEqual(dependency.verification_scope, "target")
+
+    def test_the_executor_kill_variant_kills_the_configuration_repair(self):
+        self.assertEqual(self.pair(executor_kill=True).kill_target, "cartservice")
+        self.assertEqual(self.pair("shipping-config+cart-pod", executor_kill=True).kill_target, "shippingservice")
+        self.assertIsNone(self.pair().kill_target)
+
+    def test_acting_as_switches_one_target_and_always_restores(self):
+        experiment = self.pair()
+        with experiment.acting_as("cartservice") as lane:
+            self.assertEqual((experiment.name, experiment.scenario["id"], experiment.profile.label),
+                             ("cartservice", "C1", "cart"))
+            self.assertIs(experiment.target, lane["target"])
+            with experiment.acting_as("redis-cart"):
+                self.assertEqual(experiment.profile.probe["kind"], "redis")
+            self.assertEqual(experiment.name, "cartservice")
+        self.assertEqual((experiment.name, experiment.target), ("redis-cart", None))
+        with self.assertRaises(KeyError), experiment.acting_as("cartservice"):
+            raise KeyError("boom")
+        self.assertEqual(experiment.name, "redis-cart")
+
+    def test_each_target_gets_its_own_live_policy(self):
+        from services.guard.decisions import validate_policy
+        experiment = self.pair()
+        redis, cart = (experiment.lane_policy(name) for name in ("redis-cart", "cartservice"))
+        for name, policy in (("redis-cart", redis), ("cartservice", cart)):
+            with self.subTest(name=name):
+                validate_policy(policy, require_live=True)
+                self.assertEqual(policy["targets"], [experiment.lanes[name]["target"]])
+                self.assertEqual(policy["restart_constraints"]["targets"], [experiment.lanes[name]["target"]])
+                self.assertEqual(policy["allowed_actions"], ["ROLLBACK", "RESTART"])
+        self.assertEqual((redis["health"]["protocol"], redis["health"]["required_dependencies"]), ("redis", []))
+        self.assertEqual((cart["health"]["protocol"], cart["health"]["required_dependencies"]), ("grpc", ["redis-cart"]))
+        self.assertEqual(redis["security_constraints"]["allowed_service_accounts"], ["default"])
+        self.assertEqual(cart["security_constraints"]["allowed_service_accounts"], ["cartservice"])
+        self.assertEqual(redis["resource_constraints"]["max_container_limits"], {"cpu": "200m", "memory": "256Mi"})
+        self.assertEqual(cart["resource_constraints"]["max_container_limits"], {"cpu": "500m", "memory": "128Mi"})
+
+    def test_readers_route_by_the_message_target_not_the_acting_one(self):
+        experiment = self.pair()
+        seen = []
+        with patch.object(ConnectedBoutiqueExperiment, "dependency_result",
+                          lambda lab, proposal: seen.append(lab.name) or {"for": lab.name}):
+            with experiment.acting_as("redis-cart"):
+                self.assertEqual(experiment.dependency_result({"target": {"name": "cartservice"}}),
+                                 {"for": "cartservice"})
+                self.assertEqual(experiment.name, "redis-cart")
+        self.assertEqual(seen, ["cartservice"])
+        names = []
+
+        def readings(lab, execution):
+            for index in range(2):
+                names.append(lab.name)
+                yield {"index": index}
+        with patch.object(ConnectedBoutiqueExperiment, "verification_samples", readings):
+            stream = experiment.lane_samples({"target": {"name": "cartservice"}})
+            self.assertEqual(next(stream), {"index": 0})
+            self.assertEqual(experiment.name, "redis-cart")  # Nothing leaks between readings.
+            self.assertEqual(list(stream), [{"index": 1}])
+        self.assertEqual(names, ["cartservice", "cartservice"])
+
+    def test_each_target_keeps_its_own_dependency_readiness_file(self):
+        experiment = self.pair()
+        deployments = [item for item in resources() if item.get("kind") == "Deployment"]
+        deployments.append({"kind": "Deployment", "metadata": {"name": "redis-cart", "generation": 1},
+                            "spec": {"replicas": 1}, "status": {"observedGeneration": 1, "readyReplicas": 0,
+                                                                "availableReplicas": 0}})
+        experiment.kubectl = Mock(return_value=SimpleNamespace(stdout=json.dumps({"items": deployments})))
+        with patch("experiments.boutique.harness.connected.inspect_dependencies", return_value={"status": "CLEAR"}):
+            for name in ("cartservice", "redis-cart"):
+                experiment.dependency_result({"target": {"name": name}})
+        saved = {name: json.loads((experiment.directory / ("dependency-readiness-" + name + ".json"))
+                                  .read_text(encoding="utf-8")) for name in ("cartservice", "redis-cart")}
+        self.assertEqual({name: state["deployment"]["metadata"]["name"] for name, state in saved.items()},
+                         {"cartservice": "cartservice", "redis-cart": "redis-cart"})
+        self.assertIs(saved["cartservice"]["known_health"]["redis-cart"], False)
+        self.assertFalse((experiment.directory / "dependency-readiness.json").exists())
+
+    def test_faults_applied_more_than_five_seconds_apart_fail_the_pair(self):
+        from experiments.boutique.harness import multi_fault
+        for chaos_at, passes in (("2026-11-13T10:00:03Z", True), ("2026-11-13T10:00:09Z", False)):
+            experiment = self.pair()
+            injected = []
+
+            def inject(lab=experiment, at=chaos_at, injected=injected):
+                injected.append(lab.name)
+                if lab.scenario["injection"]["kind"] == "chaos":
+                    lab.chaos_record = {"created_at": at}
+            experiment.inject_fault = inject
+            with self.subTest(chaos_at=chaos_at), patch.object(multi_fault, "live_utc",
+                                                               return_value="2026-11-13T10:00:00Z"):
+                if passes:
+                    with redirect_stdout(StringIO()):
+                        applied = experiment.inject_pair()
+                    self.assertEqual(applied["redis-cart"], chaos_at)
+                    self.assertEqual(experiment.summary["pair_injection"]["spread_seconds"], 3.0)
+                else:
+                    with self.assertRaisesRegex(RuntimeError, "9.0 s apart"):
+                        experiment.inject_pair()
+            self.assertEqual(injected, ["cartservice", "redis-cart"])  # The configuration fault goes first.
+
+    def test_inject_pair_uses_the_chaos_harness_record_and_cleans_up_an_uncertain_create(self):
+        from experiments.boutique.harness import chaos_recovery
+        from tests.test_boutique_chaos import FakeInjectionCluster
+        pod = "redis-cart-7c9d8f6b5-abcde"
+        records = ["sentinel-boutique-connected/" + pod + "/redis"]
+        for fail_create in (False, True):
+            experiment = self.pair()
+            fake = FakeInjectionCluster(records, {pod: ("uid-redis", "redis-cart")}, fail_create=fail_create)
+            experiment.chaos_cluster = lambda fake=fake: fake
+            configured = []
+            clock = iter(range(0, 10_000, 25))
+            with self.subTest(fail_create=fail_create), \
+                    patch.object(ConnectedBoutiqueExperiment, "inject_fault",
+                                 lambda lab, configured=configured: configured.append(lab.name)), \
+                    patch.object(chaos_recovery, "time", SimpleNamespace(monotonic=lambda clock=clock: float(next(clock)),
+                                                                         sleep=Mock())), \
+                    redirect_stdout(StringIO()):
+                if not fail_create:
+                    applied = experiment.inject_pair()
+                    self.assertEqual(applied["redis-cart"], experiment.chaos_record["created_at"])
+                    self.assertEqual(experiment.chaos_record["selected_pods"], [{"name": pod, "uid": "uid-redis"}])
+                    self.assertEqual(fake.calls[:2], [("create", "dry-run"), ("create", "real")])
+                    self.assertIn("basis", experiment.summary["pair_injection"])
+                else:
+                    with self.assertRaisesRegex(RuntimeError, "connection reset"):
+                        experiment.inject_pair()
+                    # The object is known before the create call, so the pair's cleanup removes it.
+                    self.assertIsNone(experiment.chaos_record)
+                    experiment.remove_chaos()
+                    self.assertEqual(fake.removed, [("PodChaos", experiment.chaos_document["metadata"]["name"])])
+                self.assertEqual(configured, ["cartservice"])  # The configuration fault goes first.
+
+    def test_one_target_runs_the_executor_at_a_time(self):
+        experiment = self.pair()
+        experiment.store = Mock()
+        experiment.store.pending_routes.return_value = [(1,), (2,)]
+        experiment.store.route.side_effect = lambda event_id: {"action_id": {1: "ACT-CART", 2: "ACT-REDIS"}[event_id]}
+        with experiment.acting_as("cartservice"), self.assertRaisesRegex(RuntimeError, "one target runs at a time"):
+            experiment.execute_lane({"action_id": "ACT-CART", "target": {"name": "cartservice"}})
+        experiment.store.approval.assert_not_called()
+
+    def test_emergency_restore_touches_only_changed_templates(self):
+        from experiments.boutique.harness.multi_fault import Experiment
+        experiment = self.pair()
+        templates = {"redis-cart": {"spec": "redis"}, "cartservice": {"spec": "broken"}}
+        for name in experiment.order:
+            experiment.lanes[name]["baseline"] = {"template_sha256": fingerprint({"spec": name.split("-")[0]
+                                                                                  if name == "redis-cart" else "good"})}
+        experiment.deployment = lambda: {"spec": {"template": templates[experiment.name]}}
+        experiment.remove_chaos = Mock(return_value=True)
+        restored = []
+        with patch.object(Experiment, "emergency_restore", lambda lab: restored.append(lab.name) or True):
+            result = experiment.emergency_restore()
+        self.assertEqual(result, {"redis-cart": "unchanged", "cartservice": True})
+        self.assertEqual(restored, ["cartservice"])
+        experiment.remove_chaos.assert_called_once()
+
+
+class PairVerdictTests(unittest.TestCase):
+    """The live pair harness's pass/fail checks offline: judge, the Executor steps and the RESTART attribution gate."""
+
+    setUp = PairHarnessTests.setUp
+    pair = PairHarnessTests.pair
+
+    def lab(self, faults, edges, **health):
+        from tests.support.pair_lab import PairLab
+        lab = PairLab(self.enterContext(tempfile.TemporaryDirectory()), faults, edges=edges)
+        self.addCleanup(lab.close)
+        lab.health.update(health)
+        return lab
+
+    def run_lab(self, lab, **advance_options):
+        from experiments.boutique.harness.multi_fault import PairRunner, replan
+        from services.coordinator.core import handle
+        from services.planner.core import mock_provider, retrieve_runbooks
+        ids = lab.open()
+
+        def again(name, incident_id, attempt):
+            live = lab.cluster.read(lab.incidents[name]["target"])["deployment"]
+            proposal = replan(lab.incidents[name], baselines=[lab.baselines[name]], retriever=retrieve_runbooks,
+                              provider=mock_provider, live_template=live["spec"]["template"],
+                              resource_version=live["metadata"]["resourceVersion"], attempt=attempt)
+            handle(proposal, lab.store, lab.bus)
+            return proposal
+
+        runner = PairRunner(lab.store, ids, advance=lambda name, incident_id: lab.advance(
+            name, incident_id, **advance_options), replan=again, clock=lambda: lab.now.timestamp(), sleep=lab.tick)
+        return ids, runner.run()
+
+    def independent(self, **advance_options):
+        lab = self.lab({"shippingservice": "config", "cartservice": "pod"},
+                       [("frontend", "shippingservice"), ("frontend", "cartservice")])
+        return (lab, *self.run_lab(lab, **advance_options))
+
+    def dependent(self, *, cart_ready):
+        lab = self.lab({"redis-cart": "pod", "cartservice": "config"},
+                       [("frontend", "cartservice"), ("cartservice", "redis-cart")], cartservice=cart_ready)
+        return (lab, *self.run_lab(lab))
+
+    def judge(self, pair_id, lab, ids, run, *, writes=None, journeys=None):
+        """PairBoutiqueExperiment.judge over the lab's real Coordinator journal and Executor ledger."""
+        from experiments.boutique.harness import multi_fault
+        experiment = self.pair(pair_id)
+        experiment.store = lab.store
+        experiment.scores = Mock(return_value={})
+        experiment.shop_journeys = Mock(return_value=[{"passed": True}] * 3 if journeys is None else journeys)
+        counted = multi_fault.writes_by_target(lab.ledger.db) if writes is None else writes
+        with patch.object(multi_fault, "writes_by_target", return_value=counted), redirect_stdout(StringIO()):
+            evidence = experiment.judge({name: {"incident_id": value} for name, value in ids.items()}, run)
+        return experiment, evidence
+
+    def test_judge_passes_a_clean_independent_pair(self):
+        lab, ids, run = self.independent()
+        experiment, evidence = self.judge("shipping-config+cart-pod", lab, ids, run)
+        self.assertEqual((evidence["result"]["result"], evidence["result"]["writes"]),
+                         ("RECOVERED", {"shippingservice": 1, "cartservice": 1}))
+        self.assertIsNone(evidence["result"]["ordered_recovery_shown"])
+        self.assertEqual(evidence["cross_incident_transitions"], [])
+        self.assertTrue((experiment.directory / "pair-result.json").is_file())
+
+    def test_judge_fails_on_a_forged_cross_incident_journal_row(self):
+        lab, ids, run = self.independent()
+        shipping_message = next(key for key, payload in lab.store.db.execute("SELECT event_key, payload FROM messages")
+                                if json.loads(payload).get("incident_id") == ids["shippingservice"])
+        with lab.store.db:
+            lab.store.db.execute("INSERT INTO transitions(incident_id, action_id, from_state, to_state, cause, "
+                                 "recorded_at) VALUES (?, NULL, 'RECOVERED', 'RECOVERED', ?, ?)",
+                                 (ids["cartservice"], shipping_message, "2026-10-10T12:30:00Z"))
+        with self.assertRaisesRegex(RuntimeError, "changed state because of the other incident"):
+            self.judge("shipping-config+cart-pod", lab, ids, run)
+
+    def test_judge_fails_a_result_that_is_neither_expected_nor_acceptable(self):
+        lab, ids, run = self.independent(verify_health={"cartservice": False})
+        with self.assertRaisesRegex(RuntimeError, "ended PARTIAL; expected RECOVERED"):
+            self.judge("shipping-config+cart-pod", lab, ids, run)
+        lab, ids, run = self.independent()
+        for writes in ({"shippingservice": 2, "cartservice": 1}, {"shippingservice": 0, "cartservice": 1},
+                       {"cartservice": 1}):
+            with self.subTest(writes=writes), self.assertRaisesRegex(RuntimeError, "ended UNEXPECTED_WRITES"):
+                self.judge("shipping-config+cart-pod", lab, ids, run, writes=writes)
+
+    def test_judge_scores_an_incident_the_runner_stopped_as_not_recovered(self):
+        from experiments.boutique.harness.multi_fault import ApprovalRefused
+
+        def approve(proposal, decision):
+            if proposal["target"]["name"] == "cartservice":
+                raise ApprovalRefused(proposal["action_id"])
+            return lab.approve(proposal, decision)
+        lab = self.lab({"shippingservice": "config", "cartservice": "pod"},
+                       [("frontend", "shippingservice"), ("frontend", "cartservice")])
+        ids, run = self.run_lab(lab, approve=approve)
+        self.assertEqual((run["stops"], run["states"]["cartservice"]), ({"cartservice": "APPROVAL_REFUSED"},
+                                                                        "AWAITING_APPROVAL"))
+        with self.assertRaisesRegex(RuntimeError, "ended PARTIAL"):
+            self.judge("shipping-config+cart-pod", lab, ids, run)
+        [saved] = self.directory.glob("*/pair-result.json")
+        self.assertEqual(json.loads(saved.read_text(encoding="utf-8"))["shop"]["not_recovered"], ["cartservice"])
+
+    def test_judge_fails_a_recovered_dependency_pair_whose_cart_was_allowed_before_redis_recovered(self):
+        lab, ids, run = self.dependent(cart_ready=True)
+        _, evidence = self.judge("redis-pod+cart-config", lab, ids, run)
+        self.assertEqual(evidence["result"]["result"], "RECOVERED")
+        self.assertIs(evidence["result"]["ordered_recovery_shown"], True)
+        cart_action = lab.store.actions_for_incident(ids["cartservice"])[-1]["action_id"]
+        with lab.store.db:  # An early READY of the cart's own action, before Redis RECOVERED.
+            lab.store.db.execute("INSERT INTO transitions(seq, incident_id, action_id, from_state, to_state, cause, "
+                                 "recorded_at) VALUES (0, ?, ?, 'VALIDATING', 'READY', NULL, ?)",
+                                 (ids["cartservice"], cart_action, "2026-10-10T12:00:36Z"))
+        with self.assertRaisesRegex(RuntimeError, "allowed before the first RECOVERED"):
+            self.judge("redis-pod+cart-config", lab, ids, run)
+
+    def test_judge_accepts_a_deadlock_as_a_safe_stop_but_not_as_an_ordered_recovery(self):
+        lab, ids, run = self.dependent(cart_ready=False)  # The faulted cart is NotReady, as in the live C1 runs.
+        experiment, evidence = self.judge("redis-pod+cart-config", lab, ids, run, journeys=[])
+        graded = evidence["result"]
+        self.assertEqual((graded["result"], graded["acceptable"], graded["matched_expected"]),
+                         ("DEPENDENCY_DEADLOCK", True, False))
+        self.assertEqual(graded["writes"], {"redis-cart": 0, "cartservice": 0})
+        self.assertIs(graded["ordered_recovery_shown"], False)
+        self.assertFalse(evidence["ordering"]["passed"])
+        self.assertIs(experiment.summary["pair_result"]["result"]["ordered_recovery_shown"], False)
+
+    def test_run_pair_says_when_a_dependency_pair_showed_no_ordered_recovery(self):
+        from experiments.boutique.harness import multi_fault
+        from experiments.boutique.harness.multi_fault import pair_result, shop_outcome
+        from experiments.boutique.harness import scenarios
+        pair = scenarios.pair("redis-pod+cart-config")
+        stops = {"redis-cart": "DEPENDENCY_DEADLOCK", "cartservice": "DEPENDENCY_DEADLOCK"}
+        deadlock = pair_result(pair, shop=shop_outcome({"redis-cart": "REJECTED", "cartservice": "REJECTED"}, []),
+                               stops=stops, writes={})
+        ordered = pair_result(pair, shop=shop_outcome({"redis-cart": "RECOVERED", "cartservice": "RECOVERED"},
+                                                      [{"passed": True}] * 3),
+                              stops={}, writes={"redis-cart": 1, "cartservice": 1}, ordering={"passed": True})
+
+        class Finished:
+            def __init__(self, directory, **options):
+                self.directory, self.summary = Path(directory), {"provenance": {}}
+
+            def configure_approval(self, mode, operator):
+                pass
+
+            def run(self):
+                self.summary["pair_result"] = {"result": graded}
+
+            def close(self):
+                pass
+        args = SimpleNamespace(pair=pair["id"], storefront_port=8080, executor_kill=False, approval="auto-lab",
+                               operator=None)
+        for graded, noted in ((deadlock, True), (ordered, False)):
+            output = StringIO()
+            with self.subTest(result=graded["result"]), patch.object(multi_fault, "PairBoutiqueExperiment", Finished), \
+                    redirect_stdout(output):
+                self.assertEqual(multi_fault.run_pair(args, self.directory / graded["result"], tools={}), 0)
+            self.assertIs("NOTE: DEPENDENCY_DEADLOCK is not an ordered recovery" in output.getvalue(), noted)
+
+    # The Executor steps.
+
+    def lane_adapters(self, writes=0):
+        return SimpleNamespace(cluster=SimpleNamespace(stats={"write_attempts": writes}), ledger=Mock())
+
+    def executing(self, experiment, action_id):
+        experiment.store = Mock()
+        experiment.store.pending_routes.return_value = [(1,)]
+        experiment.store.route.return_value = {"action_id": action_id}
+        experiment.store.approval.return_value = {"action_id": action_id}
+        experiment.dependency_result = Mock(return_value={"status": "CLEAR"})
+        adapters = self.lane_adapters()
+        experiment.adapters = Mock(return_value=adapters)
+
+        def apply(store, bus, *, adapters):
+            adapters.cluster.stats["write_attempts"] += 1
+            return [{"action_id": action_id, "status": "APPLIED"}]
+        return adapters, apply
+
+    def test_execute_lane_requires_a_changed_payload_under_the_same_action_id_to_be_refused_without_a_write(self):
+        from experiments.boutique.harness import multi_fault
+        from services.executor.store import ActionConflict
+        proposal = {"action_id": "ACT-SHIP", "target": {"name": "shippingservice"}, "rationale": "restore"}
+
+        def repeat_write(changed, adapters):
+            adapters.cluster.stats["write_attempts"] += 1
+            raise ActionConflict("reused")
+        for execute, error in ((Mock(side_effect=ActionConflict("reused")), None),
+                               (Mock(return_value={"status": "APPLIED"}), "Changed intent .* was accepted"),
+                               (repeat_write, "A changed action ID repeated a write")):
+            experiment = self.pair("shipping-config+cart-pod")
+            adapters, apply = self.executing(experiment, "ACT-SHIP")
+            with self.subTest(error=error), experiment.acting_as("shippingservice") as lane, \
+                    patch.object(multi_fault, "process_executor_requests", side_effect=apply), \
+                    patch.object(multi_fault, "execute", side_effect=execute):
+                if error is None:
+                    experiment.execute_lane(proposal)
+                    self.assertTrue(lane["changed_payload_refused"])
+                    self.assertEqual(lane["write_attempts"], 1)
+                else:
+                    with self.assertRaisesRegex(RuntimeError, error):
+                        experiment.execute_lane(proposal)
+                    self.assertNotIn("changed_payload_refused", lane)
+                adapters.ledger.close.assert_called_once()
+
+    def test_execute_lane_kills_only_the_first_repair_of_the_configuration_target(self):
+        from experiments.boutique.harness import multi_fault
+        from services.executor.store import ActionConflict
+        experiment = self.pair("shipping-config+cart-pod", executor_kill=True)
+        adapters, apply = self.executing(experiment, "ACT-SHIP")
+        experiment.kill_and_reconcile = Mock()
+        proposal = {"action_id": "ACT-SHIP", "target": {"name": "shippingservice"}, "rationale": "restore"}
+        with experiment.acting_as("shippingservice"), \
+                patch.object(multi_fault, "process_executor_requests", side_effect=apply) as process, \
+                patch.object(multi_fault, "execute", side_effect=ActionConflict("reused")):
+            experiment.execute_lane(proposal)
+            experiment.kill_and_reconcile.assert_called_once()
+            process.assert_not_called()
+            experiment.killed = True
+            experiment.execute_lane(proposal)
+            process.assert_called_once()
+
+    def killing(self, *, returncode=73, phase="WRITE_STARTED", status="APPLIED", reconcile_writes=0, receipt_writes=1):
+        from experiments.boutique.harness import multi_fault
+        experiment = self.pair("shipping-config+cart-pod", executor_kill=True)
+        experiment.store = Mock()
+        authority = Mock()
+        authority.executor_environment.return_value = {"SENTINEL_TEST_TOKEN": "offline"}
+        experiment.approval_authority = Mock(return_value=authority)
+        adapters = self.lane_adapters(reconcile_writes)
+        experiment.adapters = Mock(return_value=adapters)
+        folder = experiment.directory / "pair-shippingservice"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "write-receipt.json").write_text(json.dumps({"stats": {"write_attempts": receipt_writes}}),
+                                                   encoding="utf-8")
+        ledger = Mock()
+        ledger.__enter__ = Mock(return_value=ledger)
+        ledger.__exit__ = Mock(return_value=False)
+        ledger.get.return_value = {"phase": phase}
+        proposal = {"action_id": "ACT-SHIP", "target": {"name": "shippingservice"}}
+        with experiment.acting_as("shippingservice") as lane, \
+                patch.object(multi_fault.subprocess, "run", return_value=SimpleNamespace(returncode=returncode)), \
+                patch.object(multi_fault, "SQLiteExecutionLedger", return_value=ledger), \
+                patch.object(multi_fault, "process_executor_requests",
+                             return_value=[{"action_id": "ACT-SHIP", "status": status}]), \
+                redirect_stdout(StringIO()):
+            experiment.kill_and_reconcile(folder, proposal)
+        return experiment, lane, adapters
+
+    def test_kill_and_reconcile_records_one_write_and_a_reconciliation_without_another(self):
+        experiment, lane, adapters = self.killing()
+        adapters.ledger.close.assert_called_once()
+        self.assertEqual(experiment.adapters.call_args.kwargs, {"coordinator": True, "reconcile_only": True})
+        self.assertEqual(experiment.summary["executor_kill"]["reconcile_writes"], 0)
+        self.assertEqual(lane["write_attempts"], 1)
+        self.assertTrue((experiment.directory / "pair-shippingservice" / "reconciliation.json").is_file())
+
+    def test_kill_and_reconcile_fails_the_run_on_any_other_boundary_or_write(self):
+        for options, error in (({"returncode": 0}, "did not stop at the intended post-write boundary"),
+                               ({"returncode": 1}, "did not stop at the intended post-write boundary"),
+                               ({"phase": "COMPLETED"}, "completed its ledger entry unexpectedly"),
+                               ({"status": "FAILED"}, "did not find the killed worker's committed write"),
+                               ({"reconcile_writes": 1}, "Reconciliation issued another write"),
+                               ({"receipt_writes": 2}, "issued more than one write")):
+            with self.subTest(**options), self.assertRaisesRegex(RuntimeError, error):
+                self.killing(**options)
+
+    # Role 6: only a recovered chaos RESTART is attributed.
+
+    def verifying(self, name, proposal, outcomes):
+        from experiments.boutique.harness import multi_fault
+        experiment = self.pair()
+        experiment.kubectl = Mock()
+        experiment.attribute = Mock()
+        ledger = Mock()
+        ledger.get.return_value = None
+        with experiment.acting_as(name), patch.object(multi_fault, "VerificationStore", return_value=ledger), \
+                patch.object(multi_fault, "process_verifier_requests", return_value=outcomes):
+            experiment.verify_lane(proposal, {"action_id": proposal["action_id"]})
+        ledger.close.assert_called_once()
+        return experiment.attribute
+
+    def test_verify_lane_attributes_only_a_recovered_restart_of_the_chaos_target(self):
+        def outcome(name, action_id, status):
+            return {"target": {"name": name}, "action_id": action_id, "status": status}
+        restart = {"action_id": "ACT-REDIS", "action": "RESTART", "target": {"name": "redis-cart"}}
+        rollback = {"action_id": "ACT-CART", "action": "ROLLBACK", "target": {"name": "cartservice"}}
+        self.verifying("redis-cart", restart, [outcome("redis-cart", "ACT-REDIS", "RECOVERED")]).assert_called_once()
+        for name, proposal, outcomes in (
+                ("redis-cart", restart, [outcome("redis-cart", "ACT-REDIS", "NOT_RECOVERED")]),
+                ("redis-cart", restart, [outcome("cartservice", "ACT-CART", "RECOVERED")]),
+                ("redis-cart", restart, []),
+                ("redis-cart", dict(restart, action="ROLLBACK"), [outcome("redis-cart", "ACT-REDIS", "RECOVERED")]),
+                ("cartservice", rollback, [outcome("cartservice", "ACT-CART", "RECOVERED")]),
+                ("cartservice", dict(rollback, action="RESTART"), [outcome("cartservice", "ACT-CART", "RECOVERED")])):
+            with self.subTest(name=name, action=proposal["action"], outcomes=outcomes):
+                self.verifying(name, proposal, outcomes).assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

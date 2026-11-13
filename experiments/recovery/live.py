@@ -195,6 +195,20 @@ class Experiment:
     def deployment(self):
         return json.loads(self.kubectl("get", "deployment", self.name, "-o", "json").stdout)
 
+    def guard_state(self, proposal):
+        """The Guard's trusted live state: the Deployment, and for a RESTART the restart history.
+
+        The history comes from this run's Executor ledger (executor.sqlite), the
+        same source the Executor's own Guard check reads under its target lock.
+        Without it the Guard cannot check the restart budget and escalates the
+        RESTART as RESTART_BUDGET_UNKNOWN.
+        """
+        state = {"cluster_id": self.cluster_id, "captured_at": utc(), "deployment": self.deployment()}
+        if proposal.get("action") == "RESTART":
+            with SQLiteExecutionLedger(self.directory / "executor.sqlite") as ledger:
+                state["restart_history"] = ledger.restart_history(proposal["target"])
+        return state
+
     def phase(self, name, scenario=None):
         """Record a lifecycle step so evidence timings are measured, not typed."""
         self.summary.setdefault("timeline", []).append({"phase": name, "at": utc(), "scenario": scenario})
@@ -238,18 +252,30 @@ class Experiment:
         save(self.directory / "allowed-targets.json", self.execution_scope())
         template = deployment["spec"]["template"]
         samples = self.health_window(template)
-        self.baseline = {"baseline_id": "BASE-LIVE-" + uuid4().hex[:12], "target": self.target,
-                         "healthy_observed_at": samples[-1]["at"], "pod_template": template,
-                         "template_sha256": fingerprint(template), "reference_versions": [],
-                         "health_evidence": {"source": self.health_source,
-                             "evidence_id": "HEALTH-" + uuid4().hex, "status": "HEALTHY",
-                             "target": self.target, "template_sha256": fingerprint(template),
-                             "window_start": samples[0]["at"], "window_end": samples[-1]["at"]}}
+        self.baseline = self.measured_baseline(template, samples)
         save(self.directory / "baseline.json", self.baseline)
         # The Executor can also read baselines keyed by target name; it refuses one for another target.
         save(self.directory / "baselines" / (self.name + ".json"), self.baseline)
         save(self.directory / "baseline-health.json", samples)
-        policy = {"policy_id": "executor-live-lab", "policy_version": "executor-live-lab-1",
+        policy = self.executor_policy()
+        save(self.directory / "policy.json", policy)
+        self.policy = policy
+        self.issue_restricted_credentials()
+        self.check("healthy baseline captured with real service samples and immutable image", image=image)
+
+    def measured_baseline(self, template, samples):
+        """The healthy baseline of self.target: its template and the health window that measured it."""
+        return {"baseline_id": "BASE-LIVE-" + uuid4().hex[:12], "target": self.target,
+                "healthy_observed_at": samples[-1]["at"], "pod_template": template,
+                "template_sha256": fingerprint(template), "reference_versions": [],
+                "health_evidence": {"source": self.health_source,
+                    "evidence_id": "HEALTH-" + uuid4().hex, "status": "HEALTHY",
+                    "target": self.target, "template_sha256": fingerprint(template),
+                    "window_start": samples[0]["at"], "window_end": samples[-1]["at"]}}
+
+    def executor_policy(self):
+        """The live Guard and Executor policy for self.target alone, with its ceilings and registries."""
+        return {"policy_id": "executor-live-lab", "policy_version": "executor-live-lab-1",
                   "profile": "live", "targets": [self.target], "allowed_actions": ["ROLLBACK"],
                   "require_operator_approval": True, "unknown_dependency_result": "ESCALATE",
                   "max_state_age_seconds": 30, "max_dependency_age_seconds": 300,
@@ -262,8 +288,9 @@ class Experiment:
                       "allowed_image_registries": self.allowed_registries, "allowed_service_accounts": [self.service_account],
                       "forbid_service_account_change": True},
                   **policy_ceilings(self.ceilings)}
-        save(self.directory / "policy.json", policy)
-        self.policy = policy
+
+    def issue_restricted_credentials(self):
+        """Apply the executor Role and write the private one-hour executor kubeconfig (never logged)."""
         self.kubectl("apply", "-f", str(self.rbac_path))
         configuration = json.loads(self.kubectl("config", "view", "--minify", "--flatten", "--raw", "-o", "json").stdout)
         cluster = configuration["clusters"][0]["cluster"]
@@ -280,7 +307,6 @@ class Experiment:
         with self.credentials.open("x", encoding="utf-8") as stream:
             _private_file(self.credentials)
             json.dump(private_config, stream)
-        self.check("healthy baseline captured with real service samples and immutable image", image=image)
 
     def execution_scope(self):
         """The Executor's independent target allowlist (allowed-targets.json); only this target by default."""
@@ -401,8 +427,7 @@ class Experiment:
             handle(proposal, self.store, self.bus)
             if self.publish_dependency_results:
                 handle(dependencies, self.store, self.bus)
-            state_reader = lambda p: {"cluster_id": self.cluster_id, "captured_at": utc(), "deployment": self.deployment()}
-            readers = dict(state_reader=state_reader, policy_reader=lambda p: self.policy,
+            readers = dict(state_reader=self.guard_state, policy_reader=lambda p: self.policy,
                            baseline_reader=lambda p: self.baseline, dependency_reader=lambda p: dependencies)
             first = process_guard_requests(self.store, self.bus, **readers)[0]
             require(first["verdict"] == "ESCALATE" and first["reason_codes"] == ["OPERATOR_APPROVAL_REQUIRED"],
@@ -595,13 +620,17 @@ class Experiment:
 
 
 def crash_worker(configuration):
-    """Test-only child process: terminate AFTER a real patch, before ledger finish."""
+    """Test-only child process: terminate AFTER a real patch, before ledger finish.
+
+    A scenario-pair run names its target's own policy file in "policy"; other
+    runs use the run's one policy.json.
+    """
     config = json.loads(Path(configuration).read_text(encoding="utf-8"))
     directory, folder = Path(config["directory"]), Path(config["folder"])
     adapters = build_adapters(context=config.get("context", RESTRICTED_CONTEXT),
         cluster_id=config.get("cluster_id", "sentinel-lab"), kubeconfig=config["credentials"],
         allowed_targets=directory / "allowed-targets.json", ledger=directory / "executor.sqlite", locks=directory / "locks",
-        policy=directory / "policy.json", dependencies=folder / "dependencies.json",
+        policy=Path(config.get("policy", directory / "policy.json")), dependencies=folder / "dependencies.json",
         **({"baselines": config["baselines"]} if "baselines" in config else
            {"baseline": directory / "baseline.json"}),
         approval_reader=executor_client_from_environment(), server_dry_run=True)

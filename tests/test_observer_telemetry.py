@@ -250,6 +250,97 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 2)
 
 
+class MetricsBridgeThresholdTests(unittest.TestCase):
+    """The metrics-server bridge feeds the existing gauge thresholds; no alert without every owned Pod."""
+
+    CPU = [{"name": "k8s.pod.cpu.usage", "unit": "cores", "above": 0.18}]
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.store = TelemetryStore(Path(temp.name) / "telemetry.sqlite")
+
+    @staticmethod
+    def two_pods(at=NOW):
+        item = observation(at)
+        other = deepcopy(item["pods"][0])
+        other["metadata"].update(name="demo-api-second", uid="pod-2")
+        item["pods"].append(other)
+        return item
+
+    @staticmethod
+    def usage(name, cpu, at=NOW):
+        container = observation()["pods"][0]["status"]["containerStatuses"][0]["name"]
+        return {"metadata": {"name": name, "namespace": "sentinel-demo"},
+                "timestamp": at.isoformat().replace("+00:00", "Z"), "window": "15s",
+                "containers": [{"name": container, "usage": {"cpu": cpu, "memory": "32Mi"}}]}
+
+    def collector(self, items, at=NOW, *, fail=False):
+        from runtime.metrics_bridge import MetricsBridgeCollector
+        from services.observer.telemetry import CorrelatedEvidenceCollector
+        base = SimpleNamespace(target={"name": "demo-api"}, collect=lambda: self.two_pods(at))
+
+        class Reader:
+            def get(self, path):
+                if fail:
+                    raise RuntimeError("metrics.k8s.io unavailable")
+                assert path == "/apis/metrics.k8s.io/v1beta1/namespaces/sentinel-demo/pods"
+                return {"items": items}
+
+        bridge = MetricsBridgeCollector(base, Reader(), self.store, service="demo-api", now=lambda: at)
+        return bridge, CorrelatedEvidenceCollector(bridge, self.store, ["demo-api"],
+                                                   {"max_age_seconds": 60, "metric_thresholds": self.CPU})
+
+    def test_alert_fires_only_when_every_owned_pod_has_a_point(self):
+        pods = self.two_pods()["pods"]
+        full = [self.usage(pods[0]["metadata"]["name"], "190m"), self.usage(pods[1]["metadata"]["name"], "5m")]
+        bridge, collector = self.collector(full)
+        telemetry = collector.collect()["telemetry"]
+        self.assertTrue(telemetry["thresholds_complete"])
+        self.assertEqual([alert["name"] for alert in telemetry["alerts"]], ["k8s.pod.cpu.usage"])
+        self.assertTrue(bridge.reports[-1]["complete"])
+
+    def test_a_missing_pod_gives_incomplete_thresholds_and_no_alert(self):
+        pods = self.two_pods()["pods"]
+        bridge, collector = self.collector([self.usage(pods[0]["metadata"]["name"], "190m")])
+        telemetry = collector.collect()["telemetry"]
+        self.assertFalse(telemetry["thresholds_complete"])
+        self.assertEqual(telemetry["alerts"], [])
+        self.assertEqual(bridge.reports[-1]["incomplete"], {pods[1]["metadata"]["name"]: "missing"})
+
+    def test_values_at_or_below_the_threshold_raise_no_alert(self):
+        pods = self.two_pods()["pods"]
+        _, collector = self.collector([self.usage(pods[0]["metadata"]["name"], "180m"),
+                                       self.usage(pods[1]["metadata"]["name"], "180000000n")])
+        telemetry = collector.collect()["telemetry"]
+        self.assertTrue(telemetry["thresholds_complete"])
+        self.assertEqual(telemetry["alerts"], [])
+
+    def test_a_failed_metrics_read_is_unknown_and_never_fails_collection(self):
+        bridge, collector = self.collector([], fail=True)
+        observation_with_context = collector.collect()
+        self.assertFalse(observation_with_context["telemetry"]["thresholds_complete"])
+        self.assertEqual(observation_with_context["telemetry"]["alerts"], [])
+        self.assertEqual(bridge.reports[-1], {"complete": False, "error": "RuntimeError",
+                                              "captured_at": observation_with_context["captured_at"]})
+
+    def test_sustained_bridged_cpu_alert_is_a_metric_only_incident_the_planner_escalates(self):
+        from services.planner.core import METRIC_ONLY_RATIONALE, metric_only, propose
+        observer, incident = Observer(POLICY), None
+        for offset in (0, 15):
+            at = NOW + timedelta(seconds=offset)
+            pods = self.two_pods(at)["pods"]
+            _, collector = self.collector([self.usage(pod["metadata"]["name"], "195m", at) for pod in pods], at)
+            incident = observer.observe(collector.collect()) or incident
+        self.assertIsNotNone(incident)
+        self.assertTrue(metric_only(incident))
+        baseline = json.loads((ROOT / "data/sentinel/samples/baseline.json").read_text())
+        baseline["target"] = incident["target"]
+        proposal = propose(incident, [baseline], lambda current: self.fail("no runbook retrieval"),
+                           lambda context: self.fail("no provider call for a metric-only incident"))
+        self.assertEqual((proposal["action"], proposal["rationale"]), ("ESCALATE", METRIC_ONLY_RATIONALE))
+
+
 class ReceiverTests(unittest.TestCase):
     def test_http_auth_json_gzip_partial_success_and_limits(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -13,7 +13,8 @@ Read these in order:
 5. [Results](results.md): tables generated from the committed evidence bundles.
 6. [Limitations](limitations.md): known limitations and open defects, each with checked citations.
 
-Use [Planner mode](planner.md), [authenticated approvals](approvals.md), [Chaos Mesh](chaos.md), [security](security.md) or
+Use [Planner mode](planner.md), [authenticated approvals](approvals.md), [Chaos Mesh](chaos.md),
+[two simultaneous faults](dual-fault.md), [security](security.md) or
 [packaging](packaging.md) only when using that optional mode. The [release process](release.md) covers
 version tags, the image scan gate and what a person must approve.
 

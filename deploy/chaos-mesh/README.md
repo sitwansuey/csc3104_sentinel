@@ -6,7 +6,7 @@
 python scripts/run_boutique_chaos.py --setup --faults network
 ```
 
-Only the dedicated `kind-sentinel-boutique-chaos` context and `sentinel-boutique-chaos` namespace can be provisioned by setup. Scenario definitions are in `experiments/boutique/scenarios/`. Existing other lab contexts can be used explicitly after installation and namespace opt-in, but setup will not rewrite them.
+Only the dedicated `kind-sentinel-boutique-chaos` context and `sentinel-boutique-chaos` namespace can be provisioned by setup. The same pinned chart and values are installed into the connected lab, install only, by `python scripts/boutique_chaos_recovery.py install` (`kind-sentinel-boutique-connected`, namespace `sentinel-boutique-connected` opted in); see [Chaos Mesh in guarded recovery](../../docs/chaos.md#chaos-mesh-in-guarded-recovery). Scenario definitions are in `experiments/boutique/scenarios/`. Existing other lab contexts can be used explicitly after installation and namespace opt-in, but setup will not rewrite them.
 
 The four-node `kind-sentinel-dist` lab (P4.01) installs the same chart version with these values through the explicit `helm upgrade --install` command in its [recipe](../../docs/distributed-acceptance.md#live-recipe); its `sentinel-dist` namespace is annotated for injection by its own manifest.
 

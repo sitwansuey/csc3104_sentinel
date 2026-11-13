@@ -1,0 +1,10 @@
+# metrics-server for the connected kind lab only (kind-sentinel-boutique-connected).
+# The chart version is pinned in experiments/boutique/harness/chaos_recovery.py, and the
+# installer refuses an image that is not pinned by digest (--set-string image.tag=<tag>@sha256:...).
+# kind's kubelets serve self-signed certificates, so this lab-only install skips kubelet TLS
+# verification. Never use these values outside the dedicated kind lab.
+image:
+  repository: registry.k8s.io/metrics-server/metrics-server
+args:
+  - --kubelet-insecure-tls
+replicas: 1

@@ -45,8 +45,8 @@ def _health_policy(policy):
         raise VerifierInputError("policy.health must be an object")
     rules = deepcopy(policy["health"])
     protocol = rules.setdefault("protocol", "http")
-    if protocol not in {"http", "grpc"}:
-        raise VerifierInputError("policy.health.protocol must be http or grpc")
+    if protocol not in {"http", "grpc", "redis"}:
+        raise VerifierInputError("policy.health.protocol must be http, grpc or redis")
     for key in ("minimum_samples", "stable_window_seconds", "max_sample_gap_seconds"):
         if type(rules.get(key)) is not int or rules[key] < 1:
             raise VerifierInputError(f"policy.health.{key} must be a positive integer")
@@ -58,6 +58,10 @@ def _health_policy(policy):
         status = rules.get("required_http_status")
         if type(status) is not int or not 100 <= status <= 599:
             raise VerifierInputError("policy.health.required_http_status must be an HTTP status")
+    elif protocol == "redis":
+        # The Redis check is a PING (P4.05: redis-cart); only the exact reply PONG is healthy.
+        if rules.get("required_redis_reply") != "PONG":
+            raise VerifierInputError("policy.health.required_redis_reply must be PONG")
     else:
         status = rules.get("required_grpc_status")
         if type(status) is not int or status != 0:
@@ -212,6 +216,10 @@ def _assess(execution, samples, policy):
             status, application_ok = sample.get("grpc_status"), sample.get("application_check_passed")
             response_complete = type(status) is int and 0 <= status <= 16 and type(application_ok) is bool
             response_healthy = status == rules["required_grpc_status"] and application_ok is True
+        elif rules["protocol"] == "redis":
+            reply = sample.get("redis_reply")
+            response_complete = isinstance(reply, str) and 0 < len(reply) <= 64
+            response_healthy = reply == rules["required_redis_reply"]
         else:
             status = sample.get("http_status")
             response_complete = type(status) is int and 100 <= status <= 599
@@ -272,6 +280,9 @@ def _assess(execution, samples, policy):
         # Only bounded measured scalars, never response bodies or collector errors.
         fields = ("http_status", "grpc_status", "application_check_passed", "ready_replicas",
                   "desired_replicas", "available_replicas")
+        if rules["protocol"] == "redis" and latest.get("redis_reply") == rules["required_redis_reply"]:
+            # A reply is shown only when it is the expected one; any other text stays out of the outcome.
+            checks[-1]["detail"] += "; latest reply PONG"
         observed = {k: latest.get(k) for k in fields if k in latest and
                     (latest[k] is None or type(latest[k]) in (int, bool))}
         checks[-1]["detail"] += "; latest reading: " + ", ".join(f"{k}={v}" for k, v in observed.items())

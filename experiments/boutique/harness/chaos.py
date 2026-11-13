@@ -22,6 +22,15 @@ KINDS = ("StressChaos", "PodChaos", "NetworkChaos", "HTTPChaos", "DNSChaos")
 CLUSTER = "sentinel-boutique-chaos"
 CONTEXT = "kind-" + CLUSTER
 CHAOS_VERSION = "2.8.2"
+CHAOS_REPOSITORY = "https://charts.chaos-mesh.org"
+# The connected Boutique lab, where Chaos Mesh faults drive guarded recovery (P4.03).
+CONNECTED_CONTEXT = "kind-sentinel-boutique-connected"
+CONNECTED_NAMESPACE = "sentinel-boutique-connected"
+# The connected lab is one kind node; a context of the right name pointing anywhere else is refused.
+CONNECTED_NODE = "sentinel-boutique-connected-control-plane"
+# Chaos Mesh only injects into namespaces that opt in with this annotation (enableFilterNamespace).
+INJECT_ANNOTATION = "chaos-mesh.org/inject=enabled"
+FORBIDDEN = "sentinel-lab"
 TRAFFIC_IMAGE = "python:3.12-alpine3.23@sha256:3d0ca66b723a0ff2a7a6e424cc2d01443e1b7c75ffcc110145f75d0f4daf6d63"
 
 
@@ -152,6 +161,49 @@ def restore_context(cluster, previous):
         cluster.command([cluster.kubectl, "config", "unset", "current-context"])
 
 
+def helm_install_argv(cluster, helm="helm"):
+    """The pinned Chaos Mesh chart with namespace filtering; an exact argument list, never a shell string."""
+    return [helm, "upgrade", "--install", "chaos-mesh", "chaos-mesh", "--repo", CHAOS_REPOSITORY,
+            "--version", CHAOS_VERSION, "--kube-context", cluster.context, "--namespace", "chaos-mesh",
+            "--create-namespace", "--values", str(ROOT / "deploy/chaos-mesh/values.yaml"), "--wait", "--timeout", "10m"]
+
+
+def require_connected(context, namespace):
+    """Chaos Mesh joins guarded recovery only in the connected lab; sentinel-lab is always refused."""
+    if not isinstance(context, str) or not isinstance(namespace, str):
+        raise ValueError("Context and namespace must be text")
+    if FORBIDDEN in context or FORBIDDEN in namespace:
+        raise ValueError("Chaos Mesh is never installed into or aimed at " + FORBIDDEN)
+    if (context, namespace) != (CONNECTED_CONTEXT, CONNECTED_NAMESPACE):
+        raise ValueError(f"Chaos recovery is limited to {CONNECTED_CONTEXT} and namespace {CONNECTED_NAMESPACE}")
+
+
+def require_connected_nodes(cluster):
+    """A read-only check that the context really reaches the connected lab: its single kind node, by name."""
+    names = [node["metadata"]["name"] for node in cluster.get("nodes")["items"]]
+    if names != [CONNECTED_NODE]:
+        raise RuntimeError(f"Context {cluster.context} does not point to the single-node connected lab "
+                           f"({CONNECTED_NODE}); nodes: {', '.join(names[:5]) or 'none'}")
+
+
+def ensure_chaos_mesh(cluster, helm="helm"):
+    """Install only: the pinned Helm chart, then the connected namespace's opt-in annotation.
+
+    It creates no cluster, deploys no workload and writes nothing else: after
+    one read of the node list, the commands are one helm upgrade --install
+    (chart 2.8.2, namespace filtering on) and one kubectl annotate of the
+    connected namespace. Any other context, and any name containing
+    sentinel-lab, is refused before a command runs; a context of the right
+    name whose nodes are not the connected lab's is refused before helm.
+    """
+    require_connected(cluster.context, cluster.namespace)
+    if not shutil.which(helm):
+        raise RuntimeError(f"Missing {helm}; install it or supply its executable path")
+    require_connected_nodes(cluster)
+    cluster.command(helm_install_argv(cluster, helm), timeout=660)
+    cluster.call("annotate", "namespace", cluster.namespace, INJECT_ANNOTATION, "--overwrite")
+
+
 def setup(cluster, kind="kind", helm="helm"):
     if (cluster.context, cluster.namespace) != (CONTEXT, CLUSTER):
         raise ValueError("--setup only provisions the dedicated sentinel-boutique-chaos lab")
@@ -170,10 +222,7 @@ def setup(cluster, kind="kind", helm="helm"):
     nodes = cluster.get("nodes")["items"]
     if [x["metadata"]["name"] for x in nodes] != [CLUSTER + "-control-plane"]:
         raise RuntimeError("Context does not point to the dedicated single-node kind lab")
-    cluster.command([helm, "upgrade", "--install", "chaos-mesh", "chaos-mesh", "--repo",
-                     "https://charts.chaos-mesh.org", "--version", CHAOS_VERSION,
-                     "--kube-context", cluster.context, "--namespace", "chaos-mesh", "--create-namespace",
-                     "--values", str(ROOT / "deploy/chaos-mesh/values.yaml"), "--wait", "--timeout", "10m"], timeout=660)
+    cluster.command(helm_install_argv(cluster, helm), timeout=660)
     if hashlib.sha256(UPSTREAM.read_bytes()).hexdigest() != UPSTREAM_SHA256:
         raise ValueError("Pinned upstream Boutique manifest checksum changed")
     text = cluster.call("create", "--dry-run=client", "--validate=false", "-f", str(UPSTREAM), "-o", "json")

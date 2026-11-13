@@ -10,6 +10,23 @@ from shared.contracts import ContractError, validate_message
 
 # Signal sources that show Pods themselves failing (not ready, crashing, killed).
 _POD_FAILURE_SOURCES = frozenset({"pod_status"})
+# Signal sources that show the workload failing: Deployment replica status or Pod status.
+_WORKLOAD_FAILURE_SOURCES = frozenset({"deployment_status", "pod_status"})
+METRIC_ALERT_SOURCE = "otel_metric_alert"
+# The fixed rationale of the metric-only rule; a code rule, never a provider, writes it.
+METRIC_ONLY_RATIONALE = ("Only metric alerts show a problem: the Deployment and its Pods report no failure, so no "
+                         "repair is justified. Decided by a code rule, not a provider. Operator review is required "
+                         "(runbook resource-saturation). No repair is authorized.")
+
+
+def metric_only(incident):
+    """True when a metric alert is the incident's only failure evidence.
+
+    Events, logs and correlated telemetry records may accompany it, but no
+    Deployment-status or Pod-status signal does: every desired Pod is ready.
+    """
+    sources = {signal["source"] for signal in incident["signals"]}
+    return METRIC_ALERT_SOURCE in sources and not sources & _WORKLOAD_FAILURE_SOURCES
 
 
 def retrieve_runbooks(incident):
@@ -21,6 +38,8 @@ def retrieve_runbooks(incident):
         selected.append("failed-rollout")
     if any(word in reasons for word in ("notready", "unhealthy", "oomkilled")):
         selected.append("pod-failure")
+    if any(signal["source"] == METRIC_ALERT_SOURCE for signal in incident["signals"]):
+        selected.append("resource-saturation")
     return [{"id": name, "content": (folder / (name + ".md")).read_text(encoding="utf-8")} for name in selected]
 
 
@@ -122,6 +141,10 @@ def propose(incident: dict, baselines: list[dict], retriever, provider, *, diagn
     live_template, when given, is a trusted read of the target's current Pod
     template. The context then says whether its configuration is unchanged from
     a suitable baseline, and only then may a provider choose RESTART.
+
+    A metric-only incident (metric_only()) is escalated by a code rule before
+    any provider call: when every Pod is ready, neither a rollback nor a restart
+    is a justified repair, whatever a provider or model would answer.
     """
     validate_message(incident)
     if incident["kind"] != "incident" or not isinstance(baselines, list):
@@ -133,9 +156,13 @@ def propose(incident: dict, baselines: list[dict], retriever, provider, *, diagn
     suitable = _eligible_baselines(incident, baselines)
     unchanged = _unchanged_baselines(suitable, live_template)
     evidence = [item["evidence_id"] for item in incident["signals"]]
-    runbooks = _retrieve(incident, retriever, diagnosis) if suitable and (
+    saturation = metric_only(incident)
+    runbooks = _retrieve(incident, retriever, diagnosis) if not saturation and suitable and (
         diagnosis is None or diagnosis.get("prediction")) else None
-    if not suitable or not runbooks or (diagnosis is not None and not diagnosis.get("prediction")):
+    if saturation:
+        answer = {"action": "ESCALATE", "parameters": {}, "rationale": METRIC_ONLY_RATIONALE,
+                  "evidence_refs": evidence}
+    elif not suitable or not runbooks or (diagnosis is not None and not diagnosis.get("prediction")):
         answer = {"action": "ESCALATE", "parameters": {},
                   "rationale": "No suitable saved healthy baseline or relevant runbook is available, or RCA abstained.",
                   "evidence_refs": evidence}

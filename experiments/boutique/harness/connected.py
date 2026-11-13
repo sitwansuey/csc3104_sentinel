@@ -7,6 +7,15 @@ overrides and the storefront impact a fault must show come from the scenario
 catalog (experiments/boutique/catalog.json). Executor permissions name exactly
 the catalog targets enabled in the connected scope (shippingservice and
 cartservice), never the whole namespace.
+
+Verification has two scopes. A single-target run keeps the shop scope: every
+other application must be ready and a real storefront checkout must pass in
+every reading. A scenario-pair run (P4.05, multi_fault.py) uses the target
+scope: a target is judged by its own probe, readiness and template and by the
+readiness of the services it calls (verification_dependencies), never by its
+callers or by an unrelated broken service, so the other fault cannot mark a
+correct repair NOT_RECOVERED. The storefront is still recorded in every
+reading, and the pair judges it separately as a ShopOutcome.
 """
 
 from copy import deepcopy
@@ -126,6 +135,17 @@ def configured_graph(manifest):
             "edges": [{"from": caller, "to": callee} for caller, callee in sorted(edges)]}
 
 
+def verification_dependencies(graph, name):
+    """The direct callees of name in the reviewed caller-to-callee graph, sorted.
+
+    A target-scope repair is judged by the target and what it calls, never by
+    its callers or by an unrelated broken service.
+    """
+    if not isinstance(graph, dict) or graph.get("edge_direction") != "caller_to_callee":
+        raise ValueError("The dependency graph must declare caller_to_callee edges")
+    return sorted({edge["to"] for edge in graph.get("edges", []) if edge.get("from") == name and edge.get("to") != name})
+
+
 def readiness(deployments, target=None):
     """Readiness of every application except the recovery target (the catalog default when None)."""
     result = {}
@@ -153,6 +173,8 @@ class ConnectedBoutiqueExperiment(BoutiqueExperiment):
     namespace = "sentinel-boutique-connected"
     restricted_context = "sentinel-executor-boutique-connected"
     health_source = "sentinel-boutique-connected-checkout"
+    # "shop" (single-target runs) or "target" (scenario pairs); see the module docstring.
+    verification_scope = "shop"
 
     def __init__(self, directory, *, storefront_port=8080):
         super().__init__(directory)
@@ -227,9 +249,22 @@ class ConnectedBoutiqueExperiment(BoutiqueExperiment):
                 time.sleep(.3)
         raise RuntimeError("Storefront forwarding did not become available")
 
+    def required_dependencies(self):
+        """The dependency names every verification reading must cover, for this run's verification scope."""
+        if self.verification_scope == "target":
+            return verification_dependencies(self.graph, self.name)
+        return sorted(APPLICATIONS - {self.name}) + ["storefront-checkout"]
+
+    def dependency_readings(self, deployments, journey):
+        """One verification reading's dependencies: what required_dependencies names, measured now."""
+        ready = readiness(deployments, self.name)
+        if self.verification_scope == "target":
+            return {name: ready.get(name) for name in self.required_dependencies()}
+        return {**ready, "storefront-checkout": journey["passed"]}
+
     def prepare(self):
         super().prepare()
-        self.policy["health"]["required_dependencies"] = sorted(APPLICATIONS - {self.name}) + ["storefront-checkout"]
+        self.policy["health"]["required_dependencies"] = self.required_dependencies()
         self.policy["health"]["max_sample_gap_seconds"] = 90
         save(self.directory / "policy.json", self.policy)
 
@@ -238,8 +273,12 @@ class ConnectedBoutiqueExperiment(BoutiqueExperiment):
         target = next(item for item in deployments if item["metadata"]["name"] == self.name)
         state = {"cluster_id": self.cluster_id, "captured_at": utc(), "deployment": target,
                  "known_health": readiness(deployments, self.name)}
-        save(self.directory / "dependency-readiness.json", state)
+        save(self.readiness_path(), state)
         return inspect_dependencies(proposal, self.graph, state, now=now())
+
+    def readiness_path(self):
+        """Where the last dependency-readiness read is kept; one file for a single-target run."""
+        return self.directory / "dependency-readiness.json"
 
     def application_inventory(self):
         # Called by the dashboard thread: no Coordinator connection or mutation.
@@ -285,7 +324,7 @@ class ConnectedBoutiqueExperiment(BoutiqueExperiment):
             deployments = json.loads(self.kubectl("get", "deployments", "-o", "json").stdout)["items"]
             target = next(item for item in deployments if item["metadata"]["name"] == self.name)
             metadata, status = target["metadata"], target.get("status", {})
-            sample["dependencies"] = {**readiness(deployments, self.name), "storefront-checkout": journey["passed"]}
+            sample["dependencies"] = self.dependency_readings(deployments, journey)
             sample["storefront"] = journey
             sample["configuration_stable"] = (sample["configuration_stable"]
                 and metadata["uid"] == execution["target"]["uid"]

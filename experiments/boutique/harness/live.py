@@ -133,8 +133,17 @@ def validate_cart(response):
     return cart
 
 
+def validate_redis(response):
+    """A Redis PING (redis-cart, P4.05) is healthy only when it answers exactly PONG."""
+    require(response == "PONG", "Redis PING did not answer PONG")
+    return response
+
+
 # Code-owned application checks; the catalog names one per target. Value: (sample key, validator).
-PROBES = {"shipping_quote": ("quote", validate_quote), "cart_round_trip": ("cart", validate_cart)}
+PROBES = {"shipping_quote": ("quote", validate_quote), "cart_round_trip": ("cart", validate_cart),
+          "redis_ping": ("redis_reply", validate_redis)}
+# The longest Redis reply a probe keeps; anything longer is not a PING answer.
+REDIS_REPLY_LIMIT = 64
 
 
 class BoutiqueExperiment(Experiment):
@@ -267,7 +276,12 @@ class BoutiqueExperiment(Experiment):
 
     def prepare(self):
         super().prepare()
-        self.policy["health"] = {
+        self.policy["health"] = self.health_rules()
+        save(self.directory / "policy.json", self.policy)
+
+    def health_rules(self):
+        """The Verifier health policy for this run's target, in its probe's protocol."""
+        rules = {
             "protocol": "grpc", "required_grpc_status": 0,
             "minimum_samples": 3, "stable_window_seconds": 10,
             "max_sample_gap_seconds": 45, "required_dependencies": [],
@@ -276,7 +290,11 @@ class BoutiqueExperiment(Experiment):
             # Callers' gRPC reconnect backoff can outlive Pod readiness; sustained health is still required afterwards.
             "convergence_grace_seconds": 150, "verification_timeout_seconds": 300,
         }
-        save(self.directory / "policy.json", self.policy)
+        if self.profile.probe["kind"] == "redis":
+            # redis-cart (P4.05): a PING must answer exactly PONG.
+            del rules["required_grpc_status"]
+            rules.update(protocol="redis", required_redis_reply="PONG")
+        return rules
 
     def dependency_result(self, proposal):
         # Reviewed single-service topology, not automatic dependency discovery.
@@ -320,21 +338,29 @@ class BoutiqueExperiment(Experiment):
             except READ_ERRORS as error:
                 skip(error)
                 continue
-            sample = {"service": self.name, "protocol": "grpc", "dependencies": {},
-                      "grpc_status": None, "application_check_passed": None}
             key, validator = PROBES[self.profile.probe["check"]]
-            try:
-                response = self.probe_response()
-                sample.update(grpc_status=0, **{key: response})
+            if self.profile.probe["kind"] == "redis":
+                # The reply itself is the evidence; the Verifier accepts only the exact PONG.
+                sample = {"service": self.name, "protocol": "redis", "dependencies": {}, "redis_reply": None}
                 try:
-                    validator(response)
-                except (AttributeError, TypeError, ValueError, RuntimeError):
-                    sample["application_check_passed"] = False
-                else:
-                    sample["application_check_passed"] = True
-            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
-                # Do not turn a timeout or unavailable probe into an invented gRPC status.
-                sample["collection_error"] = type(error).__name__
+                    sample["redis_reply"] = self.probe_response()
+                except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+                    sample["collection_error"] = type(error).__name__
+            else:
+                sample = {"service": self.name, "protocol": "grpc", "dependencies": {},
+                          "grpc_status": None, "application_check_passed": None}
+                try:
+                    response = self.probe_response()
+                    sample.update(grpc_status=0, **{key: response})
+                    try:
+                        validator(response)
+                    except (AttributeError, TypeError, ValueError, RuntimeError):
+                        sample["application_check_passed"] = False
+                    else:
+                        sample["application_check_passed"] = True
+                except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+                    # Do not turn a timeout or unavailable probe into an invented gRPC status.
+                    sample["collection_error"] = type(error).__name__
             try:
                 after = self.deployment()
             except READ_ERRORS as error:
@@ -515,7 +541,38 @@ class BoutiqueExperiment(Experiment):
     def probe_response(self):
         """The target's catalog application check, called through cluster DNS by an unprivileged client."""
         check = self.profile.probe["check"]
+        if check == "redis_ping":
+            return self.redis_response()
         return self.quote_response() if check == "shipping_quote" else self.cart_response()
+
+    def redis_probe_pod(self, name):
+        """An unprivileged redis-cli Pod that sends one PING to the target's Service.
+
+        It runs the target's own image as pinned in the measured baseline (or,
+        before the baseline exists, the live template), so nothing new is
+        pulled: imagePullPolicy stays Never.
+        """
+        template = (self.baseline or {}).get("pod_template") or self.deployment()["spec"]["template"]
+        image = scenarios.container_image(template, self.profile.container)
+        require("@sha256:" in image, "The Redis probe image must be pinned by digest")
+        container = {"name": "probe", "image": image, "imagePullPolicy": "Never",
+                     "command": ["redis-cli", "-h", self.name, "-p", str(self.profile.port), "PING"],
+                     "resources": {"requests": {"cpu": "10m", "memory": "16Mi"},
+                                   "limits": {"cpu": "100m", "memory": "64Mi"}},
+                     "securityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
+                                         "capabilities": {"drop": ["ALL"]}}}
+        spec = {"restartPolicy": "Never", "activeDeadlineSeconds": 45, "automountServiceAccountToken": False,
+                "securityContext": {"runAsNonRoot": True, "runAsUser": 1000,
+                                    "seccompProfile": {"type": "RuntimeDefault"}},
+                "containers": [container]}
+        return {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": name, "namespace": self.namespace},
+                "spec": spec}
+
+    def redis_response(self):
+        """The PING reply text, bounded; a longer or empty reply is reported as it is, never as PONG."""
+        name = self.profile.label + "-probe-" + uuid4().hex[:10]
+        return self.run_probe_pod(name, self.redis_probe_pod(name),
+                                  lambda text: text.strip()[:REDIS_REPLY_LIMIT + 1])
 
     def probe(self):
         response = self.probe_response()
@@ -538,7 +595,10 @@ class BoutiqueExperiment(Experiment):
 
     def grpc_call(self, method, request):
         name = self.profile.label + "-probe-" + uuid4().hex[:10]
-        pod = self.probe_pod(name, method, request)
+        return self.run_probe_pod(name, self.probe_pod(name, method, request), json.loads)
+
+    def run_probe_pod(self, name, pod, parse):
+        """Create one probe Pod, wait for it to finish, and parse its log; the Pod is always deleted."""
         path = self.directory / (name + ".json")
         save(path, pod)
         try:
@@ -551,8 +611,7 @@ class BoutiqueExperiment(Experiment):
                     logs = self.kubectl("logs", name, allow_failure=True)
                     require(phase == "Succeeded" and logs.returncode == 0,
                             self.profile.label.capitalize() + " RPC failed: " + logs.stdout[-500:])
-                    response = json.loads(logs.stdout)
-                    return response
+                    return parse(logs.stdout)
                 time.sleep(1)
             raise RuntimeError(self.profile.label.capitalize() + " RPC probe timed out")
         finally:
@@ -691,14 +750,39 @@ class BoutiqueExperiment(Experiment):
             index += 1
             time.sleep(2)
         # A scored run records NO_INCIDENT first. Only a scenario whose label allows
-        # no incident continues; for every current scenario this stays a failure.
+        # no incident continues (T1, and N3 as acceptable); for the others this stays a failure.
+        before = self.summary.get("scenario_result")
         if not self.no_incident(label):
+            graded = self.summary.get("scenario_result")
+            if graded is not None and graded is not before and graded.get("actual") == "NO_INCIDENT":
+                proof = graded.get("true_negative")
+                raise RuntimeError(
+                    f"No incident opened in the detection window: scenario {graded['scenario']} scored NO_INCIDENT "
+                    f"{graded['score']}"
+                    + ("" if proof is None else "; true-negative proof " + ("passed" if proof.get("passed")
+                                                                             else "failed"))
+                    + "; the run does not pass on it")
             raise RuntimeError("Role 2 did not detect the Boutique rollout failure")
         return None
 
     def no_incident(self, label):
         """Record that no incident appeared; True only when the scenario's label allows that."""
         return False
+
+
+def chaos_pass_line(scenario_id, expect, summary):
+    """The PASS line of a Chaos Mesh run: the decision actually scored, not only the outcome the run expected."""
+    graded = summary.get("scenario_result")
+    if graded and graded.get("score") != "correct":
+        outcome = f"ended in {graded['actual']}, which its label scores {graded['score']} (run expected {expect})"
+    elif graded:
+        outcome = f"reached its expected outcome ({expect}) with {graded['actual']}"
+    else:
+        outcome = f"reached its expected outcome ({expect})"
+    refused = len(summary.get("forced_refusals", []))
+    return (f"PASS: Chaos Mesh scenario {scenario_id} {outcome}; "
+            + (f"{refused} forced wrong action(s) refused with zero writes; " if refused else "")
+            + "chaos cleanup confirmed")
 
 
 def main():
@@ -711,14 +795,16 @@ def main():
                              "recovered for R1 and R2). 'escalated' passes only when planning ends "
                              "in a saved ESCALATE and NEEDS_REVIEW; the administrator then removes the fault")
     catalog_ids = scenarios.scenario_ids()
-    parser.add_argument("--target", choices=targets.target_names(), default=targets.default_target(),
-                        help="Catalog recovery target (default %(default)s). cartservice needs --connected")
+    parser.add_argument("--target", choices=targets.target_names(),
+                        help="Catalog recovery target (default " + targets.default_target()
+                             + "). cartservice needs --connected")
     parser.add_argument("--scenario", choices=catalog_ids,
                         help="Catalog scenario to inject (experiments/boutique/catalog.json). The default is the "
                              "target's primary scenario: R1, the invalid PORT, for shippingservice and C1 for "
                              "cartservice. A target's fallback scenario (C2) also runs the operator sequence; "
-                             "any other scenario (R2, N1) needs --agent --connected and is scored against its "
-                             "pre-registered expected outcome")
+                             "R2 and N1 need --agent --connected; the Chaos Mesh scenarios (N2, N3, T1) need "
+                             "--connected and plan with the code rule provider unless --agent is given. Every "
+                             "one is scored against its pre-registered expected outcome")
     parser.add_argument("--prepared-environment", type=Path, help="Trusted host-prepared packaged cluster/images; no Docker access in runtime")
     parser.add_argument("--dashboard", action="store_true", help="Serve the real UI and collect live cluster telemetry")
     parser.add_argument("--dashboard-port", type=int, default=8765, help="Loopback UI port; 0 selects a free port")
@@ -741,7 +827,18 @@ def main():
                              "approval; ui: type the action ID and approve in the dashboard (needs --ui-controls)")
     parser.add_argument("--operator", help="Operator identity for interactive or ui approval "
                                            "(default lab-operator; dashboard-operator for ui)")
+    parser.add_argument("--pair", choices=scenarios.pair_ids(),
+                        help="Inject a catalog scenario pair together on the connected lab and verify each target "
+                             "on its own (P4.05); needs --connected and plans with the code rule provider")
+    parser.add_argument("--executor-kill", action="store_true",
+                        help="With --pair: kill the Executor worker right after the configuration fault's repair "
+                             "write and reconcile it without writing again")
     args = parser.parse_args()
+    if args.executor_kill and not args.pair:
+        parser.error("--executor-kill requires --pair")
+    if args.pair:
+        return pair_main(parser, args)
+    args.target = args.target or targets.default_target()
     if args.agent_config and not args.agent:
         parser.error("--agent-config requires --agent")
     if args.expect == "escalated" and not args.agent:
@@ -755,16 +852,33 @@ def main():
     if mode_scope not in profile.scopes:
         parser.error(f"--target {args.target} is offered only in the " + ", ".join(profile.scopes)
                      + " scope; add --connected")
+    chaos_scenario = scenario["injection"]["kind"] == "chaos"
     if args.scenario not in profile.operator_scenarios:
-        # The other scenarios are scored agent decisions on the connected lab, outside the fixed UI sequence.
-        if not (args.agent and args.connected):
+        # The other scenarios are scored decisions on the connected lab, outside the fixed UI sequence.
+        if chaos_scenario and not args.connected:
+            parser.error("--scenario " + args.scenario + " (Chaos Mesh) requires --connected")
+        if not chaos_scenario and not (args.agent and args.connected):
             parser.error("--scenario " + args.scenario + " requires --agent --connected")
+    if chaos_scenario and (args.guard_rejection or args.provider_script or args.dashboard):
+        # The dashboard's end-of-run check verifies the operator walkthrough or an agent case, not a chaos run.
+        parser.error("A Chaos Mesh scenario runs its own planning, refusals and checks; drop --guard-rejection, "
+                     "--provider-script and --dashboard")
     if args.ui_controls and (args.scenario != profile.primary_scenario or args.target != targets.default_target()):
         # The dashboard's fixed lab buttons name the default target's primary fault (an invalid PORT).
         parser.error("--ui-controls runs the fixed three-step lab sequence; use the default target and scenario R1")
     expect = args.expect or scenarios.expect(scenario)
+    # A Chaos Mesh agent variant may expect an escalation that its label accepts (N2: RESTART correct,
+    # ESCALATE acceptable); the score is still recorded but does not decide the run.
+    accepted_escalation = (chaos_scenario and args.expect == "escalated"
+                           and "ESCALATE" in scenario["expected"]["acceptable"])
+    # A chaos scenario takes its outcome from the label, with or without --agent: an --expect recovered on N3 or
+    # T1 would turn a pre-registered no-repair trial into an approved repair.
+    if (chaos_scenario and args.expect and args.expect != scenarios.expect(scenario)
+            and not accepted_escalation):
+        parser.error(f"--expect {args.expect} contradicts scenario {args.scenario}'s pre-registered outcome "
+                     f"({scenario['expected']['terminal_state']})")
     if (args.agent and args.expect and args.expect != scenarios.expect(scenario)
-            and args.scenario != profile.primary_scenario):
+            and args.scenario != profile.primary_scenario and not accepted_escalation):
         parser.error(f"--expect {args.expect} contradicts scenario {args.scenario}'s pre-registered outcome "
                      f"({scenario['expected']['terminal_state']})")
     if args.agent and args.guard_rejection:
@@ -783,8 +897,9 @@ def main():
         return crash_worker(args.crash_worker)
     try:
         operator_identity(args.approval, args.operator)
-        # The rejection scenario and an expected agent escalation never ask for approval.
-        if not (args.guard_rejection or (args.agent and expect == "escalated")):
+        # The rejection scenario, an expected agent escalation and an expected chaos no-repair never ask.
+        no_repair = expect in ("escalated", "no-incident") and (args.agent or chaos_scenario)
+        if not (args.guard_rejection or no_repair):
             require_attended(args.approval)
     except ValueError as error:
         parser.error(str(error))
@@ -809,8 +924,14 @@ def main():
     if args.agent:
         from experiments.boutique.harness.agent_live import AgentPlanningMixin
         experiment_type = type("AgentBoutiqueExperiment", (AgentPlanningMixin, experiment_type), {})
+    if chaos_scenario:
+        from experiments.boutique.harness.chaos_recovery import ChaosRecoveryMixin
+        experiment_type = type("ChaosBoutiqueExperiment", (ChaosRecoveryMixin, experiment_type), {})
     experiment = experiment_type(directory, **({"storefront_port": args.storefront_port} if args.connected else {}))
     experiment.select_target(args.target)
+    if chaos_scenario:
+        experiment.agent_mode = args.agent
+        experiment.expect = expect
     if args.agent:
         experiment.agent_config = args.agent_config
         experiment.expect = expect
@@ -838,6 +959,11 @@ def main():
         experiment.approval_not_requested(
             f"no approval was requested: scenario {args.scenario}'s pre-registered correct outcome is a saved "
             "ESCALATE and NEEDS_REVIEW, which never reaches Guard approval; a proposed repair is refused unasked")
+    elif no_repair:
+        experiment.approval_not_requested(
+            f"no approval was requested: scenario {args.scenario}'s pre-registered correct outcome is "
+            + ("a saved ESCALATE and NEEDS_REVIEW" if expect == "escalated" else "no incident")
+            + "; a proposed repair is refused unasked")
     if args.prepared_environment:
         experiment.prepared = prepared_environment(args.prepared_environment)
         experiment.cluster_id = experiment.prepared["cluster_id"]
@@ -921,7 +1047,9 @@ def main():
                 experiment.credentials.unlink(missing_ok=True)
                 save(experiment.directory / "summary.json", experiment.summary)
                 signal.signal(signal.SIGTERM, previous_term)
-    print("PASS: agent planning ended in a saved ESCALATE; incident NEEDS_REVIEW with no repair"
+    print(chaos_pass_line(args.scenario, expect, experiment.summary)
+          if chaos_scenario else
+          "PASS: agent planning ended in a saved ESCALATE; incident NEEDS_REVIEW with no repair"
           if args.agent and expect == "escalated" else
           "PASS: live agent diagnosed the fault, proposed rollback, and Coordinator verified RECOVERED"
           if args.agent else
@@ -937,6 +1065,35 @@ def main():
         if graded.get("labels_pending"):
             print("WARNING: the scenario labels are not signed off; do not report this trial as scored", flush=True)
     return 0
+
+
+def pair_main(parser, args):
+    """Validate the --pair options and run the pair (experiments/boutique/harness/multi_fault.py)."""
+    if not args.connected:
+        parser.error("--pair requires --connected")
+    given = [option for option, value in (
+        ("--target", args.target), ("--scenario", args.scenario), ("--agent", args.agent),
+        ("--agent-config", args.agent_config), ("--expect", args.expect),
+        ("--prepared-environment", args.prepared_environment), ("--dashboard", args.dashboard),
+        ("--ui-controls", args.ui_controls), ("--pause-before-injection", args.pause_before_injection),
+        ("--guard-rejection", args.guard_rejection), ("--provider-script", args.provider_script),
+        ("--provider-policy", args.provider_policy), ("--crash-worker", args.crash_worker)) if value]
+    if given:
+        # The pair names its own targets and scenarios, plans by rule and has no dashboard end-of-run check.
+        parser.error("--pair runs its own targets, scenarios and checks; drop " + ", ".join(given))
+    try:
+        operator_identity(args.approval, args.operator)
+        require_attended(args.approval)  # Each of the two repairs needs an approval.
+    except ValueError as error:
+        parser.error(str(error))
+    if args.approval == "ui":
+        parser.error("--approval ui requires --dashboard --ui-controls, which a pair run does not use")
+    if not 1 <= args.storefront_port <= 65535:
+        parser.error("Storefront port must be valid")
+    from experiments.boutique.harness.multi_fault import run_pair
+    directory = args.run_dir or ROOT / "data/experimentation/runs" / (
+        "boutique-pair-" + now().strftime("%Y%m%dT%H%M%SZ-") + uuid4().hex[:6])
+    return run_pair(args, directory, tools=tool_versions(("kubectl", "kind", "docker", "helm")))
 
 
 if __name__ == "__main__":

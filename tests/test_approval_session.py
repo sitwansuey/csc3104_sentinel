@@ -171,6 +171,21 @@ class AuthorityProcessTests(AuthorityCase):
         with self.assertRaises(ValueError):
             LocalApprovalAuthority(self.run_dir, self.db, self.proposal["target"], operator=LAB_EXECUTOR)
 
+    def test_a_pair_authority_grants_exactly_its_two_targets(self):
+        other = dict(self.proposal["target"], name="cartservice", uid="cartservice-uid")
+        pair = LocalApprovalAuthority(self.run_dir / "pair", self.run_dir / "pair" / "db.sqlite",
+                                      self.proposal["target"], additional_targets=[other])
+        pair.start()
+        self.addCleanup(pair.close)
+        permissions = json.loads(pair.permissions_path.read_text(encoding="utf-8"))
+        for grants in permissions.values():
+            self.assertEqual([grant["target"] for grant in grants], [self.proposal["target"], other])
+        # A third target, a repeated target or an incomplete identity is refused before anything starts.
+        for extra in ([other, dict(other, name="paymentservice")], [dict(self.proposal["target"])],
+                      [dict(other, uid="")]):
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                LocalApprovalAuthority(self.run_dir, self.db, self.proposal["target"], additional_targets=extra)
+
     def test_reader_identities_cannot_create_or_revoke_and_tokens_do_not_cross_identities(self):
         created = InteractiveApprover(self.authority).create(
             self.proposal, self.store.action(self.proposal["action_id"])["guard_result"])

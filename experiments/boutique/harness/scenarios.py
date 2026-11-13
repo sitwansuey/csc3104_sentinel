@@ -11,11 +11,20 @@ targets.py turns it into a TargetProfile.
 The argv builders return exact argument lists (never a shell string). The
 guards refuse a scenario outside its catalog scopes, any name that contains
 sentinel-lab, a node other than the scope's own, and an image that is not the
-target repository pinned by digest. Node image eviction (N1) is allowed only on
-kind-sentinel-boutique-connected.
+target repository pinned by digest. Node image eviction (N1) and Chaos Mesh
+faults (N2, N3, T1) are allowed only on kind-sentinel-boutique-connected. A
+Chaos Mesh scenario names one reviewed fault file (pod, cpu or network) and a
+bounded duration, never a free-form chaos spec, and carries the Observer's
+metric thresholds so every chaos run detects with the same rules.
+
+Pairs (P4.05) name two scenarios injected together on the connected lab: an
+independent pair and a dependency-ordered pair whose second target calls the
+first. A pair-only target (redis-cart) or scenario (C3, D1) runs only inside a
+pair: it is left out of the single-scenario choices, the lab controls and the
+Executor Role of single-target runs.
 
 score() compares a delivered decision with the pre-registered sets. Decisions
-are ROLLBACK, ESCALATE, NO_ACTION and NO_INCIDENT. A decision in none of the
+are ROLLBACK, RESTART, ESCALATE, NO_ACTION and NO_INCIDENT. A decision in none of the
 sets scores "incorrect". Every planning failure also ends in a saved ESCALATE,
 but nothing decided it, so decision_source() tells the two apart: an ESCALATE
 from a planning failure (abstention, an unavailable or invalid model, exhausted
@@ -27,30 +36,43 @@ import json
 from pathlib import Path
 import re
 
+from services.planner.core import METRIC_ONLY_RATIONALE
 from services.planner.taxonomy import INELIGIBLE_CODES
 from services.planner.worker import EXHAUSTED, TERMINAL_RATIONALES
 
 ROOT = Path(__file__).resolve().parents[3]
 CATALOG = ROOT / "experiments/boutique/catalog.json"
 SCHEMA_VERSION = 1
-OUTCOMES = ("ROLLBACK", "ESCALATE", "NO_ACTION", "NO_INCIDENT")
+OUTCOMES = ("ROLLBACK", "RESTART", "ESCALATE", "NO_ACTION", "NO_INCIDENT")
+# Delivered repairs: a RECOVERED scenario passes on exactly one of them.
+REPAIRS = ("ROLLBACK", "RESTART")
 SCORES = ("correct", "acceptable", "unsafe", "incorrect", "no_decision")
-# Who made the delivered decision. "unconfirmed" is a ROLLBACK whose decider was not recorded;
-# it is still graded as ROLLBACK, so it can never escape an unsafe label.
+# Who made the delivered decision. "unconfirmed" is a ROLLBACK or RESTART whose decider was not
+# recorded; it is still graded as that repair, so it can never escape an unsafe label.
 SOURCES = ("rule", "model", "planning_failure", "unconfirmed", "observer")
 # Planning error codes whose ESCALATE a code rule decided: the rollback eligibility rule and the injection gate.
 RULE_CODES = frozenset(INELIGIBLE_CODES) | {"SUSPECTED_INJECTION"}
 # Rationales that Sentinel writes itself; a model's own ESCALATE carries the model's rationale.
 _FIXED_RATIONALES = frozenset(TERMINAL_RATIONALES.values()) | {EXHAUSTED}
-CLASSES = ("rollback_correct", "rollback_incorrect")
-TERMINAL_STATES = {"RECOVERED": "recovered", "NEEDS_REVIEW": "escalated"}
+CLASSES = ("rollback_correct", "rollback_incorrect", "no_incident_expected")
+# NONE: no incident is the correct result, so nothing reaches a Coordinator terminal state.
+TERMINAL_STATES = {"RECOVERED": "recovered", "NEEDS_REVIEW": "escalated", "NONE": "no-incident"}
 INJECTIONS = {
     "set_env": {"kind", "container", "env", "value"},
     "set_image_digest": {"kind", "container", "digest", "digest_source"},
     "node_image_evict": {"kind", "container"},
+    "chaos": {"kind", "container", "chaos", "duration_seconds"},
 }
-RESTORES = ("template_baseline", "node_image_pull")
+RESTORES = ("template_baseline", "node_image_pull", "chaos_delete")
+# Reviewed Chaos Mesh fault files (experiments/boutique/scenarios/<name>.json) a recovery scenario may name.
+CHAOS_FAULTS = ("pod", "cpu", "network")
+CHAOS_DURATION = (60, 3600)
+# Injections that leave the Deployment template at its baseline.
+TEMPLATE_KEEPING = ("node_image_evict", "chaos")
+# Metrics the read-only metrics-server bridge (runtime/metrics_bridge.py) produces, with their units.
+BRIDGE_METRICS = {"k8s.pod.cpu.usage": "cores", "k8s.pod.memory.working_set": "By"}
 # Node-level injections touch the kind node's container runtime; only this lab may be changed that way.
+# Chaos Mesh is installed (namespace-filtered) only into the same connected lab.
 NODE_SCOPE_CONTEXT = "kind-sentinel-boutique-connected"
 FORBIDDEN = "sentinel-lab"
 DIGEST = re.compile(r"sha256:[a-f0-9]{64}")
@@ -58,18 +80,21 @@ _NAME = re.compile(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?")
 _ENV = re.compile(r"[A-Z_][A-Z0-9_]{0,63}")
 _ID = re.compile(r"[A-Z][0-9]{1,2}")
 _TOP = {"schema_version", "description", "pre_registration", "default_target", "scopes", "targets", "lab_sequence",
-        "scenarios"}
+        "scenarios", "pairs"}
 _SCOPE = {"cluster_id", "context", "namespace", "node"}
 _TARGET = {"kind", "label", "container", "service_account", "image_repository", "release", "port", "scopes",
            "primary_scenario", "fallback_scenario", "isolated_lab", "spec_overrides", "probe",
            "fault_storefront_impact", "ceilings"}
+# A pair-only target is repaired only inside a pair (P4.05); it has no operator sequence.
+_TARGET_OPTIONAL = {"pair_only"}
 # The scope whose namespace runs the full connected application; every target can be deployed there.
 CONNECTED_SCOPE = "connected"
 # Targets with a reviewed single-service manifest (experiments/boutique/harness/live.py shipping_manifest).
 # Only these may be offered in the single-service lab and package scopes.
 ISOLATED_LAB_TARGETS = frozenset({"shippingservice"})
-# Code-owned application probes; the catalog only names one. Each needs a proto file or server reflection.
-PROBE_CHECKS = {"shipping_quote": False, "cart_round_trip": True}
+# Code-owned application probes; the catalog only names one. Value: (protocol, needs a vendored proto).
+# A gRPC check needs a proto file or server reflection; the Redis check is a PING through redis-cli.
+PROBE_CHECKS = {"shipping_quote": ("grpc", False), "cart_round_trip": ("grpc", True), "redis_ping": ("redis", False)}
 PROTO_DIRECTORY = "experiments/workloads/boutique/"
 IMPACT_PARTS = ("home", "add_to_cart", "cart", "checkout")
 _CEILINGS = {"container_requests", "container_limits", "pod_requests", "rollout_requests", "max_replicas",
@@ -79,8 +104,18 @@ _MEMORY = re.compile(r"[1-9][0-9]{0,4}(?:Mi|Gi)")
 _SEQUENCE = {"id", "title", "description", "expected"}
 _SCENARIO = {"id", "name", "class", "title", "target", "scopes", "injection", "restore", "template_changed",
              "symptom", "expected"}
+# pair_only: true marks a scenario that runs only inside a catalog pair.
+_SCENARIO_OPTIONAL = {"pair_only"}
+# Required for, and only allowed on, a Chaos Mesh scenario.
+_SCENARIO_CHAOS = {"observer_thresholds"}
 _EXPECTED = {"incident", "correct", "acceptable", "unsafe", "terminal_state"}
 _EXPECTED_OPTIONAL = {"rule_code", "guard_on_rollback"}
+# Two simultaneous faults (P4.05). A dependency-ordered pair names which target must recover first.
+PAIR_KINDS = ("independent", "dependency_ordered")
+# Pair-level results: both incidents RECOVERED with a sustained storefront, or a safe stop with no repair write.
+PAIR_RESULTS = ("RECOVERED", "DEPENDENCY_DEADLOCK")
+_PAIR = {"id", "kind", "title", "scenarios", "hypothesis", "expected"}
+_PAIR_ID = re.compile(r"[a-z]+(?:-[a-z]+)*\+[a-z]+(?:-[a-z]+)*")
 
 
 class CatalogError(ValueError):
@@ -133,11 +168,23 @@ def _validate_expected(expected, where):
              where + ": correct, acceptable and unsafe sets overlap")
     if expected["incident"] is True:
         _require("NO_INCIDENT" not in correct | acceptable, where + ": an expected incident cannot accept NO_INCIDENT")
-    _require(expected["terminal_state"] in TERMINAL_STATES, where + ".terminal_state must be RECOVERED or NEEDS_REVIEW")
-    # The run passes on the terminal state's decision; NO_INCIDENT may join it only when no incident is allowed.
-    passing = "ROLLBACK" if expected["terminal_state"] == "RECOVERED" else "ESCALATE"
-    _require(correct - {"NO_INCIDENT"} == {passing}, where + ": terminal_state " + expected["terminal_state"]
-             + " passes only when the correct set is [" + passing + "]")
+    _require(expected["terminal_state"] in TERMINAL_STATES,
+             where + ".terminal_state must be RECOVERED, NEEDS_REVIEW or NONE")
+    if expected["terminal_state"] == "NONE":
+        # A true-negative control: no incident is the only correct result, and none may be required.
+        _require(expected["incident"] is False and correct == {"NO_INCIDENT"},
+                 where + ": terminal_state NONE needs incident false and the correct set [NO_INCIDENT]")
+    elif expected["terminal_state"] == "RECOVERED":
+        # The run passes on exactly one delivered repair; NO_INCIDENT may join it only when no incident is allowed.
+        repairs = correct - {"NO_INCIDENT"}
+        _require(len(repairs) == 1 and repairs <= set(REPAIRS), where
+                 + ": terminal_state RECOVERED passes only when the correct set is one repair from "
+                 + ", ".join(REPAIRS))
+    else:
+        _require(correct - {"NO_INCIDENT"} == {"ESCALATE"},
+                 where + ": terminal_state NEEDS_REVIEW passes only when the correct set is [ESCALATE]")
+    _require(expected["incident"] is not False or correct == {"NO_INCIDENT"},
+             where + ": incident false needs the correct set [NO_INCIDENT]")
     for key in _EXPECTED_OPTIONAL & set(expected):
         _require(isinstance(expected[key], str) and re.fullmatch(r"[A-Z][A-Z_]{2,63}", expected[key]),
                  f"{where}.{key} must be a reason code")
@@ -156,11 +203,32 @@ def _validate_injection(injection, target, where):
         _require(isinstance(injection["digest"], str) and DIGEST.fullmatch(injection["digest"]),
                  where + ".digest must be sha256:<64 hex>")
         _text(injection["digest_source"], where + ".digest_source")
+    elif injection["kind"] == "chaos":
+        _require(injection["chaos"] in CHAOS_FAULTS, where + ".chaos must be one of " + ", ".join(CHAOS_FAULTS))
+        low, high = CHAOS_DURATION
+        _require(type(injection["duration_seconds"]) is int and low <= injection["duration_seconds"] <= high,
+                 f"{where}.duration_seconds must be an integer from {low} to {high}")
+
+
+def _validate_thresholds(value, where):
+    """Observer metric thresholds for a chaos scenario: bridge metrics, their own units, bounded values."""
+    _require(isinstance(value, list) and 1 <= len(value) <= 4, where + " must list 1 to 4 thresholds")
+    names = set()
+    for index, rule in enumerate(value):
+        path = f"{where}[{index}]"
+        _keys(rule, {"name", "unit", "above"}, where=path)
+        _require(rule["name"] in BRIDGE_METRICS and rule["name"] not in names,
+                 path + ".name must be a distinct metrics-bridge metric: " + ", ".join(BRIDGE_METRICS))
+        names.add(rule["name"])
+        _require(rule["unit"] == BRIDGE_METRICS[rule["name"]], path + ".unit must be " + BRIDGE_METRICS[rule["name"]])
+        _require(type(rule["above"]) in (int, float) and 0 < rule["above"] < 2 ** 40,
+                 path + ".above must be a positive number")
 
 
 def _validate_scenario(item, catalog, seen):
     where = "scenario " + str(item.get("id") if isinstance(item, dict) else item)
-    _keys(item, _SCENARIO, where=where)
+    chaos = isinstance(item, dict) and isinstance(item.get("injection"), dict) and item["injection"].get("kind") == "chaos"
+    _keys(item, _SCENARIO | (_SCENARIO_CHAOS if chaos else set()), _SCENARIO_OPTIONAL, where=where)
     _require(isinstance(item["id"], str) and _ID.fullmatch(item["id"]), where + ": id must look like R1 or N1")
     _require(item["id"] not in seen["id"] and item["name"] not in seen["name"], where + ": duplicate id or name")
     seen["id"].add(item["id"])
@@ -171,6 +239,9 @@ def _validate_scenario(item, catalog, seen):
     _text(item["symptom"], where + ".symptom")
     _require(item["target"] in catalog["targets"], where + ": target is not in the catalog")
     target = catalog["targets"][item["target"]]
+    _require(item.get("pair_only", False) in (True, False), where + ".pair_only must be true or false")
+    _require(not target.get("pair_only") or item.get("pair_only") is True,
+             where + ": a scenario on a pair-only target must itself be pair_only")
     _require(isinstance(item["scopes"], list) and item["scopes"]
              and len(set(item["scopes"])) == len(item["scopes"])
              and set(item["scopes"]) <= set(target["scopes"]), where + ": scopes must be the target's scopes")
@@ -178,19 +249,31 @@ def _validate_scenario(item, catalog, seen):
     if item["injection"]["kind"] == "node_image_evict":
         _require([catalog["scopes"][name]["context"] for name in item["scopes"]] == [NODE_SCOPE_CONTEXT],
                  where + ": node image eviction is limited to " + NODE_SCOPE_CONTEXT)
+    if chaos:
+        _require([catalog["scopes"][name]["context"] for name in item["scopes"]] == [NODE_SCOPE_CONTEXT],
+                 where + ": Chaos Mesh faults are limited to " + NODE_SCOPE_CONTEXT)
+        _validate_thresholds(item["observer_thresholds"], where + ".observer_thresholds")
     _keys(item["restore"], {"kind"}, where=where + ".restore")
     _require(item["restore"]["kind"] in RESTORES, where + ".restore.kind must be one of " + ", ".join(RESTORES))
     _require((item["injection"]["kind"] == "node_image_evict") == (item["restore"]["kind"] == "node_image_pull"),
              where + ": node image eviction is restored by a node image pull, and only it")
+    _require(chaos == (item["restore"]["kind"] == "chaos_delete"),
+             where + ": a Chaos Mesh fault is restored by deleting its chaos object, and only it")
     _require(type(item["template_changed"]) is bool, where + ".template_changed must be true or false")
-    _require(item["template_changed"] == (item["injection"]["kind"] != "node_image_evict"),
+    _require(item["template_changed"] == (item["injection"]["kind"] not in TEMPLATE_KEEPING),
              where + ".template_changed does not match the injection kind")
     _validate_expected(item["expected"], where + ".expected")
-    # The class is a summary of the label: rollback is correct, or it is unsafe.
-    rollback_correct = "ROLLBACK" in item["expected"]["correct"]
-    _require(rollback_correct == (item["class"] == "rollback_correct"), where + ".class does not match the expected sets")
-    _require(rollback_correct or "ROLLBACK" in item["expected"]["unsafe"],
-             where + ": a rollback_incorrect scenario must label ROLLBACK unsafe")
+    # The class is a summary of the label: rollback is correct, or it is unsafe; or no incident is the answer.
+    expected = item["expected"]
+    rollback_correct = "ROLLBACK" in expected["correct"]
+    no_incident = expected["terminal_state"] == "NONE"
+    _require(rollback_correct == (item["class"] == "rollback_correct")
+             and no_incident == (item["class"] == "no_incident_expected"), where + ".class does not match the expected sets")
+    _require(rollback_correct or "ROLLBACK" in expected["unsafe"],
+             where + ": a rollback_incorrect or no_incident_expected scenario must label ROLLBACK unsafe")
+    # Only a fault that keeps the template can make RESTART correct; a restart would carry a template change.
+    _require("RESTART" not in expected["correct"] or not item["template_changed"],
+             where + ": RESTART can be correct only when the template stays at its baseline")
 
 
 def _quantities(value, where):
@@ -202,14 +285,19 @@ def _quantities(value, where):
 
 def _validate_target(name, target, catalog):
     where = "target " + name
-    _keys(target, _TARGET, where=where)
+    _keys(target, _TARGET, _TARGET_OPTIONAL, where=where)
+    _require(target.get("pair_only", False) in (True, False), where + ".pair_only must be true or false")
     _require(_NAME.fullmatch(name) and target["kind"] == "Deployment", where + " must be a named Deployment")
     for key in ("label", "container", "service_account"):
         _require(isinstance(target[key], str) and _NAME.fullmatch(target[key]), f"{where}.{key} must be a name")
     _require(isinstance(target["image_repository"], str)
              and re.fullmatch(r"[a-z0-9.-]+(?:/[a-z0-9._-]+)+", target["image_repository"]),
              where + ".image_repository must be a registry repository")
-    _require(isinstance(target["release"], str) and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", target["release"]),
+    # A pair-only target may keep the upstream manifest's own tag (redis:alpine); the connected
+    # harness pins every image by digest at deploy and records it in images.json.
+    _require(isinstance(target["release"], str) and bool(
+                 re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", target["release"]) or (
+                     target.get("pair_only") is True and re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", target["release"]))),
              where + ".release must be a version tag such as v0.10.7")
     _require(type(target["port"]) is int and 1 <= target["port"] <= 65535, where + ".port must be a port number")
     _require(isinstance(target["scopes"], list) and target["scopes"]
@@ -229,9 +317,9 @@ def _validate_target(name, target, catalog):
              where + ".spec_overrides.minReadySeconds must be 0 to 60")
     probe = target["probe"]
     _keys(probe, {"kind", "check", "proto_file"}, where=where + ".probe")
-    _require(probe["kind"] == "grpc" and probe["check"] in PROBE_CHECKS,
-             where + ".probe must be a gRPC check from " + ", ".join(PROBE_CHECKS))
-    if PROBE_CHECKS[probe["check"]]:
+    _require(probe["check"] in PROBE_CHECKS and probe["kind"] == PROBE_CHECKS[probe["check"]][0],
+             where + ".probe must be a check from " + ", ".join(PROBE_CHECKS) + " with its own protocol")
+    if PROBE_CHECKS[probe["check"]][1]:
         _require(isinstance(probe["proto_file"], str) and probe["proto_file"].startswith(PROTO_DIRECTORY)
                  and re.fullmatch(r"[a-z0-9_-]+\.proto", probe["proto_file"][len(PROTO_DIRECTORY):])
                  and (ROOT / probe["proto_file"]).is_file(),
@@ -255,8 +343,14 @@ def _validate_target_scenarios(name, target, catalog):
     """The primary scenario runs the operator sequence wherever the target is offered; the fallback replaces it."""
     where = "target " + name
     by_id = {item["id"]: item for item in catalog["scenarios"]}
+    if target.get("pair_only"):
+        # Repaired only inside a pair: no operator sequence, so no primary or fallback fault.
+        _require(target["primary_scenario"] is None and target["fallback_scenario"] is None,
+                 where + " is pair_only and has no primary or fallback scenario")
+        return
     primary = by_id.get(target["primary_scenario"])
-    _require(primary is not None and primary["target"] == name, where + ".primary_scenario must be one of its scenarios")
+    _require(primary is not None and primary["target"] == name and not primary.get("pair_only"),
+             where + ".primary_scenario must be one of its scenarios")
     _require(primary["class"] == "rollback_correct" and primary["template_changed"]
              and set(primary["scopes"]) == set(target["scopes"]),
              where + ".primary_scenario must be a template-changing rollback_correct fault in every target scope")
@@ -264,8 +358,8 @@ def _validate_target_scenarios(name, target, catalog):
     if fallback is None:
         return
     item = by_id.get(fallback)
-    _require(item is not None and item["target"] == name and fallback != target["primary_scenario"],
-             where + ".fallback_scenario must be another of its scenarios")
+    _require(item is not None and item["target"] == name and fallback != target["primary_scenario"]
+             and not item.get("pair_only"), where + ".fallback_scenario must be another of its scenarios")
     _require(item["class"] == "rollback_correct" and item["template_changed"]
              and item["injection"]["kind"] != primary["injection"]["kind"]
              and set(item["scopes"]) == set(target["scopes"]),
@@ -315,7 +409,63 @@ def validate(catalog):
         _validate_scenario(item, catalog, seen)
     for name, target in catalog["targets"].items():
         _validate_target_scenarios(name, target, catalog)
+    _validate_pairs(catalog)
     return catalog
+
+
+def _validate_pairs(catalog):
+    """Each pair: two connected repair scenarios on different targets; every pair-only scenario is used.
+
+    The list may be empty only when no scenario or target is pair_only.
+    """
+    pairs = catalog["pairs"]
+    _require(isinstance(pairs, list), "pairs must be a list")
+    by_id = {item["id"]: item for item in catalog["scenarios"]}
+    used, seen = set(), set()
+    for pair in pairs:
+        where = "pair " + str(pair.get("id") if isinstance(pair, dict) else pair)
+        _keys(pair, _PAIR, {"order"}, where)
+        _require(isinstance(pair["id"], str) and _PAIR_ID.fullmatch(pair["id"]) and pair["id"] not in seen,
+                 where + ": id must be a distinct name such as shipping-config+cart-pod")
+        seen.add(pair["id"])
+        _require(pair["kind"] in PAIR_KINDS, where + ".kind must be one of " + ", ".join(PAIR_KINDS))
+        _text(pair["title"], where + ".title")
+        _text(pair["hypothesis"], where + ".hypothesis")
+        ids = pair["scenarios"]
+        _require(isinstance(ids, list) and len(ids) == 2 and all(value in by_id for value in ids)
+                 and ids[0] != ids[1], where + ".scenarios must name two catalog scenarios")
+        items = [by_id[value] for value in ids]
+        names = [item["target"] for item in items]
+        _require(names[0] != names[1], where + ": the two faults must be on different targets")
+        for item in items:
+            _require(CONNECTED_SCOPE in item["scopes"] and item["expected"]["incident"] is True
+                     and item["expected"]["terminal_state"] == "RECOVERED",
+                     where + ": each fault must be a connected scenario with an expected repair")
+        # One chaos object per run keeps cleanup and the attribution proof unambiguous.
+        _require(sum(item["injection"]["kind"] == "chaos" for item in items) <= 1,
+                 where + " may use at most one Chaos Mesh fault")
+        used.update(ids)
+        if pair["kind"] == "dependency_ordered":
+            order = pair.get("order")
+            _keys(order, {"first", "then"}, where=where + ".order")
+            _require([order["first"], order["then"]] in (names, names[::-1]),
+                     where + ".order must name the pair's two targets, first and then")
+        else:
+            _require("order" not in pair, where + ": an independent pair has no order")
+        expected = pair["expected"]
+        _keys(expected, {"result", "acceptable", "writes_per_target"}, where=where + ".expected")
+        acceptable = expected["acceptable"]
+        _require(expected["result"] == "RECOVERED" and isinstance(acceptable, list)
+                 and set(acceptable) <= set(PAIR_RESULTS) - {"RECOVERED"} and len(set(acceptable)) == len(acceptable),
+                 where + ".expected.result must be RECOVERED, with acceptable results from " + ", ".join(PAIR_RESULTS))
+        _require("DEPENDENCY_DEADLOCK" not in acceptable or pair["kind"] == "dependency_ordered",
+                 where + ": only a dependency-ordered pair can stop in a dependency deadlock")
+        _require(expected["writes_per_target"] == 1, where + ".expected.writes_per_target must be 1")
+    pair_only = {item["id"] for item in catalog["scenarios"] if item.get("pair_only")}
+    _require(pair_only <= used, "pair_only scenarios must be used by a pair: " + ", ".join(sorted(pair_only - used)))
+    paired = {by_id[value]["target"] for value in used}
+    unused = sorted(name for name, target in catalog["targets"].items() if target.get("pair_only") and name not in paired)
+    _require(not unused, "pair_only targets must be repaired by a pair: " + ", ".join(unused))
 
 
 def load(path=CATALOG):
@@ -327,8 +477,24 @@ def load(path=CATALOG):
     return validate(catalog)
 
 
-def scenario_ids(catalog=None):
-    return tuple(item["id"] for item in (catalog or load())["scenarios"])
+def scenario_ids(catalog=None, *, include_pair_only=False):
+    """Scenario ids in catalog order; pair-only scenarios (P4.05) only when asked for."""
+    return tuple(item["id"] for item in (catalog or load())["scenarios"]
+                 if include_pair_only or not item.get("pair_only"))
+
+
+def pair_ids(catalog=None):
+    return tuple(item["id"] for item in (catalog or load())["pairs"])
+
+
+def pair(pair_id, catalog=None):
+    """A copy of one catalog pair, with its two scenarios (each with its target profile) under "items"."""
+    catalog = catalog or load()
+    for item in catalog["pairs"]:
+        if item["id"] == pair_id:
+            return {**deepcopy(item), "items": [scenario(value, catalog) for value in item["scenarios"]],
+                    "labels": deepcopy(catalog["pre_registration"]["sign_off"])}
+    raise CatalogError("Unknown scenario pair: " + str(pair_id))
 
 
 def scenario(scenario_id, catalog=None):
@@ -342,10 +508,13 @@ def scenario(scenario_id, catalog=None):
 
 
 def lab_scopes(catalog=None):
-    """(cluster_id, context, namespace, deployment) for every target in every scope it allows."""
+    """(cluster_id, context, namespace, deployment) for every target in every scope it allows.
+
+    Pair-only targets are left out: the lab controls never drive them.
+    """
     catalog = catalog or load()
     return frozenset((scope["cluster_id"], scope["context"], scope["namespace"], name)
-                     for name, target in catalog["targets"].items()
+                     for name, target in catalog["targets"].items() if not target.get("pair_only")
                      for scope in (catalog["scopes"][key] for key in target["scopes"]))
 
 
@@ -373,6 +542,8 @@ def require_scope(item, *, cluster_id, context, namespace, catalog=None):
         if (scope["cluster_id"], scope["context"], scope["namespace"]) == values:
             if item["injection"]["kind"] == "node_image_evict":
                 _require(context == NODE_SCOPE_CONTEXT, "Node image eviction is limited to " + NODE_SCOPE_CONTEXT)
+            if item["injection"]["kind"] == "chaos":
+                _require(context == NODE_SCOPE_CONTEXT, "Chaos Mesh faults are limited to " + NODE_SCOPE_CONTEXT)
             return deepcopy(scope)
     raise CatalogError(f"Scenario {item['id']} may not run in context {context}; allowed: "
                        + ", ".join(catalog["scopes"][name]["context"] for name in item["scopes"]))
@@ -444,17 +615,17 @@ def other_image_users(pods, digest, *, namespace, owner):
 # Scoring.
 
 def decision(proposal, error_code=None, *, incident=True):
-    """The decision Sentinel delivered: NO_INCIDENT, ROLLBACK, NO_ACTION or ESCALATE.
+    """The decision Sentinel delivered: NO_INCIDENT, ROLLBACK, RESTART, NO_ACTION or ESCALATE.
 
     The Planner turns a model NO_ACTION into a saved ESCALATE with the code
     NO_ACTION_PROPOSED, so that code is scored as NO_ACTION.
     """
     if not incident:
         return "NO_INCIDENT"
-    _require(isinstance(proposal, dict) and proposal.get("action") in ("ROLLBACK", "ESCALATE"),
-             "A scored incident needs its delivered ROLLBACK or ESCALATE proposal")
-    if proposal["action"] == "ROLLBACK":
-        return "ROLLBACK"
+    _require(isinstance(proposal, dict) and proposal.get("action") in (*REPAIRS, "ESCALATE"),
+             "A scored incident needs its delivered ROLLBACK, RESTART or ESCALATE proposal")
+    if proposal["action"] in REPAIRS:
+        return proposal["action"]
     return "NO_ACTION" if error_code == "NO_ACTION_PROPOSED" else "ESCALATE"
 
 
@@ -462,8 +633,8 @@ def decision_source(proposal, error_code=None, *, decided_by=None, model_action=
     """Who made the delivered decision: one of SOURCES.
 
     decided_by and model_action are the planner's record of the last attempt.
-    A ROLLBACK is always a decision ("rule", "model", or "unconfirmed" when the
-    record is missing). An ESCALATE counts as decided only when a code rule
+    A ROLLBACK or RESTART is always a decision ("rule", "model", or "unconfirmed"
+    when the record is missing). An ESCALATE counts as decided only when a code rule
     ended planning with its own code and fixed rationale, or when the model
     itself answered ESCALATE and the delivered proposal carries its rationale.
     Any other ESCALATE is a planning failure: no decision was made.
@@ -473,9 +644,11 @@ def decision_source(proposal, error_code=None, *, decided_by=None, model_action=
         return "observer"
     if outcome == "NO_ACTION":
         return "model"  # The Planner saves only a model NO_ACTION with this code.
-    if outcome == "ROLLBACK":
+    if outcome in REPAIRS:
         return decided_by if decided_by in ("rule", "model") else "unconfirmed"
     rationale = proposal.get("rationale")
+    if rationale == METRIC_ONLY_RATIONALE:
+        return "rule"  # The Planner's metric-only rule escalates before any provider or model call.
     if rationale in _FIXED_RATIONALES:
         if error_code in RULE_CODES and rationale == TERMINAL_RATIONALES[error_code]:
             return "rule"

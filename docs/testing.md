@@ -298,7 +298,29 @@ competition/replay checks must pass as well. Inspect the printed run's summary,
 dashboard validation and teardown files. Do not infer recovery from fixture results.
 
 Chaos Mesh has its own [injection demonstration](chaos.md), not automatic
-guarded repair.
+guarded repair. Separately, the catalog's Chaos Mesh scenarios N2 (pod
+failure, RESTART correct), N3 (CPU stress, ESCALATE correct) and T1 (network
+delay, no incident correct) drive guarded recovery in the connected lab, with
+an attribution proof, forced wrong actions refused with zero writes and a
+true-negative proof. They are tested offline only; the install, spikes and
+trials are in [Chaos Mesh in guarded recovery](chaos.md#chaos-mesh-in-guarded-recovery),
+and the labels need sign-off before a scored trial.
+
+Two simultaneous faults (P4.05) run as catalog pairs with `--pair`: an
+independent pair (shipping PORT rollout and cart pod failure) and a
+dependency-ordered pair (redis-cart pod failure and a cart REDIS_ADDR
+rollout). Each target is verified by its own probe and callees, and the
+storefront is judged separately as a ShopOutcome. The offline checks are
+`tests/test_overlapping_recovery.py`, `tests/test_dependency_revalidation.py`,
+`tests/test_coordinator.py` (`CrossIncidentTests`) and
+`tests/test_boutique_connected.py` (including `PairVerdictTests`, which fail
+the harness's verdict on a cross-incident transition, an early cart ALLOW,
+unexpected write counts, an accepted changed payload and a reconciliation
+that writes). The offline ordered recovery of the dependency-ordered pair
+uses a cart that stays Ready; with the faulted cart NotReady, as in the live
+C1 runs, the Guard blocks both repairs and the pair stops with
+DEPENDENCY_DEADLOCK and no write. The live recipe, not yet run, is in
+[Two simultaneous faults](dual-fault.md#live-recipe-not-yet-run).
 
 ## Agent-mode acceptance
 
@@ -371,7 +393,7 @@ kind delete cluster --name sentinel-boutique-connected
 The order is fixed (R1, R2, N1 in each round), not shuffled. For N1 the
 launcher asks for no approval: its correct outcome never reaches Guard
 approval. Each agent run writes `scenario-result.json`: the expected sets, the
-actual decision (`ROLLBACK`, `ESCALATE`, `NO_ACTION` or `NO_INCIDENT`), who
+actual decision (`ROLLBACK`, `RESTART`, `ESCALATE`, `NO_ACTION` or `NO_INCIDENT`), who
 made it (`decision_source`: `rule`, `model`, `planning_failure`, or
 `observer` for no incident), its score (`correct`, `acceptable`, `unsafe`,
 `incorrect` when it is in no set, or `no_decision`), the Guard verdict, and

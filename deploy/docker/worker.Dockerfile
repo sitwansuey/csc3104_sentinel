@@ -51,7 +51,7 @@ COPY data/sentinel/samples/rca-config.json data/sentinel/samples/rca-config.json
 # Agent mode exports Observer snapshots with the harness's exporter; only that module chain is copied.
 COPY experiments/__init__.py experiments/
 COPY experiments/boutique/__init__.py experiments/boutique/
-COPY experiments/boutique/harness/__init__.py experiments/boutique/harness/agent_live.py experiments/boutique/harness/durable_case.py experiments/boutique/harness/scenarios.py experiments/boutique/harness/targets.py experiments/boutique/harness/
+COPY experiments/boutique/harness/__init__.py experiments/boutique/harness/agent_live.py experiments/boutique/harness/durable_case.py experiments/boutique/harness/scenarios.py experiments/boutique/harness/scoring.py experiments/boutique/harness/targets.py experiments/boutique/harness/
 COPY experiments/recovery/__init__.py experiments/recovery/live.py experiments/recovery/
 # State lives only in /data (mount a volume there); /tmp is the only other path written, so the
 # root filesystem can be read-only. The runtime needs no shell or BusyBox, so both are removed.

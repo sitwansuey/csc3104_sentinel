@@ -17,7 +17,13 @@ if ($Expect -ne 'recovered' -and -not $Agent) { throw '-Expect escalated require
 # Fail fast before any cluster setup; the harness applies the same catalog rules (experiments/boutique/catalog.json).
 $operatorScenarios = @{shippingservice = @('R1'); cartservice = @('C1', 'C2')}
 if ($Target -ne 'shippingservice' -and -not $Connected) { throw "-Target $Target requires -Connected." }
-if ($Scenario -and $operatorScenarios[$Target] -notcontains $Scenario -and -not ($Agent -and $Connected)) { throw "-Scenario $Scenario requires -Agent -Connected." }
+# Chaos Mesh scenarios plan with the code rule provider unless -Agent is given; they still need -Connected.
+$chaosScenarios = @('N2', 'N3', 'T1')
+if ($Scenario -and $chaosScenarios -contains $Scenario -and -not $Connected) { throw "-Scenario $Scenario (Chaos Mesh) requires -Connected." }
+# A Chaos Mesh scenario takes its expected outcome from its catalog label. Only -Agent -Expect escalated may be given;
+# the harness then refuses it unless the label accepts ESCALATE (N2) or names it (N3).
+if ($Scenario -and $chaosScenarios -contains $Scenario -and $PSBoundParameters.ContainsKey('Expect') -and $Expect -ne 'escalated') { throw "-Scenario $Scenario (Chaos Mesh) takes its expected outcome from the catalog; drop -Expect $Expect." }
+if ($Scenario -and $operatorScenarios[$Target] -notcontains $Scenario -and $chaosScenarios -notcontains $Scenario -and -not ($Agent -and $Connected)) { throw "-Scenario $Scenario requires -Agent -Connected." }
 if ($Agent -and $GuardRejection) { throw '-Agent and -GuardRejection are separate scenarios.' }
 if ($Agent -and $ProviderScript) { throw '-Agent and -ProviderScript are separate planning modes.' }
 if ($UIControls -and (-not $Dashboard -or $PauseBeforeInjection)) { throw '-UIControls requires -Dashboard and replaces -PauseBeforeInjection.' }

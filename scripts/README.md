@@ -5,6 +5,9 @@ Use `install-dependencies.ps1` and `test-boutique-live.ps1` on Windows, or
 workflow is documented once in [run and observe](../docs/run.md).
 
 `test_boutique_live.py` and `test_executor_live.py` are thin supported launchers.
+`boutique_chaos_recovery.py` is the thin launcher that installs Chaos Mesh and
+metrics-server into the connected lab, or runs its read-only preflight
+([Chaos Mesh in guarded recovery](../docs/chaos.md#chaos-mesh-in-guarded-recovery)).
 Implementation belongs in `experiments/`, not additional copies in `scripts/`.
 `validation/` contains specialised opt-in live checks; `security/` contains
 optional protected-workload/scan tools. Deterministic developer demonstrations

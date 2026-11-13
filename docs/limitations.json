@@ -77,7 +77,7 @@
       "impact": "Fixed in code: agent planning now runs through prepare() and the PlannerStore journal. A model failure is retried up to three times; an abstention, a diagnosis of another component, a NO_ACTION answer or a target changed during inference ends at once. Every failure ends in a saved, delivered ESCALATE, so the incident moves to NEEDS_REVIEW, and a saved proposal replays without another model call. Still open: the planning budget applies per attempt, so one incident can use three budgets. The remote Planner worker now has an agent mode with the same hooks and journal (P3.07), tested offline only, as one OS process on one host with a fake model server. That ESCALATE guarantee covers only failures after a passed model preflight. In remote agent mode a model that is unreachable when the worker is about to claim never starts an attempt: there is no retry and no exhausted ESCALATE, and the incident stays OPEN (not NEEDS_REVIEW), its request unclaimed, until a ready agent Planner claims it. An outage that starts inside a cached preflight window (30 s by default) may use up attempts and escalate, or leave the incident OPEN once the cached check expires; which one happens depends on timing. Saved results are still re-sent while the model is down, except a proposal saved only in the Planner journal before the worker stopped, which waits for the next passed preflight. No bounded escalation for a long model outage exists (for example a Coordinator-side planning timeout); adding one is an owner decision. Verified live on one host for the harness agent mode's failure paths: from 4139385 every failed agent run ended in a saved, delivered ESCALATE with the incident in NEEDS_REVIEW and zero Executor writes, and each bundle's planning-status.json records the attempts, the error code and delivered 1. These are an off-target diagnosis at 4139385 (DIAGNOSIS_OFF_TARGET, C-AGENT-AUTOLAB-4139385), a forced 1 s planning budget that escalated BUDGET_EXCEEDED after three attempts (C-AGENT-FORCED-ESCALATION) and two abstentions at 870aa7d (C-SCENARIO-LIVE-UNSCORED). The retry after a failed model call also ran live in two passing runs: in boutique-live-20261111t221204z-602449 (C-AGENT-AUTOLAB-4139385) the Analyzer's call and in N1 at dab3b3f (boutique-live-20261112t080756z-29fd09, C-SCENARIO-LIVE-UNSCORED) the Reporter's call failed in attempt 1 after about 45 s and 2048 output tokens, and attempt 2 completed, reaching RECOVERED and the expected rule escalation respectively; each planning-status.json records 2 attempts. A lost delivery replayed after a restart has not been exercised live. Agent bundles before 4139385 predate the journal, so those failed runs left the incident OPEN.",
       "workaround": "For runs recorded before this change, read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:257", "text": "state = run_durable_case(self, incident"},
+        {"at": "experiments/boutique/harness/agent_live.py:258", "text": "state = run_durable_case(self, incident"},
         {"at": "services/planner/worker.py:167", "text": "raise PlanningError(\"ABSTAINED\", terminal=True)"},
         {"at": "services/planner/worker.py:181", "text": "proposal = _rebound(proposal, finalize)"},
         {"at": "tests/test_agent_journal.py:202", "text": "def test_unavailable_model_retries_with_backoff_across_restart_then_escalates"},
@@ -107,17 +107,17 @@
       "impact": "Fixed in code for the four live harness paths: the Executor experiment, Boutique walkthrough, provider mode and agent mode now create approvals through the authenticated approval API, served per run by a child process with generated tokens, and the Executor's final pre-write lookup reads them through ApprovalClient. Revocation, expiry or a stopped authority therefore fails closed with zero writes, and agent mode no longer records a pre-authorised approval. An interactive run needs a person to type the exact action ID; an unattended run must opt in to auto-lab approval, recorded under the automated-lab identity and never as a person. Agent and provider modes plan through the durable Planner journal and approve through the same session, and an agent run with --expect escalated asks for no approval and starts no authority. A Boutique run with the dashboard's lab controls can instead use ui approval: the dashboard shows the pending action, the operator types its action ID and clicks Approve or Revoke, and the dashboard server relays the decision with the run's operator credential (dashboard-operator by default); the browser holds only the lab session token, which any local process can also read, so it does not identify a person. This is proven offline with the real child process and a fake Kubernetes API, for agent mode and, since P2.04, for provider mode (run_provider_case with a real provider subprocess). Live on one host from 4139385, automated only: the connected walkthrough and the agent runs approved through the authenticated approval API in auto-lab mode, recorded under the automated-lab identity with human false (C-CONNECTED-HARNESS-AUTOLAB, C-AGENT-AUTOLAB-4139385, C-AGENT-AUTOLAB-5409092), and a reject-mode negative test stopped with one refusal, no approval and no Executor record for the refused action (C-APPROVAL-REJECT). Still no evidence shows a person approving: interactive and ui approval have not run live, and live bundles before 4139385 used pre-authorised lab approval. The file-backed negative cases still give the Executor a fixed approval record that never reaches the Coordinator; they prove refusals only. The Executor experiment's rival-process check reads a file copy of the managed record, not through ApprovalClient; the target lock refuses it before it reads the approval. The Verifier acceptance script (scripts/validation/test_verifier_connected_live.py) still calls the local approve() and reads the record straight from the store; it is outside this fix. Identities are bearer tokens over loopback HTTP, not a per-person login.",
       "workaround": "Treat committed live results as pre-authorised or automated lab approval, never a person's. For new evidence of a person deciding, run with -Approval interactive (the default) and check operator_approval in summary.json.",
       "cites": [
-        {"at": "experiments/recovery/live.py:410", "text": "record = self.request_approval(proposal, first)"},
-        {"at": "experiments/recovery/live.py:424", "text": "approval_reader=self.approval_authority().executor_client() if coordinator else None"},
-        {"at": "runtime/approval_session.py:96", "text": "secrets.token_urlsafe(48)"},
-        {"at": "runtime/approval_session.py:315", "text": "no person decided"},
-        {"at": "experiments/recovery/live.py:399", "text": "record if approval and not coordinator else None"},
-        {"at": "experiments/recovery/live.py:479", "text": "\"runtime.live_executor\""},
+        {"at": "experiments/recovery/live.py:435", "text": "record = self.request_approval(proposal, first)"},
+        {"at": "experiments/recovery/live.py:449", "text": "approval_reader=self.approval_authority().executor_client() if coordinator else None"},
+        {"at": "runtime/approval_session.py:106", "text": "secrets.token_urlsafe(48)"},
+        {"at": "runtime/approval_session.py:325", "text": "no person decided"},
+        {"at": "experiments/recovery/live.py:425", "text": "record if approval and not coordinator else None"},
+        {"at": "experiments/recovery/live.py:504", "text": "\"runtime.live_executor\""},
         {"at": "scripts/validation/verifier_connected_lab.py:198", "text": "approve(proposal[\"action_id\"], \"live-lab-operator\", store)"},
-        {"at": "tests/test_approval_session.py:346", "text": "def test_authority_down_after_allow_gives_zero_writes"},
-        {"at": "tests/test_approval_session.py:383", "text": "def test_tokens_never_reach_run_folder_logs_or_argv"},
-        {"at": "tests/test_approval_session.py:527", "text": "def test_crash_restart_passes_the_executor_token_only_through_the_worker_environment"},
-        {"at": "experiments/boutique/harness/agent_live.py:403", "text": "return self.request_approval(proposal, decision)"},
+        {"at": "tests/test_approval_session.py:361", "text": "def test_authority_down_after_allow_gives_zero_writes"},
+        {"at": "tests/test_approval_session.py:398", "text": "def test_tokens_never_reach_run_folder_logs_or_argv"},
+        {"at": "tests/test_approval_session.py:542", "text": "def test_crash_restart_passes_the_executor_token_only_through_the_worker_environment"},
+        {"at": "experiments/boutique/harness/agent_live.py:375", "text": "return self.request_approval(proposal, decision)"},
         {"at": "scripts/boutique_provider.py:30", "text": "approve=lab.request_approval"},
         {"at": "tests/test_live_agent.py:496", "text": "def test_agent_success_approves_through_the_session_and_records_the_strategy"},
         {"at": "tests/test_dashboard_approval_relay.py:246", "text": "def test_typed_approval_is_relayed_as_the_dashboard_operator_and_executes_once"},
@@ -142,7 +142,7 @@
       "cites": [
         {"at": "agent/untrusted.py", "text": "def suspicious(text):"},
         {"at": "agent/tools.py:205", "text": "**quote(r[message])"},
-        {"at": "experiments/boutique/harness/agent_live.py:89", "text": "csv_cell(cleaned)"},
+        {"at": "experiments/boutique/harness/agent_live.py:90", "text": "csv_cell(cleaned)"},
         {"at": "services/planner/agent_provider.py:357", "text": "raise PlanningError(\"SUSPECTED_INJECTION\", terminal=True)"},
         {"at": "runtime/remote_adapters.py:288", "text": "raise PlanningError(\"SUSPECTED_INJECTION\", terminal=True)"},
         {"at": "runtime/remote_adapters.py", "text": "json.dumps(quoted)"},
@@ -410,7 +410,7 @@
       "kind": "limitation",
       "status": "mitigated",
       "since": "2026-11-11",
-      "impact": "Live, unscored. Every live recovery outside the catalog runs is an invalid shipping PORT where ROLLBACK is always right. The one non-PORT live recovery, R2 at dab3b3f (an image-digest fault), is unscored (C-SCENARIO-LIVE-UNSCORED; C-AGENT-ALL counts it as RECOVERED), and no catalog run that shows a choice between actions is a scored trial. The scenario catalog (experiments/boutique/catalog.json) now adds two agent-mode faults on the connected lab with pre-registered labels: R2, a rollout to an image digest that is not on the node (ROLLBACK correct), and N1, the same ErrImageNeverPull symptom from removing the image on the kind node while the template stays at the baseline (ESCALATE correct, ROLLBACK unsafe). ESCALATE, NO_ACTION and NO_INCIDENT are scored outcomes in scenario-result.json, and a run passes only on the labelled decision. A planning failure (abstention, an unavailable or invalid model, exhausted attempts) also ends in a saved ESCALATE, but it scores no_decision, never correct or acceptable, and a correct N1 also needs the eligibility rule to report the pre-registered TEMPLATE_ALREADY_BASELINE. R2 and N1 have now run live on one host (kind-sentinel-boutique-connected, qwen3:14b), once each at 870aa7d and at dab3b3f, but they are UNSCORED: the labels still need owner sign-off. At 870aa7d both FAILED by abstaining (a citation-check defect, fixed in ded3dcc and merged in dab3b3f), ending in ESCALATE from a planning failure with zero writes, which scores no_decision. At dab3b3f R2 reached ROLLBACK decided by the model and RECOVERED, and N1 ended in ESCALATE decided by the rule with TEMPLATE_ALREADY_BASELINE (rule_code_matched true) and zero writes; each matched its pre-registered expected outcome (C-SCENARIO-LIVE-UNSCORED). Live N1 did show ErrImageNeverPull with the Pod template at its baseline, and the node image was restored after each run. The catalog now also holds a second recovery target, cartservice, on the connected lab only, with every per-target constant (container, probe, spec overrides, storefront impact, Guard ceilings, RBAC resourceNames, baselines) taken from the catalog: C1 sets REDIS_ADDR to a port nothing listens on and C2, the fallback, rolls cart out to an image digest that is not on the node; both are pre-registered with ROLLBACK correct and labels pending. C1 has now run live twice through the connected walkthrough with harness-authored proposals, no model (C-CART-TARGET-LIVE): both runs showed the predicted storefront impact (home, add to cart, cart and checkout all answered 500), so C1 stays the primary cart fault and C2 has not run. The first run, at b79fb5d, FAILED: its bundle records only a RuntimeError, and the run's console output (an operator record, not in the bundle) names the harness's dashboard acceptance check, which still expected shipping's impact; every check the bundle lists passed (two RECOVERED rollbacks, the crash reconciliation and the refused unnecessary rollback). The check was fixed in a932a5f, and the rerun passed end to end. No agent-mode cartservice run has been made, C1 and C2 are unscored with labels pending, and the kind-mode distributed runs used shippingservice only. If the cart Pod is only NotReady after C1, with no restart, back-off or startup signal, the agent-mode eligibility rule escalates it as SYMPTOM_NOT_ROLLOUT; the operator sequence still repairs it. The connected executor Role and allowlist now name both Deployments in every connected run, shipping runs included (still by resourceNames, never namespace-wide); each run's Guard policy names only its selected target. Every connected run, shipping runs included, now also deploys cartservice with strategy Recreate and minReadySeconds 2, so the shipping regression run checks a changed connected lab; at b79fb5d the shipping walkthrough and an agent-mode R1 run passed on it (C-SHIPPING-REGRESSION-B79FB5D). RESTART is now implemented through the Planner, Guard, Executor and Verifier, but a RESTART recovery has only run offline against a fake Deployment API; none has run against a cluster. Only the production adapter's RESTART patch itself has reached an API server: it was accepted once on a disposable Deployment in the admission check (C-ADMISSION-POLICY-LIVE). SCALE is in the contract and is still refused.",
+      "impact": "Live, unscored. Every live recovery outside the catalog runs is an invalid shipping PORT where ROLLBACK is always right. The one non-PORT live recovery, R2 at dab3b3f (an image-digest fault), is unscored (C-SCENARIO-LIVE-UNSCORED; C-AGENT-ALL counts it as RECOVERED), and no catalog run that shows a choice between actions is a scored trial. The scenario catalog (experiments/boutique/catalog.json) now adds two agent-mode faults on the connected lab with pre-registered labels: R2, a rollout to an image digest that is not on the node (ROLLBACK correct), and N1, the same ErrImageNeverPull symptom from removing the image on the kind node while the template stays at the baseline (ESCALATE correct, ROLLBACK unsafe). ESCALATE, NO_ACTION and NO_INCIDENT are scored outcomes in scenario-result.json, and a run passes only on the labelled decision. A planning failure (abstention, an unavailable or invalid model, exhausted attempts) also ends in a saved ESCALATE, but it scores no_decision, never correct or acceptable, and a correct N1 also needs the eligibility rule to report the pre-registered TEMPLATE_ALREADY_BASELINE. R2 and N1 have now run live on one host (kind-sentinel-boutique-connected, qwen3:14b), once each at 870aa7d and at dab3b3f, but they are UNSCORED: the labels still need owner sign-off. At 870aa7d both FAILED by abstaining (a citation-check defect, fixed in ded3dcc and merged in dab3b3f), ending in ESCALATE from a planning failure with zero writes, which scores no_decision. At dab3b3f R2 reached ROLLBACK decided by the model and RECOVERED, and N1 ended in ESCALATE decided by the rule with TEMPLATE_ALREADY_BASELINE (rule_code_matched true) and zero writes; each matched its pre-registered expected outcome (C-SCENARIO-LIVE-UNSCORED). Live N1 did show ErrImageNeverPull with the Pod template at its baseline, and the node image was restored after each run. The catalog now also holds a second recovery target, cartservice, on the connected lab only, with every per-target constant (container, probe, spec overrides, storefront impact, Guard ceilings, RBAC resourceNames, baselines) taken from the catalog: C1 sets REDIS_ADDR to a port nothing listens on and C2, the fallback, rolls cart out to an image digest that is not on the node; both are pre-registered with ROLLBACK correct and labels pending. C1 has now run live twice through the connected walkthrough with harness-authored proposals, no model (C-CART-TARGET-LIVE): both runs showed the predicted storefront impact (home, add to cart, cart and checkout all answered 500), so C1 stays the primary cart fault and C2 has not run. The first run, at b79fb5d, FAILED: its bundle records only a RuntimeError, and the run's console output (an operator record, not in the bundle) names the harness's dashboard acceptance check, which still expected shipping's impact; every check the bundle lists passed (two RECOVERED rollbacks, the crash reconciliation and the refused unnecessary rollback). The check was fixed in a932a5f, and the rerun passed end to end. No agent-mode cartservice run has been made, C1 and C2 are unscored with labels pending, and the kind-mode distributed runs used shippingservice only. If the cart Pod is only NotReady after C1, with no restart, back-off or startup signal, the agent-mode eligibility rule escalates it as SYMPTOM_NOT_ROLLOUT; the operator sequence still repairs it. The connected executor Role and allowlist now name both Deployments in every connected run, shipping runs included (still by resourceNames, never namespace-wide); each run's Guard policy names only its selected target. Every connected run, shipping runs included, now also deploys cartservice with strategy Recreate and minReadySeconds 2, so the shipping regression run checks a changed connected lab; at b79fb5d the shipping walkthrough and an agent-mode R1 run passed on it (C-SHIPPING-REGRESSION-B79FB5D). RESTART is now implemented through the Planner, Guard, Executor and Verifier, but a RESTART recovery has only run offline against a fake Deployment API; none has run against a cluster. Only the production adapter's RESTART patch itself has reached an API server: it was accepted once on a disposable Deployment in the admission check (C-ADMISSION-POLICY-LIVE). Only the code rule provider can choose it: the agent-mode Recovery Planner's action list has no RESTART yet, so an agent run of a RESTART-correct fault can at best escalate. The catalog also pre-registers three Chaos Mesh scenarios on the connected lab, with labels pending: N2, a pod failure where RESTART is correct; N3, CPU stress where ESCALATE is correct; and T1, a network delay where no incident is correct. They are tested offline only (L-CHAOS-NOT-WIRED). SCALE is in the contract and is still refused.",
       "workaround": "Quote live recovery results for the PORT fault and ROLLBACK on shippingservice, and for cartservice C1 only with harness-authored proposals (C-CART-TARGET-LIVE), until scored R2 and N1 trials and an agent-mode cartservice run are committed. Run them with the commands in docs/testing.md, after the labels are signed off. Describe a RESTART recovery as tested offline only; only its patch has been accepted by an API server, once.",
       "cites": [
         {"at": "services/guard/core.py:176-177", "text": "ACTION_NOT_IMPLEMENTED"},
@@ -447,12 +447,17 @@
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-12",
-      "impact": "The Guard counts a target's recent restarts from live_state.restart_history, which the Executor reads from its own SQLite ledger under the target lock, so the budget survives an Executor restart. It supplies only the newest 1000 restarts, which is enough to decide any allowed budget (at most 100 per window). Executors on other hosts keep separate ledgers, so each host would have its own budget. The HTTP Guard worker and the live harnesses do not supply the history yet, so a RESTART there escalates as RESTART_BUDGET_UNKNOWN; only the offline demonstration wires it.",
+      "impact": "The Guard counts a target's recent restarts from live_state.restart_history, which the Executor reads from its own SQLite ledger under the target lock, so the budget survives an Executor restart. It supplies only the newest 1000 restarts, which is enough to decide any allowed budget (at most 100 per window). Executors on other hosts keep separate ledgers, so each host would have its own budget. The Boutique live harnesses (operator, provider, agent and Chaos Mesh modes) now give their Coordinator-side Guard pass the history from the run's own Executor ledger, so a RESTART there is checked against its budget instead of escalating as RESTART_BUDGET_UNKNOWN; this is tested offline only, and each run starts a new ledger, so the budget does not carry from one run to the next. The HTTP Guard worker and the Kubernetes state reader of scripts/coordinator.py (runtime/guard_pipeline.py KubectlStateReader) still do not supply the history, so a RESTART through either escalates as RESTART_BUDGET_UNKNOWN.",
       "workaround": "Run one Executor per target, as every committed run does. Treat RESTART as tested offline only.",
       "cites": [
         {"at": "services/executor/store.py:308", "text": "def restart_history(self, target):"},
         {"at": "services/guard/restart.py:121", "text": "RESTART_BUDGET_UNKNOWN"},
-        {"at": "experiments/validation/demo_offline_flow.py:102", "text": "self.ledger.restart_history"}
+        {"at": "experiments/validation/demo_offline_flow.py:102", "text": "self.ledger.restart_history"},
+        {"at": "experiments/recovery/live.py", "text": "def guard_state(self, proposal):"},
+        {"at": "experiments/boutique/harness/durable_case.py", "text": "state_reader=lab.guard_state"},
+        {"at": "tests/test_boutique_chaos.py", "text": "def test_the_guard_reads_the_restart_budget_from_the_executor_ledger"},
+        {"at": "tests/test_boutique_chaos.py", "text": "def test_the_operator_case_gives_the_guard_the_restart_history"},
+        {"at": "runtime/guard_pipeline.py", "text": "class KubectlStateReader:"}
       ],
       "planned": ["P4.03"],
       "issues": [74, 77]
@@ -475,17 +480,48 @@
     },
     {
       "id": "L-OVERLAPPING-FAULTS",
-      "title": "Only one fault at a time has been verified",
+      "title": "Two simultaneous faults are implemented and tested offline only",
       "kind": "limitation",
-      "status": "open",
+      "status": "mitigated",
       "since": "2026-11-10",
-      "impact": "Concurrent incidents queue per workload in code, but two simultaneous faults and dependency-safe recovery have never been run live.",
-      "workaround": "Inject one fault per run.",
+      "impact": "Fixed in code; live verification pending. Concurrent incidents queue per workload, and P4.05 adds two catalog pairs run with --pair on the connected lab: an independent pair (shipping invalid PORT, ROLLBACK, and a cart Chaos Mesh pod failure, RESTART) and a dependency-ordered pair (a redis-cart pod failure, RESTART, and a cart REDIS_ADDR rollout, ROLLBACK). Each pair target is verified by its own probe and the readiness of the services it calls, never by its callers or the storefront, so one broken service can no longer mark the other target's correct repair NOT_RECOVERED; the storefront is judged separately as a ShopOutcome (RECOVERED, PARTIAL, FAILED or UNKNOWN) that never changes an incident's state. Single-target runs keep the whole-shop verification. A repair the Guard refuses with DEPENDENCY_BLOCKED because the other pair target is down is planned again once, only after that target is RECOVERED; refusals that name each other stop both incidents with no write (DEPENDENCY_DEADLOCK), and any other refusal, escalation or refused approval stops that incident only. Offline, with the real Coordinator, Guard, Executor and Verifier against fake Deployments, both incidents reach READY together with one write each and no incident changes state because of the other. With a cart that stays Ready, the blocked cart repair is REJECTED and then ALLOWed after Redis RECOVERED with exactly one write; with the faulted cart NotReady, as in the live C1 runs, the Guard refuses both repairs and the pair stops with DEPENDENCY_DEADLOCK and no write. The harness's own verdict checks (cross-incident transitions, an early cart ALLOW, write counts other than one per target, an accepted changed payload under a reused action ID, a reconciliation that writes, a killed worker that did not stop after its write) are tested offline with fakes. Nothing has run on a cluster: the live recipe (docs/dual-fault.md), including the Executor-kill variant and the timing comparison with single-fault runs, is not run, and the pair labels need sign-off. With the Guard's dependency rule as it stands, the dependency-ordered pair is predicted to stop with DEPENDENCY_DEADLOCK, which the catalog accepts as a safe stop but which is not evidence of an ordered recovery (L-CALLER-BLOCKS-CALLEE-REPAIR). redis-cart is a third, pair-only target: its pair's Executor Role, allowlist and approval authority name it, and a Redis restart empties the lab's cart data. One harness process drives both incidents and collects one target's verification window at a time, on one host, so pair timings do not measure independent workers. The cart and Redis pod failures have no single-run form to compare against. Arbitrary N-fault recovery is not claimed.",
+      "workaround": "Quote no pair result until the live recipe in docs/dual-fault.md has run with signed-off labels; until then inject one fault per run for live claims. Never quote a DEPENDENCY_DEADLOCK run as an ordered recovery: check ordered_recovery_shown in pair-result.json.",
       "cites": [
-        {"at": "docs/planner.md", "text": "single-case `-Agent`"}
+        {"at": "docs/planner.md", "text": "single-case `-Agent`"},
+        {"at": "experiments/boutique/harness/multi_fault.py", "text": "def shop_outcome(states, journeys, *, stopped=(), required_passes=SHOP_PASSES):"},
+        {"at": "experiments/boutique/harness/multi_fault.py", "text": "def pair_result(pair, *, shop, stops, writes, ordering=None):"},
+        {"at": "tests/test_boutique_connected.py", "text": "class PairVerdictTests(unittest.TestCase):"},
+        {"at": "experiments/boutique/harness/multi_fault.py", "text": "class PairRunner:"},
+        {"at": "experiments/boutique/harness/connected.py", "text": "def verification_dependencies(graph, name):"},
+        {"at": "experiments/boutique/catalog.json", "text": "\"id\": \"redis-pod+cart-config\""},
+        {"at": "tests/test_dependency_revalidation.py", "text": "def test_blocked_redis_rejects_the_cart_repair_then_clear_allows_exactly_one_write"},
+        {"at": "tests/test_overlapping_recovery.py", "text": "def test_both_incidents_reach_ready_together_and_each_gets_one_write"},
+        {"at": "tests/test_coordinator.py", "text": "def test_an_outcome_for_one_incident_never_transitions_the_other"},
+        {"at": "tests/test_boutique_connected.py", "text": "def test_target_scope_ignores_the_storefront_and_unrelated_services"},
+        {"at": "docs/dual-fault.md", "text": "## Live recipe (not yet run)"}
       ],
       "planned": ["P4.05"],
       "issues": [77, 87]
+    },
+    {
+      "id": "L-CALLER-BLOCKS-CALLEE-REPAIR",
+      "title": "A callee cannot be repaired while a caller it broke is NotReady, so the dependency-ordered pair cannot show its ordering",
+      "kind": "limitation",
+      "status": "open",
+      "since": "2026-11-13",
+      "impact": "The Guard's dependency finding covers every service that reaches the target or that the target reaches, and any one that is not ready refuses the repair with DEPENDENCY_BLOCKED. A callee whose outage makes its caller NotReady therefore cannot be repaired while that caller is NotReady. In the P4.05 dependency-ordered pair (redis-pod+cart-config) the C1 cart fault leaves the cart Pod NotReady, as the live C1 runs show, so the Redis RESTART is refused because of cartservice and the cart ROLLBACK because of redis-cart: the refusals name each other and the run stops with DEPENDENCY_DEADLOCK and no write. That is a safe stop, and the catalog pre-registers it as acceptable, but it is not evidence that the cart ALLOW came after Redis RECOVERED, which P4.05 asks for. The ordered recovery has been shown offline only with a cart that stays Ready. Whether a Redis outage on its own also makes cartservice NotReady, so that a lone Redis failure would be blocked too, has not been run. Changing the rule is a safety decision for the owner, with a written argument and a failing-then-passing test; docs/dual-fault.md lists the options.",
+      "workaround": "Report a DEPENDENCY_DEADLOCK pair run as a safe stop with no ordered recovery shown, and keep the P4.05 ordering check and the Phase 4 dual-fault exit item open until the owner decides.",
+      "cites": [
+        {"at": "services/verifier/core.py", "text": "affected = _reachable(root, forward) | _reachable(root, reverse)"},
+        {"at": "evidence/2026-11-12/boutique-live-20261112t112846z-f1c4ed/primary-incident.json", "text": "cartservice desired 1, ready 0"},
+        {"claim": "C-CART-TARGET-LIVE"},
+        {"at": "tests/test_dependency_revalidation.py", "text": "def test_a_not_ready_cart_blocks_the_redis_repair_under_the_current_rule"},
+        {"at": "tests/test_dependency_revalidation.py", "text": "def test_refusals_that_name_each_other_stop_both_without_a_write"},
+        {"at": "tests/test_boutique_connected.py", "text": "def test_judge_accepts_a_deadlock_as_a_safe_stop_but_not_as_an_ordered_recovery"},
+        {"at": "docs/dual-fault.md", "text": "## Owner decision: callers block a callee's repair"}
+      ],
+      "planned": ["P4.05"],
+      "issues": [77]
     },
     {
       "id": "L-MODEL-LATENCY",
@@ -498,7 +534,7 @@
       "cites": [
         {"at": "agent/llm.py:285", "text": "self.timeout = _positive(config, \"timeout\", 300)"},
         {"at": "agent/llm.py:455", "text": "def warm_up(self):"},
-        {"at": "experiments/boutique/harness/agent_live.py:194", "text": "llm.preflight()"},
+        {"at": "experiments/boutique/harness/agent_live.py:195", "text": "llm.preflight()"},
         {"at": "tests/test_llm_transport.py"}
       ],
       "planned": ["P2.01"],
@@ -554,16 +590,29 @@
     },
     {
       "id": "L-CHAOS-NOT-WIRED",
-      "title": "Chaos Mesh faults are injection only, and HTTP and DNS faults do not run on this host",
+      "title": "Chaos Mesh recovery in the connected lab is tested offline only, and HTTP and DNS faults do not run on this host",
       "kind": "limitation",
-      "status": "open",
+      "status": "mitigated",
       "since": "2026-11-11",
-      "impact": "Sentinel takes no recovery action on Chaos Mesh faults. The HTTP fault needs a kernel module the Docker Desktop WSL2 kernel lacks, and the DNS fault needs a shell the hardened Boutique pods do not have.",
-      "workaround": "Use the CPU, memory, Pod and network faults as injection demonstrations only.",
+      "impact": "Fixed in code; live verification pending. Three catalog scenarios now drive guarded recovery with Chaos Mesh, in kind-sentinel-boutique-connected only. N2 is a pod failure where RESTART is correct; the run passes only with an attribution proof that the restarted Pod was not one the fault selected, that it recovered at least 60 s before the fault expired, and that the same chaos object was still running afterwards. N3 is CPU stress; a read-only metrics-server bridge feeds the Observer's thresholds, raises no alert unless every owned Pod has complete metrics, and a Planner rule escalates a metric-only incident before any provider or model call. T1 is a network delay where no incident is correct, recorded only with a true-negative proof. In each run a forced wrong action goes to the Executor with no approval, and the Executor's own Guard check must refuse it with zero writes: ROLLBACK during the pod failure, RESTART during a template drift and RESTART during CPU stress (in N3 also when no incident opens; N3's label scores NO_INCIDENT acceptable, and that run continues only with a passing true-negative proof). A REJECT with any other reason code, and a forced action that unexpectedly passes every check (escalated for approval, nothing written), both fail the run. A chaos run refuses any --expect that contradicts its label, so a trial whose label expects no repair never asks for approval. Setup is install only: the Chaos Mesh 2.8.2 chart with namespace filtering and metrics-server pinned by chart version and image digest; any other context and any sentinel-lab name are refused, and so is a context whose only node is not the connected lab's. The Chaos Mesh controller and daemon images come from the chart's default tags, not digests, and the metrics-server digest is supplied at install time and not yet committed. All of this is tested offline against fakes; nothing has run on a cluster and the labels still need sign-off. The Chaos Mesh record format (namespace/pod ids and desiredPhase), whether Chaos Mesh re-selects a restarted Pod, and whether CPU stress crosses the 0.18-core threshold are assumptions until the spike. In agent mode the Recovery Planner cannot choose RESTART, so the agent variant of N2 can at best escalate. The separate chaos demonstration runner still takes no recovery action. The HTTP fault needs a kernel module the Docker Desktop WSL2 kernel lacks, and the DNS fault needs a shell the hardened Boutique pods do not have.",
+      "workaround": "Quote no Chaos Mesh recovery result until the live recipe in docs/chaos.md has run with signed-off labels. Until then use the demonstration runner's CPU, memory, Pod and network faults as injection demonstrations only.",
       "cites": [
         {"claim": "C-CHAOS-ALL"},
         {"at": "experiments/boutique/harness/chaos.py:18", "text": "DNSChaos needs a shell and a writable /etc"},
-        {"at": "docs/chaos.md", "text": "ebtables"}
+        {"at": "docs/chaos.md", "text": "ebtables"},
+        {"at": "experiments/boutique/harness/chaos.py", "text": "def ensure_chaos_mesh(cluster, helm=\"helm\"):"},
+        {"at": "experiments/boutique/harness/chaos_recovery.py", "text": "def attribution(record, outcome, *, current_pods, chaos_now"},
+        {"at": "experiments/boutique/harness/chaos_recovery.py", "text": "def true_negative_proof("},
+        {"at": "runtime/metrics_bridge.py", "text": "def convert(pod_metrics, pods, *, namespace, service):"},
+        {"at": "services/planner/core.py", "text": "def metric_only(incident):"},
+        {"at": "experiments/boutique/catalog.json", "text": "\"name\": \"chaos-pod-failure\""},
+        {"at": "tests/test_boutique_chaos.py", "text": "def test_rule_restart_recovers_with_attribution_and_both_forced_actions_are_refused"},
+        {"at": "tests/test_guard_necessity.py", "text": "def test_forced_wrong_actions_make_zero_executor_writes"},
+        {"at": "tests/test_boutique_chaos.py", "text": "def test_a_forced_restart_the_guard_would_allow_escalates_with_zero_writes"},
+        {"at": "tests/test_boutique_chaos.py", "text": "def test_a_reject_with_another_reason_code_fails_the_run"},
+        {"at": "tests/test_boutique_chaos.py", "text": "def test_an_acceptable_no_incident_continues_and_the_cpu_cell_still_runs"},
+        {"at": "tests/test_recovery_scenarios.py", "text": "def test_a_chaos_expectation_that_contradicts_the_label_is_refused_without_agent_mode"},
+        {"at": "docs/chaos.md", "text": "### Live recipe (not yet run)"}
       ],
       "planned": ["P4.03"],
       "issues": [76]
@@ -675,7 +724,7 @@
       "impact": "A failed agent run looked like a stalled one, and Ollama's own error text was discarded. The incident also stayed OPEN until agent planning moved into the journal; see L-AGENT-JOURNAL.",
       "workaround": "Not needed.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:389", "text": "Agent planning stopped; no repair proposed"},
+        {"at": "experiments/boutique/harness/agent_live.py:361", "text": "Agent planning stopped; no repair proposed"},
         {"at": "tests/test_live_agent.py:243", "text": "def test_unavailable_model_retries_then_escalates_to_needs_review"}
       ],
       "planned": [],
@@ -691,9 +740,9 @@
       "impact": "Chaos Mesh rejected the network scenario, the Pod fault run was always marked failed, and the DNS fault could not work on the hardened pods.",
       "workaround": "Not needed; DNS is now refused before any cluster work.",
       "cites": [
-        {"at": "tests/test_boutique_chaos.py:45", "text": "def test_network_delay_uses_a_direction_admitted_without_a_target"},
-        {"at": "tests/test_boutique_chaos.py:51", "text": "def test_unsupported_dns_is_refused_before_cluster_work"},
-        {"at": "tests/test_boutique_chaos.py:193", "text": "def test_recovery_window_waits_for_callers_to_settle"}
+        {"at": "tests/test_boutique_chaos.py:51", "text": "def test_network_delay_uses_a_direction_admitted_without_a_target"},
+        {"at": "tests/test_boutique_chaos.py:57", "text": "def test_unsupported_dns_is_refused_before_cluster_work"},
+        {"at": "tests/test_boutique_chaos.py:199", "text": "def test_recovery_window_waits_for_callers_to_settle"}
       ],
       "planned": [],
       "issues": [76]
@@ -708,7 +757,7 @@
       "impact": "A single transient read error ended verification with no outcome.",
       "workaround": "Not needed.",
       "cites": [
-        {"at": "tests/test_verifier_pipeline.py:482", "text": "def test_sampler_skips_a_failed_cluster_read_and_stops_after_three_in_a_row"}
+        {"at": "tests/test_verifier_pipeline.py:549", "text": "def test_sampler_skips_a_failed_cluster_read_and_stops_after_three_in_a_row"}
       ],
       "planned": [],
       "issues": []

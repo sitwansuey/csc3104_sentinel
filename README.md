@@ -125,7 +125,8 @@ prove live Kubernetes recovery. [Testing](docs/testing.md) also documents the
 browser-driven live run and specialised role checks.
 
 Optional work stays separate: [Chaos Mesh](docs/chaos.md) injects/collects faults
-without claiming Sentinel repair (claim `C-CHAOS-ALL`); [security](docs/security.md)
+without claiming Sentinel repair (claim `C-CHAOS-ALL`), and its guarded-recovery
+scenarios in the connected lab are tested offline only; [security](docs/security.md)
 is a protected lab for the shipping path only, not yet combined with guarded
 recovery (claim `C-SECURITY-LAB`); [RCAEval](agent/datasets/README.md) measures
 offline diagnosis, not recovery, and has no committed result yet; [packaging](docs/packaging.md)
@@ -157,10 +158,9 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-SINGLE-HOST-DISTRIBUTION](docs/limitations.md#l-single-host-distribution): The networked worker layer has only run on one host (limitation, open; planned P3.01, P3.07, P4.01)
 - [L-RESTART-BUDGET-LOCAL](docs/limitations.md#l-restart-budget-local): The restart budget is kept per Executor ledger, and only local wiring gives it to the Guard (limitation, open; planned P4.03)
 - [L-NO-DIAGNOSIS-ACCURACY](docs/limitations.md#l-no-diagnosis-accuracy): No diagnosis-accuracy evaluation (limitation, open; planned P2.07, P4.04)
-- [L-OVERLAPPING-FAULTS](docs/limitations.md#l-overlapping-faults): Only one fault at a time has been verified (limitation, open; planned P4.05)
+- [L-CALLER-BLOCKS-CALLEE-REPAIR](docs/limitations.md#l-caller-blocks-callee-repair): A callee cannot be repaired while a caller it broke is NotReady, so the dependency-ordered pair cannot show its ordering (limitation, open; planned P4.05)
 - [L-SECURITY-SHIPPING-ONLY](docs/limitations.md#l-security-shipping-only): The security lab protects only the shipping path (limitation, open; planned P4.06, P5.04, P5.05)
 - [L-UNGATED-CVES](docs/limitations.md#l-ungated-cves): Workload image CVEs raise alerts but gate nothing (limitation, open; planned P5.02, P5.03)
-- [L-CHAOS-NOT-WIRED](docs/limitations.md#l-chaos-not-wired): Chaos Mesh faults are injection only, and HTTP and DNS faults do not run on this host (limitation, open; planned P4.03)
 - [L-NO-RELEASE](docs/limitations.md#l-no-release): No tagged, scanned release image (limitation, open; planned P2.09, P2.10)
 - [L-LAB-CERTS](docs/limitations.md#l-lab-certs): Security lab certificates are two-day fixtures with no rotation (limitation, open; planned P5.06)
 - [L-RESTORE-DETECTION](docs/limitations.md#l-restore-detection): A Coordinator restored from a backup is detected, but lost acknowledged results are re-driven by hand (limitation, mitigated; planned P4.02)
@@ -168,8 +168,10 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-NO-FENCING](docs/limitations.md#l-no-fencing): Abandoned or revoked Executor writes are fenced only by a seal, run live on one kind node (limitation, mitigated; planned P3.04, P3.05, P4.01)
 - [L-EXECUTOR-FIELD-LIMITS](docs/limitations.md#l-executor-field-limits): The Executor's field limits are an admission policy checked live once but installed nowhere by default (limitation, mitigated; planned P3.05, P4.01)
 - [L-ONE-FAULT-ONE-ACTION](docs/limitations.md#l-one-fault-one-action): One fault type, one repair action and one live target (limitation, mitigated; planned P2.08, P3.08, P3.09)
+- [L-OVERLAPPING-FAULTS](docs/limitations.md#l-overlapping-faults): Two simultaneous faults are implemented and tested offline only (limitation, mitigated; planned P4.05)
 - [L-MODEL-LATENCY](docs/limitations.md#l-model-latency): Model cold loads make agent planning slow and variable (limitation, mitigated; planned P2.01)
 - [L-UNPINNED-BASE-IMAGES](docs/limitations.md#l-unpinned-base-images): Sentinel component images used unpinned base image tags (limitation, mitigated; planned P1.09)
+- [L-CHAOS-NOT-WIRED](docs/limitations.md#l-chaos-not-wired): Chaos Mesh recovery in the connected lab is tested offline only, and HTTP and DNS faults do not run on this host (limitation, mitigated; planned P4.03)
 - [L-EVIDENCE-INFERRED](docs/limitations.md#l-evidence-inferred): Most committed evidence has inferred provenance (limitation, mitigated; planned P2.09)
 
 8 fixed entries stay in the register as history.

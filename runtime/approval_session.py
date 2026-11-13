@@ -59,13 +59,22 @@ def utc(value):
 
 
 class LocalApprovalAuthority:
-    """One approval_http child for one run; close() stops it and drops the tokens."""
+    """One approval_http child for one run; close() stops it and drops the tokens.
+
+    It grants its identities one target; a scenario-pair run (P4.05) names its
+    second target in additional_targets, so each identity may act on exactly
+    those two complete identities and nothing else.
+    """
 
     def __init__(self, run_dir, db_path, target, *, operator=LAB_OPERATOR, max_lifetime_seconds=300,
-                 startup_timeout=20, python=None):
-        if (not isinstance(target, dict) or set(target) != TARGET_FIELDS
-                or any(not isinstance(value, str) or not value.strip() for value in target.values())):
-            raise ValueError("The authority needs one complete target identity")
+                 startup_timeout=20, python=None, additional_targets=()):
+        for item in (target, *additional_targets):
+            if (not isinstance(item, dict) or set(item) != TARGET_FIELDS
+                    or any(not isinstance(value, str) or not value.strip() for value in item.values())):
+                raise ValueError("The authority needs one complete target identity")
+        if len(additional_targets) > 1 or any(item == target for item in additional_targets):
+            raise ValueError("The authority accepts at most one additional, different target")
+        self.additional_targets = [dict(item) for item in additional_targets]
         if operator in {LAB_GUARD, LAB_EXECUTOR}:
             raise ValueError("The operator identity must differ from the reader identities")
         self.directory, self.db_path = Path(run_dir), Path(db_path)
@@ -91,7 +100,8 @@ class LocalApprovalAuthority:
         self.directory.mkdir(parents=True, exist_ok=True)
         self._write(self.identities_path, {name: {"role": role, "token_env": TOKEN_ENV[role]}
                                            for name, role in self.roles.items()})
-        self._write(self.permissions_path, {name: [{"target": self.target, "operations": OPERATIONS[role]}]
+        self._write(self.permissions_path, {name: [{"target": item, "operations": OPERATIONS[role]}
+                                                   for item in (self.target, *self.additional_targets)]
                                             for name, role in self.roles.items()})
         self._tokens = {name: secrets.token_urlsafe(48) for name in self.roles}
         environment = dict(os.environ)

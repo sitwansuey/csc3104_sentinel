@@ -85,6 +85,8 @@ starts detection/recovery. It is paused until that point; it is not an always-on
 production controller. Let subsequent scenarios inject themselves and avoid
 changing configuration during recovery. [Planner mode](planner.md) replaces the
 proposal source and runs one agent case; [Chaos Mesh](chaos.md) is separate.
+[Two simultaneous faults](dual-fault.md) (`--pair`, tested offline only) inject
+a catalog pair together and repair and verify each target on its own.
 
 ## Observe Sentinel and Boutique
 

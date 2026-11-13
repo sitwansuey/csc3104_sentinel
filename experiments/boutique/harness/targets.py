@@ -8,7 +8,8 @@ fault and its fallback, and the scopes where the target may be repaired.
 
 The executor Role is generated here from deploy/sentinel/executor-rbac.yaml. It
 names exactly the targets enabled in one lab scope (resourceNames), never the
-whole namespace.
+whole namespace. A pair-only target (redis-cart, P4.05) is never enabled in a
+scope: only a scenario-pair run names it, together with its partner.
 """
 from copy import deepcopy
 from dataclasses import dataclass
@@ -36,13 +37,14 @@ class TargetProfile:
     release: str
     port: int
     scopes: tuple
-    primary_scenario: str
+    primary_scenario: str | None
     fallback_scenario: str | None
     isolated_lab: bool
     spec_overrides: dict
     probe: dict
     fault_storefront_impact: dict
     ceilings: dict
+    pair_only: bool = False
 
     @property
     def registry(self):
@@ -69,7 +71,9 @@ def default_target(catalog=None):
 
 
 def target_names(catalog=None):
-    return tuple(sorted((catalog or scenarios.load())["targets"]))
+    """The targets a single-target run may select; pair-only targets run only inside a pair."""
+    return tuple(sorted(name for name, target in (catalog or scenarios.load())["targets"].items()
+                        if not target.get("pair_only")))
 
 
 def profile(name=None, catalog=None):
@@ -94,11 +98,12 @@ def scope_name(cluster_id, context, namespace, catalog=None):
 
 
 def enabled_targets(scope, catalog=None):
-    """Sorted names of the targets offered in one catalog scope."""
+    """Sorted names of the targets offered in one catalog scope; pair-only targets are never offered."""
     catalog = catalog or scenarios.load()
     if scope not in catalog["scopes"]:
         raise CatalogError("Unknown catalog scope: " + str(scope))
-    return tuple(sorted(name for name, target in catalog["targets"].items() if scope in target["scopes"]))
+    return tuple(sorted(name for name, target in catalog["targets"].items()
+                        if scope in target["scopes"] and not target.get("pair_only")))
 
 
 def apply_spec_overrides(spec, target):
