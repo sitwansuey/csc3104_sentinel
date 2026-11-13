@@ -8,7 +8,7 @@ import type { BoutiqueObservation, Cluster } from "@/lib/types"
 
 const stageNames: Record<string, string> = {
   baseline: "Healthy baseline", "primary-fault": "Target fault", "crash-fault": "Target fault / crash scenario",
-  verification: "Post-action verification",
+  verification: "Post-action verification", "pair-fault": "Both pair faults", "pair-shop": "Shop after both pair incidents",
 }
 
 export function BoutiqueOverview({ records, cluster, now, stale, playback=false, inspect }: {

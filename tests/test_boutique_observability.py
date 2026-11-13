@@ -71,6 +71,24 @@ class BoutiqueObservabilityTests(unittest.TestCase):
             finally:
                 experiment.store.close()
 
+    def test_every_stage_a_harness_journals_is_accepted(self):
+        """Found live (P4.05): the pair harness journaled pair-fault, which the journal refused, so every pair
+        run failed after injecting both faults. Each literal stage passed to record_shopping must be known."""
+        import re
+        from runtime.boutique_observability import STAGES
+        root = Path(__file__).resolve().parents[1] / "experiments" / "boutique" / "harness"
+        used = {match for path in root.glob("*.py")
+                for match in re.findall(r'record_shopping\(\s*"([^"]+)"', path.read_text(encoding="utf-8"))}
+        self.assertTrue({"baseline", "verification", "pair-fault", "pair-shop"} <= used)
+        self.assertEqual(used - STAGES, set())
+        with tempfile.TemporaryDirectory() as directory:
+            journal = Path(directory) / "telemetry.sqlite3"
+            for stage in ("pair-fault", "pair-shop"):
+                emit_observation(journal, cluster_id="cluster", namespace="namespace", stage=stage,
+                                 journey={"passed": True, "cart_status": 200})
+            recorded = snapshot(Path(directory) / "missing.sqlite", journal)["boutique_history"]
+            self.assertEqual({item["stage"] for item in recorded}, {"pair-fault", "pair-shop"})
+
     def test_invalid_stage_or_mixed_record_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             for arguments in ({"stage": "unknown"}, {"stage": "inventory", "journey": {}},
