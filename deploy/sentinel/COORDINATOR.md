@@ -175,3 +175,19 @@ another mutation implementation. Keep #62 open until the actual complete worker
 rollout records restricted identities, real request/result exchange, restart
 behavior, image versions and health evidence. Whole-platform fault, cross-host
 ownership and multi-node/cloud acceptance require their own runs.
+
+## The complete rollout on four kind nodes (P4.01)
+
+`deploy/sentinel/sentinel-dist` packages this Coordinator (pinned to node c,
+with its own PVC, a lease of 15 s and the fault-point gate for its lab) with
+the Observer and the planner, guard, executor-a, executor-b and verifier
+workers, each as its own Deployment with its own Secret, PVC and identity, for
+the dedicated cluster `kind-sentinel-dist`, never this guide's example
+context. `experiments/distributed/kind_acceptance.py deploy` generates every
+credential, the CA and the approval permissions bound to the target's UID;
+the recipe is in [distributed acceptance](../../docs/distributed-acceptance.md).
+It is written and tested offline only: no image from it has run in a cluster.
+Packaging it found that this image, and the Observer's, copied
+`runtime/worker_http.py` without `runtime/fault_points.py`, which it imports at
+module level, so either container would have failed at start; both
+Dockerfiles now copy it (`tests/test_dockerfile_copies.py`).

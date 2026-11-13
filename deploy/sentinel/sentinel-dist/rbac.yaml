@@ -1,0 +1,120 @@
+# Kubernetes identities of the sentinel-dist lab. Every grant is a Role in the
+# workload namespace on the named target Deployment; nothing is granted in
+# sentinel-dist itself and nothing is cluster-wide.
+#   - sentinel-executor (executor-a and executor-b): get and patch on demo-api.
+#     The admission policy in deploy/sentinel/executor-admission.yaml, bound to
+#     sentinel-dist-workload by the harness, limits what such a patch may change.
+#   - sentinel-guard and sentinel-verifier: get on demo-api.
+#   - sentinel-observer: the Observer's read set from deploy/sentinel/observer.yaml.
+#   - sentinel-planner (planner.yaml) and sentinel-coordinator (coordinator.yaml)
+#     have no binding and no token.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sentinel-executor
+  namespace: sentinel-dist
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sentinel-guard
+  namespace: sentinel-dist
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sentinel-verifier
+  namespace: sentinel-dist
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sentinel-observer
+  namespace: sentinel-dist
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sentinel-dist-executor
+  namespace: sentinel-dist-workload
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["demo-api"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sentinel-dist-executor
+  namespace: sentinel-dist-workload
+subjects:
+  - kind: ServiceAccount
+    name: sentinel-executor
+    namespace: sentinel-dist
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sentinel-dist-executor
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sentinel-dist-target-reader
+  namespace: sentinel-dist-workload
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["demo-api"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sentinel-dist-target-reader
+  namespace: sentinel-dist-workload
+subjects:
+  - kind: ServiceAccount
+    name: sentinel-guard
+    namespace: sentinel-dist
+  - kind: ServiceAccount
+    name: sentinel-verifier
+    namespace: sentinel-dist
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sentinel-dist-target-reader
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sentinel-dist-observer
+  namespace: sentinel-dist-workload
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["demo-api"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["list"]
+  - apiGroups: [""]
+    resources: ["pods", "events"]
+    verbs: ["list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sentinel-dist-observer
+  namespace: sentinel-dist-workload
+subjects:
+  - kind: ServiceAccount
+    name: sentinel-observer
+    namespace: sentinel-dist
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sentinel-dist-observer

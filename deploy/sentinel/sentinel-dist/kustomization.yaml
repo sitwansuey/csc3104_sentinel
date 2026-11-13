@@ -1,0 +1,23 @@
+# The sentinel-dist lab (P4.01): Coordinator, Observer and five workers as
+# separate Deployments on pinned kind nodes, plus the target workload.
+# experiments/distributed/kind_acceptance.py deploy renders this overlay with
+# kubectl kustomize, adds the generated Secrets and ConfigMaps (credentials,
+# CA, approval permissions and target inputs, none committed), puts the API
+# server addresses into networkpolicy.yaml and applies the result to the
+# kind-sentinel-dist context only. planner-agent.yaml is optional and not
+# listed here.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespaces.yaml
+  - workload.yaml
+  - rbac.yaml
+  - kubeconfig.yaml
+  - networkpolicy.yaml
+  - coordinator.yaml
+  - observer.yaml
+  - planner.yaml
+  - guard.yaml
+  - executor-a.yaml
+  - executor-b.yaml
+  - verifier.yaml

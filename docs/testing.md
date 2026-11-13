@@ -161,6 +161,24 @@ the planning block, a revocation with no claim (no seal), the `fence_result`
 contract and a crashed Executor settling its own ledger. No seal has been sent
 to a real API server.
 
+The four-node acceptance lab (P4.01, [distributed acceptance](distributed-acceptance.md))
+is covered offline by three files. `tests/test_deploy_manifests.py`
+(`DistManifestTests`) reads `deploy/kind/kind-dist.yaml`, the audit policy and
+`deploy/sentinel/sentinel-dist`: own Secret and PVC per worker, no worker on
+the Coordinator's data, no token for the deterministic Planner, Executor RBAC
+of get and patch on `demo-api` only, the Coordinator and Executors pinned to
+three different nodes, and exactly the allowed network policy edges, each
+also checked against a mutated manifest. `tests/test_kind_acceptance.py`
+drives the harness with a fake kubectl, docker and helm: `kind-sentinel-lab`
+and every other context refused before any command, each preflight refusal
+(memory, the shared lock, P4.03 experiments, wrong nodes or node image, no
+audit log), chaos object bounds and evidence refused when it names a Secret,
+each scenario's expectation failing on records the write invariants pass,
+and a run with an empty, partial or rotated audit extract failing.
+`tests/test_distributed_audit.py` checks the audit sanitiser, I7 and the
+extract's completeness checks on the fixtures in
+`tests/fixtures/distributed_audit/`. None of it has run against a cluster.
+
 The Planner handoff checks inject unavailable/invalid providers, restart during
 backoff, exhaust attempts after a worker death, fence a replaced lease and replay
 a saved proposal after failed Coordinator delivery. They verify no repair on
@@ -494,6 +512,7 @@ normal presentation run:
 | Verifier connected telemetry/read-only permissions | `scripts/validation/test_verifier_connected_live.py --setup` | Existing `sentinel-lab` (see below) |
 | Executor wedge (rv-race, delete-recreate) | `scripts/validation/test_executor_wedge_live.py --context <ctx> --scenario <name>` | Existing `kind-sentinel-boutique-connected` or `kind-sentinel-wedge`; own namespace, deleted on exit; never `sentinel-lab` |
 | Multi-process harness, kind mode (P3.01, P3.04; ran on 12 Nov 2026, `C-DISTRIBUTED-KIND-BE6E636`, `C-SEAL-LIVE`) | `python -m experiments.distributed.kind_bundle prepare --context kind-sentinel-boutique-connected --storefront <port-forward>`, then `experiments.distributed.run_scenarios --mode kind` ([recipe](../experiments/distributed/README.md#a-reproducible-kind-mode-run)) | Existing `kind-sentinel-boutique-connected` only; injects and restores the catalog fault on its target, mints one short-lived `sentinel-executor` token into a temporary bundle; never `sentinel-lab` |
+| Four-node distributed acceptance (P4.01; not yet run) | `python -m experiments.distributed.kind_acceptance preflight --context kind-sentinel-dist`, then `deploy` and `run --scenarios all --repeat 5` ([recipe](distributed-acceptance.md#live-recipe)) | Its own `kind-sentinel-dist` cluster, created from `deploy/kind/kind-dist.yaml` with Chaos Mesh 2.8.2; refused while the P4.03 lab runs; never `sentinel-lab` |
 | Executor admission policy (P3.05; ran once on 12 Nov 2026, `C-ADMISSION-POLICY-LIVE`) | `scripts/validation/test_executor_admission_live.py --context kind-sentinel-boutique-connected` | Existing `kind-sentinel-boutique-connected` only; own namespace, policy and binding, deleted on exit; never `sentinel-lab` |
 
 The Observer runtime and Verifier checks never create a cluster. They expect the `sentinel-lab` kind

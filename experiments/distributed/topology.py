@@ -33,6 +33,7 @@ import http.client
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import signal
@@ -203,11 +204,15 @@ def find_openssl():
     return next((path for path in OPENSSL_CANDIDATES if Path(path).is_file()), None)
 
 
-def make_certificates(directory, openssl=None):
-    """A throwaway CA and a 127.0.0.1 server certificate; None without openssl.
+def make_certificates(directory, openssl=None, names=("IP:127.0.0.1", "DNS:localhost")):
+    """A throwaway CA and a server certificate for names (127.0.0.1 by default); None without openssl.
 
-    The CA key is deleted once the server certificate is signed.
+    names are subjectAltName entries ("IP:..." or "DNS:..."); the kind
+    acceptance harness adds the Coordinator Service's DNS names. The CA key is
+    deleted once the server certificate is signed.
     """
+    if not names or any(not re.fullmatch(r"(IP:[0-9.]+|DNS:[a-z0-9.-]+)", name) for name in names):
+        raise ValueError("Certificate names must be IP:<address> or DNS:<name> entries")
     openssl = openssl or find_openssl()
     if openssl is None:
         return None
@@ -217,7 +222,7 @@ def make_certificates(directory, openssl=None):
     cert, key, request = directory / "server.crt", directory / "server.key", directory / "server.csr"
     extensions = directory / "server.ext"
     extensions.write_text("basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\n"
-                          "extendedKeyUsage=serverAuth\nsubjectAltName=IP:127.0.0.1,DNS:localhost\n"
+                          "extendedKeyUsage=serverAuth\nsubjectAltName=" + ",".join(names) + "\n"
                           "subjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid\n", encoding="ascii")
     # A minimal configuration of our own, so a host's OPENSSL_CONF cannot change or break the run.
     settings = directory / "openssl.cnf"

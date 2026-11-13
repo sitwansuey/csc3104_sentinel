@@ -737,18 +737,46 @@ not reach the Executor's local Guard re-check, which read the unshifted
 clock. The S7 and S7b results come from file
 mode on one Windows host; neither has run in kind mode.
 
+### Four-node kind acceptance (P4.01), written, not run
+
+The next step moves the same roles from processes to Pods on a dedicated
+four-node kind cluster (`deploy/kind/kind-dist.yaml`): the Coordinator,
+executor-a and executor-b on three different nodes, each worker with its own
+Secret, PVC and identity, and a network policy that lets a worker reach the
+Coordinator and, where it reads the target, the API server
+(`deploy/sentinel/sentinel-dist/networkpolicy.yaml`). The harness accepts
+only that cluster's context (`experiments/distributed/kind_acceptance.py::check_context`).
+It counts template writes from the API server's audit log
+(`deploy/kind/audit-policy.yaml`), which Sentinel does not write, classifying
+each request by its effect as the file cluster does
+(`experiments/distributed/audit.py::classify`), and checks I7, at most one
+successful template PATCH per action (`experiments/distributed/invariants.py::i7`).
+I7 fails instead of passing on an empty or short extract: the operator's
+injection must be in it, every generation the target gained must have a
+write in it, and the log must reach back to the run's start
+(`experiments/distributed/audit.py::completeness`). Each scenario's expected
+outcome is checked too (`experiments/distributed/kind_acceptance.py::expectation`).
+One Coordinator store serves every run of a deployment, so the other
+invariants are narrowed to the incidents each run opened
+(`experiments/distributed/kind_acceptance.py::scope_records`). The recipe,
+the scenario matrix and the empty results table are in
+[distributed acceptance](distributed-acceptance.md). None of it has run:
+no claim here rests on it, and when it runs its nodes are still containers
+on one Docker host.
+
 ## Planned changes
 
 | Item | Change |
 | --- | --- |
 | P2.06 | Done: the fenced abort ran live in the wedge harness `admission-deny` at 4139385 and 5409092 (`C-EXECUTOR-WEDGE-FENCE`); fencing stays off by default |
 | P3.02 | Done in file mode on one host: trace context across outbox rows, deliveries and worker requests, and the offline viewer, are in the code ([traces](observability.md#traces)), and two file-mode runs (fake cluster, synthetic planner, separate processes on one host) each rebuilt into one connected trace across six processes (`C-TRACE-FILE-679EF29`). Left: a trace from a kind-mode or multi-node run |
-| P3.01 | Done in file mode (above). Kind mode is reproducible in code: `experiments/distributed/kind_bundle.py` prepares the bundle (allowlisted lab contexts only, `sentinel-lab` always refused, a short-lived restricted `sentinel-executor` token in a temporary directory outside the repository), and kind mode injects the bundle's catalog fault (R1 by default) before every run and restores and re-checks the baseline after it (a failure after the injection is followed by a restore attempt, and the run stops naming the `kind_bundle restore` command when the baseline is not verified healthy), with a 180 s default deadline (`--deadline`), a 15 s Observer failure window and duplicate incidents counted in each run's summary ([recipe](../experiments/distributed/README.md#a-reproducible-kind-mode-run)). Two operator sessions on 12 Nov 2026 ran S1b, S1c, S2, S4, S5 and S8 twice each against `kind-sentinel-boutique-connected`, with the deterministic synthetic planner, all now committed evidence bundles: with scratch versions of these tools at 0a8d4d7, all 12 matched their expectation after the health policy was relaxed (the stricter one failed I3 at the 60 s deadline), and two opened a duplicate incident that the Guard rejected (`C-DISTRIBUTED-KIND-0A8D4D7`); with the committed tools at be6e636, 11 of 12 matched, and S2 r2 failed I5 after its Verifier command was delivered 8 times (`C-DISTRIBUTED-KIND-BE6E636`, `L-VERIFIER-RETRY-BACKOFF`). Left: that I5 failure, and P4.01's multi-node lab, which needs its context added to both allowlists and a catalog scope. Kind mode counts a template write by its effect, as file mode does: a change of the whole pod template's fingerprint between successive reads of the Deployment (a RESTART token change included), or a new evidence annotation for the template in place. It does not count `metadata.generation`, which an Executor fence also raises (`C-EXECUTOR-WEDGE-FENCE`), so a fence counts no write. Its reads are polled; when generation rose by more than the changes two reads show, a write may be hidden and I1 fails on an `unobserved` row instead of passing |
+| P3.01 | Done in file mode (above). Kind mode is reproducible in code: `experiments/distributed/kind_bundle.py` prepares the bundle (allowlisted lab contexts only, `sentinel-lab` always refused, a short-lived restricted `sentinel-executor` token in a temporary directory outside the repository), and kind mode injects the bundle's catalog fault (R1 by default) before every run and restores and re-checks the baseline after it (a failure after the injection is followed by a restore attempt, and the run stops naming the `kind_bundle restore` command when the baseline is not verified healthy), with a 180 s default deadline (`--deadline`), a 15 s Observer failure window and duplicate incidents counted in each run's summary ([recipe](../experiments/distributed/README.md#a-reproducible-kind-mode-run)). Two operator sessions on 12 Nov 2026 ran S1b, S1c, S2, S4, S5 and S8 twice each against `kind-sentinel-boutique-connected`, with the deterministic synthetic planner, all now committed evidence bundles: with scratch versions of these tools at 0a8d4d7, all 12 matched their expectation after the health policy was relaxed (the stricter one failed I3 at the 60 s deadline), and two opened a duplicate incident that the Guard rejected (`C-DISTRIBUTED-KIND-0A8D4D7`); with the committed tools at be6e636, 11 of 12 matched, and S2 r2 failed I5 after its Verifier command was delivered 8 times (`C-DISTRIBUTED-KIND-BE6E636`, `L-VERIFIER-RETRY-BACKOFF`). Left: that I5 failure. P4.01's four-node lab has its own harness (below), so these tools' allowlists stay as they are. Kind mode counts a template write by its effect, as file mode does: a change of the whole pod template's fingerprint between successive reads of the Deployment (a RESTART token change included), or a new evidence annotation for the template in place. It does not count `metadata.generation`, which an Executor fence also raises (`C-EXECUTOR-WEDGE-FENCE`), so a fence counts no write. Its reads are polled; when generation rose by more than the changes two reads show, a write may be hidden and I1 fails on an `unobserved` row instead of passing |
 | P3.03 | Done in the code above. Left: S7 in kind mode, and a real clock offset per Pod (Chaos Mesh TimeChaos, P4.01) instead of the gated test offset. With operator approval required, an Executor whose clock is 5 min off cannot reach RECOVERED: its own Guard re-check refuses the Coordinator-stamped approval. So P4.01 should expect what S7 and S7b show (FAILED with no write without a bound; with a bound, that Executor stops claiming and an in-bound peer recovers the action), unless the owners change the re-check |
 | P3.04 | Done in the code above and in file mode on one host (ownership epochs, the seal, the ledger settle), and S8 ran in kind mode against the real shippingservice Deployment four times, twice with scratch tools at 0a8d4d7 and twice with the committed tools at be6e636, on one kind node on one host with the synthetic planner (`C-SEAL-LIVE`). Left: the audit-log proof that the paused PATCH was refused (P4.01), a run across separate machines, and the Executor owner's sign-off on the mechanism (#58) |
 | P3.05 | Done: an admission policy limiting which fields the Executor identity may change, with a monotonic fence epoch (`deploy/sentinel/executor-admission.yaml`), checked structurally offline and run live once in a disposable namespace (`scripts/validation/test_executor_admission_live.py`, 24 of 24 probes as expected, including a seal from a fresh store denied by a higher stored epoch; `C-ADMISSION-POLICY-LIVE`). Left: installing it in the lab namespaces, which nothing does yet; the owners' choice between seeding a store's epoch from the annotation and fencing by resourceVersion only; and their sign-off on the choices listed in `L-EXECUTOR-FIELD-LIMITS` (no epoch required on a template change, the identity matched in any namespace, a malformed stored epoch failing closed, evidence changeable without a template change, no resourceNames on the binding) |
 | P3.06 | Done in the code above and measured in file mode on one host. Left: the same measurements in a cluster (P4.02) |
-| P4.01, P4.02 | Multi-node kind run with partitions and restarts; measured RTO and RPO added here |
+| P4.01 | Written and tested offline only ([below](#four-node-kind-acceptance-p401-written-not-run)): the four-node lab, its manifests and the acceptance harness with I7 from the audit log. Left: creating the cluster, the live S0-S9 runs with `--repeat 5`, committed audit-log extracts, and the owners' review of the evidence for #59, #61 and #63 |
+| P4.02 | Partition, restart and restore drills on the four-node lab; measured RTO and RPO added here |
 | P5.01 | A replicated Coordinator on a replicated database |
 
 P1.10 (the decision table, peer adoption and SUPERSEDED) and P1.07 (structured

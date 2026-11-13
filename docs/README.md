@@ -8,6 +8,8 @@ Read these in order:
    The [threat model](threat-model.md) and [distributed model](distributed-model.md)
    state trust boundaries, failure and timing assumptions, and known weaknesses.
 4. [Testing](testing.md): offline regressions, live acceptance and specialised checks.
+   The [four-node distributed acceptance](distributed-acceptance.md) (written,
+   not yet run) has its own recipe and results table.
 5. [Results](results.md): tables generated from the committed evidence bundles.
 6. [Limitations](limitations.md): known limitations and open defects, each with checked citations.
 

@@ -1,0 +1,159 @@
+# planner-1 of the sentinel-dist lab: the worker image in provider mode with
+# the deterministic lab planner, which every proposal labels SYNTHETIC and
+# which runtime/worker_service.py accepts only in a bound lab fault run. A
+# provider-mode Planner needs no Kubernetes credential (docs/remote-workers.md),
+# so its ServiceAccount and Pod mount no token and no Role binds it. Its own
+# Secret holds only its delivery credential; its own PVC holds planner.db and
+# transport.db. planner-agent.yaml is the optional agent-mode variant, which
+# needs read-only get on the target and is not part of the default overlay.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sentinel-planner
+  namespace: sentinel-dist
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sentinel-dist-planner-1-data
+  namespace: sentinel-dist
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 128Mi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sentinel-dist-planner-1-config
+  namespace: sentinel-dist
+data:
+  worker.json: |
+    {
+      "role": "planner",
+      "identity": "planner-1",
+      "url": "https://sentinel-coordinator.sentinel-dist.svc:8766",
+      "token_env": "SENTINEL_DELIVERY_TOKEN",
+      "ca": "/coordinator-ca/ca.crt",
+      "state_directory": "/data/planner-1",
+      "cluster_id": "sentinel-dist",
+      "provider": "deterministic",
+      "baselines": "/inputs/baseline.json",
+      "attempt_lease_seconds": 30,
+      "max_attempts": 3,
+      "retry_seconds": 5
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentinel-planner-1
+  namespace: sentinel-dist
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sentinel-planner-1
+  template:
+    metadata:
+      labels:
+        app: sentinel-planner-1
+        sentinel.io/component: planner
+        sentinel.io/identity: planner-1
+    spec:
+      serviceAccountName: sentinel-planner
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      nodeSelector:
+        sentinel.io/host: c
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: sentinel-worker:local
+          imagePullPolicy: Never
+          args: ["--role", "planner", "--config", "/config/worker.json", "--health-port", "8080"]
+          env:
+            - name: SENTINEL_FAULT_POINTS
+              value: /faults
+            - name: SENTINEL_FAULT_CLUSTER
+              value: sentinel-dist
+            - name: SENTINEL_FAULT_PROCESS
+              value: planner-1
+            - name: SENTINEL_DELIVERY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-dist-planner-1
+                  key: delivery-token
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - "-c"
+                - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=3)"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - "-c"
+                - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: inputs
+              mountPath: /inputs
+              readOnly: true
+            - name: coordinator-ca
+              mountPath: /coordinator-ca
+              readOnly: true
+            - name: faults
+              mountPath: /faults
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: sentinel-dist-planner-1-data
+        - name: config
+          configMap:
+            name: sentinel-dist-planner-1-config
+        - name: inputs
+          configMap:
+            name: sentinel-dist-inputs
+        - name: coordinator-ca
+          configMap:
+            name: sentinel-dist-coordinator-ca
+        - name: faults
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

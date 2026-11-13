@@ -56,7 +56,7 @@ in the unit tests too (the default subset takes about 90 s).
 | --- | --- | --- |
 | Topology | `topology.py` | Generates tokens (`secrets.token_urlsafe(32)`) and gives each child only its own, in its environment. The Coordinator gets all of them because it checks them. A throwaway CA and a 127.0.0.1 certificate (openssl, with a private configuration file) give HTTPS; the CA key is deleted after signing. Without openssl the run records `tls: false`. Binds loopback only. |
 | Fault proxy | `faultproxy.py` | pass, blackhole, reset, delay and drop-response, per worker, switched at run time. TLS passes through; drop-response lets the handshake finish and then drops the reply. A mode applies to connections accepted after it is set; an open connection keeps its mode. That is a hard partition here only because the worker and approval clients open one connection per request. |
-| Fault points | `runtime/fault_points.py` | Named stop points in the worker and Coordinator code paths. Inert unless `SENTINEL_FAULT_POINTS` names an existing directory and `SENTINEL_FAULT_CLUSTER` is a lab cluster (`file-sentinel-distributed` or `sentinel-boutique-connected`). With either variable (or a clock offset) set, a worker starts only if its configured `cluster_id` is that cluster and any configured context is its lab context; otherwise it refuses to start. An armed point fires once: it exits with code 73, like a crash, or blocks until released. |
+| Fault points | `runtime/fault_points.py` | Named stop points in the worker and Coordinator code paths. Inert unless `SENTINEL_FAULT_POINTS` names an existing directory and `SENTINEL_FAULT_CLUSTER` is a lab cluster (`file-sentinel-distributed`, `sentinel-boutique-connected`, or `sentinel-dist`, the four-node lab of P4.01 whose workers run in Pods). With either variable (or a clock offset) set, a worker starts only if its configured `cluster_id` is that cluster and any configured context is its lab context; otherwise it refuses to start. An armed point fires once: it exits with code 73, like a crash, or blocks until released. |
 | File cluster | `tests/support/file_cluster.py` | One Deployment in SQLite, shared by every process. It reuses the simulator's RFC 6902 JSON Patch and etcd-like revision counter (`tests/support/sim_apiserver.py`) and answers the kubectl commands of the production adapter, so `KubectlDeploymentAPI` runs unchanged. Every patch is recorded with its outcome and classified by effect: any patch that writes or changed the pod template is a template write, with or without Sentinel's evidence annotation. Workers accept it only in a lab fault run. |
 | Observer feed | `observer_feed.py` | The real Observer state machine and outbox over a synthetic observation series, delivered with the real HTTP ingress. |
 | Inputs | `fixtures.py` | The committed samples, moved to the current time and renamed to the file cluster, with a strict live-profile policy and a short health window. |
@@ -89,6 +89,15 @@ renewals. Workers serve `/healthz` and `/readyz` on 127.0.0.1
 I1-I6 follow the A1 design's numbering. X1-X4 are the further properties the
 P3.01 task lists (lease exclusivity, no secret in logs, no lost acknowledged
 message, journal consistent with the outbox).
+
+I7 (P4.01) is checked only on the four-node lab, which has an API server
+audit log: at most one successful template PATCH per action in that log, each
+by the Executor's ServiceAccount and carrying its action's evidence
+(`invariants.py::i7`, `audit.py`). It fails rather than passing on no rows
+when the extract may be short: the operator's injection missing from it, a
+generation the target gained with no write in it, a log that rotated past
+the run's start, or a Sentinel change logged without its body
+(`audit.py::completeness`). See [four-node acceptance](#four-node-acceptance-p401).
 
 ## Scenarios and results on this code base
 
@@ -279,3 +288,25 @@ starts a fresh Coordinator store, and a seal whose epoch is below the stored
 ([deploy/README.md](../../deploy/README.md)), so `--repeat` of S8 under the
 policy may not reproduce. Run S8 without the policy, or settle the fence
 epoch first (an owner decision listed under P3.05).
+
+## Four-node acceptance (P4.01)
+
+`kind_acceptance.py` (with its cluster steps in `kind_acceptance_live.py`)
+runs the same roles as Pods on the four-node kind lab `sentinel-dist`
+instead of as processes: the manifests are in `deploy/sentinel/sentinel-dist`
+and the cluster in `deploy/kind/kind-dist.yaml`. It uses neither this
+topology nor `kind_bundle.py`, so `topology.KIND_CONTEXTS` and
+`kind_bundle.LABS` are unchanged; only `runtime/fault_points.py` lists
+`sentinel-dist`, because its workers run with the fault-point gate. It
+accepts only `kind-sentinel-dist`. The scenarios map S0-S8 of the catalogue
+above onto Chaos Mesh objects, `docker pause` of a node and fault points
+armed inside a Pod, and add S9 (RBAC, admission and network policy denials).
+It copies the Coordinator's and workers' databases and logs out of the Pods
+to compute I1-I6 and X1-X4 with the code above, narrowed to the incidents
+each run opened (`kind_acceptance.py::scope_records`, since one Coordinator
+store serves every run of a deployment), and adds I7 from the API server
+audit log. Written and tested offline only; the recipe and the empty results
+table are in [distributed acceptance](../../docs/distributed-acceptance.md).
+Since one Coordinator store serves every run, ownership epochs keep growing
+across runs, so the admission policy's monotonic fence epoch does not deny
+the seals of later S8 repeats as it would with a fresh store per run.

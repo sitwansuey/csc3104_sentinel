@@ -62,6 +62,19 @@ class FaultPointTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     fault_points.bind(config)
 
+    def test_the_sentinel_dist_lab_binds_only_its_own_in_pod_context(self):
+        dist = {fault_points.ENV_CLUSTER: "sentinel-dist"}
+        with self.environment(**dist):
+            self.assertIs(fault_points.bind({"cluster_id": "sentinel-dist", "context": "kind-sentinel-dist"}), True)
+            self.assertIs(fault_points.bind({"cluster_id": "sentinel-dist"}), True)  # In-cluster readers name none.
+        refused = [{"cluster_id": "sentinel-dist", "context": "kind-sentinel-boutique-connected"},
+                   {"cluster_id": "sentinel-dist", "context": "kind-sentinel-lab"},
+                   {"cluster_id": "sentinel-boutique-connected", "context": "kind-sentinel-dist"},
+                   {"cluster_id": "file-sentinel-distributed", "context": "file-cluster"}]
+        for config in refused:
+            with self.subTest(config=config), self.environment(**dist), self.assertRaises(ValueError):
+                fault_points.bind(config)
+
     def test_an_unknown_point_is_refused_even_when_inert(self):
         with self.environment(**{fault_points.ENV_DIRECTORY: ""}), self.assertRaises(ValueError):
             fault_points.checkpoint("executor.anywhere")

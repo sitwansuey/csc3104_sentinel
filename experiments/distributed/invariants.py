@@ -24,6 +24,10 @@ Four cross-checks complete the set:
   incident's journal is one unbroken chain ending in its current state, and each
   Executor or Verifier command follows a transition into READY or VERIFYING.
 
+I7, for the four-node sentinel-dist lab only (P4.01), counts template
+writes in the API server audit log rather than in any Sentinel record: at
+most one successful template PATCH per action (i7, audit.py).
+
 check() takes plain records (see collect()) so the checks are unit-testable
 without processes. Details hold counts and identifiers only.
 """
@@ -51,6 +55,7 @@ NAMES = {
     "X2": "No secret in logs, configuration files or argv",
     "X3": "No acknowledged message lost",
     "X4": "Transitions journal consistent with incidents and outbox",
+    "I7": "At most one successful template PATCH per action in the API server audit log",
 }
 
 
@@ -197,6 +202,49 @@ def x4(records):
                  for row in records.get("outbox", [])
                  if row["topic"] in needs and (row["action_id"], needs[row["topic"]]) not in reached]
     return _result("X4", failures, f"{len(records.get('transitions', []))} transition(s) consistent")
+
+
+def i7(records):
+    """I7, from the API server audit log of the sentinel-dist lab (experiments/distributed/audit.py).
+
+    records["audit"] holds the sanitised rows of one run. Every template
+    write a Sentinel ServiceAccount made must come from the Executor's
+    ServiceAccount, carry its action's evidence annotation, and be the only
+    one for that action. A fence or seal, a denied request, a dry run and a
+    read are not template writes. A run whose audit log could not be read
+    fails rather than passing on no rows, and so does one whose extract was
+    not checked for completeness or was found short
+    (records["audit_completeness"], from audit.completeness), and one where a
+    Sentinel ServiceAccount made a Deployment change the log holds no body
+    for ("unclassified"). Not in CHECKS: file mode has no API server, so only
+    the kind acceptance harness runs it.
+    """
+    from experiments.distributed.audit import EXECUTOR_USER
+    rows = records.get("audit")
+    if rows is None:
+        return _result("I7", ["the audit log was not read"], "")
+    problems = records.get("audit_completeness")
+    if problems is None:
+        return _result("I7", ["the audit extract was not checked for completeness"], "")
+    writes, failures = defaultdict(int), [f"audit extract incomplete: {problem}" for problem in problems]
+    unclassified = sum(1 for row in rows if row["effect"] == "unclassified" and row["sentinel"])
+    if unclassified:
+        failures.append(f"{unclassified} Deployment change(s) by a Sentinel ServiceAccount logged without a "
+                        "request body: cannot tell whether they wrote the template")
+    for row in rows:
+        if row["effect"] != "template_write" or not row["sentinel"]:
+            continue
+        if row["user"] != EXECUTOR_USER:
+            failures.append(f"template written by {row['user']}, not the Executor")
+        if row["marker"] != "write" or row["action_id"] in {"unknown", "unannotated"}:
+            failures.append(f"{row['action_id']}: template PATCH without valid action evidence")
+        writes[row["action_id"]] += 1
+    failures += [f"{action}: {count} successful template PATCHes" for action, count in sorted(writes.items())
+                 if count > 1]
+    denied = sum(1 for row in rows if row["effect"] == "denied")
+    fences = sum(1 for row in rows if row["effect"] == "fence")
+    return _result("I7", failures, f"{sum(writes.values())} template PATCH(es) over {len(writes)} action(s); "
+                                   f"{fences} fence or seal PATCH(es) and {denied} denied change(s) not counted")
 
 
 CHECKS = (i1, i2, i3, i4, i5, i6, x1, x2, x3, x4)

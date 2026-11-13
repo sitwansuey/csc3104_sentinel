@@ -4,8 +4,9 @@ The project has no YAML dependency, so the manifest tests read Kubernetes
 manifests with this reader. It understands block mappings and sequences
 (including "- key: value" items and lists at their key's indentation), plain,
 single- and double-quoted scalars, one-line flow sequences such as
-["apps"], literal block scalars (| and |-), full-line comments and "---"
-document separators. Anything else (tabs, anchors, aliases, tags, flow
+["apps"], the empty flow mapping {} (podSelector: {}, emptyDir: {}),
+literal block scalars (| and |-, also as a "- |" list item), full-line comments and "---"
+document separators. Anything else (tabs, anchors, aliases, tags, other flow
 mappings, folded scalars, trailing comments after quotes) raises
 ManifestYamlError instead of being read wrongly. It is a test helper, not a
 YAML implementation: kubectl remains the authority on what a manifest means.
@@ -132,6 +133,9 @@ class _Reader:
             rest = content[1:]
             if not rest.strip():
                 value, position = self.node(position + 1, indent + 1)
+            elif rest.strip() in ("|", "|-"):
+                # "- |" is a literal block as a list item (kind's kubeadmConfigPatches).
+                value, position = self.literal(position + 1, indent, keep=rest.strip() == "|")
             else:
                 offset = indent + 1 + len(rest) - len(rest.lstrip(" "))
                 rest = rest.strip()
@@ -182,6 +186,8 @@ def scalar(text):
         if not text.endswith("'") or len(text) < 2 or "'" in text[1:-1].replace("''", ""):
             raise ManifestYamlError("Unsupported single-quoted scalar: " + text)
         return text[1:-1].replace("''", "'")
+    if text == "{}":
+        return {}
     if text.startswith("["):
         if not text.endswith("]"):
             raise ManifestYamlError("Unsupported flow sequence: " + text)

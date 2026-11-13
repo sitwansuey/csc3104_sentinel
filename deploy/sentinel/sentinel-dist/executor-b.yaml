@@ -1,0 +1,173 @@
+# executor-b of the sentinel-dist lab, pinned to node b; executor-a runs on the other
+# executor node and the Coordinator on node c, so the two Executors and the
+# Coordinator are on three different nodes. Both Executors use the
+# ServiceAccount sentinel-executor (rbac.yaml: get and patch on demo-api only),
+# because the admission policy (deploy/sentinel/executor-admission.yaml) keys
+# on that name; the audit log tells them apart by the Pod name bound into each
+# token. Each has its own Secret (delivery and approval credentials), its own
+# PVC (executor.db, its locks and transport.db) and its own Coordinator
+# identity. Nothing else is shared.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sentinel-dist-executor-b-data
+  namespace: sentinel-dist
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 128Mi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sentinel-dist-executor-b-config
+  namespace: sentinel-dist
+data:
+  worker.json: |
+    {
+      "role": "executor",
+      "identity": "executor-b",
+      "url": "https://sentinel-coordinator.sentinel-dist.svc:8766",
+      "token_env": "SENTINEL_DELIVERY_TOKEN",
+      "ca": "/coordinator-ca/ca.crt",
+      "state_directory": "/data/executor-b",
+      "cluster_id": "sentinel-dist",
+      "context": "kind-sentinel-dist",
+      "kubeconfig": "/kube/kubeconfig",
+      "policy": "/inputs/policy.json",
+      "baseline": "/inputs/baseline.json",
+      "server_dry_run": false,
+      "allowed_targets": "/inputs/allowed-targets.json",
+      "fence_after_seconds": 30,
+      "approvals": {
+        "url": "https://sentinel-coordinator.sentinel-dist.svc:8767",
+        "identity": "executor-b",
+        "token_env": "SENTINEL_APPROVAL_TOKEN",
+        "ca": "/coordinator-ca/ca.crt"
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentinel-executor-b
+  namespace: sentinel-dist
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sentinel-executor-b
+  template:
+    metadata:
+      labels:
+        app: sentinel-executor-b
+        sentinel.io/component: executor
+        sentinel.io/identity: executor-b
+        sentinel.io/api-access: "true"
+    spec:
+      serviceAccountName: sentinel-executor
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 30
+      nodeSelector:
+        sentinel.io/host: b
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: sentinel-worker:local
+          imagePullPolicy: Never
+          args: ["--role", "executor", "--config", "/config/worker.json", "--health-port", "8080"]
+          env:
+            - name: SENTINEL_FAULT_POINTS
+              value: /faults
+            - name: SENTINEL_FAULT_CLUSTER
+              value: sentinel-dist
+            - name: SENTINEL_FAULT_PROCESS
+              value: executor-b
+            - name: SENTINEL_DELIVERY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-dist-executor-b
+                  key: delivery-token
+            - name: SENTINEL_APPROVAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-dist-executor-b
+                  key: approval-token
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - "-c"
+                - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=3)"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - "-c"
+                - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: inputs
+              mountPath: /inputs
+              readOnly: true
+            - name: coordinator-ca
+              mountPath: /coordinator-ca
+              readOnly: true
+            - name: kubeconfig
+              mountPath: /kube
+              readOnly: true
+            - name: faults
+              mountPath: /faults
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: sentinel-dist-executor-b-data
+        - name: config
+          configMap:
+            name: sentinel-dist-executor-b-config
+        - name: inputs
+          configMap:
+            name: sentinel-dist-inputs
+        - name: coordinator-ca
+          configMap:
+            name: sentinel-dist-coordinator-ca
+        - name: kubeconfig
+          configMap:
+            name: sentinel-dist-kubeconfig
+        - name: faults
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

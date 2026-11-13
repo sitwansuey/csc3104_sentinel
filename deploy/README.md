@@ -11,12 +11,15 @@ worker role in one image ([worker image](../docs/remote-workers.md#worker-image)
 it has been built and scanned locally, but no container has run from it. No worker rollout or whole-platform
 Kubernetes acceptance has been run: the networked layer has only run on one
 host (`L-SINGLE-HOST-DISTRIBUTION` in [limitations](../docs/limitations.md)).
+`sentinel/sentinel-dist/` and `kind/kind-dist.yaml` are the complete rollout for
+the four-node P4.01 lab, written and tested offline only
+([distributed acceptance](../docs/distributed-acceptance.md)).
 
 | Directory | Contents |
 | --- | --- |
 | `boutique/` | Pinned upstream Boutique manifest, license and single-service dependency configuration |
-| `sentinel/` | Sentinel Kubernetes resources, restricted Executor RBAC and the Executor admission policy |
-| `kind/` | Local cluster configuration, including the separate Calico security lab |
+| `sentinel/` | Sentinel Kubernetes resources, restricted Executor RBAC and the Executor admission policy; `sentinel/sentinel-dist/` holds every role for the four-node lab |
+| `kind/` | Local cluster configuration, including the separate Calico security lab and the four-node `sentinel-dist` lab with its API server audit policy |
 | `docker/` | Sentinel component, worker, security inspector and packaged-demo Dockerfiles; repository-root build context |
 | `workloads/` | Small demo workload Kubernetes manifests |
 | `chaos-mesh/` | Pinned lab installation values; see `docs/chaos.md` |
