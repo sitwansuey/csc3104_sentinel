@@ -43,6 +43,7 @@ the fix and regenerate.
 | [L-RESTART-BUDGET-LOCAL](#l-restart-budget-local) | limitation | open | The restart budget is kept per Executor ledger, and only local wiring gives it to the Guard | P4.03 | #74, #77 |
 | [L-NO-DIAGNOSIS-ACCURACY](#l-no-diagnosis-accuracy) | limitation | open | No diagnosis-accuracy evaluation | P2.07, P4.04 | #17, #75 |
 | [L-REPLAY-MODEL-ROWS](#l-replay-model-rows) | limitation | open | The recovery decision ablation has no model rows yet, its labels are unreviewed and its state is reconstructed | P4.04, P4.07 | #17, #75, #85, #87 |
+| [L-EVALUATION-UNINTERPRETED](#l-evaluation-uninterpreted) | limitation | open | The evaluation report is generated but unscored, partly not yet run and not yet interpreted | P4.07 | #17, #75, #87 |
 | [L-CALLER-BLOCKS-CALLEE-REPAIR](#l-caller-blocks-callee-repair) | limitation | open | A callee cannot be repaired while a caller it broke is NotReady, so the dependency-ordered pair cannot show its ordering | P4.05 | #77 |
 | [L-SECURITY-SHIPPING-ONLY](#l-security-shipping-only) | limitation | open | mTLS and inspection cover only the shipping path, and the other services' L4 default-deny runs in the security lab only | P4.06, P5.04, P5.05 | #69, #71 |
 | [L-UNGATED-CVES](#l-ungated-cves) | limitation | open | Workload image CVEs raise alerts but gate nothing | P5.02, P5.03 | #72, #73 |
@@ -209,7 +210,7 @@ the fix and regenerate.
 
 - Impact: There is no committed RCAEval result and no model result for the comparison of retrieval alone, retrieval with validation, and full Sentinel: the replay harness for that comparison is built and tested offline, but its model rows have not run (L-REPLAY-MODEL-ROWS). Agent results show recovery on one fault, not diagnosis accuracy. A pre-registered Online Boutique evaluation is prepared but not run: the protocol, the stratified sampler, the BARO and anomaly-rank baselines, a runner that locks the eval split until the dev runs are frozen, and a report with Wilson intervals and paired tests. All of it is tested on synthetic data only. No RCAEval telemetry has been downloaded, no model has been run under the protocol, and the licence and citation still need a person's confirmation.
 - Workaround: None; do not quote agent recovery counts as accuracy.
-- Evidence: claim `C-AGENT-ALL`; `agent/datasets/README.md`; `docs/evaluation/rcaeval/PROTOCOL.md`.
+- Evidence: claim `C-AGENT-ALL`; `agent/datasets/README.md`; `docs/evaluation/rcaeval/PROTOCOL.md`; `docs/evaluation.md`.
 
 ### L-REPLAY-MODEL-ROWS
 
@@ -217,7 +218,15 @@ the fix and regenerate.
 
 - Impact: The incident replay corpus (74 cases: 52 captured from the committed bundles, 10 derived, 12 adversarial) and the runner for decision policies P0 to P4 at validation levels V0 to V2 are built and tested offline with a scripted model. Only the deterministic rows are committed: P0, P1, and P1R on the 15 captured agent cases with a recorded diagnosis. The model policies P2, P3 and P4, and the model and context-size ablations, have not run: that is a resumable GPU batch of about 1,300 units that a person starts; a unit whose model or agent fails is an error row with no credit, and a resume runs it again. Every expected.json is pending review, so no row is a scored result. Evidence bundles do not keep the baseline template, the live Deployment or the Observer snapshots, so the replay reconstructs them from the catalog, the pinned image digest and the incident's own quoted signals; the golden replay reproduces all 9 recorded agent runs made under a decision policy, but the template hash is mapped back and the baseline id, planning resource version and Recovery Planner answer come from the recorded proposal, so it tests the path from diagnosis to proposal, not the model; and the V2 Guard on the reconstructed state agrees with the live Guard on 38 of 38 recorded ROLLBACK verdicts, which shows consistency, not independent proof. Replay measures decisions only; recovery success comes from live trials. The corpus holds four scenarios, mostly R1, and repeated runs of one scenario are not independent.
 - Workaround: Quote only the committed deterministic rows, as unscored decision-level results with their Wilson intervals, and keep captured, derived and adversarial rows apart.
-- Evidence: `docs/evaluation/replay/README.md`; `docs/evaluation/replay/README.md`; `evidence/evaluation/recovery-ablation/v1-deterministic/table.md`; `scripts/build_replay_corpus.py`; `tests/test_replay_corpus.py`; `tests/test_recovery_ablation.py`; `tests/test_retrieval_contamination.py`.
+- Evidence: `docs/evaluation/replay/README.md`; `docs/evaluation/replay/README.md`; `evidence/evaluation/recovery-ablation/v1-deterministic/table.md`; `scripts/build_replay_corpus.py`; `tests/test_replay_corpus.py`; `tests/test_recovery_ablation.py`; `tests/test_retrieval_contamination.py`; `docs/evaluation.md`.
+
+### L-EVALUATION-UNINTERPRETED
+
+**The evaluation report is generated but unscored, partly not yet run and not yet interpreted.** Limitation, open; recorded 2026-11-13. Planned: P4.07. Issues: #17, #75, #87.
+
+- Impact: docs/evaluation.md folds the committed evidence into one page (setup and versions, RCAEval, the Guard ablation, the replay ablation, the live scenario matrix, the distributed runs, the security lab and latency) and a threats-to-validity list counted from the evidence. scripts/evidence/summarize.py generates it and --check fails when a number on the page or in the evidence it reads changes without a regeneration. It is offline only and adds no run: RCAEval, the replay model rows and the four-node sentinel-dist acceptance show 'not yet run' until their evidence is committed. No row is a scored result while the catalog, pair and replay labels await sign-off and the Guard fixture evaluation is preliminary. Every live run is on one workstation, many used the code-rule or synthetic planner rather than a model, and no run records a person approving. The generator does not say which configuration does better: the interpretation section is empty until the team writes it after reading the threats to validity. Files that are not bundles (the replay results, the RCAEval report and the latency ledger) carry no MANIFEST hash, so an edit to them is caught as a stale page, not as a tampered file.
+- Workaround: Read the threats to validity before quoting the page. Quote a number by its claim id from evidence/claims.json with its scope caveat, never from the page alone, and call every row unscored until its labels are signed.
+- Evidence: `docs/evaluation.md`; `scripts/evidence/summarize.py`; `tests/test_evaluation_docs.py`; `tests/test_evaluation_docs.py`.
 
 ### L-CALLER-BLOCKS-CALLEE-REPAIR
 

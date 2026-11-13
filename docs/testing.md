@@ -13,8 +13,9 @@ the full suite also exercises the optional native RCAEval adapter:
 .\.venv\Scripts\python.exe scripts/check_doc_citations.py
 ```
 
-The last four fail when a generated table or claim quote is stale or
-hand-edited, a claim lacks evidence, a known-stale status phrase has no claim
+The last four fail when a generated table (in [results](results.md), the
+[evaluation report](evaluation.md), the limitations page or the README) or a
+claim quote is stale or hand-edited, a claim lacks evidence, a known-stale status phrase has no claim
 id beside it, a [limitations](limitations.md) citation no longer resolves, a
 Markdown link or anchor is dead, or a code citation in the threat or
 distributed model no longer resolves.

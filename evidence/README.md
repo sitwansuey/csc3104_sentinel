@@ -1,7 +1,8 @@
 # Evidence
 
 This folder holds sanitised evidence from live runs. Results tables in
-[docs/results.md](../docs/results.md) and the claims in [claims.json](claims.json)
+[docs/results.md](../docs/results.md), the evaluation report in
+[docs/evaluation.md](../docs/evaluation.md) and the claims in [claims.json](claims.json)
 are generated from it, so every quoted number points back to a bundle here.
 
 ## Layout
