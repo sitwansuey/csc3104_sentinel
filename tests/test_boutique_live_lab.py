@@ -1,5 +1,6 @@
 """Offline checks of workload evidence/scope, not a live Boutique validation."""
 
+import json
 import unittest
 from pathlib import Path
 import tempfile
@@ -84,6 +85,37 @@ class BoutiqueLabTests(unittest.TestCase):
                     prompt.assert_called_once()
                     inject.assert_called_once()
                     self.assertEqual(observe.call_count, 2)
+            finally:
+                experiment.store.close()
+
+    def test_a_scan_directory_turns_on_the_cve_gate_for_guard_and_executor(self):
+        # P5.02: one run option adds the reviewed gate block and feeds both readers.
+        from services.guard.eligibility import validate_policy
+        with tempfile.TemporaryDirectory() as directory:
+            experiment = BoutiqueExperiment(Path(directory) / "run")
+            try:
+                experiment.select_target("cartservice")
+                self.assertNotIn("image_vulnerability_gate", experiment.executor_policy()["security_constraints"])
+                scans = Path(directory) / "scans"
+                scans.mkdir()
+                image = "registry.example/cart@sha256:" + "c" * 64
+                (scans / "cart.json").write_text(json.dumps({
+                    "image": image, "status": "NO_KNOWN_CVES", "findings": [],
+                    "scanner_image": "aquasec/trivy@sha256:" + "f" * 64, "scanned_at": "2026-11-13T00:00:00Z"}),
+                    encoding="utf-8")
+                experiment.image_scans = scans
+                policy = experiment.executor_policy()
+                validate_policy(policy)
+                self.assertEqual(policy["security_constraints"]["image_vulnerability_gate"]["mode"], "non_regression")
+                template = {"spec": {"containers": [{"name": "server", "image": image}]}}
+                experiment.baseline = {"pod_template": template}
+                deployment = {"metadata": {}, "spec": {"template": template}}
+                with patch.object(experiment, "deployment", return_value=deployment):
+                    state = experiment.guard_state({"action": "ROLLBACK"})
+                self.assertEqual([scan["image"] for scan in state["image_scans"]["scans"]], [image])
+                with patch("experiments.recovery.live.build_adapters") as build:
+                    Experiment.adapters(experiment, Path(directory))
+                self.assertEqual(build.call_args.kwargs["image_scans"], scans)
             finally:
                 experiment.store.close()
 

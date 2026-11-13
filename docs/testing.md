@@ -95,6 +95,11 @@ python scripts/ci/coverage_gate.py coverage.json
   command in the [marker instructions](instructions/README.md) names a script,
   PowerShell parameter or command-line option that no longer exists, or when a
   command block lacks its rehearsal tag.
+- **CVE exceptions.** The `test` job runs
+  `python scripts/security/gate_images.py check-exceptions deploy/security/cve-exceptions.json`.
+  It fails when a reviewed CVE exception is malformed, lasts more than 30
+  days or has expired (see the [CVE gate](security.md#cve-gate-p502)). It
+  scans no image.
 
 Making these checks required for merging is a repository setting that the
 owner has to enable.

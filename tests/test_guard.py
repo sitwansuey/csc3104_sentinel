@@ -9,7 +9,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from services.guard.core import GuardInputError, evaluate, proposal_fingerprint, template_sha256
+from services.guard.core import (GuardInputError, assert_decision_usable, evaluate, proposal_fingerprint,
+                                 template_sha256)
 from shared.contracts import ContractError, validate_message
 
 
@@ -382,6 +383,32 @@ class GuardDecisionTests(unittest.TestCase):
         reordered["evidence_refs"] = self.proposal["evidence_refs"] + ["new-evidence"]
         self.assertNotEqual(proposal_fingerprint(reordered), proposal_fingerprint(self.proposal))
         self.assertEqual(template_sha256(self.baseline["pod_template"]), self.baseline["template_sha256"])
+
+    def test_changed_image_scans_change_inputs_sha256_and_void_the_decision(self):
+        # P5.02: scans reach the Guard only as live_state.image_scans, so they are fingerprinted like any input.
+        image = "demo/sentinel@sha256:" + "a" * 64
+        for template in (self.baseline["pod_template"], self.live_state["deployment"]["spec"]["template"]):
+            template["spec"]["containers"][0]["image"] = image
+        self.baseline["template_sha256"] = template_sha256(self.baseline["pod_template"])
+        self.proposal["parameters"]["template_sha256"] = self.baseline["template_sha256"]
+        self.policy["security_constraints"] = {"image_vulnerability_gate": {
+            "block_severities": ["CRITICAL", "HIGH"], "mode": "non_regression", "max_scan_age_seconds": 86400,
+            "trusted_scanner_images": ["aquasec/trivy@sha256:" + "f" * 64]}}
+        scan = {"image": image, "status": "FINDINGS", "scanner_image": "aquasec/trivy@sha256:" + "f" * 64,
+                "scanned_at": "2026-10-10T11:00:00Z", "findings": [{"id": "CVE-1", "severity": "HIGH"}]}
+        self.live_state["image_scans"] = {"scans": [scan], "exceptions": []}
+        approval = self.approval()
+        result = self.run_guard(approval)
+        self.assert_decision(result, "ALLOW", "VALIDATION_PASSED")
+        arguments = (self.proposal, self.live_state, self.policy, self.baseline, self.dependencies, approval)
+        self.assertTrue(assert_decision_usable(result, *arguments, now=NOW))
+        changed = copy.deepcopy(self.live_state)
+        changed["image_scans"]["scans"][0]["findings"].append({"id": "CVE-2", "severity": "LOW"})
+        self.assertNotEqual(evaluate(self.proposal, changed, self.policy, self.baseline, self.dependencies,
+                                     approval, now=NOW)["inputs_sha256"], result["inputs_sha256"])
+        with self.assertRaisesRegex(GuardInputError, "inputs have changed"):
+            assert_decision_usable(result, self.proposal, changed, self.policy, self.baseline,
+                                   self.dependencies, approval, now=NOW)
 
 
 if __name__ == "__main__":

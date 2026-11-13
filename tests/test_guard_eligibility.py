@@ -11,7 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from services.guard.common import GuardInputError
+from services.guard.core import evaluate, proposal_fingerprint, template_sha256
 from services.guard.eligibility import assess, referenced_objects, validate_policy
+from shared.contracts import validate_message
 
 
 NOW = datetime(2026, 10, 10, 12, 0, 40, tzinfo=timezone.utc)
@@ -276,6 +278,130 @@ class EligibilityTests(unittest.TestCase):
         self.spec["volumes"] = "malformed"
         _, findings = referenced_objects(self.baseline["pod_template"], "test")
         self.assertEqual(findings[0]["status"], "FAIL")
+
+
+TRIVY = "aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c"
+SAFE = "demo/sentinel@sha256:" + "a" * 64
+WORSE = "demo/sentinel@sha256:" + "b" * 64
+
+
+def image_scan(image, *findings):
+    return {"image": image, "status": "FINDINGS" if findings else "NO_KNOWN_CVES", "scanner_image": TRIVY,
+            "scanned_at": "2026-10-10T11:00:00Z",
+            "findings": [{"id": cve, "severity": severity} for cve, severity in findings]}
+
+
+class ImageGateEligibilityTests(EligibilityTests):
+    """The Guard's CVE gate (P5.02) over live_state.image_scans, from the trusted reader only."""
+
+    def setUp(self):
+        super().setUp()
+        self.policy["security_constraints"]["image_vulnerability_gate"] = {
+            "block_severities": ["CRITICAL", "HIGH"], "mode": "non_regression", "max_scan_age_seconds": 86400,
+            "trusted_scanner_images": [TRIVY], "unknown_result": "ESCALATE"}
+        # A config-only rollback: the current template runs the baseline's digest.
+        self.live["deployment"]["spec"]["template"]["spec"]["containers"][0]["image"] = SAFE
+        self.live["image_scans"] = {"scans": [image_scan(SAFE, ("CVE-1", "HIGH"))], "exceptions": []}
+
+    def gate_findings(self):
+        return [item for item in self.run_checks() if item["code"].startswith("IMAGE_")]
+
+    def test_safe_baseline_passes_all_enabled_checks(self):
+        super().test_safe_baseline_passes_all_enabled_checks()
+        self.assert_finding("IMAGE_CVE_INHERITED", "PASS", "baseline.pod_template.spec.containers[0].image")
+
+    def test_absent_scans_escalate_never_allow(self):
+        del self.live["image_scans"]
+        [finding] = self.gate_findings()
+        self.assertEqual((finding["code"], finding["status"]), ("IMAGE_SCANS_MISSING", "UNKNOWN"))
+        self.policy["security_constraints"]["image_vulnerability_gate"]["unknown_result"] = "REJECT"
+        self.assert_finding("IMAGE_SCANS_MISSING", "FAIL")
+
+    def test_a_crafted_worse_baseline_is_a_regression(self):
+        self.container["image"] = WORSE
+        self.live["image_scans"]["scans"].append(image_scan(WORSE, ("CVE-1", "HIGH"), ("CVE-9", "CRITICAL")))
+        [finding] = [item for item in self.gate_findings() if item["status"] == "FAIL"]
+        self.assertEqual(finding["code"], "IMAGE_CVE_REGRESSION")
+        self.assertEqual(finding["actual"]["ids"], ["CVE-9"])
+
+    def test_every_init_container_image_is_gated(self):
+        self.spec["initContainers"] = [{"name": "setup", "image": WORSE}]
+        self.assert_finding("IMAGE_SCAN_MISSING", "UNKNOWN", "baseline.pod_template.spec.initContainers[0].image")
+
+    def test_an_unreadable_current_template_cannot_show_inheritance(self):
+        self.live["deployment"]["spec"]["template"] = "malformed"
+        self.assert_finding("IMAGE_CURRENT_SCAN_UNAVAILABLE", "UNKNOWN")
+
+    def test_malformed_scans_are_invalid_evidence(self):
+        for value in ("malformed", {"scans": [image_scan("demo/sentinel:latest")]}, {"scans": [], "exceptions": "x"}):
+            with self.subTest(value=value):
+                self.live["image_scans"] = value
+                self.assert_finding("BASELINE_ELIGIBILITY_INVALID", "FAIL", "live_state.image_scans")
+
+    def test_duplicate_container_names_cannot_hide_an_image(self):
+        self.spec["initContainers"] = [{"name": self.container["name"], "image": WORSE}]
+        self.assert_finding("BASELINE_ELIGIBILITY_INVALID", "FAIL", "baseline.pod_template.spec")
+
+    def test_unknown_or_weakened_gate_rules_are_refused(self):
+        gate_rules = self.policy["security_constraints"]["image_vulnerability_gate"]
+        for key, value in (("extra", True), ("block_severities", ["HIGH"]), ("mode", "off"),
+                           ("trusted_scanner_images", ["aquasec/trivy:latest"])):
+            with self.subTest(key=key):
+                policy = deepcopy(self.policy)
+                policy["security_constraints"]["image_vulnerability_gate"] = dict(gate_rules, **{key: value})
+                with self.assertRaises(GuardInputError):
+                    validate_policy(policy)
+
+    def test_restart_is_gated_and_scale_is_not(self):
+        del self.live["image_scans"]
+        self.proposal["action"] = "RESTART"
+        self.assert_finding("IMAGE_SCANS_MISSING", "UNKNOWN")
+        self.proposal["action"] = "SCALE"
+        self.assertEqual(self.gate_findings(), [])
+
+
+class ImageGateDecisionTests(unittest.TestCase):
+    """End to end through evaluate(): absent scans ESCALATE; usable scans keep an approved rollback ALLOWed."""
+
+    def setUp(self):
+        self.proposal = fixture("data/sentinel/samples/messages/proposal.json")
+        self.live = fixture("data/sentinel/samples/observations.json")["failed-rollout"][-1]
+        self.policy = fixture("data/sentinel/samples/policy.json")
+        self.baseline = fixture("data/sentinel/samples/baseline.json")
+        self.dependencies = fixture("data/sentinel/samples/messages/dependency-result.json")
+        self.policy["security_constraints"] = {"image_vulnerability_gate": {
+            "block_severities": ["CRITICAL", "HIGH"], "mode": "non_regression", "max_scan_age_seconds": 86400,
+            "trusted_scanner_images": [TRIVY]}}
+        self.approval = {"action_id": self.proposal["action_id"], "proposal_sha256": proposal_fingerprint(self.proposal),
+                         "policy_version": self.policy["policy_version"], "operator_id": "fixture-operator",
+                         "decision": "APPROVED", "approved_at": "2026-10-10T12:00:35Z",
+                         "expires_at": "2026-10-10T12:01:35Z"}
+
+    def decide(self):
+        return evaluate(self.proposal, self.live, self.policy, self.baseline, self.dependencies,
+                             self.approval, now=NOW)
+
+    def test_absent_scans_give_escalate(self):
+        decision = self.decide()
+        self.assertEqual(decision["verdict"], "ESCALATE")
+        self.assertIn("IMAGE_SCANS_MISSING", decision["reason_codes"])
+
+    def test_a_tagged_baseline_cannot_pass_the_gate(self):
+        self.live["image_scans"] = {"scans": [], "exceptions": []}
+        decision = self.decide()
+        self.assertEqual(decision["verdict"], "ESCALATE")
+        self.assertEqual(decision["reason_codes"], ["IMAGE_SCAN_MISSING"])
+
+    def test_usable_scans_keep_the_approved_rollback_allowed(self):
+        for template in (self.baseline["pod_template"], self.live["deployment"]["spec"]["template"]):
+            template["spec"]["containers"][0]["image"] = SAFE
+        self.baseline["template_sha256"] = template_sha256(self.baseline["pod_template"])
+        self.proposal["parameters"]["template_sha256"] = self.baseline["template_sha256"]
+        self.approval["proposal_sha256"] = proposal_fingerprint(self.proposal)
+        self.live["image_scans"] = {"scans": [image_scan(SAFE, ("CVE-1", "HIGH"))], "exceptions": []}
+        decision = self.decide()
+        validate_message(decision)
+        self.assertEqual(decision["verdict"], "ALLOW", decision["reason_codes"])
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ from runtime.approval_session import (
 )
 from runtime.executor_pipeline import process_executor_requests
 from runtime.guard_pipeline import process_guard_requests
+from runtime.image_scans import read_image_scans
 from runtime.live_executor import build_adapters
 from services.coordinator.core import LocalEventBus, SQLiteStore, handle
 from services.executor.core import ACTION_ANNOTATION, execute, reconcile
@@ -45,6 +46,7 @@ CONTEXT = "kind-sentinel-lab"
 NAMESPACE = "sentinel-demo"
 NAME = "demo-api"
 RESTRICTED_CONTEXT = "sentinel-executor-lab"
+CVE_GATE_RULES = ROOT / "deploy/security/cve-gate.json"  # the reviewed P5.02 gate block
 # Guard resource ceilings for the generic lab workload. Boutique targets take theirs from the catalog.
 LAB_CEILINGS = {"container_requests": {"cpu": "100m", "memory": "64Mi"},
                 "container_limits": {"cpu": "500m", "memory": "128Mi"},
@@ -124,6 +126,10 @@ class Experiment:
     health_outcome_description = " after executor rollback; Role 6 outcome remains pending"
     approval_mode = "interactive"
     operator = None  # Interactive operator identity; lab-operator when unset.
+    # P5.02: a directory of scan summaries turns on the CVE gate (deploy/security/cve-gate.json) in this run's
+    # policy; the Guard and the Executor then read their image_scans from it. None leaves the gate off.
+    image_scans = None
+    cve_exceptions = None
 
     def __init__(self, directory):
         self.directory = Path(directory).resolve()
@@ -207,7 +213,17 @@ class Experiment:
         if proposal.get("action") == "RESTART":
             with SQLiteExecutionLedger(self.directory / "executor.sqlite") as ledger:
                 state["restart_history"] = ledger.restart_history(proposal["target"])
+        if self.image_scans is not None:
+            state["image_scans"] = self.read_image_scans(state["deployment"])
         return state
+
+    def read_image_scans(self, deployment):
+        """image_scans for the baseline's and the current template's images, as the Executor's reader builds it."""
+        images = set()
+        for template in (self.baseline["pod_template"], deployment["spec"]["template"]):
+            for group in ("containers", "initContainers"):
+                images.update(container["image"] for container in template["spec"].get(group, []))
+        return read_image_scans(self.image_scans, sorted(images), self.cve_exceptions)
 
     def phase(self, name, scenario=None):
         """Record a lifecycle step so evidence timings are measured, not typed."""
@@ -286,8 +302,14 @@ class Experiment:
                       "require_compatible_references": True, "require_image_digests": True},
                   "security_constraints": {"deny_privileged": True, "deny_host_access": True,
                       "allowed_image_registries": self.allowed_registries, "allowed_service_accounts": [self.service_account],
-                      "forbid_service_account_change": True},
+                      "forbid_service_account_change": True, **self.cve_gate()},
                   **policy_ceilings(self.ceilings)}
+
+    def cve_gate(self):
+        """{"image_vulnerability_gate": reviewed rules} when this run has a scan directory, else {}."""
+        if self.image_scans is None:
+            return {}
+        return {"image_vulnerability_gate": json.loads(CVE_GATE_RULES.read_text(encoding="utf-8"))}
 
     def issue_restricted_credentials(self):
         """Apply the executor Role and write the private one-hour executor kubeconfig (never logged)."""
@@ -447,7 +469,7 @@ class Experiment:
             locks=self.directory / "locks", policy=self.directory / "policy.json", **self.baseline_inputs(),
             dependencies=folder / "dependencies.json", approval=folder / "approval.json", server_dry_run=True,
             approval_reader=self.approval_authority().executor_client() if coordinator else None,
-            reconcile_only=reconcile_only)
+            reconcile_only=reconcile_only, image_scans=self.image_scans, cve_exceptions=self.cve_exceptions)
 
     def negative_cases(self, incident):
         original = self.deployment()["spec"]["template"]

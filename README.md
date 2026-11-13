@@ -165,7 +165,7 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-REPLAY-MODEL-ROWS](docs/limitations.md#l-replay-model-rows): The recovery decision ablation has no model rows yet, its labels are unreviewed and its state is reconstructed (limitation, open; planned P4.04, P4.07)
 - [L-CALLER-BLOCKS-CALLEE-REPAIR](docs/limitations.md#l-caller-blocks-callee-repair): A callee cannot be repaired while a caller it broke is NotReady, so the dependency-ordered pair cannot show its ordering (limitation, open; planned P4.05)
 - [L-SECURITY-SHIPPING-ONLY](docs/limitations.md#l-security-shipping-only): mTLS and inspection cover only the shipping path, and the other services' L4 default-deny runs in the security lab only (limitation, open; planned P4.06, P5.04, P5.05)
-- [L-UNGATED-CVES](docs/limitations.md#l-ungated-cves): Workload image CVEs raise alerts but gate nothing (limitation, open; planned P5.02, P5.03)
+- [L-UNGATED-CVES](docs/limitations.md#l-ungated-cves): Workload image CVEs are gated only in offline tests; no live run uses the CVE gate (limitation, open; planned P5.02, P5.03)
 - [L-NO-RELEASE](docs/limitations.md#l-no-release): No tagged, scanned release image (limitation, open; planned P2.09, P2.10)
 - [L-LAB-CERTS](docs/limitations.md#l-lab-certs): Security lab certificates are two-day fixtures with no rotation (limitation, open; planned P5.06)
 - [L-RESTORE-DETECTION](docs/limitations.md#l-restore-detection): A Coordinator restored from a backup is detected, but lost acknowledged results are re-driven by hand (limitation, mitigated; planned P4.02)

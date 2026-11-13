@@ -25,6 +25,13 @@ from services.executor.kubernetes_adapter import KubectlDeploymentAPI as RealDep
 
 NOW = datetime(2026, 10, 10, 12, 0, 40, tzinfo=timezone.utc)
 PRIVATE_MARKER = "private-kubeconfig-token-must-not-appear"
+GATE_SCANNER = "aquasec/trivy@sha256:" + "f" * 64
+
+
+def gate_scan(image, *findings):
+    """A trusted, fresh scan summary for the CVE gate."""
+    return {"image": image, "status": "FINDINGS" if findings else "NO_KNOWN_CVES", "scanner_image": GATE_SCANNER,
+            "scanned_at": "2026-10-10T11:00:00Z", "findings": [{"id": cve, "severity": level} for cve, level in findings]}
 
 
 class SimulatedCrash(BaseException):
@@ -235,6 +242,92 @@ class LiveExecutorTests(unittest.TestCase):
         self.assertIn("OPERATOR_APPROVAL_REQUIRED", withdrawn.decision["reason_codes"])
         self.assertEqual(calls, [self.proposal["action_id"]] * 3)
 
+    def enable_cve_gate(self):
+        """P5.02: a non-regression CVE gate, and a current template that runs the baseline's digest."""
+        image = self.baseline["pod_template"]["spec"]["containers"][0]["image"]
+        self.snapshot["deployment"]["spec"]["template"]["spec"]["containers"][0]["image"] = image
+        self.policy["security_constraints"]["image_vulnerability_gate"] = {
+            "block_severities": ["CRITICAL", "HIGH"], "mode": "non_regression", "max_scan_age_seconds": 86400,
+            "trusted_scanner_images": [GATE_SCANNER]}
+        self.save_inputs()
+        self.cluster.snapshot = deepcopy(self.snapshot)
+        return image
+
+    def test_cve_gate_scans_cover_every_image_of_both_templates(self):
+        image = self.enable_cve_gate()
+        self.baseline["pod_template"]["spec"]["initContainers"] = [
+            {"name": "setup", "image": image, "resources": deepcopy(
+                self.baseline["pod_template"]["spec"]["containers"][0]["resources"]),
+             "securityContext": {"allowPrivilegeEscalation": False}}]
+        self.bind_template()
+        self.save_inputs()
+        current_init = "demo/sentinel@sha256:" + "c" * 64
+        self.snapshot["deployment"]["spec"]["template"]["spec"]["initContainers"] = [
+            dict(deepcopy(self.baseline["pod_template"]["spec"]["initContainers"][0]), image=current_init)]
+        requested = []
+        scans = {"scans": [gate_scan(image, ("CVE-1", "HIGH")), gate_scan(current_init)], "exceptions": []}
+
+        def reader(images):
+            requested.append(images)
+            return deepcopy(scans)
+
+        check = self.authorizer(scan_reader=reader).validate(self.proposal, self.snapshot, now=NOW)
+        self.assertEqual(requested, [sorted({image, current_init})])
+        self.assertEqual(check.inputs["live_state"]["image_scans"], scans)
+        self.assertNotIn("image_scans", self.snapshot)
+        # Containers are compared by name: the init container's High is new against the current clean init image.
+        self.assertEqual((check.decision["verdict"], check.decision["reason_codes"]), ("REJECT", ["IMAGE_CVE_REGRESSION"]))
+        scans["scans"][1] = gate_scan(current_init, ("CVE-1", "HIGH"))
+        check = self.authorizer(scan_reader=reader).validate(self.proposal, self.snapshot, now=NOW)
+        self.assertEqual(check.decision["verdict"], "ALLOW", check.decision["reason_codes"])
+
+    def test_cve_gate_reader_failure_escalates_never_allows(self):
+        self.enable_cve_gate()
+        for error in (OSError("disk"), ValueError("bad file")):
+            with self.subTest(error=error):
+                def reader(images, error=error):
+                    raise error
+                check = self.authorizer(scan_reader=reader).validate(self.proposal, self.snapshot, now=NOW)
+                self.assertEqual(check.decision["verdict"], "ESCALATE")
+                self.assertIn("IMAGE_SCANS_MISSING", check.decision["reason_codes"])
+                self.assertNotIn("image_scans", check.inputs["live_state"])
+
+    def test_cve_gate_ignores_scans_that_did_not_come_from_the_trusted_reader(self):
+        image = self.enable_cve_gate()
+        self.snapshot["image_scans"] = {"scans": [gate_scan(image)], "exceptions": []}
+        check = self.authorizer().validate(self.proposal, self.snapshot, now=NOW)
+        self.assertEqual(check.decision["verdict"], "ESCALATE")
+        self.assertIn("IMAGE_SCANS_MISSING", check.decision["reason_codes"])
+
+    def test_cve_gate_reads_a_scan_directory_and_blocks_a_worse_digest(self):
+        image = self.enable_cve_gate()
+        scans = self.directory / "scans"
+        scans.mkdir()
+        (scans / "current.json").write_text(json.dumps(gate_scan(image, ("CVE-1", "HIGH"))), encoding="utf-8")
+        exceptions = self.directory / "cve-exceptions.json"
+        exceptions.write_text(json.dumps({"schema": "sentinel-cve-exceptions-v1", "exceptions": []}), encoding="utf-8")
+        with self.assertRaises(ValueError):
+            self.build(cve_exceptions=exceptions)
+        adapters = self.build(image_scans=scans, cve_exceptions=exceptions)
+        self.assertEqual(execute(self.proposal, adapters)["status"], "APPLIED")
+        # A crafted baseline with a different, more vulnerable digest: REJECT, no write.
+        worse = "demo/sentinel@sha256:" + "d" * 64
+        (scans / "worse.json").write_text(json.dumps(gate_scan(worse, ("CVE-1", "HIGH"), ("CVE-9", "CRITICAL"))),
+                                          encoding="utf-8")
+        self.baseline["pod_template"]["spec"]["containers"][0]["image"] = worse
+        self.bind_template()
+        self.save_inputs()
+        check = self.authorizer(scan_reader=adapters.authorizer.scan_reader).validate(self.proposal, self.snapshot, now=NOW)
+        self.assertEqual(check.decision["verdict"], "REJECT")
+        self.assertIn("IMAGE_CVE_REGRESSION", check.decision["reason_codes"])
+
+    def test_cli_passes_the_scan_directory_and_exceptions(self):
+        scans, exceptions = self.directory / "scans", self.directory / "cve-exceptions.json"
+        with patch("runtime.live_executor.build_adapters", side_effect=GuardInputError("stop")) as build:
+            self.call_cli(self.arguments() + ["--image-scans", str(scans), "--cve-exceptions", str(exceptions)])
+        self.assertEqual(build.call_args.kwargs["image_scans"], str(scans))
+        self.assertEqual(build.call_args.kwargs["cve_exceptions"], str(exceptions))
+
     def test_build_can_use_coordinator_approval_without_an_approval_file(self):
         adapters = self.build(approval=None, approval_reader=lambda proposal: deepcopy(self.approval))
         self.assertEqual(execute(self.proposal, adapters)["status"], "APPLIED")
@@ -358,6 +451,29 @@ class LiveExecutorTests(unittest.TestCase):
                     patch("runtime.live_executor.build_adapters") as build, ExitStack() as stack:
                 worker_service.adapter(dict(config, **configured), self.directory, stack)
                 self.assertEqual(build.call_args.kwargs["fence_after_seconds"], configured.get("fence_after_seconds"))
+
+    def test_worker_service_gives_both_guarded_roles_the_cve_gate_scans(self):
+        from contextlib import ExitStack
+        from runtime import worker_service
+        scans = self.directory / "scans"
+        scans.mkdir()
+        (scans / "a.json").write_text(json.dumps(gate_scan("demo/sentinel@sha256:" + "a" * 64)), encoding="utf-8")
+        config = {"context": "restricted-lab", "cluster_id": "sentinel-lab", "kubeconfig": "k",
+                  "policy": "p", "baseline": "b", "allowed_targets": "t", "remote_dependencies": False,
+                  "image_scans": str(scans), "cve_exceptions": None,
+                  "approvals": {"url": "https://127.0.0.1:1", "identity": "worker-1", "token_env": "TEST_TOKEN"}}
+        with patch.dict(os.environ, {"TEST_TOKEN": "t" * 40}), patch("runtime.approval_http.ApprovalClient"), \
+                patch("runtime.live_executor.build_adapters") as build, ExitStack() as stack:
+            worker_service.adapter(dict(config, role="executor"), self.directory, stack)
+            self.assertEqual(build.call_args.kwargs["image_scans"], str(scans))
+            guard = worker_service.adapter(dict(config, role="guard"), self.directory, stack)
+        reader = guard.authorizer.scan_reader
+        self.assertEqual([item["image"] for item in reader(["demo/sentinel@sha256:" + "a" * 64])["scans"]],
+                         ["demo/sentinel@sha256:" + "a" * 64])
+        with patch.dict(os.environ, {"TEST_TOKEN": "t" * 40}), patch("runtime.approval_http.ApprovalClient"), \
+                ExitStack() as stack:
+            config.pop("image_scans")
+            self.assertIsNone(worker_service.adapter(dict(config, role="guard"), self.directory, stack).authorizer.scan_reader)
 
     def test_cli_exit_code_for_superseded_write(self):
         self.cluster.external_write()
