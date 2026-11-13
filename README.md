@@ -158,6 +158,7 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-VERIFIER-RETRY-BACKOFF](docs/limitations.md#l-verifier-retry-backoff): In kind mode the Coordinator's retry back-off spaced the Verifier's samples past the health policy's gap (defect, mitigated; planned P3.06, P4.01)
 - [L-ORPHANED-EXECUTOR-LEDGER](docs/limitations.md#l-orphaned-executor-ledger): A crashed Executor whose peer finished the action kept it in doubt and refused that workload (defect, mitigated; planned P3.04, P4.01)
 - [L-SINGLE-COORDINATOR](docs/limitations.md#l-single-coordinator): The Coordinator is one process with one SQLite file (limitation, open; planned P4.02, P5.01)
+- [L-COORDINATOR-POSTGRES](docs/limitations.md#l-coordinator-postgres): The Coordinator's Postgres backend is a SQL dialect only and has never run (limitation, open; planned P5.01)
 - [L-SINGLE-HOST-DISTRIBUTION](docs/limitations.md#l-single-host-distribution): The networked worker layer has only run on one host (limitation, open; planned P3.01, P3.07, P4.01)
 - [L-VERIFIER-PASS-BLOCKS-WORKER](docs/limitations.md#l-verifier-pass-blocks-worker): While one Verifier pass samples, the single Verifier delays other actions' dependency checks, Guard steps and verification (limitation, open; planned P4.01)
 - [L-RESTART-BUDGET-LOCAL](docs/limitations.md#l-restart-budget-local): The restart budget is kept per Executor ledger, and only local wiring gives it to the Guard (limitation, open; planned P4.03)

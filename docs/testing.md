@@ -117,6 +117,13 @@ python -m unittest tests.test_planner_pipeline tests.test_recovery_runner -v
 python -m unittest tests.test_remote_workers tests.test_worker_transport tests.test_approval_access -v
 ```
 
+`tests/test_coordinator_db.py` covers the Coordinator's Database port (P5.01
+stage 8.1). It compares digests of the SQLite file and of the SQL text that
+three fixed flows produce with values recorded before the port existed, runs
+the port's contract per backend, and pins which statements the Postgres
+dialect cannot translate. Its Postgres rows are skipped: no Postgres driver
+is locked, so nothing there has run against a Postgres server.
+
 `demo_offline_flow.py` runs two scenarios: a failed rollout repaired by
 ROLLBACK, and Pods failing under an unchanged template repaired by RESTART.
 `tests/test_restart_action.py` covers RESTART: the allowed path, each Guard

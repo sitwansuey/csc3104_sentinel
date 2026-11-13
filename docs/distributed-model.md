@@ -67,7 +67,7 @@ What is single-host today:
 The Coordinator is the authorisation state machine. It decides which proposal
 is active for a workload, when an action is READY, and which command a worker
 may claim. Every change runs inside `BEGIN IMMEDIATE`, so SQLite admits one
-writer at a time (`services/coordinator/store.py:501-515::SQLiteStore.transaction::@contextmanager`).
+writer at a time (`services/coordinator/store.py:518-532::SQLiteStore.transaction::@contextmanager`).
 Each claim, renew and result also replays the outbox revocation rules inside
 the same transaction (`runtime/worker_transport.py:93-122::Delivery.transaction::@contextmanager`).
 
@@ -846,6 +846,91 @@ the scenario matrix and the empty results table are in
 no claim here rests on it, and when it runs its nodes are still containers
 on one Docker host.
 
+### The Coordinator's Database port (P5.01 stage 8.1), offline only
+
+Every Coordinator statement now goes through a Database port
+(`services/coordinator/db.py::Database`): the store, the lifecycle rules in
+`services/coordinator/core.py`, the approval service
+(`services/coordinator/approvals.py::ApprovalAccess.call`), the worker
+transport (`runtime/worker_transport.py::Delivery.transaction`) and the two
+readiness checks. SQLite is the default and the only backend that runs
+(`services/coordinator/db.py::SQLiteDatabase`). Postgres exists only as a SQL
+dialect (`services/coordinator/db.py::PostgresDialect`). Its adapter refuses
+to open (`services/coordinator/db.py::PostgresDatabase`), because no Postgres
+driver is in the hash-locked requirements, and adding one, with
+CloudNativePG, is the owners' go/no-go decision for P5.01. A store also
+refuses a database that is not SQLite before it runs anything
+(`services/coordinator/store.py::SQLiteStore`), because its migrations are
+SQLite statements.
+
+**Why the port changes nothing for SQLite.** The consistency argument above
+rests on three facts: every change runs in one `BEGIN IMMEDIATE` transaction
+that holds SQLite's single writer, the transaction commits or rolls back as a
+whole, and the statements inside it are the reviewed ones. The port keeps all
+three:
+
+1. `SQLiteDatabase` opens the connection exactly as `SQLiteStore` did:
+   autocommit mode, a 10 s busy timeout, rows readable by name and position,
+   foreign keys on. Its `execute` is the connection's own bound method, so no
+   code sits between the store and SQLite. `store.db` is still that
+   connection, for the SQLite-only callers that need it (backups, file
+   identity checks).
+2. `begin`, `commit` and `rollback` send `BEGIN IMMEDIATE`, `COMMIT` and
+   `ROLLBACK`, the statements they replace, in the same places:
+   `SQLiteStore.transaction` and `Delivery.transaction` still begin, read the
+   change count, run the body, count the commit and commit, and roll back on
+   any exception.
+3. `insert` returns the `lastrowid` of the same INSERT the store sent before.
+4. Migrations are untouched: the same `MIGRATIONS` run through the same
+   `migrate()`, versioned with `PRAGMA user_version`.
+
+`tests/test_coordinator_db.py` checks this rather than assuming it. It runs
+three fixed flows: the offline demo's ROLLBACK and RESTART lifecycles, and a
+transport flow with claims, a renewal, a retry, results and a replayed result,
+clock reports, an approval and its revocation, a seal and a delivery review.
+For each it compares two digests with values recorded on integration/phase4
+before the port existed: one of the SQLite file the flow leaves (columns,
+indexes, `user_version` and every row in rowid order; only the random store
+generation, its creation time and random trace ids are masked) and one of
+the SQL text sent to the database, statement by statement. Both match, and
+the same digests come out of the code before the change. A second test
+checks that every statement a store sends passes through the port. This is
+an offline check on one host. It shows the SQLite path is unchanged; it does
+not show that anything works on Postgres.
+
+**What the Postgres dialect does, untested against a server.** It turns `?`
+into `%s` and doubles literal `%` (for a driver like psycopg), `BEGIN
+IMMEDIATE` into `BEGIN ISOLATION LEVEL SERIALIZABLE`, `INSERT OR IGNORE` into
+`ON CONFLICT DO NOTHING`, `IS ?` into `IS NOT DISTINCT FROM`, and SQLite's
+two-argument `max()` and `min()` into `GREATEST` and `LEAST`. It marks SQLSTATE
+40001 (serialization failure) and 40P01 (deadlock) as retryable; nothing
+retries yet. It refuses, naming the reason, what has no mechanical
+translation: PRAGMAs, schema statements, `rowid`, `last_insert_rowid()`,
+`INSERT OR REPLACE` and SQLite-only functions. A test passes every statement
+the three flows send through it and pins the result: 37 PRAGMA and schema
+statements, three migration statements and five runtime queries cannot be
+translated (row order by `rowid` in `SQLiteStore.planning_blocker` and
+`SQLiteStore.actions_for_incident`, `last_insert_rowid()` in the transport's
+dependency requests, and `INSERT OR REPLACE` for dependency revalidations),
+and the rest translate. A new SQLite-only statement fails that test.
+
+**Not done, and gated.** P5.01 starts properly only after P4.01 is accepted,
+and the backend needs the owners' go/no-go on a new dependency
+([limitation](limitations.md#l-coordinator-postgres)). Left for stage 8.1 on
+Postgres: a locked driver as an optional extra, the Postgres adapter, a
+Postgres migration set with explicit sequence columns, rewrites of the five
+queries above, a retry loop at the transaction boundary, and the existing
+Coordinator, transport and remote-worker suites run against both backends
+with a pinned Postgres service container in CI. The executor delivery
+reviews (`services/executor/delivery_store.py`), the read-only projection
+(`services/coordinator/read.py`) and some harness and Verifier readers still
+use the SQLite connection directly. Stages 8.2 (SKIP LOCKED claims, advisory
+locks, incremental dispatch, database-clock leases), 8.3 (CloudNativePG with
+synchronous replication and two stateless Coordinator replicas) and 8.4
+(failover acceptance S10 and S11) have not started. The move of the
+transaction boundary and the approval service onto the port is listed for
+the owners' review, with the argument and tests above.
+
 ## Planned changes
 
 | Item | Change |
@@ -859,7 +944,7 @@ on one Docker host.
 | P3.06 | Done in the code above and measured in file mode on one host. Left: the same measurements in a cluster (P4.02) |
 | P4.01 | Written and tested offline only ([below](#four-node-kind-acceptance-p401-written-not-run)): the four-node lab, its manifests and the acceptance harness with I7 from the audit log. Left: creating the cluster, the live S0-S9 runs with `--repeat 5`, committed audit-log extracts, and the owners' review of the evidence for #59, #61 and #63 |
 | P4.02 | Partition, restart and restore drills on the four-node lab; measured RTO and RPO added here |
-| P5.01 | A replicated Coordinator on a replicated database |
+| P5.01 | Stage 8.1 in part, offline only: the Database port with SQLite unchanged and a Postgres dialect ([above](#the-coordinators-database-port-p501-stage-81-offline-only)). Left: the owners' go/no-go on a Postgres driver and CloudNativePG, the Postgres adapter and both backends in CI, then 8.2 to 8.4, a replicated Coordinator on a replicated database |
 
 P1.10 (the decision table, peer adoption and SUPERSEDED) and P1.07 (structured
 logs) are in the code described above. Neither has been exercised in a live
