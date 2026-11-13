@@ -252,8 +252,8 @@
       "cites": [
         {"at": "services/coordinator/db.py:293", "text": "raise BackendUnavailable(POSTGRES_DEFERRED)"},
         {"at": "tests/test_coordinator_db.py:98", "text": "def test_each_flow_leaves_the_same_file_and_sends_the_same_statements"},
-        {"at": "tests/test_coordinator_db.py:360", "text": "def test_postgres_refuses_without_echoing_the_url"},
-        {"at": "tests/test_coordinator_db.py:493", "text": "def test_what_a_postgres_store_still_needs_is_listed"},
+        {"at": "tests/test_coordinator_db.py:371", "text": "def test_postgres_refuses_without_echoing_the_url"},
+        {"at": "tests/test_coordinator_db.py:504", "text": "def test_what_a_postgres_store_still_needs_is_listed"},
         {"at": "services/coordinator/read.py"}
       ],
       "planned": ["P5.01"],
@@ -269,7 +269,7 @@
       "workaround": "Before a restore, note the commit counter of the database being replaced (SELECT commit_counter FROM store_meta); if it cannot be read because the node or volume is lost, the positions remembered in the workers' transport.db files are the only reference. Run scripts/coordinator_restore_check.py with --previous-commit and every worker's transport.db after it, re-drive or review what it lists, then clear each worker with worker_service --accept-store, those holding replay items first.",
       "cites": [
         {"at": "services/coordinator/store.py:135", "text": "lower(hex(randomblob(16)))"},
-        {"at": "services/coordinator/store.py:465", "text": "UPDATE store_meta SET commit_counter=commit_counter+1"},
+        {"at": "services/coordinator/store.py:468", "text": "UPDATE store_meta SET commit_counter=commit_counter+1"},
         {"at": "runtime/worker_http.py:412", "text": "elif floor is not None and compared < floor:"},
         {"at": "runtime/remote_worker.py:293", "text": "\"status\": \"store_changed\""},
         {"at": "scripts/coordinator_restore_check.py"},

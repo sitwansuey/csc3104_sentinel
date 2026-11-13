@@ -21,7 +21,7 @@ import sqlite3
 from shared.canonical import canonical_json as _json, sha256_hex as _digest
 
 from shared import log, tracing
-from services.coordinator.db import BackendUnavailable, SQLiteDatabase
+from services.coordinator.db import BackendUnavailable, Database, SQLiteDatabase
 # The Executor's own workload key, so the Coordinator's ownership row and the Executor's lock agree.
 from services.executor.store import target_key
 
@@ -216,6 +216,9 @@ class SQLiteStore:
 
     def __init__(self, path=None, *, clock=None, database=None):
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        if isinstance(path, Database):
+            # A Database passed as the path would otherwise be str()-ed into a file name.
+            raise TypeError("Pass a Database as database=, not as the path")
         if database is None:
             database = SQLiteDatabase(":memory:" if path is None else path)
         elif path is not None:

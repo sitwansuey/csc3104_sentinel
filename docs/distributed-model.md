@@ -67,7 +67,7 @@ What is single-host today:
 The Coordinator is the authorisation state machine. It decides which proposal
 is active for a workload, when an action is READY, and which command a worker
 may claim. Every change runs inside `BEGIN IMMEDIATE`, so SQLite admits one
-writer at a time (`services/coordinator/store.py:522-536::SQLiteStore.transaction::@contextmanager`).
+writer at a time (`services/coordinator/store.py:525-539::SQLiteStore.transaction::@contextmanager`).
 Each claim, renew and result also replays the outbox revocation rules inside
 the same transaction (`runtime/worker_transport.py:94-123::Delivery.transaction::@contextmanager`).
 
@@ -954,7 +954,8 @@ driver is in the hash-locked requirements, and adding one, with
 CloudNativePG, is the owners' go/no-go decision for P5.01. A store also
 refuses a database that is not SQLite before it runs anything
 (`services/coordinator/store.py::SQLiteStore`), because its migrations are
-SQLite statements.
+SQLite statements, and refuses a Database passed where a file path belongs
+instead of turning it into a file name.
 
 **Why the port changes nothing for SQLite.** The consistency argument above
 rests on three facts: every change runs in one `BEGIN IMMEDIATE` transaction

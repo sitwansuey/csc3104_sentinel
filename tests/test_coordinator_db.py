@@ -322,6 +322,17 @@ class RefusalTests(unittest.TestCase):
             SQLiteStore(database=database)
         self.assertEqual(database.calls, [])
 
+    def test_a_database_passed_as_the_path_is_refused_before_anything_opens(self):
+        database = SQLiteDatabase()
+        self.addCleanup(database.close)
+        with tempfile.TemporaryDirectory() as directory,                 patch("services.coordinator.store.SQLiteDatabase") as opened:
+            with self.assertRaisesRegex(TypeError, "database="):
+                SQLiteStore(database)
+            with self.assertRaisesRegex(TypeError, "database="):
+                SQLiteStore(database, clock=lambda: None)
+            self.assertEqual(list(Path(directory).iterdir()), [])
+        opened.assert_not_called()
+
     def test_a_store_refuses_a_sqlite_database_without_a_sqlite3_connection(self):
         class NoConnection(Database):
             dialect = SQLITE
