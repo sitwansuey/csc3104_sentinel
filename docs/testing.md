@@ -295,7 +295,13 @@ rollout). Each target is verified by its own probe and callees, and the
 storefront is judged separately as a ShopOutcome. The offline checks are
 `tests/test_overlapping_recovery.py`, `tests/test_dependency_revalidation.py`,
 `tests/test_coordinator.py` (`CrossIncidentTests`) and
-`tests/test_boutique_connected.py`; the live recipe, not yet run, is in
+`tests/test_boutique_connected.py` (including `PairVerdictTests`, which fail
+the harness's verdict on a cross-incident transition, an early cart ALLOW,
+unexpected write counts, an accepted changed payload and a reconciliation
+that writes). The offline ordered recovery of the dependency-ordered pair
+uses a cart that stays Ready; with the faulted cart NotReady, as in the live
+C1 runs, the Guard blocks both repairs and the pair stops with
+DEPENDENCY_DEADLOCK and no write. The live recipe, not yet run, is in
 [Two simultaneous faults](dual-fault.md#live-recipe-not-yet-run).
 
 ## Agent-mode acceptance

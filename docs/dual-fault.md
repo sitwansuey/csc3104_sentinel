@@ -3,7 +3,9 @@
 Status: implemented and tested offline only. Nothing on this page has run on
 a cluster, and the pair labels in `experiments/boutique/catalog.json` still
 need sign-off. Do not quote a pair result until the live recipe below has run
-and its `summary.json` files are committed.
+and its `summary.json` files are committed. With the Guard's dependency rule
+as it stands, the dependency-ordered pair is not expected to show an ordered
+recovery live; see [Owner decision](#owner-decision-callers-block-a-callees-repair).
 
 ## What a pair run checks
 
@@ -18,7 +20,7 @@ template give RESTART.
 | Pair | Kind | Faults | Expected |
 |---|---|---|---|
 | `shipping-config+cart-pod` | independent | R1 (shipping invalid PORT, ROLLBACK) and C3 (cart Chaos Mesh pod failure, RESTART) | RECOVERED, one write per target |
-| `redis-pod+cart-config` | dependency-ordered | D1 (redis-cart pod failure, RESTART) and C1 (cart REDIS_ADDR rollout, ROLLBACK) | RECOVERED, one write per target, the cart ALLOW after Redis RECOVERED; DEPENDENCY_DEADLOCK with no write is also acceptable |
+| `redis-pod+cart-config` | dependency-ordered | D1 (redis-cart pod failure, RESTART) and C1 (cart REDIS_ADDR rollout, ROLLBACK) | Labelled RECOVERED, one write per target, the cart ALLOW after Redis RECOVERED. DEPENDENCY_DEADLOCK with no write is acceptable as a safe stop, and with the current Guard rule it is the predicted result; it is not ordering evidence |
 
 C3 and D1 are pair-only scenarios, and redis-cart is a pair-only target: the
 single-scenario options, the lab controls and the Executor Role of single runs
@@ -77,9 +79,12 @@ Single-target runs keep the shop scope unchanged.
 - **A mutual block stops both.** If the Redis repair is also refused because
   its caller, cartservice, is not ready, the two refusals name each other. The
   runner stops both with DEPENDENCY_DEADLOCK, writes nothing and leaves the
-  decision to a person. Whether cartservice stays Ready while Redis is down is
-  not known yet; the spike in step 3 below decides it, and the catalog
-  pre-registers DEPENDENCY_DEADLOCK as acceptable for that reason.
+  decision to a person. In this pair that is the expected case: C1 itself
+  leaves the cart Pod NotReady (the live C1 runs show `cartservice desired 1,
+  ready 0`), so the Guard names cartservice as a blocker of the Redis repair.
+  The pair result then records `ordered_recovery_shown: false`, and the run
+  prints a note saying so. A DEPENDENCY_DEADLOCK run is a safe stop, not
+  evidence that the cart ALLOW came after Redis RECOVERED.
 - **Other stops.** A refusal for any other reason, an escalation other than
   the approval request, a refused approval, or a re-plan the Coordinator
   refuses (for example a second RESTART for one incident) stops that incident
@@ -87,6 +92,47 @@ Single-target runs keep the shop scope unchanged.
 - **No cross-incident transitions.** The harness checks the Coordinator's
   lifecycle journal: every transition of an incident must be caused by its own
   message or approval (`cross_incident_transitions`). The run fails otherwise.
+
+The offline tests reach the ordered recovery (REJECTED, Redis RECOVERED, one
+re-plan, ALLOW, one write each) only with a cart that stays Ready
+(`cart_redis_lab(..., cart_ready=True)` in
+`tests/test_dependency_revalidation.py`). That checks the re-plan mechanics,
+not a prediction of the live run. With the cart NotReady, the default there,
+the same runner ends in DEPENDENCY_DEADLOCK with no write.
+
+## Owner decision: callers block a callee's repair
+
+The Guard's dependency finding (`inspect_dependencies` in
+`services/verifier/core.py`) covers every service that reaches the target or
+that the target reaches, in both directions, and any one that is not ready
+blocks the repair. That is the cautious reading of "do not change a service
+while its neighbours are unhealthy", but it has a cost: a callee whose outage
+makes its caller NotReady cannot be repaired until the caller is Ready again,
+which may need the callee first. In the dependency-ordered pair, the faulted
+cart blocks the Redis RESTART and Redis blocks the cart ROLLBACK, so neither
+repair can run. If cartservice's health check fails whenever Redis is down,
+which the C1 runs suggest but no run has shown for a Redis outage alone, a
+lone Redis failure would be blocked by the cart in the same way.
+
+This branch does not change the rule. Changing it is a safety decision for
+the owner, with a written argument and a test that fails before and passes
+after. Options:
+
+1. Keep the rule. P4.05's ordering check ("the cart ALLOW comes after redis
+   RECOVERED") is then not achievable with this pair, and DEPENDENCY_DEADLOCK
+   does not close it. Record that in the plan.
+2. Let a caller that is NotReady not block a repair of its callee, so only
+   callees block. The argument would be that restoring a callee cannot make a
+   caller worse than it already is; the risk is a callee restart that drops
+   in-flight work (a Redis restart empties the lab's cart data).
+3. Leave out of the blockers a pair partner that has its own open incident,
+   so the pair's two repairs are ordered by the runner instead of refused.
+4. Redesign the pair with a caller whose readiness does not depend on the
+   callee, for example a caller fault that keeps its health check passing.
+
+Until the owner decides, keep the P4.05 ordering item and the Phase 4 exit
+item "The dual-fault runs are committed" open
+(`L-CALLER-BLOCKS-CALLEE-REPAIR`).
 
 One harness process drives both incidents and collects one target's
 verification window at a time, so the other incident waits during it.
@@ -101,11 +147,13 @@ both targets.
 In the run folder: `summary.json` (with `pair`, `pair_injection` and
 `pair_result`), `pair-result.json` (the incident states and stops, the
 ShopOutcome, writes per target from the Executor ledger, the ordering proof
-for the dependency-ordered pair, cross-incident transitions, per-incident
-timings from the Coordinator journal and each scenario's score), one
-`pair-<target>` folder per target (proposals, Guard decisions, dependency
-findings, execution results, outcomes, `scenario-result.json`), and for the
-chaos target `chaos-experiment.json` and `attribution.json`.
+and `ordered_recovery_shown` for the dependency-ordered pair, cross-incident
+transitions, per-incident timings from the Coordinator journal and each
+scenario's score), one `pair-<target>` folder per target (proposals, Guard
+decisions, dependency findings, execution results, outcomes,
+`scenario-result.json`), one `dependency-readiness-<target>.json` per target
+with the last readiness read, and for the chaos target
+`chaos-experiment.json` and `attribution.json`.
 
 ## Live recipe (not yet run)
 
@@ -142,7 +190,11 @@ step 4.
    for those the comparison is with the shipping pod failure (N2) only; say so
    when reporting.
 
-3. **Spike: does cart stay Ready while Redis is down?** About 15 minutes.
+3. **Spike, for the owner decision: does cart turn NotReady when only Redis
+   is down?** About 15 minutes. This does not decide the pair's expected
+   result: under C1 the cart is NotReady anyway, so with the current rule the
+   pair is expected to stop with DEPENDENCY_DEADLOCK. It tells the owner
+   whether a Redis failure on its own would also be blocked by its caller.
 
    ```powershell
    python -c "import json; from experiments.boutique.harness.chaos import scenario; print(json.dumps(scenario('pod', 'sentinel-boutique-connected', 'spike-redis', 420, 'redis-cart')))" | kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected create -f -
@@ -150,9 +202,8 @@ step 4.
    kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected delete podchaos spike-redis --wait=true
    ```
 
-   Record whether cartservice stays Ready. If it turns NotReady, the expected
-   result of `redis-pod+cart-config` is DEPENDENCY_DEADLOCK (acceptable, no
-   write); record that and do not claim an ordered recovery.
+   Record whether cartservice turns NotReady while only Redis is down, and
+   attach the output to the owner decision above.
 
 4. **Independent pair, three runs.**
 
@@ -176,11 +227,16 @@ step 4.
    }
    ```
 
-   Expected per run: the first cart proposal REJECTED with
-   DEPENDENCY_BLOCKED and no write, the Redis RESTART RECOVERED, one cart
-   re-plan, the cart ALLOW after Redis RECOVERED in Coordinator sequence
-   (`ordering.passed` true), one write per target, ShopOutcome RECOVERED. Or,
-   if step 3 found cart NotReady, DEPENDENCY_DEADLOCK with no write at all.
+   Expected per run with the current Guard rule: both proposals REJECTED
+   with DEPENDENCY_BLOCKED, the refusals naming each other,
+   DEPENDENCY_DEADLOCK with no write at all, `ordered_recovery_shown` false
+   and ShopOutcome FAILED. The run passes as a safe stop, but report it as
+   "no ordered recovery shown". Only if the owner changes the rule (and the
+   code and tests change with it) is the labelled result expected: the first
+   cart proposal REJECTED with DEPENDENCY_BLOCKED and no write, the Redis
+   RESTART RECOVERED, one cart re-plan, the cart ALLOW after Redis RECOVERED
+   in Coordinator sequence (`ordering.passed` true), one write per target and
+   ShopOutcome RECOVERED.
 
 6. **Executor-kill variant, once per pair.** The Executor worker is killed
    right after the configuration fault's repair write (shipping in the
@@ -194,13 +250,30 @@ step 4.
 
    Expected: `executor_kill` in `summary.json` with worker exit 73, one worker
    write, zero reconcile writes, reconciled APPLIED, and still one write per
-   target in `pair_result`.
+   target in `pair_result`. With the current Guard rule the
+   dependency-ordered pair is expected to stop before any cart write, so its
+   kill variant is expected to end in DEPENDENCY_DEADLOCK without a kill;
+   record it as such.
 
 7. **Commit the evidence.** Copy each run folder's `summary.json` and
    `pair-result.json` into `evidence/<date>/` with the other bundle files the
    evidence policy allows, then regenerate the summaries. Report timings
    beside the single-fault runs from step 2, and state that both recoveries
    shared one host and one harness process.
+
+`pair_injection.spread_seconds` is approximate: the configuration fault is
+stamped after kubectl returns and the chaos fault just before its create
+call, so neither stamp is when the fault took effect.
+
+## Differences from the design
+
+- Detection uses one Observer store per target, not `runtime/observer_fleet.py`.
+- Per-target verification checks the target's direct callees, not a wider
+  graph neighbourhood.
+- The delayed-verification injection from issue #77 is not wired; the
+  Executor kill and the changed payload under a reused action ID are.
+- C3 and D1 have no single-run form, so the timing comparison uses N2.
+- A pair run takes no `--dashboard` and has no launcher parameter.
 
 Cleanup is automatic: each run deletes its chaos object and, on failure, puts
 a changed template back as the administrator (never counted as a repair).

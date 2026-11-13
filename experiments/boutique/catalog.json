@@ -311,7 +311,7 @@
       "restore": {"kind": "chaos_delete"},
       "template_changed": false,
       "observer_thresholds": [{"name": "k8s.pod.cpu.usage", "unit": "cores", "above": 0.11}],
-      "symptom": "PodChaos pod-failure makes the selected redis-cart Pod not ready, so cart reads and writes fail. The template stays at the baseline, so RESTART is the repair. Whether cartservice turns NotReady while Redis is down is decided by the live spike; if it does, the Guard's dependency check also names cartservice as a blocker of the Redis repair.",
+      "symptom": "PodChaos pod-failure makes the selected redis-cart Pod not ready, so cart reads and writes fail. The template stays at the baseline, so RESTART is the repair. In its pair the cart also carries C1, which leaves the cart Pod NotReady (as the live C1 runs show), so the Guard's dependency check, which counts callers, names cartservice as a blocker of the Redis repair. Whether a Redis outage on its own also makes cartservice NotReady has not been run.",
       "expected": {
         "incident": true,
         "correct": ["RESTART"],
@@ -337,7 +337,7 @@
       "title": "redis-cart pod failure and a cart REDIS_ADDR rollout at the same time",
       "scenarios": ["D1", "C1"],
       "order": {"first": "redis-cart", "then": "cartservice"},
-      "hypothesis": "cartservice calls redis-cart, so the cart ROLLBACK is refused with DEPENDENCY_BLOCKED while Redis is down, Redis is restarted and verified, and only then is the cart incident planned again and allowed: one write each, the cart ALLOW after Redis RECOVERED in the Coordinator's sequence. If cartservice is NotReady while Redis is down, the Guard also blocks the Redis repair on its caller; both refusals then name each other, the harness stops without a write (DEPENDENCY_DEADLOCK) and a person decides.",
+      "hypothesis": "cartservice calls redis-cart, so the cart ROLLBACK is refused with DEPENDENCY_BLOCKED while Redis is down; Redis is restarted and verified, and only then is the cart planned again and allowed: one write each, the cart ALLOW after Redis RECOVERED. But the Guard counts callers as blockers and C1 leaves cartservice NotReady (as the live C1 runs show), so under the current rule the Redis repair is refused too: the refusals name each other and the run stops without a write (DEPENDENCY_DEADLOCK), a safe stop that is not ordering evidence.",
       "expected": {"result": "RECOVERED", "acceptable": ["DEPENDENCY_DEADLOCK"], "writes_per_target": 1}
     }
   ]
