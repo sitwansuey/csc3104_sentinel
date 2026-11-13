@@ -1791,11 +1791,11 @@ class PairCleanupTests(unittest.TestCase):
             experiment, fake = self.cleaning({"redis-cart": "ok", "cartservice": "redis-cart:6390"})
             order = []
             for step in ("prepare", "permissions", "inject_pair", "remove_chaos", "close_approval_authority"):
-                setattr(experiment, step, Mock(side_effect=lambda step=step: order.append(step)))
+                setattr(experiment, step, Mock(side_effect=lambda step=step, order=order: order.append(step)))
             experiment.detect_pair = Mock(return_value={name: {"incident_id": "INC-" + name}
                                                         for name in experiment.order})
 
-            def judge(incidents, run, judged=judged, fake=fake):
+            def judge(incidents, run, judged=judged, fake=fake, order=order):
                 # Scored before any cleanup: the fault is still in place when the pair is judged.
                 order.append(("judge", fake.templates["cartservice"] == lane_template("cartservice")))
                 if not judged:
