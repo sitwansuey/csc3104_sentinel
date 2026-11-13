@@ -23,6 +23,26 @@ tolerated. The grace defers NOT_RECOVERED; it does not replace sustained health,
 and at the fixed deadline every reading counts again. Each outcome's
 `convergence` check states what was excluded or counted.
 
+A `Recreate` rollout has no Pod for some seconds after the write, so a reading
+there gets no response at all (P4.01, S0 r1 on sentinel-dist, 13 Nov 2026).
+The live collector records with each reading the Deployment's `generation`,
+`observed_generation`, `updated_replicas` and `total_replicas`
+(`status.replicas`), bounded integers from the same consistent Deployment read
+as the readiness counts, and none of them when that read failed. Inside the
+grace, a reading with no response (no HTTP status, no gRPC status and check, no
+Redis reply), 0 ready and 0 available replicas and those counts is judged as an
+unhealthy reading rather than missing evidence
+(`core.py::_awaiting_rollout`): with no replica available the rollout has not
+finished. Everything else about it must still be complete (identity,
+timestamp, approved template, `configuration_stable`, dependency evidence), and
+the rule above is otherwise unchanged; the outcome names the cause `service not
+answering during rollout`. Readings without the counts, from any other
+collector, are judged as before. Starting the first reading only after the new
+generation was observed and an updated Pod existed was rejected: such a Pod
+need not answer yet, the wait would leave no reading in the store or the log,
+and it would put judgement in the sampling loop
+([argument](../../docs/distributed-acceptance.md#third-deployment-recreate-and-conflicts)).
+
 A ROLLBACK and a RESTART are verified the same way. With
 `require_template_match`, the expected template is the proposal's
 `template_sha256`: for a RESTART that is the reviewed template plus its restart
