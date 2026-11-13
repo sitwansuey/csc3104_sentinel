@@ -751,7 +751,9 @@ class NoIncidentTests(unittest.TestCase):
             return self.lab.fault("primary")
 
     def test_no_incident_is_scored_and_still_fails_an_expected_incident(self):
-        with self.assertRaisesRegex(RuntimeError, "Role 2 did not detect"):
+        # The error says what was scored, not that a rollout failure went undetected.
+        with self.assertRaisesRegex(RuntimeError, "No incident opened in the detection window: scenario N1 scored "
+                                                  "NO_INCIDENT incorrect; the run does not pass on it"):
             self.fault()
         result = json.loads((self.lab.directory / "scenario-result.json").read_text(encoding="utf-8"))
         self.assertEqual((result["actual"], result["score"], result["executor_writes"]), ("NO_INCIDENT", "incorrect", 0))
@@ -820,6 +822,22 @@ class ScenarioOptionTests(unittest.TestCase):
                                                            "--expect", "escalated"))
         self.assertIn("--expect escalated requires --agent", self.main("--scenario", "N2", "--connected",
                                                                        "--expect", "escalated"))
+
+    def test_a_chaos_expectation_that_contradicts_the_label_is_refused_without_agent_mode(self):
+        """--expect recovered on N3 or T1 would turn a pre-registered no-repair trial into an approved repair."""
+        for scenario_id, label in (("N3", "NEEDS_REVIEW"), ("T1", "NONE")):
+            for approval in ((), ("--approval", "auto-lab")):
+                with self.subTest(scenario=scenario_id, approval=approval):
+                    self.assertIn(f"--expect recovered contradicts scenario {scenario_id}'s pre-registered outcome "
+                                  f"({label})", self.main("--scenario", scenario_id, "--connected",
+                                                          "--expect", "recovered", *approval))
+        with tempfile.TemporaryDirectory() as directory:
+            # An --expect equal to the label stays accepted, with or without --agent.
+            _, lab = self.run_chaos(Path(directory) / "N2", "--scenario", "N2", "--expect", "recovered",
+                                    "--approval", "reject")
+            self.assertEqual((lab.expect, lab.agent_mode), ("recovered", False))
+            summary, lab = self.run_chaos(Path(directory) / "N3", "--scenario", "N3", "--agent", "--expect", "escalated")
+            self.assertEqual((lab.expect, summary["operator_approval"]["mode"]), ("escalated", "not-requested"))
 
     def run_chaos(self, run_dir, *arguments):
         from experiments.boutique.harness import live
@@ -890,6 +908,19 @@ class ScenarioOptionTests(unittest.TestCase):
         chaos = re.search(r"\$chaosScenarios = @\(([^)]*)\)", text).group(1)
         self.assertEqual(re.findall(r"'([A-Z][0-9]+)'", chaos),
                          [item["id"] for item in scenarios.load()["scenarios"] if item["injection"]["kind"] == "chaos"])
+
+    def test_powershell_launcher_refuses_an_explicit_expect_on_a_chaos_scenario(self):
+        """The launcher forwards only a non-default -Expect, so an explicit -Expect recovered on a chaos scenario
+        is refused before setup instead of being dropped; -Agent -Expect escalated goes to the harness's check."""
+        lines = (ROOT / "scripts/test-boutique-live.ps1").read_text(encoding="utf-8").splitlines()
+        guard = [line for line in lines if "$chaosScenarios -contains $Scenario" in line
+                 and "$PSBoundParameters.ContainsKey('Expect')" in line]
+        self.assertEqual(len(guard), 1)
+        self.assertIn("-and $Expect -ne 'escalated') { throw", guard[0])
+        # It runs before any setup or cluster command.
+        first_command = next(index for index, line in enumerate(lines) if line.startswith("Set-Location"))
+        self.assertLess(lines.index(guard[0]), first_command)
+        self.assertIn("if ($Expect -ne 'recovered') { $testOptions += @('--expect', $Expect) }", "\n".join(lines))
 
     def run_main(self, run_dir, *arguments):
         from experiments.boutique.harness import live

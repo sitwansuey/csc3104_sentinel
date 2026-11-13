@@ -20,6 +20,9 @@ if ($Target -ne 'shippingservice' -and -not $Connected) { throw "-Target $Target
 # Chaos Mesh scenarios plan with the code rule provider unless -Agent is given; they still need -Connected.
 $chaosScenarios = @('N2', 'N3', 'T1')
 if ($Scenario -and $chaosScenarios -contains $Scenario -and -not $Connected) { throw "-Scenario $Scenario (Chaos Mesh) requires -Connected." }
+# A Chaos Mesh scenario takes its expected outcome from its catalog label. Only -Agent -Expect escalated may be given;
+# the harness then refuses it unless the label accepts ESCALATE (N2) or names it (N3).
+if ($Scenario -and $chaosScenarios -contains $Scenario -and $PSBoundParameters.ContainsKey('Expect') -and $Expect -ne 'escalated') { throw "-Scenario $Scenario (Chaos Mesh) takes its expected outcome from the catalog; drop -Expect $Expect." }
 if ($Scenario -and $operatorScenarios[$Target] -notcontains $Scenario -and $chaosScenarios -notcontains $Scenario -and -not ($Agent -and $Connected)) { throw "-Scenario $Scenario requires -Agent -Connected." }
 if ($Agent -and $GuardRejection) { throw '-Agent and -GuardRejection are separate scenarios.' }
 if ($Agent -and $ProviderScript) { throw '-Agent and -ProviderScript are separate planning modes.' }

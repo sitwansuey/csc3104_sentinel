@@ -102,8 +102,9 @@ Their labels were pre-registered before any trial and still need sign-off.
 
 What the harness (`experiments/boutique/harness/chaos_recovery.py`) does:
 
-- **Install only.** `python scripts/boutique_chaos_recovery.py install` runs
-  two Helm installs and one annotation, nothing else: Chaos Mesh chart 2.8.2
+- **Install only.** `python scripts/boutique_chaos_recovery.py install` reads
+  the node list, then runs two Helm installs and one annotation; it changes
+  nothing else: Chaos Mesh chart 2.8.2
   with namespace filtering (`deploy/chaos-mesh/values.yaml`), the
   `chaos-mesh.org/inject=enabled` annotation on the connected namespace, and
   metrics-server chart 3.12.2 (`deploy/metrics-server/values.yaml`) with an
@@ -113,8 +114,9 @@ What the harness (`experiments/boutique/harness/chaos_recovery.py`) does:
   whose only node is not `sentinel-boutique-connected-control-plane`, so a
   context of the right name that points elsewhere gets nothing.
   `preflight` only reads: CRDs, ready chaos-mesh Pods, the namespace
-  annotation, no chaos object left from an earlier run, and an answering
-  Metrics API.
+  annotation, no chaos object left from an earlier run, and a Metrics API
+  that returns at least one Pod's metrics for the namespace (it fails
+  otherwise, because no threshold could then be complete).
 - **Detection.** Every chaos run wraps the Observer with a read-only bridge
   (`runtime/metrics_bridge.py`) that turns metrics-server Pod usage into
   `k8s.pod.cpu.usage` (cores) and `k8s.pod.memory.working_set` (bytes)
@@ -154,23 +156,43 @@ What the harness (`experiments/boutique/harness/chaos_recovery.py`) does:
   RESTART, then restores the baseline as the administrator) and RESTART
   during CPU stress (`RESTART_NOT_JUSTIFIED`; in N3 this cell runs even when
   no incident opens, against a harness-made incident id, after NO_INCIDENT is
-  scored). A Guard rejection outranks the missing approval. If the live state
+  scored). A REJECT with any other code (for example
+  `RESTART_BUDGET_EXHAUSTED`) fails the run: it is not the cell's refusal.
+  A Guard rejection outranks the missing approval. If the live state
   lets a forced action pass every check (for example a stressed Pod that also
   fails readiness), the Guard escalates for approval instead, nothing is
   written, and the run fails as "not refused". The correct diagonal is
   RESTART for the pod failure (N2) and ROLLBACK for the configuration fault
   (R1). Each refusal is in `<label>/proof.json`.
-- **True negative (T1).** No incident passes only with a proof in
-  `true-negative.json`: the fault confirmed injected, Observer samples
-  spanning the detection window, at least one reading with complete metric
-  thresholds, no Coordinator incident or action, no Executor ledger action
-  and the template still at the baseline.
+- **True negative (T1, and N3 without an incident).** No incident passes
+  only with a proof in `true-negative.json`: the fault confirmed injected,
+  Observer samples spanning the detection window, at least one reading with
+  complete metric thresholds, no Coordinator incident or action, no
+  Executor ledger action and the template still at the baseline. For T1
+  NO_INCIDENT scores correct. N3's label scores it acceptable:
+  `scenario-result.json` keeps that score (`matched_expected` stays false),
+  the run continues to the CPU cell only when the proof passes, and the PASS
+  line names NO_INCIDENT and its score. Without the proof the run fails with
+  an error that says NO_INCIDENT was scored and the proof failed.
+- **Expected outcome.** A chaos run takes its expected outcome from the
+  catalog label. Any other `--expect` is refused, with or without
+  `--agent`, so `--expect recovered` cannot turn N3 or T1 into an approved
+  repair. The one exception is `--agent --expect escalated` on N2, whose
+  label accepts ESCALATE. `scripts/test-boutique-live.ps1` refuses an
+  explicit `-Expect recovered` on a chaos scenario.
 - **Cleanup.** The run deletes its own chaos object (by its run label) and
-  waits for the finalizers; it never strips them.
+  waits for the finalizers; it never strips them. The run knows the object
+  before its create call returns, so a create that fails after the API
+  server stored the object is still cleaned up. The drift cell's
+  administrator restore re-reads the Deployment and retries its conditional
+  patch up to three times, since the drift's rollout can change the
+  resourceVersion between the read and the patch.
 
-Offline tests: `tests/test_boutique_chaos.py` (install, attribution, true
-negative, and the N2, N3 and T1 flows with the real Coordinator, Guard,
-approval session and Executor against fakes),
+Offline tests: `tests/test_boutique_chaos.py` (install, preflight,
+injection with its UID record, attribution, true negative, emergency
+cleanup, the harness's Guard policy and Observer wiring, and the N2, N3 and
+T1 flows with the real Coordinator, Guard, approval session and Executor
+against fakes),
 `tests/test_cluster_metrics.py::MetricsBridgeTests`,
 `tests/test_observer_telemetry.py::MetricsBridgeThresholdTests`,
 `tests/test_guard_necessity.py::ChaosNegativeMatrixTests`,
@@ -219,8 +241,8 @@ first scored trial (step 4 onwards).
    python scripts/boutique_chaos_recovery.py preflight
    ```
 
-   The preflight must print the chaos-mesh Pods and a non-zero
-   `pod_metrics_items`. Stop if it fails.
+   The preflight prints the chaos-mesh Pods and `pod_metrics_items`, and it
+   fails when the Metrics API returns no Pod metrics. Stop if it fails.
 
 3. **Spikes first (about 30 minutes each).** Re-selection and record format:
 
@@ -286,8 +308,10 @@ first scored trial (step 4 onwards).
 
    Expected: N3 ends NEEDS_REVIEW with ESCALATE decided by the metric-only
    rule, zero writes, and `forced-restart/proof.json` REJECT
-   `RESTART_NOT_JUSTIFIED` (also when N3 records NO_INCIDENT, which is
-   acceptable; the cell then runs after the true-negative proof is saved). If
+   `RESTART_NOT_JUSTIFIED`. N3 may instead record NO_INCIDENT, which its
+   label scores acceptable: the run then continues only when
+   `true-negative.json` passes, the CPU cell runs against a harness-made
+   incident id, and the PASS line says NO_INCIDENT scored acceptable. If
    the stressed Pod fails readiness, that proof shows ESCALATE
    `OPERATOR_APPROVAL_REQUIRED`, zero writes and a failed run: record it as
    the measured result. T1 records NO_INCIDENT with a passing

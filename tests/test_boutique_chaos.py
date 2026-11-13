@@ -362,6 +362,11 @@ class ChaosInstallTests(unittest.TestCase):
                 else kubectl(args))):
             with self.assertRaisesRegex(RuntimeError, "left in the connected namespace"):
                 preflight(cluster)
+        # No Pod metrics: N3 could never alert and T1 could never prove a negative, so the preflight stops.
+        with patch.object(Cluster, "command", side_effect=lambda args, **kwargs: (
+                json.dumps({"items": []}) if "--raw" in args else kubectl(args))):
+            with self.assertRaisesRegex(RuntimeError, "returned no Pod metrics"):
+                preflight(cluster)
 
     def test_setup_cli_refuses_sentinel_lab_and_a_tag_only_metrics_server(self):
         from experiments.boutique.harness.chaos_recovery import main
@@ -589,22 +594,39 @@ class OfflineChaosLab:
         handle(outcome, lab.store, lab.bus)
         save(folder / "outcome.json", outcome)
 
+    listed_pods = ({"name": "demo-api-new", "uid": "new-pod-uid"},)
+    patch_conflicts = 0  # How many administrator patches fail first, as a 409 from a racing status update would.
+
     def kubectl(self, *args, **kwargs):
         """The administrator's kubectl: Pod listing, the R1 drift injection, the restore patch, rollout status."""
         self.commands.append(args)
         template = self.cluster.snapshot["deployment"]["spec"]["template"]
         stdout = ""
         if args[:2] == ("get", "pods"):
-            stdout = json.dumps({"items": [{"metadata": {"name": "demo-api-new", "uid": "new-pod-uid"}}]})
+            stdout = json.dumps({"items": [{"metadata": dict(pod)} for pod in self.listed_pods]})
         elif args[:2] == ("set", "env"):
             name, value = args[-1].split("=", 1)
             template["spec"]["containers"][0]["env"].append({"name": name, "value": value})
         elif args[0] == "patch":
+            if self.patch_conflicts:
+                self.patch_conflicts -= 1
+                if not kwargs.get("allow_failure"):
+                    raise RuntimeError("kubectl operation failed: patch")
+                return SimpleNamespace(returncode=1, stdout="", stderr="Error from server (Conflict)")
             patch_document = json.loads(Path(args[args.index("--patch-file") + 1]).read_text(encoding="utf-8"))
             self.cluster.snapshot["deployment"]["spec"]["template"] = deepcopy(patch_document[-1]["value"])
         elif args[0] != "rollout":
             raise AssertionError("unexpected kubectl " + str(args))
         return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+    def observe_window(self, lab, *, complete=True, count=4):
+        """Observer captures spanning the 120 s detection window, each with or without complete thresholds."""
+        from experiments.recovery.live import save, utc
+        start = self.real_now() - timedelta(seconds=130)
+        for index in range(count):
+            save(lab.directory / f"primary-{index}-observation.json",
+                 {"captured_at": utc(start + timedelta(seconds=index * 130 / max(count - 1, 1))),
+                  "telemetry": {"thresholds_complete": complete}})
 
     def lab(self, *, expect="recovered", approval="auto-lab"):
         from experiments.recovery.live import save
@@ -751,6 +773,54 @@ class PodFailureRecoveryTests(OfflineChaosLab, unittest.TestCase):
                                        "forced-rollback")
                 self.assertEqual(self.proof(lab, "forced-rollback")["guard_verdict"], "REJECT")
 
+    def test_a_reject_with_another_reason_code_fails_the_run(self):
+        """A refusal counts for the matrix only with its pre-registered code; any other REJECT fails the run."""
+        lab = self.lab()
+        # The real Guard refuses this ROLLBACK as ROLLBACK_ALREADY_AT_BASELINE, not as the cell's expected code.
+        with self.assertRaisesRegex(RuntimeError, r"Forced ROLLBACK was not refused with RESTART_NOT_JUSTIFIED: "
+                                                  r"REJECT \[.*'ROLLBACK_ALREADY_AT_BASELINE'"):
+            lab.forced_refusal(self.incident, "ROLLBACK", "RESTART_NOT_JUSTIFIED", "forced-rollback-other-code")
+        proof = self.proof(lab, "forced-rollback-other-code")
+        self.assertEqual((proof["guard_verdict"], proof["executor_patch_attempts"], proof["expected_reason"]),
+                         ("REJECT", 0, "RESTART_NOT_JUSTIFIED"))
+        self.assertNotIn("RESTART_NOT_JUSTIFIED", proof["guard_reason_codes"])
+        # The CPU cell's RESTART refused only because the budget is spent is not a RESTART_NOT_JUSTIFIED refusal.
+        handle(self.incident, lab.store, lab.bus)
+        with patch("sys.stdout", new=io.StringIO()):
+            lab.recover_incident(self.incident)  # The run's own RESTART uses the one-per-hour budget.
+        with self.assertRaisesRegex(RuntimeError, "Forced RESTART was not refused with RESTART_NOT_JUSTIFIED"):
+            lab.forced_refusal(self.incident, "RESTART", "RESTART_NOT_JUSTIFIED", "forced-restart-budget")
+        proof = self.proof(lab, "forced-restart-budget")
+        self.assertEqual(proof["guard_verdict"], "REJECT")
+        self.assertIn("RESTART_BUDGET_EXHAUSTED", proof["guard_reason_codes"])
+        self.assertNotIn("RESTART_NOT_JUSTIFIED", proof["guard_reason_codes"])
+        self.assertEqual((proof["executor_patch_attempts"], len(self.cluster.writes)), (0, 1))
+
+    def test_the_drift_restore_rereads_and_retries_a_conflicting_patch(self):
+        from experiments.boutique.harness import chaos_recovery
+        lab = self.lab()
+        self.cluster.snapshot["deployment"]["spec"]["template"]["metadata"].setdefault("labels", {})["drift"] = "1"
+        self.patch_conflicts = 1
+        pause = Mock()
+        with patch.object(chaos_recovery, "time", SimpleNamespace(sleep=pause, monotonic=Mock(return_value=0.0))):
+            lab.administrator_restore("drift-restore-patch.json")
+        self.assertEqual((lab.summary["drift_cell_restored"], lab.summary["drift_restore_attempts"]), (True, 2))
+        self.assertEqual(self.cluster.snapshot["deployment"]["spec"]["template"], self.baseline["pod_template"])
+        self.assertEqual(len([args for args in self.commands if args[0] == "patch"]), 2)
+        pause.assert_called_once_with(1)
+        saved = json.loads((lab.directory / "drift-restore-patch.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved[:2], [{"op": "test", "path": "/metadata/uid", "value": lab.target["uid"]},
+                                     {"op": "test", "path": "/metadata/resourceVersion",
+                                      "value": self.cluster.snapshot["deployment"]["metadata"]["resourceVersion"]}])
+        # A patch that keeps failing stops after three conditional attempts; nothing is forced.
+        self.patch_conflicts = 5
+        lab.summary.pop("drift_cell_restored")
+        with patch.object(chaos_recovery, "time", SimpleNamespace(sleep=Mock(), monotonic=Mock(return_value=0.0))), \
+                self.assertRaisesRegex(RuntimeError, "could not restore the baseline after 3 conditional patches"):
+            lab.administrator_restore("drift-restore-patch.json")
+        self.assertNotIn("drift_cell_restored", lab.summary)
+        self.assertEqual(self.patch_conflicts, 2)
+
 
 class CpuStressTests(OfflineChaosLab, unittest.TestCase):
     """N3: a metric-only incident is escalated by the rule; a forced RESTART is not justified."""
@@ -790,6 +860,46 @@ class CpuStressTests(OfflineChaosLab, unittest.TestCase):
         self.assertEqual(self.cluster.writes, [])
         self.assertEqual(self.chaos.removed, [("PodChaos", "sentinel-pod-test")])
 
+    def fault_gate(self, lab):
+        """BoutiqueExperiment.fault's no-incident gate, with a detection window that sees nothing."""
+        from experiments.boutique.harness import live
+        lab.inject_fault, lab.phase, lab.observe = Mock(), Mock(), Mock(return_value=None)
+        lab.lab_control, lab.pause_before_injection = None, False
+        clock = iter([0.0])
+        with patch.object(live, "time", SimpleNamespace(monotonic=lambda: next(clock, 1000.0), sleep=Mock())):
+            return live.BoutiqueExperiment.fault(lab, "primary")
+
+    def test_an_acceptable_no_incident_continues_and_the_cpu_cell_still_runs(self):
+        """N3's label accepts NO_INCIDENT: with a true-negative proof the run goes on, scored acceptable."""
+        lab = self.lab(expect="escalated", approval=None)
+        self.observe_window(lab)
+        self.assertIsNone(self.fault_gate(lab))
+        result = self.result(lab)
+        self.assertEqual((result["actual"], result["score"], result["matched_expected"], result["executor_writes"]),
+                         ("NO_INCIDENT", "acceptable", False, 0))
+        self.assertTrue(result["true_negative"]["passed"])
+        with patch("sys.stdout", new=io.StringIO()):
+            lab.recover_incident(None)
+        forced = self.proof(lab, "forced-restart")
+        self.assertEqual((forced["guard_verdict"], forced["executor_patch_attempts"]), ("REJECT", 0))
+        self.assertIn("RESTART_NOT_JUSTIFIED", forced["guard_reason_codes"])
+        self.assertEqual(self.cluster.writes, [])
+        self.assertEqual(self.chaos.removed, [("PodChaos", "sentinel-pod-test")])
+        # The PASS line names the decision that was scored, not only the outcome the run expected.
+        from experiments.boutique.harness.live import chaos_pass_line
+        self.assertEqual(chaos_pass_line("N3", "escalated", lab.summary),
+                         "PASS: Chaos Mesh scenario N3 ended in NO_INCIDENT, which its label scores acceptable "
+                         "(run expected escalated); 1 forced wrong action(s) refused with zero writes; "
+                         "chaos cleanup confirmed")
+
+    def test_an_acceptable_no_incident_without_a_true_negative_proof_fails_and_says_so(self):
+        lab = self.lab(expect="escalated", approval=None)
+        self.observe_window(lab, complete=False)  # Blind: no reading had complete metric thresholds.
+        with self.assertRaisesRegex(RuntimeError, "No incident opened in the detection window: scenario N3 scored "
+                                                  "NO_INCIDENT acceptable; true-negative proof failed"):
+            self.fault_gate(lab)
+        self.assertFalse(self.result(lab)["true_negative"]["passed"])
+
 
 class CpuStressUnreadyPodTests(OfflineChaosLab, unittest.TestCase):
     """N3 when the stressed Pod also fails readiness: RESTART_NOT_JUSTIFIED does not fire, and the Guard's other
@@ -817,12 +927,7 @@ class NetworkControlTests(OfflineChaosLab, unittest.TestCase):
     fixture = "healthy"
 
     def observe(self, lab, *, complete=True, count=4):
-        from experiments.recovery.live import save, utc
-        start = self.real_now() - timedelta(seconds=130)
-        for index in range(count):
-            save(lab.directory / f"primary-{index}-observation.json",
-                 {"captured_at": utc(start + timedelta(seconds=index * 130 / max(count - 1, 1))),
-                  "telemetry": {"thresholds_complete": complete}})
+        self.observe_window(lab, complete=complete, count=count)
 
     def test_no_incident_with_proof_is_correct_and_continues(self):
         lab = self.lab(expect="no-incident", approval=None)
@@ -836,6 +941,10 @@ class NetworkControlTests(OfflineChaosLab, unittest.TestCase):
         self.assertEqual(self.chaos.removed, [("PodChaos", "sentinel-pod-test")])
         self.assertEqual(self.cluster.writes, [])
         self.assertFalse((lab.directory / "forced-restart").exists())  # The CPU cell belongs to N3 only.
+        from experiments.boutique.harness.live import chaos_pass_line
+        self.assertEqual(chaos_pass_line("T1", "no-incident", lab.summary),
+                         "PASS: Chaos Mesh scenario T1 reached its expected outcome (no-incident) with NO_INCIDENT; "
+                         "chaos cleanup confirmed")
 
     def test_no_incident_without_evidence_does_not_pass(self):
         for name, change in (("blind", lambda lab: self.observe(lab, complete=False)),
@@ -856,6 +965,411 @@ class NetworkControlTests(OfflineChaosLab, unittest.TestCase):
             lab.forced_refusal(self.incident, "RESTART", "RESTART_NOT_JUSTIFIED", "forced-restart")
         self.assertFalse(lab.no_incident("primary"))
         self.assertEqual(self.result(lab)["true_negative"]["checks"]["no_executor_action"], False)
+
+
+class FakeInjectionCluster:
+    """chaos.Cluster as inject_fault, cleanup and attribution use it, for the connected namespace.
+
+    records are the containerRecords ids Chaos Mesh reports; pods maps each Pod name to (uid, app label).
+    The object reports injection on the confirm_after-th read (never when None).
+    """
+
+    def __init__(self, records, pods, *, confirm_after=1, fail_dry_run=False, fail_create=False):
+        self.records, self.pods, self.confirm_after = list(records), dict(pods), confirm_after
+        self.fail_dry_run, self.fail_create = fail_dry_run, fail_create
+        self.calls, self.removed, self.reads, self.document = [], [], 0, None
+
+    def create(self, document, *, dry_run=False):
+        self.calls.append(("create", "dry-run" if dry_run else "real"))
+        if dry_run and self.fail_dry_run:
+            raise RuntimeError("kubectl create failed: admission webhook denied the request")
+        if not dry_run:
+            self.document = deepcopy(document)
+            self.document["metadata"]["uid"] = "chaos-object-uid"
+            if self.fail_create:
+                raise RuntimeError("kubectl create failed: connection reset after the object was stored")
+        return deepcopy(document)
+
+    def current(self):
+        document = deepcopy(self.document)
+        injected = self.confirm_after is not None and self.reads >= self.confirm_after
+        document["status"] = {
+            "conditions": [{"type": "Selected", "status": "True"},
+                           {"type": "AllInjected", "status": "True" if injected else "False"}],
+            "experiment": {"desiredPhase": "Run", "containerRecords": [
+                {"id": record, "phase": "Injected" if injected else "Not Injected"} for record in self.records]}}
+        return document
+
+    def get(self, kind, name):
+        self.calls.append(("get", kind, name))
+        if kind == "pod":
+            uid, app = self.pods[name]
+            return {"metadata": {"name": name, "uid": uid, "labels": {"app": app}}}
+        self.reads += 1
+        return self.current()
+
+    def call(self, *args, **kwargs):
+        self.calls.append(("call",) + args)
+        if args[0] != "get":
+            raise AssertionError("unexpected chaos command " + str(args))
+        return json.dumps(self.current()) if self.document else ""
+
+    def remove(self, kind, name):
+        self.removed.append((kind, name))
+        self.document = None
+
+
+class InjectFaultTests(OfflineChaosLab, unittest.TestCase):
+    """inject_fault(): dry run first, confirmed injection, the selected Pods' UIDs, and refusals that stop the run."""
+
+    POD = "shippingservice-6d4f9c7b8-abcde"
+
+    def lab(self, **options):
+        lab = super().lab(**options)
+        lab.chaos_record = lab.chaos_document = None
+        lab.cluster_id, lab.context, lab.namespace, lab.name = (
+            "sentinel-boutique-connected", CONNECTED_CONTEXT, CONNECTED_NAMESPACE, "shippingservice")
+        return lab
+
+    def inject(self, fake, lab=None):
+        from experiments.boutique.harness import chaos_recovery
+        lab = lab or self.lab()
+        lab.chaos_cluster = lambda: fake
+        clock = iter(range(0, 10_000, 25))
+        with patch.object(chaos_recovery, "time", SimpleNamespace(monotonic=lambda: float(next(clock)), sleep=Mock())):
+            lab.inject_fault()
+        return lab
+
+    def records(self, *names):
+        return [CONNECTED_NAMESPACE + "/" + name + "/server" for name in names]
+
+    def test_a_confirmed_injection_saves_the_selected_pod_uids_and_attribution_uses_them(self):
+        from experiments.boutique.harness.chaos_recovery import OWNER, owner_label
+        fake = FakeInjectionCluster(self.records(self.POD), {self.POD: ("uid-selected", "shippingservice")},
+                                    confirm_after=2)
+        lab = self.inject(fake)
+        self.assertEqual(fake.calls[:2], [("create", "dry-run"), ("create", "real")])
+        self.assertEqual(fake.reads, 2)  # Not confirmed on the first read; the harness polled again.
+        request = json.loads((lab.directory / "chaos-request.json").read_text(encoding="utf-8"))
+        self.assertEqual(request["metadata"]["labels"][OWNER], owner_label(lab.directory.name))
+        self.assertEqual(request["spec"]["selector"], {"namespaces": [CONNECTED_NAMESPACE],
+                                                       "labelSelectors": {"app": "shippingservice"}})
+        saved = json.loads((lab.directory / "chaos-experiment.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["selected_pods"], [{"name": self.POD, "uid": "uid-selected"}])
+        self.assertEqual((saved["uid"], saved["duration_seconds"], saved["record_ids"]),
+                         ("chaos-object-uid", 420, self.records(self.POD)))
+        created = datetime.fromisoformat(saved["created_at"].replace("Z", "+00:00"))
+        self.assertEqual(saved["expires_at"].replace("Z", "+00:00"),
+                         (created + timedelta(seconds=420)).isoformat().replace(".000000", ""))
+        self.assertEqual(lab.summary["chaos"]["name"], saved["name"])
+        self.assertTrue(saved["name"].startswith("sentinel-pod-"))
+        # The saved record decides attribution: the selected UID still running fails it, even under a new name.
+        folder = lab.directory / "chaos-recovery"
+        folder.mkdir()
+        (folder / "outcome.json").write_text(json.dumps({"status": "RECOVERED", "window_end": saved["created_at"]}),
+                                             encoding="utf-8")
+        self.listed_pods = ({"name": "shippingservice-renamed", "uid": "uid-selected"},)
+        with self.assertRaisesRegex(RuntimeError, "cannot be attributed to the RESTART: new_pods_not_selected$"):
+            lab.attribute(folder)
+        proof = json.loads((lab.directory / "attribution.json").read_text(encoding="utf-8"))
+        self.assertEqual(proof["checks"][1]["detail"]["selected_uids_still_running"], ["uid-selected"])
+        self.listed_pods = ({"name": "shippingservice-new", "uid": "uid-fresh"},)
+        with patch("sys.stdout", new=io.StringIO()):
+            lab.attribute(folder)
+        self.assertEqual(lab.summary["attribution"], {"attributed": True, "failed": []})
+
+    def test_an_injection_not_confirmed_in_time_stops_the_run_and_cleanup_still_removes_it(self):
+        from experiments.boutique.harness.chaos_recovery import INJECTION_CONFIRM_SECONDS
+        self.assertEqual(INJECTION_CONFIRM_SECONDS, 60)
+        fake = FakeInjectionCluster(self.records(self.POD), {self.POD: ("uid-selected", "shippingservice")},
+                                    confirm_after=None)
+        lab = self.lab()
+        with self.assertRaisesRegex(RuntimeError, "did not confirm injection"):
+            self.inject(fake, lab)
+        self.assertEqual(fake.reads, 3)  # Reads at 25 s and 50 s pass the 60 s deadline check; 75 s does not.
+        self.assertIsNone(lab.chaos_record)
+        self.assertFalse((lab.directory / "chaos-experiment.json").exists())
+        lab.remove_chaos()
+        self.assertEqual(fake.removed, [("PodChaos", lab.chaos_document["metadata"]["name"])])
+
+    def test_a_selected_pod_of_another_app_is_refused(self):
+        fake = FakeInjectionCluster(self.records(self.POD), {self.POD: ("uid-frontend", "frontend")})
+        lab = self.lab()
+        with self.assertRaisesRegex(RuntimeError, "selected a Pod that is not the target's"):
+            self.inject(fake, lab)
+        self.assertIsNone(lab.chaos_record)
+        self.assertFalse((lab.directory / "chaos-experiment.json").exists())
+
+    def test_records_it_cannot_parse_are_refused(self):
+        for records in (["shippingservice-abc"], ["other-namespace/" + self.POD], [CONNECTED_NAMESPACE + "/Bad_Pod"]):
+            with self.subTest(records=records):
+                self.root = Path(tempfile.mkdtemp(dir=self.root))
+                fake = FakeInjectionCluster(records, {self.POD: ("uid-selected", "shippingservice")})
+                lab = self.lab()
+                with self.assertRaisesRegex(ValueError, "Unexpected Chaos Mesh record id"):
+                    self.inject(fake, lab)
+                self.assertFalse((lab.directory / "chaos-experiment.json").exists())
+                self.assertFalse(any(call[:2] == ("get", "pod") for call in fake.calls))
+
+    def test_a_failed_dry_run_creates_nothing_and_a_failed_create_is_still_cleaned_up(self):
+        fake = FakeInjectionCluster(self.records(self.POD), {self.POD: ("uid", "shippingservice")}, fail_dry_run=True)
+        lab = self.lab()
+        with self.assertRaisesRegex(RuntimeError, "admission webhook denied"):
+            self.inject(fake, lab)
+        self.assertEqual(fake.calls, [("create", "dry-run")])
+        self.assertIsNone(lab.chaos_document)
+        # The API server stored the object but the call failed: the run still knows it and removes it.
+        self.root = Path(tempfile.mkdtemp(dir=self.root))
+        fake = FakeInjectionCluster(self.records(self.POD), {self.POD: ("uid", "shippingservice")}, fail_create=True)
+        lab = self.lab()
+        with self.assertRaisesRegex(RuntimeError, "connection reset"):
+            self.inject(fake, lab)
+        lab.emergency_restore()
+        self.assertEqual(fake.removed, [("PodChaos", lab.chaos_document["metadata"]["name"])])
+        self.assertTrue(lab.summary["chaos_cleanup_confirmed"])
+
+    def test_the_wrong_scope_or_workload_is_refused_before_any_chaos_command(self):
+        from experiments.boutique.harness.scenarios import CatalogError
+        fake = FakeInjectionCluster(self.records(self.POD), {self.POD: ("uid", "shippingservice")})
+        lab = self.lab()
+        lab.name = "cartservice"
+        with self.assertRaisesRegex(RuntimeError, "targets another workload"):
+            self.inject(fake, lab)
+        self.root = Path(tempfile.mkdtemp(dir=self.root))
+        lab = self.lab()
+        lab.context = "kind-sentinel-boutique-lab"
+        with self.assertRaises(CatalogError):
+            self.inject(fake, lab)
+        self.assertEqual(fake.calls, [])
+
+
+class EmergencyRestoreTests(OfflineChaosLab, unittest.TestCase):
+    """emergency_restore(): remove the run's chaos object, then restore the template, even when removal fails."""
+
+    def test_removes_the_chaos_object_then_restores_the_baseline(self):
+        lab = self.lab()
+        self.cluster.snapshot["deployment"]["spec"]["template"]["metadata"].setdefault("labels", {})["drift"] = "1"
+        self.assertTrue(lab.emergency_restore())
+        self.assertEqual(self.chaos.removed, [("PodChaos", "sentinel-pod-test")])
+        self.assertEqual((lab.summary["chaos_cleanup_confirmed"], lab.summary["operator_emergency_restore"]),
+                         (True, True))
+        self.assertEqual(self.cluster.snapshot["deployment"]["spec"]["template"], self.baseline["pod_template"])
+
+    def test_a_failed_removal_is_logged_and_the_restore_still_runs(self):
+        from experiments.boutique.harness import chaos_recovery
+        lab = self.lab()
+        self.chaos.remove = Mock(side_effect=RuntimeError("Cleanup not confirmed for PodChaos/sentinel-pod-test"))
+        with patch.object(chaos_recovery.log, "failure") as failure:
+            self.assertTrue(lab.emergency_restore())
+        self.assertEqual(failure.call_args.args[1], "boutique.chaos_cleanup.failed")
+        self.assertEqual((lab.summary["chaos_cleanup_confirmed"], lab.summary["operator_emergency_restore"]),
+                         (False, True))
+        self.assertEqual(self.cluster.snapshot["deployment"]["spec"]["template"], self.baseline["pod_template"])
+
+    def test_another_runs_chaos_object_is_never_removed(self):
+        lab = self.lab()
+        self.chaos.document["metadata"]["labels"][OWNER] = "another-run"
+        self.assertTrue(lab.emergency_restore())
+        self.assertEqual(self.chaos.removed, [])
+        self.assertFalse(lab.summary["chaos_cleanup_confirmed"])
+
+
+class ChaosFaultImpactTests(OfflineChaosLab, unittest.TestCase):
+    """fault(): the pod failure keeps the catalog's storefront check; CPU and network record impact only."""
+
+    scenario_id = "N3"
+    fixture = "healthy"
+
+    def test_cpu_and_network_record_the_storefront_impact_without_requiring_it(self):
+        from experiments.boutique.harness import chaos_recovery
+        from experiments.recovery import live as recovery
+        for scenario_id in ("N3", "T1"):
+            with self.subTest(scenario=scenario_id):
+                self.root = Path(tempfile.mkdtemp(dir=self.root))
+                self.item = chaos_recovery.scenarios.scenario(scenario_id)
+                lab = self.lab(approval=None)
+                journey = {"passed": False, "steps": [{"name": "checkout", "status": 500}]}
+                lab.storefront, lab.record_shopping = Mock(journey=Mock(return_value=journey)), Mock()
+                incident = {"incident_id": "INC-CPU-1"} if scenario_id == "N3" else None
+                with patch.object(chaos_recovery.BoutiqueExperiment, "fault", return_value=incident) as detect, \
+                        patch.object(recovery.Experiment, "fault", side_effect=AssertionError("pod path")):
+                    self.assertEqual(lab.fault("primary"), incident)
+                detect.assert_called_once_with(lab, "primary")
+                saved = json.loads((lab.directory / "primary-storefront-impact.json").read_text(encoding="utf-8"))
+                self.assertEqual(saved, journey)  # A failing journey is recorded, never a reason to stop.
+                lab.record_shopping.assert_called_once_with("primary-fault", journey,
+                                                            incident_id=(incident or {}).get("incident_id"))
+
+    def test_the_pod_failure_keeps_the_predicted_storefront_check(self):
+        from experiments.boutique.harness import chaos_recovery
+        from experiments.recovery import live as recovery
+        self.item = chaos_recovery.scenarios.scenario("N2")
+        lab = self.lab(approval=None)
+        lab.storefront = Mock(journey=Mock(side_effect=AssertionError("impact is checked by the base fault")))
+        with patch.object(recovery.Experiment, "fault", return_value=self.incident) as base, \
+                patch.object(chaos_recovery.BoutiqueExperiment, "fault", side_effect=AssertionError("cpu path")):
+            self.assertEqual(lab.fault("primary"), self.incident)
+        base.assert_called_once_with("primary")
+        self.assertFalse((lab.directory / "primary-storefront-impact.json").exists())
+
+
+class HarnessWiringTests(unittest.TestCase):
+    """prepare(), prepare_image(), wrap_observer() and observe() with fakes for the cluster parts: the Guard
+    policy the harness writes, and the metrics-server bridge feeding the scenario's own thresholds."""
+
+    def setUp(self):
+        from experiments.boutique.harness import chaos_recovery
+        from experiments.recovery import live as recovery
+        from tests.test_observer_telemetry import observation
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root, self.steps, self.usage = Path(temp.name), [], {}
+        for patcher in (patch("subprocess.run", side_effect=AssertionError("cluster command attempted")),
+                        patch("shared.provenance.collect", return_value={"source_revision": "test"})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        baseline = json.loads((ROOT / "data/sentinel/samples/baseline.json").read_text(encoding="utf-8"))
+        test = self
+        self.at = datetime.fromisoformat(recovery.utc().replace("Z", "+00:00"))
+
+        class Base(recovery.Experiment):
+            """The connected experiment's cluster parts, faked; Experiment.prepare itself is real."""
+
+            def deployment(self):
+                return {"metadata": {"name": self.name, "namespace": self.namespace, "uid": "deployment-uid",
+                                     "resourceVersion": "7", "generation": 3},
+                        "spec": {"template": deepcopy(baseline["pod_template"])},
+                        "status": {"readyReplicas": 1, "availableReplicas": 1}}
+
+            def health_window(self, expected_template):
+                return [{"at": recovery.utc()} for _ in range(3)]
+
+            def prepare_image(self):
+                test.steps.append("prepare_image")
+                self.observer_collector = SimpleNamespace(target={"name": self.name},
+                                                          collect=lambda: observation(test.at))
+                return "image@sha256:" + "a" * 64
+
+            def observe(self, label):
+                test.steps.append("observe")
+                return test.observer.observe(self.observer_collector.collect())
+
+            def kubectl(self, *args, **kwargs):
+                stdout = ""
+                if args[:2] == ("config", "view"):
+                    stdout = json.dumps({"clusters": [{"cluster": {"server": "https://127.0.0.1:6443",
+                                                                    "certificate-authority-data": "Q0E="}}]})
+                elif args[:2] == ("create", "token"):
+                    stdout = "token-not-used"
+                elif args[0] != "apply":
+                    raise AssertionError("unexpected kubectl " + str(args))
+                return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+        self.lab_type = type("WiredChaosExperiment", (chaos_recovery.ChaosRecoveryMixin, Base), {
+            "scenario": property(lambda lab: test.item), "event": lambda lab, *args, **kwargs: None})
+
+        class Reader:
+            def get(self, path):
+                test.steps.append(path)
+                return {"items": [{"metadata": {"name": name, "namespace": "sentinel-demo"},
+                                   "timestamp": test.at.isoformat().replace("+00:00", "Z"), "window": "15s",
+                                   "containers": [{"name": container, "usage": {"cpu": cpu, "memory": "32Mi"}}]}
+                                  for name, (container, cpu) in test.usage.items()]}
+
+        self.reader = Reader()
+
+    def lab(self, scenario_id="N3", **scope):
+        from experiments.boutique.harness import scenarios
+        self.item = scenarios.scenario(scenario_id)
+        lab = self.lab_type(self.root / ("run-" + str(len(list(self.root.iterdir())))))
+        self.addCleanup(lab.store.close)
+        lab.cluster_id, lab.context, lab.namespace, lab.name = (
+            scope.get("cluster_id", "sentinel-boutique-connected"), scope.get("context", CONNECTED_CONTEXT),
+            CONNECTED_NAMESPACE, "shippingservice")
+        return lab
+
+    def prepare(self, lab):
+        from experiments.boutique.harness import chaos_recovery
+
+        def preflight(cluster):
+            self.steps.append("preflight")
+            self.assertEqual((cluster.context, cluster.namespace), (CONNECTED_CONTEXT, CONNECTED_NAMESPACE))
+            return {"pod_metrics_items": 1}
+        with patch.object(chaos_recovery, "preflight", side_effect=preflight), \
+                patch.object(chaos_recovery, "KubectlReader", return_value=self.reader) as reader, \
+                patch("sys.stdout", new=io.StringIO()):
+            lab.prepare()
+        reader.assert_called_once_with(CONNECTED_CONTEXT)
+        return lab
+
+    def test_prepare_writes_a_policy_that_allows_a_budgeted_restart_and_the_guard_accepts_it(self):
+        from services.guard.core import _validate_policy
+        from services.guard.common import GuardInputError
+        from services.guard.decisions import validate_policy
+        lab = self.prepare(self.lab())
+        self.assertEqual(self.steps[:2], ["preflight", "prepare_image"])  # Read-only checks before any setup.
+        policy = json.loads((lab.directory / "policy.json").read_text(encoding="utf-8"))
+        self.assertEqual(policy, lab.policy)
+        self.assertEqual(policy["allowed_actions"], ["ROLLBACK", "RESTART"])
+        self.assertEqual(policy["restart_constraints"], {"targets": [lab.target], "max_restarts": 1,
+                                                         "window_seconds": 3600})
+        self.assertEqual(lab.target["uid"], "deployment-uid")
+        self.assertEqual((policy["profile"], policy["require_operator_approval"]), ("live", True))
+        _validate_policy(policy)
+        validate_policy(policy, require_live=True)
+        self.assertEqual(lab.summary["chaos_preflight"], {"pod_metrics_items": 1})
+        # Without the harness's restart constraints, the live Guard refuses the policy outright.
+        policy.pop("restart_constraints")
+        with self.assertRaisesRegex(GuardInputError, "requires restart_constraints"):
+            validate_policy(policy, require_live=True)
+
+    def test_prepare_refuses_another_scope_before_the_preflight(self):
+        from experiments.boutique.harness.scenarios import CatalogError
+        for scope in ({"context": "kind-sentinel-boutique-lab", "cluster_id": "sentinel-boutique-lab"},
+                      {"cluster_id": "sentinel-lab"}):
+            with self.subTest(scope=scope), self.assertRaises(CatalogError):
+                self.prepare(self.lab(**scope))
+        self.assertEqual(self.steps, [])
+
+    def test_the_observer_alerts_through_the_bridge_with_the_scenarios_thresholds(self):
+        from services.observer.core import Observer
+        from services.observer.telemetry import CorrelatedEvidenceCollector
+        from tests.test_observer_telemetry import POLICY, observation
+        lab = self.prepare(self.lab())
+        self.assertIsInstance(lab.observer_collector, CorrelatedEvidenceCollector)
+        self.assertEqual(lab.observer_collector.policy["metric_thresholds"], self.item["observer_thresholds"])
+        self.assertEqual(lab.observer_collector.policy["metric_thresholds"],
+                         [{"name": "k8s.pod.cpu.usage", "unit": "cores", "above": 0.18}])
+        pod = observation()["pods"][0]
+        container = pod["status"]["containerStatuses"][0]["name"]
+        self.observer, incident = Observer(POLICY), None
+        # 190 millicores is above the 0.18-core threshold on every reading for 15 s: a metric alert incident.
+        self.usage = {pod["metadata"]["name"]: (container, "190m")}
+        start = self.at
+        for offset in (0, 15):
+            self.at = start + timedelta(seconds=offset)
+            lab.metrics_bridge.now = lambda at=self.at: at
+            incident = lab.observe("primary-" + str(offset)) or incident
+        self.assertIn("/apis/metrics.k8s.io/v1beta1/namespaces/sentinel-demo/pods", self.steps)
+        self.assertIsNotNone(incident)
+        self.assertIn("otel_metric_alert", {signal["source"] for signal in incident["signals"]})
+        reports = json.loads((lab.directory / "metrics-bridge.json").read_text(encoding="utf-8"))
+        self.assertEqual([report["complete"] for report in reports], [True, True])
+
+    def test_a_pod_without_metrics_leaves_the_thresholds_incomplete_and_raises_nothing(self):
+        lab = self.prepare(self.lab("T1"))
+        self.usage = {}
+        telemetry = lab.observer_collector.collect()["telemetry"]
+        self.assertFalse(telemetry["thresholds_complete"])
+        self.assertEqual(telemetry["alerts"], [])
+        self.assertEqual(lab.metrics_bridge.reports[-1]["complete"], False)
+        # At or below the threshold with full coverage: complete, and still no alert.
+        from tests.test_observer_telemetry import observation
+        pod = observation()["pods"][0]
+        self.usage = {pod["metadata"]["name"]: (pod["status"]["containerStatuses"][0]["name"], "180m")}
+        telemetry = lab.observer_collector.collect()["telemetry"]
+        self.assertTrue(telemetry["thresholds_complete"])
+        self.assertEqual(telemetry["alerts"], [])
 
 
 if __name__ == "__main__":

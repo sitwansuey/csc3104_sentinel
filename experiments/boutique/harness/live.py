@@ -691,14 +691,39 @@ class BoutiqueExperiment(Experiment):
             index += 1
             time.sleep(2)
         # A scored run records NO_INCIDENT first. Only a scenario whose label allows
-        # no incident continues; for every current scenario this stays a failure.
+        # no incident continues (T1, and N3 as acceptable); for the others this stays a failure.
+        before = self.summary.get("scenario_result")
         if not self.no_incident(label):
+            graded = self.summary.get("scenario_result")
+            if graded is not None and graded is not before and graded.get("actual") == "NO_INCIDENT":
+                proof = graded.get("true_negative")
+                raise RuntimeError(
+                    f"No incident opened in the detection window: scenario {graded['scenario']} scored NO_INCIDENT "
+                    f"{graded['score']}"
+                    + ("" if proof is None else "; true-negative proof " + ("passed" if proof.get("passed")
+                                                                             else "failed"))
+                    + "; the run does not pass on it")
             raise RuntimeError("Role 2 did not detect the Boutique rollout failure")
         return None
 
     def no_incident(self, label):
         """Record that no incident appeared; True only when the scenario's label allows that."""
         return False
+
+
+def chaos_pass_line(scenario_id, expect, summary):
+    """The PASS line of a Chaos Mesh run: the decision actually scored, not only the outcome the run expected."""
+    graded = summary.get("scenario_result")
+    if graded and graded.get("score") != "correct":
+        outcome = f"ended in {graded['actual']}, which its label scores {graded['score']} (run expected {expect})"
+    elif graded:
+        outcome = f"reached its expected outcome ({expect}) with {graded['actual']}"
+    else:
+        outcome = f"reached its expected outcome ({expect})"
+    refused = len(summary.get("forced_refusals", []))
+    return (f"PASS: Chaos Mesh scenario {scenario_id} {outcome}; "
+            + (f"{refused} forced wrong action(s) refused with zero writes; " if refused else "")
+            + "chaos cleanup confirmed")
 
 
 def main():
@@ -775,6 +800,12 @@ def main():
     # ESCALATE acceptable); the score is still recorded but does not decide the run.
     accepted_escalation = (chaos_scenario and args.expect == "escalated"
                            and "ESCALATE" in scenario["expected"]["acceptable"])
+    # A chaos scenario takes its outcome from the label, with or without --agent: an --expect recovered on N3 or
+    # T1 would turn a pre-registered no-repair trial into an approved repair.
+    if (chaos_scenario and args.expect and args.expect != scenarios.expect(scenario)
+            and not accepted_escalation):
+        parser.error(f"--expect {args.expect} contradicts scenario {args.scenario}'s pre-registered outcome "
+                     f"({scenario['expected']['terminal_state']})")
     if (args.agent and args.expect and args.expect != scenarios.expect(scenario)
             and args.scenario != profile.primary_scenario and not accepted_escalation):
         parser.error(f"--expect {args.expect} contradicts scenario {args.scenario}'s pre-registered outcome "
@@ -945,8 +976,7 @@ def main():
                 experiment.credentials.unlink(missing_ok=True)
                 save(experiment.directory / "summary.json", experiment.summary)
                 signal.signal(signal.SIGTERM, previous_term)
-    print(f"PASS: Chaos Mesh scenario {args.scenario} reached its expected outcome ({expect}); forced wrong "
-          "actions refused with zero writes; chaos cleanup confirmed"
+    print(chaos_pass_line(args.scenario, expect, experiment.summary)
           if chaos_scenario else
           "PASS: agent planning ended in a saved ESCALATE; incident NEEDS_REVIEW with no repair"
           if args.agent and expect == "escalated" else

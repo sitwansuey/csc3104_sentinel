@@ -146,6 +146,8 @@ def preflight(cluster):
     require(not leftovers, "Chaos objects are left in the connected namespace: " + ", ".join(leftovers[:5]))
     metrics = cluster.raw("/apis/metrics.k8s.io/v1beta1/namespaces/" + cluster.namespace + "/pods")
     facts["pod_metrics_items"] = len(metrics.get("items", []))
+    # With no Pod metrics the CPU thresholds can never be complete, so N3 and T1 could not alert or prove a negative.
+    require(facts["pod_metrics_items"] > 0, "The Metrics API returned no Pod metrics for the connected namespace")
     return facts
 
 
@@ -318,8 +320,10 @@ class ChaosRecoveryMixin(ScenarioScoringMixin):
         save(self.directory / "chaos-request.json", document)
         cluster.create(document, dry_run=True)
         created_at = utc()  # Before creation: the expiry measured from here is never later than the real one.
-        cluster.create(document)
+        # Known before the create call: if the API server made the object but the call still failed, cleanup can
+        # remove it (owned_remove ignores an object that does not exist and refuses one another run owns).
         self.chaos_document = document
+        cluster.create(document)
         deadline = time.monotonic() + INJECTION_CONFIRM_SECONDS
         while True:
             current = cluster.get(document["kind"], name)
@@ -373,14 +377,21 @@ class ChaosRecoveryMixin(ScenarioScoringMixin):
     # Scoring, planning and the forced refusals.
 
     def no_incident(self, label):
-        """Score NO_INCIDENT with a true-negative proof; continue only when the label allows no incident."""
+        """Score NO_INCIDENT with a true-negative proof; continue only when the label allows no incident.
+
+        The run continues when NO_INCIDENT scores correct (T1) or acceptable (N3,
+        whose CPU cell then still runs) and the true-negative proof passes. The
+        score saved in scenario-result.json is the one the label gives; an
+        acceptable result is never recorded as correct.
+        """
         item = self.scenario
         self.summary["expected_outcome"] = self.expect
         proof = self.true_negative()
         facts = self.scenario_facts(None, None, None, self.directory)
         facts.update(executor_writes=proof["executor_writes"], true_negative=proof)
         graded = self.save_scenario_result(scenarios.result(item, "NO_INCIDENT", source="observer", **facts))
-        return item["expected"]["incident"] is not True and graded["matched_expected"] and proof["passed"]
+        allowed = graded["matched_expected"] or graded["score"] == "acceptable"
+        return item["expected"]["incident"] is not True and allowed and proof["passed"]
 
     def true_negative(self):
         observations = sorted(self.directory.glob("primary-*-observation.json"))
@@ -569,15 +580,28 @@ class ChaosRecoveryMixin(ScenarioScoringMixin):
         self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=180s", timeout=200)
         self.check("Drift removed by the administrator; the target is back at its baseline")
 
-    def administrator_restore(self, name):
-        """Put the baseline template back as the lab administrator (conditional JSON Patch); not a Sentinel repair."""
-        deployment = self.deployment()
-        patch = [{"op": "test", "path": "/metadata/uid", "value": self.target["uid"]},
-                 {"op": "test", "path": "/metadata/resourceVersion", "value": deployment["metadata"]["resourceVersion"]},
-                 {"op": "replace", "path": "/spec/template", "value": self.baseline["pod_template"]}]
-        save(self.directory / name, patch)
-        self.kubectl("patch", "deployment", self.name, "--type=json", "--patch-file", str(self.directory / name))
-        self.summary["drift_cell_restored"] = True
+    def administrator_restore(self, name, attempts=3):
+        """Put the baseline template back as the lab administrator (conditional JSON Patch); not a Sentinel repair.
+
+        The drift's rollout is still running, so a controller status update can
+        change the resourceVersion between the read and the patch. Each attempt
+        re-reads the Deployment and patches only that version of the same UID.
+        """
+        for attempt in range(1, attempts + 1):
+            deployment = self.deployment()
+            patch = [{"op": "test", "path": "/metadata/uid", "value": self.target["uid"]},
+                     {"op": "test", "path": "/metadata/resourceVersion",
+                      "value": deployment["metadata"]["resourceVersion"]},
+                     {"op": "replace", "path": "/spec/template", "value": self.baseline["pod_template"]}]
+            save(self.directory / name, patch)
+            result = self.kubectl("patch", "deployment", self.name, "--type=json", "--patch-file",
+                                  str(self.directory / name), allow_failure=True)
+            if result.returncode == 0:
+                self.summary["drift_cell_restored"] = True
+                self.summary["drift_restore_attempts"] = attempt
+                return
+            time.sleep(1)
+        require(False, f"The administrator could not restore the baseline after {attempts} conditional patches")
 
 
 def main(argv=None):
