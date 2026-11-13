@@ -60,6 +60,24 @@ def record(path, kind, payload):
     return event
 
 
+def probe_writable(path):
+    """Raise unless an inspection record could be written now; the test write is rolled back.
+
+    The inspector's /readyz uses this: record() runs in the request path and
+    fails closed, so a journal that cannot take a write means every request
+    would be denied.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(path, timeout=1)) as db:
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            db.execute("CREATE TABLE IF NOT EXISTS security_events (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, payload TEXT NOT NULL)")
+            db.execute("INSERT INTO security_events(kind,payload) VALUES('readiness','{}')")
+        finally:
+            db.rollback()
+
+
 def update_alert(path, *, key, code, severity, detail, active, image=None, change_token=""):
     """Persist state transitions, suppress duplicate open alerts across restarts."""
     if code not in {"CVE_HIGH_CRITICAL", "CVE_SCAN_FAILED", "CVE_UNRATED", "INSPECTION_DENIED", "SCAN_STALE"}:

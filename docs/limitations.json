@@ -632,21 +632,42 @@
     },
     {
       "id": "L-SECURITY-SHIPPING-ONLY",
-      "title": "mTLS and inspection cover only the shipping path, and the other services' L4 default-deny runs in the security lab only",
+      "title": "mTLS and inspection are shown live only on the shipping path (the cart route is offline only), and the other services' L4 default-deny runs in the security lab only",
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-11",
-      "impact": "Only the shipping path has mTLS and inspection. Default-deny NetworkPolicies for all 11 services, generated from the reviewed dependency graph, and a matrix that passes only when every forbidden connection times out and the cluster's own policies are exactly the reviewed set, have passed once live in the Calico security lab at 02d91e5 (13 Nov 2026): 19 of 19 allowed edges open, 202 of 202 forbidden edges closed by timeout, no policy drift and no untested cell (C-SECURITY-NETPOL-LIVE). So the other ten services now have L4 default-deny in the security lab only, in one run on one kind node; their traffic is still plaintext. The rules match the Pod label app; they are not authentication. Normal connected recovery installs no NetworkPolicy, and the protected lab has never been combined with guarded recovery.",
-      "workaround": "Quote mTLS and inspection results for the shipping path only, and the L4 NetworkPolicy result for the security lab only (C-SECURITY-NETPOL-LIVE), never for the connected recovery cluster.",
+      "impact": "Only the shipping path has mTLS and inspection in a live run. Since P5.04 the security lab's code also routes cart calls (frontend and checkoutservice to cartservice) through the mTLS gateway with schema inspection of AddItem, GetCart and EmptyCart, a cart TLS sidecar, and a protect-cartservice policy that admits only the gateway; that is shown by offline tests only, and the regenerated policy set (no ingress-cartservice; the cart probe is no longer admitted in the lab) has not been applied live. The cartservice to redis-cart edge stays plaintext Redis and is not inspected. Default-deny NetworkPolicies for all 11 services, generated from the reviewed dependency graph, and a matrix that passes only when every forbidden connection times out and the cluster's own policies are exactly the reviewed set, have passed once live in the Calico security lab at 02d91e5 (13 Nov 2026): 19 of 19 allowed edges open, 202 of 202 forbidden edges closed by timeout, no policy drift and no untested cell (C-SECURITY-NETPOL-LIVE). So the other ten services now have L4 default-deny in the security lab only, in one run on one kind node; their traffic is still plaintext. The rules match the Pod label app; they are not authentication. Normal connected recovery installs no NetworkPolicy, and the protected lab has never been combined with guarded recovery.",
+      "workaround": "Quote mTLS and inspection results for the shipping path only, and the L4 NetworkPolicy result for the security lab only (C-SECURITY-NETPOL-LIVE), never for the connected recovery cluster. Quote the cart route as offline-tested until the P5.04 live recipe in docs/security.md has run.",
       "cites": [
         {"claim": "C-SECURITY-LAB"},
-        {"at": "docs/security.md", "text": "Only the shipping path is protected"},
+        {"at": "docs/security.md", "text": "Only the shipping path is protected by mTLS and inspection in a live"},
+        {"at": "scripts/security/boutique_security_manifest.py", "text": "def protect_policies():"},
+        {"at": "tests/test_security_connected.py", "text": "def test_cart_plaintext_port_is_closed_to_every_pod_including_its_callers_and_probe(self):"},
         {"at": "scripts/security/network_policy.py", "text": "def security_lab_policies(graph, *, probes=None):"},
         {"at": "tests/test_security_connected.py", "text": "def test_a_forbidden_edge_that_connects_is_unknown_never_pass(self):"},
         {"claim": "C-SECURITY-NETPOL-LIVE"}
       ],
       "planned": ["P4.06", "P5.04", "P5.05"],
       "issues": [69, 71]
+    },
+    {
+      "id": "L-SECURITY-GATEWAY-CAPACITY",
+      "title": "The inspector's capacity bounds and real readiness are tested offline only, and one gateway replica is a single point of failure",
+      "kind": "limitation",
+      "status": "open",
+      "since": "2026-11-13",
+      "impact": "Since P5.04 the security lab's inspector runs at most 16 inspections at once and starts at most 200 per second; a request over either bound is answered 503 before inspection, Envoy keeps failure_mode_allow false and caps its connections to the inspector at 32, and /readyz answers 503 while every slot is taken or the journal cannot take a write, with the gateway's inspector container gated on it. Offline tests against the real inspector on loopback show overload and an unwritable journal deny with 503 and never allow, and /readyz flips and recovers; the 200-call burst, the inspector kill and resource measurements in the live recipe have not run, and the limits are defaults, not measured against storefront latency. One gateway Deployment with one replica carries both protected routes, so its outage, or a flood that fills its slots, denies every shipping and cart call (fail closed, an availability loss rather than a bypass).",
+      "workaround": "Describe the bound as offline-tested and the gateway as a single replica; never claim high availability or measured capacity. Run the P5.04 live recipe in docs/security.md before quoting latency or resource numbers.",
+      "cites": [
+        {"at": "runtime/security_inspector.py", "text": "def admit(self):"},
+        {"at": "runtime/security_inspector.py", "text": "def readiness(journal, capacity):"},
+        {"at": "scripts/security/security_lab.py", "text": "INSPECTOR_CONNECTIONS = 32"},
+        {"at": "tests/test_security_lab_serve.py", "text": "def test_exhausted_inflight_denies_with_503_and_readyz_flips_and_recovers(self):"},
+        {"at": "tests/test_security_lab_serve.py", "text": "def test_unwritable_journal_denies_with_503_and_readyz_flips_and_recovers(self):"},
+        {"at": "docs/security.md", "text": "### Live recipe (not run yet)"}
+      ],
+      "planned": ["P5.04"],
+      "issues": [71]
     },
     {
       "id": "L-UNGATED-CVES",
@@ -756,7 +777,7 @@
       "impact": "Certificates expire after two days and are not rotated, revoked or bound to a workload identity.",
       "workaround": "Recreate the lab for each session.",
       "cites": [
-        {"at": "scripts/security/security_lab.py:119", "text": "\"-days\", \"2\""}
+        {"at": "scripts/security/security_lab.py:148", "text": "\"-days\", \"2\""}
       ],
       "planned": ["P5.06"],
       "issues": [70]

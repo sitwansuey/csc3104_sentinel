@@ -18,6 +18,8 @@ from experiments.boutique.harness.connected import APPLICATIONS, UPSTREAM, UPSTR
 from runtime.security_store import import_inspections, recent, update_alert
 from scripts.security import network_policy
 from scripts.security.boutique_security_manifest import CALLERS, NAMESPACE, caller_config, overlay, proxy_config
+from scripts.security.security_lab import ROUTES
+from services.grpc_inspection import ROUTE_METHODS
 from scripts.test_boutique_live import BoutiqueExperiment
 from scripts.security.scan_image_security import archive_config_id
 from scripts.security.watch_security import assess_scan, inspection_alerts, load_inventory, scan_cycle
@@ -31,7 +33,23 @@ METHOD = "/hipstershop.ShippingService/GetQuote"
 def base():
     return {"items": [{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": name, "namespace": NAMESPACE},
                        "spec": {"template": {"spec": {"containers": [{"name": "server", "env": [
-                           {"name": "SHIPPING_SERVICE_ADDR", "value": "shippingservice:50051"}]}]}}}} for name in (*CALLERS,"shippingservice")]}
+                           {"name": "SHIPPING_SERVICE_ADDR", "value": "shippingservice:50051"},
+                           {"name": "CART_SERVICE_ADDR", "value": "cartservice:7070"}]}]}}}}
+                      for name in (*CALLERS, "shippingservice", "cartservice")]}
+
+
+def deployment(manifest, name):
+    return next(item for item in manifest["items"] if item["kind"] == "Deployment" and item["metadata"]["name"] == name)
+
+
+def envoy_json(manifest, name):
+    item = next(item for item in manifest["items"] if item["kind"] == "ConfigMap" and item["metadata"]["name"] == name)
+    return json.loads(item["data"]["envoy.json"])["static_resources"]
+
+
+def endpoint(cluster):
+    address = cluster["load_assignment"]["endpoints"][0]["lb_endpoints"][0]["endpoint"]["address"]["socket_address"]
+    return address["address"], address["port_value"]
 
 
 class ConnectedSecurityTests(unittest.TestCase):
@@ -42,38 +60,139 @@ class ConnectedSecurityTests(unittest.TestCase):
         for item in result["items"]:
             if item["kind"] == "Deployment" and item["metadata"]["name"] in CALLERS:
                 pod = item["spec"]["template"]["spec"]
-                self.assertEqual(pod["containers"][0]["env"][0]["value"], "127.0.0.1:50052")
-                self.assertEqual(pod["containers"][1]["name"], "shipping-egress")
+                self.assertEqual({entry["name"]: entry["value"] for entry in pod["containers"][0]["env"]},
+                                 {"SHIPPING_SERVICE_ADDR": "127.0.0.1:50052", "CART_SERVICE_ADDR": "127.0.0.1:50053"})
+                self.assertEqual(pod["containers"][1]["name"], "protected-egress")
+                self.assertEqual(pod["containers"][1]["ports"], [{"containerPort": 50052}, {"containerPort": 50053}])
                 self.assertNotIn("volumeMounts", pod["containers"][0])
         config = caller_config("frontend-client")
         listener = config["static_resources"]["listeners"][0]
         self.assertEqual(listener["address"]["socket_address"]["address"], "127.0.0.1")
         self.assertEqual(config["static_resources"]["clusters"][0]["transport_socket"]["typed_config"]["sni"], "gateway.internal")
 
+    def test_cart_wiring_is_rewritten_for_both_callers_only(self):
+        result = overlay(base(), envoy_image="envoy", inspector_image="inspector")
+        for name in ("shippingservice", "cartservice"):
+            # The protected services keep their own (unused) env entries; only callers are rewired.
+            env = {entry["name"]: entry["value"] for entry in deployment(result, name)["spec"]["template"]["spec"]["containers"][0]["env"]}
+            self.assertEqual(env, {"SHIPPING_SERVICE_ADDR": "shippingservice:50051", "CART_SERVICE_ADDR": "cartservice:7070"})
+        for caller in CALLERS:
+            with self.subTest(caller=caller):
+                config = envoy_json(result, "security-" + caller + "-egress")
+                listeners = {listener["name"]: listener["address"]["socket_address"] for listener in config["listeners"]}
+                self.assertEqual(listeners, {"upstream": {"address": "127.0.0.1", "port_value": 50052},
+                                             "upstream-cart": {"address": "127.0.0.1", "port_value": 50053}})
+                self.assertTrue(all("transport_socket" not in listener["filter_chains"][0] for listener in config["listeners"]))
+                self.assertEqual({cluster["name"]: endpoint(cluster) for cluster in config["clusters"]},
+                                 {"shipping": ("security-gateway", 8443), "cart": ("security-cart-gateway", 8445)})
+                for cluster in config["clusters"]:
+                    tls = cluster["transport_socket"]["typed_config"]
+                    self.assertEqual(tls["sni"], "gateway.internal")
+                    self.assertEqual(tls["common_tls_context"]["tls_certificates"][0]["certificate_chain"]["filename"],
+                                     "/pki/" + caller + "-client/tls.crt")
+                # A route's egress listener forwards only that route's methods.
+                paths = {listener["name"]: {route["match"].get("path") for route in listener["filter_chains"][0]["filters"][0]
+                                            ["typed_config"]["route_config"]["virtual_hosts"][0]["routes"]}
+                         for listener in config["listeners"]}
+                self.assertEqual(paths["upstream-cart"], set(ROUTE_METHODS["cart"]) | {None})
+                self.assertEqual(paths["upstream"], set(ROUTE_METHODS["shipping"]) | {None})
+
+    def test_each_route_has_distinct_ports_and_its_own_tls_sidecar(self):
+        result = overlay(base(), envoy_image="envoy", inspector_image="inspector")
+        ports = [(spec["port"], spec["egress_port"], spec["gateway_port"], spec["upstream_port"]) for spec in ROUTES.values()]
+        flat = [port for group in ports for port in group]
+        self.assertEqual(len(flat), len(set(flat)))
+        self.assertEqual(ports, [(50051, 50052, 8443, 8444), (7070, 50053, 8445, 8446)])
+        cart = deployment(result, "cartservice")["spec"]["template"]["spec"]
+        self.assertEqual([container["name"] for container in cart["containers"]], ["server", "cart-ingress"])
+        ingress = cart["containers"][1]
+        self.assertEqual(ingress["ports"], [{"containerPort": 8446}])
+        self.assertEqual(ingress["readinessProbe"], {"tcpSocket": {"port": 8446}, "periodSeconds": 3})
+        self.assertEqual({mount["mountPath"] for mount in ingress["volumeMounts"]}, {"/config", "/pki/cart-upstream"})
+        upstream = envoy_json(result, "security-cart-upstream")
+        self.assertEqual(endpoint(upstream["clusters"][0]), ("127.0.0.1", 7070))
+        tls = upstream["listeners"][0]["filter_chains"][0]["transport_socket"]["typed_config"]
+        self.assertTrue(tls["require_client_certificate"])
+        self.assertEqual(tls["common_tls_context"]["validation_context"]["match_typed_subject_alt_names"],
+                         [{"san_type": "DNS", "matcher": {"exact": "proxy-client.internal"}}])
+        services = {item["metadata"]["name"]: item["spec"] for item in result["items"] if item["kind"] == "Service"}
+        self.assertEqual(services["security-cart-upstream"]["selector"], {"app": "cartservice"})
+        self.assertEqual(services["security-cart-upstream"]["ports"][0]["port"], 8446)
+        self.assertEqual(services["security-cart-gateway"]["selector"], {"app": "security-gateway"})
+        self.assertEqual(services["security-cart-gateway"]["ports"][0]["port"], 8445)
+        self.assertEqual(services["security-gateway"]["ports"][0]["port"], 8443)
+        # The gateway dials each service's TLS sidecar with the proxy identity and checks the sidecar's name.
+        gateway = envoy_json(result, "security-gateway")
+        clusters = {cluster["name"]: cluster for cluster in gateway["clusters"]}
+        self.assertEqual(set(clusters), {"shipping", "cart", "inspector"})
+        self.assertEqual(endpoint(clusters["cart"]), ("security-cart-upstream", 8446))
+        self.assertEqual(clusters["cart"]["transport_socket"]["typed_config"]["sni"], "cart-upstream.internal")
+        self.assertEqual(endpoint(clusters["shipping"]), ("security-upstream", 8444))
+        self.assertEqual([listener["address"]["socket_address"]["port_value"] for listener in gateway["listeners"]],
+                         [8443, 8445])
+
     def test_policies_allow_only_gateway_upstream_backend_chain(self):
         result = overlay(base(), envoy_image="envoy", inspector_image="inspector")
         policies = {i["spec"]["podSelector"]["matchLabels"]["app"]: i["spec"] for i in result["items"] if i["kind"] == "NetworkPolicy"}
-        for target, caller, port in (("shippingservice", "security-gateway", 8444),):
+        for target, caller, port in (("shippingservice", "security-gateway", 8444), ("cartservice", "security-gateway", 8446)):
             self.assertEqual(policies[target]["ingress"], [{"from": [{"podSelector": {"matchLabels": {"app": caller}}}],
                                                          "ports": [{"protocol": "TCP", "port": port}]}])
-        self.assertEqual(len(policies), 2)
+        self.assertEqual(policies["security-gateway"]["ingress"], [{
+            "from": [{"podSelector": {"matchLabels": {"app": name}}} for name in (*CALLERS, "security-test")],
+            "ports": [{"protocol": "TCP", "port": 8443}, {"protocol": "TCP", "port": 8445}]}])
+        self.assertEqual(len(policies), 3)
         cluster = proxy_config(True)["static_resources"]["clusters"][0]
         self.assertEqual(cluster["load_assignment"]["endpoints"][0]["lb_endpoints"][0]["endpoint"]["address"]["socket_address"]["address"],"127.0.0.1")
 
     def test_tls_server_checks_peer_identity_in_addition_to_ca(self):
-        for upstream, names in ((False, {"frontend-client.internal", "checkoutservice-client.internal", "client.internal"}),
-                                (True, {"proxy-client.internal"})):
-            config = proxy_config(upstream)
-            tls = config["static_resources"]["listeners"][0]["filter_chains"][0]["transport_socket"]["typed_config"]
-            self.assertTrue(tls["require_client_certificate"])
-            sans = tls["common_tls_context"]["validation_context"]["match_typed_subject_alt_names"]
-            self.assertEqual({san["matcher"]["exact"] for san in sans}, names)
+        for route in ROUTES:
+            for upstream, names in ((False, {"frontend-client.internal", "checkoutservice-client.internal", "client.internal"}),
+                                    (True, {"proxy-client.internal"})):
+                config = proxy_config(upstream, route=route)
+                tls = config["static_resources"]["listeners"][0]["filter_chains"][0]["transport_socket"]["typed_config"]
+                with self.subTest(route=route, upstream=upstream):
+                    self.assertTrue(tls["require_client_certificate"])
+                    sans = tls["common_tls_context"]["validation_context"]["match_typed_subject_alt_names"]
+                    self.assertEqual({san["matcher"]["exact"] for san in sans}, names)
 
     def test_changed_upstream_caller_configuration_requires_review(self):
+        for index, change in ((0, []), (1, [{"name": "SHIPPING_SERVICE_ADDR", "value": "shippingservice:50051"}]),
+                              (0, [{"name": "SHIPPING_SERVICE_ADDR", "value": "shippingservice:50051"},
+                                   {"name": "CART_SERVICE_ADDR", "value": "redis-cart:6379"}]),
+                              (1, [{"name": "SHIPPING_SERVICE_ADDR", "value": "shippingservice:50051"},
+                                   {"name": "CART_SERVICE_ADDR", "value": "cartservice:7070"},
+                                   {"name": "CART_SERVICE_ADDR", "value": "cartservice:7070"}])):
+            source = base()
+            source["items"][index]["spec"]["template"]["spec"]["containers"][0]["env"] = change
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, "caller wiring changed"):
+                overlay(source, envoy_image="envoy", inspector_image="inspector")
         source = base()
-        source["items"][0]["spec"]["template"]["spec"]["containers"][0]["env"] = []
-        with self.assertRaises(ValueError):
+        source["items"] = [item for item in source["items"] if item["metadata"]["name"] != "cartservice"]
+        with self.assertRaisesRegex(ValueError, "cart service is missing"):
             overlay(source, envoy_image="envoy", inspector_image="inspector")
+
+    def test_gateway_inspector_is_bounded_and_its_readiness_is_the_real_readyz(self):
+        result = overlay(base(), envoy_image="envoy", inspector_image="inspector")
+        pod = deployment(result, "security-gateway")["spec"]["template"]["spec"]
+        envoy, inspector = pod["containers"]
+        self.assertEqual(envoy["ports"], [{"containerPort": 8443}, {"containerPort": 8445}])
+        self.assertEqual(inspector["args"], ["--journal", "/data/telemetry.sqlite3", "--stdout-events",
+                                             "--max-inflight", "16", "--max-rps", "200"])
+        command = inspector["readinessProbe"]["exec"]["command"]
+        self.assertEqual(command[:2], ["python", "-c"])
+        self.assertIn("http://127.0.0.1:9001/readyz", command[2])
+        self.assertNotIn("tcpSocket", inspector["readinessProbe"])
+        # The inspector never listens beyond loopback, so no httpGet probe or container port exposes it.
+        self.assertNotIn("ports", inspector)
+        gateway = envoy_json(result, "security-gateway")
+        breaker = next(cluster for cluster in gateway["clusters"] if cluster["name"] == "inspector")["circuit_breakers"]
+        self.assertEqual(breaker["thresholds"][0]["max_connections"], 32)
+        self.assertEqual(breaker["thresholds"][0]["max_pending_requests"], 32)
+        for listener in gateway["listeners"]:
+            authz = listener["filter_chains"][0]["filters"][0]["typed_config"]["http_filters"][0]["typed_config"]
+            with self.subTest(listener=listener["name"]):
+                self.assertFalse(authz["failure_mode_allow"])
+                self.assertEqual(authz["status_on_error"], {"code": "ServiceUnavailable"})
 
 
 class ArchiveBindingTests(unittest.TestCase):
@@ -212,7 +331,8 @@ def reachable(items, namespace=NAMESPACE, identities=LAB_IDENTITIES, probes=("ca
     graph = network_policy.load_graph()
     ports = {name: {value["target"]} for name, value in graph["ports"].items()}
     ports["shippingservice"] |= {8444}
-    ports["security-gateway"] = {8443}
+    ports["cartservice"] |= {8446}
+    ports["security-gateway"] = {8443, 8445}
     sources = [*identities, *("probe:" + target for target in probes)]
     found = set()
     for source in sources:
@@ -407,6 +527,8 @@ class GraphPolicyTests(unittest.TestCase):
                 network_policy.edges(dict(self.graph, edges=edges))
         with self.assertRaisesRegex(ValueError, "shipping caller"):
             network_policy.security_lab_policies(dict(self.graph, edges=[{"from": "cartservice", "to": "shippingservice"}]))
+        with self.assertRaisesRegex(ValueError, "Unreviewed cart caller: recommendationservice"):
+            network_policy.security_lab_policies(dict(self.graph, edges=[{"from": "recommendationservice", "to": "cartservice"}]))
         with self.assertRaises(ValueError):
             network_policy.policies([("frontend", "intruder", 80)], "ns", workloads=["frontend"], ports={"frontend": 8080})
 
@@ -438,22 +560,45 @@ class GraphPolicyTests(unittest.TestCase):
 
 
 class SecurityLabPolicyTests(unittest.TestCase):
-    def test_lab_routes_shipping_only_through_the_gateway_and_keeps_every_other_edge(self):
-        expected = {edge for edge in graph_edges() if edge[1] != "shippingservice"}
-        expected |= {("frontend", "security-gateway", 8443), ("checkoutservice", "security-gateway", 8443),
-                     ("security-test", "security-gateway", 8443), ("security-gateway", "shippingservice", 8444),
-                     ("sentinel-traffic", "frontend", 8080), ("probe:cartservice", "cartservice", 7070)}
+    def test_lab_routes_shipping_and_cart_only_through_the_gateway_and_keeps_every_other_edge(self):
+        expected = {edge for edge in graph_edges() if edge[1] not in {"shippingservice", "cartservice"}}
+        expected |= {(source, "security-gateway", port) for source in ("frontend", "checkoutservice", "security-test")
+                     for port in (8443, 8445)}
+        expected |= {("security-gateway", "shippingservice", 8444), ("security-gateway", "cartservice", 8446),
+                     ("sentinel-traffic", "frontend", 8080)}
         self.assertEqual(reachable(lab_items()), expected)
 
-    def test_graph_policies_never_own_the_protected_shipping_chain(self):
+    def test_cart_plaintext_port_is_closed_to_every_pod_including_its_callers_and_probe(self):
+        # P5.04: frontend and checkoutservice used to reach cartservice:7070 directly, and the
+        # cart probe too; now only the gateway reaches cart, on its TLS sidecar's port.
+        for source in (*LAB_IDENTITIES, "probe:cartservice"):
+            with self.subTest(source=source):
+                self.assertFalse(network_policy.allowed(lab_items(), pod(identity(source)), pod({"app": "cartservice"}), 7070))
+        reached = {source for source, destination, _ in reachable(lab_items()) if destination == "cartservice"}
+        self.assertEqual(reached, {"security-gateway"})
+        # cartservice itself still reaches redis-cart (the uninspected RESP edge) and nothing else.
+        self.assertEqual({(destination, port) for source, destination, port in reachable(lab_items()) if source == "cartservice"},
+                         {("redis-cart", 6379)})
+
+    def test_graph_policies_never_own_the_protected_chains(self):
         names = {item["metadata"]["name"] for item in network_policy.security_lab_policies(network_policy.load_graph())}
-        self.assertFalse(names & {"ingress-shippingservice", "ingress-security-gateway"})
+        self.assertFalse(names & {"ingress-shippingservice", "ingress-cartservice", "ingress-security-gateway"})
         self.assertIn("egress-security-gateway", names)
+
+    def test_a_caller_may_reach_one_callee_on_two_ports_but_never_twice_on_one(self):
+        items = network_policy.policies([("frontend", "security-gateway", 8443), ("frontend", "security-gateway", 8445)],
+                                        "ns", workloads=["frontend", "security-gateway"], ports={"frontend": 8080})
+        egress = next(item for item in items if item["metadata"]["name"] == "egress-frontend")
+        self.assertEqual([rule["ports"][0]["port"] for rule in egress["spec"]["egress"]], [8443, 8445])
+        with self.assertRaisesRegex(ValueError, "Duplicate edge"):
+            network_policy.policies([("frontend", "security-gateway", 8443), ("frontend", "security-gateway", 8443)],
+                                    "ns", workloads=["frontend", "security-gateway"], ports={"frontend": 8080})
 
     def test_lab_manifest_destinations_and_sources_cover_the_gateway_chain(self):
         manifest = overlay(upstream_manifest(), envoy_image="envoy", inspector_image="inspector")
         destinations = {entry["id"]: entry for entry in network_policy.matrix_destinations(manifest)}
-        self.assertEqual(set(destinations), APPLICATIONS | {"security-gateway", "security-upstream"})
+        self.assertEqual(set(destinations), APPLICATIONS | {"security-gateway", "security-upstream",
+                                                            "security-cart-gateway", "security-cart-upstream"})
         self.assertEqual((destinations["frontend"]["service_port"], destinations["frontend"]["target_port"]), (80, 8080))
         sources = {entry["id"] for entry in network_policy.matrix_sources(APPLICATIONS | {"security-gateway"},
                                                                           ("cartservice",), extra=("security-test",))}
@@ -640,11 +785,17 @@ class MatrixRunTests(unittest.TestCase):
         self.assertEqual(result["verdict"]["status"], "PASS", result["verdict"]["reasons"])
         self.assertEqual(result["policy_drift"], [])
         self.assertEqual(result["verdict"]["untested"], 0)
-        self.assertEqual(result["verdict"]["allowed"]["cells"], 19)
+        # 11 graph edges not to shipping or cart, 3 identities x 2 gateway route Services,
+        # the gateway to 2 TLS sidecars, and storefront traffic to frontend.
+        self.assertEqual(result["verdict"]["allowed"]["cells"], 20)
         self.assertEqual(result["verdict"]["forbidden"]["timed_out"], result["verdict"]["forbidden"]["cells"])
         self.assertTrue(all(tester["trusted"] and tester["control"] == "open" for tester in result["testers"]))
-        # 16 identities (intruder, traffic, 11 workloads, gateway, security-test, cart probe) x 13 Services.
-        self.assertEqual(len(result["rows"]), 16 * 13)
+        # 16 identities (intruder, traffic, 11 workloads, gateway, security-test, cart probe) x 15 Services.
+        self.assertEqual(len(result["rows"]), 16 * 15)
+        allowed = {(row["source"], row["destination"]) for row in result["rows"] if row["expected"] == "allow"}
+        self.assertFalse({cell for cell in allowed if cell[1] == "cartservice"})
+        self.assertTrue({("app-frontend", "security-cart-gateway"), ("app-checkoutservice", "security-cart-gateway"),
+                         ("app-security-gateway", "security-cart-upstream")} <= allowed)
 
     def test_cluster_that_ignores_networkpolicy_is_unknown_not_pass(self):
         result = self.run_matrix(FakeCluster(lab_items(), enforce=False))
@@ -670,8 +821,9 @@ class MatrixRunTests(unittest.TestCase):
                 clock=iter(range(10_000)).__next__, sleep=lambda _: None)
         self.assertEqual(result["verdict"]["status"], "UNKNOWN")
         self.assertEqual(result["policy_drift"], [])
+        # protect-cartservice (P5.04) alone already denies productcatalogservice -> cartservice.
         self.assertIn("sampled forbidden edges missing or judged allowed: intruder->redis-cart, "
-                      "app-productcatalogservice->cartservice, app-paymentservice->checkoutservice",
+                      "app-paymentservice->checkoutservice",
                       result["verdict"]["reasons"])
 
     def test_cluster_whose_live_policies_differ_from_the_reviewed_set_is_unknown(self):
@@ -725,7 +877,9 @@ class SecurityLabMatrixWiringTests(unittest.TestCase):
             lab.network_matrix(Path(folder), True)
         self.assertEqual(seen["items"], lab_items())
         self.assertEqual(seen["items"], [item for item in manifest["items"] if item["kind"] == "NetworkPolicy"])
-        self.assertEqual(len(seen["items"]), 2 + 17)
+        # protect-shippingservice, -cartservice and -security-gateway, plus 16 graph-derived policies
+        # (no ingress-cartservice since P5.04: protect-cartservice owns cart's ingress).
+        self.assertEqual(len(seen["items"]), 3 + 16)
         self.assertEqual(seen["policy_drift"], [])
         self.assertIn("app-security-test", {source["id"] for source in seen["sources"]})
         self.assertIn("probe-cartservice", {source["id"] for source in seen["sources"]})
@@ -797,8 +951,8 @@ class FakeLab:
 
     def probe(self, directory, **kwargs):
         self.probes.append(kwargs)
-        # Only the authenticated quote through a running gateway succeeds.
-        return {"succeeded": not kwargs and self.gateway_up, "output": ""}
+        # Only the authenticated valid call of each route through a running gateway succeeds.
+        return {"succeeded": set(kwargs) <= {"route"} and self.gateway_up, "output": ""}
 
 
 class SecurityLabValidationTests(unittest.TestCase):
@@ -827,7 +981,79 @@ class SecurityLabValidationTests(unittest.TestCase):
         self.assertIsNone(error)
         self.assertIs(saved["passed"], True)
         self.assertEqual(saved["network_matrix"], {"status": "PASS"})
-        self.assertEqual(len(fake.probes), 9)
+        self.assertEqual(len(fake.probes), 9 + 9)
+        cart = [probe for probe in fake.probes if probe.get("route") == "cart"]
+        self.assertEqual(len(cart), 9)
+        self.assertIn({"route": "cart", "quantity": 11}, cart)
+        self.assertIn({"route": "cart", "target": "cartservice:7070", "secure": False}, cart)
+        self.assertIn({"route": "cart", "target": "10.0.0.5:7070", "secure": False}, cart)
+        self.assertIn({"route": "cart", "target": "10.0.0.5:50053", "secure": False}, cart)
+        self.assertTrue(saved["valid_mtls_cart"]["succeeded"])
+        self.assertFalse(saved["cart_proxy_outage"]["succeeded"])
+
+    def test_a_cart_bypass_that_succeeds_fails_the_validation(self):
+        fake = FakeLab()
+
+        def probe(directory, **kwargs):
+            result = fake.probe(directory, **kwargs)
+            if kwargs == {"route": "cart", "target": "cartservice:7070", "secure": False}:
+                return {"succeeded": True, "output": ""}  # plaintext cart reachable: the route is not protected
+            return result
+        fake_lab, saved, error = self.validate("PASS", probe=probe)
+        self.assertIsInstance(error, RuntimeError)
+        self.assertIs(saved["passed"], False)
+        self.assertTrue(saved["cart_direct_service_bypass"]["succeeded"])
+
+    def test_a_cart_route_that_refuses_valid_calls_fails_the_validation(self):
+        fake = FakeLab()
+
+        def probe(directory, **kwargs):
+            result = fake.probe(directory, **kwargs)
+            return {"succeeded": False, "output": ""} if kwargs == {"route": "cart"} else result
+        fake_lab, saved, error = self.validate("PASS", probe=probe)
+        self.assertIsInstance(error, RuntimeError)
+        self.assertIs(saved["passed"], False)
+        self.assertTrue(saved["valid_mtls_quote"]["succeeded"])
+
+    def test_each_cart_probe_sends_the_cart_schema_to_the_cart_gateway(self):
+        from scripts.security import boutique_security as lab
+        self.assertEqual(lab.probe_call("cart"), ("cart.proto", "hipstershop.CartService/GetCart", {"userId": lab.PROBE_USER}))
+        self.assertEqual(lab.probe_call("cart", 11)[1:], ("hipstershop.CartService/AddItem", {
+            "userId": lab.PROBE_USER, "item": {"productId": "OLJCESPC7Z", "quantity": 11}}))
+        self.assertEqual(lab.probe_call("shipping", 101)[2], {"items": [{"productId": "OLJCESPC7Z", "quantity": 101}]})
+        self.assertEqual(lab.probe_call("shipping")[2], {"items": [{"productId": "OLJCESPC7Z", "quantity": 1}]})
+        created = []
+
+        def kube(*args, **kwargs):
+            if args[:2] == ("create", "-f"):
+                created.append(json.loads(Path(args[2]).read_text(encoding="utf-8")))
+            if args[:2] == ("get", "pod"):
+                return SimpleNamespace(stdout=json.dumps({"status": {"phase": "Failed"}}), returncode=0)
+            return SimpleNamespace(stdout="", returncode=0)
+        with tempfile.TemporaryDirectory() as folder, patch.object(lab, "kube", side_effect=kube):
+            self.assertEqual(lab.probe(Path(folder), route="cart", certificate=False), {"succeeded": False, "output": ""})
+        args = created[0]["spec"]["containers"][0]["args"]
+        self.assertEqual(args[args.index("-proto") + 1], "cart.proto")
+        self.assertEqual(args[-2:], ["security-cart-gateway:8445", "hipstershop.CartService/GetCart"])
+        self.assertNotIn("-cert", args)
+        self.assertEqual(created[0]["metadata"]["labels"], {"app": "security-test"})
+
+    def test_probe_action_runs_one_call_and_exits_by_its_result(self):
+        from scripts.security import boutique_security as lab
+        calls = []
+
+        def probe(directory, **kwargs):
+            calls.append(kwargs)
+            return {"succeeded": kwargs["quantity"] is None, "output": ""}
+        with tempfile.TemporaryDirectory() as folder, patch.object(lab, "probe", side_effect=probe), \
+                patch.object(lab, "command") as command, redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(lab.main(["probe", "--directory", folder, "--route", "cart"]), 0)
+            self.assertEqual(lab.main(["probe", "--directory", folder, "--route", "cart", "--quantity", "11"]), 1)
+        command.assert_not_called()  # no port-forward, no kind, no cluster change
+        self.assertEqual(calls, [{"route": "cart", "quantity": None}, {"route": "cart", "quantity": 11}])
+        self.assertEqual(json.loads(out.getvalue().splitlines()[1]), {"route": "cart", "quantity": 11, "succeeded": False})
+        with redirect_stdout(io.StringIO()), patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
+            lab.main(["probe", "--route", "redis"])
 
     def test_a_matrix_that_is_not_pass_fails_the_validation_even_when_every_probe_passes(self):
         for status in ("UNKNOWN", "FAIL"):
@@ -853,8 +1079,8 @@ class SecurityLabValidationTests(unittest.TestCase):
     def test_workload_pod_lookups_exclude_matrix_testers(self):
         fake, saved, error = self.validate("PASS")
         excluded = ",!" + network_policy.MATRIX_LABEL
-        self.assertEqual(sorted(set(fake.selectors)), ["app=frontend" + excluded, "app=security-gateway" + excluded,
-                                                       "app=shippingservice" + excluded])
+        self.assertEqual(sorted(set(fake.selectors)), ["app=cartservice" + excluded, "app=frontend" + excluded,
+                                                       "app=security-gateway" + excluded, "app=shippingservice" + excluded])
 
 
 def dry_run_resources(extra_env=None):
@@ -894,7 +1120,8 @@ class SecurityLabPrepareTests(unittest.TestCase):
             return SimpleNamespace(stdout="", returncode=0)
 
         def certificates(pki, **kwargs):
-            for identity in ("gateway", "upstream", "proxy-client", "client", "frontend-client", "checkoutservice-client"):
+            for identity in ("gateway", "upstream", "cart-upstream", "proxy-client", "client", "frontend-client",
+                             "checkoutservice-client"):
                 (pki / identity).mkdir()
                 for name in ("ca.crt", "tls.crt", "tls.key"):
                     (pki / identity / name).write_bytes(b"test")
@@ -938,6 +1165,15 @@ class SecurityLabPrepareTests(unittest.TestCase):
             self.assertIsNone(error)
             manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
             listed = json.loads((directory / "network-policies.json").read_text(encoding="utf-8"))
+            proto = json.loads((directory / "proto.json").read_text(encoding="utf-8"))
+        self.assertEqual(set(proto["data"]), {"cart.proto", "shipping.proto"})
+        self.assertIn("service CartService", proto["data"]["cart.proto"])
+        # The cart sidecar's identity Secret is applied like the others; it never enters manifest.json.
+        self.assertIn("cart-upstream.json", applied)
+        self.assertNotIn("Secret", {item["kind"] for item in manifest["items"]})
+        cart = next(item for item in manifest["items"] if item["kind"] == "Deployment"
+                    and item["metadata"]["name"] == "cartservice")["spec"]["template"]["spec"]
+        self.assertEqual([container["name"] for container in cart["containers"]][-1], "cart-ingress")
         committed = json.loads(network_policy.SECURITY_POLICIES.read_text(encoding="utf-8"))["items"]
         self.assertEqual(listed["items"], committed)
         self.assertEqual([item for item in manifest["items"] if item["kind"] == "NetworkPolicy"], lab_items())

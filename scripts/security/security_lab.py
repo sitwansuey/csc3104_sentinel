@@ -15,7 +15,7 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from services.grpc_inspection import MAX_BODY, METHODS
+from services.grpc_inspection import MAX_BODY, ROUTE_METHODS
 
 # Reviewed release manifests: Envoy 1.40.2, Boutique 0.10.7, grpcurl 1.9.3.
 ENVOY = "envoyproxy/envoy@sha256:8de97e654644827d62afdbf7e1d3dc9fee01a8690d410dd1c63a30dc6b6cecbb"
@@ -23,6 +23,22 @@ SHIPPING = "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shi
 CLIENT = "fullstorydev/grpcurl@sha256:085e183ca334eb4e81ca81ee12cbb2b2737505d1d77f5e33dabc5d066593d998"
 INSPECTOR = "sentinel-security-inspector:0.1.0"
 PROJECT = "sentinel-security-lab"
+# The protected routes (P5.04). A caller dials its own loopback egress
+# listener; the gateway inspects the call and dials the service's own TLS
+# ingress sidecar, which forwards over loopback to the service port. Each
+# route has its own ports, so a route's listeners admit only its methods. The
+# compose lab below protects shipping only; the Kubernetes overlay
+# (boutique_security_manifest.py) protects every route here.
+ROUTES = {
+    "shipping": {"service": "shippingservice", "port": 50051, "env": "SHIPPING_SERVICE_ADDR", "egress_port": 50052,
+                 "gateway_port": 8443, "upstream_port": 8444, "upstream_identity": "upstream"},
+    "cart": {"service": "cartservice", "port": 7070, "env": "CART_SERVICE_ADDR", "egress_port": 50053,
+             "gateway_port": 8445, "upstream_port": 8446, "upstream_identity": "cart-upstream"},
+}
+# Envoy's connections to the inspector, so its threads stay bounded: twice
+# the inspector's default inflight bound (runtime/security_inspector.py). A
+# call over this bound fails ext_authz, which answers 503 (a denial).
+INSPECTOR_CONNECTIONS = 32
 
 
 def run(args, *, timeout=300, required=True):
@@ -53,27 +69,37 @@ def tls_context(identity, *, client=False, server_name=None):
             "require_client_certificate": True, "common_tls_context": common}
 
 
-def envoy_config(*, upstream=False):
-    name, port = ("upstream", 8444) if upstream else ("gateway", 8443)
-    cluster = {"name": "shipping", "type": "STRICT_DNS", "connect_timeout": "2s",
+def envoy_config(*, upstream=False, route="shipping"):
+    """One route's gateway (inspecting) or upstream (ingress) Envoy; shipping keeps its original names."""
+    spec = ROUTES[route]
+    suffix = "" if route == "shipping" else "-" + route
+    name = ("upstream" if upstream else "gateway") + suffix
+    identity = spec["upstream_identity"] if upstream else "gateway"
+    port = spec["upstream_port"] if upstream else spec["gateway_port"]
+    cluster = {"name": route, "type": "STRICT_DNS", "connect_timeout": "2s",
                "typed_extension_protocol_options": {"envoy.extensions.upstreams.http.v3.HttpProtocolOptions": {
                    "@type": "type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions",
                    "explicit_http_config": {"http2_protocol_options": {}}}},
-               "load_assignment": {"cluster_name": "shipping", "endpoints": [{"lb_endpoints": [{"endpoint": {
-                   "address": {"socket_address": {"address": "127.0.0.1" if upstream else "upstream",
-                                                   "port_value": 50051 if upstream else 8444}}}}]}]}}
+               "load_assignment": {"cluster_name": route, "endpoints": [{"lb_endpoints": [{"endpoint": {
+                   "address": {"socket_address": {"address": "127.0.0.1" if upstream else spec["upstream_identity"],
+                                                   "port_value": spec["port"] if upstream else spec["upstream_port"]}}}}]}]}}
     if not upstream:
         cluster["transport_socket"] = {"name": "envoy.transport_sockets.tls",
-                                        "typed_config": tls_context("proxy-client", client=True, server_name="upstream.internal")}
-    routes = [{"name": "shipping-rpc", "match": {"path": method, "headers": [
+                                        "typed_config": tls_context("proxy-client", client=True,
+                                                                    server_name=spec["upstream_identity"] + ".internal")}
+    routes = [{"name": route + "-rpc", "match": {"path": method, "headers": [
                    {"name": ":method", "string_match": {"exact": "POST"}},
                    {"name": "content-type", "string_match": {"safe_regex": {
                        "regex": r"(?i)application/grpc(?:\+proto)?(?:;.*)?"}}}]},
-               "route": {"cluster": "shipping", "timeout": "5s"}} for method in sorted(METHODS)]
+               "route": {"cluster": route, "timeout": "5s"}} for method in sorted(ROUTE_METHODS[route])]
     filters = []
     clusters = [cluster]
     if not upstream:
         clusters.append({"name": "inspector", "type": "STATIC", "connect_timeout": "1s",
+                         "circuit_breakers": {"thresholds": [{
+                             "priority": "DEFAULT", "max_connections": INSPECTOR_CONNECTIONS,
+                             "max_pending_requests": INSPECTOR_CONNECTIONS, "max_requests": INSPECTOR_CONNECTIONS,
+                             "max_retries": 0}]},
                          "load_assignment": {"cluster_name": "inspector", "endpoints": [{"lb_endpoints": [{
                              "endpoint": {"address": {"socket_address": {"address": "127.0.0.1", "port_value": 9001}}}}]}]}})
         filters.append({"name": "envoy.filters.http.ext_authz", "typed_config": {
@@ -88,15 +114,18 @@ def envoy_config(*, upstream=False):
                              # translated into HTTP 200 + grpc-status:14, which
                              # HTTP ext_authz interprets as permission to pass.
                              # Original client content-type is enforced above.
+                             # The route lets the inspector refuse another
+                             # route's method even if a route table drifts.
                              "authorization_request": {"headers_to_add": [
                                  {"key": "content-type", "value": "application/octet-stream"},
-                                 {"key": "x-sentinel-body-format", "value": "grpc"}]}}}})
+                                 {"key": "x-sentinel-body-format", "value": "grpc"},
+                                 {"key": "x-sentinel-route", "value": route}]}}}})
     filters.append({"name": "envoy.filters.http.router", "typed_config": {
         "@type": "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router"}})
     manager = {"@type": "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
                "stat_prefix": name, "codec_type": "HTTP2", "stream_idle_timeout": "10s",
                "request_timeout": "10s", "max_request_headers_kb": 16,
-               "route_config": {"name": name, "virtual_hosts": [{"name": "shipping", "domains": ["*"],
+               "route_config": {"name": name, "virtual_hosts": [{"name": route, "domains": ["*"],
                    "routes": routes + [{"name": "denied", "match": {"prefix": "/"}, "direct_response": {"status": 403}}]}]},
                "http_filters": filters,
                "access_log": [{"name": "envoy.access_loggers.stdout", "typed_config": {
@@ -105,7 +134,7 @@ def envoy_config(*, upstream=False):
                        "grpc_status": "%GRPC_STATUS%", "flags": "%RESPONSE_FLAGS%", "duration_ms": "%DURATION%"}}}}]}
     return {"static_resources": {"listeners": [{"name": name, "address": {"socket_address": {
         "address": "0.0.0.0", "port_value": port}}, "filter_chains": [{
-            "transport_socket": {"name": "envoy.transport_sockets.tls", "typed_config": tls_context(name)},
+            "transport_socket": {"name": "envoy.transport_sockets.tls", "typed_config": tls_context(identity)},
             "filters": [{"name": "envoy.filters.network.http_connection_manager", "typed_config": manager}]}]}],
         "clusters": clusters}}
 
@@ -120,6 +149,7 @@ def certificates(directory, *, extra_clients=()):
          "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign",
          "-addext", "subjectKeyIdentifier=hash", "-keyout", ca / "ca.key", "-out", ca / "ca.crt"])
     identities = [("gateway", "gateway.internal", False), ("upstream", "upstream.internal", False),
+                  ("cart-upstream", "cart-upstream.internal", False),
                   ("proxy-client", "proxy-client.internal", True), ("client", "client.internal", True)]
     identities += [(identity, identity + ".internal", True) for identity in extra_clients]
     for identity, host, client in identities:

@@ -48,7 +48,8 @@ sys.path.insert(0, str(ROOT))
 from experiments.boutique.harness import scenarios, targets
 from experiments.boutique.harness.connected import configured_graph, service_ports
 from experiments.boutique.harness.scenarios import CONNECTED_SCOPE
-from scripts.security.boutique_security_manifest import CALLERS, GATEWAY, NAMESPACE, UPSTREAM_PORT
+from scripts.security.boutique_security_manifest import CALLERS, GATEWAY, NAMESPACE
+from scripts.security.security_lab import ROUTES
 
 GRAPH = ROOT / "deploy/boutique/connected-graph.json"
 SECURITY_POLICIES = ROOT / "deploy/boutique/security-network-policies.json"
@@ -164,7 +165,9 @@ def policies(edge_list, namespace, *, workloads, ports, probes=(), entry=ENTRY, 
     """Default-deny plus one allow policy per callee and per caller, sorted by name.
 
     edge_list holds (caller, callee, Pod port); every workload gets egress
-    isolation. ports maps a workload to its Pod port, for the probe and entry
+    isolation. A caller may reach one callee on several ports (the lab's
+    gateway serves one port per protected route), but never twice on the same
+    port. ports maps a workload to its Pod port, for the probe and entry
     rules. Callees in ingress_owned get no ingress policy here: other reviewed
     policies (the lab's protect-* gateway chain) own their ingress.
     """
@@ -175,7 +178,7 @@ def policies(edge_list, namespace, *, workloads, ports, probes=(), entry=ENTRY, 
     for caller, callee, port in edge_list:
         if caller not in workloads or callee not in workloads:
             raise ValueError("Edge names an unknown workload: " + repr((caller, callee)))
-        if any(seen == callee for seen, _ in callees[caller]):
+        if (callee, port) in callees[caller]:
             raise ValueError("Duplicate edge: " + caller + " -> " + callee)
         callers[callee].add((caller, _port(port)))
         callees[caller].add((callee, port))
@@ -222,28 +225,33 @@ def graph_policies(graph, namespace, *, probes=None):
 
 
 def security_lab_policies(graph, *, probes=None):
-    """The security lab's set: shipping callers reach the mTLS gateway, never shippingservice.
+    """The security lab's set: callers reach each protected service only through the mTLS gateway.
 
-    The lab rewires frontend and checkoutservice to their loopback sidecars,
-    which dial security-gateway:8443; the gateway dials shippingservice's own
-    TLS sidecar on 8444. Ingress to those two stays with the overlay's
-    protect-* policies, so a graph policy can never reopen the plaintext
-    bypass. Sentinel probes of shippingservice are therefore refused in the
-    lab; they need the authenticated Verifier probe of P5.05.
+    For every protected route (security_lab.ROUTES: shipping and, from P5.04,
+    cart) the lab rewires frontend and checkoutservice to their loopback
+    sidecars, which dial the gateway on the route's port (8443 shipping, 8445
+    cart); the gateway dials the service's own TLS sidecar (8444 shipping,
+    8446 cart). Ingress to the protected services and the gateway stays with
+    the overlay's protect-* policies, so a graph policy can never reopen a
+    plaintext bypass. Sentinel probes of shippingservice and cartservice are
+    therefore refused in the lab; they need the authenticated Verifier probe
+    of P5.05.
     """
+    protected = {spec["service"]: (route, spec) for route, spec in ROUTES.items()}
     rewritten = []
     for caller, callee, port in edges(graph):
-        if callee == "shippingservice":
+        if callee in protected:
+            route, spec = protected[callee]
             if caller not in CALLERS:
-                raise ValueError("Unreviewed shipping caller: " + caller)
-            rewritten.append((caller, GATEWAY[0], GATEWAY[1]))
+                raise ValueError("Unreviewed " + route + " caller: " + caller)
+            rewritten.append((caller, GATEWAY[0], spec["gateway_port"]))
         else:
             rewritten.append((caller, callee, port))
-    rewritten.append((GATEWAY[0], "shippingservice", UPSTREAM_PORT))
+    rewritten.extend((GATEWAY[0], service, spec["upstream_port"]) for service, (_, spec) in sorted(protected.items()))
     ports = {name: value["target"] for name, value in graph["ports"].items()}
     return policies(rewritten, NAMESPACE, workloads=[*graph["nodes"], GATEWAY[0]], ports=ports,
                     probes=probe_targets() if probes is None else probes,
-                    ingress_owned=("shippingservice", GATEWAY[0]))
+                    ingress_owned=(*sorted(protected), GATEWAY[0]))
 
 
 def render(items):
