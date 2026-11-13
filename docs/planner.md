@@ -112,7 +112,9 @@ and `services/planner/change.py`:
 The agent config's `decision_policy` (set through `-AgentConfig`) chooses how
 the rule and the model combine. The names map to the evaluation policies of
 roadmap item P4.04, which the [replay guide](evaluation/replay/README.md)
-replays offline on recorded incidents:
+replays offline on recorded incidents (the committed replay runs, and those not
+yet run, are tabled in the
+[evaluation report](evaluation.md#recovery-decision-ablation-replay)):
 
 | `decision_policy` | Evaluation policy | Behaviour |
 |---|---|---|
