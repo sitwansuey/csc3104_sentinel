@@ -494,6 +494,22 @@ Trivy gate as the other images ([release](release.md)).
   listens on loopback only, and Kubernetes ignores `HEALTHCHECK`, so a
   Kubernetes `httpGet` probe cannot reach it: use an `exec` probe that runs the
   same `python -c` command.
+- The `HEALTHCHECK` runs every 10 s with a 5 s timeout and 3 retries, after a
+  60 s start period that covers startup and the first preflight. Docker
+  therefore reports the container unhealthy at most 35 s after `/readyz`
+  starts answering 503: interval × retries + timeout (10 × 3 + 5), because a
+  503 answers at once and the timeout covers a probe already running when it
+  turned. If every probe times out instead (a worker that no longer answers),
+  the bound is retries × (interval + timeout), 45 s. `/readyz` itself turns
+  503 `--ready-seconds` (60 s by default) after the last successful
+  Coordinator exchange; in the live container run it did so 62.0 s after the
+  Coordinator stopped (`C-WORKER-CONTAINER-READINESS`), so with this timing
+  Docker should report unhealthy by about 97 s. That run used the earlier
+  30 s interval, whose bound is 95 s after `/readyz` fails, and Docker
+  reported unhealthy 126.0 s after the stop. The 10 s timing has not been
+  measured live. `tests/test_worker_dockerfile.py` parses the `HEALTHCHECK`
+  and checks it against the 35 s here. No other image under `deploy/docker`
+  has a `HEALTHCHECK`.
 
 ```powershell
 docker build -f deploy/docker/worker.Dockerfile -t sentinel-worker:local .

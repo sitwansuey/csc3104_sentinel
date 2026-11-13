@@ -464,8 +464,10 @@ container (unreachable model URL) was unhealthy and claimed nothing. Its image
 was built from c973edd because the 0a8d4d7 image failed to build (see the
 excluded runs). In the be6e636 run the "Docker health when saved" column is
 taken after the Coordinator had been stopped, so it shows the unhealthy end
-state. Docker turns unhealthy about 64 s after `/readyz` does, because the
-image's HEALTHCHECK runs every 30 s and needs 3 failures in a row.
+state. Docker turned unhealthy about 64 s after `/readyz` did, because the
+image's HEALTHCHECK then ran every 30 s and needs 3 failures in a row. It now
+runs every 10 s, so the expected lag is at most 35 s
+([remote workers](remote-workers.md#worker-image)); not measured live.
 
 <!-- BEGIN GENERATED:worker-container -->
 | Bundle | Revision | Outcome | Docker-healthy samples, first healthy one to Coordinator stop | /readyz 200 while the Coordinator was up | Longest planning pass s | Highest contact age s | /readyz 503 after stop s | Docker unhealthy after stop s | Docker health when saved |

@@ -70,7 +70,12 @@ VOLUME ["/data"]
 # no exchange has succeeded for the readiness window, or a preflight, clock or store check fails. A worker
 # whose own component fails on every pass (a model call that crashes, a cluster it cannot reach) still
 # exchanges claims and retries, so it stays healthy here: watch its retry and back-off log lines for that.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+# Timing: Docker reports unhealthy at most interval*retries + timeout = 10*3 + 5 = 35 s after /readyz starts
+# answering 503 (45 s, retries*(interval + timeout), if every probe times out instead); docs/remote-workers.md
+# and tests/test_worker_dockerfile.py hold the same number. The 60 s start period covers startup and the
+# first preflight. With interval 30 s, a live run saw /readyz 503 62 s and Docker unhealthy 126 s after the
+# Coordinator stopped (C-WORKER-CONTAINER-READINESS); the 10 s timing has not been measured live.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=3)"]
 STOPSIGNAL SIGTERM
 ENTRYPOINT ["python", "-m", "runtime.worker_service"]
