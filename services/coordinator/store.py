@@ -15,6 +15,7 @@ connection for existing SQLite-only callers (backup, file identity checks).
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import json
+import sqlite3
 
 # _json and _digest stay importable for approvals.py, core.py and approval_http.py.
 from shared.canonical import canonical_json as _json, sha256_hex as _digest
@@ -222,6 +223,9 @@ class SQLiteStore:
         elif database.dialect.name != "sqlite":
             raise BackendUnavailable("Coordinator migrations exist for SQLite only; "
                                      "the Postgres schema is deferred (P5.01)")
+        elif not isinstance(getattr(database, "connection", None), sqlite3.Connection):
+            # Checked before anything runs: store.db must be the database's own sqlite3 connection.
+            raise TypeError("A SQLite store needs a SQLiteDatabase, whose connection is a sqlite3 connection")
         self.database = database
         self.db = database.connection
         self._after_commit = []

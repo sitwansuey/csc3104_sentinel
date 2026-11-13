@@ -8,16 +8,16 @@ on integration/phase4 before the port existed, and pass there too; the port,
 dialect, refusal and seam tests fail there (services/coordinator/db.py and
 SQLiteStore(database=...) did not exist).
 """
+import ast
 from pathlib import Path
-import re
 import sqlite3
 import tempfile
 import unittest
 
 from runtime.worker_transport import Delivery
 from services.coordinator.db import (
-    POSTGRES, POSTGRES_DEFERRED, SQLITE, BackendUnavailable, Database, NotPortable, PostgresDatabase,
-    SQLiteDatabase, open_database,
+    POSTGRES, POSTGRES_DEFERRED, POSTGRES_RESERVED, RESERVED_COLUMN_NAMES, SQLITE, BackendUnavailable, Database,
+    NotPortable, PostgresDatabase, SQLiteDatabase, open_database,
 )
 from services.coordinator.store import SCHEMA_VERSION, SQLiteStore, schema_version
 from tests.support import coordinator_fingerprint as fingerprints
@@ -40,21 +40,36 @@ BACKENDS = (
     ("postgres", None),
 )
 
-# Statements the three flows send that the Postgres dialect cannot translate,
-# apart from schema statements and PRAGMAs (counted separately below). This is
-# the work list for a Postgres store; a new SQLite-only statement fails here.
+# Statements the three flows send that the Postgres dialect refuses, apart from
+# schema statements and PRAGMAs (counted separately below), with a fragment of
+# each reason. A new SQLite-only statement of a kind the dialect knows fails
+# here. This is a lower bound on the work for a Postgres store, not the whole
+# list: only the flows' statements are classified, and the dialect is textual,
+# so a statement it translates has not been checked by a Postgres parser.
 NOT_PORTABLE_QUERIES = {
     "INSERT OR IGNORE INTO store_meta(id,generation,commit_counter,created_at) VALUES(1, lower(hex(randomblob(16))), 0, "
-    "strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
-    "INSERT OR REPLACE INTO dependency_revalidations VALUES(?,?)",
-    "SELECT action_id FROM actions WHERE incident_id=? ORDER BY rowid",
-    "SELECT last_insert_rowid()",
-    "SELECT rowid,* FROM incidents ORDER BY rowid",
-    "SELECT rowid,* FROM incidents WHERE incident_id=?",
+    "strftime('%Y-%m-%dT%H:%M:%fZ','now'))": ("SQLite function",),
+    "INSERT OR REPLACE INTO dependency_revalidations VALUES(?,?)": ("conflict target",),
+    "SELECT action_id FROM actions WHERE incident_id=? ORDER BY rowid": ("sequence column",),
+    "SELECT last_insert_rowid()": ("RETURNING",),
+    "SELECT rowid,* FROM incidents ORDER BY rowid": ("sequence column",),
+    "SELECT rowid,* FROM incidents WHERE incident_id=?": ("sequence column",),
     "UPDATE messages SET kind=json_extract(payload,'$.kind'), action_id=json_extract(payload,'$.action_id') "
-    "WHERE json_valid(payload)",
-    "UPDATE messages SET seq=rowid WHERE seq IS NULL",
+    "WHERE json_valid(payload)": ("SQLite function",),
+    "UPDATE messages SET seq=rowid WHERE seq IS NULL": ("sequence column",),
+    # SQLiteStore.claim_target: epoch=epoch+1 is ambiguous next to EXCLUDED.
+    "INSERT INTO target_ownership(target_key,uid,epoch,holder,delivery_id,event_id) VALUES(?,?,1,?,?,?) "
+    "ON CONFLICT(target_key) DO UPDATE SET uid=excluded.uid, epoch=epoch+1, holder=excluded.holder, "
+    "delivery_id=excluded.delivery_id, event_id=excluded.event_id": ("reads epoch without a table qualifier",),
+    # SQLiteStore.record_worker_clock: the column offset, and two bare references.
+    "INSERT INTO worker_clocks(identity,offset,uncertainty,max_abs_offset,reports,reported_at) "
+    "VALUES(?,?,?,abs(?),1,?) ON CONFLICT(identity) DO UPDATE SET offset=excluded.offset, "
+    "uncertainty=excluded.uncertainty, max_abs_offset=max(max_abs_offset, excluded.max_abs_offset), "
+    "reports=reports+1, reported_at=excluded.reported_at":
+        ("offset is a reserved word", "reads max_abs_offset, reports without a table qualifier"),
 }
+# Of those, the ones migrations send; the rest are runtime queries.
+MIGRATION_QUERIES = 3
 
 
 def normalise(sql):
@@ -196,6 +211,17 @@ class DatabasePortContractTests(unittest.TestCase):
                 second.close()
 
 
+def raw_connection_reads(source):
+    """Line numbers where source reads some object's .db (the raw sqlite3 connection).
+
+    Allowed: args.db (a command-line path) and assigning .db (the store sets it).
+    Reading it at all is refused, so an alias (db = store.db) is caught too.
+    """
+    return [node.lineno for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.Attribute) and node.attr == "db" and isinstance(node.ctx, ast.Load)
+            and not (isinstance(node.value, ast.Name) and node.value.id == "args")]
+
+
 class SeamTests(unittest.TestCase):
     """Coordinator SQL goes through the port, not around it."""
 
@@ -207,8 +233,14 @@ class SeamTests(unittest.TestCase):
         for name in self.COORDINATOR_MODULES:
             with self.subTest(module=name):
                 source = (ROOT / name).read_text(encoding="utf-8")
-                self.assertIsNone(re.search(r"\.db\.(execute|in_transaction|total_changes)\b", source))
+                self.assertEqual(raw_connection_reads(source), [])
                 self.assertNotIn("sqlite3.connect", source)
+
+    def test_the_seam_check_catches_an_alias_of_the_raw_connection(self):
+        self.assertEqual(raw_connection_reads("db = store.db\ndb.execute('SELECT 1')\n"), [1])
+        self.assertEqual(raw_connection_reads("store.db.execute('SELECT 1')\n"), [1])
+        self.assertEqual(raw_connection_reads("with SQLiteStore(args.db) as store:\n    pass\n"), [])
+        self.assertEqual(raw_connection_reads("self.db = database.connection\n"), [])
 
     def test_every_statement_of_a_store_reaches_sqlite_through_the_port(self):
         class Recording(SQLiteDatabase):
@@ -255,6 +287,23 @@ class RefusalTests(unittest.TestCase):
             SQLiteStore(database=database)
         self.assertEqual(database.calls, [])
 
+    def test_a_store_refuses_a_sqlite_database_without_a_sqlite3_connection(self):
+        class NoConnection(Database):
+            dialect = SQLITE
+
+            def __init__(self):
+                self.calls = []
+
+            def execute(self, sql, parameters=()):
+                self.calls.append(sql)
+                raise AssertionError("must not run")
+
+        database = NoConnection()
+        with self.assertRaises(TypeError) as raised:
+            SQLiteStore(database=database)
+        self.assertIn("SQLiteDatabase", str(raised.exception))
+        self.assertEqual(database.calls, [])
+
     def test_a_store_takes_a_path_or_a_database_not_both(self):
         database = SQLiteDatabase()
         self.addCleanup(database.close)
@@ -274,12 +323,13 @@ class RefusalTests(unittest.TestCase):
                 database.execute("SELECT 1")
 
     def test_postgres_refuses_without_echoing_the_url(self):
-        url = "postgresql://sentinel:hunter2-secret@db.example:5432/coordinator"
+        # Not a credential: a made-up placeholder, so the test can show the URL is never echoed.
+        url = "postgresql://sentinel:placeholder-not-a-secret@db.example.invalid:5432/coordinator"
         for opener in (PostgresDatabase, open_database):
             with self.subTest(opener=opener.__name__), self.assertRaises(BackendUnavailable) as raised:
                 opener(url)
             self.assertEqual(str(raised.exception), POSTGRES_DEFERRED)
-            self.assertNotIn("hunter2", str(raised.exception))
+            self.assertNotIn("placeholder-not-a-secret", str(raised.exception))
         with self.assertRaises(BackendUnavailable):
             open_database("POSTGRES://x")
 
@@ -298,10 +348,10 @@ class RefusalTests(unittest.TestCase):
         memory = open_database("sqlite:///:memory:")
         self.addCleanup(memory.close)
         self.assertEqual(memory.execute("SELECT 1").fetchone()[0], 1)
-        for url in ("sqlite://relative.db", "sqlite:///", "mysql://user:hunter2@x/db"):
+        for url in ("sqlite://relative.db", "sqlite:///", "mysql://user:placeholder-not-a-secret@x/db"):
             with self.subTest(url=url), self.assertRaises(ValueError) as raised:
                 open_database(url)
-            self.assertNotIn("hunter2", str(raised.exception))
+            self.assertNotIn("placeholder-not-a-secret", str(raised.exception))
 
 
 class DialectTests(unittest.TestCase):
@@ -328,6 +378,18 @@ class DialectTests(unittest.TestCase):
                 "UPDATE w SET m=GREATEST(m, excluded.m), n=LEAST(n,excluded.n)",
             "SELECT coalesce(max(id),0) FROM outbox": "SELECT coalesce(max(id),0) FROM outbox",
             "SELECT 'rowid' FROM t": "SELECT 'rowid' FROM t",
+            # OFFSET the clause, a quoted "offset" and a name that only contains it are fine.
+            "SELECT id FROM t ORDER BY id LIMIT ? OFFSET ?": "SELECT id FROM t ORDER BY id LIMIT %s OFFSET %s",
+            "SELECT id FROM t LIMIT 10 OFFSET 20": "SELECT id FROM t LIMIT 10 OFFSET 20",
+            'UPDATE w SET "offset"=? WHERE identity=?': 'UPDATE w SET "offset"=%s WHERE identity=%s',
+            "SELECT max_abs_offset FROM worker_clocks": "SELECT max_abs_offset FROM worker_clocks",
+            # Qualified references in DO UPDATE, and bare ones in an ordinary UPDATE.
+            "INSERT INTO t(k,n) VALUES(?,1) ON CONFLICT(k) DO UPDATE SET n=t.n+excluded.n, m=coalesce(t.m, 0)":
+                "INSERT INTO t(k,n) VALUES(%s,1) ON CONFLICT(k) DO UPDATE SET n=t.n+excluded.n, m=coalesce(t.m, 0)",
+            "INSERT INTO t(k,s) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET s=excluded.s, flag=1, note=NULL":
+                "INSERT INTO t(k,s) VALUES(%s,%s) ON CONFLICT(k) DO UPDATE SET s=excluded.s, flag=1, note=NULL",
+            "UPDATE worker_clocks SET reports=reports+1 WHERE identity=?":
+                "UPDATE worker_clocks SET reports=reports+1 WHERE identity=%s",
         }
         for sqlite_text, postgres_text in cases.items():
             with self.subTest(sql=sqlite_text):
@@ -347,12 +409,38 @@ class DialectTests(unittest.TestCase):
             "INSERT OR REPLACE INTO dependency_revalidations VALUES(?,?)": "conflict target",
             "UPDATE messages SET kind=json_extract(payload,'$.kind')": "SQLite function",
             "INSERT OR IGNORE INTO t(a) VALUES(?) ON CONFLICT(a) DO NOTHING": "ON CONFLICT",
+            "INSERT INTO worker_clocks(identity,offset) VALUES(?,?)": "offset is a reserved word",
+            "UPDATE worker_clocks SET offset=? WHERE identity=?": "offset is a reserved word",
+            "SELECT offset FROM worker_clocks": "offset is a reserved word",
+            "INSERT INTO t(k,n) VALUES(?,1) ON CONFLICT(k) DO UPDATE SET n=n+1": "reads n without a table qualifier",
+            "INSERT INTO t(k,n) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET n=GREATEST(n, excluded.n)":
+                "reads n without a table qualifier",
+            "INSERT INTO t(k,n) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET n=excluded.n WHERE n < excluded.n":
+                "reads n without a table qualifier",
+            "INSERT INTO t(k,g,c) VALUES(?,?,0) ON CONFLICT(k) DO UPDATE SET "
+            "c=CASE WHEN g IS excluded.g THEN c+1 ELSE 0 END": "reads g, c without a table qualifier",
         }
         for statement, reason in cases.items():
             with self.subTest(sql=statement), self.assertRaises(NotPortable) as raised:
                 POSTGRES.translate(statement)
             self.assertIn(reason, raised.exception.reason)
             self.assertEqual(raised.exception.statement, statement)
+
+    def test_every_reason_is_named_when_several_apply(self):
+        with self.assertRaises(NotPortable) as raised:
+            POSTGRES.translate("INSERT INTO w(i,offset,r) VALUES(?,?,1) ON CONFLICT(i) DO UPDATE SET "
+                               "offset=excluded.offset, r=r+1")
+        self.assertIn("offset is a reserved word", raised.exception.reason)
+        self.assertIn("reads r without a table qualifier", raised.exception.reason)
+
+    def test_the_schemas_reserved_column_names_are_the_ones_the_dialect_knows(self):
+        with SQLiteStore() as store:
+            tables = [row[0] for row in store.database.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+            names = {row[1].lower() for table in tables
+                     for row in store.database.execute(f"PRAGMA table_info({table})")} | {t.lower() for t in tables}
+        self.assertEqual(names & POSTGRES_RESERVED, set(RESERVED_COLUMN_NAMES))
+        self.assertIn("offset", POSTGRES_RESERVED)
 
     def test_only_serialization_failures_and_deadlocks_are_retryable(self):
         def error(sqlstate):
@@ -373,7 +461,7 @@ class PortabilityInventoryTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as directory, fingerprints.statements() as sent:
                 run_flow(name, directory)
             statements |= {normalise(sql) for sql in sent}
-        translated, schema, queries = 0, 0, set()
+        translated, schema, queries = 0, 0, {}
         for statement in sorted(statements):
             self.assertIs(SQLITE.translate(statement), statement)
             try:
@@ -383,8 +471,14 @@ class PortabilityInventoryTests(unittest.TestCase):
                 if error.reason.startswith(("PRAGMA", "schema")):
                     schema += 1
                 else:
-                    queries.add(statement)
-        self.assertEqual(queries, NOT_PORTABLE_QUERIES)
+                    queries[statement] = error.reason
+        self.assertEqual(set(queries), set(NOT_PORTABLE_QUERIES))
+        for statement, fragments in NOT_PORTABLE_QUERIES.items():
+            for fragment in fragments:
+                with self.subTest(sql=statement[:60], reason=fragment):
+                    self.assertIn(fragment, queries[statement])
+        # Seven runtime queries and three migration statements.
+        self.assertEqual(len(NOT_PORTABLE_QUERIES) - MIGRATION_QUERIES, 7)
         # PRAGMAs (foreign keys, versions, file identity) and the CREATE/ALTER
         # statements of migrations 1-6 and the transport tables.
         self.assertEqual(schema, 37)

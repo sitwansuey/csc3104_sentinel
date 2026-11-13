@@ -1,8 +1,9 @@
 """The Coordinator's Database port and its SQL dialects (P5.01 stage 8.1).
 
-Every statement the Coordinator store, its transport and its approval and
-review helpers run goes through a Database: execute, insert (a row's new id),
-begin, commit, rollback, in_transaction and total_changes. SQLiteDatabase is
+Every statement the Coordinator store, its lifecycle rules, its transport and
+its approval service run goes through a Database (the executor delivery reviews
+and read.py still use or open the SQLite connection directly): execute, insert
+(a row's new id), begin, commit, rollback, in_transaction and total_changes. SQLiteDatabase is
 the default and the only backend that runs. Its execute is the sqlite3
 connection's own execute, and begin, commit and rollback send the same
 statements as before the port, so SQLite receives the same SQL text in the same
@@ -11,7 +12,9 @@ digests recorded before the port existed).
 
 The Postgres side is a dialect only. PostgresDialect.translate rewrites the
 store's SQLite statements into Postgres text, or raises NotPortable naming what
-still has to change. Nothing here has run against a Postgres server: no Postgres
+still has to change. The rewrite is textual (regular expressions, not a SQL
+parser), so a statement it returns is only not known to be wrong: no Postgres
+parser has checked it. Nothing here has run against a Postgres server: no Postgres
 driver is in the hash-locked requirements, and adding one, with CloudNativePG,
 is the owners' go/no-go decision for P5.01. PostgresDatabase and
 open_database("postgresql://...") therefore refuse with BackendUnavailable.
@@ -70,6 +73,34 @@ _NOT_PORTABLE = (
     (re.compile(r"\b(json_extract|json_valid|randomblob|strftime|hex)\s*\(", re.I),
      "SQLite function with no same-name Postgres equivalent"),
 )
+# Postgres's reserved and type/function-name key words (SQL Key Words appendix of
+# the Postgres manual). None of them can be a bare column name: quote it or rename it.
+POSTGRES_RESERVED = frozenset("""
+    all analyse analyze and any array as asc asymmetric both case cast check collate column constraint
+    create current_catalog current_date current_role current_time current_timestamp current_user default
+    deferrable desc distinct do else end except false fetch for foreign from grant group having in
+    initially intersect into lateral leading limit localtime localtimestamp not null offset on only or
+    order placing primary references returning select session_user some symmetric system_user table then
+    to trailing true union unique user using variadic when where window with
+    authorization binary collation concurrently cross current_schema freeze full ilike inner is isnull
+    join left like natural notnull outer overlaps right similar tablesample verbose
+""".split())
+# Reserved words the Coordinator's SQLite schema uses as column names. A generic
+# check would also flag the key words themselves (ORDER BY seq DESC, ...), so
+# each name gets a pattern that matches it only where it is a name. OFFSET the
+# clause is always followed by a parameter or a number; offset the column never is.
+RESERVED_COLUMN_NAMES = {
+    "offset": re.compile(r"\boffset\b(?!\s*(\?|\d))", re.I),
+}
+_DO_UPDATE_SET = re.compile(r"\bDO\s+UPDATE\s+SET\b", re.I)
+_RETURNING = re.compile(r"\bRETURNING\b", re.I)
+_WHERE = re.compile(r"\bWHERE\b", re.I)
+# A name that is not qualified (no "x." before it), not a qualifier and not a function call.
+_BARE_NAME = re.compile(r"(?<![\w.])([A-Za-z_]\w*)\b(?!\s*[.(])")
+_EXPRESSION_WORDS = frozenset("""
+    and or not is null case when then else end true false distinct from in like between
+    current_timestamp current_date current_time
+""".split())
 _INSERT_OR_IGNORE = re.compile(r"^(\s*)INSERT\s+OR\s+IGNORE\s+INTO\b", re.I)
 _ON_CONFLICT = re.compile(r"\bON\s+CONFLICT\b", re.I)
 _IS_PARAMETER = re.compile(r"\bIS\s+(NOT\s+)?\?", re.I)
@@ -84,6 +115,41 @@ def _outside_quotes(sql, rewrite):
         parts += [rewrite(sql[last:match.start()]), match.group(0)]
         last = match.end()
     return "".join(parts + [rewrite(sql[last:])])
+
+
+def _top_level_split(text):
+    """Split text at the commas outside parentheses."""
+    parts, depth, start = [], 0, 0
+    for index, character in enumerate(text):
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+        elif character == "," and depth == 0:
+            parts.append(text[start:index])
+            start = index + 1
+    return parts + [text[start:]]
+
+
+def _unqualified_in_do_update(unquoted):
+    """Names read without a table qualifier in an ON CONFLICT DO UPDATE, in order.
+
+    Postgres has both the target table and EXCLUDED in scope there, so a bare
+    column on the right of SET, or anywhere in its WHERE, is ambiguous. The
+    column being assigned (left of =) is not a reference and is not listed.
+    """
+    match = _DO_UPDATE_SET.search(unquoted)
+    if match is None:
+        return []
+    rest = _RETURNING.split(unquoted[match.end():], maxsplit=1)[0]
+    parts = _WHERE.split(rest, maxsplit=1)
+    expressions = [assignment.partition("=")[2] for assignment in _top_level_split(parts[0])] + parts[1:]
+    names = []
+    for expression in expressions:
+        for name in _BARE_NAME.findall(expression):
+            if name.lower() not in _EXPRESSION_WORDS and name not in names:
+                names.append(name)
+    return names
 
 
 def _scalar_extreme(match):
@@ -109,9 +175,17 @@ class PostgresDialect(Dialect):
 
     def translate(self, sql):
         unquoted = _QUOTED.sub("''", sql)
-        for pattern, reason in _NOT_PORTABLE:
-            if pattern.search(unquoted):
-                raise NotPortable(self.name, sql, reason)
+        reasons = [reason for pattern, reason in _NOT_PORTABLE if pattern.search(unquoted)]
+        reasons += [f"{name} is a reserved word in Postgres and cannot be a bare column name; "
+                    "quote or rename it in the Postgres schema"
+                    for name, pattern in RESERVED_COLUMN_NAMES.items() if pattern.search(unquoted)]
+        unqualified = _unqualified_in_do_update(unquoted)
+        if unqualified:
+            reasons.append(f"ON CONFLICT DO UPDATE reads {', '.join(unqualified)} without a table qualifier; "
+                           "Postgres has the target table and EXCLUDED in scope there and rejects that as "
+                           "ambiguous, so write table.column")
+        if reasons:
+            raise NotPortable(self.name, sql, "; ".join(reasons))
         if sql.strip().upper() == "BEGIN IMMEDIATE":
             return self.begin_write
         text = sql
