@@ -146,11 +146,9 @@ class LiveReadingsTests(unittest.TestCase):
                     self.assertEqual(result["status"], "UNKNOWN")
                     self.assertTrue(convergence(result)["detail"].startswith("No reading was excluded"))
 
-    def test_a_silent_reading_once_the_rollout_has_settled_still_counts(self):
-        """Generation observed and every desired Pod of the new template there: its silence is missing evidence."""
+    def test_a_silent_reading_with_contradictory_counts_still_counts(self):
+        """Counts no Deployment can report (more updated Pods than Pods) never set a reading aside."""
         settled = {
-            "the new Pod exists but does not answer": {"updated_replicas": 1, "total_replicas": 1},
-            "an old Pod is still counted beside it": {"updated_replicas": 1, "total_replicas": 2},
             "counts that contradict each other": {"updated_replicas": 1, "total_replicas": 0},
             "contradictory even while unobserved": {"observed_generation": 3, "updated_replicas": 1,
                                                     "total_replicas": 0},
@@ -167,11 +165,15 @@ class LiveReadingsTests(unittest.TestCase):
                     self.assertTrue(convergence(result)["detail"].startswith("No reading was excluded"))
 
     def test_each_sign_of_an_unfinished_rollout_alone_is_enough(self):
-        """observed_generation < generation, or updated_replicas < desired_replicas (no Pod at all included)."""
+        """observed_generation < generation, updated_replicas < desired_replicas (no Pod at all included), or
+        available_replicas < updated_replicas: the new Pod exists but is not yet available (found live, S0 r3 at
+        614c4aa: updated 1, total 1, ready 0, no HTTP response at +5 s)."""
         unfinished = {
             "the write not yet observed": {"observed_generation": 3, "updated_replicas": 1, "total_replicas": 1},
             "an old Pod but no updated one": {"updated_replicas": 0, "total_replicas": 1},
             "no Pod at all (Recreate)": {"updated_replicas": 0, "total_replicas": 0},
+            "the new Pod exists but is not yet available": {"updated_replicas": 1, "total_replicas": 1},
+            "the new Pod not yet available beside an old one": {"updated_replicas": 1, "total_replicas": 2},
         }
         for label, change in unfinished.items():
             rows = live_readings()
