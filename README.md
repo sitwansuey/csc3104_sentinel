@@ -142,7 +142,6 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 
 <!-- BEGIN GENERATED:limitations-summary -->
 - [L-OBSERVER-ZERO-REPLICAS](docs/limitations.md#l-observer-zero-replicas): A Deployment scaled to zero replicas is treated as healthy (defect, open; planned P5.07)
-- [L-VERIFIER-RETRY-BACKOFF](docs/limitations.md#l-verifier-retry-backoff): In kind mode the Coordinator's retry back-off can space the Verifier's samples past the health policy's gap (defect, open; planned P3.06, P4.01)
 - [L-EXEC-WEDGE](docs/limitations.md#l-exec-wedge): A write rejected with its resource version unchanged waits in NEEDS_RECONCILIATION unless fencing is on (defect, mitigated; planned P2.06, P5.08)
 - [L-EXEC-REDELIVERY](docs/limitations.md#l-exec-redelivery): A replacement Executor without the ledger row reported CONFLICT for a write that was applied (defect, mitigated; planned P3.01, P4.01)
 - [L-CLOCK-ORDERING](docs/limitations.md#l-clock-ordering): Lifecycle ordering compared wall-clock timestamps written by different components (defect, mitigated; planned P3.03, P4.01)
@@ -152,9 +151,11 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-FREE-TEXT-DECISION](docs/limitations.md#l-free-text-decision): The live diagnosis was model free text and the rollback choice had no change evidence (defect, mitigated; planned P2.05, P4.04)
 - [L-NO-LOGGING](docs/limitations.md#l-no-logging): Structured logs cover only the networked entrypoints, and no live run has collected them (defect, mitigated; planned P1.07, P3.02)
 - [L-WORKER-READINESS-LONG-PASS](docs/limitations.md#l-worker-readiness-long-pass): A worker's /readyz turned 503 during a long pass while it was renewing its lease (defect, mitigated; planned P3.07)
+- [L-VERIFIER-RETRY-BACKOFF](docs/limitations.md#l-verifier-retry-backoff): In kind mode the Coordinator's retry back-off spaced the Verifier's samples past the health policy's gap (defect, mitigated; planned P3.06, P4.01)
 - [L-ORPHANED-EXECUTOR-LEDGER](docs/limitations.md#l-orphaned-executor-ledger): A crashed Executor whose peer finished the action kept it in doubt and refused that workload (defect, mitigated; planned P3.04, P4.01)
 - [L-SINGLE-COORDINATOR](docs/limitations.md#l-single-coordinator): The Coordinator is one process with one SQLite file (limitation, open; planned P4.02, P5.01)
 - [L-SINGLE-HOST-DISTRIBUTION](docs/limitations.md#l-single-host-distribution): The networked worker layer has only run on one host (limitation, open; planned P3.01, P3.07, P4.01)
+- [L-VERIFIER-PASS-BLOCKS-WORKER](docs/limitations.md#l-verifier-pass-blocks-worker): While one Verifier pass samples, the single Verifier delays other actions' dependency checks, Guard steps and verification (limitation, open; planned P4.01)
 - [L-RESTART-BUDGET-LOCAL](docs/limitations.md#l-restart-budget-local): The restart budget is kept per Executor ledger, and only local wiring gives it to the Guard (limitation, open; planned P4.03)
 - [L-NO-DIAGNOSIS-ACCURACY](docs/limitations.md#l-no-diagnosis-accuracy): No diagnosis-accuracy evaluation (limitation, open; planned P2.07, P4.04)
 - [L-REPLAY-MODEL-ROWS](docs/limitations.md#l-replay-model-rows): The recovery decision ablation has no model rows yet, its labels are unreviewed and its state is reconstructed (limitation, open; planned P4.04, P4.07)

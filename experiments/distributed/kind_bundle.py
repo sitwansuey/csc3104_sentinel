@@ -100,7 +100,11 @@ EXECUTOR_ACCOUNT = "sentinel-executor"
 SCHEMA = "sentinel-kind-bundle-v1"
 # The strict live profile that passed 12 of 12 kind-mode runs on 12 Nov 2026. Its first
 # version (3 samples, a 4 s stable window, a 10 s gap, a 60 s timeout) failed I3: the
-# Coordinator's retry backoff spaces the live Verifier's one-sample passes beyond 10 s.
+# Coordinator's retry backoff spaced the live Verifier's one-sample passes beyond 10 s.
+# The Verifier now samples within one pass every min(gap / 2, window / (samples - 1)) s,
+# 10 s here (services/verifier/store.py::sampling_interval), which leaves 10 s of the 20 s
+# gap for a slow reading or a quick Verifier restart; a target healthy by about +40 s is
+# then confirmed near +50 s, inside the 60 s grace, so the values below are unchanged.
 POLICY_VERSION = "distributed-kind-lab-2"
 HEALTH = {"protocol": "http", "required_http_status": 200, "minimum_samples": 2, "stable_window_seconds": 10,
           "max_sample_gap_seconds": 20, "require_target_identity": True, "require_template_match": True,

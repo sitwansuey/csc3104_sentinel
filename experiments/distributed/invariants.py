@@ -304,7 +304,7 @@ def collect(topology, *, terminal_in_time, cluster_writes=None):
                                             "FROM worker_clocks ORDER BY identity"),
         "cluster_writes": cluster_writes if cluster_writes is not None else _rows(
             topology.run_dir / "cluster.db", "SELECT * FROM cluster_requests WHERE kind='write' AND state='committed'"),
-        "executor_ledgers": {}, "worker_results": [], "observer_outbox": [],
+        "executor_ledgers": {}, "worker_results": [], "observer_outbox": [], "verification": [],
     }
     records["revocations"] = [{"action_id": row["action_id"], "revoked_at": row["revoked_at"]}
                               for row in records["revocations"]]
@@ -322,12 +322,53 @@ def collect(topology, *, terminal_in_time, cluster_writes=None):
                 "message_digest": digest(result)})
         if name.startswith("observer"):
             records["observer_outbox"] = _rows(state / "observer.db", "SELECT incident_id, delivered FROM observer_outbox")
+        if name.startswith("verifier"):
+            records["verification"] += verification(state / "verifier.db", name)
     records["access"] = [{key: line.get(key) for key in ("ts", "identity", "operation", "http_status", "outcome",
                                                            "delivery_id", "event_id")}
                          for line in log_lines(topology.processes["coordinator"].stderr_path)
                          if line.get("event") in {"http.access", "auth.denied"}]
     records["secret_scan"] = scan_secrets(topology, secrets)
     return records
+
+
+def verification(path, identity):
+    """The Verifier's own readings for each action, from its VerificationStore.
+
+    Each reading is given as seconds after the execution was recorded and its
+    status judged alone (services/verifier/core.py::reading_status), never its
+    content, so a run shows when the target first read healthy and how far
+    apart the readings were (L-VERIFIER-RETRY-BACKOFF).
+    """
+    from services.verifier.core import VerifierInputError, reading_status
+    jobs = []
+    for row in _rows(path, "SELECT action_id, execution, policy, started_at, deadline, samples, outcome "
+                           "FROM verification_jobs ORDER BY started_at, action_id"):
+        execution, policy = json.loads(row["execution"]), json.loads(row["policy"])
+        executed = _time(execution["recorded_at"])
+        readings = []
+        for sample in json.loads(row["samples"]):
+            try:
+                status = reading_status(execution, sample, policy)
+            except VerifierInputError:
+                status = "invalid"
+            readings.append({"after_execution_seconds": round(_time(sample["at"]) - executed, 3), "status": status})
+        outcome = json.loads(row["outcome"]) if row["outcome"] else None
+        jobs.append({"identity": identity, "action_id": row["action_id"],
+                     "started_after_execution_seconds": round(_time(row["started_at"]) - executed, 3),
+                     "deadline_after_execution_seconds": round(_time(row["deadline"]) - executed, 3),
+                     "outcome": outcome["status"] if outcome else None,
+                     "first_healthy_after_execution_seconds": next(
+                         (item["after_execution_seconds"] for item in readings if item["status"] == "healthy"), None),
+                     "readings": readings})
+    return jobs
+
+
+def command_attempts(records, topic):
+    """Delivery attempts of each command on topic, by Coordinator event ID."""
+    topics = {row["id"]: row["topic"] for row in records.get("outbox", [])}
+    return {row["event_id"]: row["attempts"] for row in records.get("receipts", [])
+            if topics.get(row["event_id"]) == topic}
 
 
 def scan_secrets(topology, secrets):

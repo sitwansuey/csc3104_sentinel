@@ -372,8 +372,10 @@ Coordinator's records. Read every row with these limits:
 - **S2 r2 at be6e636 FAILED** on I5: its Verifier command was delivered 8
   times (the bound is 6) after the rollback had committed, and the incident
   ended FAILED. The likely cause, the Coordinator's doubling retry back-off
-  spacing the Verifier's samples past the policy's 20 s gap, is inferred and not
-  fixed ([L-VERIFIER-RETRY-BACKOFF](limitations.md#l-verifier-retry-backoff)).
+  spacing the Verifier's samples past the policy's 20 s gap, is inferred. The
+  Verifier now samples within one pass; that is fixed in code and tested
+  offline only, and kind mode has not been re-run since
+  ([L-VERIFIER-RETRY-BACKOFF](limitations.md#l-verifier-retry-backoff)).
 - **S8 is expected to end FAILED**: the incident fails once the other Executor
   seals the Deployment, and the run passes when the paused write is refused.
   The duplicate REJECTED incidents in S1b r1 and S2 r2 at 0a8d4d7 came from the

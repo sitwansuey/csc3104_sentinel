@@ -234,7 +234,8 @@ def planner_provider(config, lab=False):
         json.dumps({"component": "planner", "event": "progress", **update}), flush=True)), 2 * timeout + 30
 
 
-def adapter(config, directory, stack, store=None, answered=None):
+def adapter(config, directory, stack, store=None, answered=None, stopping=None):
+    """The role's component; stopping (the shutdown event) ends a Verifier pass early."""
     role = config["role"]
     refuse_inline_secrets(config)
     lab = fault_points.bind(config)  # Raises when lab variables are set for a worker aimed elsewhere.
@@ -268,8 +269,10 @@ def adapter(config, directory, stack, store=None, answered=None):
             kubernetes = InClusterReader() if config.get("in_cluster") else KubectlReader(config["context"])
             collector = LiveEvidenceCollector(read_json(config["evidence"]), kubernetes)
             samples, dependencies = collector.samples, collector.dependencies
+        # A pass samples within its claim (L-VERIFIER-RETRY-BACKOFF); the shutdown event cuts its waits short.
         return VerifierAdapter(journal, policy_reader=reader(config["policy"]), sample_reader=samples,
-                               dependency_reader=dependencies, clock=clock)
+                               dependency_reader=dependencies, clock=clock, stopping=stopping,
+                               sleep=stopping.wait if stopping is not None else time.sleep)
     if role not in {"guard", "executor"}:
         raise ValueError("Worker role must be planner, guard, executor or verifier")
     from runtime.approval_http import ApprovalClient
@@ -419,7 +422,7 @@ def main(argv=None):
         with ExitStack() as stack:
             if args.health_port is not None:
                 stack.enter_context(serve_health(health, args.health_port, stopping))
-            component = adapter(config, directory, stack, store=watch, answered=health.contacted)
+            component = adapter(config, directory, stack, store=watch, answered=health.contacted, stopping=stopping)
             journal = WorkerJournal(directory / "transport.db")
             stack.callback(journal.close)
             # A component with its own prerequisite (the agent Planner's model) checks it just

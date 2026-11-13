@@ -22,9 +22,15 @@ the baseline template back if Sentinel did not and waits until the target is
 healthy. Both are recorded under kind_lab in summary.json, as operator
 actions, and a failed injection or restore stops the invocation (exit 3), so
 every run starts from a fresh fault on a verified baseline. The scenario
-deadline is --deadline (180 s by default in kind mode; the live Verifier takes
-one sample per pass), and summary.json counts the incidents opened after the
-first one as duplicate_incidents instead of hiding them.
+deadline is --deadline (180 s by default in kind mode: the kind health policy
+alone may take up to 90 s), and summary.json counts the incidents opened after
+the first one as duplicate_incidents instead of hiding them.
+
+summary.json also gives verifier_attempts (the most deliveries of any
+verifier.request command; a scenario with max_verifier_attempts matches its
+expectation only within that bound) and verification: the Verifier's own
+readings, as seconds after the execution with each one's status judged alone,
+so a run shows when the target first read healthy.
 """
 import argparse
 from datetime import UTC, datetime
@@ -42,8 +48,8 @@ from experiments.distributed.scenarios import DEFAULT, SCENARIOS
 from experiments.distributed.topology import ROOT, Topology, check_kind_context
 
 TIMELINE_DROP = {("debug", "http.access"), ("debug", "worker.status")}
-# Kind mode's default scenario deadline. The scenarios' own 60 s fits file mode; live, the Verifier
-# takes one sample per pass and the strict health policy waits up to 90 s, so 60 s failed I3.
+# Kind mode's default scenario deadline. The scenarios' own 60 s fits file mode; live, the strict
+# health policy waits up to 90 s, so 60 s failed I3 (then the Verifier also took one sample per pass).
 KIND_DEADLINE_SECONDS = 180
 DEADLINE_RANGE = (30, 1800)
 
@@ -138,6 +144,9 @@ def run_once(name, *, mode="file", out=None, repeat=1, context=None, kind_bundle
                 raise lab.off_baseline(f"The run stopped ({type(failure).__name__})") from failure
     results = invariants.check(records)
     failed = {item["id"] for item in results if not item["passed"]}
+    verifier_attempts = max(invariants.command_attempts(records, "verifier.request").values(), default=None)
+    bound = scenario.max_verifier_attempts
+    attempts_ok = bound is None or (verifier_attempts is not None and verifier_attempts <= bound)
     summary = {
         "schema": "sentinel-distributed-run-v1", "scenario": name, "title": scenario.title, "mode": mode,
         "repeat": repeat, "date": stamp.date().isoformat(), "started_at": stamp.isoformat().replace("+00:00", "Z"),
@@ -158,7 +167,11 @@ def run_once(name, *, mode="file", out=None, repeat=1, context=None, kind_bundle
         "unobserved_windows": sum(row["marker"] == "unobserved" for row in records["cluster_writes"]),
         "invariants": results, "passed": not failed,
         "expected_failures": sorted(scenario.expected_failures), "known_defect": scenario.known_defect or None,
-        "matches_expectation": failed == set(scenario.expected_failures) and error is None,
+        "matches_expectation": failed == set(scenario.expected_failures) and error is None and attempts_ok,
+        # The most deliveries of any verifier.request command, and the scenario's bound on it (None: no bound).
+        "verifier_attempts": verifier_attempts, "max_verifier_attempts": bound,
+        # The Verifier's own readings: seconds after the execution and each one's status judged alone.
+        "verification": records.get("verification", []),
         "limits": "Separate OS processes on one host: one kernel clock, one disk, loopback networking. "
                   "Not separate machines; clock skew is simulated by a gated offset, and the measured "
                   "offsets measure that simulation over loopback, not skew between hosts.",
@@ -232,6 +245,7 @@ def main(argv=None, lab=None):
             failed = [item["id"] for item in summary["invariants"] if not item["passed"]]
             print(json.dumps({"scenario": name, "repeat": index, "states": summary["states"],
                               "writes": summary["committed_writes"], "failed": failed,
+                              "verifier_attempts": summary["verifier_attempts"],
                               "matches_expectation": summary["matches_expectation"],
                               "seconds": summary["duration_seconds"], "error": summary["harness_error"]}), flush=True)
             if args.mode == "kind" and not summary["kind_lab"]["restore"]["healthy"]:
