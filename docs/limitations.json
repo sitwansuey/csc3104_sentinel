@@ -60,7 +60,7 @@
         {"at": "runtime/remote_worker.py:174", "text": "lease_duration(delivery, clock) / 3"},
         {"at": "services/guard/core.py:160", "text": "if approved_at > checked_at + skew:"},
         {"at": "runtime/worker_http.py:322", "text": "self.samples.clear()"},
-        {"at": "runtime/live_executor.py:129", "text": "now=self.clock()"},
+        {"at": "runtime/live_executor.py:128", "text": "now=self.clock()"},
         {"at": "services/verifier/store.py:96", "text": "Monitoring cannot start before execution"},
         {"at": "tests/test_distributed_processes.py:90", "text": "def test_s7_executor_clocks_300_s_behind_end_failed_without_a_write_or_a_wedge"},
         {"at": "tests/test_clock_skew.py:738", "text": "def test_per_role_clocks_300_s_apart_reach_recovered"}

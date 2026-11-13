@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -25,6 +26,7 @@ from services.executor.kubernetes_adapter import KubectlDeploymentAPI as RealDep
 
 NOW = datetime(2026, 10, 10, 12, 0, 40, tzinfo=timezone.utc)
 PRIVATE_MARKER = "private-kubeconfig-token-must-not-appear"
+READER_MARKER = "guard-reader-kubeconfig-token-must-not-appear"
 GATE_SCANNER = "aquasec/trivy@sha256:" + "f" * 64
 
 
@@ -95,6 +97,8 @@ class LiveExecutorTests(unittest.TestCase):
         self.save_inputs()
         self.kubeconfig = self.directory / "restricted.kubeconfig"
         self.kubeconfig.write_text(PRIVATE_MARKER, encoding="utf-8")
+        self.reader = self.directory / "guard-reader.kubeconfig"
+        self.reader.write_text(READER_MARKER, encoding="utf-8")
         self.cluster = FakeDeploymentAPI(self.snapshot, clock=lambda: NOW)
         self.factory = patch("services.executor.kubernetes_adapter.KubectlDeploymentAPI", return_value=self.cluster).start()
         self.addCleanup(patch.stopall)
@@ -149,6 +153,7 @@ class LiveExecutorTests(unittest.TestCase):
         with redirect_stdout(stdout), redirect_stderr(stderr):
             status = main(arguments)
         self.assertNotIn(PRIVATE_MARKER, stdout.getvalue() + stderr.getvalue())
+        self.assertNotIn(READER_MARKER, stdout.getvalue() + stderr.getvalue())
         return status, stdout.getvalue(), stderr.getvalue()
 
     def test_strict_live_policy_is_required_before_client_or_api_access(self):
@@ -177,15 +182,142 @@ class LiveExecutorTests(unittest.TestCase):
         self.save_inputs()
         self.references.return_value = [reference]
         before = deepcopy(self.snapshot)
-        check = self.authorizer().validate(self.proposal, self.snapshot, now=NOW)
+        check = self.authorizer(reference_kubeconfig=self.reader,
+                                reference_context="guard-reader-lab").validate(self.proposal, self.snapshot, now=NOW)
         self.assertEqual(check.decision["verdict"], "ALLOW", check.decision)
         self.assertEqual(self.snapshot, before)
         self.assertEqual(check.inputs["live_state"]["deployment"], before["deployment"])
         self.assertEqual(check.inputs["live_state"]["captured_at"], before["captured_at"])
         self.assertEqual(check.inputs["live_state"]["reference_versions"], [reference])
         self.assertEqual(self.references.call_args.args[0], self.proposal["target"])
-        self.assertEqual(self.references.call_args.kwargs["kubeconfig"], self.kubeconfig)
+        # P5.05 (#69): the reads use the Guard-reader identity, never the Executor's kubeconfig.
+        self.assertEqual(self.references.call_args.kwargs["kubeconfig"], self.reader)
+        self.assertEqual(self.references.call_args.kwargs["context"], "guard-reader-lab")
         self.factory.assert_not_called()
+
+    # P5.05: the Guard-reader identity is split from the Executor's (#69, live_executor.py LiveGuardAuthorizer).
+
+    def add_config_reference(self):
+        """A ConfigMap and a Secret reference in the baseline, with their saved versions; returns the records."""
+        namespace = self.proposal["target"]["namespace"]
+        records = [{"kind": kind, "namespace": namespace, "name": "security-upstream", "uid": kind + "-uid",
+                    "resource_version": "7"} for kind in ("ConfigMap", "Secret")]
+        spec = self.baseline["pod_template"]["spec"]
+        spec["volumes"] = [{"name": "config", "configMap": {"name": "security-upstream"}},
+                           {"name": "keys", "secret": {"secretName": "security-upstream"}}]
+        self.baseline["reference_versions"] = deepcopy(records)
+        self.bind_template()
+        self.save_inputs()
+        self.references.return_value = deepcopy(records)
+        return records
+
+    def test_reference_reads_never_use_the_executor_kubeconfig(self):
+        self.add_config_reference()
+        check = self.authorizer().validate(self.proposal, self.snapshot, now=NOW)
+        self.references.assert_not_called()
+        self.assertNotIn("reference_versions", check.inputs["live_state"])
+        self.assertEqual(check.decision["verdict"], "ESCALATE")
+        self.assertIn("BASELINE_REFERENCE_EVIDENCE_MISSING", check.decision["reason_codes"])
+
+    def test_a_missing_reader_escalates_and_writes_nothing(self):
+        self.add_config_reference()
+        result = execute(self.proposal, self.build())
+        self.assertEqual(result["status"], "FAILED")
+        self.assertIn("BASELINE_REFERENCE_EVIDENCE_MISSING", result["details"])
+        self.assertEqual(self.cluster.write_attempts, [])
+        self.references.assert_not_called()
+
+    def test_the_reader_identity_authorizes_one_write(self):
+        self.add_config_reference()
+        result = execute(self.proposal, self.build(reference_kubeconfig=self.reader, reference_context="guard-reader-lab"))
+        self.assertEqual(result["status"], "APPLIED", result)
+        self.assertEqual(len(self.cluster.writes), 1)
+        self.assertTrue(self.references.call_args_list)
+        for call in self.references.call_args_list:
+            self.assertEqual((call.kwargs["kubeconfig"], call.kwargs["context"]), (self.reader, "guard-reader-lab"))
+
+    def test_the_executor_credential_never_reads_a_secret(self):
+        """With the real reference adapter, every kubectl get of a Secret or ConfigMap names the reader only."""
+        from services.guard.adapters import read_reference_versions as real_reader
+        self.add_config_reference()
+        self.references.side_effect = real_reader
+        commands = []
+
+        versions = {"configmap": b"ConfigMap-uid\t7", "secret": b"Secret-uid\t7"}
+
+        def kubectl(command, **kwargs):
+            commands.append(command)
+            return SimpleNamespace(returncode=0, stdout=versions[command[command.index("get") + 1]])
+
+        with patch("services.guard.adapters.subprocess.run", side_effect=kubectl):
+            result = execute(self.proposal, self.build(reference_kubeconfig=self.reader,
+                                                       reference_context="guard-reader-lab"))
+        self.assertEqual(result["status"], "APPLIED", result)
+        reads = [command for command in commands if "get" in command]
+        self.assertEqual(sorted(command[command.index("get") + 1] for command in reads), ["configmap", "secret"])
+        for command in reads:
+            self.assertIn("--kubeconfig=" + str(self.reader), command)
+            self.assertIn("--context=guard-reader-lab", command)
+            self.assertNotIn("--kubeconfig=" + str(self.kubeconfig), command)
+
+    def test_a_template_without_references_needs_no_reader(self):
+        check = self.authorizer().validate(self.proposal, self.snapshot, now=NOW)
+        self.assertEqual(check.decision["verdict"], "ALLOW", check.decision)
+        self.assertEqual(check.inputs["live_state"]["reference_versions"], [])
+        self.references.assert_not_called()
+
+    def test_reference_versions_already_in_the_snapshot_are_never_trusted(self):
+        records = self.add_config_reference()
+        snapshot = dict(deepcopy(self.snapshot), reference_versions=records)
+        check = self.authorizer().validate(self.proposal, snapshot, now=NOW)
+        self.assertNotIn("reference_versions", check.inputs["live_state"])
+        self.assertEqual(check.decision["verdict"], "ESCALATE")
+
+    def test_the_reader_must_be_a_separate_credential_file(self):
+        alias = self.directory / "reader-alias.kubeconfig"
+        os.link(self.kubeconfig, alias)
+        for reader in (self.kubeconfig, alias, " "):
+            with self.subTest(reader=str(reader)), self.assertRaises(ValueError):
+                self.build(reference_kubeconfig=reader)
+        with self.assertRaises(ValueError):
+            self.build(reference_kubeconfig=self.reader, ledger=self.reader)
+        self.assertEqual(self.reader.read_text(encoding="utf-8"), READER_MARKER)
+        self.factory.assert_not_called()
+
+    def test_cli_passes_the_reader_identity(self):
+        with patch("runtime.live_executor.build_adapters", side_effect=GuardInputError("stop")) as build:
+            self.call_cli(self.arguments() + ["--reference-kubeconfig", str(self.reader),
+                                              "--reference-context", "guard-reader-lab"])
+        self.assertEqual(build.call_args.kwargs["reference_kubeconfig"], str(self.reader))
+        self.assertEqual(build.call_args.kwargs["reference_context"], "guard-reader-lab")
+        with patch("runtime.live_executor.build_adapters", side_effect=GuardInputError("stop")) as build:
+            self.call_cli(self.arguments())
+        self.assertIsNone(build.call_args.kwargs["reference_kubeconfig"])
+
+    def test_cli_ledger_alias_of_the_reader_is_refused(self):
+        arguments = self.arguments() + ["--reference-kubeconfig", str(self.reader)]
+        arguments[arguments.index("--ledger") + 1] = str(self.reader)
+        status, stdout, stderr = self.call_cli(arguments)
+        self.assertEqual((status, stdout), (1, ""))
+        self.assertEqual(json.loads(stderr)["error"]["code"], "ARGUMENT_ERROR")
+        self.assertEqual(self.reader.read_text(encoding="utf-8"), READER_MARKER)
+
+    def test_worker_service_gives_both_guarded_roles_the_reader_identity(self):
+        from contextlib import ExitStack
+        from runtime import worker_service
+        config = {"context": "restricted-lab", "cluster_id": "sentinel-lab", "kubeconfig": "k",
+                  "policy": "p", "baseline": "b", "allowed_targets": "t", "remote_dependencies": False,
+                  "reference_kubeconfig": "reader", "reference_context": "guard-reader-lab",
+                  "approvals": {"url": "https://127.0.0.1:1", "identity": "worker-1", "token_env": "TEST_TOKEN"}}
+        with patch.dict(os.environ, {"TEST_TOKEN": "t" * 40}), patch("runtime.approval_http.ApprovalClient"), \
+                patch("runtime.live_executor.build_adapters") as build, ExitStack() as stack:
+            worker_service.adapter(dict(config, role="executor"), self.directory, stack)
+            self.assertEqual((build.call_args.kwargs["reference_kubeconfig"], build.call_args.kwargs["reference_context"]),
+                             ("reader", "guard-reader-lab"))
+            guard = worker_service.adapter(dict(config, role="guard"), self.directory, stack)
+        self.assertEqual((guard.authorizer.reference_kubeconfig, guard.authorizer.reference_context),
+                         ("reader", "guard-reader-lab"))
+        self.assertEqual(guard.authorizer.kubeconfig, "k")
 
     def test_authorization_files_are_reloaded_for_each_validation(self):
         authorizer = self.authorizer()

@@ -13,7 +13,10 @@ or starts a spec mutation. --baselines DIR replaces --baseline with one
 measured baseline per target, DIR/<target name>.json; a file whose target is
 not the proposal's target refuses execution. --image-scans DIR (and optionally
 --cve-exceptions PATH) supply the scans for a policy's CVE gate; without them
-that gate escalates. With --fence-after SECONDS it may send one
+that gate escalates. --reference-kubeconfig PATH (P5.05) is the separate
+Guard-reader identity for ConfigMap and Secret versions; the Executor's own
+kubeconfig never reads them, so a template with references escalates without
+it. With --fence-after SECONDS it may send one
 metadata-only fence for a write still in doubt after that long (0 fences at
 once). --transport rest (P5.08) reads and writes the Deployment over HTTPS
 instead of kubectl; kubectl stays the default. Exit codes: 0 APPLIED/NOOP, 2 FAILED, 3 CONFLICT,
@@ -79,7 +82,7 @@ class LiveGuardAuthorizer:
 
     def __init__(self, *, policy, baseline, dependencies, approval, context,
                  cluster_id, kubeconfig, server_dry_run=False, approval_reader=None, clock=None,
-                 baselines=None, scan_reader=None):
+                 baselines=None, scan_reader=None, reference_kubeconfig=None, reference_context=None):
         self.paths = dict(policy=policy, baseline=baseline,
                           dependencies=dependencies, approval=approval)
         self.baselines = baselines
@@ -87,6 +90,11 @@ class LiveGuardAuthorizer:
         self.scan_reader = scan_reader
         self.clock = clock or (lambda: _utc_now())
         self.context, self.cluster_id, self.kubeconfig = context, cluster_id, kubeconfig
+        # P5.05 (#69): ConfigMap and Secret versions are read only with the separate Guard-reader
+        # identity, never the Executor's kubeconfig, so the Executor needs no get on Secrets.
+        # Without a reader the referenced versions stay unknown and the Guard escalates.
+        self.reference_kubeconfig = reference_kubeconfig
+        self.reference_context = reference_context or context
         self.dependency_reader = lambda proposal: load_json(self.paths["dependencies"], "dependencies")
         self.server_dry_run = server_dry_run
         self.approval_reader = approval_reader or (lambda proposal: load_json(self.paths["approval"], "approval"))
@@ -105,16 +113,7 @@ class LiveGuardAuthorizer:
         baseline = inputs["baseline"]
         snapshot = inputs["live_state"]
         if policy.get("baseline_constraints", {}).get("require_compatible_references"):
-            references = []
-            templates = [baseline.get("pod_template", {}) if isinstance(baseline, dict) else {},
-                         snapshot["deployment"].get("spec", {}).get("template", {})]
-            for template in templates:
-                selected, _findings = referenced_objects(template, proposal["target"]["namespace"])
-                references.extend(selected)
-            snapshot["reference_versions"] = read_reference_versions(
-                proposal["target"], references, context=self.context,
-                cluster_id=self.cluster_id, kubeconfig=self.kubeconfig,
-            )
+            self._attach_reference_versions(snapshot, baseline, proposal)
         if "image_vulnerability_gate" in policy.get("security_constraints", {}):
             self._attach_image_scans(snapshot, baseline)
         decision = evaluate(**inputs, now=self.clock())
@@ -128,6 +127,33 @@ class LiveGuardAuthorizer:
             # Remote admission latency consumes the evidence/approval validity window.
             decision = evaluate(**inputs, now=self.clock())
         return GuardCheck(decision=decision, baseline=baseline, inputs=inputs)
+
+    def _attach_reference_versions(self, snapshot, baseline, proposal):
+        """Add reference_versions for both templates, read with the Guard-reader identity only.
+
+        A template with no ConfigMap or Secret references needs no read and no
+        reader. With references but no reader, the versions stay absent, so the
+        Guard reports BASELINE_REFERENCE_EVIDENCE_MISSING (UNKNOWN, ESCALATE):
+        the Executor's own kubeconfig is never used for these reads (#69).
+        """
+        snapshot.pop("reference_versions", None)
+        references = []
+        templates = [baseline.get("pod_template", {}) if isinstance(baseline, dict) else {},
+                     snapshot["deployment"].get("spec", {}).get("template", {})]
+        for template in templates:
+            selected, _findings = referenced_objects(template, proposal["target"]["namespace"])
+            references.extend(selected)
+        if not references:
+            snapshot["reference_versions"] = []
+            return
+        if self.reference_kubeconfig is None:
+            log.emit(LOG, "executor.reference_reader.missing", level=log.WARNING,
+                     outcome="reference_versions_unknown")
+            return
+        snapshot["reference_versions"] = read_reference_versions(
+            proposal["target"], references, context=self.reference_context,
+            cluster_id=self.cluster_id, kubeconfig=self.reference_kubeconfig,
+        )
 
     def _attach_image_scans(self, snapshot, baseline):
         """Add image_scans for every container and initContainer image of the candidate and current templates.
@@ -195,7 +221,7 @@ def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, 
                    policy=None, baseline=None, dependencies=None, approval=None,
                    server_dry_run=False, reconcile_only=False, runner=None, approval_reader=None,
                    fence_after_seconds=None, clock=None, baselines=None, image_scans=None,
-                   cve_exceptions=None, transport="kubectl"):
+                   cve_exceptions=None, transport="kubectl", reference_kubeconfig=None, reference_context=None):
     """Build the standard team ExecutionAdapters using an explicit live client.
 
     allowed_targets is a trusted list of complete target identities or its JSON
@@ -216,6 +242,10 @@ def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, 
     reviewed exceptions file) feed the CVE gate when the policy configures
     security_constraints.image_vulnerability_gate; without image_scans the
     gate escalates (runtime/image_scans.py).
+    reference_kubeconfig (and optionally reference_context, else context) is
+    the separate Guard-reader identity (P5.05, #69) that reads the referenced
+    ConfigMap and Secret versions; it must be a different file from the
+    Executor's kubeconfig. Without it a template with references escalates.
     The caller owns and must close adapters.ledger.
     """
     from services.executor.kubernetes_adapter import KubectlDeploymentAPI
@@ -234,8 +264,12 @@ def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, 
         raise AdapterError("ARGUMENT_ERROR", "command_line", "Give either one baseline or a baselines directory")
     if cve_exceptions is not None and image_scans is None:
         raise AdapterError("ARGUMENT_ERROR", "command_line", "CVE exceptions need an image scans directory")
-    _protect_outputs(ledger, locks, [*paths.values(), kubeconfig, scope_path, cve_exceptions], targets,
-                     [baselines, image_scans])
+    if reference_kubeconfig is not None and (not str(reference_kubeconfig).strip() or _same_file(
+            Path(reference_kubeconfig).resolve(), Path(kubeconfig).resolve())):
+        raise AdapterError("ARGUMENT_ERROR", "reference_kubeconfig",
+                           "The Guard-reader identity must be separate from the Executor's kubeconfig")
+    _protect_outputs(ledger, locks, [*paths.values(), kubeconfig, scope_path, cve_exceptions, reference_kubeconfig],
+                     targets, [baselines, image_scans])
     if not reconcile_only:
         if (any(paths[key] is None for key in ("policy", "dependencies")) or (baseline is None and baselines is None)
                 or (approval is None and approval_reader is None)):
@@ -253,6 +287,7 @@ def build_adapters(*, context, cluster_id, kubeconfig, allowed_targets, ledger, 
     authorizer = LiveGuardAuthorizer(**paths, context=context, cluster_id=cluster_id,
                                      kubeconfig=kubeconfig, server_dry_run=server_dry_run,
                                      approval_reader=approval_reader, clock=clock, baselines=baselines,
+                                     reference_kubeconfig=reference_kubeconfig, reference_context=reference_context,
                                      scan_reader=(None if image_scans is None else
                                                   lambda images: read_image_scans(image_scans, images, cve_exceptions)))
     coordination = LocalTargetCoordinator(locks)
@@ -285,6 +320,9 @@ def _parser():
                         help="Trusted scan summaries for the policy's CVE gate (image_vulnerability_gate)")
     parser.add_argument("--cve-exceptions", metavar="PATH", help="Reviewed CVE exceptions file; needs --image-scans")
     parser.add_argument("--context", required=True, help="Explicit restricted kubectl context")
+    parser.add_argument("--reference-kubeconfig", metavar="PATH",
+                        help="Separate Guard-reader kubeconfig for ConfigMap/Secret versions (P5.05); never the Executor's")
+    parser.add_argument("--reference-context", help="The Guard-reader's context (default: --context)")
     parser.add_argument("--cluster-id", required=True, help="Trusted Sentinel cluster identity")
     parser.add_argument("--server-dry-run", action="store_true", help="Obtain optional server admission evidence before execution")
     parser.add_argument("--reconcile", action="store_true", help="Inspect a possibly committed write; no spec write")
@@ -306,7 +344,8 @@ def main(argv=None):
             raise ContractError("Expected a proposal")
         _protect_outputs(args.ledger, args.locks,
                          [args.proposal, args.policy, args.baseline, args.dependencies,
-                          args.approval, args.kubeconfig, args.allowed_targets, args.cve_exceptions],
+                          args.approval, args.kubeconfig, args.allowed_targets, args.cve_exceptions,
+                          args.reference_kubeconfig],
                          [proposal["target"]], [args.baselines, args.image_scans])
         adapters = build_adapters(
             context=args.context, cluster_id=args.cluster_id, kubeconfig=args.kubeconfig,
@@ -316,6 +355,7 @@ def main(argv=None):
             reconcile_only=args.reconcile, fence_after_seconds=args.fence_after, baselines=args.baselines,
             transport=args.transport,
             image_scans=args.image_scans, cve_exceptions=args.cve_exceptions,
+            reference_kubeconfig=args.reference_kubeconfig, reference_context=args.reference_context,
         )
         result = (reconcile if args.reconcile else execute)(proposal, adapters)
     except Exception as exc:  # noqa: BLE001 - top-level boundary: print one error code and exit 1

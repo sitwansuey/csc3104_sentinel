@@ -286,6 +286,9 @@ def adapter(config, directory, stack, store=None, answered=None, stopping=None):
     options = {key: config[key] for key in ("context", "cluster_id", "kubeconfig", "policy", "baseline")}
     options["dependencies"] = config.get("dependencies", directory / "remote-dependencies.json")
     options.update(approval_reader=approval, server_dry_run=config.get("server_dry_run", False))
+    # P5.05: the separate Guard-reader identity for ConfigMap and Secret versions (never the Executor's kubeconfig).
+    options.update(reference_kubeconfig=config.get("reference_kubeconfig"),
+                   reference_context=config.get("reference_context"))
     # The CVE gate's trusted scans (P5.02); without image_scans a configured gate escalates.
     scans = {key: config.get(key) for key in ("image_scans", "cve_exceptions")}
     if role == "executor":
