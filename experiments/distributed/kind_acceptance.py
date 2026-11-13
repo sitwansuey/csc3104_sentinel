@@ -256,7 +256,11 @@ class Shell:
         return result
 
     def kubectl(self, *args, namespace=None, stdin=None, timeout=60, check=True, binary=False):
-        command = ["kubectl", "--context=" + self.context, "--request-timeout=30s"]
+        command = ["kubectl", "--context=" + self.context]
+        # kubectl turns --request-timeout into a ?timeout= query on a --raw path, and a proxied service then
+        # sees /readyz?timeout=30s (the demo API answers 404). A raw call is bounded by the process timeout.
+        if args[:2] != ("get", "--raw"):
+            command.append("--request-timeout=30s")
         if namespace is not None:
             command.append("--namespace=" + namespace)
         return self.run(command + list(args), stdin=stdin, timeout=timeout, check=check, binary=binary)
