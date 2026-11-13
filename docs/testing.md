@@ -172,10 +172,12 @@ also checked against a mutated manifest. `tests/test_kind_acceptance.py`
 drives the harness with a fake kubectl, docker and helm: `kind-sentinel-lab`
 and every other context refused before any command, each preflight refusal
 (memory, the shared lock, P4.03 experiments, wrong nodes or node image, no
-audit log), chaos object bounds and evidence refused when it names a Secret.
-`tests/test_distributed_audit.py` checks the audit sanitiser and I7 on the
-fixtures in `tests/fixtures/distributed_audit/`. None of it has run against a
-cluster.
+audit log), chaos object bounds and evidence refused when it names a Secret,
+each scenario's expectation failing on records the write invariants pass,
+and a run with an empty, partial or rotated audit extract failing.
+`tests/test_distributed_audit.py` checks the audit sanitiser, I7 and the
+extract's completeness checks on the fixtures in
+`tests/fixtures/distributed_audit/`. None of it has run against a cluster.
 
 The Planner handoff checks inject unavailable/invalid providers, restart during
 backoff, exhaust attempts after a worker death, fence a replaced lease and replay

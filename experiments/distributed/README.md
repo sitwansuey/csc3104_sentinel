@@ -93,7 +93,11 @@ message, journal consistent with the outbox).
 I7 (P4.01) is checked only on the four-node lab, which has an API server
 audit log: at most one successful template PATCH per action in that log, each
 by the Executor's ServiceAccount and carrying its action's evidence
-(`invariants.py::i7`, `audit.py`). See [four-node acceptance](#four-node-acceptance-p401).
+(`invariants.py::i7`, `audit.py`). It fails rather than passing on no rows
+when the extract may be short: the operator's injection missing from it, a
+generation the target gained with no write in it, a log that rotated past
+the run's start, or a Sentinel change logged without its body
+(`audit.py::completeness`). See [four-node acceptance](#four-node-acceptance-p401).
 
 ## Scenarios and results on this code base
 

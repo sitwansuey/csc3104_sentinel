@@ -751,6 +751,11 @@ It counts template writes from the API server's audit log
 each request by its effect as the file cluster does
 (`experiments/distributed/audit.py::classify`), and checks I7, at most one
 successful template PATCH per action (`experiments/distributed/invariants.py::i7`).
+I7 fails instead of passing on an empty or short extract: the operator's
+injection must be in it, every generation the target gained must have a
+write in it, and the log must reach back to the run's start
+(`experiments/distributed/audit.py::completeness`). Each scenario's expected
+outcome is checked too (`experiments/distributed/kind_acceptance.py::expectation`).
 One Coordinator store serves every run of a deployment, so the other
 invariants are narrowed to the incidents each run opened
 (`experiments/distributed/kind_acceptance.py::scope_records`). The recipe,
