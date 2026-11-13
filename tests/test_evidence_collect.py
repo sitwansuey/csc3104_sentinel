@@ -131,6 +131,42 @@ class ProfileTests(unittest.TestCase):
                 "approved-rollback/planning-status.json", "approved-rollback/attempt-1/agent/report.json",
                 "approved-rollback/attempt-1/agent/branch-003/result.json"})
 
+    def test_scenario_pair_bundle_keeps_the_pair_and_lane_records_and_nothing_private(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = fx.pair_run(temp, "boutique-pair-20261113T095052Z-613964")
+            manifest = collect.collect(run, "scenario-pair", "boutique-pair-20261113t095052z-613964",
+                                       evidence_root=Path(temp) / "evidence", context=context())
+            kept = {item["path"] for item in manifest["files"]}
+            self.assertEqual(kept, {
+                "summary.json", "pair-result.json", "pair-storefront-impact.json", "rbac-checks.json", "images.json",
+                "policies/cartservice.json", "policies/redis-cart.json", "attribution.json", "chaos-experiment.json",
+                "dependency-readiness-cartservice.json", "dependency-readiness-redis-cart.json",
+                "cartservice-pair-2-incident.json", "redis-cart-pair-2-incident.json",
+                "pair-redis-cart/proposal-ACT-R.json", "pair-redis-cart/dependencies-ACT-R.json",
+                "pair-redis-cart/guard-ACT-R-0.json", "pair-redis-cart/dependencies.json",
+                "pair-redis-cart/execution-ACT-R.json", "pair-redis-cart/outcome-ACT-R.json",
+                "pair-redis-cart/outcome.json", "pair-redis-cart/scenario-result.json",
+                "pair-cartservice/proposal-ACT-C.json", "pair-cartservice/guard-ACT-C-0.json",
+                "pair-cartservice/replan-1.json", "pair-cartservice/proposal.json",
+                "pair-cartservice/reconciliation.json", "pair-cartservice/scenario-result.json"})
+            for path in kept:
+                with self.subTest(path=path):
+                    self.assertNotRegex(path.lower(), r"kubeconfig|credential|token|secret|sqlite|\.db$|lock|worker")
+            # The worker configuration names the private credential file; baselines are not kept by any class.
+            self.assertFalse(any(path.startswith("baselines/") for path in kept))
+            self.assertEqual(manifest["captured_at"], "2026-11-13T09:50:52Z")
+            self.assertEqual(manifest["provenance"]["kind"], "recorded")
+
+    def test_scenario_pair_bundle_of_a_run_that_stopped_before_judging(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = fx.pair_run(temp, "boutique-pair-20261113T093435Z-2f30b6", status="FAILED", judged=False)
+            manifest = collect.collect(run, "scenario-pair", "pair-stopped", evidence_root=Path(temp) / "evidence",
+                                       context=context())
+            self.assertEqual({item["path"] for item in manifest["files"]}, {
+                "summary.json", "rbac-checks.json", "images.json", "policies/cartservice.json",
+                "policies/redis-cart.json", "chaos-experiment.json", "cartservice-pair-2-incident.json",
+                "redis-cart-pair-2-incident.json"})
+
     def test_wedge_scenario_summaries_give_the_capture_time(self):
         with tempfile.TemporaryDirectory() as temp:
             run = wedge_run(temp, "wedge", scenario="delete-recreate", started="2026-11-11T20:21:25Z")

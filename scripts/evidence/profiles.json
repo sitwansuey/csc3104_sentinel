@@ -50,6 +50,16 @@
                   "data/evidence/*/outcome.json", "data/evidence/*/proposal.json",
                   "data/evidence/*/reconciliation.json", "data/evidence/*/result.json"]
     },
+    "scenario-pair": {
+      "description": "Two simultaneous catalog faults on the connected Boutique (P4.05, scripts/test_boutique_live.py --connected --pair): the pair result, ShopOutcome, injection, chaos record and attribution, and per target its proposals, Guard decisions, dependency findings, executions, outcomes and scenario score; never the Executor worker configuration, baselines or databases",
+      "include": ["summary.json", "pair-result.json", "pair-storefront-impact.json", "rbac-checks.json", "images.json",
+                  "policies/*.json", "attribution.json", "chaos-experiment.json", "dependency-readiness-*.json",
+                  "*-pair-*-incident.json", "pair-*/proposal-*.json", "pair-*/proposal.json", "pair-*/replan-*.json",
+                  "pair-*/guard-*.json", "pair-*/dependencies-*.json", "pair-*/dependencies.json",
+                  "pair-*/planning-status.json",
+                  "pair-*/execution-*.json", "pair-*/reconciliation.json", "pair-*/outcome-*.json",
+                  "pair-*/outcome.json", "pair-*/scenario-result.json"]
+    },
     "chaos-batch": {
       "description": "Chaos Mesh fault batch: injection, cleanup and recovery windows; no Sentinel action",
       "include": ["batch.json", "*/manifest.json", "*/outcome.json", "*/fault.json", "*/ground-truth.json",

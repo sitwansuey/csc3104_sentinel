@@ -320,6 +320,18 @@ Every planned fault counts as an attempt, including batches that failed early.
 | pod | 6 | 4/6 | 4/6 | 1/6 |
 <!-- END GENERATED:chaos -->
 
+## Scenario pairs
+
+Two simultaneous catalog faults on the connected Boutique
+([dual-fault.md](dual-fault.md)). One row per collected run, failed ones
+included. "Pair result" is the pair's own result against its pre-registered
+expectation and "ShopOutcome" the separate storefront judgement. The pair
+labels are not signed off, so these rows are not scored results.
+
+<!-- BEGIN GENERATED:pair-runs -->
+_No bundles yet._
+<!-- END GENERATED:pair-runs -->
+
 ## Security lab
 
 Blocked probes are the bypass, identity and outage probes that must fail.

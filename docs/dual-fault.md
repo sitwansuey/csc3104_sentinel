@@ -281,11 +281,27 @@ only.
    kill variant is expected to end in DEPENDENCY_DEADLOCK without a kill;
    record it as such.
 
-7. **Commit the evidence.** Copy each run folder's `summary.json` and
-   `pair-result.json` into `evidence/<date>/` with the other bundle files the
-   evidence policy allows, then regenerate the summaries. Report timings
-   beside the single-fault runs from step 2, and state that both recoveries
-   shared one host and one harness process.
+7. **Commit the evidence.** Collect each run folder, failed runs included,
+   with the `scenario-pair` class, then regenerate the summaries:
+
+   ```powershell
+   python scripts/evidence/collect.py --run data/experimentation/runs/<run> --class scenario-pair --bundle-id <run in lower case>
+   python scripts/evidence/summarize.py
+   ```
+
+   The class (`scripts/evidence/profiles.json`) keeps `summary.json`,
+   `pair-result.json`, `pair-storefront-impact.json`, `rbac-checks.json`,
+   `images.json`, the two policy files, `chaos-experiment.json`,
+   `attribution.json`, each target's dependency-readiness file and incident,
+   and per target its proposals, re-plans, Guard decisions, dependency
+   findings, planning status, executions, reconciliation, outcomes and
+   `scenario-result.json`. It never keeps the Executor worker configuration
+   (`worker.json` names the private kubeconfig), the baselines (no other
+   class keeps them), the databases or the kubeconfig. Each bundle is listed
+   in the "Scenario pairs" table of [results](results.md) with its pair
+   result and ShopOutcome; the labels show as pending until they are signed
+   off. Report timings beside the single-fault runs from step 2, and state
+   that both recoveries shared one host and one harness process.
 
 `pair_injection.spread_seconds` is approximate: the configuration fault is
 stamped after kubectl returns and the chaos fault just before its create
