@@ -162,6 +162,19 @@ against `sentinel-lab`, and not while the `sentinel-dist` cluster (P4.01) or a
 P4.03 trial is running. Have a team member sign off the catalog labels before
 step 4.
 
+Every `--pair` run holds the shared heavy-lab lock (`experiments/lab_lock.py`,
+the file `sentinel-heavy-lab.lock` in the system temporary directory) from
+before its lab is built until its cleanup ends. The P4.01 acceptance harness
+([distributed acceptance](distributed-acceptance.md)) and the P4.03 Chaos Mesh
+install and chaos runs ([chaos](chaos.md)) take the same lock, so a pair run
+started while one of them holds it prints `Refused:` with the holder, its
+process id, command and start time, and exits 2 before it creates anything.
+The lock is removed when the run ends, also when it fails or is interrupted.
+A lock left by a process that is no longer running is reported as stale and
+never taken over silently; after checking that nothing of that run is left on
+a cluster, add `--break-stale-lock` to the `--pair` command. Tested offline
+only.
+
 1. **Preflight.** The connected lab must exist from an earlier connected run,
    Chaos Mesh and metrics-server must be installed as in
    [Chaos Mesh in guarded recovery](chaos.md#live-recipe-not-yet-run), and the

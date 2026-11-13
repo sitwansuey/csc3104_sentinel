@@ -207,12 +207,22 @@ offset's error, recorded beside it.
 
 Run from the repository root in PowerShell, with the project virtual
 environment active, Docker Desktop running Linux containers, and kind
-v0.33.0, kubectl, Helm and openssl on the path. Do not run it while the P4.03
-Chaos Mesh lab is running: `preflight` refuses while the lock
-`sentinel-heavy-lab.lock` in the system temporary directory is held or Chaos
-Mesh experiments exist in `kind-sentinel-boutique-connected`. No P4.03
-harness exists yet to take that lock, so today the Chaos Mesh check is the
-guard that works; P4.03 is to take the same lock. Every command
+v0.33.0, kubectl, Helm and openssl on the path. Do not run it while another
+heavy lab experiment is running. `deploy` and `run` hold the shared heavy-lab
+lock (`experiments/lab_lock.py`: the file `sentinel-heavy-lab.lock` in the
+system temporary directory) for their whole run, as do the P4.03 Chaos Mesh
+install and chaos scenario runs ([chaos](chaos.md)) and the P4.05 fault pairs
+([dual faults](dual-fault.md)), so one refuses while another holds it. The
+lock records the holder, its process id, command and start time, and is
+removed when the run ends, also when it fails or is interrupted. `preflight`
+only reads it, and also refuses while Chaos Mesh experiments exist in
+`kind-sentinel-boutique-connected`, which catches a P4.03 run started
+without the lock. A lock left by a process that is no longer running (a run
+that was killed) is reported as stale and never taken over silently: check
+that nothing of that run is still on a cluster, then add
+`--break-stale-lock` to `deploy` or `run`. An empty or unreadable lock file is
+treated as held; delete it by hand once you know no run is going on. The
+shared lock is tested offline only. Every command
 names `--context kind-sentinel-dist` (or `--name sentinel-dist`); none
 changes the current context except `kind create cluster`, which the first
 block puts back. The harness refuses any other context, and any context or

@@ -46,6 +46,7 @@ import shutil
 import time
 from uuid import uuid4
 
+from experiments import lab_lock
 from experiments.boutique.harness import chaos, scenarios
 from experiments.boutique.harness.chaos_demo import OWNER, owned_remove
 from experiments.boutique.harness.durable_case import run_durable_case
@@ -616,9 +617,13 @@ def main(argv=None):
                         help="install: the metrics-server " + METRICS_SERVER_TAG + " image digest (sha256:<64 hex>)")
     parser.add_argument("--kubectl", default="kubectl")
     parser.add_argument("--helm", default="helm")
+    parser.add_argument(lab_lock.BREAK_OPTION, action="store_true",
+                        help="install: remove a heavy-lab lock whose process is no longer running, then take it")
     args = parser.parse_args(argv)
     try:
         chaos.require_connected(args.context, args.namespace)
+        if args.break_stale_lock and args.command != "install":
+            raise ValueError(lab_lock.BREAK_OPTION + " applies only to install; preflight only reads")
         if args.command == "install" and not (args.metrics_server_digest
                                               and _DIGEST.fullmatch(args.metrics_server_digest)):
             raise ValueError("install needs --metrics-server-digest sha256:<64 hex>")
@@ -626,10 +631,14 @@ def main(argv=None):
         parser.error(str(error))
     cluster = chaos.Cluster(args.context, args.namespace, kubectl=args.kubectl)
     if args.command == "install":
-        chaos.ensure_chaos_mesh(cluster, args.helm)
-        ensure_metrics_server(cluster, args.metrics_server_digest, args.helm)
-        print(f"Installed Chaos Mesh {chaos.CHAOS_VERSION} (namespace-filtered; {args.namespace} opted in) and "
-              f"metrics-server chart {METRICS_SERVER_CHART} into {args.context}", flush=True)
-        return 0
+        def install():
+            chaos.ensure_chaos_mesh(cluster, args.helm)
+            ensure_metrics_server(cluster, args.metrics_server_digest, args.helm)
+            print(f"Installed Chaos Mesh {chaos.CHAOS_VERSION} (namespace-filtered; {args.namespace} opted in) and "
+                  f"metrics-server chart {METRICS_SERVER_CHART} into {args.context}", flush=True)
+            return 0
+        # The install changes the connected lab, so it holds the heavy-lab lock shared with P4.01 and P4.05.
+        return lab_lock.run_holding(lab_lock.HeavyLabLock(holder="P4.03 chaos_recovery install",
+                                                          break_stale=args.break_stale_lock), install)
     print(json.dumps(preflight(cluster), indent=2, sort_keys=True), flush=True)
     return 0

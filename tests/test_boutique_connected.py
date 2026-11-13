@@ -1242,6 +1242,7 @@ class PairVerdictTests(unittest.TestCase):
         for graded, noted in ((deadlock, True), (ordered, False)):
             output = StringIO()
             with self.subTest(result=graded["result"]), patch.object(multi_fault, "PairBoutiqueExperiment", Finished), \
+                    patch("experiments.lab_lock.default_path", return_value=self.directory / "heavy-lab.lock"), \
                     redirect_stdout(output):
                 self.assertEqual(multi_fault.run_pair(args, self.directory / graded["result"], tools={}), 0)
             self.assertIs("NOTE: DEPENDENCY_DEADLOCK is not an ordered recovery" in output.getvalue(), noted)

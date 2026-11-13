@@ -18,6 +18,7 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
+from experiments import lab_lock
 from experiments.recovery.live import Experiment, crash_worker, now, require, save, utc
 from experiments.boutique.harness import scenarios, targets
 from runtime.approval_session import MODES, operator_identity, require_attended
@@ -789,6 +790,16 @@ def chaos_pass_line(scenario_id, expect, summary):
 
 
 def main():
+    """The live run; the shared heavy-lab lock a Chaos Mesh scenario takes is released however it ends."""
+    held = []
+    try:
+        return _main(held)
+    finally:
+        for lock in held:
+            lock.release()
+
+
+def _main(held):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path)
     parser.add_argument("--agent", action="store_true", help="Use live RCA and model planning for one guarded recovery")
@@ -836,6 +847,9 @@ def main():
     parser.add_argument("--executor-kill", action="store_true",
                         help="With --pair: kill the Executor worker right after the configuration fault's repair "
                              "write and reconcile it without writing again")
+    parser.add_argument(lab_lock.BREAK_OPTION, action="store_true",
+                        help="With a Chaos Mesh scenario or --pair: remove a heavy-lab lock whose process is no "
+                             "longer running, then take it (experiments/lab_lock.py)")
     args = parser.parse_args()
     if args.executor_kill and not args.pair:
         parser.error("--executor-kill requires --pair")
@@ -918,6 +932,21 @@ def main():
         parser.error("Connected mode requires its host lab; the old packaged bootstrap is single-service")
     if not 1 <= args.storefront_port <= 65535 or (args.connected and args.dashboard and args.storefront_port == args.dashboard_port):
         parser.error("Storefront port must be valid and separate from the dashboard port")
+    if args.break_stale_lock and not chaos_scenario:
+        parser.error(lab_lock.BREAK_OPTION + " applies only to a Chaos Mesh scenario or --pair")
+    if chaos_scenario:
+        # P4.03: the whole live run holds the heavy-lab lock, so P4.01 and P4.05 never run alongside it.
+        lock = lab_lock.HeavyLabLock(holder="P4.03 chaos scenario " + args.scenario,
+                                     break_stale=args.break_stale_lock)
+        try:
+            lock.acquire()
+        except lab_lock.LabLockError as error:
+            print("Refused: " + str(error), file=sys.stderr, flush=True)
+            return 2
+        held.append(lock)
+        if lock.broken is not None:
+            print("Removed a stale heavy-lab lock (" + lab_lock.describe(lock.broken) + ")", file=sys.stderr,
+                  flush=True)
     directory = args.run_dir or ROOT / "data/experimentation/runs" / ("boutique-live-" + now().strftime("%Y%m%dT%H%M%SZ-") + uuid4().hex[:6])
     if args.connected:
         from experiments.boutique.harness.connected import ConnectedBoutiqueExperiment

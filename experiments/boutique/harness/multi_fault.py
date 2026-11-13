@@ -50,6 +50,7 @@ import subprocess
 import sys
 import time
 
+from experiments import lab_lock
 from experiments.boutique.harness import chaos, scenarios, targets
 from experiments.boutique.harness.chaos_recovery import RESTART_BUDGET, ChaosRecoveryMixin, preflight
 from experiments.boutique.harness.connected import ConnectedBoutiqueExperiment
@@ -933,7 +934,17 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
 
 
 def run_pair(args, directory, *, tools):
-    """The --pair entry point of scripts/test_boutique_live.py; returns the process exit code."""
+    """The --pair entry point of scripts/test_boutique_live.py; returns the process exit code.
+
+    The whole run holds the shared heavy-lab lock (experiments/lab_lock.py), so no P4.01 or P4.03 run
+    overlaps it; a held or stale lock refuses it (exit 2) before anything is created.
+    """
+    lock = lab_lock.HeavyLabLock(holder="P4.05 pair " + args.pair,
+                                 break_stale=getattr(args, "break_stale_lock", False))
+    return lab_lock.run_holding(lock, lambda: _run_pair(args, directory, tools=tools))
+
+
+def _run_pair(args, directory, *, tools):
     experiment = PairBoutiqueExperiment(directory, pair_id=args.pair, storefront_port=args.storefront_port,
                                         executor_kill=args.executor_kill)
     experiment.configure_approval(args.approval, args.operator)
