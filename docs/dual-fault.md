@@ -1,7 +1,7 @@
 # Two simultaneous faults (P4.05)
 
-Status: implemented and tested offline only. Nothing on this page has run on
-a cluster, and the pair labels in `experiments/boutique/catalog.json` still
+Status: implemented and tested offline only. No pair run has completed on a
+cluster, and the pair labels in `experiments/boutique/catalog.json` still
 need sign-off. Do not quote a pair result until the live recipe below has run
 and its `summary.json` files are committed. With the Guard's dependency rule
 as it stands, the dependency-ordered pair is not expected to show an ordered

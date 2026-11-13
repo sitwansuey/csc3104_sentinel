@@ -41,7 +41,8 @@ stops that incident.
 The pure functions and PairRunner run offline in tests/test_overlapping_recovery.py
 and tests/test_dependency_revalidation.py. PairBoutiqueExperiment wires them
 to the connected lab for python scripts/test_boutique_live.py --connected
---pair <id>; the live recipe is in docs/dual-fault.md and has not been run.
+--pair <id>; the live recipe is in docs/dual-fault.md, and no pair run has
+completed on a cluster yet.
 """
 from contextlib import contextmanager
 from copy import deepcopy
@@ -515,7 +516,7 @@ class PairRunner:
                 "budget_exhausted": exhausted, "events": deepcopy(self.events)}
 
 
-# The live harness. Never run: see docs/dual-fault.md and L-OVERLAPPING-FAULTS.
+# The live harness. No run has completed yet: see docs/dual-fault.md and L-OVERLAPPING-FAULTS.
 
 class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
     """Two catalog faults on the connected lab at once, each repaired and verified on its own.
