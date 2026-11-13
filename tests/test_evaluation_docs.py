@@ -129,6 +129,8 @@ class EvaluationPageTests(unittest.TestCase):
         page = self.page(root)
         rcaeval = block(page, "evaluation-rcaeval")
         self.assertTrue(rcaeval.startswith("_Not yet run._ No RCAEval report is committed"), rcaeval)
+        self.assertTrue(rcaeval.rstrip().endswith("; no rcaeval bundle collected."), rcaeval)
+        self.assertNotIn("0 rcaeval", rcaeval)
         replay = block(page, "evaluation-replay")
         self.assertIn("Corpus: not built", replay)
         for name, _, _ in summarize.ABLATION_RUNS:

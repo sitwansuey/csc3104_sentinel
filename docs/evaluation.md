@@ -46,7 +46,7 @@ section says "not yet run" and live recovery counts must not be quoted as
 diagnosis accuracy.
 
 <!-- BEGIN GENERATED:evaluation-rcaeval -->
-_Not yet run._ No RCAEval report is committed under `evidence/evaluation/rcaeval/`. Pre-registration: sample manifest not committed, freeze file not committed; 0 rcaeval bundles collected.
+_Not yet run._ No RCAEval report is committed under `evidence/evaluation/rcaeval/`. Pre-registration: sample manifest not committed, freeze file not committed; no rcaeval bundle collected.
 <!-- END GENERATED:evaluation-rcaeval -->
 
 ## Guard ablation

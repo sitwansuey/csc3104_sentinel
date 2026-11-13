@@ -234,7 +234,7 @@ def outcome(bundle):
         if not runs:
             return "INCOMPLETE"
         return "PASS" if all(run.get("passed") is True for run in runs) else "FAILED"
-    summary =bundle.json("summary.json") or bundle.json("data/evidence/summary.json") or {}
+    summary = bundle.json("summary.json") or bundle.json("data/evidence/summary.json") or {}
     status = summary.get("status")
     return status if status in OUTCOMES else "INCOMPLETE"
 
@@ -1549,7 +1549,8 @@ def evaluation_rcaeval(root, bundles):
     collected = len(current_runs(bundles, ("rcaeval",)))
     committed = lambda name: "committed" if (Path(root) / RCAEVAL_DOCS / name).is_file() else "not committed"
     status = (f"Pre-registration: sample manifest {committed('sample-ob-v1.json')}, freeze file "
-              f"{committed('freeze.json')}; {collected} rcaeval bundles collected.")
+              f"{committed('freeze.json')}; "
+              + (f"{collected} rcaeval bundles collected." if collected else "no rcaeval bundle collected."))
     if not reports:
         return f"{NOT_RUN} No RCAEval report is committed under `{RCAEVAL_DIR}/`. {status}"
     parts = [status]
