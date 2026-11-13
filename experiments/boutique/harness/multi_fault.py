@@ -31,13 +31,18 @@ of the pair, waits: once that target is RECOVERED the incident is planned
 again (at most once; the Coordinator accepts a new proposal after REJECTED)
 and its fresh dependency finding is checked again. When the two refusals name
 each other, the run stops with DEPENDENCY_DEADLOCK and no write, for a person
-to decide; there is no retry loop. Any other refusal, an escalation, a refused
-approval or a refused re-plan stops that incident.
+to decide; there is no retry loop. A refusal whose only reason is that the
+proposal's resource version went stale (both incidents are planned in one
+Planner pass, so the second can wait through the first one's repair) is
+planned again on the live resource version, within the same one re-plan.
+Any other refusal, an escalation, a refused approval or a refused re-plan
+stops that incident.
 
 The pure functions and PairRunner run offline in tests/test_overlapping_recovery.py
 and tests/test_dependency_revalidation.py. PairBoutiqueExperiment wires them
 to the connected lab for python scripts/test_boutique_live.py --connected
---pair <id>; the live recipe is in docs/dual-fault.md and has not been run.
+--pair <id>; the live recipe is in docs/dual-fault.md, and no pair run has
+completed on a cluster yet.
 """
 from contextlib import contextmanager
 from copy import deepcopy
@@ -52,8 +57,12 @@ import time
 
 from experiments import lab_lock
 from experiments.boutique.harness import chaos, scenarios, targets
-from experiments.boutique.harness.chaos_recovery import RESTART_BUDGET, ChaosRecoveryMixin, preflight
+from experiments.boutique.harness.chaos_recovery import (ATTRIBUTION_MARGIN_SECONDS, RESTART_BUDGET,
+                                                         ChaosRecoveryMixin, preflight)
 from experiments.boutique.harness.connected import ConnectedBoutiqueExperiment
+from experiments.boutique.harness.durable_case import MAX_ATTEMPTS as PLANNING_ATTEMPTS
+from experiments.boutique.harness.durable_case import RETRY_SECONDS as PLANNING_RETRY_SECONDS
+from experiments.boutique.harness.durable_case import planning_status
 from experiments.boutique.harness.live import PROBE_PROTO_CONFIGMAP, ROOT
 from experiments.recovery.live import Experiment, require, save
 from experiments.recovery.live import utc as live_utc
@@ -70,8 +79,10 @@ from services.executor.core import execute
 from services.executor.store import ActionConflict, SQLiteExecutionLedger, fingerprint
 from services.observer.kubernetes import CollectionError, KubernetesEvidenceCollector, KubectlReader
 from services.planner.core import mock_provider, propose, retrieve_runbooks
-from services.verifier.store import VerificationStore
+from services.planner.store import PlannerStore
+from services.verifier.store import VerificationStore, observation_seconds
 from shared import log
+from shared.actions import config_fingerprint
 
 LOG = log.get_logger("experiment")
 
@@ -86,12 +97,35 @@ DETECTION_SECONDS = 180
 # Coordinator states after which the runner never acts on an incident again.
 SETTLED = frozenset({"RECOVERED", "NEEDS_REVIEW", "FAILED"})
 STOP_REASONS = ("REJECTED", "ESCALATED", "BLOCKER_NOT_RECOVERED", "REPLAN_BUDGET_EXHAUSTED", "REPLAN_REFUSED",
-                "DEPENDENCY_DEADLOCK", "APPROVAL_REFUSED")
+                "DEPENDENCY_DEADLOCK", "APPROVAL_REFUSED", "CHAOS_WINDOW_EXHAUSTED")
+# The worst case between a chaos lane's approval and its outcome (chaos_window): the Executor's write, and
+# verify_lane's rollout wait (its kubectl timeout); the Verifier's observation budget is added from the policy.
+EXECUTION_ALLOWANCE_SECONDS = 60
+ROLLOUT_WAIT_SECONDS = 160
 PAIR_POLICY_VERSION = "executor-live-pair-1"
+# A lane's score when its planned repair never reached a write (see lane_score).
+NOT_DELIVERED = "not_delivered"
+# Why an incident is planned again: its blocker recovered, or its proposal's resource version went stale.
+REPLAN_DEPENDENCY, REPLAN_STALE = "DEPENDENCY_RECOVERED", "STALE_RESOURCE_VERSION"
+# The Guard reasons a stale resource version alone can give, and the dependency finding's matching unknown.
+STALE_REASONS = frozenset({"STALE_RESOURCE_VERSION", "DEPENDENCY_UNKNOWN"})
+STALE_DEPENDENCY_UNKNOWN = "live-resource-version-mismatch"
 
 
 class ApprovalRefused(Exception):
     """Raised by a pair run's approve callback when the operator refuses; the runner stops that incident."""
+
+
+class ChaosWindowExhausted(Exception):
+    """Raised before or after a chaos lane's approval when its RESTART could no longer be attributed in time.
+
+    details is the chaos_window() record; the runner stops the incident with
+    CHAOS_WINDOW_EXHAUSTED, before any Executor request.
+    """
+
+    def __init__(self, details):
+        super().__init__("The chaos window left is shorter than the worst case to an attributable outcome")
+        self.details = details
 
 
 def utc(value=None):
@@ -99,11 +133,33 @@ def utc(value=None):
 
 
 def pair_order(pair):
-    """The pair's target names in the order the runner acts on them: the dependency first."""
-    names = [item["target"] for item in pair["items"]]
+    """The pair's target names in the order the runner acts on them.
+
+    A dependency-ordered pair starts with the dependency. An independent pair
+    starts with its Chaos Mesh fault: a RESTART is attributed only when its
+    outcome window ends ATTRIBUTION_MARGIN_SECONDS before the chaos object
+    expires, and the runner verifies one lane at a time, so the chaos lane
+    must not wait behind the other lane's approval and verification.
+    """
     if pair["kind"] == "dependency_ordered":
         return [pair["order"]["first"], pair["order"]["then"]]
-    return names
+    return [item["target"] for item in sorted(pair["items"], key=lambda item: item["injection"]["kind"] != "chaos")]
+
+
+def chaos_window(expires_at, now, health, *, margin_seconds=ATTRIBUTION_MARGIN_SECONDS):
+    """Whether a chaos lane's RESTART approved at now can still be attributed before the chaos object expires.
+
+    The worst case after approval is the Executor's write
+    (EXECUTION_ALLOWANCE_SECONDS), verify_lane's bounded rollout wait
+    (ROLLOUT_WAIT_SECONDS) and the Verifier's whole observation budget
+    (observation_seconds(health)); the outcome window must then still end
+    margin_seconds before expires_at (attribution in chaos_recovery.py).
+    """
+    expires = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    remaining = round((expires - now).total_seconds(), 1)
+    needed = EXECUTION_ALLOWANCE_SECONDS + ROLLOUT_WAIT_SECONDS + observation_seconds(health) + margin_seconds
+    return {"checked_at": utc(now), "expires_at": expires_at, "remaining_seconds": remaining,
+            "needed_seconds": needed, "enough": remaining >= needed}
 
 
 # The separate shop aggregate (pure).
@@ -121,19 +177,22 @@ def shop_outcome(states, journeys, *, stopped=(), required_passes=SHOP_PASSES):
     UNKNOWN when an incident has not settled. Then PARTIAL when some but not
     all incidents are RECOVERED, and FAILED when none is: the storefront
     cannot change either answer. When every incident is RECOVERED, the
-    storefront decides: UNKNOWN when its evidence is missing or incomplete
-    (fewer than required_passes journeys, or one whose result is not known),
-    RECOVERED when the last required_passes journeys all passed, FAILED when
-    one failed. The result is evidence only: it never changes an incident's
-    state.
+    storefront decides on its last required_passes journeys (the tail):
+    UNKNOWN when that evidence is missing or incomplete (fewer than
+    required_passes journeys, or one in the tail whose result is not known),
+    RECOVERED when the tail all passed, FAILED when one in it failed. Earlier
+    journeys, taken during the reconnect grace (shop_journeys), stay in the
+    counts as evidence but cannot decide the result: a timeout or refused
+    connection there is the backoff the grace exists for. The result is
+    evidence only: it never changes an incident's state.
     """
     if not isinstance(states, dict) or not states or type(required_passes) is not int or required_passes < 1:
         raise ValueError("shop_outcome needs the pair's incident states and a positive pass count")
     recovered = sorted(name for name, state in states.items() if state == "RECOVERED")
     others = sorted(name for name in states if name not in recovered)
     passed = [item.get("passed") if isinstance(item, dict) else None for item in journeys or []]
-    complete = len(passed) >= required_passes and all(type(value) is bool for value in passed)
     tail = passed[-required_passes:]
+    complete = len(passed) >= required_passes and all(type(value) is bool for value in tail)
     storefront = {"journeys": len(passed), "passed": sum(value is True for value in passed),
                   "required_passes": required_passes, "complete": complete,
                   "sustained": complete and all(tail)}
@@ -256,19 +315,49 @@ def pair_result(pair, *, shop, stops, writes, ordering=None):
             "labels_pending": labels.get("status") != "signed", "ordered_recovery_shown": shown}
 
 
-def replan(incident, *, baselines, retriever, provider, live_template, resource_version, attempt):
-    """A new proposal for an incident whose earlier one the Guard refused while a dependency was down.
+def lane_score(item, proposal, *, facts, error_code=None, stop=None):
+    """One pair lane's scenario result: the Planner's decision and what was actually delivered, kept apart.
+
+    proposed_action is the decision of the incident's first proposal and
+    decision_score its score against the scenario's pre-registered sets. A
+    ROLLBACK or RESTART is delivered only when the Executor's own ledger shows
+    a write attempt for the target (facts["executor_writes"] above 0, the
+    ledger's attempt count, as in single runs). A repair that
+    was refused, stopped or never written is scored NOT_DELIVERED with
+    matched_expected False and its stop reason, never as a correct delivered
+    repair; an unmeasured write count leaves delivered None and is not
+    delivered either. An ESCALATE needs no write. unsafe_contained keeps
+    scenarios.result's meaning: an unsafe decision with zero writes.
+    """
+    proposed = scenarios.decision(proposal, error_code)
+    source = scenarios.decision_source(proposal, error_code, decided_by="rule")
+    graded = scenarios.result(item, proposed, source=source, **facts)
+    writes = facts.get("executor_writes")
+    delivered = True
+    if proposed in scenarios.REPAIRS:
+        delivered = None if writes is None else (type(writes) is int and writes > 0)
+    graded.update(proposed_action=proposed, decision_score=graded["score"], delivered=delivered, stop_reason=stop)
+    if delivered is not True:
+        graded.update(actual=None, score=NOT_DELIVERED, matched_expected=False)
+    return graded
+
+
+def replan(incident, *, baselines, retriever, provider, live_template, resource_version, attempt,
+           cause=REPLAN_DEPENDENCY):
+    """A new proposal for an incident whose earlier one the Guard refused while a dependency was down,
+    or (cause REPLAN_STALE) only because the target's resource version moved after it was planned.
 
     The incident and its evidence are unchanged; the proposal is bound to the
-    target's current resource version, and its rationale says it is a re-plan,
-    so its action ID differs from the refused one.
+    target's current resource version, and its rationale says it is a re-plan
+    and why, so its action ID differs from the refused one.
     """
     current = dict(deepcopy(incident), observed_resource_version=resource_version)
+    why = {REPLAN_DEPENDENCY: "the dependency that blocked the earlier proposal recovered",
+           REPLAN_STALE: "the earlier proposal's resource version went stale"}[cause]
 
     def annotated(context):
         answer = provider(context)
-        return {**answer, "rationale": answer["rationale"] + f" Re-planned (attempt {attempt}) after the "
-                                                            "dependency that blocked the earlier proposal recovered."}
+        return {**answer, "rationale": answer["rationale"] + f" Re-planned (attempt {attempt}) after {why}."}
 
     return propose(current, baselines, retriever, annotated, live_template=live_template)
 
@@ -280,8 +369,9 @@ class PairRunner:
     on them (the dependency's target first). advance(name, incident_id)
     moves one incident as far as it can now (runtime.recovery_runner.advance
     with readers that route by target) and returns its state.
-    replan(name, incident_id, attempt) records a new proposal for a REJECTED
-    incident and returns it. An approve callback that raises ApprovalRefused
+    replan(name, incident_id, attempt, cause=...) records a new proposal for a
+    REJECTED incident and returns it; cause is REPLAN_DEPENDENCY or
+    REPLAN_STALE. An approve callback that raises ApprovalRefused
     stops its incident, so a refused operator is never asked again. Nothing
     here reads a cluster.
     """
@@ -318,28 +408,55 @@ class PairRunner:
     def settled(self, name):
         return name in self.stops or self.state(name) in SETTLED
 
+    def stale_only(self, name):
+        """True when the Guard refused the active proposal only because its resource version went stale.
+
+        That is a REJECT whose reasons are STALE_RESOURCE_VERSION alone or with
+        DEPENDENCY_UNKNOWN, where the dependency finding has no blocker and its
+        only unknown is live-resource-version-mismatch (the same stale read).
+        Any other reason makes the refusal final.
+        """
+        reasons, blockers = self.refusal(name)
+        if "STALE_RESOURCE_VERSION" not in reasons or not set(reasons) <= STALE_REASONS or blockers:
+            return False
+        if "DEPENDENCY_UNKNOWN" in reasons:
+            action_id = self.store.incident(self.incidents[name])["active_action_id"]
+            unknowns = (self.store.dependency_result(action_id) or {}).get("unknowns") or []
+            return bool(unknowns) and set(unknowns) <= {STALE_DEPENDENCY_UNKNOWN}
+        return True
+
+    def replan_once(self, name, cause, *, stop_details, event_details):
+        """Plan a REJECTED incident again on the live resource version, within the incident's MAX_REPLANS budget."""
+        attempt = len(self.replans[name]) + 1
+        if attempt > self.max_replans:
+            self.stop(name, "REPLAN_BUDGET_EXHAUSTED", cause=cause, **stop_details)
+            return
+        try:
+            proposal = self._replan(name, self.incidents[name], attempt, cause=cause)
+        except CoordinatorError as error:
+            # For example a second RESTART for the same incident: the Coordinator's restart budget refuses it.
+            self.stop(name, "REPLAN_REFUSED", cause=cause, error=type(error).__name__, **stop_details)
+            return
+        self.replans[name].append(proposal["action_id"])
+        self.record(name, "replanned", action_id=proposal["action_id"], attempt=attempt, cause=cause,
+                    **event_details)
+
     def after_rejection(self, name):
         """Wait, re-plan or stop an incident whose active proposal the Guard REJECTED."""
         reasons, blockers = self.refusal(name)
+        if self.stale_only(name):
+            # Planned before the other lane's repair finished, its resource version moved: plan it again.
+            self.replan_once(name, REPLAN_STALE, stop_details={"reason_codes": reasons},
+                             event_details={"reason_codes": reasons})
+            return
         partners = set(self.incidents) - {name}
         if "DEPENDENCY_BLOCKED" not in reasons or not blockers or not set(blockers) <= partners:
             self.stop(name, "REJECTED", reason_codes=reasons, blockers=blockers)
             return
         states = {blocker: self.state(blocker) for blocker in blockers}
         if all(state == "RECOVERED" for state in states.values()):
-            attempt = len(self.replans[name]) + 1
-            if attempt > self.max_replans:
-                self.stop(name, "REPLAN_BUDGET_EXHAUSTED", blockers=blockers)
-                return
-            try:
-                proposal = self._replan(name, self.incidents[name], attempt)
-            except CoordinatorError as error:
-                # For example a second RESTART for the same incident: the Coordinator's restart budget refuses it.
-                self.stop(name, "REPLAN_REFUSED", blockers=blockers, error=type(error).__name__)
-                return
-            self.replans[name].append(proposal["action_id"])
-            self.record(name, "replanned", action_id=proposal["action_id"], attempt=attempt,
-                        after_recovered=blockers)
+            self.replan_once(name, REPLAN_DEPENDENCY, stop_details={"blockers": blockers},
+                             event_details={"after_recovered": blockers})
             return
         for blocker in blockers:
             if blocker in self.stops and self.stops[blocker] != "DEPENDENCY_DEADLOCK":
@@ -385,6 +502,9 @@ class PairRunner:
                 except ApprovalRefused:
                     self.stop(name, "APPROVAL_REFUSED")
                     continue
+                except ChaosWindowExhausted as error:
+                    self.stop(name, "CHAOS_WINDOW_EXHAUSTED", window=error.details)
+                    continue
                 if last.get(name) != state:
                     self.record(name, "state", state=state)
                     last[name] = state
@@ -400,7 +520,7 @@ class PairRunner:
                 "budget_exhausted": exhausted, "events": deepcopy(self.events)}
 
 
-# The live harness. Never run: see docs/dual-fault.md and L-OVERLAPPING-FAULTS.
+# The live harness. No run has completed yet: see docs/dual-fault.md and L-OVERLAPPING-FAULTS.
 
 class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
     """Two catalog faults on the connected lab at once, each repaired and verified on its own.
@@ -418,6 +538,8 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
     """
 
     verification_scope = "target"
+    # The Planner journal's clock; None is the wall clock (tests inject one).
+    planner_clock = None
 
     def __init__(self, directory, *, pair_id, storefront_port=8080, executor_kill=False,
                  budget_seconds=DEFAULT_BUDGET_SECONDS):
@@ -681,9 +803,25 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
     # One incident's steps (runtime.recovery_runner.advance).
 
     def plan_pending(self):
-        proposals = process_planner_requests(self.store, self.bus, baseline_reader=self.lane_baselines,
-                                             retriever=retrieve_runbooks, provider=mock_provider,
-                                             template_reader=self.lane_template)
+        """Plan every pending incident through the durable Planner journal (<run>/planner.db), as single runs do.
+
+        The journal, attempt limit and backoff are run_durable_case's: a
+        transient kubectl read error or a ContractError is retried
+        (MAX_ATTEMPTS attempts, RETRY_SECONDS doubling backoff) and then saved
+        as an ESCALATE, so that incident ends in NEEDS_REVIEW instead of
+        aborting the pair; while a retry waits, the incident stays OPEN and the
+        runner polls it again. Each target's planning status is saved in its
+        folder (planning-status.json, no exception text).
+        """
+        with PlannerStore(self.directory / "planner.db", clock=self.planner_clock) as journal:
+            proposals = process_planner_requests(self.store, self.bus, baseline_reader=self.lane_baselines,
+                                                 retriever=retrieve_runbooks, provider=mock_provider,
+                                                 template_reader=self.lane_template, journal=journal,
+                                                 max_attempts=PLANNING_ATTEMPTS, retry_seconds=PLANNING_RETRY_SECONDS)
+            for lane in self.lanes.values():
+                status = planning_status(journal, lane["incident"]["incident_id"]) if lane.get("incident") else None
+                if status:
+                    save(lane["folder"] / "planning-status.json", status)
         for proposal in proposals:
             save(self.lane_of(proposal)["folder"] / ("proposal-" + proposal["action_id"] + ".json"), proposal)
             self.phase("proposal_saved", proposal["target"]["name"])
@@ -708,10 +846,37 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
                                   "reason_codes": decision["reason_codes"], "checked_at": decision["checked_at"]})
 
     def approve_pair(self, proposal, decision):
-        record = self.request_approval(proposal, decision)
+        """The run's approver for the acting lane; a chaos lane's RESTART first and last checks its chaos window."""
+        self.require_chaos_window(proposal, "before approval")
+        started = time.monotonic()
+        try:
+            record = self.request_approval(proposal, decision)
+        finally:
+            self.lane_time(self.name, "approval_seconds", time.monotonic() - started)
         if record is None:
             raise ApprovalRefused(proposal["action_id"])
+        # A slow (interactive) approval can use up the window: stop before any Executor request.
+        self.require_chaos_window(proposal, "after approval")
         return record
+
+    def require_chaos_window(self, proposal, when, now=None):
+        """Stop a chaos lane's RESTART with ChaosWindowExhausted when it can no longer be attributed (chaos_window)."""
+        if (proposal["action"] != "RESTART" or self.scenario["injection"]["kind"] != "chaos"
+                or not self.chaos_record):
+            return
+        check = dict(chaos_window(self.chaos_record["expires_at"], now or datetime.now(UTC),
+                                  self.lanes[self.name]["policy"]["health"]), when=when)
+        self.lanes[self.name].setdefault("chaos_window", []).append(check)
+        if not check["enough"]:
+            raise ChaosWindowExhausted(check)
+
+    def lane_time(self, name, key, seconds):
+        """Add seconds to one of the lane's wall-time counters (pair-result.json lane_wall_times)."""
+        wall = self.lanes[name].setdefault("wall", {"advances": 0, "advance_seconds": 0.0, "approval_seconds": 0.0,
+                                                    "verification_seconds": 0.0, "first_advance_at": None,
+                                                    "last_advance_at": None})
+        wall[key] = round(wall[key] + seconds, 1)
+        return wall
 
     def execute_lane(self, proposal):
         """Run the restricted Executor for the acting target's one pending request (or the kill variant)."""
@@ -782,7 +947,8 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
     def verify_lane(self, proposal, execution):
         """Role 6 for the acting target, in the target verification scope; records the outcome, never asserts it."""
         lane = self.lanes[self.name]
-        self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=120s", timeout=160,
+        started = time.monotonic()
+        self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=120s", timeout=ROLLOUT_WAIT_SECONDS,
                      allow_failure=True)
         ledger = VerificationStore(self.directory / "verifier.sqlite3")
         try:
@@ -793,6 +959,7 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
                 save(lane["folder"] / ("post-health-" + execution["action_id"] + ".json"), job["samples"])
         finally:
             ledger.close()
+            self.lane_time(self.name, "verification_seconds", time.monotonic() - started)
         for outcome in outcomes:
             folder = self.lane_of(outcome)["folder"]
             save(folder / ("outcome-" + outcome["action_id"] + ".json"), outcome)
@@ -804,56 +971,119 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
             self.attribute(lane["folder"])  # Fails the run unless the RESTART, not the fault's expiry, recovered it.
 
     def advance_lane(self, name, incident_id):
-        with self.acting_as(name):
-            return advance_incident(self.store, incident_id, plan=self.plan_pending, assess=self.assess,
-                                    guard=self.guard_pending, approve=self.approve_pair, execute=self.execute_lane,
-                                    verify=self.verify_lane)
+        """One runner step for one lane; its wall time is added to the lane's counters."""
+        started, at = time.monotonic(), live_utc()
+        try:
+            with self.acting_as(name):
+                return advance_incident(self.store, incident_id, plan=self.plan_pending, assess=self.assess,
+                                        guard=self.guard_pending, approve=self.approve_pair,
+                                        execute=self.execute_lane, verify=self.verify_lane)
+        finally:
+            wall = self.lane_time(name, "advance_seconds", time.monotonic() - started)
+            wall["advances"] += 1
+            wall["first_advance_at"] = wall["first_advance_at"] or at
+            wall["last_advance_at"] = live_utc()
 
-    def replan_lane(self, name, incident_id, attempt):
+    def replan_lane(self, name, incident_id, attempt, cause=REPLAN_DEPENDENCY):
         with self.acting_as(name) as lane:
             deployment = self.deployment()
             proposal = replan(lane["incident"], baselines=[deepcopy(self.baseline)], retriever=retrieve_runbooks,
                               provider=mock_provider, live_template=deployment["spec"]["template"],
-                              resource_version=deployment["metadata"]["resourceVersion"], attempt=attempt)
+                              resource_version=deployment["metadata"]["resourceVersion"], attempt=attempt,
+                              cause=cause)
             save(lane["folder"] / ("replan-" + str(attempt) + ".json"), proposal)
             handle(proposal, self.store, self.bus)
             return proposal
 
     # The verdict.
 
-    def shop_journeys(self):
-        journeys = []
-        for index in range(SHOP_PASSES):
+    def shop_journeys(self, states=None, *, clock=time.monotonic, sleep=time.sleep):
+        """Storefront journeys after both incidents settled, each recorded as pair-shop; shop_outcome judges the tail.
+
+        When every incident is RECOVERED, the frontend's and checkout's gRPC
+        reconnect backoff after a long outage can still fail the first
+        journeys, as in single runs (the Verifier's convergence grace). So
+        journeys continue, SHOP_INTERVAL_SECONDS apart, until SHOP_PASSES pass
+        in a row or a window of the single-run convergence_grace_seconds ends
+        (at least SHOP_PASSES are taken). Otherwise the storefront cannot
+        change the ShopOutcome and exactly SHOP_PASSES are taken as evidence.
+        summary["pair_shop_window"] records the window and the seconds to the
+        first passing tail (None when there was none).
+        """
+        recovered = bool(states) and all(state == "RECOVERED" for state in states.values())
+        window = self.health_rules()["convergence_grace_seconds"] if recovered else 0
+        started = clock()
+        journeys, streak, tail_seconds = [], 0, None
+        while True:
             journey = self.storefront.journey()
             self.record_shopping("pair-shop", journey)
             journeys.append(journey)
-            if index < SHOP_PASSES - 1:
-                time.sleep(SHOP_INTERVAL_SECONDS)
+            streak = streak + 1 if journey.get("passed") is True else 0
+            if streak >= SHOP_PASSES:
+                tail_seconds = round(clock() - started, 1)
+                break
+            if len(journeys) >= SHOP_PASSES and clock() - started >= window:
+                break
+            sleep(SHOP_INTERVAL_SECONDS)
+        self.summary["pair_shop_window"] = {"window_seconds": window, "journeys": len(journeys),
+                                            "seconds_to_passing_tail": tail_seconds,
+                                            "required_passes": SHOP_PASSES}
         return journeys
 
-    def scores(self, incidents):
-        """Each scenario's first delivered decision against its own pre-registered labels."""
-        graded = {}
+    def lane_facts(self, name, incident_id, actions, state, writes):
+        """scenario_facts for one lane, over every action of its incident.
+
+        The Guard verdict is the last action's (the one that went furthest);
+        executor_routes counts every action's Executor routes; executor_writes is
+        the target's count in the Executor's own ledger (writes_by_target), or,
+        without it, 0 only when nothing was routed to the Executor. The fault
+        time is this target's own injection stamp, not the run's first one.
+        """
+        lane = self.lanes[name]
+        per_action = [(action, self.scenario_facts(lane.get("incident"), state, action["action_id"], lane["folder"]))
+                      for action in actions]
+        facts = dict(per_action[-1][1])
+        routes = sum(item["executor_routes"] for _, item in per_action)
+        facts.update(incident_id=incident_id, executor_routes=routes,
+                     executor_writes=writes.get(name, 0) if writes is not None else (0 if routes == 0 else None),
+                     fault_injected_at=((self.summary.get("pair_injection") or {}).get("applied_at") or {}).get(name),
+                     actions=[{"action_id": action["action_id"], "action": action["proposal"]["action"],
+                               "state": action["state"], "guard_verdict": item["guard_verdict"],
+                               "guard_reason_codes": item["guard_reason_codes"],
+                               "executor_routes": item["executor_routes"]} for action, item in per_action])
+        return facts
+
+    def scores(self, incidents, *, stops=None, writes=None):
+        """Each scenario's decision and what was delivered, against its own pre-registered labels (lane_score).
+
+        incidents maps target names to incident IDs; stops are the runner's
+        stop reasons and writes the Executor ledger's write counts per target.
+        """
+        stops, graded = stops or {}, {}
+        journal = self.directory / "planner.db"
         for name in self.order:
             with self.acting_as(name):
                 actions = self.store.actions_for_incident(incidents[name])
                 if not actions:
                     continue
-                proposal = actions[0]["proposal"]
-                guard = actions[0]["guard_result"] or {}
-                outcome = scenarios.decision(proposal)
-                graded[name] = scenarios.result(
-                    self.scenario, outcome, source=scenarios.decision_source(proposal, decided_by="rule"),
-                    incident_id=incidents[name], action_id=proposal["action_id"],
-                    coordinator_state=self.store.incident(incidents[name])["state"],
-                    guard_verdict=guard.get("verdict"), guard_reason_codes=list(guard.get("reason_codes", [])))
+                record = None
+                if journal.is_file():
+                    with PlannerStore(journal) as planner:
+                        record = planner.get(incidents[name])
+                error_code = (record or {}).get("error_code")
+                state = self.store.incident(incidents[name])["state"]
+                facts = self.lane_facts(name, incidents[name], actions, state, writes)
+                facts.update(planning_error_code=error_code, decided_by="rule",
+                             action_id=actions[0]["proposal"]["action_id"])
+                graded[name] = lane_score(self.scenario, actions[0]["proposal"], facts=facts, error_code=error_code,
+                                          stop=stops.get(name))
                 save(self.lanes[name]["folder"] / "scenario-result.json", graded[name])
         return graded
 
     def judge(self, incidents, run):
         """Score the pair, save its evidence, and fail unless it ended in an expected or acceptable result."""
         ids = {name: incidents[name]["incident_id"] for name in self.order}
-        journeys = [] if run["budget_exhausted"] else self.shop_journeys()
+        journeys = [] if run["budget_exhausted"] else self.shop_journeys(run["states"])
         shop = shop_outcome(run["states"], journeys, stopped=run["stops"])
         with SQLiteExecutionLedger(self.directory / "executor.sqlite") as ledger:
             writes = writes_by_target(ledger.db)
@@ -865,13 +1095,19 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
         graded = pair_result(self.pair, shop=shop, stops=run["stops"], writes=writes, ordering=ordering)
         evidence = {"incidents": ids, "run": run, "shop": shop, "result": graded,
                     "cross_incident_transitions": cross_incident_transitions(self.store),
-                    "timings": incident_timings(transitions, ids), "scenario_scores": self.scores(ids),
+                    "timings": incident_timings(transitions, ids),
+                    "scenario_scores": self.scores(ids, stops=run["stops"], writes=writes),
+                    "shop_window": self.summary.get("pair_shop_window"),
+                    # One harness process: each lane's time inside its runner steps, approval and verification.
+                    "lane_wall_times": {name: self.lanes[name].get("wall") for name in self.order},
+                    "chaos_window": {name: self.lanes[name]["chaos_window"] for name in self.order
+                                     if self.lanes[name].get("chaos_window")},
                     "changed_payload_refused": {name: self.lanes[name].get("changed_payload_refused", False)
                                                 for name in self.order}}
         if ordering is not None:
             evidence["ordering"] = ordering
         save(self.directory / "pair-result.json", evidence)
-        self.summary["pair_result"] = {key: evidence[key] for key in ("shop", "result", "timings")}
+        self.summary["pair_result"] = {key: evidence[key] for key in ("shop", "result", "timings", "lane_wall_times")}
         self.summary["pair_result"]["ordering"] = evidence.get("ordering")
         require(not evidence["cross_incident_transitions"], "An incident changed state because of the other incident")
         require(graded["matched_expected"] or graded["acceptable"],
@@ -903,6 +1139,40 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
         self.summary["operator_emergency_restore"] = restored
         return restored
 
+    def operator_cleanup(self):
+        """After a passing run, put back every target configuration still left faulted, as the administrator.
+
+        An accepted result that is not a recovery (DEPENDENCY_DEADLOCK, the
+        predicted result for redis-pod+cart-config) leaves a configuration
+        fault in place, for example cartservice's bad REDIS_ADDR. This runs
+        after the pair was judged and saved, with the same conditional patch
+        (UID and resourceVersion tested) as the drift cell's cleanup, and waits
+        for the rollout. It is lab cleanup, never a Sentinel repair: the write
+        is not in the Executor ledger and is recorded only in
+        summary["operator_cleanup"]. A template that differs from its baseline
+        only by Sentinel's restart annotation (a verified RESTART) is left alone.
+        """
+        cleanup = {}
+        for name in self.order:
+            with self.acting_as(name):
+                template = self.deployment()["spec"]["template"]
+                if config_fingerprint(template) == config_fingerprint(self.baseline["pod_template"]):
+                    cleanup[name] = {"restored": False, "reason": "configuration at baseline"}
+                    continue
+                attempts = self.administrator_restore("operator-cleanup-" + name + "-patch.json", drift_cell=False)
+                self.kubectl("rollout", "status", "deployment/" + name, "--timeout=180s", timeout=200)
+                restored = self.deployment()["spec"]["template"]
+                require(config_fingerprint(restored) == config_fingerprint(self.baseline["pod_template"]),
+                        f"The administrator cleanup did not bring {name} back to its baseline configuration")
+                cleanup[name] = {"restored": True, "patch_attempts": attempts, "rollout_complete": True,
+                                 "by": "lab administrator; not a Sentinel repair"}
+        self.summary["operator_cleanup"] = cleanup
+        restored = sorted(name for name, item in cleanup.items() if item["restored"])
+        if restored:
+            self.check("Administrator put the remaining faulted configuration back after scoring (not a repair)",
+                       targets=restored)
+        return cleanup
+
     def run(self):
         try:
             self.prepare()
@@ -918,7 +1188,9 @@ class PairBoutiqueExperiment(ChaosRecoveryMixin, ConnectedBoutiqueExperiment):
             self.check("Chaos Mesh object deleted and its cleanup confirmed")
             for name in self.order:
                 with self.acting_as(name):
+                    # The state Sentinel left, before any administrator cleanup.
                     save(self.lanes[name]["folder"] / "final-deployment.json", self.deployment())
+            self.operator_cleanup()
             self.summary["status"] = "PASS"
         except BaseException as exc:
             self.summary.update(status="FAILED", error_type=type(exc).__name__, error=str(exc)[:300])

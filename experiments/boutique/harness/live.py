@@ -569,8 +569,11 @@ class BoutiqueExperiment(Experiment):
                 "securityContext": {"runAsNonRoot": True, "runAsUser": 1000,
                                     "seccompProfile": {"type": "RuntimeDefault"}},
                 "containers": [container]}
-        return {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": name, "namespace": self.namespace},
-                "spec": spec}
+        # The grpcurl probe's labels, so a graph-derived NetworkPolicy admits this Pod to redis-cart's port only
+        # (scripts/security/network_policy.py).
+        labels = {"app": "sentinel-probe", "sentinel.io/probe-target": self.name}
+        return {"apiVersion": "v1", "kind": "Pod",
+                "metadata": {"name": name, "namespace": self.namespace, "labels": labels}, "spec": spec}
 
     def redis_response(self):
         """The PING reply text, bounded; a longer or empty reply is reported as it is, never as PONG."""

@@ -555,6 +555,45 @@ class FailureClassTests(unittest.TestCase):
         self.assertEqual(summarize.failure_class({"error": "odd", "error_type": "KeyError"}), "KeyError")
 
 
+class PairBundleTests(unittest.TestCase):
+    """Scenario-pair bundles (P4.05) are listed with their pair result and ShopOutcome; labels stay pending."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        runs, evidence = self.root / "source", self.root / "evidence"
+        for run, bundle_id in ((fx.pair_run(runs, "boutique-pair-20261113T100000Z-aaaaaa"), "pair-deadlock"),
+                               (fx.pair_run(runs, "boutique-pair-20261113T090000Z-bbbbbb", status="FAILED",
+                                            judged=False, started="2026-11-13T09:00:00Z"), "pair-stopped"),
+                               (fx.pair_run(runs, "boutique-pair-20261113T110000Z-cccccc", result="RECOVERED",
+                                            shop="RECOVERED", started="2026-11-13T11:00:00Z", labels="signed"),
+                                "pair-recovered")):
+            collect.collect(run, "scenario-pair", bundle_id, evidence_root=evidence, context=fx.context())
+        for relative, names in summarize.TARGETS.items():
+            fx.write(self.root / relative, skeleton(names))
+
+    def test_pair_rows_list_every_run_with_its_result_shop_outcome_and_labels(self):
+        rows = summarize.pair_rows(summarize.load_bundles(self.root))
+        self.assertEqual(rows, [
+            ["pair-stopped", "redis-pod+cart-config", "0123456", "FAILED", "no result", "unknown", "unmeasured",
+             "none", "n/a", "pending"],
+            ["pair-deadlock", "redis-pod+cart-config", "0123456", "PASS", "DEPENDENCY_DEADLOCK", "FAILED",
+             "cartservice 0, redis-cart 0", "cartservice DEPENDENCY_DEADLOCK, redis-cart DEPENDENCY_DEADLOCK", "no",
+             "pending"],
+            ["pair-recovered", "redis-pod+cart-config", "0123456", "PASS", "RECOVERED", "RECOVERED",
+             "cartservice 1, redis-cart 1", "none", "yes", "signed"]])
+
+    def test_the_generated_block_and_the_runs_table_include_pair_bundles(self):
+        code, output = run(self.root)
+        self.assertEqual(code, 0, output)
+        results = (self.root / "docs/results.md").read_text(encoding="utf-8")
+        self.assertIn("| pair-deadlock | redis-pod+cart-config | 0123456 | PASS | DEPENDENCY_DEADLOCK | FAILED |",
+                      block(results, "pair-runs"))
+        self.assertIn("| scenario-pair | 3 | 2 | 1 | 0 | 0 | 3 recorded, 0 inferred |", block(results, "runs"))
+        self.assertEqual(run(self.root, check=True)[0], 0)
+
+
 class Phase3DerivationTests(unittest.TestCase):
     """Distributed scenarios, the seal, traces, the admission check, worker containers and kind lab sessions."""
 

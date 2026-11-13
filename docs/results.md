@@ -28,7 +28,9 @@ Read each number with its limits:
 - No two-fault (P4.05 pair) run has a result: the eight pair runs of 13 Nov
   2026 stopped on a harness defect and are listed in
   [evidence/exclusions.json](../evidence/README.md), with the operator spikes
-  and the other attempts that produced no Sentinel result.
+  and the other attempts that produced no Sentinel result. The defect and the
+  pair harness's other live-readiness gaps are fixed and tested offline; the
+  pair runs have not been repeated ([dual-fault.md](dual-fault.md)).
 
 ## Runs by class
 
@@ -274,6 +276,11 @@ with these limits:
 - Mostly one fault type (from 870aa7d also the unscored catalog runs R2 and
   N1), on one host, one model (`qwen3:14b`) and runs from several revisions.
   These are not independent trials.
+- Scenario-pair runs are not in this table. The latency tools read a single
+  run's `primary` phases, and a pair run records its phases per target, so
+  pair latency comes from `pair-result.json` instead: `timings` (per
+  incident, from the Coordinator journal) and `lane_wall_times` (per lane,
+  from the one harness process). See [dual-fault.md](dual-fault.md).
 
 <!-- BEGIN GENERATED:latency -->
 - agent: 41 runs, 28 PASS; stopped at: planning x11; verification x2.
@@ -370,6 +377,21 @@ scored trials.
 | chaos-n2-r5-29e41f8 | N2 | PodChaos | 29e41f8 | PASS | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_BUDGET_EXHAUSTED, RESTART_TEMPLATE_DRIFT, 0 writes | yes |
 | chaos-n2-agent-r1-29e41f8 | N2 | PodChaos | 29e41f8 | PASS | ESCALATE | 0 | n/a | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_TEMPLATE_DRIFT, 0 writes | yes |
 <!-- END GENERATED:chaos-recovery -->
+
+## Scenario pairs
+
+Two simultaneous catalog faults on the connected Boutique
+([dual-fault.md](dual-fault.md)). One row per collected run, failed ones
+included. "Pair result" is the pair's own result against its pre-registered
+expectation and "ShopOutcome" the separate storefront judgement. The pair
+labels are not signed off, so these rows are not scored results. The eight
+pair runs of 13 Nov 2026 stopped on a harness defect before this evidence
+class existed; they are listed in the [exclusions](../evidence/README.md),
+not here.
+
+<!-- BEGIN GENERATED:pair-runs -->
+_No bundles yet._
+<!-- END GENERATED:pair-runs -->
 
 ## Security lab
 

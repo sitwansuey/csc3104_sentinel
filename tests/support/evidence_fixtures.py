@@ -198,6 +198,61 @@ def chaos_recovery_run(root, name, *, scenario="N2", kind="PodChaos", status="PA
     return run
 
 
+# The file layout of a real scenario-pair run folder (redis-pod+cart-config, 13 November 2026), which stopped after
+# detection: probe Pods, observations, the Observer, metrics and telemetry stores, the Coordinator database, the
+# connected manifest and RBAC, baselines, policies and each target's baseline health.
+PAIR_RUN_LAYOUT = (
+    "allowed-targets.json", "baseline-storefront.json", "cart-probe-1a35386cd3.json", "cart-probe-1f8ccf4d81.json",
+    "cartservice-healthy-0-observation.json", "cartservice-pair-0-observation.json",
+    "cartservice-pair-2-incident.json", "cartservice-pair-2-observation.json", "chaos-experiment.json",
+    "chaos-request.json", "connected-manifest.json", "coordinator.sqlite", "dependency-graph.json",
+    "emergency-cleanup-patch.json", "executor-rbac.yaml", "images.json", "metrics-bridge.json",
+    "observer-cartservice.sqlite", "observer-metrics.sqlite3", "observer-redis-cart.sqlite", "probe-proto.json",
+    "rbac-checks.json", "redis-cart-healthy-0-observation.json", "redis-cart-pair-0-observation.json",
+    "redis-cart-pair-2-incident.json", "redis-cart-pair-2-observation.json", "redis-probe-bf847b5d13.json",
+    "storefront-cleanup.json", "storefront-forward.log", "summary.json", "telemetry.sqlite3",
+    "baselines/cartservice.json", "baselines/redis-cart.json", "pair-cartservice/baseline-health.json",
+    "pair-redis-cart/baseline-health.json", "policies/cartservice.json", "policies/redis-cart.json")
+# What multi_fault.py adds once a pair is judged: the pair result and, per target, its proposal, Guard decisions,
+# dependency findings, approval, execution, outcome and score; the Executor-kill variant's worker files; the
+# Executor, Planner and Verifier stores; and the private Executor kubeconfig while the run is still going.
+PAIR_RUN_JUDGED = (
+    ".executor-kubeconfig.json", "pair-result.json", "pair-storefront-impact.json", "attribution.json",
+    "dependency-readiness-cartservice.json", "dependency-readiness-redis-cart.json", "executor.sqlite",
+    "planner.db", "verifier.sqlite3", "locks/target.lock", "operator-cleanup-cartservice-patch.json",
+    "pair-redis-cart/proposal-ACT-R.json", "pair-redis-cart/dependencies-ACT-R.json",
+    "pair-redis-cart/guard-ACT-R-0.json", "pair-redis-cart/approval.json", "pair-redis-cart/dependencies.json",
+    "pair-redis-cart/execution-ACT-R.json", "pair-redis-cart/outcome-ACT-R.json", "pair-redis-cart/outcome.json",
+    "pair-redis-cart/post-health-ACT-R.json", "pair-redis-cart/scenario-result.json",
+    "pair-redis-cart/final-deployment.json", "pair-cartservice/proposal-ACT-C.json",
+    "pair-cartservice/guard-ACT-C-0.json", "pair-cartservice/replan-1.json", "pair-cartservice/proposal.json",
+    "pair-cartservice/worker.json", "pair-cartservice/write-receipt.json", "pair-cartservice/reconciliation.json",
+    "pair-cartservice/scenario-result.json", "pair-cartservice/final-deployment.json")
+
+
+def pair_run(root, name, *, status="PASS", result="DEPENDENCY_DEADLOCK", shop="FAILED", started="2026-11-13T09:50:52Z",
+             judged=True, labels="pending"):
+    """A scenario-pair run folder with the real layout; judged adds what a run that reached judging writes."""
+    run = Path(root) / name
+    for relative in PAIR_RUN_LAYOUT + (PAIR_RUN_JUDGED if judged else ()):
+        write(run / relative, {"file": relative})
+    stops = ({"redis-cart": "DEPENDENCY_DEADLOCK", "cartservice": "DEPENDENCY_DEADLOCK"}
+             if result == "DEPENDENCY_DEADLOCK" else {})
+    writes = {"redis-cart": 0, "cartservice": 0} if result == "DEPENDENCY_DEADLOCK" else {"redis-cart": 1,
+                                                                                          "cartservice": 1}
+    graded = {"pair": "redis-pod+cart-config", "result": result, "writes": writes, "stops": stops,
+              "labels": labels, "labels_pending": labels != "signed",
+              "ordered_recovery_shown": result == "RECOVERED"}
+    summary = {"status": status, "started_at": started, "checks": [],
+               "pair": {"id": "redis-pod+cart-config", "kind": "dependency_ordered", "labels": labels},
+               "provenance": {"source_revision": REVISION, "dirty": False}}
+    if judged:
+        summary["pair_result"] = {"result": graded, "shop": {"status": shop}}
+        write(run / "pair-result.json", {"result": graded, "shop": {"status": shop}})
+    write(run / "summary.json", summary)
+    return run
+
+
 def jsonl(path, records):
     """Write one JSON object per line, as the distributed harness and the operator orchestrators do."""
     return write(path, "".join(json.dumps(record) + "\n" for record in records))

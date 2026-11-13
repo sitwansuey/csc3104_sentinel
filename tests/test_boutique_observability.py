@@ -71,16 +71,39 @@ class BoutiqueObservabilityTests(unittest.TestCase):
             finally:
                 experiment.store.close()
 
+    @staticmethod
+    def journaled_stages(harness, callers):
+        """Every stage the given sources journal: literal record_shopping stages, each fault label with the
+        suffix a record_shopping(label + "...") call adds, and literal stage= arguments of emit_observation."""
+        import re
+        harness_text = "\n".join(harness)
+        literal = set(re.findall(r'record_shopping\(\s*"([^"]+)"', harness_text))
+        suffixes = set(re.findall(r'record_shopping\(\s*label\s*\+\s*"([^"]+)"', harness_text))
+        labels = {match for text in callers for match in re.findall(r'\bself\.fault\(\s*"([^"]+)"', text)}
+        emitted = {match for text in (*harness, *callers)
+                   for match in re.findall(r'emit_observation\([^()]*?\bstage="([^"]+)"', text, re.DOTALL)}
+        return literal | {label + suffix for label in labels for suffix in suffixes} | emitted, labels, suffixes
+
     def test_every_stage_a_harness_journals_is_accepted(self):
         """Found live (P4.05): the pair harness journaled pair-fault, which the journal refused, so every pair
-        run failed after injecting both faults. Each literal stage passed to record_shopping must be known."""
-        import re
+        run failed after injecting both faults. Every stage a harness journals must be known: literal
+        record_shopping stages, each fault label plus the "-fault" suffix the harness adds, and the dashboard's
+        and the security lab's direct emit_observation calls."""
         from runtime.boutique_observability import STAGES
-        root = Path(__file__).resolve().parents[1] / "experiments" / "boutique" / "harness"
-        used = {match for path in root.glob("*.py")
-                for match in re.findall(r'record_shopping\(\s*"([^"]+)"', path.read_text(encoding="utf-8"))}
-        self.assertTrue({"baseline", "verification", "pair-fault", "pair-shop"} <= used)
+        root = Path(__file__).resolve().parents[1]
+        harness = [path.read_text(encoding="utf-8") for path in (root / "experiments/boutique/harness").glob("*.py")]
+        callers = [(root / relative).read_text(encoding="utf-8") for relative in (
+            "experiments/recovery/live.py", "experiments/boutique/harness/dashboard.py",
+            "scripts/security/boutique_security.py")]
+        used, labels, suffixes = self.journaled_stages(harness, callers)
+        self.assertEqual((labels, suffixes), ({"primary", "crash"}, {"-fault"}))
+        self.assertTrue({"baseline", "verification", "pair-fault", "pair-shop", "primary-fault", "crash-fault",
+                         "inventory"} <= used)
         self.assertEqual(used - STAGES, set())
+        # The scan itself finds an unknown label or a direct stage, so a new one cannot slip past it.
+        rogue, _, _ = self.journaled_stages(['self.record_shopping(label + "-fault", impact)'],
+                                            ['self.fault("rogue")', 'emit_observation(path, stage="odd", journey=j)'])
+        self.assertEqual(rogue - STAGES, {"rogue-fault", "odd"})
         with tempfile.TemporaryDirectory() as directory:
             journal = Path(directory) / "telemetry.sqlite3"
             for stage in ("pair-fault", "pair-shop"):

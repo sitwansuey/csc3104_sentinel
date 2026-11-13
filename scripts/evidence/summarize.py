@@ -36,7 +36,8 @@ from scripts.evidence import collect, limitations  # noqa: E402
 TARGETS = {
     "docs/results.md": ("runs", "recovery-checks", "agent-runs", "scenario-runs", "guard-rejection", "guard-eval",
                         "executor-wedge", "timings", "latency", "model-calls", "chaos", "chaos-recovery",
-                        "security-lab", "observer", "distributed-runs", "kind-lab-sessions", "executor-admission", "worker-container", "claims"),
+                        "pair-runs", "security-lab", "observer", "distributed-runs", "kind-lab-sessions",
+                        "executor-admission", "worker-container", "claims"),
     "evidence/README.md": ("index", "exclusions"),
     "docs/limitations.md": ("limitations",),
     "README.md": ("limitations-summary",),
@@ -463,6 +464,35 @@ def chaos_injection(bundles):
     injected = sum(int(row[2].split("/")[0]) for row in rows)
     cleaned = sum(int(row[3].split("/")[0]) for row in rows)
     return f"injected {ratio(injected, attempts)}, cleaned up {ratio(cleaned, attempts)}"
+
+
+def pair_row(bundle):
+    """Pair, revision, outcome, pair result, ShopOutcome, writes, stops, ordering and labels of one scenario-pair run.
+
+    The result comes from pair-result.json, else from the summary's
+    pair_result; a run that failed before judging shows "no result". Labels
+    read "pending" until the pair's labels are signed off.
+    """
+    summary = summary_of(bundle)
+    evidence = bundle.json("pair-result.json") or {}
+    judged = summary.get("pair_result") or {}
+    result = evidence.get("result") or judged.get("result") or {}
+    shop = evidence.get("shop") or judged.get("shop") or {}
+    pair = summary.get("pair") or {}
+    labels = result.get("labels") or pair.get("labels")
+    pairs = lambda value: ", ".join(f"{name} {count}" for name, count in sorted((value or {}).items())) or "none"
+    shown = result.get("ordered_recovery_shown")
+    return [bundle.bundle_id, pair.get("id") or result.get("pair") or "unknown",
+            short(bundle.entry.get("source_revision")), outcome(bundle), result.get("result") or "no result",
+            shop.get("status") or "unknown", pairs(result.get("writes")) if result else "unmeasured",
+            pairs(result.get("stops")), {True: "yes", False: "no", None: "n/a"}.get(shown, "unknown"),
+            "signed" if labels == "signed" else "pending"]
+
+
+def pair_rows(bundles):
+    members = sorted((b for b in bundles if b.run_class == "scenario-pair" and not superseded(b)),
+                     key=lambda b: (b.entry.get("captured_at") or "", b.bundle_id))
+    return [pair_row(bundle) for bundle in members]
 
 
 def security_lab(bundles):
@@ -1320,6 +1350,8 @@ def render_blocks(root):
         "chaos-recovery": table(["Bundle", "Scenario", "Chaos", "Revision", "Outcome", "Decision", "Executor writes",
                                  "RESTART attributed", "Forced wrong actions", "Chaos cleaned up"],
                                 chaos_recovery_rows(bundles)),
+        "pair-runs": table(["Bundle", "Pair", "Revision", "Outcome", "Pair result", "ShopOutcome", "Executor writes",
+                            "Stops", "Ordered recovery shown", "Labels"], pair_rows(bundles)),
         "security-lab": table(["Bundle", "Outcome", "Valid mTLS quote", "Blocked probes", "Shopping after restore"],
                               security_lab(bundles)),
         "observer": table(["Bundle", "Outcome", "Detection s", "Duplicate suppression s"], observer(bundles)),

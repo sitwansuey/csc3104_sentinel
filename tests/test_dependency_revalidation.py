@@ -326,13 +326,13 @@ def cart_redis_lab(test, *, cart_ready=False):
 class PairDependencyRevalidationTests(unittest.TestCase):
     """The dependency-ordered pair: a BLOCKED callee refuses the caller's repair until it recovers."""
 
-    def replan(self, lab, name, attempt=1):
+    def replan(self, lab, name, attempt=1, cause="DEPENDENCY_RECOVERED"):
         from experiments.boutique.harness.multi_fault import replan
         from services.planner.core import mock_provider, retrieve_runbooks
         live = lab.cluster.read(lab.incidents[name]["target"])["deployment"]
         proposal = replan(lab.incidents[name], baselines=[lab.baselines[name]], retriever=retrieve_runbooks,
                           provider=mock_provider, live_template=live["spec"]["template"],
-                          resource_version=live["metadata"]["resourceVersion"], attempt=attempt)
+                          resource_version=live["metadata"]["resourceVersion"], attempt=attempt, cause=cause)
         handle(proposal, lab.store, lab.bus)
         return proposal
 
@@ -402,7 +402,7 @@ class PairDependencyRevalidationTests(unittest.TestCase):
         ids = lab.open()
         order = {"redis-cart": ids["redis-cart"], "cartservice": ids["cartservice"]}
         runner = PairRunner(lab.store, order, advance=advance or lab.advance,
-                            replan=lambda name, incident_id, attempt: self.replan(lab, name, attempt),
+                            replan=lambda name, incident_id, attempt, cause: self.replan(lab, name, attempt, cause),
                             clock=lambda: lab.now.timestamp(), sleep=lab.tick)
         return ids, runner.run()
 

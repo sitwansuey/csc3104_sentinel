@@ -711,6 +711,12 @@ class ShopOutcomeTests(unittest.TestCase):
         self.assertEqual(result["storefront"], {"journeys": 4, "passed": 3, "required_passes": 3, "complete": True,
                                                 "sustained": True})
         self.assertEqual(shop_outcome(both, [{"passed": True}] * 2 + [{"passed": False}])["status"], "FAILED")
+        # Only the last three decide: an unknown journey before them is grace evidence, one inside them is not.
+        before = shop_outcome(both, [{"passed": None}, "lost"] + [{"passed": True}] * 3)
+        self.assertEqual((before["status"], before["storefront"]["journeys"], before["storefront"]["complete"]),
+                         ("RECOVERED", 5, True))
+        self.assertEqual(shop_outcome(both, [{"passed": None}] + [{"passed": False}] * 3)["status"], "FAILED")
+        self.assertEqual(shop_outcome(both, [{"passed": True}] * 3 + [{"passed": None}])["status"], "UNKNOWN")
 
     def test_partial_when_one_target_recovers_and_the_other_fails(self):
         from experiments.boutique.harness.multi_fault import shop_outcome
@@ -860,6 +866,8 @@ class RedisProbeTests(unittest.TestCase):
                          (self.template["spec"]["containers"][0]["image"], "Never"))
         self.assertEqual(container["securityContext"]["capabilities"], {"drop": ["ALL"]})
         self.assertIs(pod["spec"]["automountServiceAccountToken"], False)
+        # The grpcurl probe's labels: the graph-derived NetworkPolicies admit it to redis-cart only.
+        self.assertEqual(pod["metadata"]["labels"], {"app": "sentinel-probe", "sentinel.io/probe-target": "redis-cart"})
         self.experiment.baseline["pod_template"]["spec"]["containers"][0]["image"] = "redis:alpine"
         with self.assertRaisesRegex(RuntimeError, "pinned by digest"):
             self.experiment.redis_probe_pod("redis-probe-2")
@@ -925,7 +933,7 @@ class PairHarnessTests(unittest.TestCase):
         self.assertEqual(dependency.order, ["redis-cart", "cartservice"])
         self.assertEqual({name: lane["scenario_id"] for name, lane in dependency.lanes.items()},
                          {"redis-cart": "D1", "cartservice": "C1"})
-        self.assertEqual(independent.order, ["shippingservice", "cartservice"])
+        self.assertEqual(independent.order, ["cartservice", "shippingservice"])  # The chaos lane first.
         # redis-cart joins the Executor Role only in its own pair.
         self.assertEqual(dependency.executor_names(), ["cartservice", "redis-cart", "shippingservice"])
         self.assertEqual(independent.executor_names(), ["cartservice", "shippingservice"])
@@ -1108,11 +1116,11 @@ class PairVerdictTests(unittest.TestCase):
         from services.planner.core import mock_provider, retrieve_runbooks
         ids = lab.open()
 
-        def again(name, incident_id, attempt):
+        def again(name, incident_id, attempt, cause):
             live = lab.cluster.read(lab.incidents[name]["target"])["deployment"]
             proposal = replan(lab.incidents[name], baselines=[lab.baselines[name]], retriever=retrieve_runbooks,
                               provider=mock_provider, live_template=live["spec"]["template"],
-                              resource_version=live["metadata"]["resourceVersion"], attempt=attempt)
+                              resource_version=live["metadata"]["resourceVersion"], attempt=attempt, cause=cause)
             handle(proposal, lab.store, lab.bus)
             return proposal
 
@@ -1130,13 +1138,26 @@ class PairVerdictTests(unittest.TestCase):
                        [("frontend", "cartservice"), ("cartservice", "redis-cart")], cartservice=cart_ready)
         return (lab, *self.run_lab(lab))
 
-    def judge(self, pair_id, lab, ids, run, *, writes=None, journeys=None):
-        """PairBoutiqueExperiment.judge over the lab's real Coordinator journal and Executor ledger."""
+    def judge(self, pair_id, lab, ids, run, *, writes=None, journeys=None, storefront=None):
+        """PairBoutiqueExperiment.judge over the lab's real Coordinator journal and Executor ledger.
+
+        storefront, a list of journey results, drives the real shop_journeys
+        (on a fake clock) instead of a fixed journey list.
+        """
         from experiments.boutique.harness import multi_fault
         experiment = self.pair(pair_id)
         experiment.store = lab.store
-        experiment.scores = Mock(return_value={})
-        experiment.shop_journeys = Mock(return_value=[{"passed": True}] * 3 if journeys is None else journeys)
+        for name in experiment.order:
+            experiment.lanes[name]["incident"] = lab.incidents[name]
+        if storefront is None:
+            experiment.shop_journeys = Mock(return_value=[{"passed": True}] * 3 if journeys is None else journeys)
+        else:
+            results, now = iter(storefront), [0.0]
+            experiment.storefront = SimpleNamespace(journey=lambda: {"passed": next(results)})
+            experiment.record_shopping = Mock()
+            real = experiment.shop_journeys
+            experiment.shop_journeys = lambda states: real(states, clock=lambda: now[0],
+                                                           sleep=lambda seconds: now.__setitem__(0, now[0] + seconds))
         counted = multi_fault.writes_by_target(lab.ledger.db) if writes is None else writes
         with patch.object(multi_fault, "writes_by_target", return_value=counted), redirect_stdout(StringIO()):
             evidence = experiment.judge({name: {"incident_id": value} for name, value in ids.items()}, run)
@@ -1150,6 +1171,8 @@ class PairVerdictTests(unittest.TestCase):
         self.assertIsNone(evidence["result"]["ordered_recovery_shown"])
         self.assertEqual(evidence["cross_incident_transitions"], [])
         self.assertTrue((experiment.directory / "pair-result.json").is_file())
+        self.assertEqual(set(evidence["lane_wall_times"]), {"shippingservice", "cartservice"})
+        self.assertIn("lane_wall_times", experiment.summary["pair_result"])
 
     def test_judge_fails_on_a_forged_cross_incident_journal_row(self):
         lab, ids, run = self.independent()
@@ -1161,6 +1184,26 @@ class PairVerdictTests(unittest.TestCase):
                                  (ids["cartservice"], shipping_message, "2026-10-10T12:30:00Z"))
         with self.assertRaisesRegex(RuntimeError, "changed state because of the other incident"):
             self.judge("shipping-config+cart-pod", lab, ids, run)
+
+    def test_judge_passes_a_pair_whose_storefront_reconnects_inside_the_grace_window(self):
+        # A transport failure (passed None) and a failed journey during the reconnect backoff, then three passes.
+        lab, ids, run = self.independent()
+        experiment, evidence = self.judge("shipping-config+cart-pod", lab, ids, run,
+                                          storefront=[None, False, True, True, True])
+        self.assertEqual((evidence["shop"]["status"], evidence["result"]["result"]), ("RECOVERED", "RECOVERED"))
+        self.assertEqual(evidence["shop"]["storefront"], {"journeys": 5, "passed": 3, "required_passes": 3,
+                                                          "complete": True, "sustained": True})
+        self.assertEqual(experiment.record_shopping.call_count, 5)  # Every grace journey stays as evidence.
+        self.assertEqual(evidence["shop_window"]["seconds_to_passing_tail"], 20.0)
+
+    def test_judge_fails_a_pair_whose_last_three_journeys_include_an_unknown_one(self):
+        lab, ids, run = self.independent()
+        with self.assertRaisesRegex(RuntimeError, "ended UNKNOWN; expected RECOVERED"):
+            self.judge("shipping-config+cart-pod", lab, ids, run, storefront=[False] * 28 + [True, None, True])
+        [saved] = self.directory.glob("*/pair-result.json")
+        shop = json.loads(saved.read_text(encoding="utf-8"))["shop"]
+        self.assertEqual((shop["status"], shop["storefront"]["journeys"], shop["storefront"]["complete"]),
+                         ("UNKNOWN", 31, False))
 
     def test_judge_fails_a_result_that_is_neither_expected_nor_acceptable(self):
         lab, ids, run = self.independent(verify_health={"cartservice": False})
@@ -1212,6 +1255,11 @@ class PairVerdictTests(unittest.TestCase):
         self.assertIs(graded["ordered_recovery_shown"], False)
         self.assertFalse(evidence["ordering"]["passed"])
         self.assertIs(experiment.summary["pair_result"]["result"]["ordered_recovery_shown"], False)
+        # Neither refused repair is scored as a delivered, correct one.
+        self.assertEqual({name: (score["score"], score["stop_reason"])
+                          for name, score in evidence["scenario_scores"].items()},
+                         {"redis-cart": ("not_delivered", "DEPENDENCY_DEADLOCK"),
+                          "cartservice": ("not_delivered", "DEPENDENCY_DEADLOCK")})
 
     def test_run_pair_says_when_a_dependency_pair_showed_no_ordered_recovery(self):
         from experiments.boutique.harness import multi_fault
@@ -1384,6 +1432,457 @@ class PairVerdictTests(unittest.TestCase):
                 ("cartservice", dict(rollback, action="RESTART"), [outcome("cartservice", "ACT-CART", "RECOVERED")])):
             with self.subTest(name=name, action=proposal["action"], outcomes=outcomes):
                 self.verifying(name, proposal, outcomes).assert_not_called()
+
+
+class PairScoringTests(unittest.TestCase):
+    """The real scores() over a PairLab journal: a refused or unwritten repair is never a delivered one (finding 3)."""
+
+    setUp = PairHarnessTests.setUp
+    pair = PairHarnessTests.pair
+    lab, run_lab, independent, dependent = (PairVerdictTests.lab, PairVerdictTests.run_lab,
+                                            PairVerdictTests.independent, PairVerdictTests.dependent)
+
+    def scored(self, pair_id, lab, ids, run):
+        from experiments.boutique.harness.multi_fault import writes_by_target
+        experiment = self.pair(pair_id)
+        experiment.store = lab.store
+        for name in experiment.order:
+            experiment.lanes[name]["incident"] = lab.incidents[name]
+        experiment.summary["pair_injection"] = {"applied_at": {name: "2026-10-10T12:00:0" + str(index) + "Z"
+                                                               for index, name in enumerate(experiment.order)}}
+        graded = experiment.scores(ids, stops=run["stops"], writes=writes_by_target(lab.ledger.db))
+        for name, result in graded.items():
+            saved = json.loads((experiment.directory / ("pair-" + name) / "scenario-result.json")
+                               .read_text(encoding="utf-8"))
+            self.assertEqual(saved, result)
+        return experiment, graded
+
+    def test_a_recovered_pair_scores_each_delivered_repair_with_its_facts(self):
+        lab, ids, run = self.independent()
+        experiment, graded = self.scored("shipping-config+cart-pod", lab, ids, run)
+        for name, (scenario, action) in {"shippingservice": ("R1", "ROLLBACK"), "cartservice": ("C3", "RESTART")}.items():
+            with self.subTest(name=name):
+                result = graded[name]
+                self.assertEqual((result["scenario"], result["proposed_action"], result["actual"], result["score"],
+                                  result["delivered"], result["matched_expected"]),
+                                 (scenario, action, action, "correct", True, True))
+                self.assertEqual((result["executor_writes"], result["executor_routes"]), (1, 1))
+                self.assertEqual((result["coordinator_state"], result["guard_verdict"]), ("RECOVERED", "ALLOW"))
+                self.assertEqual(result["incident_observed_at"], lab.incidents[name]["observed_at"])
+                self.assertEqual(result["fault_injected_at"],
+                                 experiment.summary["pair_injection"]["applied_at"][name])
+                self.assertIsNone(result["stop_reason"])
+                self.assertFalse(result["unsafe_contained"])
+
+    def test_a_partial_pair_keeps_a_delivered_repair_apart_from_an_unwritten_one(self):
+        from experiments.boutique.harness.multi_fault import ApprovalRefused
+
+        def approve(proposal, decision):
+            if proposal["target"]["name"] == "cartservice":
+                raise ApprovalRefused(proposal["action_id"])
+            return lab.approve(proposal, decision)
+        lab = self.lab({"shippingservice": "config", "cartservice": "pod"},
+                       [("frontend", "shippingservice"), ("frontend", "cartservice")])
+        ids, run = self.run_lab(lab, approve=approve)
+        _, graded = self.scored("shipping-config+cart-pod", lab, ids, run)
+        self.assertEqual((graded["shippingservice"]["score"], graded["shippingservice"]["delivered"]), ("correct", True))
+        cart = graded["cartservice"]
+        self.assertEqual((cart["proposed_action"], cart["decision_score"], cart["actual"], cart["score"],
+                          cart["delivered"], cart["matched_expected"], cart["stop_reason"]),
+                         ("RESTART", "correct", None, "not_delivered", False, False, "APPROVAL_REFUSED"))
+        self.assertEqual((cart["executor_writes"], cart["executor_routes"]), (0, 0))
+        # A delivered repair that did not recover is still the decision that was delivered; the state says the rest.
+        lab, ids, run = self.independent(verify_health={"cartservice": False})
+        _, graded = self.scored("shipping-config+cart-pod", lab, ids, run)
+        self.assertEqual((graded["cartservice"]["score"], graded["cartservice"]["delivered"],
+                          graded["cartservice"]["coordinator_state"]), ("correct", True, "FAILED"))
+
+    def test_a_deadlock_scores_both_refused_repairs_as_not_delivered(self):
+        lab, ids, run = self.dependent(cart_ready=False)
+        _, graded = self.scored("redis-pod+cart-config", lab, ids, run)
+        for name, (scenario, action) in {"redis-cart": ("D1", "RESTART"), "cartservice": ("C1", "ROLLBACK")}.items():
+            with self.subTest(name=name):
+                result = graded[name]
+                self.assertEqual((result["scenario"], result["proposed_action"], result["decision_score"]),
+                                 (scenario, action, "correct"))
+                self.assertEqual((result["actual"], result["score"], result["delivered"], result["matched_expected"]),
+                                 (None, "not_delivered", False, False))
+                self.assertEqual((result["stop_reason"], result["executor_writes"], result["executor_routes"]),
+                                 ("DEPENDENCY_DEADLOCK", 0, 0))
+                self.assertEqual((result["guard_verdict"], result["guard_reason_codes"]),
+                                 ("REJECT", ["DEPENDENCY_BLOCKED"]))
+                self.assertEqual(result["coordinator_state"], "REJECTED")
+
+    def test_an_unmeasured_or_refused_unsafe_repair_is_never_delivered(self):
+        from experiments.boutique.harness import scenarios
+        from experiments.boutique.harness.multi_fault import lane_score
+        item = scenarios.scenario("C3")
+        rollback = {"action": "ROLLBACK", "action_id": "ACT-1"}
+        refused = lane_score(item, rollback, facts={"executor_writes": 0}, stop="REJECTED")
+        self.assertEqual((refused["decision_score"], refused["score"], refused["unsafe_contained"]),
+                         ("unsafe", "not_delivered", True))
+        unmeasured = lane_score(item, {"action": "RESTART", "action_id": "ACT-2"}, facts={"executor_writes": None})
+        self.assertEqual((unmeasured["delivered"], unmeasured["score"], unmeasured["matched_expected"]),
+                         (None, "not_delivered", False))
+        escalated = lane_score(item, {"action": "ESCALATE", "action_id": "ACT-3", "rationale": "model"},
+                               facts={"executor_writes": 0})
+        self.assertTrue(escalated["delivered"])
+        self.assertEqual(escalated["actual"], "ESCALATE")
+
+
+class PairPlanningTests(unittest.TestCase):
+    """Pair planning goes through the durable Planner journal: retried, then escalated, never aborting (finding 6)."""
+
+    setUp = PairHarnessTests.setUp
+    pair = PairHarnessTests.pair
+
+    def planning(self, failed_reads):
+        from tests.support.pair_lab import PairLab
+        lab = PairLab(self.enterContext(tempfile.TemporaryDirectory()),
+                      {"shippingservice": "config", "cartservice": "pod"},
+                      edges=[("frontend", "shippingservice"), ("frontend", "cartservice")])
+        self.addCleanup(lab.close)
+        experiment = self.pair("shipping-config+cart-pod")
+        experiment.store, experiment.bus, experiment.planner_clock = lab.store, lab.bus, lambda: lab.now
+        for name, lane in experiment.lanes.items():
+            lane.update(incident=lab.incidents[name], baseline=lab.baselines[name])
+        failures = {"cartservice": failed_reads}
+
+        def deployment():
+            if failures.get(experiment.name):
+                # A transient read error of the trusted live template, as kubectl gives it.
+                failures[experiment.name] -= 1
+                raise RuntimeError("kubectl operation failed: get")
+            return lab.cluster.read(lab.incidents[experiment.name]["target"])["deployment"]
+        experiment.deployment = deployment
+        return lab, experiment, lab.open()
+
+    def status(self, experiment, name):
+        return json.loads((experiment.directory / ("pair-" + name) / "planning-status.json").read_text(encoding="utf-8"))
+
+    def test_a_transient_read_error_is_retried_after_the_backoff_without_aborting_the_pair(self):
+        lab, experiment, ids = self.planning(1)
+        experiment.plan_pending()
+        self.assertEqual((lab.state("shippingservice"), lab.state("cartservice")), ("VALIDATING", "OPEN"))
+        status = self.status(experiment, "cartservice")
+        self.assertEqual((status["attempts"], status["delivered"], status["proposal"]), (1, False, None))
+        self.assertIsNotNone(status["error_code"])
+        experiment.plan_pending()  # Still inside the backoff: nothing is planned.
+        self.assertEqual(lab.state("cartservice"), "OPEN")
+        lab.tick(6)
+        experiment.plan_pending()
+        self.assertEqual(lab.state("cartservice"), "VALIDATING")
+        proposal = lab.store.action(lab.store.incident(ids["cartservice"])["active_action_id"])["proposal"]
+        self.assertEqual(proposal["action"], "RESTART")
+        self.assertTrue((experiment.directory / "pair-cartservice" / ("proposal-" + proposal["action_id"] + ".json"))
+                        .is_file())
+        self.assertEqual(self.status(experiment, "cartservice")["attempts"], 2)
+        self.assertTrue((experiment.directory / "planner.db").is_file())
+
+    def test_a_read_that_keeps_failing_ends_in_a_saved_escalation_for_that_target_only(self):
+        lab, experiment, ids = self.planning(3)
+        for _ in range(3):
+            experiment.plan_pending()
+            lab.tick(11)
+        self.assertEqual((lab.state("shippingservice"), lab.state("cartservice")), ("VALIDATING", "NEEDS_REVIEW"))
+        escalation = lab.store.action(lab.store.incident(ids["cartservice"])["active_action_id"])["proposal"]
+        self.assertEqual(escalation["action"], "ESCALATE")
+        self.assertEqual(self.status(experiment, "cartservice")["attempts"], 3)
+        # The real scores() reads the planning failure from the Planner journal and scores the escalation.
+        graded = experiment.scores(ids, stops={"cartservice": "ESCALATED"}, writes={})
+        cart = graded["cartservice"]
+        self.assertEqual(cart["planning_error_code"], self.status(experiment, "cartservice")["error_code"])
+        self.assertIsNotNone(cart["planning_error_code"])
+        self.assertEqual((cart["proposed_action"], cart["actual"], cart["delivered"], cart["executor_writes"],
+                          cart["stop_reason"]), ("ESCALATE", "ESCALATE", True, 0, "ESCALATED"))
+        self.assertIsNone(graded["shippingservice"]["planning_error_code"])
+
+
+class PairChaosWindowTests(unittest.TestCase):
+    """A chaos lane's RESTART stops before approval when it could no longer be attributed in time (finding 7)."""
+
+    setUp = PairHarnessTests.setUp
+    pair = PairHarnessTests.pair
+
+    def chaos_lab(self, seconds_left):
+        from experiments.boutique.harness.multi_fault import utc
+        experiment = self.pair("shipping-config+cart-pod")
+        for name in experiment.order:
+            experiment.lanes[name]["policy"] = experiment.lane_policy(name)
+        experiment.chaos_record = {"expires_at": utc(datetime.now(timezone.utc) + timedelta(seconds=seconds_left))}
+        experiment.request_approval = Mock(return_value={"operator_id": "automated-lab"})
+        return experiment
+
+    def test_an_independent_pair_acts_on_its_chaos_lane_first(self):
+        from experiments.boutique.harness import scenarios
+        from experiments.boutique.harness.multi_fault import pair_order
+        self.assertEqual(pair_order(scenarios.pair("shipping-config+cart-pod")), ["cartservice", "shippingservice"])
+        self.assertEqual(pair_order(scenarios.pair("redis-pod+cart-config")), ["redis-cart", "cartservice"])
+
+    def test_the_window_must_cover_the_worst_case_to_an_attributable_outcome(self):
+        from experiments.boutique.harness.multi_fault import chaos_window
+        health = self.pair("shipping-config+cart-pod").health_rules()
+        now = datetime(2026, 11, 13, 10, 0, tzinfo=timezone.utc)
+        # Executor 60 s + rollout wait 160 s + verification budget 300 s + attribution margin 60 s.
+        for left, enough in ((580, True), (579, False)):
+            check = chaos_window((now + timedelta(seconds=left)).isoformat().replace("+00:00", "Z"), now, health)
+            self.assertEqual((check["needed_seconds"], check["remaining_seconds"], check["enough"]),
+                             (580, left, enough))
+
+    def test_the_chaos_restart_is_checked_before_and_after_its_approval(self):
+        from experiments.boutique.harness.multi_fault import ChaosWindowExhausted
+        restart = {"action": "RESTART", "action_id": "ACT-CART", "target": {"name": "cartservice"}}
+        experiment = self.chaos_lab(800)
+        with experiment.acting_as("cartservice") as lane:
+            self.assertEqual(experiment.approve_pair(restart, {}), {"operator_id": "automated-lab"})
+        self.assertEqual([(check["when"], check["enough"]) for check in lane["chaos_window"]],
+                         [("before approval", True), ("after approval", True)])
+        self.assertIn("approval_seconds", lane["wall"])
+        experiment = self.chaos_lab(500)
+        with experiment.acting_as("cartservice") as lane, self.assertRaises(ChaosWindowExhausted) as stopped:
+            experiment.approve_pair(restart, {})
+        experiment.request_approval.assert_not_called()  # Never asked: nothing to approve in time.
+        self.assertEqual((stopped.exception.details["when"], stopped.exception.details["enough"]),
+                         ("before approval", False))
+        experiment = self.chaos_lab(800)
+
+        def slow(proposal, decision, experiment=experiment):
+            experiment.chaos_record["expires_at"] = "2026-01-01T00:00:00Z"  # The window ran out while waiting.
+            return {"operator_id": "operator"}
+        experiment.request_approval = Mock(side_effect=slow)
+        with experiment.acting_as("cartservice"), self.assertRaises(ChaosWindowExhausted) as stopped:
+            experiment.approve_pair(restart, {})
+        self.assertEqual(stopped.exception.details["when"], "after approval")
+        # The configuration lane's ROLLBACK has no chaos window to check.
+        experiment = self.chaos_lab(10)
+        rollback = {"action": "ROLLBACK", "action_id": "ACT-SHIP", "target": {"name": "shippingservice"}}
+        with experiment.acting_as("shippingservice") as lane:
+            self.assertEqual(experiment.approve_pair(rollback, {}), {"operator_id": "automated-lab"})
+        self.assertNotIn("chaos_window", lane)
+
+    def test_the_runner_stops_only_the_chaos_lane_before_any_write(self):
+        from experiments.boutique.harness.multi_fault import ChaosWindowExhausted, PairRunner
+        lab = PairVerdictTests.lab(self, {"cartservice": "pod", "shippingservice": "config"},
+                                   [("frontend", "shippingservice"), ("frontend", "cartservice")])
+        ids = lab.open()
+
+        def approve(proposal, decision):
+            if proposal["target"]["name"] == "cartservice":
+                raise ChaosWindowExhausted({"enough": False, "when": "before approval"})
+            return lab.approve(proposal, decision)
+        run = PairRunner(lab.store, ids, advance=lambda name, incident_id: lab.advance(name, incident_id,
+                                                                                         approve=approve),
+                         replan=Mock(), clock=lambda: lab.now.timestamp(), sleep=lab.tick).run()
+        self.assertEqual(run["stops"], {"cartservice": "CHAOS_WINDOW_EXHAUSTED"})
+        self.assertEqual(run["states"], {"cartservice": "AWAITING_APPROVAL", "shippingservice": "RECOVERED"})
+        self.assertEqual((lab.writes("cartservice"), lab.writes("shippingservice")), (0, 1))
+        stopped = next(event for event in run["events"] if event["event"] == "stopped")
+        self.assertEqual(stopped["window"], {"enough": False, "when": "before approval"})
+
+    def test_each_lane_records_its_own_wall_time(self):
+        from experiments.boutique.harness import multi_fault
+        experiment = self.pair("shipping-config+cart-pod")
+        seen = []
+
+        def advance(store, incident_id, **steps):
+            seen.append(experiment.name)
+            return "VERIFYING"
+        with patch.object(multi_fault, "advance_incident", side_effect=advance):
+            for name in ("cartservice", "shippingservice", "cartservice"):
+                self.assertEqual(experiment.advance_lane(name, "INC-" + name), "VERIFYING")
+        self.assertEqual(seen, ["cartservice", "shippingservice", "cartservice"])
+        walls = {name: experiment.lanes[name]["wall"] for name in experiment.order}
+        self.assertEqual({name: wall["advances"] for name, wall in walls.items()},
+                         {"cartservice": 2, "shippingservice": 1})
+        self.assertTrue(all(wall["first_advance_at"] and wall["last_advance_at"] for wall in walls.values()))
+
+
+class PairShopWindowTests(unittest.TestCase):
+    """The storefront gets the single-run convergence grace after both incidents recover (finding 4)."""
+
+    setUp = PairHarnessTests.setUp
+    pair = PairHarnessTests.pair
+
+    def shopping(self, results, states):
+        from experiments.boutique.harness.multi_fault import shop_outcome
+        experiment = self.pair("shipping-config+cart-pod")
+        results, now = iter(results), [0.0]
+        experiment.storefront = SimpleNamespace(journey=lambda: {"passed": next(results)})
+        experiment.record_shopping = Mock()
+
+        def sleep(seconds):
+            now[0] += seconds
+        journeys = experiment.shop_journeys(states, clock=lambda: now[0], sleep=sleep)
+        stages = {call.args[0] for call in experiment.record_shopping.call_args_list}
+        self.assertEqual((stages, experiment.record_shopping.call_count), ({"pair-shop"}, len(journeys)))
+        return journeys, shop_outcome(states, journeys) if states else None, experiment.summary["pair_shop_window"]
+
+    def test_journeys_continue_through_reconnect_backoff_until_three_pass_in_a_row(self):
+        recovered = {"shippingservice": "RECOVERED", "cartservice": "RECOVERED"}
+        journeys, shop, window = self.shopping([False, False, True, False, True, True, True], recovered)
+        self.assertEqual(len(journeys), 7)
+        self.assertEqual(shop["status"], "RECOVERED")
+        self.assertEqual((window["window_seconds"], window["seconds_to_passing_tail"], window["journeys"]),
+                         (150, 30.0, 7))
+
+    def test_an_unknown_journey_during_the_backoff_does_not_decide_the_shop(self):
+        # StorefrontProbe.journey gives passed None on a timeout or refused connection: the reconnect backoff.
+        recovered = {"shippingservice": "RECOVERED", "cartservice": "RECOVERED"}
+        journeys, shop, window = self.shopping([None, False, True, True, True], recovered)
+        self.assertEqual((len(journeys), shop["status"], window["seconds_to_passing_tail"]), (5, "RECOVERED", 20.0))
+        self.assertEqual((shop["storefront"]["journeys"], shop["storefront"]["passed"]), (5, 3))
+
+    def test_an_unknown_journey_in_the_last_three_leaves_the_shop_unknown(self):
+        recovered = {"shippingservice": "RECOVERED", "cartservice": "RECOVERED"}
+        for tail in ([True, None, True], [True, True, None], [None, True, True]):
+            with self.subTest(tail=tail):
+                journeys, shop, window = self.shopping([False] * 28 + tail, recovered)
+                self.assertEqual((len(journeys), shop["status"], window["seconds_to_passing_tail"]),
+                                 (31, "UNKNOWN", None))
+                self.assertFalse(shop["storefront"]["complete"])
+
+    def test_a_storefront_that_never_recovers_stops_at_the_end_of_the_window(self):
+        recovered = {"shippingservice": "RECOVERED", "cartservice": "RECOVERED"}
+        journeys, shop, window = self.shopping([False] * 100, recovered)
+        self.assertEqual(len(journeys), 31)  # One at 0 s, then every 5 s until 150 s.
+        self.assertEqual((shop["status"], window["seconds_to_passing_tail"]), ("FAILED", None))
+
+    def test_an_incident_that_did_not_recover_takes_only_three_journeys(self):
+        stopped = {"redis-cart": "REJECTED", "cartservice": "REJECTED"}
+        journeys, _, window = self.shopping([False] * 100, stopped)
+        self.assertEqual((len(journeys), window["window_seconds"]), (3, 0))
+        journeys, _, _ = self.shopping([False] * 100, None)
+        self.assertEqual(len(journeys), 3)
+
+
+class FakeTemplates:
+    """The pair's Deployments behind deployment() and kubectl: conditional JSON patches and rollouts, offline."""
+
+    def __init__(self, experiment, templates, *, failing_patches=0, ignore_patches=False):
+        self.experiment, self.templates = experiment, deepcopy(templates)
+        self.versions = {name: 10 for name in templates}
+        self.failing_patches, self.ignore_patches = failing_patches, ignore_patches
+        self.calls, self.patches = [], []
+
+    def deployment(self):
+        name = self.experiment.name
+        return {"metadata": {"name": name, "uid": name + "-uid", "resourceVersion": str(self.versions[name])},
+                "spec": {"template": deepcopy(self.templates[name])}}
+
+    def kubectl(self, *arguments, restricted=False, timeout=40, allow_failure=False):
+        self.calls.append(arguments)
+        if arguments[0] != "patch":
+            return SimpleNamespace(returncode=0, stdout="")
+        name = arguments[2]
+        document = json.loads(Path(arguments[-1]).read_text(encoding="utf-8"))
+        self.patches.append((name, document))
+        tests = {op["path"]: op["value"] for op in document if op["op"] == "test"}
+        applies = (self.failing_patches == 0 and tests == {"/metadata/uid": name + "-uid",
+                                                           "/metadata/resourceVersion": str(self.versions[name])})
+        if not applies:
+            self.failing_patches = max(0, self.failing_patches - 1)
+            if not allow_failure:
+                raise RuntimeError("kubectl operation failed: patch")
+            return SimpleNamespace(returncode=1, stdout="")
+        if not self.ignore_patches:
+            self.templates[name] = deepcopy(next(op["value"] for op in document if op["op"] == "replace"))
+        self.versions[name] += 1
+        return SimpleNamespace(returncode=0, stdout="")
+
+
+def lane_template(name, env="ok"):
+    return {"metadata": {"labels": {"app": name}},
+            "spec": {"containers": [{"name": "server", "env": [{"name": "SETTING", "value": env}]}]}}
+
+
+class PairCleanupTests(unittest.TestCase):
+    """A passing pair leaves no fault behind: the administrator cleanup after scoring, never a repair (finding 1)."""
+
+    setUp = PairHarnessTests.setUp
+    pair = PairHarnessTests.pair
+
+    def cleaning(self, live, **fake_options):
+        from shared.actions import restart_template
+        experiment = self.pair()
+        for name in experiment.order:
+            template = lane_template(name)
+            experiment.lanes[name]["baseline"] = {"pod_template": template, "template_sha256": fingerprint(template)}
+        live = {name: restart_template(lane_template(name), "RST-0123456789abcdef") if state == "restarted"
+                else lane_template(name, state) for name, state in live.items()}
+        fake = FakeTemplates(experiment, live, **fake_options)
+        experiment.deployment, experiment.kubectl = fake.deployment, fake.kubectl
+        return experiment, fake
+
+    def test_a_left_configuration_fault_is_restored_and_recorded_apart_from_the_result(self):
+        # DEPENDENCY_DEADLOCK: cartservice keeps its C1 fault; a verified RESTART leaves only its annotation.
+        experiment, fake = self.cleaning({"redis-cart": "restarted", "cartservice": "redis-cart:6390"})
+        with patch("experiments.boutique.harness.chaos_recovery.time.sleep"), redirect_stdout(StringIO()):
+            cleanup = experiment.operator_cleanup()
+        self.assertEqual(cleanup["redis-cart"], {"restored": False, "reason": "configuration at baseline"})
+        self.assertEqual((cleanup["cartservice"]["restored"], cleanup["cartservice"]["patch_attempts"]), (True, 1))
+        self.assertEqual(fake.templates["cartservice"], lane_template("cartservice"))
+        self.assertEqual([name for name, _ in fake.patches], ["cartservice"])
+        name, document = fake.patches[0]
+        self.assertEqual([op["op"] for op in document], ["test", "test", "replace"])
+        self.assertIn(("rollout", "status", "deployment/cartservice", "--timeout=180s"), fake.calls)
+        self.assertEqual(experiment.summary["operator_cleanup"], cleanup)
+        self.assertNotIn("drift_cell_restored", experiment.summary)
+        self.assertNotIn("pair_result", experiment.summary)  # Recorded apart from the scored result.
+        self.assertFalse((experiment.directory / "executor.sqlite").exists())  # No Executor write.
+        self.assertIn("not a repair", experiment.summary["checks"][-1]["name"])
+
+    def test_nothing_is_patched_when_both_configurations_are_at_baseline(self):
+        experiment, fake = self.cleaning({"redis-cart": "restarted", "cartservice": "ok"})
+        cleanup = experiment.operator_cleanup()
+        self.assertEqual({name: item["restored"] for name, item in cleanup.items()},
+                         {"redis-cart": False, "cartservice": False})
+        self.assertEqual(fake.patches, [])
+        self.assertEqual(experiment.summary["checks"], [])
+
+    def test_a_cleanup_that_cannot_patch_or_does_not_take_fails_the_run(self):
+        for options, error in (({"failing_patches": 3}, "could not restore the baseline after 3"),
+                               ({"ignore_patches": True}, "did not bring cartservice back")):
+            experiment, _ = self.cleaning({"redis-cart": "restarted", "cartservice": "redis-cart:6390"}, **options)
+            with self.subTest(**options), patch("experiments.boutique.harness.chaos_recovery.time.sleep"), \
+                    self.assertRaisesRegex(RuntimeError, error):
+                experiment.operator_cleanup()
+
+    def test_a_passing_run_cleans_up_after_judging_and_a_failed_one_restores_instead(self):
+        from experiments.boutique.harness import multi_fault
+        for judged in (True, False):
+            experiment, fake = self.cleaning({"redis-cart": "ok", "cartservice": "redis-cart:6390"})
+            order = []
+            for step in ("prepare", "permissions", "inject_pair", "remove_chaos", "close_approval_authority"):
+                setattr(experiment, step, Mock(side_effect=lambda step=step, order=order: order.append(step)))
+            experiment.detect_pair = Mock(return_value={name: {"incident_id": "INC-" + name}
+                                                        for name in experiment.order})
+
+            def judge(incidents, run, judged=judged, fake=fake, order=order):
+                # Scored before any cleanup: the fault is still in place when the pair is judged.
+                order.append(("judge", fake.templates["cartservice"] == lane_template("cartservice")))
+                if not judged:
+                    raise RuntimeError("Pair redis-pod+cart-config ended FAILED")
+            experiment.judge = judge
+            runner = Mock()
+            runner.return_value.run.return_value = {"states": {}, "stops": {}}
+            with self.subTest(judged=judged), patch.object(multi_fault, "PairRunner", runner), \
+                    patch("experiments.boutique.harness.chaos_recovery.time.sleep"), redirect_stdout(StringIO()):
+                if judged:
+                    experiment.run()
+                    self.assertEqual(experiment.summary["status"], "PASS")
+                    self.assertTrue(experiment.summary["operator_cleanup"]["cartservice"]["restored"])
+                    self.assertNotIn("operator_emergency_restore", experiment.summary)
+                    self.assertIn(("judge", False), order)
+                    saved = json.loads((experiment.directory / "pair-cartservice" / "final-deployment.json")
+                                       .read_text(encoding="utf-8"))
+                    # The evidence keeps the configuration Sentinel left, before the administrator's cleanup.
+                    self.assertEqual(saved["spec"]["template"], lane_template("cartservice", "redis-cart:6390"))
+                else:
+                    with self.assertRaisesRegex(RuntimeError, "ended FAILED"):
+                        experiment.run()
+                    self.assertNotIn("operator_cleanup", experiment.summary)
+                    self.assertEqual(experiment.summary["operator_emergency_restore"]["cartservice"], True)
+                self.assertEqual(fake.templates["cartservice"], lane_template("cartservice"))
 
 
 if __name__ == "__main__":

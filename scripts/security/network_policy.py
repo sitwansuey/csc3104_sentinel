@@ -45,7 +45,7 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from experiments.boutique.harness import targets
+from experiments.boutique.harness import scenarios, targets
 from experiments.boutique.harness.connected import configured_graph, service_ports
 from experiments.boutique.harness.scenarios import CONNECTED_SCOPE
 from scripts.security.boutique_security_manifest import CALLERS, GATEWAY, NAMESPACE, UPSTREAM_PORT
@@ -131,6 +131,18 @@ def probe_targets():
     return targets.enabled_targets(CONNECTED_SCOPE)
 
 
+def connected_probe_targets():
+    """probe_targets() plus the pair-only targets a scenario pair repairs on the connected lab (redis-cart, P4.05).
+
+    A pair run probes redis-cart with a Redis PING from a Pod labelled like the
+    grpcurl probes, so the connected namespace's graph policies must admit it.
+    The security lab never runs a pair and keeps probe_targets().
+    """
+    paired = {item["target"] for pair_id in scenarios.pair_ids() for item in scenarios.pair(pair_id)["items"]
+              if CONNECTED_SCOPE in targets.profile(item["target"]).scopes}
+    return tuple(sorted(set(probe_targets()) | paired))
+
+
 # ----- generation -----
 
 def _selector(app):
@@ -203,10 +215,10 @@ def policies(edge_list, namespace, *, workloads, ports, probes=(), entry=ENTRY, 
 
 
 def graph_policies(graph, namespace, *, probes=None):
-    """The plain graph-derived set for one namespace, with Sentinel probe allowances."""
+    """The plain graph-derived set for one namespace, with Sentinel probe allowances (pair targets included)."""
     ports = {name: value["target"] for name, value in graph["ports"].items()}
     return policies(edges(graph), namespace, workloads=graph["nodes"], ports=ports,
-                    probes=probe_targets() if probes is None else probes)
+                    probes=connected_probe_targets() if probes is None else probes)
 
 
 def security_lab_policies(graph, *, probes=None):
