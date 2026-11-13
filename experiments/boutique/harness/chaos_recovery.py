@@ -85,6 +85,9 @@ FORCED = {
 # progress) gets CONFLICT with no Guard decision; it is retried with a fresh proposal this many times.
 FORCED_STALE_RETRIES = 3
 FORCED_STALE_WAIT_SECONDS = 2
+# Before the drift cell's forced proposal: wait (bounded) until the drift's Deployment stops changing.
+DRIFT_SETTLE_SECONDS = 30
+DRIFT_SETTLE_POLL_SECONDS = 2
 
 
 def owner_label(name):
@@ -561,6 +564,7 @@ class ChaosRecoveryMixin(ScenarioScoringMixin):
             guard = (entry or {}).get("guard_result") or {}
             unchanged = fingerprint(before["spec"]["template"]) == fingerprint(after["spec"]["template"])
             if (result["status"] == "CONFLICT" and not guard and stats["write_attempts"] == 0 and unchanged
+                    and result.get("resource_version") != proposal["based_on_resource_version"]
                     and attempt < FORCED_STALE_RETRIES):
                 stale.append({"action_id": proposal["action_id"], "executor_status": result["status"],
                               "based_on_resource_version": proposal["based_on_resource_version"],
@@ -591,6 +595,31 @@ class ChaosRecoveryMixin(ScenarioScoringMixin):
                    action_id=proposal["action_id"])
         return proof
 
+    def settle_deployment(self):
+        """Wait, at most DRIFT_SETTLE_SECONDS, until two reads DRIFT_SETTLE_POLL_SECONDS apart show the same
+        resourceVersion and the controller has observed the current generation.
+
+        The drift's rollout keeps updating the Deployment for a while; a forced
+        proposal read during that time can go stale before the Executor reads
+        it. Not settling is recorded, not fatal: forced_refusal still retries a
+        stale read, and a version that keeps moving still fails the cell.
+        """
+        started = time.monotonic()
+        previous = self.deployment()
+        reads = 1
+        while True:
+            time.sleep(DRIFT_SETTLE_POLL_SECONDS)
+            current = self.deployment()
+            reads += 1
+            metadata, status = current["metadata"], current.get("status") or {}
+            observed = status.get("observedGeneration")
+            if (metadata["resourceVersion"] == previous["metadata"]["resourceVersion"]
+                    and (observed is None or observed == metadata["generation"])):
+                return {"settled": True, "reads": reads, "resource_version": metadata["resourceVersion"]}
+            if time.monotonic() - started >= DRIFT_SETTLE_SECONDS:
+                return {"settled": False, "reads": reads, "resource_version": metadata["resourceVersion"]}
+            previous = current
+
     def drift_refusal(self):
         """The drift cell: inject R1's template fault, refuse a forced RESTART (0 writes), then restore."""
         self.kubectl("rollout", "status", "deployment/" + self.name, "--timeout=180s", timeout=200)
@@ -599,6 +628,7 @@ class ChaosRecoveryMixin(ScenarioScoringMixin):
         self.kubectl(*scenarios.set_env_argv(self.name, injection["container"], injection["env"], injection["value"]))
         incident = {"incident_id": "INC-FORCED-DRIFT-" + uuid4().hex[:12].upper()}
         try:
+            self.summary["drift_settle"] = self.settle_deployment()
             self.forced_refusal(incident, "RESTART", FORCED[("drift", "RESTART")], "forced-restart-drift")
         finally:
             self.administrator_restore("drift-restore-patch.json")

@@ -167,7 +167,11 @@ What the harness (`experiments/boutique/harness/chaos_recovery.py`) does:
   move the Deployment's resourceVersion between the forced proposal's read
   and the Executor's. The Executor then answers CONFLICT before any Guard
   check, so nothing was refused. This happened in the first live N2 trial.
-  Only that answer (CONFLICT with no Guard result and no write) is retried
+  The cell now first waits, for at most 30 s, until two reads 2 s apart
+  show the same resourceVersion and the observed generation is current.
+  The result is recorded as `drift_settle` in `summary.json`. Only that
+  answer (CONFLICT with no Guard result, no write and a resourceVersion
+  that really moved) is retried
   with a fresh proposal, at most three more times, 2 s apart. Each stale
   attempt is kept under `stale_resource_version_attempts` in the proof. A
   version that keeps moving still fails the cell.
