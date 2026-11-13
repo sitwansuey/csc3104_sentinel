@@ -17,7 +17,8 @@ from unittest.mock import patch
 from experiments.boutique.harness.connected import APPLICATIONS, UPSTREAM, UPSTREAM_SHA256, service_ports
 from runtime.security_store import import_inspections, recent, update_alert
 from scripts.security import network_policy
-from scripts.security.boutique_security_manifest import CALLERS, NAMESPACE, caller_config, overlay, proxy_config
+from scripts.security.boutique_security_manifest import (CALLERS, NAMESPACE, VERIFIER_IDENTITY, VERIFIER_PROBE_APP,
+                                                          caller_config, overlay, proxy_config)
 from scripts.security.security_lab import ROUTES
 from services.grpc_inspection import ROUTE_METHODS
 from scripts.test_boutique_live import BoutiqueExperiment
@@ -138,15 +139,22 @@ class ConnectedSecurityTests(unittest.TestCase):
             self.assertEqual(policies[target]["ingress"], [{"from": [{"podSelector": {"matchLabels": {"app": caller}}}],
                                                          "ports": [{"protocol": "TCP", "port": port}]}])
         self.assertEqual(policies["security-gateway"]["ingress"], [{
-            "from": [{"podSelector": {"matchLabels": {"app": name}}} for name in (*CALLERS, "security-test")],
+            "from": [{"podSelector": {"matchLabels": {"app": name}}} for name in (*CALLERS, "security-test", VERIFIER_PROBE_APP)],
             "ports": [{"protocol": "TCP", "port": 8443}, {"protocol": "TCP", "port": 8445}]}])
-        self.assertEqual(len(policies), 3)
+        # P5.05: the Verifier's probe Pods send only DNS and the gateway's two route ports.
+        self.assertEqual(policies[VERIFIER_PROBE_APP]["policyTypes"], ["Egress"])
+        self.assertEqual(policies[VERIFIER_PROBE_APP]["egress"][1], {
+            "to": [{"podSelector": {"matchLabels": {"app": "security-gateway"}}}],
+            "ports": [{"protocol": "TCP", "port": 8443}, {"protocol": "TCP", "port": 8445}]})
+        self.assertEqual(policies[VERIFIER_PROBE_APP]["egress"][0], network_policy.DNS_RULE)
+        self.assertEqual(len(policies), 4)
         cluster = proxy_config(True)["static_resources"]["clusters"][0]
         self.assertEqual(cluster["load_assignment"]["endpoints"][0]["lb_endpoints"][0]["endpoint"]["address"]["socket_address"]["address"],"127.0.0.1")
 
     def test_tls_server_checks_peer_identity_in_addition_to_ca(self):
         for route in ROUTES:
-            for upstream, names in ((False, {"frontend-client.internal", "checkoutservice-client.internal", "client.internal"}),
+            for upstream, names in ((False, {"frontend-client.internal", "checkoutservice-client.internal", "client.internal",
+                                             VERIFIER_IDENTITY + ".internal"}),
                                     (True, {"proxy-client.internal"})):
                 config = proxy_config(upstream, route=route)
                 tls = config["static_resources"]["listeners"][0]["filter_chains"][0]["transport_socket"]["typed_config"]
@@ -154,6 +162,21 @@ class ConnectedSecurityTests(unittest.TestCase):
                     self.assertTrue(tls["require_client_certificate"])
                     sans = tls["common_tls_context"]["validation_context"]["match_typed_subject_alt_names"]
                     self.assertEqual({san["matcher"]["exact"] for san in sans}, names)
+
+    def test_the_verifier_identity_is_accepted_at_the_gateway_only(self):
+        # P5.05: the authenticated Verifier probe enters through the gateway like a real caller; no
+        # service's own TLS sidecar accepts it, so it can never skip the inspector.
+        result = overlay(base(), envoy_image="envoy", inspector_image="inspector")
+        verifier = VERIFIER_IDENTITY + ".internal"
+
+        def accepted(name):
+            return [verifier in {san["matcher"]["exact"] for san in listener["filter_chains"][0]["transport_socket"]
+                                 ["typed_config"]["common_tls_context"]["validation_context"]["match_typed_subject_alt_names"]}
+                    for listener in envoy_json(result, name)["listeners"]]
+        self.assertEqual(accepted("security-gateway"), [True, True])
+        for name in ("security-upstream", "security-cart-upstream"):
+            with self.subTest(sidecar=name):
+                self.assertEqual(accepted(name), [False])
 
     def test_changed_upstream_caller_configuration_requires_review(self):
         for index, change in ((0, []), (1, [{"name": "SHIPPING_SERVICE_ADDR", "value": "shippingservice:50051"}]),
@@ -877,12 +900,13 @@ class SecurityLabMatrixWiringTests(unittest.TestCase):
             lab.network_matrix(Path(folder), True)
         self.assertEqual(seen["items"], lab_items())
         self.assertEqual(seen["items"], [item for item in manifest["items"] if item["kind"] == "NetworkPolicy"])
-        # protect-shippingservice, -cartservice and -security-gateway, plus 16 graph-derived policies
-        # (no ingress-cartservice since P5.04: protect-cartservice owns cart's ingress).
-        self.assertEqual(len(seen["items"]), 3 + 16)
+        # protect-shippingservice, -cartservice and -security-gateway, the Verifier probe's egress (P5.05),
+        # plus 16 graph-derived policies (no ingress-cartservice since P5.04: protect-cartservice owns cart's ingress).
+        self.assertEqual(len(seen["items"]), 4 + 16)
         self.assertEqual(seen["policy_drift"], [])
         self.assertIn("app-security-test", {source["id"] for source in seen["sources"]})
         self.assertIn("probe-cartservice", {source["id"] for source in seen["sources"]})
+        self.assertIn("app-" + VERIFIER_PROBE_APP, {source["id"] for source in seen["sources"]})
         self.assertTrue(seen["journey_passed"])
 
     def matrix(self, manifest, cluster):
@@ -951,8 +975,10 @@ class FakeLab:
 
     def probe(self, directory, **kwargs):
         self.probes.append(kwargs)
-        # Only the authenticated valid call of each route through a running gateway succeeds.
-        return {"succeeded": set(kwargs) <= {"route"} and self.gateway_up, "output": ""}
+        # Only the authenticated valid call of each route through a running gateway succeeds,
+        # with the lab's client identity or the Verifier's (P5.05).
+        valid = set(kwargs) <= {"route"} or kwargs == {"identity": VERIFIER_IDENTITY}
+        return {"succeeded": valid and self.gateway_up, "output": ""}
 
 
 class SecurityLabValidationTests(unittest.TestCase):
@@ -982,7 +1008,9 @@ class SecurityLabValidationTests(unittest.TestCase):
         self.assertIsNone(error)
         self.assertIs(saved["passed"], True)
         self.assertEqual(saved["network_matrix"], {"status": "PASS"})
-        self.assertEqual(len(fake.probes), 9 + 9)
+        self.assertEqual(len(fake.probes), 10 + 9)
+        self.assertIn({"identity": VERIFIER_IDENTITY}, fake.probes)
+        self.assertTrue(saved["verifier_identity_quote"]["succeeded"])
         cart = [probe for probe in fake.probes if probe.get("route") == "cart"]
         self.assertEqual(len(cart), 9)
         self.assertIn({"route": "cart", "quantity": 11}, cart)
@@ -1164,8 +1192,9 @@ class SecurityLabPrepareTests(unittest.TestCase):
             return SimpleNamespace(stdout="", returncode=0)
 
         def certificates(pki, **kwargs):
+            self.assertIn(VERIFIER_IDENTITY, kwargs["extra_clients"])
             for identity in ("gateway", "upstream", "cart-upstream", "proxy-client", "client", "frontend-client",
-                             "checkoutservice-client"):
+                             "checkoutservice-client", VERIFIER_IDENTITY):
                 (pki / identity).mkdir()
                 for name in ("ca.crt", "tls.crt", "tls.key"):
                     (pki / identity / name).write_bytes(b"test")
@@ -1214,6 +1243,7 @@ class SecurityLabPrepareTests(unittest.TestCase):
         self.assertIn("service CartService", proto["data"]["cart.proto"])
         # The cart sidecar's identity Secret is applied like the others; it never enters manifest.json.
         self.assertIn("cart-upstream.json", applied)
+        self.assertIn(VERIFIER_IDENTITY + ".json", applied)
         self.assertNotIn("Secret", {item["kind"] for item in manifest["items"]})
         cart = next(item for item in manifest["items"] if item["kind"] == "Deployment"
                     and item["metadata"]["name"] == "cartservice")["spec"]["template"]["spec"]

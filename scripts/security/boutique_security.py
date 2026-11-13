@@ -23,7 +23,8 @@ sys.path.insert(0, str(ROOT))
 from runtime.security_store import import_inspections
 from experiments.boutique.harness.connected import APPLICATIONS, UPSTREAM, UPSTREAM_SHA256, connected_manifest, decoded_resources, image_digest
 from experiments.boutique.harness.dashboard import BoutiqueDashboard
-from scripts.security.boutique_security_manifest import GATEWAY, GATEWAY_SERVICES, NAMESPACE, overlay, protect_policies
+from scripts.security.boutique_security_manifest import (GATEWAY, GATEWAY_SERVICES, NAMESPACE, VERIFIER_IDENTITY,
+                                                          VERIFIER_PROBE_APP, overlay, protect_policies)
 from scripts.security.network_policy import (MATRIX_IMAGE, MATRIX_LABEL, committed_security_policies, graph_from_manifest,
                                              matrix_destinations, matrix_sources, policy_differences, probe_targets,
                                              reviewed_security_policies, run_matrix)
@@ -37,7 +38,8 @@ CONTEXT = "kind-" + CLUSTER
 CALICO_URL = "https://raw.githubusercontent.com/projectcalico/calico/v3.33.0/manifests/calico.yaml"
 CALICO_SHA = "2de8f47595fb9c41b3f47d7b767a1f8e72ecf84057af834738ff12689a234da5"
 # The certificate identities whose Secrets the lab creates (never committed).
-IDENTITIES = ("gateway", "upstream", "cart-upstream", "proxy-client", "client", "frontend-client", "checkoutservice-client")
+IDENTITIES = ("gateway", "upstream", "cart-upstream", "proxy-client", "client", "frontend-client", "checkoutservice-client",
+              VERIFIER_IDENTITY)
 # The grpcurl probe per route: its schema file and the read-only RPC used for
 # a valid call. A cart probe with a quantity sends AddItem instead.
 PROBE_RPCS = {"shipping": ("shipping.proto", "hipstershop.ShippingService/GetQuote"),
@@ -124,7 +126,7 @@ def prepare(directory, candidate):
     node = setup_cluster(directory)
     pki = directory / "pki"
     pki.mkdir(mode=0o700)
-    certificates(pki, extra_clients=("frontend-client", "checkoutservice-client"))
+    certificates(pki, extra_clients=("frontend-client", "checkoutservice-client", VERIFIER_IDENTITY))
     if hashlib.sha256(UPSTREAM.read_bytes()).hexdigest() != UPSTREAM_SHA256:
         raise ValueError("Pinned Boutique manifest checksum changed")
     resources = decoded_resources(kube("create", "--dry-run=client", "--validate=false", "-f", UPSTREAM, "-o", "json").stdout)
@@ -206,7 +208,7 @@ def probe_call(route="shipping", quantity=None):
 
 
 def probe(directory, *, route="shipping", quantity=None, target=None, secure=True, certificate=True, identity="client"):
-    if identity not in {"client", "proxy-client"}:
+    if identity not in {"client", "proxy-client", VERIFIER_IDENTITY}:
         raise ValueError("Only the lab's test identities may be used")
     schema, method, request = probe_call(route, quantity)
     target = target or f"{GATEWAY_SERVICES[route]}:{ROUTES[route]['gateway_port']}"
@@ -283,7 +285,7 @@ def network_matrix(directory, journey_passed):
     manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
     reviewed = protect_policies() + committed_security_policies()
     applied = [item for item in manifest["items"] if item["kind"] == "NetworkPolicy"]
-    sources = matrix_sources(APPLICATIONS | {GATEWAY[0]}, probe_targets(), extra=("security-test",))
+    sources = matrix_sources(APPLICATIONS | {GATEWAY[0]}, probe_targets(), extra=("security-test", VERIFIER_PROBE_APP))
     return run_matrix(lambda *args: command(["kubectl", "--context=" + CONTEXT, *args], required=False, timeout=60),
                       directory, namespace=NAMESPACE, items=reviewed, sources=sources,
                       destinations=matrix_destinations(manifest), journey_passed=journey_passed,
@@ -296,7 +298,7 @@ def workload(app):
 
 
 # The probes that must succeed, and those that must fail, for a passing run.
-ALLOWED_PROBES = ("valid_mtls_quote", "valid_mtls_cart")
+ALLOWED_PROBES = ("valid_mtls_quote", "valid_mtls_cart", "verifier_identity_quote")
 DENIED_PROBES = ("invalid_quantity", "missing_client_certificate", "wrong_client_identity", "direct_service_bypass",
                  "direct_pod_ip_bypass", "direct_egress_bypass", "proxy_outage", "outage_direct_bypass",
                  "cart_invalid_quantity", "cart_missing_client_certificate", "cart_wrong_client_identity",
@@ -326,6 +328,8 @@ def validate(directory, storefront):
     summary["network_matrix"] = network_matrix(directory, summary["shopping_and_checkout"]["passed"])["verdict"]
     save(directory / "validation.json", summary)
     summary["valid_mtls_quote"] = probe(directory)
+    # P5.05: the Verifier's client identity is accepted at the gateway (its SAN is allowlisted there).
+    summary["verifier_identity_quote"] = probe(directory, identity=VERIFIER_IDENTITY)
     summary["invalid_quantity"] = probe(directory, quantity=101)
     summary["missing_client_certificate"] = probe(directory, certificate=False)
     summary["wrong_client_identity"] = probe(directory, identity="proxy-client")
