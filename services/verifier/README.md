@@ -30,16 +30,19 @@ The live collector records with each reading the Deployment's `generation`,
 (`status.replicas`), bounded integers from the same consistent Deployment read
 as the readiness counts, and none of them when that read failed. Inside the
 grace, a reading with no response (no HTTP status, no gRPC status and check, no
-Redis reply), 0 ready and 0 available replicas and those counts is judged as an
-unhealthy reading rather than missing evidence
-(`core.py::_awaiting_rollout`): with no replica available the rollout has not
-finished. Everything else about it must still be complete (identity,
+Redis reply), 0 ready and 0 available replicas and counts that show the new
+template not yet in place (`observed_generation` below `generation`, or
+`updated_replicas` below `desired_replicas`, which includes no Pod at all) is
+judged as an unhealthy reading rather than missing evidence
+(`core.py::_awaiting_rollout`). A silent reading once the generation is
+observed and every desired Pod of the new template exists stays missing
+evidence: that Pod is there and does not answer. Everything else about it must still be complete (identity,
 timestamp, approved template, `configuration_stable`, dependency evidence), and
 the rule above is otherwise unchanged; the outcome names the cause `service not
 answering during rollout`. Readings without the counts, from any other
 collector, are judged as before. Starting the first reading only after the new
-generation was observed and an updated Pod existed was rejected: such a Pod
-need not answer yet, the wait would leave no reading in the store or the log,
+generation was observed and an updated Pod existed was rejected: it covers no
+more than this rule (an updated Pod need not answer yet), the wait would leave no reading in the store or the log,
 and it would put judgement in the sampling loop
 ([argument](../../docs/distributed-acceptance.md#third-deployment-recreate-and-conflicts)).
 

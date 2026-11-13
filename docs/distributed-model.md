@@ -521,16 +521,32 @@ made the whole window UNKNOWN although every later reading was healthy.
 The live collector now records the rollout counts with each reading
 (`generation`, `observed_generation`, `updated_replicas`, `total_replicas`),
 and inside the convergence grace a reading with no response, no ready or
-available replica and those counts counts as unhealthy, not as missing
-evidence (`services/verifier/core.py::_awaiting_rollout`). It can then be
-set aside like any leading unhealthy reading, under the same conditions:
+available replica and counts that show the new template not yet in place
+counts as unhealthy, not as missing evidence
+(`services/verifier/core.py::_awaiting_rollout`). The test is
+`observed_generation < generation` or `updated_replicas < desired_replicas`.
+The first says the controller has not yet acted on the write, so every count
+still describes the old spec. The second says fewer Pods of the new template
+exist than the spec asks for; it includes no Pod at all, because
+`updatedReplicas` counts a subset of `status.replicas` and the desired count
+is at least 1, and that is what a Recreate rollout reports between the old
+Pod going and the new one starting (updated 0, total 0). Once the generation
+is observed and every desired Pod of the new template exists, a silent
+reading is about a Pod that is there and does not answer (still starting,
+failing its probe, crash-looping), so it stays missing evidence; that is why
+the remaining test of `kubectl rollout status` (available below updated) is
+left out, at the cost that a first reading landing in a new Pod's start-up
+seconds still leaves the window UNKNOWN. Counts that contradict each other
+(more updated Pods than Pods) never qualify. A qualifying reading can then
+be set aside like any leading unhealthy reading, under the same conditions:
 leading, inside the grace, the rest of the window trustworthy, the readings
 after it passing every rule alone. Identity, timestamp, template,
 `configuration_stable`, dependency evidence and a failed Deployment read
 still count; so do a relapse and any reading after the grace. The other
 option, not starting the first reading until the new generation is observed
-and an updated Pod exists, was rejected: an updated Pod that exists does not
-yet answer, the wait would leave no evidence in the store or the log, and it
+and an updated Pod exists, was rejected: it would cover no more than this
+rule (a Pod that exists but does not answer yet stays missing evidence under
+both), the wait would leave no evidence in the store or the log, and it
 would move judgement into the sampling loop
 (`docs/distributed-acceptance.md` gives the full argument). Not yet run live.
 

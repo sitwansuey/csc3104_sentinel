@@ -628,18 +628,29 @@ What changed (offline):
   (`services/verifier/live.py::LiveEvidenceCollector._snapshot`); a failed or
   changing read records none of them. Inside `convergence_grace_seconds`, a
   reading with no response (no HTTP status, no gRPC status and check, no
-  Redis reply), 0 ready and 0 available replicas and those counts is judged
-  as the unhealthy reading it is: with no replica available the rollout has
-  not finished by the test `kubectl rollout status` applies
-  (`services/verifier/core.py::_awaiting_rollout`). Every other fact of that
+  Redis reply), 0 ready and 0 available replicas and counts that show the new
+  template not yet in place is judged as the unhealthy reading it is:
+  `observed_generation` below `generation` (the controller has not yet acted
+  on the write) or `updated_replicas` below `desired_replicas` (fewer Pods of
+  the new template than the spec asks for, which includes no Pod at all, the
+  updated 0 / total 0 a Recreate rollout reports before the new Pod starts)
+  (`services/verifier/core.py::_awaiting_rollout`). Once the generation is
+  observed and every desired Pod of the new template exists, a silent reading
+  is about a Pod that is there and does not answer, so it stays missing
+  evidence; the remaining test of `kubectl rollout status` (available below
+  updated) is left out for that reason, and counts that contradict each other
+  never qualify. Every other fact of that
   reading must still be complete and right (target identity, timestamp,
   approved template, `configuration_stable`, dependency evidence); the rest
   of the grace rule is unchanged: only a leading run inside the grace is set
   aside, only when the readings after it alone pass every rule, a relapse
   counts, readings after the grace count, and the outcome's `convergence`
-  check names the cause (`service not answering during rollout`). A target
-  that never answers, or answers unhealthy, still ends UNKNOWN as before
-  (NEEDS_REVIEW). A reading from a collector that does not record the counts
+  check names the cause (`service not answering during rollout`). When the
+  readings after the set-aside run do not recover, the verdict is the strict
+  one on the readings as they are, as before: UNKNOWN (NEEDS_REVIEW) for a
+  target that never answers or that answers unhealthy after a silent reading,
+  NOT_RECOVERED for one that answers unhealthy at every reading. A reading
+  from a collector that does not record the counts
   (the Boutique harness and file mode) is judged exactly as before.
 - **The Coordinator: a CONFLICT that provably wrote nothing is re-planned.**
   The Executor's CONFLICT result now carries an optional `conflict` record
@@ -669,10 +680,11 @@ Why these and not the alternatives:
 
 - *Wait before the first reading instead* (start sampling only once the
   controller has observed the new generation and an updated Pod exists,
-  bounded by the grace). Rejected. In r1 that would not have been enough: an
-  updated Pod that exists is not yet one that answers, so the first reading
-  can still find no response; waiting for an answering Pod is waiting for
-  health, which is the verdict's job, not a precondition's. It would also
+  bounded by the grace). Rejected. It would cover no more than the rule
+  above: after the wait the first reading can still find an updated Pod that
+  does not answer yet, which both leave as missing evidence, and waiting for
+  an answering Pod is waiting for health, which is the verdict's job, not a
+  precondition's. It would also
   move part of the judgement into the sampling loop
   (`runtime/remote_adapters.py::VerifierAdapter._sample`), where the fixed
   deadline, the lease checks and the restart-from-saved-readings live, and
@@ -726,9 +738,12 @@ Tests: `tests/test_verifier_rollout.py` (the r1 readings, saved by
 verifier-1, recover once the Pod-less reading carries its rollout counts
 and stay UNKNOWN without them; the same timeline through the real delivery
 layer, `RemoteWorker` and `VerifierAdapter`; every other gap in the silent
-reading still counts; a silent reading after the grace or after a healthy one
-counts; a target that never answers or answers 503 ends UNKNOWN; gRPC and
-Redis; the collector's counts) and `tests/test_conflict_replan.py` (r3 and r2
+reading still counts; a silent reading once every desired Pod of the new
+template exists, or with contradictory counts, still counts, and each sign of
+an unfinished rollout alone is enough; a silent reading after the grace or
+after a healthy one counts; a target that never answers, or answers 503 after
+a silent start, ends UNKNOWN, and one answering 503 throughout NOT_RECOVERED;
+gRPC and Redis; the collector's counts) and `tests/test_conflict_replan.py` (r3 and r2
 over loopback HTTP with the real Planner, Guard and Executor workers: the
 CONFLICT is re-planned on the version the Executor read, approved again and
 repaired with one write; a spec change before or inside the patch, a

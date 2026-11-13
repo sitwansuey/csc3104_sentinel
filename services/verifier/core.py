@@ -353,17 +353,28 @@ def _awaiting_rollout(sample, rules, limit):
 
     The service gave no response (no HTTP status, no gRPC status and check,
     no Redis reply), and the reading's own Deployment read says why: no
-    replica is ready or available. The reading must also carry the rollout
-    counts (ROLLOUT_FIELDS) as non-negative integers, which the collector
-    records only from a whole, consistent Deployment read; with no replica
-    available the rollout has not finished by the test `kubectl rollout
-    status` applies (observedGeneration at the generation, updated, total and
-    available replicas at the desired count), whichever of those still lags. A
-    Recreate rollout leaves the target with no Pod for some seconds after the
-    write, so the first reading can fall there. Every other fact is still
-    checked by _assess (identity, timestamps, template, configuration_stable,
-    dependencies). A reading whose Deployment read failed has no counts and
-    never qualifies, nor does a silent target with a ready replica.
+    replica is ready or available, and the rollout counts (ROLLOUT_FIELDS,
+    non-negative integers the collector records only from a whole,
+    consistent Deployment read) show the new template not yet in place:
+
+        observed_generation < generation  or  updated_replicas < desired_replicas
+
+    The first means the controller has not yet acted on the write, so every
+    count still describes the old spec. The second means fewer Pods of the
+    new template exist than the spec asks for; it also covers no Pod at all
+    (total_replicas 0), since updatedReplicas counts a subset of
+    status.replicas and desired is at least 1. A Recreate rollout leaves the
+    target with no Pod for some seconds after the write (updated 0, total 0),
+    so the first reading can fall there. Once the generation is observed and
+    every desired Pod of the new template exists, a silent reading is about
+    a Pod that is there and does not answer (still starting, failing its
+    probe, crash-looping): that stays missing evidence, which is why the
+    test `kubectl rollout status` also applies (available below updated) is
+    left out. Counts that contradict each other (more updated Pods than
+    Pods) never qualify. Every other fact is still checked by _assess
+    (identity, timestamps, template, configuration_stable, dependencies). A
+    reading whose Deployment read failed has no counts and never qualifies,
+    nor does a silent target with a ready or available replica.
     """
     if not isinstance(sample, dict) or sample.get("protocol", "http") != rules["protocol"]:
         return False
@@ -382,8 +393,10 @@ def _awaiting_rollout(sample, rules, limit):
     available = sample.get("available_replicas", 0 if not rules.get("require_available_replicas") else None)
     if not silent or any(type(value) is not int or value < 0 for value in (*counts, available)):
         return False
-    desired, ready, generation = counts[:3]
-    return desired >= 1 and generation >= 1 and ready == 0 and available == 0
+    desired, ready, generation, observed, updated, total = counts
+    if desired < 1 or generation < 1 or ready != 0 or available != 0 or updated > total:
+        return False
+    return observed < generation or updated < desired
 
 
 def verify(execution: dict, samples: list[dict], policy: dict, *, final: bool = True) -> dict:

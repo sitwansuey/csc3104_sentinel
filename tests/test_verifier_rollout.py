@@ -11,7 +11,8 @@ leading readings, and one incomplete reading kept the whole window UNKNOWN.
 
 The collector now records the Deployment's rollout counts with each reading,
 and inside the grace a reading with no response, no ready or available
-replica and those counts is judged as the unhealthy reading it is
+replica and counts showing the new template not yet in place is judged as
+the unhealthy reading it is
 (services/verifier/core.py::_awaiting_rollout). Everything else about it must
 still be complete. At b9e4ddb RecreateTimelineTests and the live readings in
 LiveReadingsTests give UNKNOWN / NEEDS_REVIEW.
@@ -52,14 +53,20 @@ def execution(recorded_at="2026-11-13T16:39:54.621009Z"):
 
 
 def reading(at, *, answered=True, facts=True, **changes):
-    """One reading as the live collector builds it for demo-api; answered=False is the Pod-less one."""
+    """One reading as the live collector builds it for demo-api; answered=False is the Pod-less one.
+
+    The Pod-less reading carries what a Recreate rollout reports once the old
+    Pod is gone and before the new one exists: the generation observed, no
+    updated Pod and no Pod at all (updated_replicas 0, total_replicas 0).
+    """
     row = {"at": at, "service": "demo-api", "target": deepcopy(TARGET),
            "http_status": 200 if answered else None, "ready_replicas": 1 if answered else 0,
            "desired_replicas": 1, "available_replicas": 1 if answered else 0,
            "template_sha256": "b" * 64, "configuration_stable": True, "dependencies": {},
            "source": "live_verifier", "dependency_unknowns": []}
     if facts:
-        row.update(generation=4, observed_generation=4, updated_replicas=1, total_replicas=1 if answered else 0)
+        pods = 1 if answered else 0
+        row.update(generation=4, observed_generation=4, updated_replicas=pods, total_replicas=pods)
     row.update(changes)
     return row
 
@@ -139,6 +146,42 @@ class LiveReadingsTests(unittest.TestCase):
                     self.assertEqual(result["status"], "UNKNOWN")
                     self.assertTrue(convergence(result)["detail"].startswith("No reading was excluded"))
 
+    def test_a_silent_reading_once_the_rollout_has_settled_still_counts(self):
+        """Generation observed and every desired Pod of the new template there: its silence is missing evidence."""
+        settled = {
+            "the new Pod exists but does not answer": {"updated_replicas": 1, "total_replicas": 1},
+            "an old Pod is still counted beside it": {"updated_replicas": 1, "total_replicas": 2},
+            "counts that contradict each other": {"updated_replicas": 1, "total_replicas": 0},
+            "contradictory even while unobserved": {"observed_generation": 3, "updated_replicas": 1,
+                                                    "total_replicas": 0},
+        }
+        for label, change in settled.items():
+            rows = live_readings()
+            rows[0].update(change)
+            for final in (True, False):
+                with self.subTest(label, final=final):
+                    result = verify(self.execution, rows, self.policy, final=final)
+                    self.assertEqual(result["status"], "UNKNOWN")
+                    self.assertEqual([check["name"] for check in result["checks"] if not check["passed"]],
+                                     ["service_health"])
+                    self.assertTrue(convergence(result)["detail"].startswith("No reading was excluded"))
+
+    def test_each_sign_of_an_unfinished_rollout_alone_is_enough(self):
+        """observed_generation < generation, or updated_replicas < desired_replicas (no Pod at all included)."""
+        unfinished = {
+            "the write not yet observed": {"observed_generation": 3, "updated_replicas": 1, "total_replicas": 1},
+            "an old Pod but no updated one": {"updated_replicas": 0, "total_replicas": 1},
+            "no Pod at all (Recreate)": {"updated_replicas": 0, "total_replicas": 0},
+        }
+        for label, change in unfinished.items():
+            rows = live_readings()
+            rows[0].update(change)
+            for final in (True, False):
+                with self.subTest(label, final=final):
+                    result = verify(self.execution, rows, self.policy, final=final)
+                    self.assertEqual(result["status"], "RECOVERED")
+                    self.assertIn("(" + AWAITING_ROLLOUT_CAUSE + ")", convergence(result)["detail"])
+
     def test_an_unstamped_or_reordered_silent_reading_still_counts(self):
         for at in (None, "2026-11-13T16:40:00", "2026-11-13T16:39:50Z", "2026-11-13T16:40:07.712259Z"):
             with self.subTest(at=at):
@@ -155,16 +198,20 @@ class LiveReadingsTests(unittest.TestCase):
             with self.subTest(relapse=True, final=final):
                 self.assertEqual(verify(self.execution, rows, self.policy, final=final)["status"], "UNKNOWN")
 
-    def test_a_silent_target_that_never_answers_or_answers_unhealthy_ends_as_today(self):
+    def test_a_target_that_never_recovers_keeps_the_strict_verdict(self):
         # Silent throughout, the last readings after the 60 s grace: UNKNOWN, as before the change.
         stamps = [datetime(2026, 11, 13, 16, 40, tzinfo=UTC) + timedelta(seconds=10 * index)
                   for index in range(9)]
         silent = [reading(at.isoformat().replace("+00:00", "Z"), answered=False) for at in stamps]
         self.assertEqual(verify(self.execution, silent, self.policy)["status"], "UNKNOWN")
         self.assertEqual(verify(self.execution, silent, self.policy, final=False)["status"], "UNKNOWN")
-        # A Pod that answers 503 after the silent start: still UNKNOWN, never RECOVERED.
-        unhealthy = silent[:1] + [dict(row, http_status=503, total_replicas=1) for row in silent[1:]]
+        # A Pod that answers 503 after the silent start: the silent reading is missing evidence, so UNKNOWN.
+        answering = {"http_status": 503, "updated_replicas": 1, "total_replicas": 1}
+        unhealthy = silent[:1] + [dict(row, **answering) for row in silent[1:]]
         self.assertEqual(verify(self.execution, unhealthy, self.policy)["status"], "UNKNOWN")
+        # 503 from the first reading on: every reading is complete, so NOT_RECOVERED, as before.
+        answered = [dict(row, **answering) for row in silent]
+        self.assertEqual(verify(self.execution, answered, self.policy)["status"], "NOT_RECOVERED")
 
     def test_a_policy_without_grace_is_unchanged(self):
         policy = deepcopy(self.policy)
