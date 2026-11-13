@@ -69,7 +69,7 @@ is active for a workload, when an action is READY, and which command a worker
 may claim. Every change runs inside `BEGIN IMMEDIATE`, so SQLite admits one
 writer at a time (`services/coordinator/store.py:501-515::SQLiteStore.transaction::@contextmanager`).
 Each claim, renew and result also replays the outbox revocation rules inside
-the same transaction (`runtime/worker_transport.py:93-122::Delivery.transaction::@contextmanager`).
+the same transaction (`runtime/worker_transport.py:94-123::Delivery.transaction::@contextmanager`).
 
 If two writable Coordinators existed during a partition, each could admit a
 different proposal for the same workload, or move the same action to READY on
@@ -251,7 +251,7 @@ previous result of the same kind was accepted
 Its own timestamp is never compared with another process's. A result that
 answers an older request is refused even if it is stamped later, and the
 transport answers it with HTTP 409
-(`runtime/worker_transport.py:326::Delivery.finish::Result answers a superseded request`),
+(`runtime/worker_transport.py:327::Delivery.finish::Result answers a superseded request`),
 so the worker releases the delivery instead of resending it. Most such
 results never get that far: `services/coordinator/core.py::dispatch_pending`
 already retires a superseded request, and `finish` then answers 409.
@@ -269,7 +269,7 @@ so their tests are unchanged.
 | Guard ALLOW not older than the latest finding | Guard vs Verifier | The answered guard request was issued after the latest finding was accepted (`services/coordinator/core.py:193::_apply::_issued_after(store, answers, "dependency_result"`); the binding of the Guard report to that finding is unchanged | Nothing |
 | Finding newer than the stored one | Verifier vs Verifier | A finding answering a dependency request: that request is the newest. A finding pushed through `ingest`: timestamps are compared only when the same identity produced both (one clock); across identities the later acceptance wins (`services/coordinator/core.py:169::_apply::previous["producer"] == producer`) | One producer's clock must not step back |
 | Health window after the write | Verifier vs Executor (`window_start >= recorded_at`) | The answered verifier request was issued after the current execution was accepted (`services/coordinator/core.py:260::_apply::_issued_after(store, answers, "execution_result"`) | See the Verifier below |
-| Approval not before the Guard decision | Coordinator vs Guard | Not compared for a sequenced decision: AWAITING_APPROVAL already proves the decision was accepted first (`services/coordinator/core.py:459::approve::meta["answers"] is None`) | Nothing |
+| Approval not before the Guard decision | Coordinator vs Guard | Not compared for a sequenced decision: AWAITING_APPROVAL already proves the decision was accepted first (`services/coordinator/core.py:565::approve::meta["answers"] is None`) | Nothing |
 | Approval not from the future | Coordinator vs Guard or Executor | `approved_at > checked_at + ε` (`services/guard/core.py:159::_approval_reasons::approved_at > checked_at + skew`) | Skew up to ε is tolerated |
 | Approval expiry | Coordinator or operator vs Guard or Executor | Expired once `checked_at + ε >= expires_at` (`services/guard/core.py:161::_approval_reasons::checked_at + skew >= expires_at`), and a decision's `valid_until` ends ε before the expiry (`services/guard/decisions.py:314::_valid_until::-skew`) | An approval can end up to 2ε early, never late |
 | Finding not from the future | Verifier vs Guard or Executor | `checked_at > now + ε` is UNKNOWN (`services/guard/core.py:249::_evaluate_core::dependency_at > checked_at + skew`) | Skew up to ε is tolerated |
@@ -294,7 +294,7 @@ the skew between two processes:
 
 - The Executor's local Guard re-check runs with its own clock against an
   approval stamped by the Coordinator and a finding stamped by the Verifier
-  (`services/executor/core.py:537::execute::authorizer.validate`, which reads
+  (`services/executor/core.py:579::execute::authorizer.validate`, which reads
   the host clock in `runtime/live_executor.py::LiveGuardAuthorizer.validate`). With more than ε of
   skew it refuses, and the Executor reports FAILED with no write. The
   Coordinator now accepts that FAILED result in order, so the action ends
@@ -311,7 +311,7 @@ the skew between two processes:
   with the Executor in the loopback test and at offset 0 in S7.
 - An Executor host decides whether its own uncertain reconcile result is
   newer than a peer's by comparing their `recorded_at`
-  (`services/executor/core.py:502::unchanged_uncertainty::return mine <= theirs`). A wrong
+  (`services/executor/core.py:543::unchanged_uncertainty::return mine <= theirs`). A wrong
   answer only makes it retry the command or report one more uncertain
   result, which the Coordinator orders by sequence.
 
@@ -356,7 +356,7 @@ The bound is enforced, and fails closed, only where it is configured:
   `runtime/worker_service.py::poll`).
 - A Coordinator started with `--max-clock-skew-seconds` refuses a claim, with
   HTTP 409, from a worker whose latest reported estimate is missing or
-  outside the bound (`runtime/worker_transport.py:195::Delivery.claim::Worker clock skew exceeds the bound`).
+  outside the bound (`runtime/worker_transport.py:196::Delivery.claim::Worker clock skew exceeds the bound`).
 
 Without the setting, workers and the Coordinator measure and record the
 offset but do not refuse. What is guaranteed after a clock step: the worker
@@ -379,7 +379,7 @@ share one clock, so the only offset it has measured is the simulated one.
 **Leases use one clock.** Lease expiry and retry back-off are computed only
 from the Coordinator's clock (`runtime/worker_transport.py::Delivery.claim`).
 A claim and a renewal also answer `expires_in`, the lease length as a
-duration (`runtime/worker_transport.py:266::Delivery.renew::"expires_in": self.lease`), and the worker
+duration (`runtime/worker_transport.py:267::Delivery.renew::"expires_in": self.lease`), and the worker
 schedules renewal from it (`runtime/remote_worker.py::lease_duration`), so no
 lease decision compares the Coordinator's clock with a worker's. Only a
 Coordinator from before this change, which sends no `expires_in`, makes the
@@ -415,7 +415,7 @@ hour off.
 | A worker result and its acknowledgment commit together; a resend is a replay | Result digest stored on the receipt | `runtime/worker_transport.py::Delivery.finish` |
 | A worker never redoes finished work after a lost response | Result saved before it is sent | `runtime/remote_worker.py::RemoteWorker.once` |
 | Only the current lease holder can renew or report | Owner, role and lease token must match; renewal cannot revive finished or expired work | `runtime/worker_transport.py::Delivery.renew` |
-| The Kubernetes write happens at most once per action on one ledger | Write intent is journalled before the call; an unclear outcome is reconciled by reading, never by writing again, through a pure decision table | `services/executor/core.py:552-565::execute::start_write`, `services/executor/reconciliation.py::classify` |
+| The Kubernetes write happens at most once per action on one ledger | Write intent is journalled before the call; an unclear outcome is reconciled by reading, never by writing again, through a pure decision table | `services/executor/core.py:594-607::execute::start_write`, `services/executor/reconciliation.py::classify` |
 
 Tests: `tests/test_coordinator.py::CoordinatorTests.test_changed_payload_under_stable_id_is_rejected`,
 `tests/test_worker_transport.py::TransportTests.test_lost_result_response_recovers_exact_receipt_after_restart`,
@@ -509,6 +509,47 @@ checks the bound itself on fake records: more deliveries than the bound, or no
 Verifier command at all, does not match the expectation. None of this has run
 in kind mode yet.
 
+### A reading taken while a Recreate rollout has no Pod (P4.01)
+
+`demo-api` on sentinel-dist rolls out with `Recreate`, so after the
+Executor's write there are some seconds with no Pod. On 13 Nov 2026 (S0 r1 of
+the [third deployment](distributed-acceptance.md#third-deployment-recreate-and-conflicts))
+the Verifier's first reading fell there: no HTTP response, 0 ready and 0
+available replicas. It was incomplete evidence, and one incomplete reading
+made the whole window UNKNOWN although every later reading was healthy.
+
+The live collector now records the rollout counts with each reading
+(`generation`, `observed_generation`, `updated_replicas`, `total_replicas`),
+and inside the convergence grace a reading with no response, no ready or
+available replica and counts that show the new template not yet in place
+counts as unhealthy, not as missing evidence
+(`services/verifier/core.py::_awaiting_rollout`). The test is
+`observed_generation < generation` or `updated_replicas < desired_replicas`.
+The first says the controller has not yet acted on the write, so every count
+still describes the old spec. The second says fewer Pods of the new template
+exist than the spec asks for; it includes no Pod at all, because
+`updatedReplicas` counts a subset of `status.replicas` and the desired count
+is at least 1, and that is what a Recreate rollout reports between the old
+Pod going and the new one starting (updated 0, total 0). Once the generation
+is observed and every desired Pod of the new template exists, a silent
+reading is about a Pod that is there and does not answer (still starting,
+failing its probe, crash-looping), so it stays missing evidence; that is why
+the remaining test of `kubectl rollout status` (available below updated) is
+left out, at the cost that a first reading landing in a new Pod's start-up
+seconds still leaves the window UNKNOWN. Counts that contradict each other
+(more updated Pods than Pods) never qualify. A qualifying reading can then
+be set aside like any leading unhealthy reading, under the same conditions:
+leading, inside the grace, the rest of the window trustworthy, the readings
+after it passing every rule alone. Identity, timestamp, template,
+`configuration_stable`, dependency evidence and a failed Deployment read
+still count; so do a relapse and any reading after the grace. The other
+option, not starting the first reading until the new generation is observed
+and an updated Pod exists, was rejected: it would cover no more than this
+rule (a Pod that exists but does not answer yet stays missing evidence under
+both), the wait would leave no evidence in the store or the log, and it
+would move judgement into the sampling loop
+(`docs/distributed-acceptance.md` gives the full argument). Not yet run live.
+
 ## Fencing limits
 
 - A lease is a work-distribution hint held at the Coordinator. It is not a
@@ -529,7 +570,7 @@ in kind mode yet.
   resourceVersion test lets only one write land, and the loser finds this
   action's evidence annotation on the Deployment and reports APPLIED without
   writing
-  (`services/executor/core.py:531::execute::Another host may already have committed`).
+  (`services/executor/core.py:572::execute::Another host may already have committed`).
   The multi-process scenarios S1c and S2 run two Executor processes with
   separate ledgers and locks on one host and show this adoption; no run has
   used two Executors on separate machines.
@@ -755,6 +796,50 @@ doubt, backs off, and waits for its own command or a seal. The row is closed
 from the cluster's evidence alone, because that is what decides whether a
 write can still commit; and since every way the Coordinator abandons a
 claimed command now seals it, the cluster always ends up deciding the row.
+
+### A CONFLICT after the ALLOW is re-planned, not retried (P4.01)
+
+On sentinel-dist the Deployment controller writes the target's status at any
+moment of a `Recreate` rollout, so its resourceVersion can move between the
+Guard's ALLOW and the Executor's conditional patch. The Executor then refuses
+and writes nothing, which is correct, and on 13 Nov 2026 that ended two S0
+incidents FAILED ([third deployment](distributed-acceptance.md#third-deployment-recreate-and-conflicts)).
+
+The fix keeps the Executor as it is and lets the Coordinator re-plan
+(`services/coordinator/core.py::replan_after_conflict`), with the stale
+re-plan's budget (`--stale-replans`, shared over both causes) and its
+mechanism: a new proposal with a new action ID on the version the Executor
+read, a new Guard check and a new approval. It applies only when the
+Executor's result carries its `conflict` record
+(`services/executor/core.py::_conflict`), which it gives only when a read
+after refusing shows the same UID at a version other than the proposal's
+with no evidence or fence of the action, so no write of it committed or can
+ever commit; only when the generation in that record is the incident's
+`observed_generation`; only when the Executor reported nothing earlier on the
+action (no write ever in doubt), for the incident's active ROLLBACK, in the
+action's first approval cycle, with no revocation and no seal.
+
+Why not have the Executor re-read and re-guard. The proposal, its approval
+(bound to the proposal's digest), the ALLOW and the patch's precondition all
+name one version, V0, and reconciliation, the fence and the seal all rest on
+every write of an action testing that V0: once the version leaves V0, no
+write of the action can ever commit, which is also why
+`runtime/worker_transport.py` requires no seal after a CONFLICT. A retry at a
+newer version under the same action ID would need a decision and an approval
+nobody gave, and could commit after a holder or a seal had already declared
+the action unable to. A re-plan is a new action with its own version,
+journal rows, decision, approval and seal scope.
+
+Why the generation is enough. Kubernetes raises a Deployment's
+`metadata.generation` for any change to its spec or to its annotations made
+through the Deployment itself: this action's write (template plus evidence
+annotation), a fence's marker, an operator's fix. The controller's writes
+through the status subresource raise neither. So a generation equal to the
+incident's means only status changed since the incident: no write of this
+action landed and no newer spec would be overwritten by a ROLLBACK planned
+from the incident's evidence. If the spec changes after the Executor's read,
+the version moves again, the Guard refuses the re-planned proposal as stale,
+and the stale rule refuses to re-plan it (SPEC_CHANGED). Not yet run live.
 
 ## Multi-process fault runs on one host
 

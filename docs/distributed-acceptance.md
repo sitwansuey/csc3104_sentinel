@@ -507,7 +507,9 @@ successful rollback, while the rollback's own `Recreate` rollout has no Pod;
 that has not been seen here yet. A status write between a re-plan's ALLOW
 and the Executor's patch (for example the progress-deadline write) still
 makes the patch fail its resourceVersion test: the action ends FAILED and
-is not re-planned, so S0 can still end without a repair.
+is not re-planned, so S0 can still end without a repair. (That happened in
+the [third deployment](#third-deployment-recreate-and-conflicts), which
+changed it.)
 
 ### Second deployment: one pass, then runs that waited for nothing
 
@@ -578,6 +580,184 @@ harness the deployment above would be refused before injecting, because of
 `INC-ECED0043B19F`; it was left as it is, read only. The next live attempt
 deploys again into a new run directory (or lets an operator decide that
 incident first) and runs S0 several times in one deployment.
+
+### Third deployment: Recreate and conflicts
+
+On 13 Nov 2026 (16:38-16:45 UTC) the lab was deployed again, with run
+scoping fixed, and S0 was run three times in that deployment. The
+Coordinator's journal and messages, verifier-1's store and the Executors'
+logs, all read without writing, show:
+
+| Run | Incident opened (UTC), generation | What happened | Sentinel template writes | Incident ends |
+| --- | --- | --- | --- | --- |
+| r1 | 16:39:13, 3 | stale refusal, re-plan, approval, ALLOW, executor rolled back at 16:39:54 (generation 4) | 1 | NEEDS_REVIEW (outcome UNKNOWN) |
+| r2 | 16:42:30, 5 | approval, ALLOW at 16:42:41, executor-a: `CONFLICT` "Conditional write was refused without committing" at 16:42:44 | 0 | FAILED |
+| r3 | 16:43:48, 7 | approval, ALLOW at 16:43:55, executor-b: `CONFLICT` "Target identity or resource version changed" at 16:44:20 | 0 | FAILED |
+
+r1 repaired the target and was still not counted. verifier-1's first reading
+came 6 s after the write, during `demo-api`'s `Recreate` rollout, when no Pod
+existed: the HTTP probe got no response and the Deployment reported 0 ready
+and 0 available replicas. Every later reading, from +13 s to +84 s, was
+healthy, with the approved template. The outcome was UNKNOWN with only
+`service_health` failed. The convergence grace (60 s here) set aside only a
+leading run of complete, unhealthy readings, and it judged a start only when
+the whole window was otherwise complete (`services/verifier/core.py::verify`
+at b9e4ddb); a reading with no response is incomplete, not unhealthy, so the
+Pod-less reading kept the whole window UNKNOWN.
+
+r2 and r3 wrote nothing, correctly. Between the Guard's ALLOW and the
+Executor's patch the Deployment controller wrote the target's status again
+(the injected template's `Recreate` rollout and its progress condition), so
+the resourceVersion moved: in r3 the Executor's own read already showed
+43314 for a proposal on 43248, in r2 the adapter's read just before the
+patch refused it (the proposal was on 43022). The generation each incident
+observed (5 and 7) was still the target's until the operator's restore
+after the run (6 and 8 follow from those restores; read from the timeline,
+not from a recorded read). CONFLICT was final for the incident, so neither
+run repaired anything. The stale re-plan of the first live attempts covers a
+refusal by the Guard, not this one, as noted under
+[first live attempts](#first-live-attempts).
+
+What changed (offline):
+
+- **The Verifier: a reading during the rollout counts as not yet
+  converged.** The live collector records with every reading the
+  Deployment's `generation`, `observedGeneration`, `updatedReplicas` and
+  `status.replicas` (`total_replicas`), bounded integers from the same
+  consistent Deployment read as the readiness counts
+  (`services/verifier/live.py::LiveEvidenceCollector._snapshot`); a failed or
+  changing read records none of them. Inside `convergence_grace_seconds`, a
+  reading with no response (no HTTP status, no gRPC status and check, no
+  Redis reply), 0 ready and 0 available replicas and counts that show the new
+  template not yet in place is judged as the unhealthy reading it is:
+  `observed_generation` below `generation` (the controller has not yet acted
+  on the write) or `updated_replicas` below `desired_replicas` (fewer Pods of
+  the new template than the spec asks for, which includes no Pod at all, the
+  updated 0 / total 0 a Recreate rollout reports before the new Pod starts)
+  (`services/verifier/core.py::_awaiting_rollout`). Once the generation is
+  observed and every desired Pod of the new template exists, a silent reading
+  is about a Pod that is there and does not answer, so it stays missing
+  evidence; the remaining test of `kubectl rollout status` (available below
+  updated) is left out for that reason, and counts that contradict each other
+  never qualify. Every other fact of that
+  reading must still be complete and right (target identity, timestamp,
+  approved template, `configuration_stable`, dependency evidence); the rest
+  of the grace rule is unchanged: only a leading run inside the grace is set
+  aside, only when the readings after it alone pass every rule, a relapse
+  counts, readings after the grace count, and the outcome's `convergence`
+  check names the cause (`service not answering during rollout`). When the
+  readings after the set-aside run do not recover, the verdict is the strict
+  one on the readings as they are, as before: UNKNOWN (NEEDS_REVIEW) for a
+  target that never answers or that answers unhealthy after a silent reading,
+  NOT_RECOVERED for one that answers unhealthy at every reading. A reading
+  from a collector that does not record the counts
+  (the Boutique harness and file mode) is judged exactly as before.
+- **The Coordinator: a CONFLICT that provably wrote nothing is re-planned.**
+  The Executor's CONFLICT result now carries an optional `conflict` record
+  when, after refusing, it read the target and the decision table showed the
+  same UID at a version other than the proposal's, without this action's
+  evidence or fence: `basis` (NOT_SENT: it sent no write, its own read showed
+  another version; REFUSED: the adapter refused the patch's preconditions
+  without committing), the `resource_version` it read and the Deployment's
+  `generation` (`services/executor/core.py::_conflict`, contract in
+  `shared/contracts.py`). With `--stale-replans` above 0
+  (`replan_after_conflict`), the Coordinator then reopens the incident
+  (journal cause `conflict_replan`) and queues a `planner.request` carrying
+  that version and the cause `EXECUTOR_CONFLICT`, only for the incident's
+  active ROLLBACK, only when the generation read equals the incident's
+  `observed_generation`, only if the Executor reported nothing earlier on the
+  action (no write ever in doubt), only in the action's first approval cycle
+  (one approval at most, never revoked, one ALLOW) and only with no seal for
+  it; the budget is the stale re-plan's, shared over both causes. The new
+  proposal has a new action ID and a rationale that says why it was
+  re-planned; the Guard checks it against live state, the operator approves
+  it again and the Executor's patch tests its version. A CONFLICT without the
+  record (an older Executor, an unreadable target, a replaced target, a
+  write that was ever in doubt, FENCED included) stays final, as does any
+  CONFLICT with the default `--stale-replans=0`.
+
+Why these and not the alternatives:
+
+- *Wait before the first reading instead* (start sampling only once the
+  controller has observed the new generation and an updated Pod exists,
+  bounded by the grace). Rejected. It would cover no more than the rule
+  above: after the wait the first reading can still find an updated Pod that
+  does not answer yet, which both leave as missing evidence, and waiting for
+  an answering Pod is waiting for health, which is the verdict's job, not a
+  precondition's. It would also
+  move part of the judgement into the sampling loop
+  (`runtime/remote_adapters.py::VerifierAdapter._sample`), where the fixed
+  deadline, the lease checks and the restart-from-saved-readings live, and
+  the seconds spent waiting would leave no reading in the store or the log.
+  Judging the reading in `verify()`, a pure function, keeps every reading
+  saved and logged, keeps the decision in one place that the window tests
+  already cover exhaustively (`tests/test_verifier.py`), and discloses each
+  exclusion in the outcome.
+- *Let the Executor re-read and re-guard after a CONFLICT instead.* Rejected
+  as less safe. The proposal, its approval (bound to the proposal's digest),
+  the Guard's ALLOW (`validated_resource_version`) and the patch's
+  precondition all name one version, V0. Writing at a newer version under the
+  same action would need either a Guard decision and an approval for a
+  version no one approved, or an Executor that makes its own proposal. It
+  would also break what reconciliation, fencing and the seal rest on: every
+  write of an action tests the same V0, so once the version has left V0 no
+  write of the action can ever commit
+  (`services/executor/reconciliation.py`; `runtime/worker_transport.py` needs
+  no seal after a CONFLICT for that reason). A second write at V1 under the
+  same action ID could still commit after an earlier holder's result, or a
+  seal fenced at V0, had declared the action unable to commit. A re-plan is a
+  new action with its own version, journal row, Guard decision, approval and
+  seal scope, through a path already reviewed for the stale refusal.
+- *Why the generation is the right test.* Kubernetes raises a Deployment's
+  `metadata.generation` for any change to its spec or its annotations made
+  through the Deployment itself: this action's write (template and evidence
+  annotation), a fence's marker, an operator's fix. The controller's status
+  writes go through the status subresource and raise neither. Equal to the
+  incident's `observed_generation` means nothing but status changed since the
+  incident, so no write of this action (nor anyone's fix) landed, and a
+  ROLLBACK planned from the incident's evidence cannot overwrite a newer
+  spec. The re-planned proposal is bound to
+  the version the Executor read: if the spec changes after that read, the
+  version moves and the Guard refuses the proposal as stale, which the stale
+  rule then refuses to re-plan (SPEC_CHANGED).
+
+What it costs: each re-plan needs the operator's approval again, and on this
+lab the controller can still write status between a re-plan's ALLOW and its
+patch, so S0 can still end FAILED after the last re-plan (3 per incident,
+both causes together). How the other scenarios meet the rule (offline
+analysis, not run): S8 is unchanged (revoked, and sealed: final). In S7 a
+re-planned action meets the same clock refusal (FAILED, which is never
+re-planned), so it still ends FAILED with no write. In S3 a takeover holder
+that finds the first holder's write adopts it (APPLIED); one that reports
+CONFLICT with the record proves that write can no longer commit (the version
+left V0) and has not (the generation is the incident's), so a re-plan keeps
+S3's bound of at most one write. S1b, S1c, S2, S4 and S5 expect the one
+write they already make.
+
+Tests: `tests/test_verifier_rollout.py` (the r1 readings, saved by
+verifier-1, recover once the Pod-less reading carries its rollout counts
+and stay UNKNOWN without them; the same timeline through the real delivery
+layer, `RemoteWorker` and `VerifierAdapter`; every other gap in the silent
+reading still counts; a silent reading once every desired Pod of the new
+template exists, or with contradictory counts, still counts, and each sign of
+an unfinished rollout alone is enough; a silent reading after the grace or
+after a healthy one counts; a target that never answers, or answers 503 after
+a silent start, ends UNKNOWN, and one answering 503 throughout NOT_RECOVERED;
+gRPC and Redis; the collector's counts) and `tests/test_conflict_replan.py` (r3 and r2
+over loopback HTTP with the real Planner, Guard and Executor workers: the
+CONFLICT is re-planned on the version the Executor read, approved again and
+repaired with one write; a spec change before or inside the patch, a
+replaced target and the default setting leave it FAILED; the budget is
+shared with stale re-plans and every re-plan has its own Planner row; the
+Coordinator's rule declines without the record, for a moved spec or an
+unmoved version, after an earlier result, a revocation, a second approval
+or ALLOW, a seal, for a RESTART and past the budget; the Executor's record
+and the contract). At b9e4ddb the symptom tests end UNKNOWN / NEEDS_REVIEW
+(r1) and FAILED with no write (r2, r3).
+
+Still to run live: rebuild the Coordinator and worker images, deploy into a
+new run directory and run S0 several times in one deployment, then the
+other scenarios.
 
 ## Results
 
@@ -666,6 +846,10 @@ quoted. P4.02 adds the measured RTO and RPO table to the
   pipeline refuses a re-plan request, and an agent-mode re-plan says in its
   rationale that it is one. The tests of these conditions fail against the
   first version of the rule, which re-planned every stale refusal.
+- `tests/test_conflict_replan.py` and `tests/test_verifier_rollout.py`: the
+  third deployment's CONFLICTs (r2, r3) and its Pod-less first reading (r1),
+  as listed under
+  [third deployment](#third-deployment-recreate-and-conflicts).
 - `tests/test_kind_acceptance.py` also checks that S6 starts its operator
   only after its runner returns, while S0 approves from the start, and that
   `deploy` applies Sentinel without the workload and stops when the target's
