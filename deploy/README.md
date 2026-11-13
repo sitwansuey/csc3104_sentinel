@@ -32,6 +32,17 @@ docker build -f experiments/workloads/verifier-lab/Dockerfile -t sentinel-verifi
 
 The small `experiments/workloads/demo/` and `experiments/workloads/otel/` applications keep their own directories as build contexts. The security candidate Dockerfile and the shipping and cart protocol subsets live in `experiments/workloads/security/`; `scripts/security/build_security_candidate.py` prepares its upstream build context.
 
+## Guard reader (P5.05)
+
+`sentinel/guard-reader-rbac.yaml` is the protected security lab's Guard-reader
+identity: get on exactly the ConfigMap and Secret that the protected
+shippingservice template references, so the Executor's Role never needs to
+read a Secret (#69). It is generated, not hand-written:
+`python scripts/security/protected_recovery.py rbac --check` fails when it no
+longer matches the reviewed template. The protected harness applies it; it has
+not been applied to a live cluster yet. See
+[security](../docs/security.md#protected-recovery-p505).
+
 ## Executor admission policy
 
 RBAC limits the Executor to get and patch on the Deployments its Role names

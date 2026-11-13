@@ -112,7 +112,7 @@
         {"at": "runtime/approval_session.py:106", "text": "secrets.token_urlsafe(48)"},
         {"at": "runtime/approval_session.py:329", "text": "no person decided"},
         {"at": "experiments/recovery/live.py:452", "text": "record if approval and not coordinator else None"},
-        {"at": "experiments/recovery/live.py:531", "text": "\"runtime.live_executor\""},
+        {"at": "experiments/recovery/live.py:540", "text": "\"runtime.live_executor\""},
         {"at": "scripts/validation/verifier_connected_lab.py:198", "text": "approve(proposal[\"action_id\"], \"live-lab-operator\", store)"},
         {"at": "tests/test_approval_session.py:370", "text": "def test_authority_down_after_allow_gives_zero_writes"},
         {"at": "tests/test_approval_session.py:407", "text": "def test_tokens_never_reach_run_folder_logs_or_argv"},
@@ -732,7 +732,7 @@
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-11",
-      "impact": "Only the shipping path has mTLS and inspection in a live run. Since P5.04 the security lab's code also routes cart calls (frontend and checkoutservice to cartservice) through the mTLS gateway with schema inspection of AddItem, GetCart and EmptyCart, a cart TLS sidecar, and a protect-cartservice policy that admits only the gateway; that is shown by offline tests only, and the regenerated policy set (no ingress-cartservice; the cart probe is no longer admitted in the lab) has not been applied live. The cartservice to redis-cart edge stays plaintext Redis and is not inspected. Default-deny NetworkPolicies for all 11 services, generated from the reviewed dependency graph, and a matrix that passes only when every forbidden connection times out and the cluster's own policies are exactly the reviewed set, have passed once live in the Calico security lab at 02d91e5 (13 Nov 2026): 19 of 19 allowed edges open, 202 of 202 forbidden edges closed by timeout, no policy drift and no untested cell (C-SECURITY-NETPOL-LIVE). So the other ten services now have L4 default-deny in the security lab only, in one run on one kind node; their traffic is still plaintext. The rules match the Pod label app; they are not authentication. Normal connected recovery installs no NetworkPolicy, and the protected lab has never been combined with guarded recovery.",
+      "impact": "Only the shipping path has mTLS and inspection in a live run. Since P5.04 the security lab's code also routes cart calls (frontend and checkoutservice to cartservice) through the mTLS gateway with schema inspection of AddItem, GetCart and EmptyCart, a cart TLS sidecar, and a protect-cartservice policy that admits only the gateway; that is shown by offline tests only, and the regenerated policy set (no ingress-cartservice; the cart probe is no longer admitted in the lab) has not been applied live. The cartservice to redis-cart edge stays plaintext Redis and is not inspected. Default-deny NetworkPolicies for all 11 services, generated from the reviewed dependency graph, and a matrix that passes only when every forbidden connection times out and the cluster's own policies are exactly the reviewed set, have passed once live in the Calico security lab at 02d91e5 (13 Nov 2026): 19 of 19 allowed edges open, 202 of 202 forbidden edges closed by timeout, no policy drift and no untested cell (C-SECURITY-NETPOL-LIVE). So the other ten services now have L4 default-deny in the security lab only, in one run on one kind node; their traffic is still plaintext. The rules match the Pod label app; they are not authentication. Normal connected recovery installs no NetworkPolicy, and the protected lab has never been combined with guarded recovery in a live run; P5.05 adds that in code, tested offline only (L-PROTECTED-RECOVERY-OFFLINE).",
       "workaround": "Quote mTLS and inspection results for the shipping path only, and the L4 NetworkPolicy result for the security lab only (C-SECURITY-NETPOL-LIVE), never for the connected recovery cluster. Quote the cart route as offline-tested until the P5.04 live recipe in docs/security.md has run.",
       "cites": [
         {"claim": "C-SECURITY-LAB"},
@@ -765,6 +765,27 @@
       ],
       "planned": ["P5.04"],
       "issues": [71]
+    },
+    {
+      "id": "L-PROTECTED-RECOVERY-OFFLINE",
+      "title": "Guarded recovery on the protected template is tested offline only, and its Guard reader can read the named Secret",
+      "kind": "limitation",
+      "status": "open",
+      "since": "2026-11-14",
+      "impact": "P5.05 adds, in code, guarded recovery of the security lab's protected shippingservice: a Guard rule (allowed_sidecars) that accepts only the reviewed TLS ingress sidecar with its Envoy digest, command, arguments and exact read-only ConfigMap and Secret mounts; reference reads moved from the Executor's kubeconfig to a separate Guard-reader ServiceAccount with get on exactly those two names; an authenticated Verifier probe that presents its own client certificate to the gateway and may reach only the gateway's route ports; and a staged harness mode (--protected). All of it is checked by offline tests with fake clusters only: no protected baseline has been captured, no can-i matrix has run, no write has reached the protected Deployment and no authenticated probe has run. Without a reader identity, a template with ConfigMap or Secret references now escalates instead of being read with the Executor's kubeconfig. The reader can read the named Secret's key bytes, because Kubernetes RBAC has no metadata-only get and kubectl fetches the whole object; the bytes never reach Python and the token lasts an hour. The protected run does not yet cover the dashboard view or crash reconciliation, the sidecar rule does not pin ports, probes or resources, the protected policy raises the container memory-limit ceiling from 128Mi to 192Mi to fit the sidecar (which also lets the shipping container be restored with up to 192Mi), and the Verifier's client key is a Secret any Pod in the namespace could mount.",
+      "workaround": "Quote protected recovery as offline-tested only. Before relying on it, run the staged live recipe in docs/security.md (Protected recovery) on the security lab, never alongside another heavy-lab run, and replace the Secret reads with Certificate status reads in P5.06.",
+      "cites": [
+        {"at": "services/guard/eligibility.py", "text": "def _sidecars(spec, containers, proposal, rules):"},
+        {"at": "runtime/live_executor.py", "text": "def _attach_reference_versions(self, snapshot, baseline, proposal):"},
+        {"at": "deploy/sentinel/guard-reader-rbac.yaml", "text": "resourceNames: [\"security-upstream\"]"},
+        {"at": "scripts/security/boutique_security_manifest.py", "text": "def verifier_probe_pod(name, *, image, route, method, request, schema):"},
+        {"at": "experiments/boutique/harness/protected.py", "text": "class ProtectedBoutiqueExperiment(ConnectedBoutiqueExperiment):"},
+        {"at": "tests/test_live_executor.py", "text": "def test_the_executor_credential_never_reads_a_secret(self):"},
+        {"at": "tests/test_protected_recovery.py", "text": "def test_one_write_restores_the_protected_template_byte_for_byte(self):"},
+        {"at": "docs/security.md", "text": "### Live recipe (staged; not run)"}
+      ],
+      "planned": ["P5.05", "P5.06"],
+      "issues": [69, 70, 10]
     },
     {
       "id": "L-UNGATED-CVES",

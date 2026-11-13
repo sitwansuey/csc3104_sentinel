@@ -25,6 +25,12 @@
       "context": "kind-sentinel-boutique-package",
       "namespace": "sentinel-boutique",
       "node": "sentinel-boutique-package-control-plane"
+    },
+    "protected": {
+      "cluster_id": "sentinel-boutique-security",
+      "context": "kind-sentinel-boutique-security",
+      "namespace": "sentinel-boutique-security",
+      "node": "sentinel-boutique-security-control-plane"
     }
   },
   "targets": {
@@ -36,7 +42,7 @@
       "image_repository": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice",
       "release": "v0.10.7",
       "port": 50051,
-      "scopes": ["connected", "lab", "package"],
+      "scopes": ["connected", "lab", "package", "protected"],
       "primary_scenario": "R1",
       "fallback_scenario": null,
       "isolated_lab": true,
@@ -115,7 +121,7 @@
       "class": "rollback_correct",
       "title": "Invalid PORT rollout",
       "target": "shippingservice",
-      "scopes": ["connected", "lab", "package"],
+      "scopes": ["connected", "lab", "package", "protected"],
       "injection": {"kind": "set_env", "container": "server", "env": "PORT", "value": "invalid-port"},
       "restore": {"kind": "template_baseline"},
       "template_changed": true,

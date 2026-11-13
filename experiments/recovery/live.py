@@ -474,7 +474,16 @@ class Experiment:
             locks=self.directory / "locks", policy=self.directory / "policy.json", **self.baseline_inputs(),
             dependencies=folder / "dependencies.json", approval=folder / "approval.json", server_dry_run=True,
             approval_reader=self.approval_authority().executor_client() if coordinator else None,
-            reconcile_only=reconcile_only, image_scans=self.image_scans, cve_exceptions=self.cve_exceptions)
+            reconcile_only=reconcile_only, image_scans=self.image_scans, cve_exceptions=self.cve_exceptions,
+            **self.reader_inputs())
+
+    def reader_inputs(self):
+        """The Guard-reader identity for ConfigMap and Secret versions (P5.05); none here, so references escalate."""
+        return {}
+
+    def reader_arguments(self):
+        """reader_inputs() as live_executor command-line arguments."""
+        return []
 
     def negative_cases(self, incident):
         original = self.deployment()["spec"]["template"]
@@ -533,7 +542,7 @@ class Experiment:
                 "--context", self.restricted_context, "--cluster-id", self.cluster_id, "--ledger", str(self.directory / "executor.sqlite"),
                 "--locks", str(self.directory / "locks"), "--policy", str(self.directory / "policy.json"),
                 *self.baseline_arguments(), "--dependencies", str(folder / "dependencies.json"),
-                "--approval", str(folder / "approval.json")]
+                "--approval", str(folder / "approval.json"), *self.reader_arguments()]
             with adapters.coordination.hold(self.target):
                 rival = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=30)
             require(rival.returncode == 1 and json.loads(rival.stderr)["error"]["code"] == "TARGET_BUSY",

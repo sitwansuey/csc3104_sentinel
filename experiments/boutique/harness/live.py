@@ -861,7 +861,28 @@ def _main(held):
                         help="With --connected: turn on the CVE gate (deploy/security/cve-gate.json) and read its "
                              "scans from this directory of scan summaries (P5.02)")
     parser.add_argument("--cve-exceptions", type=Path, help="With --image-scans: the reviewed CVE exceptions file")
+    parser.add_argument("--protected", action="store_true",
+                        help="P5.05: recover the security lab's protected shippingservice (R1) with the sidecar-aware "
+                             "Guard, the split Guard-reader identity and the authenticated Verifier probe; start the "
+                             "lab with scripts/security/boutique_security.py first. Holds the heavy-lab lock "
+                             "(docs/security.md, Protected recovery)")
+    parser.add_argument("--security-run", type=Path, help="With --protected: the security lab's run folder")
+    parser.add_argument("--protected-stage", choices=("baseline", "full"), default="full",
+                        help="With --protected: baseline stops after the protected baseline, the RBAC matrix and the "
+                             "before-repair bypass probes; full (default) injects R1 and recovers it with one write")
     args = parser.parse_args()
+    if (args.security_run or args.protected_stage != "full") and not args.protected:
+        parser.error("--security-run and --protected-stage require --protected")
+    if args.protected:
+        if (args.pair or args.connected or args.agent or args.guard_rejection or args.provider_script or args.ui_controls
+                or args.image_scans or args.prepared_environment or args.dashboard):
+            parser.error("--protected runs its own staged recovery; drop --connected, --agent, --pair, "
+                         "--guard-rejection, --provider-script, --ui-controls, --dashboard, --image-scans and "
+                         "--prepared-environment")
+        if not args.security_run:
+            parser.error("--protected requires --security-run (the boutique_security.py run folder)")
+        if args.target not in (None, "shippingservice") or args.scenario not in (None, "R1"):
+            parser.error("--protected recovers shippingservice from scenario R1 only")
     if args.executor_kill and not args.pair:
         parser.error("--executor-kill requires --pair")
     if (args.image_scans or args.cve_exceptions) and (args.pair or not args.connected):
@@ -880,7 +901,8 @@ def _main(held):
     scenario = scenarios.scenario(args.scenario)
     if scenario["target"] != args.target:
         parser.error(f"--scenario {args.scenario} targets {scenario['target']}, not --target {args.target}")
-    mode_scope = "connected" if args.connected else "package" if args.prepared_environment else "lab"
+    mode_scope = ("protected" if args.protected else "connected" if args.connected else
+                  "package" if args.prepared_environment else "lab")
     if mode_scope not in profile.scopes:
         parser.error(f"--target {args.target} is offered only in the " + ", ".join(profile.scopes)
                      + " scope; add --connected")
@@ -953,13 +975,16 @@ def _main(held):
         parser.error("--approval ui requires --dashboard --ui-controls: the approval routes use the lab session token")
     if args.connected and args.prepared_environment:
         parser.error("Connected mode requires its host lab; the old packaged bootstrap is single-service")
-    if not 1 <= args.storefront_port <= 65535 or (args.connected and args.dashboard and args.storefront_port == args.dashboard_port):
+    if not 1 <= args.storefront_port <= 65535 or ((args.connected or args.protected) and args.dashboard
+                                                 and args.storefront_port == args.dashboard_port):
         parser.error("Storefront port must be valid and separate from the dashboard port")
-    if args.break_stale_lock and not (chaos_scenario or scale_scenario):
-        parser.error(lab_lock.BREAK_OPTION + " applies only to a Chaos Mesh or scale scenario or --pair")
-    if chaos_scenario or scale_scenario:
+    if args.break_stale_lock and not (chaos_scenario or scale_scenario or args.protected):
+        parser.error(lab_lock.BREAK_OPTION + " applies only to a Chaos Mesh or scale scenario, --protected or --pair")
+    if chaos_scenario or scale_scenario or args.protected:
         # P4.03: the whole live run holds the heavy-lab lock, so P4.01 and P4.05 never run alongside it.
-        lock = lab_lock.HeavyLabLock(holder=("P4.03 chaos scenario " if chaos_scenario else "P5.07 scale scenario ")
+        # P5.05: the protected security lab shares Docker's memory with them, so it takes the same lock.
+        lock = lab_lock.HeavyLabLock(holder=("P5.05 protected recovery " if args.protected else
+                                             "P4.03 chaos scenario " if chaos_scenario else "P5.07 scale scenario ")
                                      + args.scenario, break_stale=args.break_stale_lock)
         try:
             lock.acquire()
@@ -971,7 +996,10 @@ def _main(held):
             print("Removed a stale heavy-lab lock (" + lab_lock.describe(lock.broken) + ")", file=sys.stderr,
                   flush=True)
     directory = args.run_dir or ROOT / "data/experimentation/runs" / ("boutique-live-" + now().strftime("%Y%m%dT%H%M%SZ-") + uuid4().hex[:6])
-    if args.connected:
+    if args.protected:
+        from experiments.boutique.harness.protected import ProtectedBoutiqueExperiment
+        experiment_type = ProtectedBoutiqueExperiment
+    elif args.connected:
         from experiments.boutique.harness.connected import ConnectedBoutiqueExperiment
         experiment_type = ConnectedBoutiqueExperiment
     else:
@@ -985,7 +1013,12 @@ def _main(held):
     if scale_scenario:
         from experiments.boutique.harness.scale_recovery import ScaleRecoveryMixin
         experiment_type = type("ScaleBoutiqueExperiment", (ScaleRecoveryMixin, experiment_type), {})
-    experiment = experiment_type(directory, **({"storefront_port": args.storefront_port} if args.connected else {}))
+    options = {"storefront_port": args.storefront_port} if args.connected or args.protected else {}
+    if args.protected:
+        options.update(security_run=args.security_run, stage=args.protected_stage)
+    experiment = experiment_type(directory, **options)
+    if args.protected:
+        experiment.held_lock = held[-1]
     experiment.select_target(args.target)
     if args.image_scans:  # P5.02: the run's policy gets the CVE gate; Guard and Executor read these scans
         experiment.image_scans = args.image_scans.resolve()
@@ -1110,7 +1143,12 @@ def _main(held):
                 signal.signal(signal.SIGTERM, previous_term)
     if scale_scenario:
         from experiments.boutique.harness.scale_recovery import scale_pass_line
-    print(chaos_pass_line(args.scenario, expect, experiment.summary)
+    print(("PASS: protected baseline captured; Executor and Guard-reader RBAC matrix and bypass probes passed; no fault"
+           if args.protected_stage == "baseline" else
+           "PASS: protected template recovered with one approved write; authenticated Verifier RECOVERED; bypass "
+           "probes blocked before, during and after repair")
+          if args.protected else
+          chaos_pass_line(args.scenario, expect, experiment.summary)
           if chaos_scenario else
           scale_pass_line(args.scenario, experiment.summary)
           if scale_scenario else

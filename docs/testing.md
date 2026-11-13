@@ -163,6 +163,19 @@ NOT_RECOVERED; a missing count is UNKNOWN), one end-to-end recovery with exactly
 write, the catalog scenario S1 and the harness helpers. SCALE has not run
 against a cluster; the live recipe is [below](#scale-recovery-live-recipe).
 
+`tests/test_protected_recovery.py` covers guarded recovery on the protected
+template (P5.05), all offline: the reviewed sidecar entries against the
+security overlay, the generated Guard-reader RBAC and its can-i matrix, the
+authenticated Verifier probe Pod and its NetworkPolicy reach, one Executor
+write that restores the whole protected template (sidecar included) while an
+extra container, another Envoy digest or a host path writes nothing, the staged
+recipe's preflight refusals, and the harness's `--protected` options and
+heavy-lab lock. The sidecar rule itself is in `tests/test_guard_eligibility.py`
+(`ProtectedSidecarEligibilityTests` reruns every eligibility test with the
+sidecar in the template) and the split reader identity in
+`tests/test_live_executor.py`. Nothing has run against a cluster; the staged
+live recipe is in [security](security.md#protected-recovery-p505).
+
 `tests/test_distributed_processes.py` runs fault scenarios with the Coordinator
 and every worker as separate processes on one host, against a file-backed test
 cluster, and checks invariants from their records and logs. The default subset

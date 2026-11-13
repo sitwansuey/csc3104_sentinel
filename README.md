@@ -172,6 +172,7 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-CALLER-BLOCKS-CALLEE-REPAIR](docs/limitations.md#l-caller-blocks-callee-repair): A callee cannot be repaired while a caller it broke is NotReady, so the dependency-ordered pair cannot show its ordering (limitation, open; planned P4.05)
 - [L-SECURITY-SHIPPING-ONLY](docs/limitations.md#l-security-shipping-only): mTLS and inspection are shown live only on the shipping path (the cart route is offline only), and the other services' L4 default-deny runs in the security lab only (limitation, open; planned P4.06, P5.04, P5.05)
 - [L-SECURITY-GATEWAY-CAPACITY](docs/limitations.md#l-security-gateway-capacity): The inspector's capacity bounds and real readiness are tested offline only, and one gateway replica is a single point of failure (limitation, open; planned P5.04)
+- [L-PROTECTED-RECOVERY-OFFLINE](docs/limitations.md#l-protected-recovery-offline): Guarded recovery on the protected template is tested offline only, and its Guard reader can read the named Secret (limitation, open; planned P5.05, P5.06)
 - [L-UNGATED-CVES](docs/limitations.md#l-ungated-cves): Workload image CVEs are gated only in offline tests; no live run uses the CVE gate (limitation, open; planned P5.02, P5.03)
 - [L-NO-RELEASE](docs/limitations.md#l-no-release): No tagged, scanned release image (limitation, open; planned P2.09, P2.10)
 - [L-LAB-CERTS](docs/limitations.md#l-lab-certs): Security lab certificates are two-day fixtures with no rotation (limitation, open; planned P5.06)

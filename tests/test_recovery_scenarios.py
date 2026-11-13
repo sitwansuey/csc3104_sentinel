@@ -215,14 +215,17 @@ class CatalogSchemaTests(unittest.TestCase):
 
     def test_lab_controls_read_scopes_and_sequence_from_the_catalog(self):
         from runtime import lab_control
-        # The values the lab controls used before the catalog existed, plus cartservice in the connected lab only.
+        # The values the lab controls used before the catalog existed, plus cartservice in the connected lab only,
+        # plus shippingservice in the protected security lab (P5.05).
         self.assertEqual(lab_control.SCOPES, {
             ("sentinel-boutique-connected", "kind-sentinel-boutique-connected", "sentinel-boutique-connected",
              "shippingservice"),
             ("sentinel-boutique-connected", "kind-sentinel-boutique-connected", "sentinel-boutique-connected",
              "cartservice"),
             ("sentinel-boutique-lab", "kind-sentinel-boutique-lab", "sentinel-boutique", "shippingservice"),
-            ("sentinel-boutique-package", "kind-sentinel-boutique-package", "sentinel-boutique", "shippingservice")})
+            ("sentinel-boutique-package", "kind-sentinel-boutique-package", "sentinel-boutique", "shippingservice"),
+            ("sentinel-boutique-security", "kind-sentinel-boutique-security", "sentinel-boutique-security",
+             "shippingservice")})
         self.assertEqual([step[0] for step in lab_control.SCENARIOS], ["primary", "crash", "unnecessary-rollback"])
         self.assertEqual([step[3] for step in lab_control.SCENARIOS], ["RECOVERED", "RECOVERED", "REJECTED"])
         catalog = deepcopy(self.catalog)
@@ -285,7 +288,7 @@ class ChaosCatalogTests(unittest.TestCase):
         self.refused("missing", lambda c: scenario_in(c, "N2")["injection"].pop("duration_seconds"))
         self.refused("Chaos Mesh faults are limited", lambda c: (
             scenario_in(c, "N2").update(scopes=["connected", "lab"]),
-            c["targets"]["shippingservice"].update(scopes=["connected", "lab", "package"])))
+            c["targets"]["shippingservice"].update(scopes=["connected", "lab", "package", "protected"])))
         self.refused("restored by deleting its chaos object", lambda c: scenario_in(c, "N2").update(
             restore={"kind": "template_baseline"}))
         self.refused("restored by deleting its chaos object", lambda c: scenario_in(c, "R1").update(

@@ -1,7 +1,9 @@
 # Optional protected-workload experiments
 
-Security code is retained as a separate, opt-in experiment. It does not complete
-the Sentinel guarded recovery chain on protected templates. The current baseline
+Security code is retained as a separate, opt-in experiment. From P5.05 the code
+also runs the Sentinel guarded recovery chain on the protected template (see
+[Protected recovery](#protected-recovery-p505)); that has been checked offline
+only, not in a live run. The current baseline
 still uses restricted repair RBAC, strict Guard checks, non-root demo workloads,
 scoped contexts, bounded reads and private test credentials.
 
@@ -348,8 +350,10 @@ succeeded; every other probe failed, including `cart_invalid_quantity`,
 `cart_direct_pod_ip_bypass`, `cart_direct_egress_bypass` (frontend's
 loopback port 50053 from another Pod), `cart_proxy_outage` and
 `cart_outage_direct_bypass`; both storefront journeys (add to cart and
-checkout through both routes) passed; the matrix is PASS with 20 allowed
-cells and 16 by 15 rows. The run folder's `telemetry.sqlite3` holds
+checkout through both routes) passed; the matrix is PASS with 22 allowed
+cells and 18 sources by 15 destinations (from P5.05 the Verifier's probe
+identity is a source too, and reaches the two gateway Services only); a
+lab started before P5.05 has 20 allowed cells and 17 sources. The run folder's `telemetry.sqlite3` holds
 CartService inspection events.
 
 Load, burst and inspector outage, with the lab still running:
@@ -478,8 +482,8 @@ of 13 images. See `L-SECURITY-SHIPPING-ONLY` and `L-UNGATED-CVES` in
 Lab certificates are short-lived fixtures, not a rotation/revocation/workload-identity
 system. The inspector's capacity is bounded in code (P5.04) but not measured
 live, and one gateway replica stays a single point of failure.
-Current-image reconciliation and protected Guard/Executor/Verifier
-integration remain tracked work. Keep credentials,
+Current-image reconciliation remains tracked work, and the protected
+Guard/Executor/Verifier integration (P5.05) has not run live. Keep credentials,
 private keys and unsanitised logs out of Git and exported image contexts.
 
 ## CVE gate (P5.02)
@@ -736,3 +740,201 @@ These are safety-critical and wait for an owner:
   (P5.03);
 - every CVE exception: a human signs each one, with a role, rationale and at
   most 30 days (P5.03). The agent prepares none.
+
+## Protected recovery (P5.05)
+
+Until P5.05 the security lab and guarded recovery never met (#69): the
+Executor read Secret and ConfigMap versions with its own kubeconfig
+(`runtime/live_executor.py::LiveGuardAuthorizer`), the Verifier's plaintext
+probe is refused by the lab's NetworkPolicies, and the Guard knew nothing of
+the TLS sidecar in the protected template. P5.05 adds the pieces offline.
+None of it has run against a cluster yet (`L-PROTECTED-RECOVERY-OFFLINE` in
+[limitations](limitations.md)).
+
+### What changed
+
+- **Sidecar-aware Guard policy.** `security_constraints.allowed_sidecars`
+  lists each target's reviewed sidecars: name, image digest, optionally
+  command and arguments, and the exact read-only mounts with the ConfigMap or
+  Secret behind each one (`services/guard/eligibility.py::_sidecars`). With
+  the rule configured, a restored template may hold one application container
+  and the target's reviewed sidecars only. Another container or any init
+  container is `SECURITY_SIDECAR_NOT_ALLOWED`; a different Envoy digest is
+  `SECURITY_SIDECAR_IMAGE`; another command or arguments,
+  `SECURITY_SIDECAR_COMMAND`; another Secret, a writable mount, a `subPath`
+  or a host path behind a mount is `SECURITY_SIDECAR_MOUNTS`; environment
+  references are `SECURITY_SIDECAR_ENV`; a template without the reviewed
+  sidecar is `SECURITY_SIDECAR_MISSING`. Each is a FAIL, so the decision is
+  REJECT. The reviewed entries come from the overlay itself
+  (`scripts/security/boutique_security_manifest.py::reviewed_sidecars`), and a
+  test fails when the overlay's sidecar and the entry differ. The protected
+  policy allows the registries `us-central1-docker.pkg.dev` (Boutique) and
+  `docker.io` (the digest-pinned Envoy) only; the inspector's `sentinel.local`
+  image runs in the gateway, never in a recovery target, so it is not allowed.
+  The Guard's resource ceilings apply to every container alike, so the
+  protected run raises shipping's container memory-limit ceiling from 128Mi to
+  192Mi, the reviewed sidecar's own limit, and nothing else
+  (`experiments/boutique/harness/protected.py::protected_ceilings`).
+- **Split Guard-reader identity.** `LiveGuardAuthorizer` and `build_adapters`
+  take `reference_kubeconfig` (and `reference_context`); the CLI has
+  `--reference-kubeconfig` and `--reference-context`, and a worker
+  configuration has `reference_kubeconfig` and `reference_context`. The
+  reference reads use only that identity. Without it, a template with
+  ConfigMap or Secret references gets no versions, the Guard reports
+  `BASELINE_REFERENCE_EVIDENCE_MISSING` (UNKNOWN, so ESCALATE) and the
+  Executor writes nothing; a template without references needs no reader.
+  The reader file must not be the Executor's kubeconfig. The reader's Role,
+  `deploy/sentinel/guard-reader-rbac.yaml`, is generated from the protected
+  shippingservice template and grants `get` on `configmap/security-upstream`
+  and `secret/security-upstream` only
+  (`experiments/boutique/harness/protected.py::guard_reader_rbac`).
+- **Authenticated Verifier probe.** A new client identity,
+  `sentinel-verifier-client`, gets its certificate and Secret like the lab's
+  other identities. The gateway's SAN allowlist admits it; the services' own
+  TLS sidecars do not. The probe Pod mounts that Secret and the probe schema
+  read-only, presents the certificate, checks `gateway.internal` and calls
+  `security-gateway:8443`
+  (`scripts/security/boutique_security_manifest.py::verifier_probe_pod`). Its
+  label, `app=sentinel-verifier-probe`, is admitted at the gateway, and a new
+  egress policy lets those Pods send only DNS and the gateway's two route
+  ports. The lab's own validation adds `verifier_identity_quote`, an
+  authenticated quote with the Verifier's identity, and its matrix gains that
+  identity as a source (22 allowed cells, 18 sources by 15 destinations).
+- **Protected harness.** `scripts/test_boutique_live.py --protected`
+  (`experiments/boutique/harness/protected.py::ProtectedBoutiqueExperiment`)
+  recovers the running lab's shippingservice from R1 with the connected
+  harness's Guard, Executor and Verifier. It deploys nothing; it needs the
+  lab's run folder (`--security-run`). The catalog has a `protected` scope for
+  the security lab with shippingservice only. The run takes the heavy-lab
+  lock, so it refuses while P4.01, P4.03, P4.05 or a P5.07 run holds it.
+
+### Why no existing check is weaker (owner sign-off)
+
+These touch the Guard, the Executor's credentials and reads, a Verifier probe
+and certificates, so they wait for an owner's review. The argument, with the
+tests that hold it:
+
+- Every earlier eligibility rule is unchanged and still runs on the sidecar.
+  `ProtectedSidecarEligibilityTests` reruns the whole eligibility suite with
+  the reviewed sidecar in the template, so a privileged sidecar is still
+  `SECURITY_PRIVILEGED` and a host path still `SECURITY_HOST_ACCESS`
+  (`tests/test_guard_eligibility.py::ProtectedSidecarEligibilityTests.test_a_privileged_sidecar_is_rejected`,
+  `tests/test_guard_eligibility.py::ProtectedSidecarEligibilityTests.test_a_host_path_is_rejected`).
+  A policy without `allowed_sidecars` behaves as before.
+- The sidecar rule only adds FAILs. It never turns another finding into a
+  PASS, and a malformed rule refuses the policy
+  (`tests/test_guard_eligibility.py::ProtectedSidecarEligibilityTests.test_malformed_sidecar_rules_are_refused`).
+- The reference reads moved from the Executor's identity to the reader's; no
+  read became optional. When the reader is missing the evidence is absent,
+  which the existing rule already makes UNKNOWN, and a `reference_versions`
+  already in the snapshot is dropped rather than trusted
+  (`tests/test_live_executor.py::LiveExecutorTests.test_reference_reads_never_use_the_executor_kubeconfig`,
+  `tests/test_live_executor.py::LiveExecutorTests.test_reference_versions_already_in_the_snapshot_are_never_trusted`).
+  One behaviour changed: a template with references that was ALLOWed by
+  reading with the Executor's kubeconfig now ESCALATEs unless a reader is
+  configured. No current live target has references, so no live run is
+  affected; the Executor Role never granted Secret or ConfigMap reads, so
+  such a run could not have passed live anyway.
+- The Executor's Role is unchanged: `get` and `patch` on named Deployments.
+  With the real reference adapter, every `kubectl get` of a ConfigMap or
+  Secret names the reader's kubeconfig and context
+  (`tests/test_live_executor.py::LiveExecutorTests.test_the_executor_credential_never_reads_a_secret`).
+- The gateway accepts one more client identity. That identity reaches the
+  same inspected listeners as the other callers, under the same route and
+  inspection rules; no service's TLS sidecar accepts it
+  (`tests/test_security_connected.py::ConnectedSecurityTests.test_the_verifier_identity_is_accepted_at_the_gateway_only`),
+  and its Pods cannot reach any other port
+  (`tests/test_protected_recovery.py::AuthenticatedProbeTests.test_the_probe_pod_reaches_only_the_gateways_route_ports`).
+- A rollback restores the whole protected template, sidecar included, with
+  one write; an extra container, another Envoy digest or a host path writes
+  nothing
+  (`tests/test_protected_recovery.py::ProtectedRollbackTests.test_one_write_restores_the_protected_template_byte_for_byte`,
+  `tests/test_protected_recovery.py::ProtectedRollbackTests.test_an_extra_container_or_another_envoy_digest_writes_nothing`).
+
+Residual risks, also in the threat model: the reader can read the named
+Secret's key bytes (RBAC has no metadata-only `get`, and kubectl fetches the
+whole object before selecting the UID and resourceVersion; the bytes never
+reach Python, and the one-hour token is deleted when the run ends). P5.06
+replaces these Secret reads with cert-manager Certificate status reads. The
+Verifier's client key is a Secret that any Pod in the namespace could mount.
+The sidecar rule pins the image, command, arguments and mounts, not ports,
+probes or resources; the resource and privilege rules still apply, with the
+raised memory-limit ceiling above.
+
+### Live recipe (staged; not run)
+
+Run on the security lab cluster only, from a new run folder, and never while
+another heavy run is going: P4.01, P4.03, P4.05, P5.07 and this run each take
+most of Docker's 15 GB, and the harness refuses while the heavy-lab lock is
+held. The lab's two-day certificates are made at `start`, so start the lab
+for each session. `python scripts/security/protected_recovery.py plan` prints
+these commands.
+
+```powershell
+# Stage (a), offline: the changes and the reviewed Guard-reader RBAC.
+python -m unittest tests.test_guard_eligibility tests.test_live_executor tests.test_security_connected tests.test_protected_recovery
+python scripts/security/protected_recovery.py rbac --check
+
+# Start the lab with this revision (it creates the Verifier identity), then check the preconditions.
+$lab = "data/experimentation/runs/protected-recovery-lab"
+python scripts/security/boutique_security.py start --directory $lab --exit-after-test
+python scripts/security/protected_recovery.py preflight --security-run $lab --stage baseline
+
+# Stage (b), baseline only: protected baseline, RBAC can-i matrix and the bypass probes; no fault.
+python scripts/test_boutique_live.py --protected --security-run $lab --protected-stage baseline --run-dir data/experimentation/runs/protected-recovery-baseline
+
+# Stage (c), full recovery: R1 on the protected shippingservice, one approved write, authenticated verification.
+python scripts/test_boutique_live.py --protected --security-run $lab --protected-stage full --run-dir data/experimentation/runs/protected-recovery
+
+# Afterwards: the security-only launcher still passes on its own, then stop the lab.
+python scripts/security/boutique_security.py test --directory $lab --exit-after-test
+python scripts/security/boutique_security.py stop --directory $lab
+```
+
+The preflight refuses, with one reason per line, unless the lab's
+`validation.json` passed and includes `verifier_identity_quote`, the run
+folder's `session.json` names `sentinel-boutique-security`, the catalog's
+`protected` scope is that lab with shippingservice only, the committed
+Guard-reader RBAC matches the reviewed template, Envoy and grpcurl are pinned
+by digest, no reviewed file has a `TODO-PIN`, and the heavy-lab lock is free.
+The harness runs the same preflight before its first cluster command.
+
+Expected, stage (b): `PASS: protected baseline captured; ...`. The baseline's
+template holds `shipping-ingress` with the reviewed Envoy digest, and its
+`reference_versions` hold `ConfigMap/security-upstream` and
+`Secret/security-upstream`, read by the Guard reader.
+`protected-rbac-checks.json` has every row as expected: the Executor gets and
+patches `deployment/shippingservice` and gets no Secret or ConfigMap
+(`can-i get secrets`, `get secret/security-upstream` and `get
+configmap/security-upstream` all `no`); the reader gets
+`secret/security-upstream` and `configmap/security-upstream` and nothing
+else (`secret/security-gateway`, `secrets`, `list secrets` and the
+Deployment all `no`). `bypass-before.json` shows the plaintext Service, the
+Pod IP and the gateway outage all refused.
+
+Expected, stage (c): `PASS: protected template recovered with one approved
+write; ...`. The policy carries `allowed_sidecars` for shipping-ingress; the
+three negative cases make zero writes; the Coordinator Guard and the
+Executor's own check both ALLOW with the reader's reference versions;
+`transport-stats.json` shows one write; `outcome.json` is RECOVERED from
+samples taken by `sentinel-verifier-probe` Pods through the gateway;
+`bypass-before.json`, `bypass-during.json` (fault in place) and
+`bypass-after.json` all show every bypass refused; the run folder's
+`telemetry.sqlite3` holds inspector events in the action window; and
+`summary.json` records both private kubeconfigs removed. A Guard REJECT with
+`SECURITY_SIDECAR_*`, or an ESCALATE with
+`BASELINE_REFERENCE_EVIDENCE_MISSING`, is the protected rules failing
+closed: record it as such, not as a recovery. The `--dashboard` view and the
+crash-reconciliation case are not part of this run yet.
+
+### Owner sign-offs
+
+- the Guard rule `allowed_sidecars`, its codes and the argument above;
+- the reference reads moving to the Guard-reader identity, and the reader's
+  residual Secret read until P5.06;
+- the Verifier client identity at the gateway and its probe policy;
+- the protected run's 192Mi container memory-limit ceiling: it lets the
+  shipping container be restored with up to 192Mi as well, because the Guard
+  has no per-container ceilings;
+- the `protected` catalog scope (R1's labels are unchanged; only its scopes
+  gain `protected`).
