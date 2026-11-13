@@ -156,7 +156,7 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
             if self.path == "/readyz":
                 try:
                     with SQLiteStore(database, clock=clock) as store, store.transaction():
-                        store.db.execute("SELECT 1 FROM outbox LIMIT 1").fetchone()
+                        store.database.execute("SELECT 1 FROM outbox LIMIT 1").fetchone()
                 except Exception as error:  # noqa: BLE001 - any failure to open the store means not ready
                     log.failure(LOG, "http.readiness.failed", error)
                     self.reply(503, {"ready": False})

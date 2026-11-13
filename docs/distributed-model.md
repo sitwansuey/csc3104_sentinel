@@ -67,7 +67,7 @@ What is single-host today:
 The Coordinator is the authorisation state machine. It decides which proposal
 is active for a workload, when an action is READY, and which command a worker
 may claim. Every change runs inside `BEGIN IMMEDIATE`, so SQLite admits one
-writer at a time (`services/coordinator/store.py:501-515::SQLiteStore.transaction::@contextmanager`).
+writer at a time (`services/coordinator/store.py:525-539::SQLiteStore.transaction::@contextmanager`).
 Each claim, renew and result also replays the outbox revocation rules inside
 the same transaction (`runtime/worker_transport.py:94-123::Delivery.transaction::@contextmanager`).
 
@@ -1007,6 +1007,124 @@ the scenario matrix and the empty results table are in
 no claim here rests on it, and when it runs its nodes are still containers
 on one Docker host.
 
+### The Coordinator's Database port (P5.01 stage 8.1), offline only
+
+Most Coordinator statements now go through a Database port
+(`services/coordinator/db.py::Database`): those of the store, the lifecycle
+rules in `services/coordinator/core.py`, the approval service
+(`services/coordinator/approvals.py::ApprovalAccess.call`), the worker
+transport (`runtime/worker_transport.py::Delivery.transaction`) and the two
+readiness checks. The ones that do not are listed under "Not done" below.
+SQLite is the default and the only backend that runs
+(`services/coordinator/db.py::SQLiteDatabase`). Postgres exists only as a SQL
+dialect (`services/coordinator/db.py::PostgresDialect`). Its adapter refuses
+to open (`services/coordinator/db.py::PostgresDatabase`), because no Postgres
+driver is in the hash-locked requirements, and adding one, with
+CloudNativePG, is the owners' go/no-go decision for P5.01. A store also
+refuses a database that is not SQLite before it runs anything
+(`services/coordinator/store.py::SQLiteStore`), because its migrations are
+SQLite statements, and refuses a Database passed where a file path belongs
+instead of turning it into a file name.
+
+**Why the port changes nothing for SQLite.** The consistency argument above
+rests on three facts: every change runs in one `BEGIN IMMEDIATE` transaction
+that holds SQLite's single writer, the transaction commits or rolls back as a
+whole, and the statements inside it are the reviewed ones. The port keeps all
+three, and leaves the migrations alone:
+
+1. `SQLiteDatabase` opens the connection exactly as `SQLiteStore` did:
+   autocommit mode, a 10 s busy timeout, rows readable by name and position,
+   foreign keys on. Its `execute` is the connection's own bound method, so no
+   code sits between the store and SQLite. `store.db` is still that
+   connection, for the SQLite-only callers that need it (backups, file
+   identity checks).
+2. `begin`, `commit` and `rollback` send `BEGIN IMMEDIATE`, `COMMIT` and
+   `ROLLBACK`, the statements they replace, in the same places:
+   `SQLiteStore.transaction` and `Delivery.transaction` still begin, read the
+   change count, run the body, count the commit and commit, and roll back on
+   any exception.
+3. `insert` returns the `lastrowid` of the same INSERT the store sent before.
+4. Migrations are untouched: the same `MIGRATIONS` run through the same
+   `migrate()`, versioned with `PRAGMA user_version`.
+
+`tests/test_coordinator_db.py` checks this rather than assuming it. It runs
+four fixed flows: the offline demo's ROLLBACK and RESTART lifecycles, a
+transport flow with claims, a renewal, a retry, results and a replayed result,
+clock reports, an approval and its revocation, a seal and a delivery review,
+and an Executor CONFLICT that wrote nothing being re-planned
+(`services/coordinator/core.py::replan_after_conflict`). For each it compares
+two digests with values computed from clean exports of integration/phase4
+before the port existed: one of the SQLite file the flow leaves (columns,
+indexes, `user_version` and every row in rowid order; only the random store
+generation, its creation time and random trace ids are masked) and one of
+the SQL text sent to the database, statement by statement. The first three
+were recorded at 2ef594a and come out the same at 1adcfe3; the CONFLICT
+re-plan flow, which 1adcfe3 added, was recorded at 1adcfe3. On
+integration/phase5 the two offline flows send one more statement (the
+Verifier pipeline reads the action to bind a SCALE's replica count, P5.07), so
+their SQL digests were recomputed at 7f86bd6, the last commit before the port
+was merged; their file digests and the other two flows came out the same
+there. All four match through the port. Two more tests check that every statement a store sends
+passes through the port, one of them for the CONFLICT re-plan's three
+queries, and a source check refuses any read of the raw connection in the
+Coordinator modules. This is
+an offline check on one host. It shows the SQLite path is unchanged; it does
+not show that anything works on Postgres.
+
+**What the Postgres dialect does, untested against a server.** It turns `?`
+into `%s` and doubles literal `%` (for a driver like psycopg), `BEGIN
+IMMEDIATE` into `BEGIN ISOLATION LEVEL SERIALIZABLE`, `INSERT OR IGNORE` into
+`ON CONFLICT DO NOTHING`, `IS ?` into `IS NOT DISTINCT FROM`, and SQLite's
+two-argument `max()` and `min()` into `GREATEST` and `LEAST`. It marks SQLSTATE
+40001 (serialization failure) and 40P01 (deadlock) as retryable; nothing
+retries yet. It refuses, naming every reason that applies, what has no
+mechanical translation: PRAGMAs, schema statements, `rowid`,
+`last_insert_rowid()`, `INSERT OR REPLACE`, SQLite-only functions, the column
+name `offset` (a reserved word in Postgres, so it must be quoted or renamed in
+a Postgres schema) and a column read without a table qualifier inside `ON
+CONFLICT ... DO UPDATE` (Postgres has both the target table and `EXCLUDED` in
+scope there and rejects the bare name as ambiguous). The rewrite is textual,
+done with regular expressions; no Postgres parser has checked any statement
+it produces, so "translates" means only that none of these rules found a
+problem. A test passes every statement the four flows send through it and
+pins the result: 37 PRAGMA and schema statements, three migration
+statements and seven runtime queries are refused. The seven are row order by
+`rowid` in `SQLiteStore.planning_blocker` and
+`SQLiteStore.actions_for_incident`, `last_insert_rowid()` in the transport's
+dependency requests, `INSERT OR REPLACE` for dependency revalidations,
+`epoch=epoch+1` in the upsert of `SQLiteStore.claim_target`, and the upsert of
+`SQLiteStore.record_worker_clock`, which writes the column `offset` and reads
+`max_abs_offset` and `reports` without a qualifier. A new statement of a kind
+these rules know fails that test, and another test checks that `offset` is
+the only Postgres reserved word the schema uses as a name. The list is a
+lower bound, not the whole work list: statements the four flows do not send
+are not classified, and a Postgres server may reject statements the dialect
+let through.
+
+**Not done, and gated.** P5.01 starts properly only after P4.01 is accepted,
+and the backend needs the owners' go/no-go on a new dependency
+([limitation](limitations.md#l-coordinator-postgres)). Left for stage 8.1 on
+Postgres: a locked driver as an optional extra, the Postgres adapter, a
+Postgres migration set with explicit sequence columns and `offset` quoted or
+renamed, rewrites of the seven queries above (and of any others a Postgres
+parser rejects), a retry loop at the transaction boundary, and a pinned
+Postgres service container in CI. The plan's first stage 8.1 verification
+item is also unmet: the existing Coordinator, transport and remote-worker
+suites are not parameterised over the backends. They run on SQLite only,
+through the port, because `SQLiteStore(path)` opens a `SQLiteDatabase`; they
+have no Postgres row, skipped or otherwise. Only the port's own contract
+tests in `tests/test_coordinator_db.py` have a Postgres row, and it is
+skipped. Parameterising those suites waits, with the adapter it would run
+against, for the owners' go/no-go. The executor delivery
+reviews (`services/executor/delivery_store.py`), the read-only projection
+(`services/coordinator/read.py`) and some harness and Verifier readers still
+use the SQLite connection directly. Stages 8.2 (SKIP LOCKED claims, advisory
+locks, incremental dispatch, database-clock leases), 8.3 (CloudNativePG with
+synchronous replication and two stateless Coordinator replicas) and 8.4
+(failover acceptance S10 and S11) have not started. The move of the
+transaction boundary and the approval service onto the port is listed for
+the owners' review, with the argument and tests above.
+
 ## Planned changes
 
 | Item | Change |
@@ -1020,7 +1138,7 @@ on one Docker host.
 | P3.06 | Done in the code above and measured in file mode on one host. Left: the same measurements in a cluster (P4.02) |
 | P4.01 | Written and tested offline only ([below](#four-node-kind-acceptance-p401-written-not-run)): the four-node lab, its manifests and the acceptance harness with I7 from the audit log. Left: creating the cluster, the live S0-S9 runs with `--repeat 5`, committed audit-log extracts, and the owners' review of the evidence for #59, #61 and #63 |
 | P4.02 | Partition, restart and restore drills on the four-node lab; measured RTO and RPO added here |
-| P5.01 | A replicated Coordinator on a replicated database |
+| P5.01 | Stage 8.1 in part, offline only: the Database port with SQLite unchanged and a Postgres dialect ([above](#the-coordinators-database-port-p501-stage-81-offline-only)). Left: the owners' go/no-go on a Postgres driver and CloudNativePG, the Postgres adapter and both backends in CI, then 8.2 to 8.4, a replicated Coordinator on a replicated database |
 | P5.08 | Done offline only: the optional REST transport decides a definite rejection at once ([above](#fencing-limits)); kubectl stays the default. Left: the rv-race and admission-deny live runs with `--transport rest` next to kubectl ([recipe](testing.md#rest-transport-live-recipe-p508)), and the owner's sign-off |
 
 P1.10 (the decision table, peer adoption and SUPERSEDED) and P1.07 (structured

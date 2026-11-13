@@ -319,11 +319,11 @@ def _replan_declined(message, store, action):
         return "SPEC_CHANGED"
     if any(entry["revocation"] for entry in store.approval_history(action_id)):
         return "APPROVAL_REVOKED"
-    if store.db.execute("SELECT 1 FROM transitions WHERE action_id=? AND to_state='READY' LIMIT 1",
-                        (action_id,)).fetchone():
+    if store.database.execute("SELECT 1 FROM transitions WHERE action_id=? AND to_state='READY' LIMIT 1",
+                              (action_id,)).fetchone():
         return "ALLOWED_BEFORE"
     owner = store.target_ownership(action["proposal"]["target"])
-    if (owner is not None and owner["seal_action_id"] == action_id) or store.db.execute(
+    if (owner is not None and owner["seal_action_id"] == action_id) or store.database.execute(
             "SELECT 1 FROM outbox WHERE topic='executor.seal' AND action_id=? LIMIT 1", (action_id,)).fetchone():
         return "SEALED"
     return None
@@ -413,18 +413,18 @@ def _conflict_replan_declined(message, store, action):
         return "VERSION_UNMOVED"
     if evidence["generation"] != incident["observed_generation"]:
         return "SPEC_CHANGED"
-    if store.db.execute("SELECT 1 FROM messages WHERE kind='execution_result' AND action_id=? LIMIT 1",
+    if store.database.execute("SELECT 1 FROM messages WHERE kind='execution_result' AND action_id=? LIMIT 1",
                         (action_id,)).fetchone():
         return "EARLIER_RESULT"
     approvals = store.approval_history(action_id)
     if any(entry["revocation"] is not None for entry in approvals):
         return "APPROVAL_REVOKED"
-    allowed = store.db.execute("SELECT count(*) FROM transitions WHERE action_id=? AND to_state='READY'",
+    allowed = store.database.execute("SELECT count(*) FROM transitions WHERE action_id=? AND to_state='READY'",
                                (action_id,)).fetchone()[0]
     if len(approvals) > 1 or allowed != 1:
         return "NOT_FIRST_CYCLE"
     owner = store.target_ownership(action["proposal"]["target"])
-    if (owner is not None and owner["seal_action_id"] == action_id) or store.db.execute(
+    if (owner is not None and owner["seal_action_id"] == action_id) or store.database.execute(
             "SELECT 1 FROM outbox WHERE topic='executor.seal' AND action_id=? LIMIT 1", (action_id,)).fetchone():
         return "SEALED"
     return None
@@ -625,12 +625,12 @@ def dispatch_pending(store: SQLiteStore, event_bus) -> int:
             elif row["topic"] == "guard.request":
                 # A newer request supersedes earlier approval/dependency inputs,
                 # including a request that was already leased to a worker.
-                newest = store.db.execute("SELECT max(id) FROM outbox WHERE topic='guard.request' AND action_id=?",
-                                          (row["action_id"],)).fetchone()[0]
+                newest = store.database.execute("SELECT max(id) FROM outbox WHERE topic='guard.request' AND action_id=?",
+                                                (row["action_id"],)).fetchone()[0]
                 obsolete = obsolete or row["id"] != newest
             elif row["topic"] == "dependency.request":
-                newest = store.db.execute("SELECT max(id) FROM outbox WHERE topic='guard.request' AND action_id=?",
-                                          (row["action_id"],)).fetchone()[0]
+                newest = store.database.execute("SELECT max(id) FROM outbox WHERE topic='guard.request' AND action_id=?",
+                                                (row["action_id"],)).fetchone()[0]
                 obsolete = obsolete or payload.get("guard_event_id") != newest
             elif row["topic"] == "executor.seal":
                 # A seal stays wanted, whatever the action's state, until its workload is released.
