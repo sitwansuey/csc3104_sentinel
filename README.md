@@ -165,7 +165,7 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-VERIFIER-PASS-BLOCKS-WORKER](docs/limitations.md#l-verifier-pass-blocks-worker): While one Verifier pass samples, the single Verifier delays other actions' dependency checks, Guard steps and verification (limitation, open; planned P4.01)
 - [L-RESTART-BUDGET-LOCAL](docs/limitations.md#l-restart-budget-local): The restart budget is kept per Executor ledger, and only local wiring gives it to the Guard (limitation, open; planned P4.03)
 - [L-NO-DIAGNOSIS-ACCURACY](docs/limitations.md#l-no-diagnosis-accuracy): No diagnosis-accuracy evaluation (limitation, open; planned P2.07, P4.04)
-- [L-REPLAY-MODEL-ROWS](docs/limitations.md#l-replay-model-rows): The recovery decision ablation has no model rows yet, its labels are unreviewed and its state is reconstructed (limitation, open; planned P4.04, P4.07)
+- [L-REPLAY-MODEL-ROWS](docs/limitations.md#l-replay-model-rows): The recovery decision ablation has model rows for qwen3:14b only, all unscored because its labels are unreviewed, and its state is reconstructed (limitation, open; planned P4.04, P4.07)
 - [L-CALLER-BLOCKS-CALLEE-REPAIR](docs/limitations.md#l-caller-blocks-callee-repair): A callee cannot be repaired while a caller it broke is NotReady, so the dependency-ordered pair cannot show its ordering (limitation, open; planned P4.05)
 - [L-SECURITY-SHIPPING-ONLY](docs/limitations.md#l-security-shipping-only): mTLS and inspection cover only the shipping path, and the other services' L4 default-deny runs in the security lab only (limitation, open; planned P4.06, P5.04, P5.05)
 - [L-UNGATED-CVES](docs/limitations.md#l-ungated-cves): Workload image CVEs raise alerts but gate nothing (limitation, open; planned P5.02, P5.03)

@@ -234,7 +234,8 @@ corpus manifest, policy set, configuration or model digest.
 `tests/test_retrieval_contamination.py` checks that no label reaches the
 runbooks, `agent/knowledge` or any prompt built from a case's inputs. These
 use a scripted model; the [replay guide](evaluation/replay/README.md) has the
-commands and the model batch that has not run.
+commands and the model batch, whose `qwen3:14b` runs are committed (unscored)
+and whose `qwen3:8b` run was not made.
 
 The Planner handoff checks inject unavailable/invalid providers, restart during
 backoff, exhaust attempts after a worker death, fence a replaced lease and replay

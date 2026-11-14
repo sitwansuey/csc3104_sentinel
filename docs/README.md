@@ -28,7 +28,8 @@ Online Boutique evaluation (prepared, not yet run) has its own
 [protocol and run guide](evaluation/rcaeval/README.md). The
 [incident replay and recovery decision ablation](evaluation/replay/README.md)
 replays decision policies at three validation levels on recorded incidents
-(deterministic rows committed; the model rows not yet run).
+(deterministic rows and unscored `qwen3:14b` model rows committed; the
+`qwen3:8b` run was not made).
 
 Role design lives beside the implementation: [Coordinator](../services/coordinator/README.md),
 [Observer](../services/observer/README.md), [Planner](../services/planner/README.md),
