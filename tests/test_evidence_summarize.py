@@ -796,9 +796,9 @@ class Phase3DerivationTests(unittest.TestCase):
 
 
 class AcceptanceOutcomeTests(unittest.TestCase):
-    """A distributed-acceptance bundle passes only when every run summary it holds passed."""
+    """Scenario counts exclude drills; bundle outcomes include both kinds of summary."""
 
-    def bundle(self, runs, overview=None):
+    def bundle(self, runs=(), overview=None, summaries=()):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         root = Path(temp.name)
@@ -811,18 +811,67 @@ class AcceptanceOutcomeTests(unittest.TestCase):
             (root / path).parent.mkdir(parents=True)
             (root / path).write_text(json.dumps({"scenario": name[:2], "passed": passed}), encoding="utf-8")
             files.append({"path": path})
+        for path, summary in summaries:
+            (root / path).parent.mkdir(parents=True, exist_ok=True)
+            (root / path).write_text(json.dumps(summary), encoding="utf-8")
+            files.append({"path": path})
         return summarize.Bundle({"bundle_id": "dist", "class": "distributed-acceptance"}, root, {"files": files})
 
     def test_every_run_passed_is_pass(self):
-        self.assertEqual(summarize.outcome(self.bundle([("S7-r1-1", True), ("S9-r1-2", True)])), "PASS")
+        self.assertEqual(summarize.outcome(self.bundle([("S7-r1-120000z", True), ("S9-r1-120001z", True)])), "PASS")
 
     def test_one_failed_run_fails_the_bundle_whatever_the_overview_says(self):
-        bundle = self.bundle([("S8-r1-1", False), ("S9-r1-2", True)], overview={"passed": True})
+        bundle = self.bundle([("S8-r1-120000z", False), ("S9-r1-120001z", True)], overview={"passed": True})
         self.assertEqual(summarize.outcome(bundle), "FAILED")
 
     def test_no_run_summary_or_no_verdict_is_incomplete(self):
         self.assertEqual(summarize.outcome(self.bundle([], overview={"passed": True})), "INCOMPLETE")
-        self.assertEqual(summarize.outcome(self.bundle([("S5-r1-1", None)])), "INCOMPLETE")
+        self.assertEqual(summarize.outcome(self.bundle([("S5-r1-120000z", None)])), "INCOMPLETE")
+
+    def test_only_dated_scenario_run_paths_are_counted(self):
+        summary = {"scenario": "S1a", "passed": True}
+        bundle = self.bundle(summaries=[(path, summary) for path in (
+            "2026-11-14/S1a-r2-120001z/summary.json",
+            "drills/restore-abcd/summary.json",
+            "other/S1a-r2-120001z/summary.json",
+            "2026-11-14/restore-abcd/summary.json",
+            "2026-11-14/S1a-rx-120001z/summary.json",
+            "2026-11-14/S1a-r2-later/summary.json",
+            "2026-11-14/S1a-r2-120001z/extra/summary.json")])
+        self.assertEqual(summarize.acceptance_runs(bundle), [summary])
+
+    def test_drill_only_outcome_uses_each_drills_verdict(self):
+        for verdict, expected in ((True, "PASS"), (False, "FAILED"), (None, "INCOMPLETE"), ([], "INCOMPLETE")):
+            with self.subTest(verdict=verdict):
+                bundle = self.bundle(overview={"passed": True}, summaries=(
+                    ("drills/partition-abcd/summary.json", {"passed": True}),
+                    ("drills/restore-abcd/summary.json", {"passed": verdict})))
+                self.assertEqual(summarize.acceptance_runs(bundle), [])
+                self.assertEqual(summarize.outcome(bundle), expected)
+                self.assertIn("| distributed-acceptance | 1 |", summarize.runs_table([bundle]))
+                self.assertIn("no run is counted.", summarize.evaluation_distributed([bundle]))
+                self.assertIn("sentinel-dist: none counted;", summarize.evaluation_threats(bundle.directory, [bundle]))
+
+    def test_mixed_bundle_keeps_drills_out_of_evaluation_counts_but_in_its_outcome(self):
+        scenario = {"scenario": "S0", "passed": True, "invariants_passed": True, "expectation": {"met": True},
+                    "audit": {"max_template_writes_per_action": 1}, "synthetic_planner": True}
+        bundle = self.bundle(summaries=(("2026-11-14/S0-r1-120000z/summary.json", scenario),
+                                       ("drills/restore-abcd/summary.json", {"passed": False})))
+        self.assertEqual(summarize.acceptance_runs(bundle), [scenario])
+        self.assertEqual(summarize.outcome(bundle), "FAILED")
+        self.assertIn("| distributed-acceptance | 1 | 0 | 1 | 0 | 0 |", summarize.runs_table([bundle]))
+        distributed = summarize.evaluation_distributed([bundle])
+        self.assertIn("1 runs from 1 bundles; planner: synthetic x1.", distributed)
+        self.assertIn("| S0 | 1 | 1/1 | 1/1 |", distributed)
+        self.assertNotIn("run summaries name no scenario", distributed)
+        threats = summarize.evaluation_threats(bundle.directory, [bundle])
+        self.assertIn("sentinel-dist: 1 runs,", threats)
+        self.assertIn("sentinel-dist 1/1;", threats)
+
+    def test_non_object_scenario_summary_still_counts_as_incomplete(self):
+        bundle = self.bundle(summaries=(("2026-11-14/S0-r1-120000z/summary.json", []),))
+        self.assertEqual(summarize.acceptance_runs(bundle), [{}])
+        self.assertEqual(summarize.outcome(bundle), "INCOMPLETE")
 
 if __name__ == "__main__":
     unittest.main()

@@ -280,7 +280,7 @@ Restore RPO is the lost Coordinator commit count, not elapsed time or a
 count of workload writes. Detection is the latest of the five workers'
 rollback logs / observed readyz 503 responses, measured from restore-copy
 completion on the cluster clock, including the Coordinator restart. All
-five completed attempts logged rollback detection, returned readyz 503
+six completed attempts logged rollback detection, returned readyz 503
 with `store_changed`, and made zero claims after detection.
 
 | Deploy / drill | Verdict | RPO: lost commits | Detection log / readyz (s) | Staged clearing | Fresh incident |
