@@ -1131,6 +1131,84 @@ by name to run its imported module, with `agent/datasets/evaluate.py`
 listed as safe and why; at bc4dc70 it fails for `kind_acceptance` and the
 Boutique harness. Not yet re-run live.
 
+### S7 r4 refused at its restore: the target's resourceVersion moved
+
+On 14 Nov 2026 the matrix ran on `kind-sentinel-dist` from deploy 13 at
+0b5529f (run directory `sentinel-dist-20261114T161109`). S5 passed 5 of 5
+and S6 4 of 5. S7 r1, r2 and r3 passed: each ended FAILED, as S7 expects,
+with no template write, under the 300 s TimeChaos skew on both Executors.
+During S7 r4 the harness printed `Refused: kubectl patch failed (exit 1)`
+and exited 2. No S7 r4 summary was written, the matrix stopped there, and
+`demo-api` was left faulted (`STARTUP_FAILURE=true`, generation 29, 0 of 1
+Pods ready).
+
+What is known and what is not. The only `kubectl patch` the harness sends
+in a run is `Lab.restore`'s, which S7 needs because its incident ends
+FAILED and Sentinel puts nothing back. That patch is one JSON patch: a test
+of the baseline's uid, a test of the resourceVersion `Lab.restore` had
+just read, and the template. kubectl's stderr was not kept, and the message
+named only the verb and the exit status, so why the API server refused it
+is not known. The most likely cause is that the resourceVersion test
+failed: the target was crash-looping, so the Deployment controller kept
+writing its status, and each status write moves the resourceVersion
+between the harness's read and its patch. This is the same race the
+Executors' CONFLICTs showed in this lab
+([third deployment](#third-deployment-recreate-and-conflicts)). It is not
+proved. And the refusal escaped `run_one`: the restore ran in its
+`finally`, before the summary, so a failed restore meant no summary at all.
+
+What changed (offline, `experiments/distributed/kind_acceptance.py` and
+`kind_acceptance_live.py`):
+
+- **A refused patch or apply names its class** (`write_failure`,
+  `WriteRefused`). The class comes from the exit status and stderr: `test
+  failed` (the API server's 422 for a JSON patch test, in either the
+  generic or the json-patch wording), `conflict`, `not found`, `admission
+  denied`, `forbidden`, `invalid`, or `stderr not classified`. The message
+  is `kubectl patch failed (exit 1): test failed`. It never includes
+  kubectl's text, which names the object and can quote the patch. A
+  transient failure is still `TransientRead`, and a failed read's message
+  is unchanged.
+- **The restore reads the target again and retries, keeping both tests**
+  (`Lab.restore`). After a `test failed` or `conflict` refusal, or a
+  transient failure, it reads the Deployment again and acts on what it
+  finds. If the uid has changed, it refuses. If the template is already
+  the baseline, it does nothing (`operator_restore` false, with a note;
+  null if its own earlier patch failed transiently and may have applied).
+  If the template is the one the restore first read, it patches again with
+  the new resourceVersion. Any other template is refused, never
+  overwritten. Every patch tests the uid and the resourceVersion read just
+  before it; no patch drops a test or uses a merge patch. The restore makes
+  at most `RESTORE_ATTEMPTS` (5) attempts within `RESTORE_RETRY_SECONDS`
+  (30 s), pausing 2 s between them, and then stops with an error saying
+  the target may still be faulted. Any other refusal raises at once. The
+  result lists each attempt's resourceVersion and outcome.
+- **A failed restore or settle is in the run's summary** (`run_one`). The
+  error is recorded as `restore_error`, prefixed `restore:` or `settle:`,
+  and added to `harness_error`, so the run fails and never passes. The
+  settle is skipped when the restore failed. The cleanup, the record copy
+  and the evidence go on as before. `run` then stops the matrix, after
+  writing the summary and the overview, with a message that the lab needs
+  `demo-api` restored by hand or a teardown before the next run.
+
+Tests: `tests/test_kind_restore_race.py` uses the real `Shell` and
+`Lab.restore` over a fake kubectl. The fake holds one Deployment and
+checks a JSON patch's tests the way the API server does. Covered: a
+resourceVersion that moves once (each refusal wording, and a conflict) is
+read again and patched once more, and every patch carries both tests; one
+that keeps moving stops at the bound with a clear error and the template
+left faulted; a changed uid and a template written by someone else are
+refused and not overwritten; a target that another writer already restored
+is left alone; a forbidden, denied or not-found patch is raised after one
+attempt with its class; transient failures are retried within the same
+bound, and a lost answer is reported in doubt; and patch and apply messages
+carry a class but never an argument or the patch. Through `run_one` and
+`run`: a restore that keeps losing the race, or raises, and a settle that
+raises each write a failed summary with the error, the cleanup still runs,
+and the matrix stops after that run with the manual-restore message. At
+0b5529f all 14 of these tests fail. Not yet re-run live; the S7 r4 target
+must be restored by hand or the lab torn down before the next run.
+
 ## Results
 
 Generated by `python -m experiments.distributed.kind_acceptance table`;
@@ -1236,6 +1314,12 @@ quoted. P4.02 adds the measured RTO and RPO table to the
   transient read from the `Shell` it built is asked again; and every entry
   point imported again by name runs its imported module, as listed under
   [S5 r1 refused](#s5-r1-refused-at-its-first-poll-one-module-run-twice).
+- `tests/test_kind_restore_race.py`: the operator's restore reads the
+  target again and retries its guarded patch while the resourceVersion
+  moves, refuses a changed uid or a template someone else wrote, and a
+  restore or settle that fails is a harness error in the written summary
+  that stops the matrix, as listed under
+  [S7 r4 refused](#s7-r4-refused-at-its-restore-the-targets-resourceversion-moved).
 - `tests/test_kind_acceptance.py` also checks that S6 starts its operator
   only after its runner returns, while S0 approves from the start, and that
   `deploy` applies Sentinel without the workload and stops when the target's

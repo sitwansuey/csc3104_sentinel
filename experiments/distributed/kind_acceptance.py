@@ -230,6 +230,20 @@ class ReadUnavailable(AcceptanceError):
     """A read kept failing transiently until its bound: a harness error that fails the run, never a pass."""
 
 
+class WriteRefused(AcceptanceError):
+    """A kubectl patch or apply that failed for a reason other than a transient one.
+
+    reason is the class write_failure gave its stderr (WRITE_CLASSES, or
+    "stderr not classified"), never kubectl's own text, which names the
+    object and can quote the patch. Lab.restore reads the patch again on
+    "test failed" and "conflict"; every other reason stops at once.
+    """
+
+    def __init__(self, message, reason):
+        super().__init__(message)
+        self.reason = reason
+
+
 def utc_now():
     return datetime.now(UTC)
 
@@ -299,6 +313,10 @@ def check_context(context):
 
 READ_RETRY_SECONDS = 180  # How long a read is asked again while it fails transiently: a replaced Pod's Ready time.
 READ_BACKOFF_SECONDS = 8.0  # The longest pause between two attempts of a read that keeps failing transiently.
+RESTORE_ATTEMPTS = 5  # Reads and guarded patches the operator's restore tries before it stops (Lab.restore).
+RESTORE_RETRY_SECONDS = 30.0  # ... and the time it may take for them.
+RESTORE_PAUSE_SECONDS = 2.0  # The pause before reading the target again.
+RESTORE_RETRIED = frozenset({"test failed", "conflict"})  # Refusals of the restore patch that are read again.
 _RAN = re.compile(r"command terminated with exit code (\d+)")
 _STOPPED = {137: "process killed with its container (SIGKILL)", 143: "process stopped with its container (SIGTERM)"}
 TRANSIENT_CLASSES = (
@@ -339,6 +357,37 @@ def transient_failure(result):
     return next((label for label, pattern in TRANSIENT_CLASSES if pattern.search(text)), None)
 
 
+# A kubectl patch or apply the API server refused. On 14 Nov 2026 (S7 r4 at 0b5529f) the operator's restore patch
+# failed with only "kubectl patch failed (exit 1)" and its stderr was not kept, so why is not known
+# (docs/distributed-acceptance.md#s7-r4-refused-at-its-restore-the-targets-resourceversion-moved). Its class is now in
+# the message. A JSON patch whose test op failed is refused with 422: kubectl prints the API server's generic "the
+# server rejected our request due to an error in our request", or, where the server passes it on, the json-patch
+# library's "testing value <path> failed: test failed". First match wins: an admission denial also reads "invalid".
+WRITE_VERBS = frozenset({"patch", "apply"})
+WRITE_CLASSES = (
+    ("test failed", re.compile(
+        r"testing value [^\n]* failed|\btest failed\b|the server rejected our request due to an error in our request",
+        re.I)),
+    ("conflict", re.compile(r"\(Conflict\)|the object has been modified|Operation cannot be fulfilled", re.I)),
+    ("not found", re.compile(r"\(NotFound\)|\bnot found\b", re.I)),
+    ("admission denied", re.compile(r"ValidatingAdmissionPolicy|denied (the )?request|admission webhook", re.I)),
+    ("forbidden", re.compile(r"\(Forbidden\)|\bis forbidden\b", re.I)),
+    ("invalid", re.compile(r"\((Invalid|BadRequest|UnprocessableEntity)\)|\bis invalid\b", re.I)),
+)
+
+
+def write_failure(result):
+    """The class of a failed kubectl patch or apply (WRITE_CLASSES), "stderr not classified" otherwise.
+
+    Only the class leaves this function: kubectl's stderr names the object
+    and can quote the patch, so it is never put in a message or evidence.
+    """
+    text = result.stderr or ""
+    if isinstance(text, bytes):
+        text = text.decode("utf-8", "replace")
+    return next((label for label, pattern in WRITE_CLASSES if pattern.search(text)), "stderr not classified")
+
+
 class Shell:
     """kubectl, docker, helm and kind with an explicit context; runner is injected by tests."""
 
@@ -360,6 +409,9 @@ class Shell:
             reason = transient_failure(result) if tool == "kubectl" else None
             if reason:
                 raise TransientRead(f"{message}: {reason}", reason)
+            if tool == "kubectl" and verb in WRITE_VERBS:
+                reason = write_failure(result)
+                raise WriteRefused(f"{message}: {reason}", reason)
             raise AcceptanceError(message)
         return result
 
@@ -1658,25 +1710,89 @@ class Lab:
         return {"operator_action": "inject STARTUP_FAILURE=true", "at": stamp(self.clock())}
 
     def restore(self, baseline):
-        """Put the baseline template back under uid and resourceVersion tests when Sentinel did not."""
+        """Put the baseline template back under uid and resourceVersion tests when Sentinel did not.
+
+        Every patch tests the baseline's uid and the resourceVersion read just
+        before it, then replaces the template. A crash-looping target's status
+        moves its resourceVersion between that read and the patch, and the
+        API server then refuses it (a failed test, or a conflict; 14 Nov 2026,
+        S7 r4). Such a refusal, or a transient kubectl failure, is read again
+        and patched again, both tests kept, up to RESTORE_ATTEMPTS tries
+        within RESTORE_RETRY_SECONDS. Each read must find the same uid and
+        either the baseline (put back by someone else: nothing to do, or this
+        restore's own patch whose answer was lost: in doubt) or the template
+        the restore first read; anything else is refused, never overwritten.
+        Any other refusal raises at once. Returns operator_restore (True when
+        this patched, False when it did not, None in doubt) and, when it
+        patched, each attempt's resourceVersion and outcome.
+        """
         from services.executor.store import fingerprint
-        current = self.target()
-        if fingerprint(current["spec"]["template"]) == baseline["template_sha256"]:
-            return {"operator_restore": False}
-        patch = [{"op": "test", "path": "/metadata/uid", "value": baseline["target"]["uid"]},
-                 {"op": "test", "path": "/metadata/resourceVersion", "value": current["metadata"]["resourceVersion"]},
-                 {"op": "replace", "path": "/spec/template", "value": baseline["pod_template"]}]
+        uid, attempts, faulted, start = baseline["target"]["uid"], [], None, self.monotonic()
+        lost = False  # A patch failed transiently, so it may have been applied.
+        while True:
+            try:
+                current = self.target()
+            except TransientRead as error:
+                current = None
+                attempts.append({"resource_version": None, "outcome": "read transient: " + error.reason})
+            if current is not None:
+                if current["metadata"].get("uid") != uid:
+                    raise AcceptanceError(f"{TARGET} is not the Deployment the baseline names (its uid changed); "
+                                          "it was not restored: check it and restore or tear down the lab by hand")
+                template = fingerprint(current["spec"]["template"])
+                if template == baseline["template_sha256"]:
+                    if not attempts:
+                        return {"operator_restore": False}
+                    note = ("already at its baseline after a patch whose answer was lost; that patch may have "
+                            "applied it" if lost else "already at its baseline when read again: not written by this "
+                            "restore")
+                    return {"operator_restore": None if lost else False, "note": note, "attempts": attempts}
+                if faulted is None:
+                    faulted = template
+                elif template != faulted:
+                    raise AcceptanceError(f"{TARGET}'s template is neither the baseline nor the one this restore "
+                                          "read first (another writer changed it); it was not overwritten: check "
+                                          "it and restore or tear down the lab by hand")
+                version = current["metadata"]["resourceVersion"]
+                outcome = self._restore_patch(uid, version, baseline["pod_template"])
+                attempts.append({"resource_version": version, "outcome": outcome})
+                if outcome == "applied":
+                    break
+                lost = lost or outcome.startswith("transient")
+            elapsed = self.monotonic() - start
+            if len(attempts) >= RESTORE_ATTEMPTS or elapsed >= RESTORE_RETRY_SECONDS:
+                raise AcceptanceError(
+                    f"{TARGET} was not restored after {len(attempts)} attempts in {elapsed:.0f} s (last: "
+                    f"{attempts[-1]['outcome']}); it may still be faulted: restore it by hand or tear down the lab")
+            self.sleep(min(RESTORE_PAUSE_SECONDS, RESTORE_RETRY_SECONDS - elapsed))
+        self.shell.kubectl("rollout", "status", "deployment/" + TARGET, "--timeout=180s", namespace=WORKLOAD,
+                           timeout=200)
+        return {"operator_restore": True, "at": stamp(self.clock()), "attempts": attempts}
+
+    def _restore_patch(self, uid, version, template):
+        """One guarded JSON patch: "applied", the class of a refusal worth reading again, or "transient: <class>".
+
+        Any other refusal (WriteRefused with another class, or any other
+        failure) is raised as it is.
+        """
+        patch = [{"op": "test", "path": "/metadata/uid", "value": uid},
+                 {"op": "test", "path": "/metadata/resourceVersion", "value": version},
+                 {"op": "replace", "path": "/spec/template", "value": template}]
         # kubectl patch reads --patch-file as a path and has no "-" for standard input (on Windows it
         # looked for a file named "-"), so the patch, which holds no credential, goes to a private file.
         path = private_file(self.run_dir, "restore-patch-", json.dumps(patch))
         try:
             self.shell.kubectl("patch", "deployment", TARGET, "--type=json", "--patch-file=" + str(path),
                                namespace=WORKLOAD)
+        except WriteRefused as error:
+            if error.reason not in RESTORE_RETRIED:
+                raise
+            return error.reason
+        except TransientRead as error:
+            return "transient: " + error.reason
         finally:
             path.unlink(missing_ok=True)
-        self.shell.kubectl("rollout", "status", "deployment/" + TARGET, "--timeout=180s", namespace=WORKLOAD,
-                           timeout=200)
-        return {"operator_restore": True, "at": stamp(self.clock())}
+        return "applied"
 
     # Evidence -------------------------------------------------------------------------------------------
 
