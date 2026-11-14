@@ -1,0 +1,86 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "sentinel-dist-20261114t202554",
+  "class": "distributed-acceptance",
+  "captured_at": null,
+  "source_run_dir_name": "sentinel-dist-20261114T202554",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "unknown",
+    "basis": "No provenance block in the run; revision not inferred"
+  },
+  "files": [
+    {
+      "path": "drills/restore-2932721b4c66/summary.json",
+      "sha256": "1d6e44dc630f5ad611b66c42730c0e21668646b699070f1a0f6bdb2b5e26decd",
+      "bytes": 38377,
+      "redactions": 0
+    },
+    {
+      "path": "drills/restore-cf0b0acc0582/records.json",
+      "sha256": "0d44d4fadf89a676f54a3c03cbddf7cda981a8ff9569031b680cab9782f6273f",
+      "bytes": 37013,
+      "redactions": 0
+    },
+    {
+      "path": "drills/restore-cf0b0acc0582/summary.json",
+      "sha256": "bc33801e32176b1190119d22a3f0a34592067dee275ab478e7332a09618becff",
+      "bytes": 26743,
+      "redactions": 0
+    },
+    {
+      "path": "inputs/allowed-targets.json",
+      "sha256": "c7e88a2d4758aa8ea12677b49395742b36d29301d05a68e66bcb434b1b724b06",
+      "bytes": 190,
+      "redactions": 0
+    },
+    {
+      "path": "inputs/baseline.json",
+      "sha256": "d84f8c0d6e355d107fb3c89a14e6422aedda18d5e87373b7a0298f429ef5fa28",
+      "bytes": 3341,
+      "redactions": 0
+    },
+    {
+      "path": "inputs/observer-policy.json",
+      "sha256": "311b81e7e7c5ddf8f7339ef090b68873c854bd0d6946e9e75a6807e16f84c913",
+      "bytes": 60,
+      "redactions": 0
+    },
+    {
+      "path": "inputs/policy.json",
+      "sha256": "4de2d3948ff0375e36541cf83c5b6f585f47282d6aa55605608882f6fac8f1e8",
+      "bytes": 2212,
+      "redactions": 0
+    },
+    {
+      "path": "inputs/verifier-inventory.json",
+      "sha256": "ae398f8fef9e7f307706efb7cafacef8bdd1bda6c9cca5eb6d4266ea3cb8077d",
+      "bytes": 571,
+      "redactions": 0
+    },
+    {
+      "path": "lab.json",
+      "sha256": "26405097ed792d2aaa6f6f29788a32242d4ac14771b6eb66c1b21431c9de487e",
+      "bytes": 8236,
+      "redactions": 2
+    }
+  ],
+  "omitted": [
+    {
+      "path": "drills/restore-2932721b4c66/audit-extract.jsonl",
+      "bytes": 690144,
+      "reason": "over per-file cap"
+    },
+    {
+      "path": "drills/restore-2932721b4c66/records.json",
+      "bytes": 383410,
+      "reason": "over per-file cap"
+    },
+    {
+      "path": "drills/restore-cf0b0acc0582/audit-extract.jsonl",
+      "bytes": 366574,
+      "reason": "over per-file cap"
+    }
+  ]
+}

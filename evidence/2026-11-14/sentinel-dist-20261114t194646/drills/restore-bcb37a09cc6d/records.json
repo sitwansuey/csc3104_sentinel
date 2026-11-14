@@ -1,0 +1,1026 @@
+{
+  "rechecks": [
+    {
+      "exit_code": 1,
+      "report": {
+        "database": {
+          "schema_version": 6,
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2622
+        },
+        "previous": {
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2682
+        },
+        "different_database": false,
+        "rolled_back": true,
+        "lost_commits": 60,
+        "journals": [
+          {
+            "journal": "planner-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2582,
+              "change": null
+            },
+            "acknowledged": 14,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "guard-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2608,
+              "change": null
+            },
+            "acknowledged": 29,
+            "missing": [],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-a/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2619,
+              "change": null
+            },
+            "acknowledged": 9,
+            "missing": [
+              {
+                "kind": "execution_result",
+                "incident_id": "INC-AAAB26C5C5F2",
+                "action_id": "ACT-95dc23f3d318e3a6960861dc",
+                "topic": "executor.request",
+                "redrive": "replay",
+                "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+                "accepted_commit": 2619
+              }
+            ],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-b/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2054,
+              "change": null
+            },
+            "acknowledged": 2,
+            "missing": [],
+            "unsent": 5,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "verifier-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2672,
+              "change": null
+            },
+            "acknowledged": 37,
+            "missing": [
+              {
+                "kind": "outcome",
+                "incident_id": "INC-AAAB26C5C5F2",
+                "action_id": "ACT-95dc23f3d318e3a6960861dc",
+                "topic": "verifier.request",
+                "redrive": "review",
+                "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+                "accepted_commit": 2672
+              }
+            ],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": true,
+            "lost_commits": 50
+          }
+        ],
+        "missing": 2,
+        "may_lose_acknowledged_work": true
+      },
+      "listing": "Restored database: schema 6, generation fedbb4a9e2c25d09bcbcd5df3803c081, commit counter 2622\n  It is 60 commits behind the counter noted before the restore.\nJournal planner-1/transport.db: 14 acknowledged, 0 missing, 0 not yet sent\nJournal guard-1/transport.db: 29 acknowledged, 0 missing, 1 not yet sent\nJournal executor-a/transport.db: 9 acknowledged, 1 missing, 0 not yet sent\n  missing execution_result for ACT-95dc23f3d318e3a6960861dc (executor.request): replay: the request is pending again; clear this worker first, and it resends its saved result when it claims it\nJournal executor-b/transport.db: 2 acknowledged, 0 missing, 5 not yet sent\nJournal verifier-1/transport.db: 37 acknowledged, 1 missing, 1 not yet sent\n  The worker saw commit 2672; the restored database is 50 commits behind.\n  missing outcome for ACT-95dc23f3d318e3a6960861dc (verifier.request): review: no pending request asks for this result; check again after the replays\nAcknowledged work may be lost."
+    },
+    {
+      "exit_code": 1,
+      "report": {
+        "database": {
+          "schema_version": 6,
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2624
+        },
+        "previous": {
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2682
+        },
+        "different_database": false,
+        "rolled_back": true,
+        "lost_commits": 58,
+        "journals": [
+          {
+            "journal": "planner-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2582,
+              "change": null
+            },
+            "acknowledged": 14,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "guard-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2608,
+              "change": null
+            },
+            "acknowledged": 29,
+            "missing": [],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-a/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2619,
+              "change": null
+            },
+            "acknowledged": 9,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-b/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2054,
+              "change": null
+            },
+            "acknowledged": 2,
+            "missing": [],
+            "unsent": 5,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "verifier-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2672,
+              "change": null
+            },
+            "acknowledged": 37,
+            "missing": [
+              {
+                "kind": "outcome",
+                "incident_id": "INC-AAAB26C5C5F2",
+                "action_id": "ACT-95dc23f3d318e3a6960861dc",
+                "topic": "verifier.request",
+                "redrive": "replay",
+                "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+                "accepted_commit": 2672
+              }
+            ],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": true,
+            "lost_commits": 48
+          }
+        ],
+        "missing": 1,
+        "may_lose_acknowledged_work": true
+      },
+      "listing": "Restored database: schema 6, generation fedbb4a9e2c25d09bcbcd5df3803c081, commit counter 2624\n  It is 58 commits behind the counter noted before the restore.\nJournal planner-1/transport.db: 14 acknowledged, 0 missing, 0 not yet sent\nJournal guard-1/transport.db: 29 acknowledged, 0 missing, 1 not yet sent\nJournal executor-a/transport.db: 9 acknowledged, 0 missing, 0 not yet sent\nJournal executor-b/transport.db: 2 acknowledged, 0 missing, 5 not yet sent\nJournal verifier-1/transport.db: 37 acknowledged, 1 missing, 1 not yet sent\n  The worker saw commit 2672; the restored database is 48 commits behind.\n  missing outcome for ACT-95dc23f3d318e3a6960861dc (verifier.request): replay: the request is pending again; clear this worker first, and it resends its saved result when it claims it\nAcknowledged work may be lost."
+    },
+    {
+      "exit_code": 1,
+      "report": {
+        "database": {
+          "schema_version": 6,
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2625
+        },
+        "previous": {
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2682
+        },
+        "different_database": false,
+        "rolled_back": true,
+        "lost_commits": 57,
+        "journals": [
+          {
+            "journal": "planner-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2582,
+              "change": null
+            },
+            "acknowledged": 14,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "guard-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2608,
+              "change": null
+            },
+            "acknowledged": 29,
+            "missing": [],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-a/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2619,
+              "change": null
+            },
+            "acknowledged": 9,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-b/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2054,
+              "change": null
+            },
+            "acknowledged": 2,
+            "missing": [],
+            "unsent": 5,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "verifier-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2672,
+              "change": null
+            },
+            "acknowledged": 37,
+            "missing": [
+              {
+                "kind": "outcome",
+                "incident_id": "INC-AAAB26C5C5F2",
+                "action_id": "ACT-95dc23f3d318e3a6960861dc",
+                "topic": "verifier.request",
+                "redrive": "replay",
+                "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+                "accepted_commit": 2672
+              }
+            ],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": true,
+            "lost_commits": 47
+          }
+        ],
+        "missing": 1,
+        "may_lose_acknowledged_work": true
+      },
+      "listing": "Restored database: schema 6, generation fedbb4a9e2c25d09bcbcd5df3803c081, commit counter 2625\n  It is 57 commits behind the counter noted before the restore.\nJournal planner-1/transport.db: 14 acknowledged, 0 missing, 0 not yet sent\nJournal guard-1/transport.db: 29 acknowledged, 0 missing, 1 not yet sent\nJournal executor-a/transport.db: 9 acknowledged, 0 missing, 0 not yet sent\nJournal executor-b/transport.db: 2 acknowledged, 0 missing, 5 not yet sent\nJournal verifier-1/transport.db: 37 acknowledged, 1 missing, 1 not yet sent\n  The worker saw commit 2672; the restored database is 47 commits behind.\n  missing outcome for ACT-95dc23f3d318e3a6960861dc (verifier.request): replay: the request is pending again; clear this worker first, and it resends its saved result when it claims it\nAcknowledged work may be lost."
+    },
+    {
+      "exit_code": 1,
+      "report": {
+        "database": {
+          "schema_version": 6,
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2629
+        },
+        "previous": {
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2682
+        },
+        "different_database": false,
+        "rolled_back": true,
+        "lost_commits": 53,
+        "journals": [
+          {
+            "journal": "planner-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2582,
+              "change": null
+            },
+            "acknowledged": 14,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "guard-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2608,
+              "change": null
+            },
+            "acknowledged": 29,
+            "missing": [],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-a/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2619,
+              "change": null
+            },
+            "acknowledged": 9,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-b/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2054,
+              "change": null
+            },
+            "acknowledged": 2,
+            "missing": [],
+            "unsent": 5,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "verifier-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2672,
+              "change": null
+            },
+            "acknowledged": 37,
+            "missing": [],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": true,
+            "lost_commits": 43
+          }
+        ],
+        "missing": 0,
+        "may_lose_acknowledged_work": true
+      },
+      "listing": "Restored database: schema 6, generation fedbb4a9e2c25d09bcbcd5df3803c081, commit counter 2629\n  It is 53 commits behind the counter noted before the restore.\nJournal planner-1/transport.db: 14 acknowledged, 0 missing, 0 not yet sent\nJournal guard-1/transport.db: 29 acknowledged, 0 missing, 1 not yet sent\nJournal executor-a/transport.db: 9 acknowledged, 0 missing, 0 not yet sent\nJournal executor-b/transport.db: 2 acknowledged, 0 missing, 5 not yet sent\nJournal verifier-1/transport.db: 37 acknowledged, 0 missing, 1 not yet sent\n  The worker saw commit 2672; the restored database is 43 commits behind.\nAcknowledged work may be lost."
+    }
+  ],
+  "restore_checks": [
+    {
+      "exit_code": 1,
+      "report": {
+        "database": {
+          "schema_version": 6,
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2616
+        },
+        "previous": {
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2682
+        },
+        "different_database": false,
+        "rolled_back": true,
+        "lost_commits": 66,
+        "journals": [
+          {
+            "journal": "planner-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2582,
+              "change": null
+            },
+            "acknowledged": 14,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "guard-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2608,
+              "change": null
+            },
+            "acknowledged": 29,
+            "missing": [],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-a/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2619,
+              "change": null
+            },
+            "acknowledged": 9,
+            "missing": [
+              {
+                "kind": "execution_result",
+                "incident_id": "INC-AAAB26C5C5F2",
+                "action_id": "ACT-95dc23f3d318e3a6960861dc",
+                "topic": "executor.request",
+                "redrive": "replay",
+                "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+                "accepted_commit": 2619
+              }
+            ],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": true,
+            "lost_commits": 3
+          },
+          {
+            "journal": "executor-b/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2054,
+              "change": null
+            },
+            "acknowledged": 2,
+            "missing": [],
+            "unsent": 5,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "verifier-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2672,
+              "change": null
+            },
+            "acknowledged": 37,
+            "missing": [
+              {
+                "kind": "outcome",
+                "incident_id": "INC-AAAB26C5C5F2",
+                "action_id": "ACT-95dc23f3d318e3a6960861dc",
+                "topic": "verifier.request",
+                "redrive": "review",
+                "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+                "accepted_commit": 2672
+              }
+            ],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": true,
+            "lost_commits": 56
+          }
+        ],
+        "missing": 2,
+        "may_lose_acknowledged_work": true
+      },
+      "listing": "Restored database: schema 6, generation fedbb4a9e2c25d09bcbcd5df3803c081, commit counter 2616\n  It is 66 commits behind the counter noted before the restore.\nJournal planner-1/transport.db: 14 acknowledged, 0 missing, 0 not yet sent\nJournal guard-1/transport.db: 29 acknowledged, 0 missing, 1 not yet sent\nJournal executor-a/transport.db: 9 acknowledged, 1 missing, 0 not yet sent\n  The worker saw commit 2619; the restored database is 3 commits behind.\n  missing execution_result for ACT-95dc23f3d318e3a6960861dc (executor.request): replay: the request is pending again; clear this worker first, and it resends its saved result when it claims it\nJournal executor-b/transport.db: 2 acknowledged, 0 missing, 5 not yet sent\nJournal verifier-1/transport.db: 37 acknowledged, 1 missing, 1 not yet sent\n  The worker saw commit 2672; the restored database is 56 commits behind.\n  missing outcome for ACT-95dc23f3d318e3a6960861dc (verifier.request): review: no pending request asks for this result; check again after the replays\nAcknowledged work may be lost."
+    },
+    {
+      "exit_code": 1,
+      "report": {
+        "database": {
+          "schema_version": 6,
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2622
+        },
+        "previous": {
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2682
+        },
+        "different_database": false,
+        "rolled_back": true,
+        "lost_commits": 60,
+        "journals": [
+          {
+            "journal": "planner-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2582,
+              "change": null
+            },
+            "acknowledged": 14,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "guard-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2608,
+              "change": null
+            },
+            "acknowledged": 29,
+            "missing": [],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-a/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2619,
+              "change": null
+            },
+            "acknowledged": 9,
+            "missing": [
+              {
+                "kind": "execution_result",
+                "incident_id": "INC-AAAB26C5C5F2",
+                "action_id": "ACT-95dc23f3d318e3a6960861dc",
+                "topic": "executor.request",
+                "redrive": "replay",
+                "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+                "accepted_commit": 2619
+              }
+            ],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-b/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2054,
+              "change": null
+            },
+            "acknowledged": 2,
+            "missing": [],
+            "unsent": 5,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "verifier-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2672,
+              "change": null
+            },
+            "acknowledged": 37,
+            "missing": [
+              {
+                "kind": "outcome",
+                "incident_id": "INC-AAAB26C5C5F2",
+                "action_id": "ACT-95dc23f3d318e3a6960861dc",
+                "topic": "verifier.request",
+                "redrive": "review",
+                "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+                "accepted_commit": 2672
+              }
+            ],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": true,
+            "lost_commits": 50
+          }
+        ],
+        "missing": 2,
+        "may_lose_acknowledged_work": true
+      },
+      "listing": "Restored database: schema 6, generation fedbb4a9e2c25d09bcbcd5df3803c081, commit counter 2622\n  It is 60 commits behind the counter noted before the restore.\nJournal planner-1/transport.db: 14 acknowledged, 0 missing, 0 not yet sent\nJournal guard-1/transport.db: 29 acknowledged, 0 missing, 1 not yet sent\nJournal executor-a/transport.db: 9 acknowledged, 1 missing, 0 not yet sent\n  missing execution_result for ACT-95dc23f3d318e3a6960861dc (executor.request): replay: the request is pending again; clear this worker first, and it resends its saved result when it claims it\nJournal executor-b/transport.db: 2 acknowledged, 0 missing, 5 not yet sent\nJournal verifier-1/transport.db: 37 acknowledged, 1 missing, 1 not yet sent\n  The worker saw commit 2672; the restored database is 50 commits behind.\n  missing outcome for ACT-95dc23f3d318e3a6960861dc (verifier.request): review: no pending request asks for this result; check again after the replays\nAcknowledged work may be lost."
+    },
+    {
+      "exit_code": 1,
+      "report": {
+        "database": {
+          "schema_version": 6,
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2624
+        },
+        "previous": {
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2682
+        },
+        "different_database": false,
+        "rolled_back": true,
+        "lost_commits": 58,
+        "journals": [
+          {
+            "journal": "planner-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2582,
+              "change": null
+            },
+            "acknowledged": 14,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "guard-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2608,
+              "change": null
+            },
+            "acknowledged": 29,
+            "missing": [],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-a/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2619,
+              "change": null
+            },
+            "acknowledged": 9,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-b/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2054,
+              "change": null
+            },
+            "acknowledged": 2,
+            "missing": [],
+            "unsent": 5,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "verifier-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2672,
+              "change": null
+            },
+            "acknowledged": 37,
+            "missing": [
+              {
+                "kind": "outcome",
+                "incident_id": "INC-AAAB26C5C5F2",
+                "action_id": "ACT-95dc23f3d318e3a6960861dc",
+                "topic": "verifier.request",
+                "redrive": "replay",
+                "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+                "accepted_commit": 2672
+              }
+            ],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": true,
+            "lost_commits": 48
+          }
+        ],
+        "missing": 1,
+        "may_lose_acknowledged_work": true
+      },
+      "listing": "Restored database: schema 6, generation fedbb4a9e2c25d09bcbcd5df3803c081, commit counter 2624\n  It is 58 commits behind the counter noted before the restore.\nJournal planner-1/transport.db: 14 acknowledged, 0 missing, 0 not yet sent\nJournal guard-1/transport.db: 29 acknowledged, 0 missing, 1 not yet sent\nJournal executor-a/transport.db: 9 acknowledged, 0 missing, 0 not yet sent\nJournal executor-b/transport.db: 2 acknowledged, 0 missing, 5 not yet sent\nJournal verifier-1/transport.db: 37 acknowledged, 1 missing, 1 not yet sent\n  The worker saw commit 2672; the restored database is 48 commits behind.\n  missing outcome for ACT-95dc23f3d318e3a6960861dc (verifier.request): replay: the request is pending again; clear this worker first, and it resends its saved result when it claims it\nAcknowledged work may be lost."
+    },
+    {
+      "exit_code": 1,
+      "report": {
+        "database": {
+          "schema_version": 6,
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2625
+        },
+        "previous": {
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2682
+        },
+        "different_database": false,
+        "rolled_back": true,
+        "lost_commits": 57,
+        "journals": [
+          {
+            "journal": "planner-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2582,
+              "change": null
+            },
+            "acknowledged": 14,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "guard-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2608,
+              "change": null
+            },
+            "acknowledged": 29,
+            "missing": [],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-a/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2619,
+              "change": null
+            },
+            "acknowledged": 9,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-b/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2054,
+              "change": null
+            },
+            "acknowledged": 2,
+            "missing": [],
+            "unsent": 5,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "verifier-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2672,
+              "change": null
+            },
+            "acknowledged": 37,
+            "missing": [
+              {
+                "kind": "outcome",
+                "incident_id": "INC-AAAB26C5C5F2",
+                "action_id": "ACT-95dc23f3d318e3a6960861dc",
+                "topic": "verifier.request",
+                "redrive": "replay",
+                "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+                "accepted_commit": 2672
+              }
+            ],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": true,
+            "lost_commits": 47
+          }
+        ],
+        "missing": 1,
+        "may_lose_acknowledged_work": true
+      },
+      "listing": "Restored database: schema 6, generation fedbb4a9e2c25d09bcbcd5df3803c081, commit counter 2625\n  It is 57 commits behind the counter noted before the restore.\nJournal planner-1/transport.db: 14 acknowledged, 0 missing, 0 not yet sent\nJournal guard-1/transport.db: 29 acknowledged, 0 missing, 1 not yet sent\nJournal executor-a/transport.db: 9 acknowledged, 0 missing, 0 not yet sent\nJournal executor-b/transport.db: 2 acknowledged, 0 missing, 5 not yet sent\nJournal verifier-1/transport.db: 37 acknowledged, 1 missing, 1 not yet sent\n  The worker saw commit 2672; the restored database is 47 commits behind.\n  missing outcome for ACT-95dc23f3d318e3a6960861dc (verifier.request): replay: the request is pending again; clear this worker first, and it resends its saved result when it claims it\nAcknowledged work may be lost."
+    },
+    {
+      "exit_code": 1,
+      "report": {
+        "database": {
+          "schema_version": 6,
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2629
+        },
+        "previous": {
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2682
+        },
+        "different_database": false,
+        "rolled_back": true,
+        "lost_commits": 53,
+        "journals": [
+          {
+            "journal": "planner-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2582,
+              "change": null
+            },
+            "acknowledged": 14,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "guard-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2608,
+              "change": null
+            },
+            "acknowledged": 29,
+            "missing": [],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-a/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2619,
+              "change": null
+            },
+            "acknowledged": 9,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-b/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2054,
+              "change": null
+            },
+            "acknowledged": 2,
+            "missing": [],
+            "unsent": 5,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "verifier-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2672,
+              "change": null
+            },
+            "acknowledged": 37,
+            "missing": [],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": true,
+            "lost_commits": 43
+          }
+        ],
+        "missing": 0,
+        "may_lose_acknowledged_work": true
+      },
+      "listing": "Restored database: schema 6, generation fedbb4a9e2c25d09bcbcd5df3803c081, commit counter 2629\n  It is 53 commits behind the counter noted before the restore.\nJournal planner-1/transport.db: 14 acknowledged, 0 missing, 0 not yet sent\nJournal guard-1/transport.db: 29 acknowledged, 0 missing, 1 not yet sent\nJournal executor-a/transport.db: 9 acknowledged, 0 missing, 0 not yet sent\nJournal executor-b/transport.db: 2 acknowledged, 0 missing, 5 not yet sent\nJournal verifier-1/transport.db: 37 acknowledged, 0 missing, 1 not yet sent\n  The worker saw commit 2672; the restored database is 43 commits behind.\nAcknowledged work may be lost."
+    },
+    {
+      "exit_code": 1,
+      "report": {
+        "database": {
+          "schema_version": 6,
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2640
+        },
+        "previous": {
+          "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+          "commit_counter": 2682
+        },
+        "different_database": false,
+        "rolled_back": true,
+        "lost_commits": 42,
+        "journals": [
+          {
+            "journal": "planner-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2582,
+              "change": null
+            },
+            "acknowledged": 14,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "guard-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2608,
+              "change": null
+            },
+            "acknowledged": 29,
+            "missing": [],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-a/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2619,
+              "change": null
+            },
+            "acknowledged": 9,
+            "missing": [],
+            "unsent": 0,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "executor-b/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2054,
+              "change": null
+            },
+            "acknowledged": 2,
+            "missing": [],
+            "unsent": 5,
+            "different_database": false,
+            "rolled_back": false,
+            "lost_commits": 0
+          },
+          {
+            "journal": "verifier-1/transport.db",
+            "remembered": {
+              "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "commit_counter": 2672,
+              "change": null
+            },
+            "acknowledged": 37,
+            "missing": [],
+            "unsent": 1,
+            "different_database": false,
+            "rolled_back": true,
+            "lost_commits": 32
+          }
+        ],
+        "missing": 0,
+        "may_lose_acknowledged_work": true
+      },
+      "listing": "Restored database: schema 6, generation fedbb4a9e2c25d09bcbcd5df3803c081, commit counter 2640\n  It is 42 commits behind the counter noted before the restore.\nJournal planner-1/transport.db: 14 acknowledged, 0 missing, 0 not yet sent\nJournal guard-1/transport.db: 29 acknowledged, 0 missing, 1 not yet sent\nJournal executor-a/transport.db: 9 acknowledged, 0 missing, 0 not yet sent\nJournal executor-b/transport.db: 2 acknowledged, 0 missing, 5 not yet sent\nJournal verifier-1/transport.db: 37 acknowledged, 0 missing, 1 not yet sent\n  The worker saw commit 2672; the restored database is 32 commits behind.\nAcknowledged work may be lost."
+    }
+  ]
+}

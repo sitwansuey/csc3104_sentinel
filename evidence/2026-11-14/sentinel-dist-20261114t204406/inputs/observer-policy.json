@@ -1,0 +1,5 @@
+{
+  "detection": {
+    "failure_duration_seconds": 15
+  }
+}

@@ -31,7 +31,6 @@ from runtime.cluster_metrics import parse_quantity
 
 CPU_METRIC, CPU_UNIT = "k8s.pod.cpu.usage", "cores"
 MEMORY_METRIC, MEMORY_UNIT = "k8s.pod.memory.working_set", "By"
-METRICS = {CPU_METRIC: CPU_UNIT, MEMORY_METRIC: MEMORY_UNIT}
 MAX_ITEMS = 1000
 
 

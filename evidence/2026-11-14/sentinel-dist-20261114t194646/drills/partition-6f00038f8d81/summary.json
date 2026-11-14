@@ -1,0 +1,320 @@
+{
+  "schema": "sentinel-p402-drill-v1",
+  "drill": "partition",
+  "context": "kind-sentinel-dist",
+  "passed": true,
+  "failures": [],
+  "started_at": "2026-11-14T12:06:15.856869Z",
+  "limits": "Four kind nodes (containers) on one Docker host: separate network namespaces and kubelets, one shared kernel, clock and disk. Not separate machines. The Planner is the deterministic lab planner (synthetic proposals), and clock skew is injected by Chaos Mesh TimeChaos, not measured between hosts.",
+  "steps": [
+    {
+      "step": "measure cluster clock offset",
+      "started_at": "2026-11-14T12:06:15.943820Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:06:16.146455Z",
+      "seconds": 0.203
+    },
+    {
+      "step": "check settled lab and scope incidents",
+      "started_at": "2026-11-14T12:06:16.146477Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:06:17.370183Z",
+      "seconds": 1.224
+    },
+    {
+      "step": "require DEBUG Coordinator access evidence",
+      "started_at": "2026-11-14T12:06:17.371270Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:06:17.650073Z",
+      "seconds": 0.279
+    },
+    {
+      "step": "inject incident",
+      "started_at": "2026-11-14T12:06:17.929367Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:06:18.037013Z",
+      "seconds": 0.108
+    },
+    {
+      "step": "wait for approval or READY",
+      "started_at": "2026-11-14T12:06:18.037028Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:06:40.664417Z",
+      "seconds": 22.628
+    },
+    {
+      "step": "create and confirm all-worker partition",
+      "started_at": "2026-11-14T12:06:40.664463Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:06:42.875736Z",
+      "seconds": 2.211
+    },
+    {
+      "step": "approve partitioned action",
+      "started_at": "2026-11-14T12:06:42.875747Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:06:45.239778Z",
+      "seconds": 2.364
+    },
+    {
+      "step": "measure kubectl round trip",
+      "started_at": "2026-11-14T12:08:45.237846Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:08:45.335722Z",
+      "seconds": 0.098
+    },
+    {
+      "step": "remove confirmed partition",
+      "started_at": "2026-11-14T12:08:45.335751Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:08:45.913464Z",
+      "seconds": 0.578
+    },
+    {
+      "step": "wait for served request and incident progress",
+      "started_at": "2026-11-14T12:08:45.913502Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:08:52.831863Z",
+      "seconds": 6.918
+    },
+    {
+      "step": "recover after healing",
+      "started_at": "2026-11-14T12:08:52.831876Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:09:27.463568Z",
+      "seconds": 34.632
+    },
+    {
+      "step": "cleanup all tracked chaos and fault points",
+      "started_at": "2026-11-14T12:09:27.463588Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:09:27.463599Z",
+      "seconds": 0.0
+    },
+    {
+      "step": "restore target baseline",
+      "started_at": "2026-11-14T12:09:27.463604Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:09:27.550473Z",
+      "seconds": 0.087
+    },
+    {
+      "step": "settle lab",
+      "started_at": "2026-11-14T12:09:27.550498Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:09:50.833398Z",
+      "seconds": 23.283
+    },
+    {
+      "step": "measure final cluster clock offset",
+      "started_at": "2026-11-14T12:09:50.833714Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:09:51.021114Z",
+      "seconds": 0.187
+    },
+    {
+      "step": "collect complete audit log",
+      "started_at": "2026-11-14T12:09:51.021145Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:10:06.915814Z",
+      "seconds": 15.895
+    },
+    {
+      "step": "verify Coordinator access logging remained intact",
+      "started_at": "2026-11-14T12:10:07.288665Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:10:07.554759Z",
+      "seconds": 0.266
+    }
+  ],
+  "clock": {
+    "before": {
+      "offset_seconds": -0.01,
+      "uncertainty_seconds": 0.101,
+      "at": "2026-11-14T12:06:15.943834Z"
+    },
+    "after": {
+      "offset_seconds": -0.013,
+      "uncertainty_seconds": 0.094,
+      "at": "2026-11-14T12:09:50.833724Z"
+    }
+  },
+  "earlier_incidents": 9,
+  "access_logging": {
+    "level": "DEBUG",
+    "pod_uid": "4f7f94d6-b8c1-4f86-a39a-e0be2ceceb6e",
+    "restarts": 0
+  },
+  "partition": {
+    "confirmed_at": "2026-11-14T12:06:42.875742Z",
+    "start": "2026-11-14T12:06:42.865742Z",
+    "end": "2026-11-14T12:08:45.325744Z",
+    "seconds": 120.0,
+    "removal_requested_at": "2026-11-14T12:08:45.325744Z",
+    "removed_at": "2026-11-14T12:08:45.903472Z",
+    "rtt_seconds": 0.09785140000167303,
+    "rtt_method": "harness monotonic duration of kubectl get deployment sentinel-coordinator",
+    "recovery_origin": "delete request start; conservative upper bound including removal"
+  },
+  "incident": [
+    {
+      "incident_id": "INC-53725787C19D",
+      "state": "RECOVERED",
+      "active_action_id": "ACT-320a8e853312626fa3ea9d3f"
+    }
+  ],
+  "cleanup": {
+    "actions": [],
+    "problems": []
+  },
+  "target_restore": {
+    "operator_restore": false
+  },
+  "settle": {
+    "settled": true,
+    "seconds": 21.7,
+    "target": [],
+    "open": [],
+    "leftovers": []
+  },
+  "audit_completeness": [],
+  "audit": {
+    "skipped": 0,
+    "first_at": "2026-11-13T10:26:21.581188Z",
+    "files": 4,
+    "rows": 619
+  },
+  "measurements": {
+    "template_writes": 0,
+    "renewals_answered": 0,
+    "renewal_operation": "renew",
+    "recovery_seconds": {
+      "to_ready": null,
+      "to_first_claim": 3.888,
+      "to_first_served_request": 0.714,
+      "to_next_transition": 7.372
+    },
+    "bound_seconds": 15.097851400001673,
+    "rtt_seconds": 0.09785140000167303,
+    "clock_uncertainty_seconds": 0.10400000000000001,
+    "failures": [],
+    "passed": true
+  },
+  "chaos": [
+    {
+      "kind": "NetworkChaos",
+      "name": "s6-r402-all",
+      "at": "2026-11-14T12:06:41.683240Z",
+      "targets": {
+        ".": [
+          {
+            "pod": "sentinel-coordinator-5648f4c965-k66xs",
+            "uid": "4f7f94d6-b8c1-4f86-a39a-e0be2ceceb6e"
+          }
+        ],
+        ".Target": [
+          {
+            "pod": "sentinel-executor-a-6b7fdf7cfb-sbtkj",
+            "uid": "d2c124bb-4a1f-4a38-9db8-2a10fd68f19e"
+          },
+          {
+            "pod": "sentinel-executor-b-7b46d445db-9dvn7",
+            "uid": "f6e29428-bf9f-4798-83dd-cd133b3f161c"
+          },
+          {
+            "pod": "sentinel-guard-1-855cf6588d-wtllg",
+            "uid": "c7005569-353a-4dc4-9784-2b3a323d55fd"
+          },
+          {
+            "pod": "sentinel-observer-1-66df84cdb7-dhf6k",
+            "uid": "e6e2f749-7826-4c9f-bca7-4da76ad47002"
+          },
+          {
+            "pod": "sentinel-planner-1-7c5b54fbd5-8nt54",
+            "uid": "0b4ce165-0d59-4092-9a19-057f8dd17a14"
+          },
+          {
+            "pod": "sentinel-verifier-1-f45b888b7-2ctgx",
+            "uid": "620a2949-38af-4cb1-99ec-73559fbbd69e"
+          }
+        ]
+      },
+      "confirmation": {
+        "desired_phase": "Run",
+        "records": [
+          {
+            "id": "sentinel-dist/sentinel-coordinator-5648f4c965-k66xs",
+            "selector_key": ".",
+            "phase": "Injected"
+          },
+          {
+            "id": "sentinel-dist/sentinel-executor-a-6b7fdf7cfb-sbtkj",
+            "selector_key": ".Target",
+            "phase": "Injected"
+          },
+          {
+            "id": "sentinel-dist/sentinel-executor-b-7b46d445db-9dvn7",
+            "selector_key": ".Target",
+            "phase": "Injected"
+          },
+          {
+            "id": "sentinel-dist/sentinel-guard-1-855cf6588d-wtllg",
+            "selector_key": ".Target",
+            "phase": "Injected"
+          },
+          {
+            "id": "sentinel-dist/sentinel-observer-1-66df84cdb7-dhf6k",
+            "selector_key": ".Target",
+            "phase": "Injected"
+          },
+          {
+            "id": "sentinel-dist/sentinel-planner-1-7c5b54fbd5-8nt54",
+            "selector_key": ".Target",
+            "phase": "Injected"
+          },
+          {
+            "id": "sentinel-dist/sentinel-verifier-1-f45b888b7-2ctgx",
+            "selector_key": ".Target",
+            "phase": "Injected"
+          }
+        ],
+        "confirmed_at": "2026-11-14T12:06:42.875718Z",
+        "waited_seconds": 1.2
+      },
+      "removed_at": "2026-11-14T12:08:45.913435Z",
+      "in_effect_until_removal": true
+    }
+  ],
+  "operator_actions": [
+    {
+      "operator_action": "remove chaos",
+      "kind": "NetworkChaos",
+      "name": "s6-r402-all",
+      "at": "2026-11-14T12:08:45.913456Z"
+    }
+  ],
+  "approval_attempts": [
+    {
+      "operation": "create",
+      "action_id": "ACT-5d7b2a0a0a83a9758f2bc58d",
+      "attempt": 1,
+      "sent_at": "2026-11-14T12:06:43.173465Z",
+      "fresh_port_forward": false,
+      "outcome": "answered"
+    },
+    {
+      "operation": "create",
+      "action_id": "ACT-320a8e853312626fa3ea9d3f",
+      "attempt": 1,
+      "sent_at": "2026-11-14T12:08:59.861549Z",
+      "fresh_port_forward": false,
+      "outcome": "answered"
+    }
+  ],
+  "read_outages": [],
+  "ended_at": "2026-11-14T12:10:07.556186Z",
+  "records": {
+    "partition_access": 94,
+    "partition_transitions": 6
+  }
+}

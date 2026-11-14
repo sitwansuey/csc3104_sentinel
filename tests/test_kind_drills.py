@@ -632,6 +632,31 @@ class RestoreTests(DirectoryTest):
         self.assertEqual(lab.cleared[:2], ["verifier-1", "guard-1"])
         self.assertEqual(sorted(lab.cleared), sorted(drills.WORKERS))
 
+    def test_an_action_whose_approval_the_restore_dropped_is_approved_again(self):
+        # Live (14 Nov 2026, deploy 16 restore 2): every result of a later action was acknowledged after the
+        # backup, its approval included; the replays stopped at AWAITING_APPROVAL until it was approved again.
+        def report(redrive):
+            journals = [{"journal": identity + "/transport.db", "acknowledged": 2, "unsent": 0,
+                         "missing": [{"kind": "execution_result", "action_id": "ACT-3", "topic": "executor.request",
+                                      "redrive": redrive, "accepted_generation": "gen", "accepted_commit": 618}]
+                         if identity == "executor-a" else []} for identity in drills.WORKERS]
+            return {"report": {"journals": journals}, "exit_code": 1}
+        lab = RestoreLab(self.directory)
+        approvals = []
+
+        def recheck(*args, **kwargs):
+            if "executor-a" in lab.cleared:  # Its replay is back: nothing is missing any more.
+                return {"report": {"journals": [{"journal": identity + "/transport.db", "missing": []}
+                                                for identity in drills.WORKERS]}, "exit_code": 0}
+            return report("replay" if approvals else "review")
+        steps_report = {}
+        with unittest.mock.patch.object(drills, "run_check", side_effect=recheck):
+            drills.check_replays(lab, self.directory, [], {"generation": "gen", "commit_counter": 100},
+                                 report("review"), drills.Steps(lab, steps_report), steps_report,
+                                 approve=lambda: approvals.append(lab.now))
+        self.assertTrue(approvals)
+        self.assertEqual(lab.cleared[0], "executor-a")
+
     def test_review_items_get_a_bounded_chance_to_become_replays(self):
         def report(redrive):
             journals = [{"journal": identity + "/transport.db", "acknowledged": 2, "unsent": 0,
@@ -799,6 +824,38 @@ class MaintenanceTests(DirectoryTest):
         result = subprocess.run([sys.executable, "-c", drills.RESTORE_SCRIPT, str(backup), str(source)],
                                 capture_output=True, text=True, check=True, timeout=10)
         self.assertEqual(json.loads(result.stdout), {"generation": "gen", "commit_counter": 10})
+
+
+class SplitReportTests(unittest.TestCase):
+    def report(self):
+        rows = [{"at": f"2026-11-14T00:00:0{index}Z", "effect": "request"} for index in range(3)]
+        return {"drill": "restore", "passed": True, "rpo_lost_commits": 61,
+                "audit": {"rows": rows, "skipped": 0, "first_at": "x", "files": 1},
+                "rechecks": [{"exit_code": 1}] * 4, "restore_checks": [{"exit_code": 1}], "partition_access": []}
+
+    def test_summary_keeps_measurements_and_counts_and_the_raw_reads_move_out(self):
+        files = drills.split_report(self.report())
+        summary = files["summary.json"]
+        self.assertEqual(summary["rpo_lost_commits"], 61)
+        self.assertEqual(summary["audit"]["rows"], 3)
+        self.assertNotIn("rechecks", summary)
+        self.assertEqual(summary["records"], {"partition_access": 0, "rechecks": 4, "restore_checks": 1})
+        self.assertEqual(len(files["audit-extract.jsonl"].splitlines()), 3)
+        self.assertEqual(len(files["records.json"]["rechecks"]), 4)
+
+    def test_compact_splits_an_earlier_summary_once_and_loses_nothing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            original = {"schema": "sentinel-p402-drill-v1", **self.report()}
+            (folder / "summary.json").write_text(json.dumps(original), encoding="utf-8")
+            self.assertTrue(drills.compact(folder))
+            self.assertFalse(drills.compact(folder))
+            summary = json.loads((folder / "summary.json").read_text(encoding="utf-8"))
+            records = json.loads((folder / "records.json").read_text(encoding="utf-8"))
+            lines = (folder / "audit-extract.jsonl").read_text(encoding="utf-8").splitlines()
+            rebuilt = {**{key: value for key, value in summary.items() if key != "records"}, **records,
+                       "audit": {**summary["audit"], "rows": [json.loads(line) for line in lines]}}
+            self.assertEqual(rebuilt, original)
 
 
 if __name__ == "__main__":

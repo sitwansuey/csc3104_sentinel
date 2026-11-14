@@ -1,0 +1,2755 @@
+{
+  "lease_seconds": 15,
+  "terminal_in_time": true,
+  "incidents": [
+    {
+      "incident_id": "INC-2D99E493E073",
+      "state": "FAILED",
+      "active_action_id": "ACT-081839a9dd33bac709b0137a"
+    }
+  ],
+  "actions": [
+    {
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "incident_id": "INC-2D99E493E073",
+      "state": "FAILED"
+    }
+  ],
+  "transitions": [
+    {
+      "seq": 8,
+      "incident_id": "INC-2D99E493E073",
+      "action_id": null,
+      "from_state": null,
+      "to_state": "OPEN",
+      "cause": "[\"incident\",\"INC-2D99E493E073\",\"\"]",
+      "outbox_high_water": 11,
+      "recorded_at": "2026-11-14T11:50:47.110788Z"
+    },
+    {
+      "seq": 9,
+      "incident_id": "INC-2D99E493E073",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "from_state": "OPEN",
+      "to_state": "VALIDATING",
+      "cause": "[\"proposal\",\"ACT-081839a9dd33bac709b0137a\",\"\"]",
+      "outbox_high_water": 12,
+      "recorded_at": "2026-11-14T11:50:48.325366Z"
+    },
+    {
+      "seq": 10,
+      "incident_id": "INC-2D99E493E073",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "from_state": "VALIDATING",
+      "to_state": "AWAITING_APPROVAL",
+      "cause": "[\"guard_result\",\"ACT-081839a9dd33bac709b0137a\",\"2026-11-14T11:50:49.797551Z\"]",
+      "outbox_high_water": 15,
+      "recorded_at": "2026-11-14T11:50:49.834344Z"
+    },
+    {
+      "seq": 11,
+      "incident_id": "INC-2D99E493E073",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "from_state": "AWAITING_APPROVAL",
+      "to_state": "VALIDATING",
+      "cause": "approval",
+      "outbox_high_water": 15,
+      "recorded_at": "2026-11-14T11:50:50.937202Z"
+    },
+    {
+      "seq": 12,
+      "incident_id": "INC-2D99E493E073",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "from_state": "VALIDATING",
+      "to_state": "READY",
+      "cause": "[\"guard_result\",\"ACT-081839a9dd33bac709b0137a\",\"2026-11-14T11:50:53.983352Z\"]",
+      "outbox_high_water": 18,
+      "recorded_at": "2026-11-14T11:50:54.020956Z"
+    },
+    {
+      "seq": 13,
+      "incident_id": "INC-2D99E493E073",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "from_state": "READY",
+      "to_state": "VALIDATING",
+      "cause": "revocation",
+      "outbox_high_water": 19,
+      "recorded_at": "2026-11-14T11:50:58.336305Z"
+    },
+    {
+      "seq": 14,
+      "incident_id": "INC-2D99E493E073",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "from_state": "VALIDATING",
+      "to_state": "FAILED",
+      "cause": "[\"fence_result\",\"ACT-081839a9dd33bac709b0137a\",\"2026-11-14T11:51:00.099323Z\"]",
+      "outbox_high_water": 23,
+      "recorded_at": "2026-11-14T11:51:00.287878Z"
+    }
+  ],
+  "outbox": [
+    {
+      "id": 13,
+      "topic": "guard.request",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "delivered": 1
+    },
+    {
+      "id": 14,
+      "topic": "dependency.request",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "delivered": 1
+    },
+    {
+      "id": 15,
+      "topic": "guard.request",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "delivered": 1
+    },
+    {
+      "id": 16,
+      "topic": "guard.request",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "delivered": 1
+    },
+    {
+      "id": 17,
+      "topic": "dependency.request",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "delivered": 1
+    },
+    {
+      "id": 18,
+      "topic": "guard.request",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "delivered": 1
+    },
+    {
+      "id": 19,
+      "topic": "executor.request",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "delivered": 1
+    },
+    {
+      "id": 20,
+      "topic": "guard.request",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "delivered": 1
+    },
+    {
+      "id": 21,
+      "topic": "dependency.request",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "delivered": 1
+    },
+    {
+      "id": 22,
+      "topic": "executor.seal",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "delivered": 1
+    },
+    {
+      "id": 23,
+      "topic": "guard.request",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "delivered": 1
+    }
+  ],
+  "receipts": [
+    {
+      "event_id": 1,
+      "delivery_id": "21075c73b93c44aca917ee4bff8993bd",
+      "owner": "planner-1",
+      "attempts": 1,
+      "finished": 1794656943.1635623,
+      "result_digest": "4221a2a278139f65d4665e578e2cafca3b570fd6e4896699082ce108b86e9889"
+    },
+    {
+      "event_id": 3,
+      "delivery_id": "f391f0e5c96a4594b0bf539fa7da2d25",
+      "owner": "verifier-1",
+      "attempts": 1,
+      "finished": 1794656944.2999563,
+      "result_digest": "05e2bbe06761cebd807443750b9c05a26de8c8ea6fdf2cca03f1c48a73ab4a65"
+    },
+    {
+      "event_id": 4,
+      "delivery_id": "f839134927074cdea3959a26f6e872af",
+      "owner": "guard-1",
+      "attempts": 1,
+      "finished": 1794656946.364426,
+      "result_digest": "76256b9a00add4c9e8e4c40020f640a43a7548c4ee0c0ddd15e9145ea5b48074"
+    },
+    {
+      "event_id": 6,
+      "delivery_id": "9f350a0d6c6645dc8013cdc6086c45a1",
+      "owner": "verifier-1",
+      "attempts": 1,
+      "finished": 1794656950.476158,
+      "result_digest": "eee24ac8b954977d940202903ede24dbd34c873c6f1940f0be11955476c3facc"
+    },
+    {
+      "event_id": 7,
+      "delivery_id": "fbd98cb1121848468e343be9dcf9fd9f",
+      "owner": "guard-1",
+      "attempts": 1,
+      "finished": 1794656952.6074827,
+      "result_digest": "6ec653a80e4c008517a2f76024c870def7e3f1bb7d48831adb2bdaeff24e4485"
+    },
+    {
+      "event_id": 8,
+      "delivery_id": "6661a9821b5f4511adb00df5a1dca6b7",
+      "owner": "executor-b",
+      "attempts": 1,
+      "finished": 1794656957.366776,
+      "result_digest": null
+    },
+    {
+      "event_id": 10,
+      "delivery_id": "a78fe707e3e64c5caae1eebcb6c7e347",
+      "owner": "verifier-1",
+      "attempts": 1,
+      "finished": 1794656958.792739,
+      "result_digest": null
+    },
+    {
+      "event_id": 11,
+      "delivery_id": "1d5e772a506e46f6a698672e102e3be8",
+      "owner": "executor-a",
+      "attempts": 1,
+      "finished": 1794656958.6999547,
+      "result_digest": "87bffc6c802e6821586215d1bdaf00e67059cd3dd6a81f207d74d4ce3280f6ee"
+    },
+    {
+      "event_id": 12,
+      "delivery_id": "149c887d0205456299e6524f1cb05ade",
+      "owner": "planner-1",
+      "attempts": 1,
+      "finished": 1794657048.3246017,
+      "result_digest": "94e1296f7b856b3b25d0d1431bfcace949b9b403812c97cf851f41a9c624e2ea"
+    },
+    {
+      "event_id": 14,
+      "delivery_id": "d8eaa861aa5346ecaf90cba63759aad3",
+      "owner": "verifier-1",
+      "attempts": 1,
+      "finished": 1794657048.5424342,
+      "result_digest": "8d83bbb444b4e06ad060efc5e9393adb8a47ab4b43bf8ea4091c8059a3ec0107"
+    },
+    {
+      "event_id": 15,
+      "delivery_id": "fc2e3391b66147deb16cd356a864d6e7",
+      "owner": "guard-1",
+      "attempts": 1,
+      "finished": 1794657049.8335965,
+      "result_digest": "a70125a88cc98ac47e8995c06a3aef0420d354ae30d4c09e0a5bf207b857ba16"
+    },
+    {
+      "event_id": 17,
+      "delivery_id": "2dfdacbf618646fca153628ea2591018",
+      "owner": "verifier-1",
+      "attempts": 1,
+      "finished": 1794657052.840642,
+      "result_digest": "a82d7d05b9380f09df253f187941290af38aacfe5c8df75323265df2f64f2bd0"
+    },
+    {
+      "event_id": 18,
+      "delivery_id": "8c457f464060478ba707f9e54fc8f1de",
+      "owner": "guard-1",
+      "attempts": 1,
+      "finished": 1794657054.0198076,
+      "result_digest": "2fa75d3aec296d208c7367e1795fd526594f115657f290107dd435fe51889d57"
+    },
+    {
+      "event_id": 19,
+      "delivery_id": "bfc1cfa7be73420ab36701373842ffd2",
+      "owner": "executor-b",
+      "attempts": 1,
+      "finished": 1794657058.4562488,
+      "result_digest": null
+    },
+    {
+      "event_id": 21,
+      "delivery_id": "9222f5e9ae644187b3d3d56ec06a6364",
+      "owner": "verifier-1",
+      "attempts": 1,
+      "finished": 1794657058.9918835,
+      "result_digest": "b34be6897abf9b87dfb5f42d8ab955d359e647f7a71f881f9a269678a3451bb6"
+    },
+    {
+      "event_id": 22,
+      "delivery_id": "5c82ebcc4d1d4957a4c8777419d3dc8a",
+      "owner": "executor-a",
+      "attempts": 1,
+      "finished": 1794657060.2870739,
+      "result_digest": "1683662a6c85d38595a2b3848f391c1531f99c8e5bfe4de0e94bdc33aa9405d1"
+    },
+    {
+      "event_id": 23,
+      "delivery_id": "32cbdb4c62544e058a88704440184522",
+      "owner": "guard-1",
+      "attempts": 1,
+      "finished": 1794657060.3152087,
+      "result_digest": null
+    }
+  ],
+  "message_digests": [
+    "982cb25aeb9ae3bdd397ed9551de2addd859fbfeb25fbbe677ff7458262217eb",
+    "4221a2a278139f65d4665e578e2cafca3b570fd6e4896699082ce108b86e9889",
+    "05e2bbe06761cebd807443750b9c05a26de8c8ea6fdf2cca03f1c48a73ab4a65",
+    "93a784c6d404f42e476c29fef01d14e4bf0c0fd9ab454f483f53d89eea1f5de8",
+    "eee24ac8b954977d940202903ede24dbd34c873c6f1940f0be11955476c3facc",
+    "de9c99512ff803b021befec0362f03e1733f7dcc780e4121b789d176ea4c25df",
+    "87bffc6c802e6821586215d1bdaf00e67059cd3dd6a81f207d74d4ce3280f6ee",
+    "4ec46ff86acec013e979005646651de455fef07bdeb30a826d6e5fb4b78c0a21",
+    "94e1296f7b856b3b25d0d1431bfcace949b9b403812c97cf851f41a9c624e2ea",
+    "8d83bbb444b4e06ad060efc5e9393adb8a47ab4b43bf8ea4091c8059a3ec0107",
+    "40e01123c7b6eca029df98f54c9f4a9588284c18791399d88851837dc3576cc3",
+    "a82d7d05b9380f09df253f187941290af38aacfe5c8df75323265df2f64f2bd0",
+    "d71181f5da837dc238a2f978d575c07880581632207aa543af157546e2c3ce33",
+    "b34be6897abf9b87dfb5f42d8ab955d359e647f7a71f881f9a269678a3451bb6",
+    "1683662a6c85d38595a2b3848f391c1531f99c8e5bfe4de0e94bdc33aa9405d1"
+  ],
+  "revocations": [
+    {
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "revoked_at": "2026-11-14T11:50:58.336195Z"
+    }
+  ],
+  "seals": [
+    {
+      "seq": 15,
+      "event_key": "[\"fence_result\",\"ACT-081839a9dd33bac709b0137a\",\"2026-11-14T11:51:00.099323Z\"]",
+      "producer": "executor-a",
+      "incident_id": "INC-2D99E493E073",
+      "action_id": "ACT-081839a9dd33bac709b0137a",
+      "epoch": 4,
+      "outcome": "SEALED",
+      "resource_version": "180540",
+      "recorded_at": "2026-11-14T11:51:00.099323Z",
+      "based_on_resource_version": "180476"
+    }
+  ],
+  "worker_clocks": [
+    {
+      "identity": "executor-a",
+      "offset": 0.007113,
+      "uncertainty": 0.007426,
+      "max_abs_offset": 2.056364,
+      "reports": 97
+    },
+    {
+      "identity": "executor-b",
+      "offset": 0.006504,
+      "uncertainty": 0.006794,
+      "max_abs_offset": 1.019259,
+      "reports": 89
+    },
+    {
+      "identity": "guard-1",
+      "offset": 0.00668,
+      "uncertainty": 0.00694,
+      "max_abs_offset": 0.51441,
+      "reports": 99
+    },
+    {
+      "identity": "planner-1",
+      "offset": 0.006317,
+      "uncertainty": 0.006546,
+      "max_abs_offset": 0.007737,
+      "reports": 104
+    },
+    {
+      "identity": "verifier-1",
+      "offset": 0.006808,
+      "uncertainty": 0.007067,
+      "max_abs_offset": 0.01123,
+      "reports": 97
+    }
+  ],
+  "cluster_writes": [],
+  "executor_ledgers": {
+    "executor-a": [],
+    "executor-b": [
+      {
+        "action_id": "ACT-9d5c2232e5bb26865f5da73e",
+        "phase": "DONE"
+      },
+      {
+        "action_id": "ACT-081839a9dd33bac709b0137a",
+        "phase": "DONE"
+      }
+    ]
+  },
+  "worker_results": [
+    {
+      "identity": "planner-1",
+      "event_id": 1,
+      "accepted": true,
+      "result_digest": "4221a2a278139f65d4665e578e2cafca3b570fd6e4896699082ce108b86e9889",
+      "message_digest": "4221a2a278139f65d4665e578e2cafca3b570fd6e4896699082ce108b86e9889"
+    },
+    {
+      "identity": "planner-1",
+      "event_id": 12,
+      "accepted": true,
+      "result_digest": "94e1296f7b856b3b25d0d1431bfcace949b9b403812c97cf851f41a9c624e2ea",
+      "message_digest": "94e1296f7b856b3b25d0d1431bfcace949b9b403812c97cf851f41a9c624e2ea"
+    },
+    {
+      "identity": "guard-1",
+      "event_id": 4,
+      "accepted": true,
+      "result_digest": "76256b9a00add4c9e8e4c40020f640a43a7548c4ee0c0ddd15e9145ea5b48074",
+      "message_digest": "93a784c6d404f42e476c29fef01d14e4bf0c0fd9ab454f483f53d89eea1f5de8"
+    },
+    {
+      "identity": "guard-1",
+      "event_id": 7,
+      "accepted": true,
+      "result_digest": "6ec653a80e4c008517a2f76024c870def7e3f1bb7d48831adb2bdaeff24e4485",
+      "message_digest": "de9c99512ff803b021befec0362f03e1733f7dcc780e4121b789d176ea4c25df"
+    },
+    {
+      "identity": "guard-1",
+      "event_id": 15,
+      "accepted": true,
+      "result_digest": "a70125a88cc98ac47e8995c06a3aef0420d354ae30d4c09e0a5bf207b857ba16",
+      "message_digest": "40e01123c7b6eca029df98f54c9f4a9588284c18791399d88851837dc3576cc3"
+    },
+    {
+      "identity": "guard-1",
+      "event_id": 18,
+      "accepted": true,
+      "result_digest": "2fa75d3aec296d208c7367e1795fd526594f115657f290107dd435fe51889d57",
+      "message_digest": "d71181f5da837dc238a2f978d575c07880581632207aa543af157546e2c3ce33"
+    },
+    {
+      "identity": "guard-1",
+      "event_id": null,
+      "accepted": false,
+      "result_digest": "624060ac62c1a6aa3303b09983fc3e12077c676329137bc1c792db016372342c",
+      "message_digest": "24cb086c541bbff30ab8e9a1d860f6e303333e1937ea905c8a28cfb73ea41319"
+    },
+    {
+      "identity": "executor-a",
+      "event_id": 11,
+      "accepted": true,
+      "result_digest": "87bffc6c802e6821586215d1bdaf00e67059cd3dd6a81f207d74d4ce3280f6ee",
+      "message_digest": "87bffc6c802e6821586215d1bdaf00e67059cd3dd6a81f207d74d4ce3280f6ee"
+    },
+    {
+      "identity": "executor-a",
+      "event_id": 22,
+      "accepted": true,
+      "result_digest": "1683662a6c85d38595a2b3848f391c1531f99c8e5bfe4de0e94bdc33aa9405d1",
+      "message_digest": "1683662a6c85d38595a2b3848f391c1531f99c8e5bfe4de0e94bdc33aa9405d1"
+    },
+    {
+      "identity": "executor-b",
+      "event_id": null,
+      "accepted": false,
+      "result_digest": "ef69d88d0fa84ffbed2c2aab0124a3b35e95e35f89d80b93d8067438ba7e9497",
+      "message_digest": "ef69d88d0fa84ffbed2c2aab0124a3b35e95e35f89d80b93d8067438ba7e9497"
+    },
+    {
+      "identity": "executor-b",
+      "event_id": null,
+      "accepted": false,
+      "result_digest": "0bfdc0ac7a85ac7ba77595cb2a4dce7aa99dbc26b106a35a1db5bf4059d39769",
+      "message_digest": "0bfdc0ac7a85ac7ba77595cb2a4dce7aa99dbc26b106a35a1db5bf4059d39769"
+    },
+    {
+      "identity": "verifier-1",
+      "event_id": 3,
+      "accepted": true,
+      "result_digest": "05e2bbe06761cebd807443750b9c05a26de8c8ea6fdf2cca03f1c48a73ab4a65",
+      "message_digest": "05e2bbe06761cebd807443750b9c05a26de8c8ea6fdf2cca03f1c48a73ab4a65"
+    },
+    {
+      "identity": "verifier-1",
+      "event_id": 6,
+      "accepted": true,
+      "result_digest": "eee24ac8b954977d940202903ede24dbd34c873c6f1940f0be11955476c3facc",
+      "message_digest": "eee24ac8b954977d940202903ede24dbd34c873c6f1940f0be11955476c3facc"
+    },
+    {
+      "identity": "verifier-1",
+      "event_id": null,
+      "accepted": false,
+      "result_digest": "61a201f43de186fae4296b7e22f7ab4536495e2d60b74fa51016b0c183be3854",
+      "message_digest": "61a201f43de186fae4296b7e22f7ab4536495e2d60b74fa51016b0c183be3854"
+    },
+    {
+      "identity": "verifier-1",
+      "event_id": 14,
+      "accepted": true,
+      "result_digest": "8d83bbb444b4e06ad060efc5e9393adb8a47ab4b43bf8ea4091c8059a3ec0107",
+      "message_digest": "8d83bbb444b4e06ad060efc5e9393adb8a47ab4b43bf8ea4091c8059a3ec0107"
+    },
+    {
+      "identity": "verifier-1",
+      "event_id": 17,
+      "accepted": true,
+      "result_digest": "a82d7d05b9380f09df253f187941290af38aacfe5c8df75323265df2f64f2bd0",
+      "message_digest": "a82d7d05b9380f09df253f187941290af38aacfe5c8df75323265df2f64f2bd0"
+    },
+    {
+      "identity": "verifier-1",
+      "event_id": 21,
+      "accepted": true,
+      "result_digest": "b34be6897abf9b87dfb5f42d8ab955d359e647f7a71f881f9a269678a3451bb6",
+      "message_digest": "b34be6897abf9b87dfb5f42d8ab955d359e647f7a71f881f9a269678a3451bb6"
+    }
+  ],
+  "observer_outbox": [
+    {
+      "incident_id": "INC-B6C2183DFF0D",
+      "delivered": 1
+    },
+    {
+      "incident_id": "INC-2D99E493E073",
+      "delivered": 1
+    }
+  ],
+  "verification": [],
+  "access": [
+    {
+      "ts": "2026-11-14T11:50:27.117Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:27.399Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:27.411Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:28.036Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:28.263Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:29.133Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:29.415Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:29.426Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:30.051Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:30.278Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:31.225Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:31.430Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:31.441Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:32.067Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:32.295Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:33.241Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:33.446Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:33.497Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:34.084Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:34.312Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:35.257Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:35.486Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:35.519Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:36.099Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:36.329Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:37.281Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:37.502Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:37.533Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:38.115Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:38.354Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:39.328Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:39.517Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:39.548Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:40.134Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:40.370Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:41.345Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:41.571Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:41.582Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:42.149Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:42.385Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:43.360Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:43.587Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:43.604Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:44.164Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:44.401Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:45.390Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:45.610Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:45.630Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:46.179Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:46.415Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:47.120Z",
+      "identity": "observer-1",
+      "operation": "ingest",
+      "http_status": 200,
+      "outcome": "accepted",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:47.428Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:47.630Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:47.678Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:48.196Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "claimed",
+      "delivery_id": "149c887d0205456299e6524f1cb05ade",
+      "event_id": 12
+    },
+    {
+      "ts": "2026-11-14T11:50:48.230Z",
+      "identity": "planner-1",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "149c887d0205456299e6524f1cb05ade",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:48.320Z",
+      "identity": "planner-1",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "149c887d0205456299e6524f1cb05ade",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:48.334Z",
+      "identity": "planner-1",
+      "operation": "result",
+      "http_status": 200,
+      "outcome": "accepted",
+      "delivery_id": "149c887d0205456299e6524f1cb05ade",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:48.433Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "claimed",
+      "delivery_id": "d8eaa861aa5346ecaf90cba63759aad3",
+      "event_id": 14
+    },
+    {
+      "ts": "2026-11-14T11:50:48.462Z",
+      "identity": "verifier-1",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "d8eaa861aa5346ecaf90cba63759aad3",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:48.534Z",
+      "identity": "verifier-1",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "d8eaa861aa5346ecaf90cba63759aad3",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:48.555Z",
+      "identity": "verifier-1",
+      "operation": "result",
+      "http_status": 200,
+      "outcome": "accepted",
+      "delivery_id": "d8eaa861aa5346ecaf90cba63759aad3",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:49.444Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:49.646Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:49.694Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "claimed",
+      "delivery_id": "fc2e3391b66147deb16cd356a864d6e7",
+      "event_id": 15
+    },
+    {
+      "ts": "2026-11-14T11:50:49.725Z",
+      "identity": "guard-1",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "fc2e3391b66147deb16cd356a864d6e7",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:49.769Z",
+      "identity": "guard-1",
+      "operation": "dependencies",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:49.785Z",
+      "identity": "guard-1",
+      "operation": "read",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:49.790Z",
+      "identity": "guard-1",
+      "operation": "dependencies",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:49.795Z",
+      "identity": "guard-1",
+      "operation": "read",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:49.828Z",
+      "identity": "guard-1",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "fc2e3391b66147deb16cd356a864d6e7",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:49.846Z",
+      "identity": "guard-1",
+      "operation": "result",
+      "http_status": 200,
+      "outcome": "accepted",
+      "delivery_id": "fc2e3391b66147deb16cd356a864d6e7",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:50.382Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:50.597Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:50.946Z",
+      "identity": "operator-1",
+      "operation": "create",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:51.460Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:51.661Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:51.877Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:52.415Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:52.653Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "claimed",
+      "delivery_id": "2dfdacbf618646fca153628ea2591018",
+      "event_id": 17
+    },
+    {
+      "ts": "2026-11-14T11:50:52.684Z",
+      "identity": "verifier-1",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "2dfdacbf618646fca153628ea2591018",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:52.781Z",
+      "identity": "verifier-1",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "2dfdacbf618646fca153628ea2591018",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:52.853Z",
+      "identity": "verifier-1",
+      "operation": "result",
+      "http_status": 200,
+      "outcome": "accepted",
+      "delivery_id": "2dfdacbf618646fca153628ea2591018",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:53.474Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:53.708Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:53.893Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "claimed",
+      "delivery_id": "8c457f464060478ba707f9e54fc8f1de",
+      "event_id": 18
+    },
+    {
+      "ts": "2026-11-14T11:50:53.919Z",
+      "identity": "guard-1",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "8c457f464060478ba707f9e54fc8f1de",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:53.961Z",
+      "identity": "guard-1",
+      "operation": "dependencies",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:53.969Z",
+      "identity": "guard-1",
+      "operation": "read",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:53.973Z",
+      "identity": "guard-1",
+      "operation": "dependencies",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:53.978Z",
+      "identity": "guard-1",
+      "operation": "read",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:54.014Z",
+      "identity": "guard-1",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "8c457f464060478ba707f9e54fc8f1de",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:54.033Z",
+      "identity": "guard-1",
+      "operation": "result",
+      "http_status": 200,
+      "outcome": "accepted",
+      "delivery_id": "8c457f464060478ba707f9e54fc8f1de",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:54.431Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:54.889Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:55.496Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "claimed",
+      "delivery_id": "bfc1cfa7be73420ab36701373842ffd2",
+      "event_id": 19
+    },
+    {
+      "ts": "2026-11-14T11:50:55.525Z",
+      "identity": "executor-b",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "bfc1cfa7be73420ab36701373842ffd2",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:55.595Z",
+      "identity": "executor-b",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "bfc1cfa7be73420ab36701373842ffd2",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:55.601Z",
+      "identity": "executor-b",
+      "operation": "dependencies",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:55.613Z",
+      "identity": "executor-b",
+      "operation": "read",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:55.651Z",
+      "identity": "executor-b",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "bfc1cfa7be73420ab36701373842ffd2",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:55.656Z",
+      "identity": "executor-b",
+      "operation": "read",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:55.689Z",
+      "identity": "executor-b",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "bfc1cfa7be73420ab36701373842ffd2",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:55.694Z",
+      "identity": "executor-b",
+      "operation": "read",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:55.723Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:56.063Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:56.450Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:56.905Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:57.741Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:58.080Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:58.351Z",
+      "identity": "operator-1",
+      "operation": "revoke",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:58.469Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:58.920Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "claimed",
+      "delivery_id": "9222f5e9ae644187b3d3d56ec06a6364",
+      "event_id": 21
+    },
+    {
+      "ts": "2026-11-14T11:50:58.949Z",
+      "identity": "verifier-1",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "9222f5e9ae644187b3d3d56ec06a6364",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:58.986Z",
+      "identity": "verifier-1",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "9222f5e9ae644187b3d3d56ec06a6364",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:59.001Z",
+      "identity": "verifier-1",
+      "operation": "result",
+      "http_status": 200,
+      "outcome": "accepted",
+      "delivery_id": "9222f5e9ae644187b3d3d56ec06a6364",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:50:59.763Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "claimed",
+      "delivery_id": "5c82ebcc4d1d4957a4c8777419d3dc8a",
+      "event_id": 22
+    },
+    {
+      "ts": "2026-11-14T11:50:59.813Z",
+      "identity": "executor-a",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "5c82ebcc4d1d4957a4c8777419d3dc8a",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:00.096Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "claimed",
+      "delivery_id": "32cbdb4c62544e058a88704440184522",
+      "event_id": 23
+    },
+    {
+      "ts": "2026-11-14T11:51:00.156Z",
+      "identity": "guard-1",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "32cbdb4c62544e058a88704440184522",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:00.213Z",
+      "identity": "executor-a",
+      "operation": "renew",
+      "http_status": 200,
+      "outcome": "renewed",
+      "delivery_id": "5c82ebcc4d1d4957a4c8777419d3dc8a",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:00.286Z",
+      "identity": "guard-1",
+      "operation": "dependencies",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:00.299Z",
+      "identity": "executor-a",
+      "operation": "result",
+      "http_status": 200,
+      "outcome": "accepted",
+      "delivery_id": "5c82ebcc4d1d4957a4c8777419d3dc8a",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:00.309Z",
+      "identity": "guard-1",
+      "operation": "read",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:00.331Z",
+      "identity": "guard-1",
+      "operation": "dependencies",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:00.335Z",
+      "identity": "guard-1",
+      "operation": "read",
+      "http_status": 200,
+      "outcome": "ok",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:00.358Z",
+      "identity": "guard-1",
+      "operation": "renew",
+      "http_status": 409,
+      "outcome": "conflict",
+      "delivery_id": "32cbdb4c62544e058a88704440184522",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:00.486Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:00.531Z",
+      "identity": "executor-b",
+      "operation": "renew",
+      "http_status": 409,
+      "outcome": "conflict",
+      "delivery_id": "bfc1cfa7be73420ab36701373842ffd2",
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:01.035Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:02.333Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:02.397Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:02.520Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:03.053Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:04.277Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:04.350Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:04.413Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:04.537Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:05.071Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:06.298Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:06.368Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:06.430Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:06.568Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:07.086Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:08.320Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:08.384Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:08.486Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:08.585Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:09.104Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:10.341Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:10.406Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:10.512Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:10.602Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:11.119Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:12.358Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:12.424Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:12.527Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:12.618Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:13.136Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:14.375Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:14.439Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:14.542Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:14.633Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:15.152Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:16.423Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:16.455Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:16.558Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:16.648Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:17.167Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:18.440Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:18.470Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:18.575Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:18.663Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:19.184Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:20.457Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:20.485Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:20.599Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:20.677Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:21.200Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:22.472Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:22.500Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:22.612Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:22.716Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:23.214Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:24.515Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:24.525Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:24.628Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:24.731Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:25.230Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:26.532Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:26.543Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:26.642Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:26.757Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:27.245Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:28.549Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:28.560Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:28.669Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:28.773Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:29.266Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:30.565Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:30.575Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:30.684Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:30.787Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:31.282Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:32.581Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:32.622Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:32.701Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:32.800Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:33.331Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:34.598Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:34.638Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:34.717Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:34.815Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:35.355Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:36.616Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:36.652Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:36.731Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:36.838Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:37.371Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:38.632Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:38.668Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:38.783Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:38.854Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:39.386Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:40.648Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:40.682Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:40.798Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:40.868Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:41.402Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:42.665Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:42.724Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:42.813Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:42.882Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:43.432Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:44.689Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:44.740Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:44.828Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:44.898Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:45.448Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:46.706Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:46.754Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:46.843Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:46.912Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:47.463Z",
+      "identity": "verifier-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:48.722Z",
+      "identity": "executor-a",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:48.769Z",
+      "identity": "executor-b",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:48.859Z",
+      "identity": "guard-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    },
+    {
+      "ts": "2026-11-14T11:51:48.935Z",
+      "identity": "planner-1",
+      "operation": "claim",
+      "http_status": 200,
+      "outcome": "idle",
+      "delivery_id": null,
+      "event_id": null
+    }
+  ],
+  "recorded_incident_ids": [
+    "INC-2D99E493E073",
+    "INC-B6C2183DFF0D"
+  ],
+  "audit_completeness": []
+}

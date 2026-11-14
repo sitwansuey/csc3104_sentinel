@@ -166,8 +166,8 @@ Measured with `experiments/distributed/claims.py` in the file mode of the
 multi-process harness: the Coordinator and five workers as separate processes
 on one Windows host, over HTTPS on loopback, so one kernel clock, one disk and
 no real network. Other test runs shared the host at the same time, so the
-timings are indicative only. No cluster was involved; P4.02 repeats this in
-kind.
+timings are indicative only. No cluster was involved; the P4.02 kind
+measurements follow below.
 
 Time from the restarted Coordinator answering `/readyz` to the first claim,
 scenario S5 with timed restarts (`claims.py restart`, workers polling every
@@ -229,6 +229,84 @@ commands queued and 21 to 23 with 1,000, with the median claim taking 60 to
 busier host, gave 12 to 14). It falls with the backlog because every claim
 replays the whole pending outbox in one `BEGIN IMMEDIATE` transaction. This
 is the claim path alone, not end-to-end recovery.
+
+### Measured on the four-node kind lab (P4.02)
+
+These runs are **unscored; owner sign-off is pending**. `sentinel-dist`
+has four kind nodes on one Docker host, sharing one kernel, clock and disk;
+these are not separate machines. The Planner is synthetic and approvals
+are scripted. The restart samples use deploy 13 at 0b5529f, run directory
+`sentinel-dist-20261114T161109` (C in the
+[acceptance results](distributed-acceptance.md#results-p401)).
+
+The newest PASS offline summary, `rto-from-runs-b6e9c120cf93` in
+`sentinel-dist-p402-rto`, aggregates all five S5 runs. RTO starts at the
+Coordinator Pod delete on the cluster clock.
+
+| Restart metric | Samples | Min / median / max (s) |
+| --- | --- | --- |
+| Pod Ready | 5 | 1.714 / 2.389 / 2.852 |
+| First served worker request | 5 | 4.114 / 20.015 / 21.148 |
+| Next journal transition | 5 | 9.706 / 19.996 / 21.132 |
+
+All five S5 runs passed with one template write each. No first claim was
+observed: no command was pending; a served request still measures contact.
+The served-request median, about 20 s, sits near the documented bound:
+an in-flight attempt, up to 15 s back-off and one request, after Ready.
+It is not a 15 s bound measured from deletion. Earlier S5 attempts aborted
+without summaries on outage reads (bc4dc70 / 3cfac2f) and duplicate module
+identities (0b5529f / 625d555). The initial offline aggregation found no
+runs because it stopped at the overview summary; fixed 2c0f595. It is not
+an additional restart sample.
+
+Partition and restore sources are summary.json files under the drill
+basenames below in D `sentinel-dist-20261114T164045` (smoke at 03a5b77),
+E `sentinel-dist-20261114T194646` (deploy 15 at d8d90e3), and
+F `sentinel-dist-20261114T202554` (deploy 16 at 7244e41). The Coordinator
+logged accesses at DEBUG for these drills.
+
+Every partition lasted 120 s. Writes and answered renewals are counted
+while cut; recovery starts at the request to remove the partition, so it
+includes removal time. Both recovery metrics met 15 s + the measured RTT.
+
+| Deploy / drill | Verdict | Writes / answered renewals | First served request / next transition after heal (s) | 15 s + RTT (s) |
+| --- | --- | --- | --- | --- |
+| 14 smoke / `partition-b387eb29c1b2` | PASS | 0 / 0 | 0.556 / 5.171 | 15.092 |
+| 15 r1 / `partition-b20b8c3ae1d6` | PASS | 0 / 0 | 0.538 / 9.507 | 15.095 |
+| 15 r2 / `partition-0e15466acfb8` | PASS | 0 / 0 | 0.489 / 4.680 | 15.124 |
+| 15 r3 / `partition-6f00038f8d81` | PASS | 0 / 0 | 0.714 / 7.372 | 15.098 |
+
+Restore RPO is the lost Coordinator commit count, not elapsed time or a
+count of workload writes. Detection is the latest of the five workers'
+rollback logs / observed readyz 503 responses, measured from restore-copy
+completion on the cluster clock, including the Coordinator restart. All
+five completed attempts logged rollback detection, returned readyz 503
+with `store_changed`, and made zero claims after detection.
+
+| Deploy / drill | Verdict | RPO: lost commits | Detection log / readyz (s) | Staged clearing | Fresh incident |
+| --- | --- | --- | --- | --- | --- |
+| 14 smoke / `restore-11918e34bb55` | FAIL (harness) | 108 | 35.360 / 41.323 | executor-b replay returned; harness wait stalled | Not reached |
+| 15 r1 / `restore-bcb37a09cc6d` | PASS | 66 | 38.111 / 42.519 | executor-a, verifier-1, planner-1, guard-1, executor-b; replayed incident RECOVERED | RECOVERED |
+| 15 r2 / `restore-a5f219178576` | FAIL (harness) | 122 | 36.365 / 42.158 | executor-a, planner-1, verifier-1 cleared; harness wait stalled | Not reached |
+| 16 r1 / `restore-cf0b0acc0582` | PASS | 61 | 46.566 / 49.076 | executor-b, verifier-1, planner-1, guard-1, executor-a; replayed incident RECOVERED | RECOVERED |
+| 16 r2 / `restore-2932721b4c66` | FAIL (review required) | 113 | 38.003 / 40.165 | executor-a, planner-1, verifier-1, guard-1 cleared; four results still under review | Not reached |
+| 17 r1 / `restore-e5cf86880cc0` | FAIL (harness) | 120 | 38.453 / 42.587 | executor-b, planner-1, verifier-1, guard-1 cleared; one action approved again; a Guard result never resent | Not reached |
+
+- Smoke: the harness waited for executor-b to have no missing result, although the staged replay had returned and an unrelated review item remained; timed out at 120 s and left workers stopped. Fixed e9707ae: wait for the staged results and re-check later replays, including those of an already cleared worker.
+- Deploy 15 r2: two Verifier dependency results shared the harness's key; one returned, but the other kept the wait open while a Guard result became replayable. The 120 s wait timed out and the lab did not settle. Fixed 7244e41: include accepted generation/commit in the key and allow review-only items 60 s to become replays.
+
+- Deploy 16 r2 at 7244e41: every result of a later action, its approval included, had been acknowledged after the backup. Replays re-ran its proposal and first Guard pass, then it waited for an approval the restore had dropped, so its other results stayed under review past the 60 s wait. Fixed 8bad459: replay staging approves again, as the operator resuming the lab, any action waiting for approval, and lists those approvals.
+- Deploy 17 r1 at 8bad459: the action was approved again, but the Guard's acknowledged result for its second pass was never resent. After a new approval the Guard answers a new request with a new result, so the lost result is redone rather than replayed, and the restore check keeps listing the old one as missing. Not fixed: the drill would have to treat a result superseded by new work as recovered, which needs an owner decision on what "recovered" means after a restore.
+
+Across the six restore attempts the part P4.02 asks for held every time:
+every worker logged the rollback, answered readyz 503 with `store_changed`
+and made no claim after it; between 61 and 122 Coordinator commits were
+lost; and the restore check exited 1 with the replay and review listing.
+Automatic staged acceptance through to a fresh RECOVERED incident completed
+in two of the six (deploy 15 r1, deploy 16 r1). Staged acceptance therefore
+stays an operator procedure ([remote workers](remote-workers.md)); the drill
+automates it only partly. An offline full test suite overlapped deploy 16's
+later drills, so host CPU load is a possible timing confound for those.
 
 ## Time and ordering
 
@@ -990,12 +1068,12 @@ S7 was asserted the same way until P3.03 fixed the wedge, and now asserts
 FAILED with no write and the measured offsets. An earlier version of this
 change reported S7 as RECOVERED; that held only because the test offset did
 not reach the Executor's local Guard re-check, which read the unshifted
-clock. The S7 and S7b results come from file
-mode on one Windows host; neither has run in kind mode.
+clock. These S7 and S7b measurements come from file mode on one Windows
+host. P4.01 also ran S7 with TimeChaos in kind; S7b remains file-mode only.
 
-### Four-node kind acceptance (P4.01), written, not run
+### Four-node kind acceptance (P4.01)
 
-The next step moves the same roles from processes to Pods on a dedicated
+The acceptance runs place the same roles in Pods on a dedicated
 four-node kind cluster (`deploy/kind/kind-dist.yaml`): the Coordinator,
 executor-a and executor-b on three different nodes, each worker with its own
 Secret, PVC and identity, and a network policy that lets a worker reach the
@@ -1016,10 +1094,12 @@ One Coordinator store serves every run of a deployment, so a run starts only
 on a settled lab (`experiments/distributed/kind_acceptance.py::run_unsettled`),
 and its waiting, approvals and other invariants are narrowed to the incidents
 it opened (`experiments/distributed/kind_acceptance.py::scope_records`). The recipe,
-the scenario matrix and the empty results table are in
-[distributed acceptance](distributed-acceptance.md). None of it has run:
-no claim here rests on it, and when it runs its nodes are still containers
-on one Docker host.
+the scenario matrix and the recorded results are in
+[distributed acceptance](distributed-acceptance.md#results-p401): 71/80
+completed runs passed across deploys 10-15, with invariants holding in all
+80. S8 deploy 15 remains 3/5 as recorded; its separate offline re-judge at
+0ff1fb3 is 5/5. Owner sign-off is pending and every run is unscored. The
+four nodes are containers on one Docker host, not separate machines.
 
 ### The Coordinator's Database port (P5.01 stage 8.1), offline only
 
@@ -1146,12 +1226,12 @@ the owners' review, with the argument and tests above.
 | P2.06 | Done: the fenced abort ran live in the wedge harness `admission-deny` at 4139385 and 5409092 (`C-EXECUTOR-WEDGE-FENCE`); fencing stays off by default |
 | P3.02 | Done in file mode on one host: trace context across outbox rows, deliveries and worker requests, and the offline viewer, are in the code ([traces](observability.md#traces)), and two file-mode runs (fake cluster, synthetic planner, separate processes on one host) each rebuilt into one connected trace across six processes (`C-TRACE-FILE-679EF29`). Left: a trace from a kind-mode or multi-node run |
 | P3.01 | Done in file mode (above). Kind mode is reproducible in code: `experiments/distributed/kind_bundle.py` prepares the bundle (allowlisted lab contexts only, `sentinel-lab` always refused, a short-lived restricted `sentinel-executor` token in a temporary directory outside the repository), and kind mode injects the bundle's catalog fault (R1 by default) before every run and restores and re-checks the baseline after it (a failure after the injection is followed by a restore attempt, and the run stops naming the `kind_bundle restore` command when the baseline is not verified healthy), with a 180 s default deadline (`--deadline`), a 15 s Observer failure window and duplicate incidents counted in each run's summary ([recipe](../experiments/distributed/README.md#a-reproducible-kind-mode-run)). Two operator sessions on 12 Nov 2026 ran S1b, S1c, S2, S4, S5 and S8 twice each against `kind-sentinel-boutique-connected`, with the deterministic synthetic planner, all now committed evidence bundles: with scratch versions of these tools at 0a8d4d7, all 12 matched their expectation after the health policy was relaxed (the stricter one failed I3 at the 60 s deadline), and two opened a duplicate incident that the Guard rejected (`C-DISTRIBUTED-KIND-0A8D4D7`); with the committed tools at be6e636, 11 of 12 matched, and S2 r2 failed I5 after its Verifier command was delivered 8 times (`C-DISTRIBUTED-KIND-BE6E636`, `L-VERIFIER-RETRY-BACKOFF`). The Verifier now samples within one pass ([above](#the-verifier-samples-within-one-claimed-pass)); a third session at 02d91e5 on 13 Nov 2026 re-ran all six scenarios twice with the committed tools: 12 of 12 matched, every invariant held, the Verifier command was delivered once in each non-S8 run, and the kind restore reset the Sentinel annotations after every run, removing the S8 fence annotations (`C-DISTRIBUTED-KIND-02D91E5`). P4.01's four-node lab has its own harness (below), so these tools' allowlists stay as they are. Kind mode counts a template write by its effect, as file mode does: a change of the whole pod template's fingerprint between successive reads of the Deployment (a RESTART token change included), or a new evidence annotation for the template in place. It does not count `metadata.generation`, which an Executor fence also raises (`C-EXECUTOR-WEDGE-FENCE`), so a fence counts no write. Its reads are polled; when generation rose by more than the changes two reads show, a write may be hidden and I1 fails on an `unobserved` row instead of passing |
-| P3.03 | Done in the code above. Left: S7 in kind mode, and a real clock offset per Pod (Chaos Mesh TimeChaos, P4.01) instead of the gated test offset. With operator approval required, an Executor whose clock is 5 min off cannot reach RECOVERED: its own Guard re-check refuses the Coordinator-stamped approval. So P4.01 should expect what S7 and S7b show (FAILED with no write without a bound; with a bound, that Executor stops claiming and an in-bound peer recovers the action), unless the owners change the re-check |
-| P3.04 | Done in the code above and in file mode on one host (ownership epochs, the seal, the ledger settle), and S8 ran in kind mode against the real shippingservice Deployment four times, twice with scratch tools at 0a8d4d7 and twice with the committed tools at be6e636, on one kind node on one host with the synthetic planner (`C-SEAL-LIVE`). Left: the audit-log proof that the paused PATCH was refused (P4.01), a run across separate machines, and the Executor owner's sign-off on the mechanism (#58) |
-| P3.05 | Done: an admission policy limiting which fields the Executor identity may change, with a monotonic fence epoch (`deploy/sentinel/executor-admission.yaml`), checked structurally offline and run live once in a disposable namespace (`scripts/validation/test_executor_admission_live.py`, 24 of 24 probes as expected, including a seal from a fresh store denied by a higher stored epoch; `C-ADMISSION-POLICY-LIVE`). Left: installing it in the lab namespaces, which nothing does yet; the owners' choice between seeding a store's epoch from the annotation and fencing by resourceVersion only; and their sign-off on the choices listed in `L-EXECUTOR-FIELD-LIMITS` (no epoch required on a template change, the identity matched in any namespace, a malformed stored epoch failing closed, evidence changeable without a template change, no resourceNames on the binding) |
-| P3.06 | Done in the code above and measured in file mode on one host. Left: the same measurements in a cluster (P4.02) |
-| P4.01 | Written and tested offline only ([below](#four-node-kind-acceptance-p401-written-not-run)): the four-node lab, its manifests and the acceptance harness with I7 from the audit log. Left: creating the cluster, the live S0-S9 runs with `--repeat 5`, committed audit-log extracts, and the owners' review of the evidence for #59, #61 and #63 |
-| P4.02 | Partition, restart and restore drills on the four-node lab; measured RTO and RPO added here |
+| P3.03 | Done in code and file mode. P4.01 S7 used TimeChaos -300 s on both Executors: all 8 completed runs passed with FAILED and zero writes, as expected; one additional attempt aborted at restore. No skew between separate machines was measured |
+| P3.04 | Done in code, file mode and kind. P4.01 deploy 15 captured the holder's stale PATCH refused 422 in all five S8 runs, with zero writes for each revoked action; recorded verdict 3/5, scoped offline re-judge 5/5 at 0ff1fb3 ([results](distributed-acceptance.md#results-p401)). Separate machines and Executor owner sign-off (#58) remain |
+| P3.05 | Done: an admission policy limiting which fields the Executor identity may change, with a monotonic fence epoch (`deploy/sentinel/executor-admission.yaml`), checked structurally offline and run live once in a disposable namespace (`scripts/validation/test_executor_admission_live.py`, 24 of 24 probes as expected, including a seal from a fresh store denied by a higher stored epoch; `C-ADMISSION-POLICY-LIVE`). P4.01 installs it in sentinel-dist-workload, where S9 passed 5/5. Left: installing it in the Boutique lab namespaces; the owners' choice between seeding a store's epoch from the annotation and fencing by resourceVersion only; and their sign-off on the choices listed in `L-EXECUTOR-FIELD-LIMITS` (no epoch required on a template change, the identity matched in any namespace, a malformed stored epoch failing closed, evidence changeable without a template change, no resourceNames on the binding) |
+| P3.06 | Done in code; measured in file mode and the four-node kind lab on one host ([P4.02](#measured-on-the-four-node-kind-lab-p402)) |
+| P4.01 | S0-S9 ran on four kind nodes on one Docker host: 71/80 completed runs passed as recorded, all 80 passed invariants; failures and fixes are [above](#four-node-kind-acceptance-p401). Unscored; owners' review for #59, #61 and #63 remains |
+| P4.02 | Measured on the four-node kind lab, one Docker host: restart S5 x5 and partition 120 s x3 plus smoke passed; restore detection and the restore-check listing held in 6/6 attempts (RPO 61-122 lost commits); automatic staged acceptance to a fresh RECOVERED incident completed in 2/6, each failure a harness staging gap (three fixed: e9707ae, 7244e41, 8bad459; one documented). Unscored; owner sign-off pending ([measurements](#measured-on-the-four-node-kind-lab-p402)) |
 | P5.01 | Stage 8.1 in part, offline only: the Database port with SQLite unchanged and a Postgres dialect ([above](#the-coordinators-database-port-p501-stage-81-offline-only)). Left: the owners' go/no-go on a Postgres driver and CloudNativePG, the Postgres adapter and both backends in CI, then 8.2 to 8.4, a replicated Coordinator on a replicated database |
 | P5.08 | Done offline only: the optional REST transport decides a definite rejection at once ([above](#fencing-limits)); kubectl stays the default. Left: the rv-race and admission-deny live runs with `--transport rest` next to kubectl ([recipe](testing.md#rest-transport-live-recipe-p508)), and the owner's sign-off |
 

@@ -1,0 +1,1412 @@
+{
+  "schema": "sentinel-p402-drill-v1",
+  "drill": "restore",
+  "context": "kind-sentinel-dist",
+  "passed": false,
+  "failures": [
+    "TimeoutError: Acknowledged replay results did not return; do not clear peers",
+    "The lab did not settle"
+  ],
+  "started_at": "2026-11-14T12:14:12.510163Z",
+  "limits": "Four kind nodes (containers) on one Docker host: separate network namespaces and kubelets, one shared kernel, clock and disk. Not separate machines. The Planner is the deterministic lab planner (synthetic proposals), and clock skew is injected by Chaos Mesh TimeChaos, not measured between hosts.",
+  "steps": [
+    {
+      "step": "measure cluster clock offset",
+      "started_at": "2026-11-14T12:14:12.615921Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:14:12.826504Z",
+      "seconds": 0.211
+    },
+    {
+      "step": "check settled lab and scope incidents",
+      "started_at": "2026-11-14T12:14:12.826523Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:14:14.078578Z",
+      "seconds": 1.252
+    },
+    {
+      "step": "require DEBUG Coordinator access evidence",
+      "started_at": "2026-11-14T12:14:14.079567Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:14:14.356936Z",
+      "seconds": 0.277
+    },
+    {
+      "step": "arm Executor before patch",
+      "started_at": "2026-11-14T12:14:14.663201Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:14:15.573959Z",
+      "seconds": 0.911
+    },
+    {
+      "step": "inject S0 incident",
+      "started_at": "2026-11-14T12:14:15.573980Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:14:15.682979Z",
+      "seconds": 0.109
+    },
+    {
+      "step": "wait for managed approval",
+      "started_at": "2026-11-14T12:14:15.682990Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:14:37.202393Z",
+      "seconds": 21.52
+    },
+    {
+      "step": "approve initial incident",
+      "started_at": "2026-11-14T12:14:37.202416Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:14:39.574572Z",
+      "seconds": 2.372
+    },
+    {
+      "step": "wait for held Executor",
+      "started_at": "2026-11-14T12:14:39.574583Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:14:45.189936Z",
+      "seconds": 5.615
+    },
+    {
+      "step": "confirm READY backup point",
+      "started_at": "2026-11-14T12:14:45.277945Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:14:45.594610Z",
+      "seconds": 0.317
+    },
+    {
+      "step": "SQLite read-only consistent backup inside Coordinator Pod",
+      "started_at": "2026-11-14T12:14:45.594629Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:14:45.928623Z",
+      "seconds": 0.334
+    },
+    {
+      "step": "release Executor",
+      "started_at": "2026-11-14T12:14:45.928642Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:14:46.395285Z",
+      "seconds": 0.467
+    },
+    {
+      "step": "disarm backup fault points",
+      "started_at": "2026-11-14T12:14:46.395294Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:14:47.451683Z",
+      "seconds": 1.056
+    },
+    {
+      "step": "finish S0 incident",
+      "started_at": "2026-11-14T12:14:47.451702Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:15:24.587978Z",
+      "seconds": 37.137
+    },
+    {
+      "step": "note previous store counter before shutdown",
+      "started_at": "2026-11-14T12:15:24.588001Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:15:24.890119Z",
+      "seconds": 0.302
+    },
+    {
+      "step": "copy journal read-only: planner-1",
+      "started_at": "2026-11-14T12:15:24.890170Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:15:25.399873Z",
+      "seconds": 0.51
+    },
+    {
+      "step": "copy journal read-only: guard-1",
+      "started_at": "2026-11-14T12:15:25.399903Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:15:26.220209Z",
+      "seconds": 0.82
+    },
+    {
+      "step": "copy journal read-only: executor-a",
+      "started_at": "2026-11-14T12:15:26.220243Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:15:26.673592Z",
+      "seconds": 0.453
+    },
+    {
+      "step": "copy journal read-only: executor-b",
+      "started_at": "2026-11-14T12:15:26.673621Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:15:27.124678Z",
+      "seconds": 0.451
+    },
+    {
+      "step": "copy journal read-only: verifier-1",
+      "started_at": "2026-11-14T12:15:27.124707Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:15:27.595549Z",
+      "seconds": 0.471
+    },
+    {
+      "step": "scale Coordinator to zero and wait for all Pods to terminate",
+      "started_at": "2026-11-14T12:15:27.595603Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:15:29.995626Z",
+      "seconds": 2.4
+    },
+    {
+      "step": "create PVC maintenance Pod",
+      "started_at": "2026-11-14T12:15:29.995646Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:15:31.106107Z",
+      "seconds": 1.11
+    },
+    {
+      "step": "note final counter with Coordinator stopped",
+      "started_at": "2026-11-14T12:15:31.106138Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:15:31.647254Z",
+      "seconds": 0.541
+    },
+    {
+      "step": "restore backup with no Coordinator writers",
+      "started_at": "2026-11-14T12:15:31.647291Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:15:32.194028Z",
+      "seconds": 0.547
+    },
+    {
+      "step": "copy restored database read-only before startup",
+      "started_at": "2026-11-14T12:15:32.194089Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:15:32.717167Z",
+      "seconds": 0.523
+    },
+    {
+      "step": "remove maintenance Pod and confirm termination",
+      "started_at": "2026-11-14T12:15:32.717941Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:04.133340Z",
+      "seconds": 31.416
+    },
+    {
+      "step": "restart Coordinator and wait Ready",
+      "started_at": "2026-11-14T12:16:04.133359Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:07.697750Z",
+      "seconds": 3.564
+    },
+    {
+      "step": "measure restore detection",
+      "started_at": "2026-11-14T12:16:07.697772Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:20.660260Z",
+      "seconds": 12.963
+    },
+    {
+      "step": "detect store rollback on every delivery worker",
+      "started_at": "2026-11-14T12:16:07.697778Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:14.351786Z",
+      "seconds": 6.654
+    },
+    {
+      "step": "observe stopped claims",
+      "started_at": "2026-11-14T12:16:14.351798Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:20.351946Z",
+      "seconds": 6.0
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:16:20.660314Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:20.875225Z",
+      "seconds": 0.215
+    },
+    {
+      "step": "stage replay holders before clearing peers",
+      "started_at": "2026-11-14T12:16:20.875330Z",
+      "status": "failed",
+      "error_type": "TimeoutError",
+      "ended_at": "2026-11-14T12:18:32.961164Z",
+      "seconds": 132.088
+    },
+    {
+      "step": "accept replay holder: executor-a",
+      "started_at": "2026-11-14T12:16:20.875380Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:22.272204Z",
+      "seconds": 1.397
+    },
+    {
+      "step": "wait for acknowledged replays",
+      "started_at": "2026-11-14T12:16:22.272226Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:25.334354Z",
+      "seconds": 3.062
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:16:22.272242Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:22.602247Z",
+      "seconds": 0.33
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:16:22.602299Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:22.791034Z",
+      "seconds": 0.189
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:16:24.791656Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:25.106746Z",
+      "seconds": 0.315
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:16:25.106795Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:25.334184Z",
+      "seconds": 0.227
+    },
+    {
+      "step": "accept replay holder: planner-1",
+      "started_at": "2026-11-14T12:16:25.334380Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:27.019170Z",
+      "seconds": 1.685
+    },
+    {
+      "step": "wait for acknowledged replays",
+      "started_at": "2026-11-14T12:16:27.019194Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:30.077813Z",
+      "seconds": 3.059
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:16:27.019209Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:27.372154Z",
+      "seconds": 0.353
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:16:27.372204Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:27.547881Z",
+      "seconds": 0.176
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:16:29.548261Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:29.901804Z",
+      "seconds": 0.354
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:16:29.901856Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:30.077704Z",
+      "seconds": 0.176
+    },
+    {
+      "step": "accept replay holder: verifier-1",
+      "started_at": "2026-11-14T12:16:30.077829Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:31.875675Z",
+      "seconds": 1.798
+    },
+    {
+      "step": "wait for acknowledged replays",
+      "started_at": "2026-11-14T12:16:31.875700Z",
+      "status": "failed",
+      "error_type": "TimeoutError",
+      "ended_at": "2026-11-14T12:18:32.961136Z",
+      "seconds": 121.088
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:16:31.875718Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:32.205915Z",
+      "seconds": 0.33
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:16:32.205963Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:32.380316Z",
+      "seconds": 0.174
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:16:34.380756Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:34.775801Z",
+      "seconds": 0.395
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:16:34.775859Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:34.964989Z",
+      "seconds": 0.189
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:16:36.965213Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:37.308553Z",
+      "seconds": 0.343
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:16:37.308595Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:37.497556Z",
+      "seconds": 0.189
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:16:39.497751Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:39.871288Z",
+      "seconds": 0.374
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:16:39.871332Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:40.053298Z",
+      "seconds": 0.182
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:16:42.053769Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:42.381018Z",
+      "seconds": 0.327
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:16:42.381072Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:42.564338Z",
+      "seconds": 0.183
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:16:44.564555Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:44.958752Z",
+      "seconds": 0.394
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:16:44.958799Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:45.171809Z",
+      "seconds": 0.213
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:16:47.172113Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:47.497512Z",
+      "seconds": 0.325
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:16:47.497558Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:47.682557Z",
+      "seconds": 0.185
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:16:49.683110Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:50.001879Z",
+      "seconds": 0.319
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:16:50.001926Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:50.197175Z",
+      "seconds": 0.195
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:16:52.197350Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:53.156884Z",
+      "seconds": 0.96
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:16:53.156934Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:53.348806Z",
+      "seconds": 0.192
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:16:55.349260Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:55.694484Z",
+      "seconds": 0.345
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:16:55.694529Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:55.873464Z",
+      "seconds": 0.179
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:16:57.874042Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:58.275430Z",
+      "seconds": 0.401
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:16:58.275486Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:16:58.452769Z",
+      "seconds": 0.177
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:00.453197Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:00.798952Z",
+      "seconds": 0.346
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:00.799007Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:01.014978Z",
+      "seconds": 0.216
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:03.015588Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:04.170162Z",
+      "seconds": 1.155
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:04.170204Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:04.350888Z",
+      "seconds": 0.181
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:06.351477Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:07.266118Z",
+      "seconds": 0.915
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:07.266163Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:07.527198Z",
+      "seconds": 0.261
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:09.527534Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:10.072434Z",
+      "seconds": 0.545
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:10.072499Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:10.278351Z",
+      "seconds": 0.206
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:12.278937Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:12.607962Z",
+      "seconds": 0.329
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:12.608011Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:12.792232Z",
+      "seconds": 0.184
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:14.792538Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:15.252524Z",
+      "seconds": 0.46
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:15.252571Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:15.455107Z",
+      "seconds": 0.203
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:17.455375Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:17.970159Z",
+      "seconds": 0.515
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:17.970208Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:18.163166Z",
+      "seconds": 0.193
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:20.163392Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:20.520251Z",
+      "seconds": 0.357
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:20.520292Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:20.719978Z",
+      "seconds": 0.2
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:22.720319Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:23.070363Z",
+      "seconds": 0.35
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:23.070415Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:23.257233Z",
+      "seconds": 0.187
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:25.257698Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:25.594537Z",
+      "seconds": 0.337
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:25.594592Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:25.771838Z",
+      "seconds": 0.177
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:27.772413Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:28.096279Z",
+      "seconds": 0.324
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:28.096329Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:28.274219Z",
+      "seconds": 0.178
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:30.274717Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:30.594610Z",
+      "seconds": 0.32
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:30.594655Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:30.776547Z",
+      "seconds": 0.182
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:32.777261Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:33.106262Z",
+      "seconds": 0.329
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:33.106314Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:33.287154Z",
+      "seconds": 0.181
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:35.287357Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:35.603185Z",
+      "seconds": 0.316
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:35.603232Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:35.776850Z",
+      "seconds": 0.174
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:37.777042Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:38.093158Z",
+      "seconds": 0.316
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:38.093224Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:38.266486Z",
+      "seconds": 0.173
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:40.267038Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:40.595065Z",
+      "seconds": 0.328
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:40.595113Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:40.767690Z",
+      "seconds": 0.173
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:42.768125Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:43.094225Z",
+      "seconds": 0.326
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:43.094289Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:43.268222Z",
+      "seconds": 0.174
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:45.268606Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:45.589883Z",
+      "seconds": 0.321
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:45.589925Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:45.760327Z",
+      "seconds": 0.17
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:47.760835Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:48.103811Z",
+      "seconds": 0.343
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:48.103862Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:48.279291Z",
+      "seconds": 0.175
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:50.279650Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:50.603269Z",
+      "seconds": 0.324
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:50.603324Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:50.781912Z",
+      "seconds": 0.179
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:52.782153Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:53.101335Z",
+      "seconds": 0.319
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:53.101381Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:53.277780Z",
+      "seconds": 0.176
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:55.278384Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:55.657996Z",
+      "seconds": 0.38
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:55.658048Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:55.831782Z",
+      "seconds": 0.174
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:17:57.831979Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:58.179659Z",
+      "seconds": 0.348
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:17:58.179744Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:17:58.354593Z",
+      "seconds": 0.175
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:18:00.355186Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:00.688523Z",
+      "seconds": 0.333
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:18:00.688566Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:00.860896Z",
+      "seconds": 0.172
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:18:02.861186Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:03.199312Z",
+      "seconds": 0.338
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:18:03.199362Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:03.372322Z",
+      "seconds": 0.173
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:18:05.372874Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:05.698251Z",
+      "seconds": 0.325
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:18:05.698300Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:05.874250Z",
+      "seconds": 0.176
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:18:07.874840Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:08.198466Z",
+      "seconds": 0.324
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:18:08.198516Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:08.372876Z",
+      "seconds": 0.174
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:18:10.373376Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:10.690099Z",
+      "seconds": 0.317
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:18:10.690142Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:10.861127Z",
+      "seconds": 0.171
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:18:12.861417Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:13.267221Z",
+      "seconds": 0.406
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:18:13.267265Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:13.472640Z",
+      "seconds": 0.205
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:18:15.473259Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:15.788904Z",
+      "seconds": 0.316
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:18:15.788958Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:15.964311Z",
+      "seconds": 0.175
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:18:17.964491Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:18.295731Z",
+      "seconds": 0.331
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:18:18.295784Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:18.460137Z",
+      "seconds": 0.164
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:18:20.460300Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:20.798453Z",
+      "seconds": 0.338
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:18:20.798509Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:20.969855Z",
+      "seconds": 0.171
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:18:22.970325Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:23.287958Z",
+      "seconds": 0.318
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:18:23.288015Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:23.454428Z",
+      "seconds": 0.166
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:18:25.454910Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:25.793233Z",
+      "seconds": 0.338
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:18:25.793288Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:25.981515Z",
+      "seconds": 0.188
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:18:27.981776Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:28.293080Z",
+      "seconds": 0.311
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:18:28.293139Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:28.470542Z",
+      "seconds": 0.177
+    },
+    {
+      "step": "copy current Coordinator read-only",
+      "started_at": "2026-11-14T12:18:30.470773Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:30.788922Z",
+      "seconds": 0.318
+    },
+    {
+      "step": "coordinator_restore_check --previous-commit",
+      "started_at": "2026-11-14T12:18:30.788966Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:30.960884Z",
+      "seconds": 0.172
+    },
+    {
+      "step": "cleanup all tracked chaos and fault points",
+      "started_at": "2026-11-14T12:18:32.961246Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:32.961260Z",
+      "seconds": 0.0
+    },
+    {
+      "step": "restore target baseline",
+      "started_at": "2026-11-14T12:18:32.961267Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:18:33.055709Z",
+      "seconds": 0.094
+    },
+    {
+      "step": "settle lab",
+      "started_at": "2026-11-14T12:18:33.055727Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:22:36.656978Z",
+      "seconds": 243.605
+    },
+    {
+      "step": "measure final cluster clock offset",
+      "started_at": "2026-11-14T12:22:36.660023Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:22:36.862411Z",
+      "seconds": 0.202
+    },
+    {
+      "step": "collect complete audit log",
+      "started_at": "2026-11-14T12:22:36.862450Z",
+      "status": "completed",
+      "ended_at": "2026-11-14T12:22:53.997187Z",
+      "seconds": 17.135
+    }
+  ],
+  "clock": {
+    "before": {
+      "offset_seconds": -0.003,
+      "uncertainty_seconds": 0.105,
+      "at": "2026-11-14T12:14:12.615935Z"
+    },
+    "after": {
+      "offset_seconds": -0.01,
+      "uncertainty_seconds": 0.101,
+      "at": "2026-11-14T12:22:36.660036Z"
+    }
+  },
+  "earlier_incidents": 12,
+  "access_logging": {
+    "level": "DEBUG",
+    "pod_uid": "f813cc01-cfec-49df-8e90-493ccbcb066e",
+    "restarts": 0
+  },
+  "backup": {
+    "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+    "commit_counter": 3057
+  },
+  "backup_fault_cleanup": {
+    "actions": [
+      {
+        "operator_action": "disarm fault point",
+        "identity": "executor-b",
+        "stem": "executor.before_patch",
+        "at": "2026-11-14T12:14:46.985911Z"
+      }
+    ],
+    "problems": []
+  },
+  "first_incident": [
+    {
+      "incident_id": "INC-BD64EDB07374",
+      "state": "RECOVERED",
+      "active_action_id": "ACT-03551c24023d777a2e859988"
+    }
+  ],
+  "before_stop": {
+    "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+    "commit_counter": 3172
+  },
+  "maintenance_pod": "p402-restore-5773f67d2dde",
+  "maintenance_removed": true,
+  "coordinator_restarted": true,
+  "before_restore": {
+    "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+    "commit_counter": 3179
+  },
+  "restored": {
+    "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+    "commit_counter": 3057
+  },
+  "restore_completed_at": "2026-11-14T12:15:32.191071Z",
+  "ready_at": "2026-11-14T12:16:07Z",
+  "rpo_lost_commits": 122,
+  "detection_origin": "restore copy completion on cluster clock; includes Coordinator restart",
+  "detection": {
+    "guard-1": {
+      "ts": "2026-11-14T12:16:07.276Z",
+      "event": "worker.store_rollback_detected",
+      "previous_commit": 3179,
+      "commit_counter": 3058,
+      "readyz": {
+        "http_status": 503,
+        "body": {
+          "ready": false,
+          "contact_age_seconds": 1.768,
+          "store_changed": true
+        }
+      },
+      "seconds": 35.085,
+      "readyz_observed_at": "2026-11-14T12:16:09.115594Z",
+      "readyz_observed_seconds": 36.925
+    },
+    "executor-a": {
+      "ts": "2026-11-14T12:16:07.516Z",
+      "event": "worker.store_rollback_detected",
+      "previous_commit": 3178,
+      "commit_counter": 3059,
+      "readyz": {
+        "http_status": 503,
+        "body": {
+          "ready": false,
+          "contact_age_seconds": 0.578,
+          "store_changed": true
+        }
+      },
+      "seconds": 35.325,
+      "readyz_observed_at": "2026-11-14T12:16:10.138146Z",
+      "readyz_observed_seconds": 37.947
+    },
+    "executor-b": {
+      "ts": "2026-11-14T12:16:07.544Z",
+      "event": "worker.store_rollback_detected",
+      "previous_commit": 3177,
+      "commit_counter": 3059,
+      "readyz": {
+        "http_status": 503,
+        "body": {
+          "ready": false,
+          "contact_age_seconds": 1.617,
+          "store_changed": true
+        }
+      },
+      "seconds": 35.353,
+      "readyz_observed_at": "2026-11-14T12:16:11.216982Z",
+      "readyz_observed_seconds": 39.026
+    },
+    "verifier-1": {
+      "ts": "2026-11-14T12:16:07.147Z",
+      "event": "worker.store_rollback_detected",
+      "previous_commit": 3175,
+      "commit_counter": 3057,
+      "readyz": {
+        "http_status": 503,
+        "body": {
+          "ready": false,
+          "contact_age_seconds": 1.057,
+          "store_changed": true
+        }
+      },
+      "seconds": 34.956,
+      "readyz_observed_at": "2026-11-14T12:16:12.266672Z",
+      "readyz_observed_seconds": 40.076
+    },
+    "planner-1": {
+      "ts": "2026-11-14T12:16:08.556Z",
+      "event": "worker.store_rollback_detected",
+      "previous_commit": 3176,
+      "commit_counter": 3062,
+      "readyz": {
+        "http_status": 503,
+        "body": {
+          "ready": false,
+          "contact_age_seconds": 1.778,
+          "store_changed": true
+        }
+      },
+      "seconds": 36.365,
+      "readyz_observed_at": "2026-11-14T12:16:14.348710Z",
+      "readyz_observed_seconds": 42.158
+    }
+  },
+  "claims_after_detection": 0,
+  "detection_log_seconds": 36.365,
+  "detection_seconds": 42.158,
+  "restore_check": {
+    "exit_code": 1,
+    "report": {
+      "database": {
+        "schema_version": 6,
+        "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+        "commit_counter": 3057
+      },
+      "previous": {
+        "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+        "commit_counter": 3179
+      },
+      "different_database": false,
+      "rolled_back": true,
+      "lost_commits": 122,
+      "journals": [
+        {
+          "journal": "planner-1/transport.db",
+          "remembered": {
+            "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+            "commit_counter": 3066,
+            "change": null
+          },
+          "acknowledged": 17,
+          "missing": [
+            {
+              "kind": "proposal",
+              "incident_id": "INC-BD64EDB07374",
+              "action_id": "ACT-03551c24023d777a2e859988",
+              "topic": "planner.request",
+              "redrive": "review",
+              "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "accepted_commit": 3066
+            }
+          ],
+          "unsent": 0,
+          "different_database": false,
+          "rolled_back": true,
+          "lost_commits": 9
+        },
+        {
+          "journal": "guard-1/transport.db",
+          "remembered": {
+            "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+            "commit_counter": 3108,
+            "change": null
+          },
+          "acknowledged": 35,
+          "missing": [
+            {
+              "kind": "guard_result",
+              "incident_id": "INC-BD64EDB07374",
+              "action_id": "ACT-03551c24023d777a2e859988",
+              "topic": "guard.request",
+              "redrive": "review",
+              "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "accepted_commit": 3086
+            },
+            {
+              "kind": "guard_result",
+              "incident_id": "INC-BD64EDB07374",
+              "action_id": "ACT-03551c24023d777a2e859988",
+              "topic": "guard.request",
+              "redrive": "review",
+              "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "accepted_commit": 3108
+            }
+          ],
+          "unsent": 1,
+          "different_database": false,
+          "rolled_back": true,
+          "lost_commits": 51
+        },
+        {
+          "journal": "executor-a/transport.db",
+          "remembered": {
+            "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+            "commit_counter": 3060,
+            "change": null
+          },
+          "acknowledged": 11,
+          "missing": [
+            {
+              "kind": "execution_result",
+              "incident_id": "INC-BD64EDB07374",
+              "action_id": "ACT-f82571094644308052af31ed",
+              "topic": "executor.request",
+              "redrive": "replay",
+              "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "accepted_commit": 3060
+            }
+          ],
+          "unsent": 0,
+          "different_database": false,
+          "rolled_back": true,
+          "lost_commits": 3
+        },
+        {
+          "journal": "executor-b/transport.db",
+          "remembered": {
+            "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+            "commit_counter": 3117,
+            "change": null
+          },
+          "acknowledged": 3,
+          "missing": [
+            {
+              "kind": "execution_result",
+              "incident_id": "INC-BD64EDB07374",
+              "action_id": "ACT-03551c24023d777a2e859988",
+              "topic": "executor.request",
+              "redrive": "review",
+              "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "accepted_commit": 3117
+            }
+          ],
+          "unsent": 5,
+          "different_database": false,
+          "rolled_back": true,
+          "lost_commits": 60
+        },
+        {
+          "journal": "verifier-1/transport.db",
+          "remembered": {
+            "generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+            "commit_counter": 3170,
+            "change": null
+          },
+          "acknowledged": 45,
+          "missing": [
+            {
+              "kind": "dependency_result",
+              "incident_id": "INC-BD64EDB07374",
+              "action_id": "ACT-03551c24023d777a2e859988",
+              "topic": "dependency.request",
+              "redrive": "review",
+              "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "accepted_commit": 3079
+            },
+            {
+              "kind": "dependency_result",
+              "incident_id": "INC-BD64EDB07374",
+              "action_id": "ACT-03551c24023d777a2e859988",
+              "topic": "dependency.request",
+              "redrive": "review",
+              "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "accepted_commit": 3102
+            },
+            {
+              "kind": "outcome",
+              "incident_id": "INC-BD64EDB07374",
+              "action_id": "ACT-03551c24023d777a2e859988",
+              "topic": "verifier.request",
+              "redrive": "review",
+              "accepted_generation": "fedbb4a9e2c25d09bcbcd5df3803c081",
+              "accepted_commit": 3170
+            }
+          ],
+          "unsent": 1,
+          "different_database": false,
+          "rolled_back": true,
+          "lost_commits": 113
+        }
+      ],
+      "missing": 8,
+      "may_lose_acknowledged_work": true
+    },
+    "listing": "Restored database: schema 6, generation fedbb4a9e2c25d09bcbcd5df3803c081, commit counter 3057\n  It is 122 commits behind the counter noted before the restore.\nJournal planner-1/transport.db: 17 acknowledged, 1 missing, 0 not yet sent\n  The worker saw commit 3066; the restored database is 9 commits behind.\n  missing proposal for ACT-03551c24023d777a2e859988 (planner.request): review: no pending request asks for this result; check again after the replays\nJournal guard-1/transport.db: 35 acknowledged, 2 missing, 1 not yet sent\n  The worker saw commit 3108; the restored database is 51 commits behind.\n  missing guard_result for ACT-03551c24023d777a2e859988 (guard.request): review: no pending request asks for this result; check again after the replays\n  missing guard_result for ACT-03551c24023d777a2e859988 (guard.request): review: no pending request asks for this result; check again after the replays\nJournal executor-a/transport.db: 11 acknowledged, 1 missing, 0 not yet sent\n  The worker saw commit 3060; the restored database is 3 commits behind.\n  missing execution_result for ACT-f82571094644308052af31ed (executor.request): replay: the request is pending again; clear this worker first, and it resends its saved result when it claims it\nJournal executor-b/transport.db: 3 acknowledged, 1 missing, 5 not yet sent\n  The worker saw commit 3117; the restored database is 60 commits behind.\n  missing execution_result for ACT-03551c24023d777a2e859988 (executor.request): review: no pending request asks for this result; check again after the replays\nJournal verifier-1/transport.db: 45 acknowledged, 3 missing, 1 not yet sent\n  The worker saw commit 3170; the restored database is 113 commits behind.\n  missing dependency_result for ACT-03551c24023d777a2e859988 (dependency.request): review: no pending request asks for this result; check again after the replays\n  missing dependency_result for ACT-03551c24023d777a2e859988 (dependency.request): review: no pending request asks for this result; check again after the replays\n  missing outcome for ACT-03551c24023d777a2e859988 (verifier.request): review: no pending request asks for this result; check again after the replays\nAcknowledged work may be lost."
+  },
+  "workers_cleared": [
+    "executor-a",
+    "planner-1",
+    "verifier-1"
+  ],
+  "cleanup": {
+    "actions": [],
+    "problems": []
+  },
+  "target_restore": {
+    "operator_restore": false
+  },
+  "settle": {
+    "settled": false,
+    "seconds": 242.1,
+    "target": [],
+    "open": [
+      "INC-BD64EDB07374: VALIDATING"
+    ],
+    "leftovers": []
+  },
+  "detection_upper_bound_seconds": 42.27,
+  "audit_completeness": [],
+  "audit": {
+    "skipped": 0,
+    "first_at": "2026-11-13T10:26:21.581188Z",
+    "files": 4,
+    "rows": 1269
+  },
+  "chaos": [],
+  "operator_actions": [
+    {
+      "operator_action": "release fault point",
+      "identity": "executor-a",
+      "stem": "executor.before_patch",
+      "pod": "sentinel-executor-a-6b7fdf7cfb-sbtkj",
+      "at": "2026-11-14T12:14:46.395271Z"
+    },
+    {
+      "operator_action": "disarm fault point",
+      "identity": "executor-b",
+      "stem": "executor.before_patch",
+      "at": "2026-11-14T12:14:46.985911Z"
+    }
+  ],
+  "approval_attempts": [
+    {
+      "operation": "create",
+      "action_id": "ACT-f82571094644308052af31ed",
+      "attempt": 1,
+      "sent_at": "2026-11-14T12:14:37.506808Z",
+      "fresh_port_forward": false,
+      "outcome": "answered"
+    },
+    {
+      "operation": "create",
+      "action_id": "ACT-03551c24023d777a2e859988",
+      "attempt": 1,
+      "sent_at": "2026-11-14T12:14:56.098432Z",
+      "fresh_port_forward": false,
+      "outcome": "answered"
+    }
+  ],
+  "read_outages": [],
+  "manual_recovery": "Check the summary's cleanup and restore-check listing. Remove only this drill's NetworkChaos or maintenance Pod in sentinel-dist; ensure the maintenance Pod has terminated before scaling sentinel-coordinator to one. Run coordinator_restore_check before accepting any stopped worker; resolve review items, then restore demo-api from inputs/baseline.json and settle the lab by hand.",
+  "ended_at": "2026-11-14T12:22:54.095634Z",
+  "records": {
+    "rechecks": 51,
+    "restore_checks": 52
+  }
+}
