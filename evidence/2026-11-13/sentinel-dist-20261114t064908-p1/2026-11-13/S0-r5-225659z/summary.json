@@ -1,0 +1,183 @@
+{
+  "schema": "sentinel-dist-acceptance-run-v1",
+  "scenario": "S0",
+  "title": "No fault: authorized recovery with operator approval through the approval API",
+  "fault": "none",
+  "file_mode_counterpart": "S0",
+  "expect": "RECOVERED, exactly 1 Sentinel template write",
+  "repeat_index": 5,
+  "context": "kind-sentinel-dist",
+  "date": "2026-11-13",
+  "started_at": "2026-11-13T22:56:59.975078Z",
+  "ended_at": "2026-11-13T22:58:15.920308Z",
+  "duration_seconds": 81.4,
+  "fault_at": null,
+  "notes": {},
+  "harness_error": null,
+  "terminal_in_time": true,
+  "states": [
+    "RECOVERED"
+  ],
+  "incidents": [
+    {
+      "incident_id": "INC-C0CD2385D15E",
+      "state": "RECOVERED",
+      "opened_at": "2026-11-13T22:57:18.320195Z"
+    }
+  ],
+  "earlier_incidents": 4,
+  "settle": {
+    "settled": true,
+    "seconds": 20.4,
+    "target": [],
+    "open": [],
+    "leftovers": []
+  },
+  "invariants": [
+    {
+      "id": "I1",
+      "name": "At most one committed template write per action",
+      "passed": true,
+      "detail": "1 committed write(s) over 1 action(s)"
+    },
+    {
+      "id": "I2",
+      "name": "No template write after revocation unless surfaced for review",
+      "passed": true,
+      "detail": "0 revocation(s), no write after any"
+    },
+    {
+      "id": "I3",
+      "name": "Every incident terminal or reviewable within the deadline",
+      "passed": true,
+      "detail": "RECOVERED"
+    },
+    {
+      "id": "I4",
+      "name": "No delivery has two acknowledged results",
+      "passed": true,
+      "detail": "35 acknowledged command(s), one result each"
+    },
+    {
+      "id": "I5",
+      "name": "No poison loop (bounded attempts, at most two HTTP 400 refusals per command)",
+      "passed": true,
+      "detail": "at most 1 attempt(s) per command, 0 HTTP 400 result(s)"
+    },
+    {
+      "id": "I6",
+      "name": "No Executor ledger ends with a write in doubt",
+      "passed": true,
+      "detail": "5 ledger row(s), none in doubt"
+    },
+    {
+      "id": "X1",
+      "name": "Lease ownership exclusive",
+      "passed": true,
+      "detail": "7 delivery lease(s), each held by one identity at a time"
+    },
+    {
+      "id": "X2",
+      "name": "No secret in logs, configuration files or argv",
+      "passed": true,
+      "detail": "7 file(s) and 7 argv list(s) clean"
+    },
+    {
+      "id": "X3",
+      "name": "No acknowledged message lost",
+      "passed": true,
+      "detail": "35 acknowledged result(s) all recorded"
+    },
+    {
+      "id": "X4",
+      "name": "Transitions journal consistent with incidents and outbox",
+      "passed": true,
+      "detail": "7 transition(s) consistent"
+    },
+    {
+      "id": "I7",
+      "name": "At most one successful template PATCH per action in the API server audit log",
+      "passed": true,
+      "detail": "1 template PATCH(es) over 1 action(s); 0 fence or seal PATCH(es) and 0 denied change(s) not counted"
+    }
+  ],
+  "invariants_passed": true,
+  "expectation": {
+    "expect": "RECOVERED, exactly 1 Sentinel template write",
+    "met": true,
+    "failures": []
+  },
+  "passed": true,
+  "audit": {
+    "events": 209,
+    "effects": {
+      "request": 207,
+      "template_write": 2
+    },
+    "sentinel_template_writes_per_action": {
+      "ACT-a4e0b40fd603d548d80dada5": 1
+    },
+    "max_template_writes_per_action": 1,
+    "sentinel_template_writes": 1,
+    "operator_template_writes": 1,
+    "sentinel_denials": {},
+    "unclassified": {
+      "sentinel": 0,
+      "operator": 0
+    }
+  },
+  "audit_lines_skipped": 0,
+  "audit_completeness": {
+    "complete": true,
+    "problems": [],
+    "files": 2,
+    "first_event_at": "2026-11-13T10:26:21.581188Z",
+    "window": [
+      "2026-11-13T22:56:58.866078Z",
+      "2026-11-13T22:58:16.003308Z"
+    ],
+    "generation": {
+      "before": 10,
+      "before_restore": 12,
+      "after": 12
+    }
+  },
+  "clock": {
+    "control_plane_minus_harness": [
+      {
+        "offset_seconds": -0.013,
+        "uncertainty_seconds": 0.096,
+        "at": "2026-11-13T22:56:59.698814Z"
+      },
+      {
+        "offset_seconds": -0.013,
+        "uncertainty_seconds": 0.094,
+        "at": "2026-11-13T22:58:14.732964Z"
+      }
+    ],
+    "fault_at_cluster_clock": null
+  },
+  "takeover_seconds": null,
+  "coordinator_recovery": null,
+  "operator_actions": [
+    {
+      "operator_action": "inject STARTUP_FAILURE=true",
+      "at": "2026-11-13T22:57:01.127061Z"
+    },
+    {
+      "operator_restore": false
+    },
+    {
+      "operator_action": "approve",
+      "action_id": "ACT-a4e0b40fd603d548d80dada5",
+      "at": "2026-11-13T22:57:21.333616Z"
+    }
+  ],
+  "cleanup": {
+    "actions": [],
+    "problems": []
+  },
+  "synthetic_planner": true,
+  "git_revision": "3ba0d123333ac66f7cf9fc989b5a6310abb5ac0f",
+  "limits": "Four kind nodes (containers) on one Docker host: separate network namespaces and kubelets, one shared kernel, clock and disk. Not separate machines. The Planner is the deterministic lab planner (synthetic proposals), and clock skew is injected by Chaos Mesh TimeChaos, not measured between hosts."
+}

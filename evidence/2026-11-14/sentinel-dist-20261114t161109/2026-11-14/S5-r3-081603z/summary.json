@@ -1,0 +1,246 @@
+{
+  "schema": "sentinel-dist-acceptance-run-v1",
+  "scenario": "S5",
+  "title": "Restart the Coordinator between commit and reply, then delete its Pod",
+  "fault": "fault point coordinator.after_commit_before_reply@execution_result (exit), then kubectl delete pod of the Coordinator",
+  "file_mode_counterpart": "S5",
+  "expect": "RECOVERED, exactly 1 Sentinel template write, Coordinator RTO to Ready measured",
+  "repeat_index": 3,
+  "context": "kind-sentinel-dist",
+  "date": "2026-11-14",
+  "started_at": "2026-11-14T08:16:03.204554Z",
+  "ended_at": "2026-11-14T08:17:32.608033Z",
+  "duration_seconds": 100.4,
+  "fault_at": "2026-11-14T08:16:37.969506Z",
+  "notes": {
+    "after_commit_exit": {
+      "exit_code": 73,
+      "exited_at": "2026-11-14T08:16:34Z",
+      "restarts": 1,
+      "ready_at": "2026-11-14T08:16:37Z"
+    },
+    "pod_delete": {
+      "deleted_at": "2026-11-14T08:16:37.969506Z",
+      "pod": "sentinel-coordinator-77f69bd4ff-cgqws",
+      "replacement": "sentinel-coordinator-77f69bd4ff-kkk5r",
+      "ready_at": "2026-11-14T08:16:40Z",
+      "readable_at": "2026-11-14T08:16:41.686626Z"
+    }
+  },
+  "harness_error": null,
+  "terminal_in_time": true,
+  "states": [
+    "RECOVERED"
+  ],
+  "incidents": [
+    {
+      "incident_id": "INC-735AB4C6F08E",
+      "state": "RECOVERED",
+      "opened_at": "2026-11-14T08:16:22.164523Z"
+    }
+  ],
+  "earlier_incidents": 2,
+  "settle": {
+    "settled": true,
+    "seconds": 23.1,
+    "target": [],
+    "open": [],
+    "leftovers": []
+  },
+  "invariants": [
+    {
+      "id": "I1",
+      "name": "At most one committed template write per action",
+      "passed": true,
+      "detail": "1 committed write(s) over 1 action(s)"
+    },
+    {
+      "id": "I2",
+      "name": "No template write after revocation unless surfaced for review",
+      "passed": true,
+      "detail": "0 revocation(s), no write after any"
+    },
+    {
+      "id": "I3",
+      "name": "Every incident terminal or reviewable within the deadline",
+      "passed": true,
+      "detail": "RECOVERED"
+    },
+    {
+      "id": "I4",
+      "name": "No delivery has two acknowledged results",
+      "passed": true,
+      "detail": "21 acknowledged command(s), one result each"
+    },
+    {
+      "id": "I5",
+      "name": "No poison loop (bounded attempts, at most two HTTP 400 refusals per command)",
+      "passed": true,
+      "detail": "at most 1 attempt(s) per command, 0 HTTP 400 result(s)"
+    },
+    {
+      "id": "I6",
+      "name": "No Executor ledger ends with a write in doubt",
+      "passed": true,
+      "detail": "3 ledger row(s), none in doubt"
+    },
+    {
+      "id": "X1",
+      "name": "Lease ownership exclusive",
+      "passed": true,
+      "detail": "6 delivery lease(s), each held by one identity at a time"
+    },
+    {
+      "id": "X2",
+      "name": "No secret in logs, configuration files or argv",
+      "passed": true,
+      "detail": "7 file(s) and 7 argv list(s) clean"
+    },
+    {
+      "id": "X3",
+      "name": "No acknowledged message lost",
+      "passed": true,
+      "detail": "21 acknowledged result(s) all recorded"
+    },
+    {
+      "id": "X4",
+      "name": "Transitions journal consistent with incidents and outbox",
+      "passed": true,
+      "detail": "7 transition(s) consistent"
+    },
+    {
+      "id": "I7",
+      "name": "At most one successful template PATCH per action in the API server audit log",
+      "passed": true,
+      "detail": "1 template PATCH(es) over 1 action(s); 0 fence or seal PATCH(es) and 0 denied change(s) not counted"
+    }
+  ],
+  "invariants_passed": true,
+  "expectation": {
+    "expect": "RECOVERED, exactly 1 Sentinel template write, Coordinator RTO to Ready measured",
+    "met": true,
+    "failures": []
+  },
+  "passed": true,
+  "audit": {
+    "events": 239,
+    "effects": {
+      "request": 237,
+      "template_write": 2
+    },
+    "sentinel_template_writes_per_action": {
+      "ACT-f62996fdb86afc968eb5bc43": 1
+    },
+    "max_template_writes_per_action": 1,
+    "sentinel_template_writes": 1,
+    "operator_template_writes": 1,
+    "sentinel_denials": {},
+    "unclassified": {
+      "sentinel": 0,
+      "operator": 0
+    }
+  },
+  "audit_lines_skipped": 0,
+  "audit_completeness": {
+    "complete": true,
+    "problems": [],
+    "files": 3,
+    "first_event_at": "2026-11-13T10:26:21.581188Z",
+    "window": [
+      "2026-11-14T08:16:02.096554Z",
+      "2026-11-14T08:17:32.703033Z"
+    ],
+    "generation": {
+      "before": 6,
+      "before_restore": 8,
+      "after": 8
+    }
+  },
+  "clock": {
+    "control_plane_minus_harness": [
+      {
+        "offset_seconds": -0.006,
+        "uncertainty_seconds": 0.101,
+        "at": "2026-11-14T08:16:02.917603Z"
+      },
+      {
+        "offset_seconds": -0.008,
+        "uncertainty_seconds": 0.1,
+        "at": "2026-11-14T08:17:31.408011Z"
+      }
+    ],
+    "fault_at_cluster_clock": "2026-11-14T08:16:37.963506Z"
+  },
+  "takeover_seconds": null,
+  "coordinator_recovery": {
+    "to_ready": 2.036,
+    "to_first_claim": null,
+    "to_next_transition": 21.132
+  },
+  "operator_actions": [
+    {
+      "operator_action": "inject STARTUP_FAILURE=true",
+      "at": "2026-11-14T08:16:04.356953Z"
+    },
+    {
+      "operator_restore": false
+    },
+    {
+      "operator_action": "approve",
+      "action_id": "ACT-f62996fdb86afc968eb5bc43",
+      "at": "2026-11-14T08:16:31.317668Z"
+    }
+  ],
+  "operator": {
+    "attempts_failed": 2,
+    "failures": [
+      {
+        "at": "2026-11-14T08:16:27.627126Z",
+        "kind": "transient",
+        "reason": "SSLEOFError",
+        "error_type": "SSLEOFError"
+      },
+      {
+        "at": "2026-11-14T08:16:35.082036Z",
+        "kind": "transient",
+        "reason": "container not running",
+        "error_type": "TransientRead"
+      }
+    ],
+    "outages": [
+      {
+        "since": "2026-11-14T08:16:27.627109Z",
+        "seconds": 3.7,
+        "attempts": 1,
+        "reason": "SSLEOFError",
+        "ended": "answered"
+      },
+      {
+        "since": "2026-11-14T08:16:35.082028Z",
+        "seconds": 1.5,
+        "attempts": 1,
+        "reason": "container not running",
+        "ended": "answered"
+      }
+    ],
+    "fatal": [],
+    "still_running": false
+  },
+  "read_outages": [
+    {
+      "what": "coordinator.after_commit_before_reply@execution_result was not reached",
+      "since": "2026-11-14T08:16:35.081886Z",
+      "attempts": 1,
+      "reason": "container not running",
+      "seconds": 1.1,
+      "recovered": true
+    }
+  ],
+  "cleanup": {
+    "actions": [],
+    "problems": []
+  },
+  "synthetic_planner": true,
+  "git_revision": "0b5529fb77e4485493ca683b58394cef0bec098d",
+  "limits": "Four kind nodes (containers) on one Docker host: separate network namespaces and kubelets, one shared kernel, clock and disk. Not separate machines. The Planner is the deterministic lab planner (synthetic proposals), and clock skew is injected by Chaos Mesh TimeChaos, not measured between hosts."
+}

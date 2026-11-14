@@ -795,5 +795,34 @@ class Phase3DerivationTests(unittest.TestCase):
         self.assertEqual(summarize.outcome(self.bundles["lab-old"]), "FAILED")
 
 
+class AcceptanceOutcomeTests(unittest.TestCase):
+    """A distributed-acceptance bundle passes only when every run summary it holds passed."""
+
+    def bundle(self, runs, overview=None):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        files = []
+        if overview is not None:
+            (root / "summary.json").write_text(json.dumps(overview), encoding="utf-8")
+            files.append({"path": "summary.json"})
+        for name, passed in runs:
+            path = "2026-11-14/" + name + "/summary.json"
+            (root / path).parent.mkdir(parents=True)
+            (root / path).write_text(json.dumps({"scenario": name[:2], "passed": passed}), encoding="utf-8")
+            files.append({"path": path})
+        return summarize.Bundle({"bundle_id": "dist", "class": "distributed-acceptance"}, root, {"files": files})
+
+    def test_every_run_passed_is_pass(self):
+        self.assertEqual(summarize.outcome(self.bundle([("S7-r1-1", True), ("S9-r1-2", True)])), "PASS")
+
+    def test_one_failed_run_fails_the_bundle_whatever_the_overview_says(self):
+        bundle = self.bundle([("S8-r1-1", False), ("S9-r1-2", True)], overview={"passed": True})
+        self.assertEqual(summarize.outcome(bundle), "FAILED")
+
+    def test_no_run_summary_or_no_verdict_is_incomplete(self):
+        self.assertEqual(summarize.outcome(self.bundle([], overview={"passed": True})), "INCOMPLETE")
+        self.assertEqual(summarize.outcome(self.bundle([("S5-r1-1", None)])), "INCOMPLETE")
+
 if __name__ == "__main__":
     unittest.main()

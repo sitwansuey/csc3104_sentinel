@@ -1740,6 +1740,116 @@
       "provenance": "recorded",
       "status": "current",
       "reason": null
+    },
+    {
+      "bundle_id": "sentinel-dist-20261114t161109",
+      "class": "distributed-acceptance",
+      "path": "2026-11-14/sentinel-dist-20261114t161109",
+      "captured_at": "2026-11-14T08:13:05.782584Z",
+      "source_revision": "0b5529fb77e4485493ca683b58394cef0bec098d",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "sentinel-dist-20261114t064908-p1",
+      "class": "distributed-acceptance",
+      "path": "2026-11-13/sentinel-dist-20261114t064908-p1",
+      "captured_at": "2026-11-13T22:51:04.286455Z",
+      "source_revision": "3ba0d123333ac66f7cf9fc989b5a6310abb5ac0f",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "sentinel-dist-20261114t064908-p3",
+      "class": "distributed-acceptance",
+      "path": "2026-11-13/sentinel-dist-20261114t064908-p3",
+      "captured_at": "2026-11-13T22:51:04.286455Z",
+      "source_revision": "3ba0d123333ac66f7cf9fc989b5a6310abb5ac0f",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "sentinel-dist-20261114t123624-p1",
+      "class": "distributed-acceptance",
+      "path": "2026-11-14/sentinel-dist-20261114t123624-p1",
+      "captured_at": "2026-11-14T04:38:20.085885Z",
+      "source_revision": "b37017e8aa156809bb7b872a962c201edb23d397",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "sentinel-dist-20261114t123624-p2",
+      "class": "distributed-acceptance",
+      "path": "2026-11-14/sentinel-dist-20261114t123624-p2",
+      "captured_at": "2026-11-14T04:38:20.085885Z",
+      "source_revision": "b37017e8aa156809bb7b872a962c201edb23d397",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "sentinel-dist-20261114t164045-p1",
+      "class": "distributed-acceptance",
+      "path": "2026-11-14/sentinel-dist-20261114t164045-p1",
+      "captured_at": "2026-11-14T08:42:39.998092Z",
+      "source_revision": "7ce9863906edf56620ab0354ac7bc9573506cad7",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "sentinel-dist-20261114t164045-p2",
+      "class": "distributed-acceptance",
+      "path": "2026-11-14/sentinel-dist-20261114t164045-p2",
+      "captured_at": "2026-11-14T08:42:39.998092Z",
+      "source_revision": "7ce9863906edf56620ab0354ac7bc9573506cad7",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "sentinel-dist-20261114t164045-p3",
+      "class": "distributed-acceptance",
+      "path": "2026-11-14/sentinel-dist-20261114t164045-p3",
+      "captured_at": "2026-11-14T08:42:39.998092Z",
+      "source_revision": "7ce9863906edf56620ab0354ac7bc9573506cad7",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "sentinel-dist-20261114t164045-p4",
+      "class": "distributed-acceptance",
+      "path": "2026-11-14/sentinel-dist-20261114t164045-p4",
+      "captured_at": "2026-11-14T08:42:39.998092Z",
+      "source_revision": "7ce9863906edf56620ab0354ac7bc9573506cad7",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "sentinel-dist-20261114t064908-p2-p1",
+      "class": "distributed-acceptance",
+      "path": "2026-11-13/sentinel-dist-20261114t064908-p2-p1",
+      "captured_at": "2026-11-13T22:51:04.286455Z",
+      "source_revision": "3ba0d123333ac66f7cf9fc989b5a6310abb5ac0f",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "sentinel-dist-20261114t064908-p2-p2",
+      "class": "distributed-acceptance",
+      "path": "2026-11-13/sentinel-dist-20261114t064908-p2-p2",
+      "captured_at": "2026-11-13T22:51:04.286455Z",
+      "source_revision": "3ba0d123333ac66f7cf9fc989b5a6310abb5ac0f",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
     }
   ]
 }

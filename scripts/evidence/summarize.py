@@ -220,9 +220,25 @@ def outcome(bundle):
         return container_record(bundle)["outcome"]
     if bundle.run_class == "kind-lab-session":
         return lab_session_record(bundle)["outcome"]
+    if bundle.run_class == "distributed-acceptance":
+        runs = acceptance_runs(bundle)
+        if not runs or any(not isinstance(run.get("passed"), bool) for run in runs):
+            return "INCOMPLETE"
+        return "PASS" if all(run["passed"] for run in runs) else "FAILED"
     summary = bundle.json("summary.json") or bundle.json("data/evidence/summary.json") or {}
     status = summary.get("status")
     return status if status in OUTCOMES else "INCOMPLETE"
+
+
+def acceptance_runs(bundle):
+    """Per-run summaries of a distributed-acceptance bundle (<date>/<scenario>-r<n>-<time>/summary.json).
+
+    The root summary.json is the whole run directory's overview, which a bundle split into
+    parts carries in each part, so a bundle's outcome comes from its own run summaries only.
+    """
+    paths = sorted(item["path"] for item in bundle.manifest.get("files", [])
+                   if item["path"].count("/") == 2 and item["path"].endswith("/summary.json"))
+    return [run for run in (bundle.json(path) for path in paths) if isinstance(run, dict)]
 
 
 def summary_of(bundle):
