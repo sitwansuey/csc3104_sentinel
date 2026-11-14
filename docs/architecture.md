@@ -134,8 +134,10 @@ as NEEDS_REVIEW without an approval or execution request.
 
 SCALE is the first action that writes something other than a Pod template, so
 its safety rests on these points, each tested offline in
-`tests/test_scale_action.py` and none yet shown against a cluster
-(`L-SCALE-OFFLINE-ONLY`):
+`tests/test_scale_action.py`; point 1 was also exercised live in four
+connected-lab rounds on one host (a reviewed restore of 0 to 1 replica, and a
+forced SCALE to 5 refused with WORKLOAD_REPLICAS_EXCEED_POLICY and zero writes;
+bundles `p5conn-*-scale`, `L-SCALE-OFFLINE-ONLY`); the others are offline only:
 
 1. It can only restore a reviewed count. The Planner, not a provider, binds
    `desired_replicas` to the count recorded with the reviewed baseline, and the
