@@ -37,7 +37,8 @@ from experiments.distributed.kind_acceptance import (
     AcceptanceError, Lab, ReadUnavailable, RunView, TransientRead,
     approval_permissions, certificate_names, cluster_identity, config_map, control_plane_window, coordinator_recovery,
     credentials, expectation, holder_patches, partition, pod_facts, pod_failure, pod_kill, load_summaries,
-    preflight, ready_since, render_admission, render_api_server_policy, results_table, s8_seal, secret_documents,
+    preflight, ready_since, render_admission, render_api_server_policy, results_table, s8_later_incidents, s8_seal,
+    secret_documents,
     scope_records, secret_name, selector_apps, shift, stamp, takeover_seconds, target_inputs, time_skew,
     transient_failure)
 from runtime.service_identity import ProtocolError
@@ -1206,7 +1207,7 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
     invariants_passed = all(item["passed"] for item in results)
     failures = expectation(scenario.name, incidents=records["incidents"], rows=rows, notes=run.notes,
                            stalled=run.stalled, takeover=takeover, recovery=recovery,
-                           generation_at_end=generation_at_end, records=records)
+                           generation_at_end=generation_at_end, records=records, operator_actions=operator_actions)
     seal = s8_seal(rows, records, run.stalled) if scenario.name == "S8" else None
     unsettled = settled is not None and not settled["settled"]
     passed = invariants_passed and not failures and not problems and error is None and not unsettled
@@ -1229,6 +1230,8 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
                                                      "after": generations[1]}},
                "clock": {"control_plane_minus_harness": offsets, "fault_at_cluster_clock": fault_at},
                "seal_path": seal and seal["path"], "seal": seal,
+               "later_incidents": (s8_later_incidents(rows, records, operator_actions)
+                                   if scenario.name == "S8" else []),
                "takeover_seconds": takeover, "coordinator_recovery": recovery, "operator_actions": operator_actions,
                "operator": operator, "read_outages": lab.read_outages[outages_before:],
                "approval_attempts": lab.approval_attempts[attempts_before:], "cleanup": cleaned,

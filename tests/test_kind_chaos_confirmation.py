@@ -776,9 +776,21 @@ class CleanupTests(Harness):
                                    generation=row.get("generation")) for row in rows],
                      "skipped": 0, "first_at": "2026-11-13T09:00:00Z", "files": 1}
             return lambda lab, since, until: found
+        collect = live.invariants.collect
+
+        def with_revoked_action(*args, **options):
+            records = collect(*args, **options)
+            records["actions"] = [{"action_id": "ACT-1", "incident_id": "I0", "state": "FAILED"}]
+            records["revocations"] = [{"action_id": "ACT-1", "revoked_at": "2026-11-13T20:59:20Z"}]
+            records["transitions"] = [{"seq": 1, "incident_id": "I0", "action_id": None,
+                                       "from_state": None, "to_state": "OPEN", "cause": "incident",
+                                       "recorded_at": "2026-11-13T20:59:01Z"}]
+            return records
+
         for path, seal_path in ((True, "fenced"), (False, None)):
             with self.subTest(fence=path), patch.object(RunLab, "audit_log", log(path)), patch.object(
-                    RunLab, "audit_rows", lambda lab, since, until: (lab.audit_log(since, until)["rows"], 0)):
+                    RunLab, "audit_rows", lambda lab, since, until: (lab.audit_log(since, until)["rows"], 0)), \
+                    patch.object(live.invariants, "collect", with_revoked_action):
                 summary = self.run_one(FakeCluster(latency=1.0), "S8")
                 self.assertEqual(summary["seal_path"], seal_path)
                 self.assertEqual(summary["notes"]["holder_patch"]["code"], 422)

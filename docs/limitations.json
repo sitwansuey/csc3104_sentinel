@@ -817,7 +817,7 @@
       "cites": [
         {"at": "experiments/distributed/kind_acceptance.py:904","text": "def chaos_effect(document, current, targets, pods_now):"},
         {"at": "experiments/distributed/kind_acceptance.py", "text": "def confirm_chaos(self, document, targets, timeout=CHAOS_CONFIRM_SECONDS, interval=1.0):"},
-        {"at": "experiments/distributed/kind_acceptance_live.py:1137", "text": "cleaned = run.cleanup()  # Every fault undone, or said not to be: never a silent leftover."},
+        {"at": "experiments/distributed/kind_acceptance_live.py:1138", "text": "cleaned = run.cleanup()  # Every fault undone, or said not to be: never a silent leftover."},
         {"at": "tests/test_kind_chaos_confirmation.py:391", "text": "def test_s1a_kills_the_planner_before_the_chaos_object_is_removed(self):"},
         {"at": "tests/test_kind_chaos_confirmation.py", "text": "def test_a_pod_kill_that_never_happens_stops_the_run_and_releases_the_planner(self):"},
         {"at": "docs/distributed-acceptance.md", "text": "### First matrix (1adcfe3): a chaos object removed before Chaos Mesh acted"}

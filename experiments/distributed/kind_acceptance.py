@@ -1020,9 +1020,10 @@ SCENARIOS = {item.name: item for item in (
              "Executor seals", "fault point executor.before_submit (block, after the adapter's pre-read and local "
              "UID/resourceVersion check), revoke through the approval API, wait for the seal, then release the "
              "holder so its PATCH goes out with the version it read", "S8",
-             "not RECOVERED, 0 template writes, a seal by the other Executor (its fence in the audit log, or the "
-             "Coordinator's records of a seal past V0 with nothing to send), then the holder's PATCH refused by "
-             "the API server (409 or 422), generation unchanged after the seal"),
+             "revoked incident not RECOVERED, 0 template writes of the revoked action, a seal of that action by "
+             "the other Executor (its fence or Coordinator records of a seal past V0 with nothing to send), then "
+             "the holder's PATCH of that action refused (409 or 422), generation unchanged from seal to refusal "
+             "or first later incident opening; later writes only for separately approved later incidents"),
     Scenario("S9", "RBAC, admission and network policy denials", "the Executor reads a Secret, patches "
              "another Deployment, asks for pods/exec and changes spec.replicas; the Planner opens a TCP "
              "connection to the API server; the Executor to the target's port", "design S9 (A6)",
@@ -1061,6 +1062,52 @@ def holder_patches(rows, holder):
                    and _from_pod(row, holder)), key=lambda row: _seconds(row["at"]))
 
 
+def _s8_revoked(records):
+    """The single revoked action in the run's scoped records; absent or ambiguous evidence fails closed."""
+    records = records or {}
+    revoked = {row.get("action_id") for row in records.get("revocations", [])}
+    actions = [row for row in records.get("actions", []) if row.get("action_id") in revoked]
+    return actions[0] if len(revoked) == len(actions) == 1 and actions[0].get("incident_id") else None
+
+
+def _s8_later_openings(records, revoked):
+    """Journal openings after the revoked incident's terminal transition, including incidents with no action yet."""
+    terminal = [_seconds(row["recorded_at"]) for row in records.get("transitions", [])
+                if row.get("incident_id") == revoked["incident_id"] and row.get("to_state") in invariants.TERMINAL
+                and row.get("recorded_at")]
+    return {row["incident_id"]: row["recorded_at"] for row in records.get("transitions", [])
+            if terminal and row.get("from_state") is None and row.get("recorded_at")
+            and row.get("incident_id") != revoked["incident_id"]
+            and _seconds(row["recorded_at"]) > min(terminal)}
+
+
+def s8_later_incidents(rows, records, operator_actions=()):
+    """Other incidents opened after the revoked incident went terminal, with approval evidence and write counts.
+
+    Only accepted managed approvals or the harness's completed approve actions
+    count. An unrelated action, a re-plan in the revoked incident, or a missing
+    terminal/open transition cannot justify a later write.
+    """
+    records = records or {}
+    revoked = _s8_revoked(records)
+    if revoked is None:
+        return []
+    opened = _s8_later_openings(records, revoked)
+    managed = {row["approval_id"] for row in records.get("managed_approvals", [])}
+    approved = {row["action_id"] for row in records.get("approvals", []) if row.get("approval_id") in managed}
+    approved.update(row["action_id"] for row in operator_actions if row.get("operator_action") == "approve"
+                    and row.get("action_id"))
+    states = {row["incident_id"]: row["state"] for row in records.get("incidents", [])}
+    return [{"incident_id": action["incident_id"], "action_id": action["action_id"],
+             "state": states.get(action["incident_id"]),
+             "writes": sum(row["effect"] == "template_write" and row["sentinel"]
+                           and row.get("action_id") == action["action_id"] for row in rows),
+             "opened_at": opened[action["incident_id"]], "approved": action["action_id"] in approved}
+            for action in sorted(records.get("actions", []), key=lambda action: action["action_id"])
+            if action["incident_id"] in opened and action["incident_id"] in states
+            and action["action_id"] != revoked["action_id"]]
+
+
 def s8_seal(rows, records, stalled):
     """The other Executor's seal of S8's action, as the run's evidence proves it; None when nothing proves one.
 
@@ -1075,8 +1122,8 @@ def s8_seal(rows, records, stalled):
     - "advanced_without_evidence": the target had already left V0 without
       this action's evidence (a crash-looping target's own status writes move
       its resourceVersion), so the seal sent nothing. The Coordinator's
-      records prove it: an accepted fence_result SEALED for one of the run's
-      actions, produced by the other Executor, at a resourceVersion that is
+      records prove it: an accepted fence_result SEALED for the run's revoked
+      action, produced by the other Executor, at a resourceVersion that is
       not the proposal's V0; the executor.seal delivery for that action owned
       by the same Executor and finished; and the action's move to FAILED
       caused by that very message (its event key). at is the Coordinator's
@@ -1086,21 +1133,23 @@ def s8_seal(rows, records, stalled):
     A fence from the holder's own Pod, or a seal the holder produced, is
     never a proof: expectation fails such a run on its own.
     """
-    if stalled not in EXECUTORS:
+    revoked = _s8_revoked(records)
+    if stalled not in EXECUTORS or revoked is None:
         return None
     other = [identity for identity in EXECUTORS if identity != stalled]
     fences = [row for row in rows if row["effect"] == "fence" and row["sentinel"] and _on_target(row) and row["at"]
+              and row.get("action_id") == revoked["action_id"]
               and any(_from_pod(row, identity) for identity in other)]
     if fences:
         first = min(fences, key=lambda row: _seconds(row["at"]))
         sealer = next(identity for identity in other if _from_pod(first, identity))
         return {"path": "fenced", "sealer": sealer, "at": first["at"],
-                "generation": max((row["generation"] for row in fences if type(row["generation"]) is int),
-                                  default=None)}
+                "generation": first["generation"]}
     records = records or {}
     for seal in records.get("seals", []):
         base, version = seal.get("based_on_resource_version"), seal.get("resource_version")
-        if (seal.get("outcome") != "SEALED" or seal.get("producer") not in other
+        if (seal.get("action_id") != revoked["action_id"] or seal.get("incident_id") != revoked["incident_id"]
+                or seal.get("outcome") != "SEALED" or seal.get("producer") not in other
                 or not isinstance(base, str) or not base or not isinstance(version, str) or not version
                 or version == base):
             continue
@@ -1119,27 +1168,31 @@ def s8_seal(rows, records, stalled):
 
 
 def expectation(name, *, incidents, rows, notes=None, stalled=None, takeover=None, recovery=None,
-                generation_at_end=None, records=None):
+                generation_at_end=None, records=None, operator_actions=()):
     """Failures of scenario name's expected outcome (Scenario.expect), from what the run recorded; [] when met.
 
     incidents are the run's scoped incident rows, rows its audit extract,
     notes the scenario's notes, stalled the Executor a fault point held,
     takeover and recovery the measurements, and generation_at_end the
     target's metadata.generation after the run and before the operator's
-    restore, and records the run's scoped records (S8 reads a seal that sent
-    no fence from them). The invariants cap writes and need a terminal state; this checks
+    restore, records the run's scoped records, and operator_actions the
+    harness's completed approvals. S8 uses revocations to select its action.
+    The invariants cap writes and need a terminal state; this checks
     what each scenario is for: S0, S1a-S1c, S2, S4 and S5 end RECOVERED with
     exactly one Sentinel template write (S2's not from the paused holder's
     Pod; S1b and S1c with a takeover measured; S5 with the Coordinator's
     return to Ready measured); S3 and S6 end with every incident terminal and
     at most one write (S6 with none during the partition); S7 ends FAILED,
-    none RECOVERED, with no write; S8 ends not RECOVERED with no template
-    write, a seal by the other Executor (s8_seal: its fence in the audit
+    none RECOVERED, with no write; S8's revoked incident ends not RECOVERED
+    with no template write of its revoked action, a seal by the other Executor
+    (s8_seal: its fence in the audit
     log, or the Coordinator's records of a seal past V0 with nothing to
     send), none by the holder, after it a PATCH from the holder's Pod that
     reached the API server and was refused with 409 or 422 (a holder that
     sent none did not exercise the race S8 is for, and fails), no write from
-    the holder's Pod, and no change to the target after the seal; S9's
+    the holder's Pod unless separately approved for a different incident
+    opened after the revoked incident went terminal, and no generation change
+    between seal and refused PATCH (or first later incident opening); S9's
     probes all behave as expected with no write.
     """
     notes, failures = notes or {}, []
@@ -1171,13 +1224,29 @@ def expectation(name, *, incidents, rows, notes=None, stalled=None, takeover=Non
              f"expected FAILED and none RECOVERED (states: {', '.join(states) or 'none'})")
         need(not writes, f"{len(writes)} Sentinel template write(s), expected 0")
     if name == "S8":
+        revoked = _s8_revoked(records)
+        need(revoked is not None, "no single revoked action identified in the run's records")
+        if revoked is None:
+            return failures
+        states = sorted({row["state"] for row in incidents if row["incident_id"] == revoked["incident_id"]})
         need(bool(states) and "RECOVERED" not in states, f"expected not RECOVERED (states: {', '.join(states) or 'none'})")
-        need(not writes, f"{len(writes)} Sentinel template write(s), expected 0")
+        revoked_writes = [row for row in writes if row.get("action_id") == revoked["action_id"]]
+        need(not revoked_writes, f"{len(revoked_writes)} Sentinel template write(s), expected 0")
+        later = s8_later_incidents(rows, records, operator_actions)
+        allowed = {item["action_id"]: _seconds(item["opened_at"]) for item in later if item["approved"]}
+
+        def later_approved(row):
+            return (row.get("action_id") in allowed and row.get("at")
+                    and _seconds(row["at"]) >= allowed[row["action_id"]])
+
+        unexpected = [row for row in writes if row.get("action_id") != revoked["action_id"] and not later_approved(row)]
+        need(not unexpected, f"{len(unexpected)} Sentinel template write(s) without a separately approved later incident")
         if stalled not in EXECUTORS:
             failures.append("no paused holder was recorded")
             return failures
-        own = [row for row in rows if row["sentinel"] and _on_target(row) and _from_pod(row, stalled)]
-        need(not any(row["effect"] in {"template_write", "metadata_write", "unclassified"} for row in own),
+        own = [row for row in rows if _on_target(row) and _from_pod(row, stalled)]
+        need(not any(row["effect"] in {"template_write", "metadata_write", "unclassified"} and not later_approved(row)
+                     for row in own),
              "the holder's Pod changed the target")
         need(not any(row["effect"] == "fence" for row in own), "a fence from the holder's own Pod: the holder sealed")
         need(not any(seal.get("producer") == stalled for seal in (records or {}).get("seals", [])),
@@ -1188,20 +1257,31 @@ def expectation(name, *, incidents, rows, notes=None, stalled=None, takeover=Non
              "on it)")
         if proof is not None:
             sealed_at = _seconds(proof["at"])
-            after = [row for row in holder_patches(rows, stalled) if _seconds(row["at"]) > sealed_at]
+            after = [row for row in holder_patches(rows, stalled) if _seconds(row["at"]) > sealed_at
+                     and row.get("action_id") == revoked["action_id"]]
             need(bool(after), "the holder's Pod sent no PATCH to the target after the seal: its stale PATCH never "
                  "reached the API server, so the race S8 is for was not exercised")
+            refused = [row for row in after if row["effect"] == "denied" and row["code"] in {409, 422}]
             if after:
-                need(any(row["effect"] == "denied" and row["code"] in {409, 422} for row in after),
-                     "no PATCH from the holder's Pod refused (409 or 422) after the seal")
-            sealed = proof["generation"]
-            if proof["path"] != "fenced":  # Nothing was sent: the generation last stored before the seal.
-                sealed = max((row["generation"] for row in rows if row["effect"] in audit.STORED and _on_target(row)
-                              and type(row["generation"]) is int and row["at"]
-                              and _seconds(row["at"]) <= sealed_at), default=None)
-            need(sealed is not None and generation_at_end == sealed,
-                 f"the target's generation is {generation_at_end} at the end and {sealed} after the seal: "
-                 "something changed it after the seal")
+                need(bool(refused), "no PATCH from the holder's Pod refused (409 or 422) after the seal")
+            # A refused PATCH has no Deployment response body. Generation is monotonic for this target UID:
+            # use successful target responses in the complete audit extract, stopping before later incidents' work.
+            # GET/status responses can show generation too; a dry run's predicted generation never counts.
+            observed = [row for row in rows if _on_target(row) and row.get("at") and not row.get("dry_run")
+                        and type(row.get("code")) is int and 200 <= row["code"] < 300
+                        and type(row.get("generation")) is int]
+
+            def generation_at(at):
+                return max((row["generation"] for row in observed if _seconds(row["at"]) <= at), default=None)
+
+            sealed = proof["generation"] if proof["path"] == "fenced" else generation_at(sealed_at)
+            boundaries = [_seconds(row["at"]) for row in (refused[:1] or after[:1])]
+            boundaries += [_seconds(at) for at in _s8_later_openings(records, revoked).values()]
+            boundary = min(boundaries, default=sealed_at)
+            generation = generation_at(boundary)
+            need(sealed is not None and generation == sealed,
+                 f"the target's generation is {generation} at the holder PATCH / first later incident and {sealed} "
+                 "after the seal: something changed it before that boundary")
     if name == "S9":
         probes = notes.get("probes") or []
         need(bool(probes) and all(item.get("passed") for item in probes), "not every denial probe behaved as expected")
@@ -2232,6 +2312,9 @@ def scope_records(records, since, prior=()):
     scoped["transitions"] = [row for row in records.get("transitions", []) if row["incident_id"] in opened]
     scoped["outbox"] = [row for row in records.get("outbox", []) if row.get("action_id") in actions]
     scoped["revocations"] = [row for row in records.get("revocations", []) if row["action_id"] in actions]
+    scoped["approvals"] = [row for row in records.get("approvals", []) if row["action_id"] in actions]
+    approvals = {row["approval_id"] for row in scoped["approvals"]}
+    scoped["managed_approvals"] = [row for row in records.get("managed_approvals", []) if row["approval_id"] in approvals]
     scoped["seals"] = [row for row in records.get("seals", []) if row.get("action_id") in actions]
     return scoped
 
