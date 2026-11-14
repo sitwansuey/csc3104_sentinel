@@ -1528,3 +1528,13 @@ quoted. P4.02 adds the measured RTO and RPO table to the
   without its body fails I7 and I1 while the operator's is reported apart,
   the completeness checks, and the extract drops bodies,
   IPs, agents, credential IDs and Secret names.
+
+## P4.02 drills
+
+```powershell
+python -m experiments.distributed.kind_drills rto-from-runs $s5runs --run-dir $run
+kubectl --context=kind-sentinel-dist --namespace=sentinel-dist set env deployment/sentinel-coordinator SENTINEL_LOG_LEVEL=DEBUG
+kubectl --context=kind-sentinel-dist --namespace=sentinel-dist rollout status deployment/sentinel-coordinator --timeout=180s
+python -m experiments.distributed.kind_drills partition --context kind-sentinel-dist --run-dir $run --seconds 120
+python -m experiments.distributed.kind_drills restore --context kind-sentinel-dist --run-dir $run
+```
