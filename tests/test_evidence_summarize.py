@@ -873,5 +873,73 @@ class AcceptanceOutcomeTests(unittest.TestCase):
         self.assertEqual(summarize.acceptance_runs(bundle), [{}])
         self.assertEqual(summarize.outcome(bundle), "INCOMPLETE")
 
+class CveGateOutcomeTests(unittest.TestCase):
+    """A P5.02 round passes only when every gate proof it records holds."""
+
+    def bundle(self, **overrides):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        files = {"admission-deny.json": {"passed": True, "unscanned_digest_denied": True},
+                 "zero-write.json": {"passed": True, "executor_writes": 0},
+                 "guard-regression.json": {"verdict": "REJECT",
+                                           "checks": [{"code": "IMAGE_CVE_REGRESSION", "status": "FAIL"}]},
+                 "guard-inherited.json": [{"verdict": "REJECT", "checks": []},
+                                          {"verdict": "ALLOW", "checks": [{"code": "IMAGE_CVE_INHERITED"}]}]}
+        files.update(overrides)
+        manifest = []
+        for name, value in files.items():
+            if value is None:
+                continue
+            (root / name).write_text(json.dumps(value), encoding="utf-8")
+            manifest.append({"path": name})
+        return summarize.Bundle({"bundle_id": "gate", "class": "cve-gate"}, root, {"files": manifest})
+
+    def test_every_proof_holding_is_pass(self):
+        self.assertEqual(summarize.outcome(self.bundle()), "PASS")
+
+    def test_any_proof_failing_is_failed(self):
+        for name, value in (("admission-deny.json", {"passed": True, "unscanned_digest_denied": False}),
+                            ("zero-write.json", {"passed": True, "executor_writes": 1}),
+                            ("guard-regression.json", {"verdict": "ESCALATE", "checks": []}),
+                            ("guard-inherited.json", [{"verdict": "REJECT", "checks": []}])):
+            with self.subTest(name=name):
+                self.assertEqual(summarize.outcome(self.bundle(**{name: value})), "FAILED")
+
+    def test_a_missing_record_is_incomplete(self):
+        self.assertEqual(summarize.outcome(self.bundle(**{"zero-write.json": None})), "INCOMPLETE")
+
+
+class CertLifecycleOutcomeTests(unittest.TestCase):
+    """A P5.06 round passes only when every lifecycle record it holds passed."""
+
+    def bundle(self, **overrides):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        files = {name: {"passed": True} for name in summarize.CERT_LIFECYCLE_RECORDS}
+        files.update(overrides)
+        manifest = []
+        for name, value in files.items():
+            if value is None:
+                continue
+            (root / name).write_text(json.dumps(value), encoding="utf-8")
+            manifest.append({"path": name})
+        return summarize.Bundle({"bundle_id": "certs", "class": "cert-lifecycle"}, root, {"files": manifest})
+
+    def test_every_record_passing_is_pass_with_or_without_the_expiry_drill(self):
+        self.assertEqual(summarize.outcome(self.bundle()), "PASS")
+        expiry = {"identity-expiring.json": {"passed": True, "executor_write_attempts": 0}}
+        self.assertEqual(summarize.outcome(self.bundle(**expiry)), "PASS")
+
+    def test_a_failed_record_or_an_expiry_write_is_failed(self):
+        self.assertEqual(summarize.outcome(self.bundle(**{"negatives.json": {"passed": False}})), "FAILED")
+        expiry = {"identity-expiring.json": {"passed": True, "executor_write_attempts": 1}}
+        self.assertEqual(summarize.outcome(self.bundle(**expiry)), "FAILED")
+
+    def test_a_missing_record_is_incomplete(self):
+        self.assertEqual(summarize.outcome(self.bundle(**{"rotation.json": None})), "INCOMPLETE")
+
+
 if __name__ == "__main__":
     unittest.main()

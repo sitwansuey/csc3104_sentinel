@@ -1,0 +1,34 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "p5conn-r2-wedge-delete-recreate-kubectl",
+  "class": "executor-wedge",
+  "captured_at": "2026-11-14T15:24:08.961964Z",
+  "source_run_dir_name": "r2-wedge-delete-recreate-kubectl",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+    "basis": "connected-lab Phase 5 session attempt 7 (14 Nov 2026) run from integration/phase5 at 7b35066, clean worktree plus untracked scratch runner"
+  },
+  "files": [
+    {
+      "path": "delete-recreate.json",
+      "sha256": "a1c5ab08a76a25c0b8bdc174c03051f4a800534eba37e134a0a7eaaa26296a68",
+      "bytes": 2990,
+      "redactions": 0
+    },
+    {
+      "path": "manifests.json",
+      "sha256": "de9b293192880f9216dafd8570846bbe8898a2c336da08b083cc5fb382e10f63",
+      "bytes": 2416,
+      "redactions": 0
+    },
+    {
+      "path": "recreate.json",
+      "sha256": "1fe87539a5c155d0102dfb2221863b30df14c8c438c320609bee57bc4cea64a9",
+      "bytes": 1135,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

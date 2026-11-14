@@ -1,0 +1,7 @@
+{
+  "fence_attempts": 0,
+  "read_attempts": 3,
+  "successful_fences": 0,
+  "successful_writes": 1,
+  "write_attempts": 1
+}

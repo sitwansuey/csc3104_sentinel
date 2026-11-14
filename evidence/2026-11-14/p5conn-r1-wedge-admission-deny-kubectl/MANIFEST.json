@@ -1,0 +1,34 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "p5conn-r1-wedge-admission-deny-kubectl",
+  "class": "executor-wedge",
+  "captured_at": "2026-11-14T15:03:48.446837Z",
+  "source_run_dir_name": "r1-wedge-admission-deny-kubectl",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+    "basis": "connected-lab Phase 5 session attempt 7 (14 Nov 2026) run from integration/phase5 at 7b35066, clean worktree plus untracked scratch runner"
+  },
+  "files": [
+    {
+      "path": "admission-deny.json",
+      "sha256": "33570b8ae30618e1b9a82f8affe8d85fec77fb769988f6809a8956be4200622a",
+      "bytes": 4673,
+      "redactions": 0
+    },
+    {
+      "path": "admission-policy.json",
+      "sha256": "d25927a49e0b194f7f0ceef023616aad763c5f41a7116e70085c342935afe4c4",
+      "bytes": 1830,
+      "redactions": 0
+    },
+    {
+      "path": "manifests.json",
+      "sha256": "4e48db993363c75e3d9490a59f732d0e083d656e7e1662b64a5eeb0569beddcf",
+      "bytes": 2416,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

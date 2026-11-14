@@ -1890,6 +1890,696 @@
       "provenance": "inferred",
       "status": "current",
       "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r1-cve",
+      "class": "cve-gate",
+      "path": "2026-11-14/p5conn-r1-cve",
+      "captured_at": null,
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r1-cve-n2",
+      "class": "chaos-recovery",
+      "path": "2026-11-14/p5conn-r1-cve-n2",
+      "captured_at": "2026-11-14T15:13:02.171017Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r1-cve-n3",
+      "class": "chaos-recovery",
+      "path": "2026-11-14/p5conn-r1-cve-n3",
+      "captured_at": "2026-11-14T15:14:58.059073Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r1-cve-t1",
+      "class": "chaos-recovery",
+      "path": "2026-11-14/p5conn-r1-cve-t1",
+      "captured_at": "2026-11-14T15:16:55.710641Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r1-cve-cart",
+      "class": "connected-harness",
+      "path": "2026-11-14/p5conn-r1-cve-cart",
+      "captured_at": "2026-11-14T15:05:51.015098Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r1-cve-negative-shipping",
+      "class": "connected-harness",
+      "path": "2026-11-14/p5conn-r1-cve-negative-shipping",
+      "captured_at": "2026-11-14T15:10:39.461376Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r1-scale",
+      "class": "scale-recovery",
+      "path": "2026-11-14/p5conn-r1-scale",
+      "captured_at": "2026-11-14T15:00:47.265856Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r1-wedge-admission-deny-kubectl",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r1-wedge-admission-deny-kubectl",
+      "captured_at": "2026-11-14T15:03:48.446837Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r1-wedge-admission-deny-rest",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r1-wedge-admission-deny-rest",
+      "captured_at": "2026-11-14T15:04:25.570047Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r1-wedge-delete-recreate-kubectl",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r1-wedge-delete-recreate-kubectl",
+      "captured_at": "2026-11-14T15:04:29.612203Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r1-wedge-delete-recreate-rest",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r1-wedge-delete-recreate-rest",
+      "captured_at": "2026-11-14T15:04:32.440362Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r1-wedge-rv-race-kubectl",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r1-wedge-rv-race-kubectl",
+      "captured_at": "2026-11-14T15:03:43.570473Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r1-wedge-rv-race-rest",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r1-wedge-rv-race-rest",
+      "captured_at": "2026-11-14T15:03:46.273872Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r2-cve",
+      "class": "cve-gate",
+      "path": "2026-11-14/p5conn-r2-cve",
+      "captured_at": null,
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r2-cve-n2",
+      "class": "chaos-recovery",
+      "path": "2026-11-14/p5conn-r2-cve-n2",
+      "captured_at": "2026-11-14T15:32:40.519260Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r2-cve-n3",
+      "class": "chaos-recovery",
+      "path": "2026-11-14/p5conn-r2-cve-n3",
+      "captured_at": "2026-11-14T15:34:39.187485Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r2-cve-t1",
+      "class": "chaos-recovery",
+      "path": "2026-11-14/p5conn-r2-cve-t1",
+      "captured_at": "2026-11-14T15:36:40.048261Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r2-cve-cart",
+      "class": "connected-harness",
+      "path": "2026-11-14/p5conn-r2-cve-cart",
+      "captured_at": "2026-11-14T15:25:34.981534Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r2-cve-negative-shipping",
+      "class": "connected-harness",
+      "path": "2026-11-14/p5conn-r2-cve-negative-shipping",
+      "captured_at": "2026-11-14T15:29:59.993193Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r2-scale",
+      "class": "scale-recovery",
+      "path": "2026-11-14/p5conn-r2-scale",
+      "captured_at": "2026-11-14T15:20:28.213553Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r2-wedge-admission-deny-kubectl",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r2-wedge-admission-deny-kubectl",
+      "captured_at": "2026-11-14T15:23:27.755575Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r2-wedge-admission-deny-rest",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r2-wedge-admission-deny-rest",
+      "captured_at": "2026-11-14T15:24:04.905000Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r2-wedge-delete-recreate-kubectl",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r2-wedge-delete-recreate-kubectl",
+      "captured_at": "2026-11-14T15:24:08.961964Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r2-wedge-delete-recreate-rest",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r2-wedge-delete-recreate-rest",
+      "captured_at": "2026-11-14T15:24:11.830022Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r2-wedge-rv-race-kubectl",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r2-wedge-rv-race-kubectl",
+      "captured_at": "2026-11-14T15:23:22.886243Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r2-wedge-rv-race-rest",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r2-wedge-rv-race-rest",
+      "captured_at": "2026-11-14T15:23:25.605728Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r3-cve",
+      "class": "cve-gate",
+      "path": "2026-11-14/p5conn-r3-cve",
+      "captured_at": null,
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r3-cve-n2",
+      "class": "chaos-recovery",
+      "path": "2026-11-14/p5conn-r3-cve-n2",
+      "captured_at": "2026-11-14T15:52:53.519914Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r3-cve-n3",
+      "class": "chaos-recovery",
+      "path": "2026-11-14/p5conn-r3-cve-n3",
+      "captured_at": "2026-11-14T15:54:51.031830Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r3-cve-t1",
+      "class": "chaos-recovery",
+      "path": "2026-11-14/p5conn-r3-cve-t1",
+      "captured_at": "2026-11-14T15:56:55.058192Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r3-cve-cart",
+      "class": "connected-harness",
+      "path": "2026-11-14/p5conn-r3-cve-cart",
+      "captured_at": "2026-11-14T15:45:39.050498Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r3-cve-negative-shipping",
+      "class": "connected-harness",
+      "path": "2026-11-14/p5conn-r3-cve-negative-shipping",
+      "captured_at": "2026-11-14T15:50:28.315456Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r3-scale",
+      "class": "scale-recovery",
+      "path": "2026-11-14/p5conn-r3-scale",
+      "captured_at": "2026-11-14T15:40:16.768555Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r3-wedge-admission-deny-kubectl",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r3-wedge-admission-deny-kubectl",
+      "captured_at": "2026-11-14T15:43:34.517971Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r3-wedge-admission-deny-rest",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r3-wedge-admission-deny-rest",
+      "captured_at": "2026-11-14T15:44:11.893886Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r3-wedge-delete-recreate-kubectl",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r3-wedge-delete-recreate-kubectl",
+      "captured_at": "2026-11-14T15:44:17.330481Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r3-wedge-delete-recreate-rest",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r3-wedge-delete-recreate-rest",
+      "captured_at": "2026-11-14T15:44:20.282174Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r3-wedge-rv-race-kubectl",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r3-wedge-rv-race-kubectl",
+      "captured_at": "2026-11-14T15:43:29.334357Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-r3-wedge-rv-race-rest",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-r3-wedge-rv-race-rest",
+      "captured_at": "2026-11-14T15:43:32.222771Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-smoke-cve",
+      "class": "cve-gate",
+      "path": "2026-11-14/p5conn-smoke-cve",
+      "captured_at": null,
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-smoke-cve-n2",
+      "class": "chaos-recovery",
+      "path": "2026-11-14/p5conn-smoke-cve-n2",
+      "captured_at": "2026-11-14T14:53:15.750315Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-smoke-cve-n3",
+      "class": "chaos-recovery",
+      "path": "2026-11-14/p5conn-smoke-cve-n3",
+      "captured_at": "2026-11-14T14:55:12.984307Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-smoke-cve-t1",
+      "class": "chaos-recovery",
+      "path": "2026-11-14/p5conn-smoke-cve-t1",
+      "captured_at": "2026-11-14T14:57:12.335874Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-smoke-cve-cart",
+      "class": "connected-harness",
+      "path": "2026-11-14/p5conn-smoke-cve-cart",
+      "captured_at": "2026-11-14T14:46:35.392666Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-smoke-cve-negative-shipping",
+      "class": "connected-harness",
+      "path": "2026-11-14/p5conn-smoke-cve-negative-shipping",
+      "captured_at": "2026-11-14T14:50:52.632926Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-smoke-scale",
+      "class": "scale-recovery",
+      "path": "2026-11-14/p5conn-smoke-scale",
+      "captured_at": "2026-11-14T14:41:25.287806Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-smoke-wedge-admission-deny-kubectl",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-smoke-wedge-admission-deny-kubectl",
+      "captured_at": "2026-11-14T14:44:28.727089Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-smoke-wedge-admission-deny-rest",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-smoke-wedge-admission-deny-rest",
+      "captured_at": "2026-11-14T14:45:06.130326Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-smoke-wedge-delete-recreate-kubectl",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-smoke-wedge-delete-recreate-kubectl",
+      "captured_at": "2026-11-14T14:45:11.570515Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-smoke-wedge-delete-recreate-rest",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-smoke-wedge-delete-recreate-rest",
+      "captured_at": "2026-11-14T14:45:15.192403Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-smoke-wedge-rv-race-kubectl",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-smoke-wedge-rv-race-kubectl",
+      "captured_at": "2026-11-14T14:44:23.213543Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5conn-smoke-wedge-rv-race-rest",
+      "class": "executor-wedge",
+      "path": "2026-11-14/p5conn-smoke-wedge-rv-race-rest",
+      "captured_at": "2026-11-14T14:44:26.155208Z",
+      "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p506-r1",
+      "class": "cert-lifecycle",
+      "path": "2026-11-14/p5sec-p506-r1",
+      "captured_at": null,
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p504-r1",
+      "class": "security-lab",
+      "path": "2026-11-14/p5sec-p504-r1",
+      "captured_at": "2026-11-14T18:27:03.819509Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p505-r1-baseline",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p505-r1-baseline",
+      "captured_at": "2026-11-14T18:21:40.531089Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p505-r1-full",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p505-r1-full",
+      "captured_at": "2026-11-14T18:23:10.050186Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p506-r2",
+      "class": "cert-lifecycle",
+      "path": "2026-11-14/p5sec-p506-r2",
+      "captured_at": null,
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p504-r2",
+      "class": "security-lab",
+      "path": "2026-11-14/p5sec-p504-r2",
+      "captured_at": "2026-11-14T19:02:01.896206Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p505-r2-baseline",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p505-r2-baseline",
+      "captured_at": "2026-11-14T18:57:02.948265Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p505-r2-full",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p505-r2-full",
+      "captured_at": "2026-11-14T18:58:25.750410Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p506-r3",
+      "class": "cert-lifecycle",
+      "path": "2026-11-14/p5sec-p506-r3",
+      "captured_at": null,
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p504-r3",
+      "class": "security-lab",
+      "path": "2026-11-14/p5sec-p504-r3",
+      "captured_at": "2026-11-14T19:36:16.992104Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p505-r3-baseline",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p505-r3-baseline",
+      "captured_at": "2026-11-14T19:31:09.993968Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p505-r3-full",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p505-r3-full",
+      "captured_at": "2026-11-14T19:32:32.564427Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p506-smoke",
+      "class": "cert-lifecycle",
+      "path": "2026-11-14/p5sec-p506-smoke",
+      "captured_at": null,
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p504-smoke",
+      "class": "security-lab",
+      "path": "2026-11-14/p5sec-p504-smoke",
+      "captured_at": "2026-11-14T17:26:22.474976Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p505-smoke-baseline",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p505-smoke-baseline",
+      "captured_at": "2026-11-14T17:20:46.383903Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p506-smoke-expiry",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p506-smoke-expiry",
+      "captured_at": "2026-11-14T17:56:11.100629Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p505-smoke-full",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p505-smoke-full",
+      "captured_at": "2026-11-14T17:22:15.622049Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
     }
   ]
 }

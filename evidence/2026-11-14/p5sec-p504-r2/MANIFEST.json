@@ -1,0 +1,93 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "p5sec-p504-r2",
+  "class": "security-lab",
+  "captured_at": "2026-11-14T19:02:01.896206Z",
+  "source_run_dir_name": "r2-lab",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "recorded",
+    "schema": "sentinel-provenance-v1",
+    "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+    "dirty": true,
+    "dirty_paths_sha256": "274cc9943bf49d0f608a534d47ef3eb1cfdefbb80431b5d89afd48e795dcd9a3",
+    "dirty_path_count": 1,
+    "python": "3.13.2",
+    "host_class": "windows-amd64",
+    "tools": {
+      "kubectl": "1.34.1",
+      "kind": "0.33.0",
+      "docker": "29.4.3"
+    },
+    "captured_by": "security-lab"
+  },
+  "files": [
+    {
+      "path": "gateway-load.json",
+      "sha256": "1142fe5d0543b8823052abfc2a91e885818d316da78212fc6c29feced6f6263b",
+      "bytes": 216,
+      "redactions": 0
+    },
+    {
+      "path": "inspection-comparison.json",
+      "sha256": "d8e61f2ca84bdc85b7b520ac4df273e057bdf87846e4bc4612bb8048e4d3c7b2",
+      "bytes": 165,
+      "redactions": 0
+    },
+    {
+      "path": "inspector-burst.json",
+      "sha256": "0c8591a2653df30657c830e753d70b7781820fda9aa6db6d5b5719b0f633bd02",
+      "bytes": 297,
+      "redactions": 0
+    },
+    {
+      "path": "inspector-outage.json",
+      "sha256": "f863d30468118885629f03f7418a6f8d6e266c0f66f0470694f18b34349fd822",
+      "bytes": 101,
+      "redactions": 0
+    },
+    {
+      "path": "inspector-readiness-load.json",
+      "sha256": "abdb310c63a822200028892f0373306803a87d7d142cbe7deed525798dfeb784",
+      "bytes": 234,
+      "redactions": 0
+    },
+    {
+      "path": "network-matrix.json",
+      "sha256": "83ff3f480a1b995c2fde4851611eb1c220cf51f4d157faba33d23641ac8f74bb",
+      "bytes": 60966,
+      "redactions": 0
+    },
+    {
+      "path": "network-policies.json",
+      "sha256": "79f1ec37dc6493d7945796dbb1e21e9e6e7be5f77f2984bc792740e12e9435ad",
+      "bytes": 18300,
+      "redactions": 0
+    },
+    {
+      "path": "resources.json",
+      "sha256": "ebbf4b4abc8301145b0aaf739021ca51ab413e16c42c1c137196997061823ffd",
+      "bytes": 12502,
+      "redactions": 8
+    },
+    {
+      "path": "scan-inventory.json",
+      "sha256": "18258be38b40251956863f3cd0f3bf3e7dd9c796faaf18ae1e4bd8b19001a77d",
+      "bytes": 2221,
+      "redactions": 0
+    },
+    {
+      "path": "session.json",
+      "sha256": "f2d1922052ea1b881f782e30fca0e271398d73b3508b51695c6c3cfc753ec898",
+      "bytes": 373,
+      "redactions": 0
+    },
+    {
+      "path": "validation.json",
+      "sha256": "84a71172c091debdd44425aa54964a153d6b4645e09158e608d0a78b754893f0",
+      "bytes": 5507,
+      "redactions": 6
+    }
+  ],
+  "omitted": []
+}

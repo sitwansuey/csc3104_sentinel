@@ -1,0 +1,114 @@
+{
+  "checks": [
+    {
+      "name": "process stopped after journaling, before sending",
+      "passed": true
+    },
+    {
+      "name": "first action resolves as SUPERSEDED/TARGET_REPLACED",
+      "observed": [
+        "SUPERSEDED",
+        "TARGET_REPLACED"
+      ],
+      "passed": true
+    },
+    {
+      "name": "ledger releases the workload",
+      "passed": true
+    },
+    {
+      "name": "no patch reached kubectl for the first action",
+      "passed": true
+    },
+    {
+      "name": "a new proposal for the workload is admitted",
+      "passed": true
+    },
+    {
+      "name": "the new proposal is APPLIED",
+      "passed": true
+    },
+    {
+      "name": "the baseline template is restored",
+      "passed": true
+    }
+  ],
+  "context": "kind-sentinel-boutique-connected",
+  "finished_at": "2026-11-14T15:44:22.070410Z",
+  "ground_truth": [
+    {
+      "evidence_action_id": null,
+      "fence_action_id": null,
+      "field_managers": [],
+      "generation": 2,
+      "label": "after first action",
+      "resource_version": "346013",
+      "spec_sha256": "bc166f5ca1495d62bb803f9d2a5d317795e4bd75eff83b9b9fe7acfb7f3f6109",
+      "template_is_baseline": false,
+      "uid_is_original": false
+    },
+    {
+      "evidence_action_id": "ACT-WEDGE-second-99893a355e15",
+      "fence_action_id": null,
+      "field_managers": [],
+      "generation": 3,
+      "label": "after second action",
+      "resource_version": "346027",
+      "spec_sha256": "33c67444181a5c6f05f08322882ea4eb0831cd241a5ab95d2ca0645b4b3df31f",
+      "template_is_baseline": true,
+      "uid_is_original": false
+    }
+  ],
+  "namespace": "sentinel-wedge-84fccde6",
+  "namespace_deleted": true,
+  "patch_processes_for_first_action": 0,
+  "private_credentials_removed": true,
+  "reconcile_pass_statuses": [
+    "SUPERSEDED",
+    "SUPERSEDED",
+    "SUPERSEDED",
+    "SUPERSEDED",
+    "SUPERSEDED"
+  ],
+  "results": [
+    {
+      "basis": null,
+      "fence_attempts": 0,
+      "label": "execute (stopped before send)",
+      "passes": 1,
+      "patch_processes": 0,
+      "status": null,
+      "successful_fences": 0,
+      "successful_writes": 0,
+      "write_attempts": 0
+    },
+    {
+      "basis": "TARGET_REPLACED",
+      "fence_attempts": 0,
+      "label": "reconcile",
+      "passes": 5,
+      "patch_processes": 0,
+      "status": "SUPERSEDED",
+      "successful_fences": 0,
+      "successful_writes": 0,
+      "write_attempts": 0
+    },
+    {
+      "basis": "EVIDENCE_MATCH",
+      "fence_attempts": 0,
+      "label": "second execute",
+      "passes": 1,
+      "patch_processes": 1,
+      "status": "APPLIED",
+      "successful_fences": 0,
+      "successful_writes": 1,
+      "write_attempts": 1
+    }
+  ],
+  "scenario": "delete-recreate",
+  "scope": "one disposable namespace on a local kind cluster; containers on one host, not separate machines; Guard not under test",
+  "started_at": "2026-11-14T15:44:20.282174Z",
+  "status": "PASS",
+  "time_to_resolution_seconds": 0.452,
+  "transport": "rest"
+}

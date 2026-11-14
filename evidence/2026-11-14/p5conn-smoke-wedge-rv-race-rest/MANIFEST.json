@@ -1,0 +1,28 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "p5conn-smoke-wedge-rv-race-rest",
+  "class": "executor-wedge",
+  "captured_at": "2026-11-14T14:44:26.155208Z",
+  "source_run_dir_name": "smoke-wedge-rv-race-rest",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+    "basis": "connected-lab Phase 5 session attempt 7 (14 Nov 2026) run from integration/phase5 at 7b35066, clean worktree plus untracked scratch runner"
+  },
+  "files": [
+    {
+      "path": "manifests.json",
+      "sha256": "5cc1e3a22856296414e762d02ad88e4843f2339948aa2d902ffd3cef6d63da65",
+      "bytes": 2416,
+      "redactions": 0
+    },
+    {
+      "path": "rv-race.json",
+      "sha256": "38226e4886d7375faf4b4079d26fbf49c8c195ad6752cd94a36cb6558d135ee6",
+      "bytes": 2773,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

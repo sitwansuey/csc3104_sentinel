@@ -1,0 +1,10 @@
+{
+  "inspector_allowed": {
+    "/hipstershop.CartService/GetCart": 432
+  },
+  "upstream_statuses": {
+    "200": 390
+  },
+  "allowed_add_item": 0,
+  "passed": true
+}

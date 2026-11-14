@@ -2,8 +2,10 @@
 
 Security code is retained as a separate, opt-in experiment. From P5.05 the code
 also runs the Sentinel guarded recovery chain on the protected template (see
-[Protected recovery](#protected-recovery-p505)); that has been checked offline
-only, not in a live run. The current baseline
+[Protected recovery](#protected-recovery-p505)); one smoke round passed live on
+14 Nov 2026. Phase 5 results below are lab observations on one kind node on one
+Docker host, with automated auto-lab approvals for recovery, unscored until
+owner sign-off. Security repeats r1-r3 are pending. The current baseline
 still uses restricted repair RBAC, strict Guard checks, non-root demo workloads,
 scoped contexts, bounded reads and private test credentials.
 
@@ -28,14 +30,14 @@ must be on PATH for certificate generation; if it fails to open an
 `openssl.cfg`, a stale `OPENSSL_CONF` environment variable is the usual cause.
 From P5.06 `start` also installs cert-manager with Helm (so `helm` must be on
 PATH) and refuses before any cluster command while a cert-manager pin in
-`deploy/cert-manager/pins.json` is unresolved; today all six are `TODO-PIN`
+`deploy/cert-manager/pins.json` is unresolved. All six were lab-resolved on
+14 Nov 2026 at 7ac2752; owner review remains pending
 (see [Certificate lifecycle](#certificate-lifecycle-p506)).
 The script owns a dedicated Calico/kind lab with mTLS and inspected shipping
-traffic. Only the shipping path is protected by mTLS and inspection in a live
-run so far. From P5.04 the code also protects the cart path the same way (see
-[Cart route and inspector capacity](#cart-route-and-inspector-capacity-p504));
-that has been checked offline only, not in a live run. The other Boutique
-services keep their upstream plaintext connections. From P4.06 the lab
+traffic. Shipping and cart both passed live mTLS and inspection probes in the
+Phase 5 smoke round (see
+[Cart route and inspector capacity](#cart-route-and-inspector-capacity-p504)).
+The other Boutique services keep their upstream plaintext connections. From P4.06 the lab
 also applies graph-derived default-deny NetworkPolicies to all 11 services (see
 below); their enforcement matrix passed in one live run on 13 Nov 2026
 (`C-SECURITY-NETPOL-LIVE`). The smaller `scripts/security/security_lab.py`
@@ -209,8 +211,42 @@ Windows host with one kind node, not for a multi-node cluster.
 
 ## Cart route and inspector capacity (P5.04)
 
-This section describes code and offline tests. None of it has run on a live
-cluster yet; the recipe at the end is how to run it.
+### Live results (14 Nov 2026)
+
+Attempt 5, `p5-security-20261114T171037Z`, smoke round only:
+
+- `smoke-lab/validation.json`: PASS; shipping, cart and Verifier mTLS controls
+  succeeded, all 16 negative probes were refused, and storefront journeys
+  before and after proxy restore passed. The matrix opened 22/22 allowed cells
+  and timed out 248/248 forbidden cells, with no untested cell.
+- 200 workers for 30 s: 9,343 storefront requests, 14 HTTP 200, 9,329 HTTP 500,
+  zero connection errors; p50/p95 506.9/1,315.7 ms. The inspector shed 2,769
+  inflight requests; its sampled readiness was 200. Availability was poor:
+  storefront requests mostly failed while inspection shed load, fail-closed.
+- Log comparison passed: 195 upstream 200s versus 258 inspector GetCart
+  ALLOWs, zero AddItem ALLOWs. Three invalid cart probes and one invalid
+  shipping probe were refused; the valid cart probe under load was also refused.
+- Direct burst: 200/200 completed, 166 overload denials, zero invalid requests
+  allowed, p50/p95 1,319.7/2,878.6 ms. Invalid/valid cart probes after the burst
+  were refused/accepted. SIGSTOP froze the inspector; cart and shipping were
+  refused, and cart recovered after SIGCONT (`inspector-outage.json`: PASS).
+- Resource snapshot covers the whole node: 136.88% CPU, 2.68 GiB/15.23 GiB;
+  it does not measure the inspector container's CPU or memory.
+
+Earlier failures: attempt 1's Jetstack HTTP 403 with urllib's default
+User-Agent was fixed by ac8ac91 (named User-Agent, pinned hash still checked;
+also UTF-8 tool output). Attempt 2's Envoy SDS crash loops lacked node id and
+cluster; 02d40be supplies them. Attempt 3's valid cart mTLS call hit Kestrel's
+HTTP/2 protocol error because `:scheme https` reached plaintext loopback;
+e8d6fed overwrites it to http in upstream sidecars. Attempt 4 validated, but
+SIGINT restarted the inspector before the probe arrived, so cart succeeded.
+The scratch runner changed to node-side SIGSTOP/SIGCONT; no fix commit was
+recorded. That earlier load recorded 9,843 requests, 2,633 shed and 171 burst
+overload denials, with zero invalid requests allowed.
+
+Repeats r1-r3 (each on a freshly built cluster) passed the same checks: 4/4
+rounds in all, bundles `p5sec-p504-smoke` and `p5sec-p504-r1`..`r3`. Owner
+sign-off remains pending.
 
 ### The routes
 
@@ -285,7 +321,8 @@ all 16 slots busy at two probe checks in a row also takes shipping (and so
 checkout) out of service for at least one probe period. That fails closed, as
 E10 asks, but it widens an outage; whether a busy inspector should mark the
 Pod unready at all, or only an unwritable journal should, is an owner
-decision. The defaults are not measured against storefront latency yet. One
+decision. Smoke measured storefront latency and mostly HTTP 500s under load;
+the defaults are not a production capacity target. One
 gateway replica is a single point of failure; nothing here makes it highly
 available.
 
@@ -331,7 +368,7 @@ need an owner's review before merge. The argument, with the tests that hold it:
   Step 2's 200 concurrent calls go straight to the inspector and skip Envoy.
   The owner should accept this or ask for a load client image with a shell.
 
-### Live recipe (not run yet)
+### Live recipe (P5.04)
 
 Run on the security lab cluster only, with a new run folder. The P4.01
 distributed acceptance run and the security lab each need most of Docker's
@@ -397,11 +434,18 @@ Stop-Process -Id $forward.Id
 #    (exit 1) and a valid one succeeds again (exit 0).
 python scripts/security/boutique_security.py probe --route cart --quantity 11 --directory $run
 python scripts/security/boutique_security.py probe --route cart --directory $run
-# 4. Stop the inspector process (SIGINT ends serve_forever; the container restarts). Until /readyz
-#    answers again, cart and shipping calls through the gateway are refused.
-kubectl $ctx $ns exec deployment/security-gateway -c inspector -- python -c "import os, signal; os.kill(1, signal.SIGINT)"
-python scripts/security/boutique_security.py probe --route cart --directory $run
-python scripts/security/boutique_security.py probe --route shipping --directory $run
+# 4. Freeze the inspector from its kind node, keeping it stopped while probes start.
+$gatewayPod = (kubectl $ctx $ns get pod -l app=security-gateway -o json | ConvertFrom-Json).items[0]
+$node = $gatewayPod.spec.nodeName
+$containerId = ($gatewayPod.status.containerStatuses | Where-Object name -eq inspector).containerID -replace '^containerd://', ''
+$inspectorPid = (docker exec $node crictl inspect $containerId | ConvertFrom-Json).info.pid
+docker exec $node kill -STOP $inspectorPid
+try {
+  python scripts/security/boutique_security.py probe --route cart --directory $run
+  python scripts/security/boutique_security.py probe --route shipping --directory $run
+} finally {
+  docker exec $node kill -CONT $inspectorPid
+}
 kubectl $ctx $ns rollout status deployment/security-gateway --timeout=120s
 kubectl $ctx $ns wait pod -l app=security-gateway --for=condition=Ready --timeout=120s
 python scripts/security/boutique_security.py probe --route cart --directory $run
@@ -436,25 +480,24 @@ needs metrics-server, which the lab does not install; without it, record
 `docker stats --no-stream sentinel-boutique-security-control-plane` (the
 whole node) and the inspector container's restart count instead, and say so.
 
-Step 3: the invalid probe exits 1, the valid one 0. Step 4: after the SIGINT
-the first two probes exit 1 (the inspector is restarting) and the last exits
-0. These probes race the container restart: a probe that starts after the
-inspector is back can succeed, so repeat step 4 if both succeeded and note
-it.
+Step 3: the invalid probe exits 1, the valid one 0. Step 4: both probes
+while SIGSTOP holds the inspector exit 1; after SIGCONT and readiness, the
+last cart probe exits 0. Thaw in `finally` even if a probe fails.
 
 Record the outputs and timings with the run, then collect evidence as in the
 NetworkPolicy recipe above and stop the lab. What this can show, on one kind
 node on one host: step 1, how Envoy answered cart calls at the load the
 storefront reached, and that no request reached cartservice without an
 inspector ALLOW in that window; step 2, the inspector's own bound; step 4,
-that calls are refused while the inspector restarts. It is not a capacity
+that calls are refused while the inspector is frozen. It is not a capacity
 figure for real machines.
 
 Image scan/candidate workflows remain explicit. A candidate needs reviewed
 metadata and adjacent passing scan evidence; a scan does not grant repair
 authorization. The [CVE gate](#cve-gate-p502) below is what turns scans into
 Guard and admission decisions, and `image_inventory.py` feeds the monitor the
-digests that are running; both are tested offline only. `--help` on
+digests that are running; the gate passed four connected-lab rounds below.
+`--help` on
 `scan_image_security.py`, `build_security_candidate.py`, `watch_security.py`,
 `gate_images.py` and `image_inventory.py` documents the exact arguments.
 
@@ -471,30 +514,49 @@ project's pinned Trivy. The PR reports 0 High and 0 Medium findings in both,
 with unrated Go findings left that need a newer toolchain. That scan output is
 not a committed evidence bundle, and no release image is tagged.
 
-Two gaps remain. Only the shipping path has been shown live with mTLS and
-inspection; the cart route exists in code with offline tests only, and the
-cart-to-redis-cart edge stays plaintext and uninspected. The other services
-have L4 default-deny NetworkPolicies in the security lab only, shown by one
-live run on one kind node, and their traffic is still plaintext; the
-connected recovery cluster applies none of these policies.
-Workload images are
-scanned and raise dashboard alerts, and a CVE gate now exists, but no live run
-has used it: the 11 November evaluation found High or Critical findings in 11
-of 13 images. See `L-SECURITY-SHIPPING-ONLY` and `L-UNGATED-CVES` in
-[limitations](limitations.md).
+Shipping and cart now have live lab mTLS and inspection results; the
+cart-to-redis-cart edge stays plaintext and uninspected. Other services have
+L4 default-deny only in the security lab and still use plaintext; connected
+recovery installs none of these policies. The CVE gate passed four lab
+rounds, but non-regression still permits inherited findings; the 11 November
+evaluation found High or Critical findings in 11 of 13 images. See
+`L-SECURITY-SHIPPING-ONLY` and `L-UNGATED-CVES` in [limitations](limitations.md).
 
-Lab certificates are short-lived fixtures, not a rotation/revocation/workload-identity
-system. The inspector's capacity is bounded in code (P5.04) but not measured
-live, and one gateway replica stays a single point of failure.
-Current-image reconciliation remains tracked work, and the protected
-Guard/Executor/Verifier integration (P5.05) has not run live. Keep credentials,
-private keys and unsanitised logs out of Git and exported image contexts.
+Certificate rotation and protected recovery have smoke results below. The
+single gateway and inspector shedding still cost availability. Current-image
+reconciliation and owner sign-offs remain pending. Keep credentials, private
+keys and unsanitised logs out of Git and exported image contexts.
 
 ## CVE gate (P5.02)
 
-Status: built and tested offline only. No committed live policy turns the gate
-on, the admission policy has never been evaluated by an API server, and the
-live recipe below has not run. Offline tests are not a live result.
+### Live results (14 Nov 2026)
+
+Connected attempt 7 completed smoke plus r1-r3: four rounds, 24 P5.02 bundles
+among the 52 `p5conn-*` bundles in [the dated evidence](../evidence/2026-11-14).
+Each round recorded Audit warnings for an unscanned digest, Deny refusal,
+C1 recovery including crash-after-write reconciliation, shipping negative
+checks, IMAGE_CVE_INHERITED PASS checks (four per round), and a worse shipping
+image REJECT with IMAGE_CVE_REGRESSION. The regression check used the Guard
+CLI: UID/resourceVersion stayed unchanged and Executor writes were zero;
+other UNKNOWN checks were present, so this is not an isolated regression test.
+N2 RESTART/RECOVERED, N3 ESCALATE/NEEDS_REVIEW and T1 NO_INCIDENT each passed
+4/4 under Deny. These are single-node lab runs on one Docker host, with code
+rules and automated auto-lab approval, unscored until owner sign-off.
+Non-regression permits inherited vulnerabilities; P5.03 remains pending.
+
+Earlier connected attempts failed as follows:
+
+| Attempt | Cause | Fix |
+| --- | --- | --- |
+| 1 | `rollout restart --dry-run` is unsupported | Scratch runner corrected; no commit recorded |
+| 2 | Exact-string admission approved the helper's short name, but the Pod used its docker.io name | b3f18be approves both reviewed forms |
+| 3 | Audit enforcement raced the probe about 1 s after apply | Scratch runner waits for Audit; no commit recorded |
+| 4 | API server v1.37.0 retained the old 21-entry params ConfigMap after same-name delete/recreate | 3ccbf49 uses a fresh ConfigMap name and runner patches paramRef |
+| 5 | Crash worker omitted image_scans/cve_exceptions; Guard re-check failed closed before writing | 7b35066 passes the gate inputs |
+| 6 | Uppercase N2 in the bundle id was refused after the scenario passed | Scratch runner lowercases ids; no commit recorded |
+
+Attempts 2 and 3 had passing P5.07/P5.08 smoke checks; their partial runs are
+not added to the four collected rounds.
 
 One pure function, `services/image_security.py::gate`, decides whether images
 may run. It reads scan summaries (the output of `scan_image_security.py` or
@@ -648,7 +710,7 @@ UNKNOWN. The inventory retains the spec reference for scanning and admission and
 records the platform manifest evidence in `platform_resolution`. Saved
 `--from-json` snapshots must include the Nodes when using this option.
 
-### Live recipe (not run)
+### Live recipe (P5.02)
 
 Run on `kind-sentinel-boutique-connected` only, with the connected lab up and
 no other heavy-lab run active (`experiments/lab_lock.py`). Never on
@@ -758,11 +820,11 @@ it. Use a new folder; `$run` below is that folder.
 
 These are safety-critical and wait for an owner:
 
-- the Guard change: the gate block, its codes and the argument above, before
-  any live policy sets it;
+- the Guard change: the gate block, its codes and the argument above;
+  live use so far is lab-only;
 - the Guard image change: `deploy/docker/guard.Dockerfile` now copies
   `services/image_security.py` and `runtime/image_scans.py`;
-- the admission policy, before step 5 switches it to Deny;
+- the admission policy; Deny has run in the lab, with owner sign-off pending;
 - non-regression as the default mode, and which targets move to strict mode
   (P5.03);
 - every CVE exception: a human signs each one, with a role, rationale and at
@@ -774,9 +836,33 @@ Until P5.05 the security lab and guarded recovery never met (#69): the
 Executor read Secret and ConfigMap versions with its own kubeconfig
 (`runtime/live_executor.py::LiveGuardAuthorizer`), the Verifier's plaintext
 probe is refused by the lab's NetworkPolicies, and the Guard knew nothing of
-the TLS sidecar in the protected template. P5.05 adds the pieces offline.
-None of it has run against a cluster yet (`L-PROTECTED-RECOVERY-OFFLINE` in
-[limitations](limitations.md)).
+the TLS sidecar in the protected template. P5.05 adds the pieces below
+(`L-PROTECTED-RECOVERY-OFFLINE` in [limitations](limitations.md)).
+
+### Live results (14 Nov 2026)
+
+In `p5-security-20261114T171037Z`, `smoke-protected-baseline` passed 4/4 checks
+and `smoke-protected-full` passed 14/14: one approved rollback restored the
+protected shipping template, the authenticated Verifier reported RECOVERED,
+and bypass checks passed before, during and after repair beside working
+controls. Missing approval, hard-policy rejection and stale state each made
+zero writes; duplicate replay and changed-ID rejection passed. The RBAC
+matrix passed with no Secret read by Executor or Guard reader; reader RBAC
+and private credentials were removed. Approval was automated auto-lab.
+
+The shared lab startup/route failures and fixes are recorded under
+[P5.04](#cart-route-and-inspector-capacity-p504). A separate expiry run
+(`smoke-protected-expiring`) was FAILED by the harness despite safe Guard
+escalation with zero write attempts: it expected an approval response
+(`Guard must require approval before live execution`). Emergency operator
+restore ran; no harness fix commit is recorded. See [P5.06](#certificate-lifecycle-p506).
+Baseline and full stages passed in all four rounds (smoke and r1-r3,
+`p5sec-p505-*`). The expiry drill's protected run (`p5sec-p506-smoke-expiry`)
+is recorded FAILED by the generic recovery harness because the Guard
+escalated instead of asking for approval, the intended fail-closed result;
+its proof (Guard ESCALATE, zero Executor writes) is `identity-expiring.json`
+in `p5sec-p506-smoke`. One Docker host, unscored; owner sign-off and the
+documented coverage gaps remain.
 
 ### What changed
 
@@ -934,7 +1020,7 @@ still apply, with the raised memory-limit ceiling above. Secret and
 ConfigMap volumes are compared by kind and name, not by `items`,
 `optional` or `defaultMode`.
 
-### Live recipe (staged; not run)
+### Live recipe (P5.05; staged)
 
 Run on the security lab cluster only, from a new run folder, and never while
 another heavy run is going: P4.01, P4.03, P4.05, P5.07 and this run each take
@@ -1046,11 +1132,40 @@ Until P5.06 the lab's certificates were two-day OpenSSL fixtures made at
 #70 asks for one certificate framework; P5.06 picks cert-manager for the
 Kubernetes security lab, loads every key pair through Envoy's file-based SDS
 so a renewal needs no restart, and makes expired, untrusted or misnamed
-identities escalate. All of it is code and offline tests. Nothing has run
-against a cluster, and the cert-manager pins are not resolved yet
-(`L-LAB-CERTS` in [limitations](limitations.md)). The standalone compose lab
-(`scripts/security/security_lab.py`) uses the same SDS configuration but keeps
+identities escalate (`L-LAB-CERTS` in [limitations](limitations.md)).
+The standalone compose lab (`scripts/security/security_lab.py`) uses the same SDS configuration but keeps
 its two-day OpenSSL certificates.
+
+### Live results (14 Nov 2026)
+
+Smoke only, `smoke-certs` in `p5-security-20261114T171037Z`:
+
+- Rotation passed: gateway serial changed; gateway and frontend Certificate
+  revisions advanced 2 to 3; Pod identities/restart counts stayed unchanged;
+  checkout passed 79/79 samples. The record does not show all eight revisions
+  advancing in that comparison.
+- Untrusted-CA, wrong-SAN and expired clients were refused, 3/3. These are
+  gateway refusals only; they create no incident or live Planner escalation.
+- CA rollover passed: old CA accepted during overlap, new CA accepted after
+  switch, old CA refused after finish; Pod identities/restart counts unchanged,
+  checkout 323/323 samples passed.
+- Expiry escalation ran once in smoke, not in every repeat. With the controller
+  stopped and about 1,742 s left, identity inspection escalated; the Guard
+  report had SECURITY_IDENTITY_EXPIRING and ESCALATE, with zero Executor write
+  attempts (`identity-expiring.json`: passed). The enclosing recovery harness
+  returned FAILED because it expected approval before execution; operator
+  emergency restore ran. No fix commit is recorded for this harness mismatch.
+  Restored identities subsequently passed.
+
+Startup failures: Jetstack's default-User-Agent 403 was fixed by ac8ac91;
+missing Envoy SDS node id/cluster by 02d40be. The valid-cart Kestrel `:scheme`
+error was fixed by e8d6fed; the SIGINT outage race was replaced in the scratch
+runner by SIGSTOP/SIGCONT, without a recorded commit (details under [P5.04](#cart-route-and-inspector-capacity-p504)).
+Pins were lab-resolved at 7ac2752; owner review remains pending. Rotation, the three
+client refusals and the CA rollover passed in all four rounds (smoke and
+r1-r3, `p5sec-p506-*`); the expiry escalation ran in the smoke round only. One
+Docker host, unscored;
+wrong upstream SAN/issuer Guard escalation remains offline-only.
 
 ### What changed
 
@@ -1139,8 +1254,7 @@ its two-day OpenSSL certificates.
   refuse until none is left, before any cluster command. Only digests reach
   the Helm values (`scripts/security/cert_lifecycle.py::helm_values`), and
   the chart is checked against its SHA-256 before Helm sees it. The version
-  number was chosen offline and is confirmed only when the resolution
-  commands succeed.
+  and pins were lab-resolved at 7ac2752 on 14 Nov 2026; owner review is pending.
 
 ### Why no existing check is weaker (owner sign-off)
 
@@ -1255,7 +1369,7 @@ the Planner escalate, even when a rollback could have repaired a bad
 rollout that broke a TLS client. That fails safe (no write) but suppresses
 the repair.
 
-### Live recipe (P5.06; not run)
+### Live recipe (P5.06)
 
 Run on the security lab only, from a new run folder, never alongside another
 heavy run. `python scripts/security/cert_lifecycle.py plan` prints these
@@ -1369,9 +1483,8 @@ minute ago, valid for ten minutes, replaces it for the expired client.
 - the trust bundle as a reviewed ConfigMap, and the rollover policy: both CAs
   until every certificate is reissued, then the new one only, with a new
   baseline after a rollover;
-- adding cert-manager v1.18.2 to the security lab, and resolving its six pins
-  by hand; until then the lab, and the P5.04 and P5.05 live recipes that
-  start it, refuse to start;
+- adding cert-manager v1.18.2 to the security lab and reviewing the six
+  lab-resolved pins (7ac2752); smoke used them, owner review remains pending;
 - the Planner's identity rule and `runbooks/identity-failure.md`;
 - the lab CA key and the test keys living in the run folder for the lab's
   life;

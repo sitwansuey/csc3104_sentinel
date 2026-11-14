@@ -40,21 +40,25 @@ Read each number with its limits:
 | Class | Runs | PASS | FAILED | INTERRUPTED | INCOMPLETE | Provenance |
 | --- | --- | --- | --- | --- | --- | --- |
 | agent | 41 | 28 | 13 | 0 | 0 | 21 recorded, 20 inferred |
+| cert-lifecycle | 4 | 4 | 0 | 0 | 0 | 0 recorded, 4 inferred |
 | chaos-batch | 17 | 3 | 13 | 0 | 1 | 0 recorded, 17 inferred |
-| chaos-recovery | 13 | 8 | 5 | 0 | 0 | 13 recorded, 0 inferred |
-| connected-harness | 12 | 10 | 2 | 0 | 0 | 8 recorded, 4 inferred |
+| chaos-recovery | 25 | 20 | 5 | 0 | 0 | 25 recorded, 0 inferred |
+| connected-harness | 20 | 18 | 2 | 0 | 0 | 16 recorded, 4 inferred |
+| cve-gate | 4 | 4 | 0 | 0 | 0 | 0 recorded, 4 inferred |
 | distributed-acceptance | 15 | 7 | 8 | 0 | 0 | 13 recorded, 2 inferred |
 | distributed-scenario | 39 | 37 | 2 | 0 | 0 | 0 recorded, 39 inferred |
 | executor-admission | 1 | 1 | 0 | 0 | 0 | 0 recorded, 1 inferred |
-| executor-wedge | 7 | 5 | 2 | 0 | 0 | 0 recorded, 7 inferred |
+| executor-wedge | 31 | 29 | 2 | 0 | 0 | 0 recorded, 31 inferred |
 | guard-eval | 1 | 1 | 0 | 0 | 0 | 1 recorded, 0 inferred |
 | guard-rejection | 4 | 4 | 0 | 0 | 0 | 2 recorded, 2 inferred |
 | kind-lab-session | 3 | 3 | 0 | 0 | 0 | 0 recorded, 3 inferred |
 | observer-acceptance | 3 | 3 | 0 | 0 | 0 | 0 recorded, 3 inferred |
 | packaged | 9 | 5 | 0 | 1 | 3 | 0 recorded, 9 inferred |
+| protected-recovery | 9 | 8 | 1 | 0 | 0 | 9 recorded, 0 inferred |
 | provider-recovery | 1 | 0 | 1 | 0 | 0 | 0 recorded, 1 inferred |
+| scale-recovery | 4 | 4 | 0 | 0 | 0 | 4 recorded, 0 inferred |
 | scenario-pair | 8 | 8 | 0 | 0 | 0 | 8 recorded, 0 inferred |
-| security-lab | 4 | 4 | 0 | 0 | 0 | 1 recorded, 3 inferred |
+| security-lab | 8 | 8 | 0 | 0 | 0 | 5 recorded, 3 inferred |
 | shipping-lab | 2 | 2 | 0 | 0 | 0 | 0 recorded, 2 inferred |
 | ui-session | 7 | 0 | 0 | 0 | 7 | 0 recorded, 7 inferred |
 | worker-container | 2 | 1 | 0 | 0 | 1 | 0 recorded, 2 inferred |
@@ -76,20 +80,20 @@ harness's dashboard acceptance step, fixed in a932a5f
 <!-- BEGIN GENERATED:recovery-checks -->
 | Class | Check | Passed / runs |
 | --- | --- | --- |
-| connected-harness | healthy baseline captured with real service samples and immutable image | 12/12 |
-| connected-harness | real ServiceAccount permits only selected Deployment get/patch; forbidden write denied | 12/12 |
-| connected-harness | Connected cart and checkout fail while shipping configuration is broken | 9/12 |
-| connected-harness | missing-approval makes zero executor writes | 12/12 |
-| connected-harness | hard-policy-rejection makes zero executor writes | 12/12 |
-| connected-harness | stale-state makes zero executor writes | 12/12 |
-| connected-harness | real API rejects JSON Patch after resourceVersion changes | 12/12 |
-| connected-harness | competing real worker is excluded before mutation | 11/12 |
-| connected-harness | approved real rollback, duplicate replay and changed-ID rejection | 11/12 |
-| connected-harness | Role 6 verified gRPC, readiness and template; Coordinator RECOVERED | 11/12 |
-| connected-harness | gRPC quote and replica health after executor rollback; Role 6 published RECOVERED | 11/12 |
-| connected-harness | actual worker process exits after live patch; restart reconciles without resubmission | 11/12 |
-| connected-harness | Guard rejects unnecessary rollback despite approval; zero Executor patch attempts | 11/12 |
-| connected-harness | Connected home, add to cart, cart and checkout fail while cart configuration is broken | 3/12 |
+| connected-harness | healthy baseline captured with real service samples and immutable image | 20/20 |
+| connected-harness | real ServiceAccount permits only selected Deployment get/patch; forbidden write denied | 20/20 |
+| connected-harness | Connected cart and checkout fail while shipping configuration is broken | 13/20 |
+| connected-harness | missing-approval makes zero executor writes | 20/20 |
+| connected-harness | hard-policy-rejection makes zero executor writes | 20/20 |
+| connected-harness | stale-state makes zero executor writes | 20/20 |
+| connected-harness | real API rejects JSON Patch after resourceVersion changes | 20/20 |
+| connected-harness | competing real worker is excluded before mutation | 19/20 |
+| connected-harness | approved real rollback, duplicate replay and changed-ID rejection | 19/20 |
+| connected-harness | Role 6 verified gRPC, readiness and template; Coordinator RECOVERED | 19/20 |
+| connected-harness | gRPC quote and replica health after executor rollback; Role 6 published RECOVERED | 19/20 |
+| connected-harness | actual worker process exits after live patch; restart reconciles without resubmission | 19/20 |
+| connected-harness | Guard rejects unnecessary rollback despite approval; zero Executor patch attempts | 19/20 |
+| connected-harness | Connected home, add to cart, cart and checkout fail while cart configuration is broken | 7/20 |
 | shipping-lab | healthy baseline captured with real service samples and immutable image | 2/2 |
 | shipping-lab | real ServiceAccount permits only selected Deployment get/patch; forbidden write denied | 2/2 |
 | shipping-lab | missing-approval makes zero executor writes | 2/2 |
@@ -177,6 +181,18 @@ these rows are not scored trials.
 | chaos-n2-r4-29e41f8 | N2 | 29e41f8 | PASS | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
 | chaos-n2-r5-29e41f8 | N2 | 29e41f8 | PASS | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
 | chaos-n2-agent-r1-29e41f8 | N2 | 29e41f8 | PASS | ESCALATE | decided by the rule (TEMPLATE_ALREADY_BASELINE) | 0 | NEEDS_REVIEW | no | pending |
+| p5conn-smoke-cve-n2 | N2 | 7b35066 | PASS | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
+| p5conn-smoke-cve-n3 | N3 | 7b35066 | PASS | ESCALATE | decided by the rule | 0 | NEEDS_REVIEW | yes | pending |
+| p5conn-smoke-cve-t1 | T1 | 7b35066 | PASS | NO_INCIDENT | from observer | 0 | no incident | yes | pending |
+| p5conn-r1-cve-n2 | N2 | 7b35066 | PASS | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
+| p5conn-r1-cve-n3 | N3 | 7b35066 | PASS | ESCALATE | decided by the rule | 0 | NEEDS_REVIEW | yes | pending |
+| p5conn-r1-cve-t1 | T1 | 7b35066 | PASS | NO_INCIDENT | from observer | 0 | no incident | yes | pending |
+| p5conn-r2-cve-n2 | N2 | 7b35066 | PASS | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
+| p5conn-r2-cve-n3 | N3 | 7b35066 | PASS | ESCALATE | decided by the rule | 0 | NEEDS_REVIEW | yes | pending |
+| p5conn-r2-cve-t1 | T1 | 7b35066 | PASS | NO_INCIDENT | from observer | 0 | no incident | yes | pending |
+| p5conn-r3-cve-n2 | N2 | 7b35066 | PASS | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
+| p5conn-r3-cve-n3 | N3 | 7b35066 | PASS | ESCALATE | decided by the rule | 0 | NEEDS_REVIEW | yes | pending |
+| p5conn-r3-cve-t1 | T1 | 7b35066 | PASS | NO_INCIDENT | from observer | 0 | no incident | yes | pending |
 <!-- END GENERATED:scenario-runs -->
 
 ## Guard rejection
@@ -238,6 +254,30 @@ MANIFEST `basis` says how it is known. Guard is not under test.
 | executor-wedge-rv-race-p2-20261111t220648z | rv-race | 4139385 | inferred | PASS | SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE | 5/5 SUPERSEDED | APPLIED |
 | executor-wedge-delete-recreate-p2-20261111t220650z | delete-recreate | 4139385 | inferred | PASS | SUPERSEDED/TARGET_REPLACED | 5/5 SUPERSEDED | APPLIED |
 | executor-wedge-admission-deny-p2b-20261112t050853z | admission-deny | 5409092 | inferred | PASS | CONFLICT/FENCED | 5/5 CONFLICT | APPLIED |
+| p5conn-smoke-wedge-rv-race-kubectl | rv-race | 7b35066 | inferred | PASS | SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE | 5/5 SUPERSEDED | APPLIED |
+| p5conn-smoke-wedge-rv-race-rest | rv-race | 7b35066 | inferred | PASS | CONFLICT/DEFINITE_REJECTION | 5/5 CONFLICT | APPLIED |
+| p5conn-smoke-wedge-admission-deny-kubectl | admission-deny | 7b35066 | inferred | PASS | CONFLICT/FENCED | 5/5 CONFLICT | APPLIED |
+| p5conn-smoke-wedge-admission-deny-rest | admission-deny | 7b35066 | inferred | PASS | FAILED/DEFINITE_REJECTION | 5/5 FAILED | APPLIED |
+| p5conn-smoke-wedge-delete-recreate-kubectl | delete-recreate | 7b35066 | inferred | PASS | SUPERSEDED/TARGET_REPLACED | 5/5 SUPERSEDED | APPLIED |
+| p5conn-smoke-wedge-delete-recreate-rest | delete-recreate | 7b35066 | inferred | PASS | SUPERSEDED/TARGET_REPLACED | 5/5 SUPERSEDED | APPLIED |
+| p5conn-r1-wedge-rv-race-kubectl | rv-race | 7b35066 | inferred | PASS | SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE | 5/5 SUPERSEDED | APPLIED |
+| p5conn-r1-wedge-rv-race-rest | rv-race | 7b35066 | inferred | PASS | CONFLICT/DEFINITE_REJECTION | 5/5 CONFLICT | APPLIED |
+| p5conn-r1-wedge-admission-deny-kubectl | admission-deny | 7b35066 | inferred | PASS | CONFLICT/FENCED | 5/5 CONFLICT | APPLIED |
+| p5conn-r1-wedge-admission-deny-rest | admission-deny | 7b35066 | inferred | PASS | FAILED/DEFINITE_REJECTION | 5/5 FAILED | APPLIED |
+| p5conn-r1-wedge-delete-recreate-kubectl | delete-recreate | 7b35066 | inferred | PASS | SUPERSEDED/TARGET_REPLACED | 5/5 SUPERSEDED | APPLIED |
+| p5conn-r1-wedge-delete-recreate-rest | delete-recreate | 7b35066 | inferred | PASS | SUPERSEDED/TARGET_REPLACED | 5/5 SUPERSEDED | APPLIED |
+| p5conn-r2-wedge-rv-race-kubectl | rv-race | 7b35066 | inferred | PASS | SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE | 5/5 SUPERSEDED | APPLIED |
+| p5conn-r2-wedge-rv-race-rest | rv-race | 7b35066 | inferred | PASS | CONFLICT/DEFINITE_REJECTION | 5/5 CONFLICT | APPLIED |
+| p5conn-r2-wedge-admission-deny-kubectl | admission-deny | 7b35066 | inferred | PASS | CONFLICT/FENCED | 5/5 CONFLICT | APPLIED |
+| p5conn-r2-wedge-admission-deny-rest | admission-deny | 7b35066 | inferred | PASS | FAILED/DEFINITE_REJECTION | 5/5 FAILED | APPLIED |
+| p5conn-r2-wedge-delete-recreate-kubectl | delete-recreate | 7b35066 | inferred | PASS | SUPERSEDED/TARGET_REPLACED | 5/5 SUPERSEDED | APPLIED |
+| p5conn-r2-wedge-delete-recreate-rest | delete-recreate | 7b35066 | inferred | PASS | SUPERSEDED/TARGET_REPLACED | 5/5 SUPERSEDED | APPLIED |
+| p5conn-r3-wedge-rv-race-kubectl | rv-race | 7b35066 | inferred | PASS | SUPERSEDED/ADVANCED_WITHOUT_EVIDENCE | 5/5 SUPERSEDED | APPLIED |
+| p5conn-r3-wedge-rv-race-rest | rv-race | 7b35066 | inferred | PASS | CONFLICT/DEFINITE_REJECTION | 5/5 CONFLICT | APPLIED |
+| p5conn-r3-wedge-admission-deny-kubectl | admission-deny | 7b35066 | inferred | PASS | CONFLICT/FENCED | 5/5 CONFLICT | APPLIED |
+| p5conn-r3-wedge-admission-deny-rest | admission-deny | 7b35066 | inferred | PASS | FAILED/DEFINITE_REJECTION | 5/5 FAILED | APPLIED |
+| p5conn-r3-wedge-delete-recreate-kubectl | delete-recreate | 7b35066 | inferred | PASS | SUPERSEDED/TARGET_REPLACED | 5/5 SUPERSEDED | APPLIED |
+| p5conn-r3-wedge-delete-recreate-rest | delete-recreate | 7b35066 | inferred | PASS | SUPERSEDED/TARGET_REPLACED | 5/5 SUPERSEDED | APPLIED |
 <!-- END GENERATED:executor-wedge -->
 
 ## Timings
@@ -251,9 +291,9 @@ Successful runs only. `recorded` values come from the harness timeline;
 | agent | fault -> incident observed | 17 | 7.8 | 7.5 | 10.3 | recorded |
 | agent | incident observed -> repair applied | 25 | 40.6 | 23.7 | 356.5 | approx |
 | agent | repair applied -> outcome window end | 25 | 43.3 | 23.5 | 62.5 | approx |
-| connected-harness | fault -> incident observed | 6 | 7.7 | 6.5 | 9.9 | recorded |
-| connected-harness | incident observed -> repair applied | 10 | 3.4 | 3.2 | 6 | approx |
-| connected-harness | repair applied -> outcome window end | 10 | 26.35 | 23.9 | 101.8 | approx |
+| connected-harness | fault -> incident observed | 14 | 7.65 | 5.5 | 9.9 | recorded |
+| connected-harness | incident observed -> repair applied | 18 | 3.85 | 3.2 | 6 | approx |
+| connected-harness | repair applied -> outcome window end | 18 | 26.6 | 23.9 | 101.8 | approx |
 <!-- END GENERATED:timings -->
 
 ## Per-stage latency
@@ -288,28 +328,28 @@ with these limits:
 
 <!-- BEGIN GENERATED:latency -->
 - agent: 41 runs, 28 PASS; stopped at: planning x11; verification x2.
-- harness: 12 runs, 10 PASS; stopped at: after_recovery x1; decision x1.
+- harness: 20 runs, 18 PASS; stopped at: after_recovery x1; decision x1.
 
 | Mode | Stage | n | Median s | p90 s | Min s | Max s | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | agent | detection: start -> incident observed | 40 | 7.3 | 9.7 | 5.0 | 10.2 | bundle; start: first failing snapshot x20, injection x20 |
-| agent | planning: incident -> last planning record | 22 | 27.7 | 57.9 | 16.4 | 76.2 | bundle + run folder |
+| agent | planning: incident -> last planning record | 22 | 27.7 | 57.9 | 16.5 | 76.2 | bundle + run folder |
 | agent | model calls: sum per run (part of planning) | 29 | 43.1 | 66.6 | 21.9 | 109.3 | bundle |
-| agent | Guard: planning end -> ALLOW (incl. lab approval) | 19 | 0.7 | 0.9 | 0.4 | 1.1 | bundle + run folder |
+| agent | Guard: planning end -> ALLOW (incl. lab approval) | 19 | 0.7 | 0.9 | 0.2 | 1.0 | bundle + run folder |
 | agent | incident -> Guard ALLOW (planning + Guard) | 27 | 44.3 | 76.9 | 23.3 | 355.8 | bundle |
 | agent | execution: ALLOW -> Executor result | 27 | 0.7 | 0.8 | 0.5 | 0.8 | bundle |
 | agent | verification: Executor result -> outcome window end | 27 | 43.3 | 55.2 | 8.0 | 62.5 | bundle |
 | agent | fault to repair: start -> Executor result | 27 | 52.3 | 84.8 | 31.5 | 363.7 | bundle; start: first failing snapshot x13, injection x14 |
 | agent | total: start -> outcome window end | 27 | 85.7 | 147.4 | 56.9 | 407.0 | bundle; start: first failing snapshot x13, injection x14 |
-| harness | detection: start -> incident observed | 12 | 7.3 | 9.6 | 5.7 | 9.7 | bundle; start: first failing snapshot x4, injection x8 |
-| harness | planning: incident -> last planning record | 8 | 2.6 | 4.4 | 2.4 | 4.4 | bundle |
+| harness | detection: start -> incident observed | 20 | 7.3 | 7.6 | 5.1 | 9.7 | bundle; start: first failing snapshot x4, injection x16 |
+| harness | planning: incident -> last planning record | 16 | 3.0 | 4.2 | 2.4 | 4.4 | bundle |
 | harness | model calls: sum per run (part of planning) | 0 | n/a | n/a | n/a | n/a | - |
-| harness | Guard: planning end -> ALLOW (incl. lab approval) | 7 | 0.4 | 0.9 | 0.3 | 0.9 | bundle |
-| harness | incident -> Guard ALLOW (planning + Guard) | 11 | 3.0 | 3.1 | 2.8 | 5.4 | bundle |
-| harness | execution: ALLOW -> Executor result | 11 | 0.6 | 0.7 | 0.6 | 1.0 | bundle |
-| harness | verification: Executor result -> outcome window end | 11 | 26.6 | 91.1 | 24.1 | 102.3 | bundle |
-| harness | fault to repair: start -> Executor result | 11 | 11.0 | 13.0 | 10.5 | 13.3 | bundle; start: first failing snapshot x4, injection x7 |
-| harness | total: start -> outcome window end | 11 | 37.3 | 104.4 | 35.0 | 114.4 | bundle; start: first failing snapshot x4, injection x7 |
+| harness | Guard: planning end -> ALLOW (incl. lab approval) | 15 | 0.5 | 0.7 | 0.3 | 0.9 | bundle |
+| harness | incident -> Guard ALLOW (planning + Guard) | 19 | 3.1 | 4.8 | 2.8 | 5.4 | bundle |
+| harness | execution: ALLOW -> Executor result | 19 | 0.7 | 0.9 | 0.6 | 1.0 | bundle |
+| harness | verification: Executor result -> outcome window end | 19 | 26.7 | 91.1 | 24.1 | 102.3 | bundle |
+| harness | fault to repair: start -> Executor result | 19 | 11.0 | 13.0 | 9.4 | 13.3 | bundle; start: first failing snapshot x4, injection x15 |
+| harness | total: start -> outcome window end | 19 | 37.3 | 104.4 | 35.0 | 114.4 | bundle; start: first failing snapshot x4, injection x15 |
 <!-- END GENERATED:latency -->
 
 ### Model calls and cold loads
@@ -380,6 +420,18 @@ scored trials.
 | chaos-n2-r4-29e41f8 | N2 | PodChaos | 29e41f8 | PASS | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_BUDGET_EXHAUSTED, RESTART_TEMPLATE_DRIFT, 0 writes | yes |
 | chaos-n2-r5-29e41f8 | N2 | PodChaos | 29e41f8 | PASS | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_BUDGET_EXHAUSTED, RESTART_TEMPLATE_DRIFT, 0 writes | yes |
 | chaos-n2-agent-r1-29e41f8 | N2 | PodChaos | 29e41f8 | PASS | ESCALATE | 0 | n/a | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_TEMPLATE_DRIFT, 0 writes | yes |
+| p5conn-smoke-cve-n2 | N2 | PodChaos | 7b35066 | PASS | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_BUDGET_EXHAUSTED, RESTART_TEMPLATE_DRIFT, 0 writes | yes |
+| p5conn-smoke-cve-n3 | N3 | StressChaos | 7b35066 | PASS | ESCALATE | 0 | n/a | RESTART REJECT RESTART_NOT_JUSTIFIED, 0 writes | yes |
+| p5conn-smoke-cve-t1 | T1 | NetworkChaos | 7b35066 | PASS | NO_INCIDENT | 0 | n/a | none | yes |
+| p5conn-r1-cve-n2 | N2 | PodChaos | 7b35066 | PASS | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_BUDGET_EXHAUSTED, RESTART_TEMPLATE_DRIFT, 0 writes | yes |
+| p5conn-r1-cve-n3 | N3 | StressChaos | 7b35066 | PASS | ESCALATE | 0 | n/a | RESTART REJECT RESTART_NOT_JUSTIFIED, 0 writes | yes |
+| p5conn-r1-cve-t1 | T1 | NetworkChaos | 7b35066 | PASS | NO_INCIDENT | 0 | n/a | none | yes |
+| p5conn-r2-cve-n2 | N2 | PodChaos | 7b35066 | PASS | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_BUDGET_EXHAUSTED, RESTART_TEMPLATE_DRIFT, 0 writes | yes |
+| p5conn-r2-cve-n3 | N3 | StressChaos | 7b35066 | PASS | ESCALATE | 0 | n/a | RESTART REJECT RESTART_NOT_JUSTIFIED, 0 writes | yes |
+| p5conn-r2-cve-t1 | T1 | NetworkChaos | 7b35066 | PASS | NO_INCIDENT | 0 | n/a | none | yes |
+| p5conn-r3-cve-n2 | N2 | PodChaos | 7b35066 | PASS | RESTART | 1 | yes | ROLLBACK REJECT ROLLBACK_ALREADY_AT_BASELINE, 0 writes; RESTART REJECT RESTART_BUDGET_EXHAUSTED, RESTART_TEMPLATE_DRIFT, 0 writes | yes |
+| p5conn-r3-cve-n3 | N3 | StressChaos | 7b35066 | PASS | ESCALATE | 0 | n/a | RESTART REJECT RESTART_NOT_JUSTIFIED, 0 writes | yes |
+| p5conn-r3-cve-t1 | T1 | NetworkChaos | 7b35066 | PASS | NO_INCIDENT | 0 | n/a | none | yes |
 <!-- END GENERATED:chaos-recovery -->
 
 ## Scenario pairs
@@ -426,6 +478,10 @@ Blocked probes are the bypass, identity and outage probes that must fail.
 | protected-boutique-context-231935 | PASS | yes | 8/8 | yes |
 | protected-boutique-pr5-230557 | PASS | yes | 8/8 | yes |
 | protected-boutique-netpol | PASS | yes | 8/8 | yes |
+| p5sec-p504-r1 | PASS | yes | 8/8 | yes |
+| p5sec-p504-r2 | PASS | yes | 8/8 | yes |
+| p5sec-p504-r3 | PASS | yes | 8/8 | yes |
+| p5sec-p504-smoke | PASS | yes | 8/8 | yes |
 <!-- END GENERATED:security-lab -->
 
 ## Observer acceptance

@@ -1,0 +1,153 @@
+{
+  "allowed_actions": [
+    "ROLLBACK"
+  ],
+  "baseline_constraints": {
+    "max_age_seconds": 1800,
+    "min_healthy_duration_seconds": 10,
+    "require_compatible_references": true,
+    "require_health_evidence": true,
+    "require_image_digests": true,
+    "trusted_sources": [
+      "sentinel-boutique-security-authenticated"
+    ]
+  },
+  "decision_ttl_seconds": 20,
+  "health": {
+    "convergence_grace_seconds": 150,
+    "max_sample_gap_seconds": 90,
+    "minimum_samples": 3,
+    "protocol": "grpc",
+    "require_available_replicas": true,
+    "require_target_identity": true,
+    "require_template_match": true,
+    "required_dependencies": [
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice",
+      "emailservice",
+      "frontend",
+      "paymentservice",
+      "productcatalogservice",
+      "recommendationservice",
+      "redis-cart",
+      "storefront-checkout"
+    ],
+    "required_grpc_status": 0,
+    "stable_window_seconds": 10,
+    "verification_timeout_seconds": 300
+  },
+  "max_approval_lifetime_seconds": 300,
+  "max_dependency_age_seconds": 300,
+  "max_state_age_seconds": 30,
+  "policy_id": "executor-live-lab",
+  "policy_version": "executor-live-lab-1",
+  "profile": "live",
+  "require_operator_approval": true,
+  "require_server_dry_run": false,
+  "resource_constraints": {
+    "max_container_limits": {
+      "cpu": "500m",
+      "memory": "192Mi"
+    },
+    "max_container_requests": {
+      "cpu": "100m",
+      "memory": "64Mi"
+    },
+    "require_requests_and_limits": true
+  },
+  "security_constraints": {
+    "allowed_image_registries": [
+      "us-central1-docker.pkg.dev",
+      "docker.io"
+    ],
+    "allowed_service_accounts": [
+      "shippingservice"
+    ],
+    "allowed_sidecars": [
+      {
+        "args": [
+          "-c",
+          "/config/envoy.json",
+          "--concurrency",
+          "2",
+          "--log-level",
+          "warn"
+        ],
+        "command": [
+          "envoy"
+        ],
+        "image": "envoyproxy/envoy@sha256:8de97e654644827d62afdbf7e1d3dc9fee01a8690d410dd1c63a30dc6b6cecbb",
+        "mounts": [
+          {
+            "mount_path": "/config",
+            "source": {
+              "kind": "ConfigMap",
+              "name": "security-upstream"
+            },
+            "volume": "security-upstream"
+          },
+          {
+            "mount_path": "/trust",
+            "source": {
+              "kind": "ConfigMap",
+              "name": "security-trust-bundle"
+            },
+            "volume": "security-trust-bundle"
+          },
+          {
+            "mount_path": "/pki/upstream",
+            "source": {
+              "kind": "Secret",
+              "name": "security-upstream"
+            },
+            "volume": "upstream"
+          }
+        ],
+        "name": "shipping-ingress",
+        "target": "shippingservice"
+      }
+    ],
+    "certificate_identities": [
+      {
+        "certificate": "security-upstream",
+        "dns_names": [
+          "upstream.internal"
+        ],
+        "issuer": {
+          "group": "cert-manager.io",
+          "kind": "ClusterIssuer",
+          "name": "sentinel-lab-ca"
+        },
+        "min_remaining_seconds": 1800,
+        "secret": "<redacted:80b4f07d>"
+      }
+    ],
+    "deny_host_access": true,
+    "deny_privileged": true,
+    "forbid_service_account_change": true
+  },
+  "targets": [
+    {
+      "cluster_id": "sentinel-boutique-security",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-security",
+      "uid": "872166a6-efce-4249-9204-328190d1227d"
+    }
+  ],
+  "unknown_dependency_result": "ESCALATE",
+  "workload_constraints": {
+    "max_pod_requests": {
+      "cpu": "250m",
+      "memory": "128Mi"
+    },
+    "max_replicas": 2,
+    "max_rollout_requests": {
+      "cpu": "1",
+      "memory": "512Mi"
+    },
+    "max_surge_replicas": 1
+  }
+}

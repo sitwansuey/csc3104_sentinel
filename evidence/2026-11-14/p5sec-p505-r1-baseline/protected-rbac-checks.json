@@ -1,0 +1,256 @@
+[
+  {
+    "allowed": true,
+    "identity": "executor",
+    "resource": "deployment/shippingservice",
+    "verb": "get"
+  },
+  {
+    "allowed": true,
+    "identity": "executor",
+    "resource": "deployment/shippingservice",
+    "verb": "patch"
+  },
+  {
+    "allowed": false,
+    "identity": "executor",
+    "resource": "secrets",
+    "verb": "get"
+  },
+  {
+    "allowed": false,
+    "identity": "executor",
+    "resource": "secrets",
+    "verb": "list"
+  },
+  {
+    "allowed": false,
+    "identity": "executor",
+    "resource": "secret/security-upstream",
+    "verb": "get"
+  },
+  {
+    "allowed": false,
+    "identity": "executor",
+    "resource": "configmap/security-trust-bundle",
+    "verb": "get"
+  },
+  {
+    "allowed": false,
+    "identity": "executor",
+    "resource": "configmap/security-upstream",
+    "verb": "get"
+  },
+  {
+    "allowed": false,
+    "identity": "executor",
+    "resource": "certificates.cert-manager.io/security-upstream",
+    "verb": "get"
+  },
+  {
+    "allowed": false,
+    "identity": "executor",
+    "resource": "deployment/shippingservice",
+    "verb": "delete"
+  },
+  {
+    "allowed": false,
+    "identity": "executor",
+    "resource": "deployment/paymentservice",
+    "verb": "patch"
+  },
+  {
+    "allowed": false,
+    "identity": "executor",
+    "resource": "pods/exec",
+    "verb": "create"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "resource": "secret/security-upstream",
+    "verb": "get"
+  },
+  {
+    "allowed": true,
+    "identity": "reader",
+    "resource": "configmap/security-trust-bundle",
+    "verb": "get"
+  },
+  {
+    "allowed": true,
+    "identity": "reader",
+    "resource": "configmap/security-upstream",
+    "verb": "get"
+  },
+  {
+    "allowed": true,
+    "identity": "reader",
+    "resource": "certificates.cert-manager.io/security-upstream",
+    "verb": "get"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "resource": "secret/security-gateway",
+    "verb": "get"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "resource": "secrets",
+    "verb": "get"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "resource": "secrets",
+    "verb": "list"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "resource": "secrets",
+    "verb": "watch"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "resource": "configmaps",
+    "verb": "list"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "resource": "configmap/security-trust-bundle",
+    "verb": "patch"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "resource": "certificates.cert-manager.io",
+    "verb": "list"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "resource": "certificates.cert-manager.io/security-upstream",
+    "verb": "patch"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "resource": "certificaterequests.cert-manager.io",
+    "verb": "get"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "resource": "deployment/shippingservice",
+    "verb": "get"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "resource": "deployment/shippingservice",
+    "verb": "patch"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "resource": "pods",
+    "verb": "create"
+  },
+  {
+    "allowed": false,
+    "identity": "executor",
+    "resource": "certificates.cert-manager.io",
+    "verb": "create"
+  },
+  {
+    "allowed": false,
+    "identity": "executor",
+    "resource": "certificaterequests.cert-manager.io",
+    "verb": "create"
+  },
+  {
+    "allowed": false,
+    "identity": "executor",
+    "namespace": "*",
+    "resource": "certificates.cert-manager.io",
+    "verb": "create"
+  },
+  {
+    "allowed": false,
+    "identity": "executor",
+    "namespace": "*",
+    "resource": "certificaterequests.cert-manager.io",
+    "verb": "create"
+  },
+  {
+    "allowed": false,
+    "identity": "executor",
+    "namespace": "cert-manager",
+    "resource": "secret/sentinel-lab-ca",
+    "verb": "get"
+  },
+  {
+    "allowed": false,
+    "identity": "executor",
+    "namespace": "cert-manager",
+    "resource": "secret/sentinel-lab-ca-2",
+    "verb": "get"
+  },
+  {
+    "allowed": false,
+    "identity": "executor",
+    "resource": "clusterissuers.cert-manager.io/sentinel-lab-ca",
+    "verb": "patch"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "resource": "certificates.cert-manager.io",
+    "verb": "create"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "resource": "certificaterequests.cert-manager.io",
+    "verb": "create"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "namespace": "*",
+    "resource": "certificates.cert-manager.io",
+    "verb": "create"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "namespace": "*",
+    "resource": "certificaterequests.cert-manager.io",
+    "verb": "create"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "namespace": "cert-manager",
+    "resource": "secret/sentinel-lab-ca",
+    "verb": "get"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "namespace": "cert-manager",
+    "resource": "secret/sentinel-lab-ca-2",
+    "verb": "get"
+  },
+  {
+    "allowed": false,
+    "identity": "reader",
+    "resource": "clusterissuers.cert-manager.io/sentinel-lab-ca",
+    "verb": "patch"
+  }
+]

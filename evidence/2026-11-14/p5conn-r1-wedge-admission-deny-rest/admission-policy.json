@@ -1,0 +1,72 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "admissionregistration.k8s.io/v1",
+      "kind": "ValidatingAdmissionPolicy",
+      "metadata": {
+        "name": "sentinel-wedge-e9778bb6-deny-template",
+        "labels": {
+          "app.kubernetes.io/managed-by": "sentinel-wedge-harness"
+        }
+      },
+      "spec": {
+        "failurePolicy": "Fail",
+        "matchConstraints": {
+          "resourceRules": [
+            {
+              "apiGroups": [
+                "apps"
+              ],
+              "apiVersions": [
+                "v1"
+              ],
+              "operations": [
+                "UPDATE"
+              ],
+              "resources": [
+                "deployments"
+              ]
+            }
+          ]
+        },
+        "matchConditions": [
+          {
+            "name": "wedge-target-only",
+            "expression": "object.metadata.name == 'wedge-target'"
+          }
+        ],
+        "validations": [
+          {
+            "expression": "object.spec.template == oldObject.spec.template",
+            "message": "Wedge harness: Pod template changes are denied"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "admissionregistration.k8s.io/v1",
+      "kind": "ValidatingAdmissionPolicyBinding",
+      "metadata": {
+        "name": "sentinel-wedge-e9778bb6-deny-template",
+        "labels": {
+          "app.kubernetes.io/managed-by": "sentinel-wedge-harness"
+        }
+      },
+      "spec": {
+        "policyName": "sentinel-wedge-e9778bb6-deny-template",
+        "validationActions": [
+          "Deny"
+        ],
+        "matchResources": {
+          "namespaceSelector": {
+            "matchLabels": {
+              "kubernetes.io/metadata.name": "sentinel-wedge-e9778bb6"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

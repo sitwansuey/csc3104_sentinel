@@ -1,0 +1,17 @@
+{
+  "action": "SCALE",
+  "action_id": "ACT-FORCED-3c262ad7dc4d47f8b2010a8d7e88bc57",
+  "desired_replicas": 5,
+  "executor_journal_attempts": 0,
+  "executor_patch_attempts": 0,
+  "executor_status": "FAILED",
+  "expected_reason": "WORKLOAD_REPLICAS_EXCEED_POLICY",
+  "generation_unchanged": true,
+  "guard_reason_codes": [
+    "SCALE_NOT_BASELINE",
+    "WORKLOAD_REPLICAS_EXCEED_POLICY"
+  ],
+  "guard_verdict": "REJECT",
+  "replicas_unchanged": true,
+  "template_unchanged": true
+}

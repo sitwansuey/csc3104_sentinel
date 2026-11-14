@@ -1,0 +1,14 @@
+{
+  "status": 200,
+  "body": {
+    "ready": true,
+    "reasons": [],
+    "inflight": 0,
+    "max_inflight": 16,
+    "max_rps": 200.0,
+    "shed": {
+      "inflight": 2769,
+      "rate": 0
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "p5conn-smoke-wedge-delete-recreate-rest",
+  "class": "executor-wedge",
+  "captured_at": "2026-11-14T14:45:15.192403Z",
+  "source_run_dir_name": "smoke-wedge-delete-recreate-rest",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+    "basis": "connected-lab Phase 5 session attempt 7 (14 Nov 2026) run from integration/phase5 at 7b35066, clean worktree plus untracked scratch runner"
+  },
+  "files": [
+    {
+      "path": "delete-recreate.json",
+      "sha256": "f6d5f2af8faa39591d9680b3cc0de9ea93749ed1d2f09294aac05a18a7c6d0a1",
+      "bytes": 2986,
+      "redactions": 0
+    },
+    {
+      "path": "manifests.json",
+      "sha256": "e6f6dbe947dc9e9a6c0616e23d254d67c337d80317c78f3e9c81b6d5706aa542",
+      "bytes": 2416,
+      "redactions": 0
+    },
+    {
+      "path": "recreate.json",
+      "sha256": "2f58a75ab2f0e923c55e366bccf2940c733bfe39b3957dc017afee9f00a0d17e",
+      "bytes": 1135,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

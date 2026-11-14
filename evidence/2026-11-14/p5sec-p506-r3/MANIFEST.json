@@ -1,0 +1,52 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "p5sec-p506-r3",
+  "class": "cert-lifecycle",
+  "captured_at": null,
+  "source_run_dir_name": "r3-certs",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+    "basis": "security-lab Phase 5 session attempt 5 (14 Nov 2026) run from integration/phase5 at e8d6fed, clean worktree plus untracked scratch runner"
+  },
+  "files": [
+    {
+      "path": "checkout-rollover.json",
+      "sha256": "17b4ff94cdf7f09668f095048fe67c6e09cff7ad517a09b925d2a8d70b46010e",
+      "bytes": 26362,
+      "redactions": 0
+    },
+    {
+      "path": "checkout-rotation.json",
+      "sha256": "832c8fd71311bb6e7cb9324e1149839af7ac2559f7022823dd0cd26d85f58d75",
+      "bytes": 6026,
+      "redactions": 0
+    },
+    {
+      "path": "identity-before.json",
+      "sha256": "44ca24764896b56c10a97a0f8df84d4bc1d46ff34ec0f87c0c8d1fb5de75f98b",
+      "bytes": 41,
+      "redactions": 0
+    },
+    {
+      "path": "negatives.json",
+      "sha256": "be638fa167f2e3820cb4173aac12a380cfd5531a160f122b0ff9bd550b6c59e3",
+      "bytes": 183,
+      "redactions": 0
+    },
+    {
+      "path": "rollover-finish.json",
+      "sha256": "08ab5c339d373e6ef406f2d07644f84b3a2c4c9139f2ff723ca87f068f723045",
+      "bytes": 61,
+      "redactions": 0
+    },
+    {
+      "path": "rotation.json",
+      "sha256": "0baa1675b87114dd229f018b8cd95a9688e67da4a3fc8068c873d91577749d6c",
+      "bytes": 754,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

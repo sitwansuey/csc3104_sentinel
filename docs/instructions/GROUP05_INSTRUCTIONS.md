@@ -341,8 +341,9 @@ bash scripts/run-sentinel.sh --setup --cleanup
 
 The security lab is a separate experiment in its own cluster,
 `sentinel-boutique-security`. It puts the shipping path behind an mTLS gateway
-and probes it for bypasses. Since P5.04 it does the same for the cart path; that
-has been checked offline only. It is not combined with guarded recovery. OpenSSL
+and probes it for bypasses. Shipping/cart inspection and protected shipping
+recovery passed one Phase 5 smoke round on one Docker host; unscored, owner
+sign-off pending ([results](../security.md)). OpenSSL
 must be on PATH. Run each step on its own, and use a new `--directory` for each
 attempt.
 

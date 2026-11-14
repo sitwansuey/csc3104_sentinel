@@ -1,0 +1,14 @@
+{
+  "workers": 200,
+  "seconds": 30.0,
+  "workers_finished": 200,
+  "requests": 11016,
+  "statuses": {
+    "200": 16,
+    "500": 11000
+  },
+  "errors": 0,
+  "p50_ms": 480.2,
+  "p95_ms": 1110.2,
+  "completed": true
+}

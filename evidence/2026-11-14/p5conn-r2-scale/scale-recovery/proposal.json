@@ -1,0 +1,25 @@
+{
+  "action": "SCALE",
+  "action_id": "ACT-ab72e71e218fc6c15cf31591",
+  "based_on_resource_version": "341932",
+  "evidence_refs": [
+    "E-9AE530C0B69D",
+    "E-DF958B10FAE1"
+  ],
+  "incident_id": "INC-D598F5771368",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-132a527290de",
+    "desired_replicas": 1,
+    "template_sha256": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d"
+  },
+  "rationale": "The Deployment was scaled below its reviewed minimum while its configuration equals the reviewed healthy baseline; restore the replica count recorded with that baseline.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "cartservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+  }
+}

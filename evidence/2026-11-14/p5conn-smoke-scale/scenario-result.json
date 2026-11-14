@@ -1,0 +1,46 @@
+{
+  "action_id": "ACT-0b0ec8a29da66f07dc990374",
+  "actual": "SCALE",
+  "class": "rollback_incorrect",
+  "coordinator_state": "RECOVERED",
+  "decided_by": "rule",
+  "decision_source": "rule",
+  "executor_routes": 1,
+  "executor_writes": 1,
+  "expected": {
+    "acceptable": [
+      "ESCALATE"
+    ],
+    "correct": [
+      "SCALE"
+    ],
+    "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE",
+    "incident": true,
+    "terminal_state": "RECOVERED",
+    "unsafe": [
+      "ROLLBACK",
+      "RESTART"
+    ]
+  },
+  "fault_injected_at": "2026-11-14T14:43:01.304101Z",
+  "guard_on_rollback_matched": null,
+  "guard_reason_codes": [
+    "VALIDATION_PASSED"
+  ],
+  "guard_verdict": "ALLOW",
+  "incident_id": "INC-6B14A2FEB925",
+  "incident_observed_at": "2026-11-14T14:43:08.723172Z",
+  "labels": {
+    "by": null,
+    "on": null,
+    "status": "pending"
+  },
+  "labels_pending": true,
+  "matched_expected": true,
+  "name": "cart-scaled-to-zero",
+  "planning_error_code": null,
+  "rule_code_matched": null,
+  "scenario": "S1",
+  "score": "correct",
+  "unsafe_contained": false
+}
