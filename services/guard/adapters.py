@@ -185,3 +185,99 @@ def read_reference_versions(target, references, *, context, cluster_id, kubeconf
         output.append({"kind": kind, "namespace": namespace, "name": name,
                        "uid": uid, "resource_version": version})
     return output
+
+
+# P5.06: a Certificate is read as a bounded JSON object and reduced to these
+# fields at once. A cert-manager Certificate holds no key material: the key
+# lives in the Secret it names, which this reader never requests.
+MAX_CERTIFICATE_BYTES = 64 * 1024
+
+
+def certificate_record(certificate, namespace):
+    """The Guard's record of one cert-manager Certificate: identity, spec and status fields only.
+
+    Raises AdapterError when the object is not that namespace's Certificate.
+    Optional status fields that cert-manager has not set yet are None, which
+    the Guard treats as unknown, never as valid.
+    """
+    try:
+        metadata, spec = certificate["metadata"], certificate["spec"]
+        status = certificate.get("status") or {}
+        if (certificate.get("apiVersion") != "cert-manager.io/v1" or certificate.get("kind") != "Certificate"
+                or metadata.get("namespace") != namespace or not isinstance(status, dict)):
+            raise ValueError("not this namespace's Certificate")
+        issuer = spec["issuerRef"]
+        ready = [item for item in status.get("conditions") or [] if isinstance(item, dict) and item.get("type") == "Ready"]
+        condition = ready[0] if len(ready) == 1 else {}
+        generation = metadata["generation"]
+        observed = condition.get("observedGeneration")
+        revision = status.get("revision")
+        record = {
+            "kind": "Certificate", "namespace": namespace, "name": metadata["name"], "uid": metadata["uid"],
+            "generation": generation, "secret_name": spec["secretName"],
+            "dns_names": list(spec.get("dnsNames") or []),
+            "issuer": {"group": issuer.get("group") or "cert-manager.io", "kind": issuer.get("kind") or "Issuer",
+                       "name": issuer["name"]},
+            "ready": condition.get("status") if condition.get("status") in ("True", "False") else "Unknown",
+            "ready_observed_generation": observed if type(observed) is int else None,
+            "not_before": status.get("notBefore"), "not_after": status.get("notAfter"),
+            "revision": revision if type(revision) is int else None,
+        }
+        if (type(generation) is not int or any(not isinstance(record[key], str) or not record[key]
+                                               for key in ("name", "uid", "secret_name"))
+                or not isinstance(record["issuer"]["name"], str)
+                or any(not isinstance(name, str) for name in record["dns_names"])
+                or any(value is not None and not isinstance(value, str)
+                       for value in (record["not_before"], record["not_after"]))):
+            raise ValueError("malformed Certificate fields")
+    except (KeyError, TypeError, AttributeError, ValueError) as exc:
+        raise AdapterError("CERTIFICATE_STATE_INVALID", "certificate_state", "Invalid Certificate status response") from exc
+    return record
+
+
+def read_certificate_status(target, names, *, context, cluster_id, kubeconfig=None):
+    """Read named cert-manager Certificates in the target's namespace; never a Secret (P5.06).
+
+    The Guard-reader identity needs get on exactly these
+    certificates.cert-manager.io names, and no Secret permission at all.
+    """
+    if (
+        not isinstance(context, str) or not context.strip()
+        or not isinstance(cluster_id, str) or not cluster_id.strip()
+        or target.get("cluster_id") != cluster_id
+        or (kubeconfig is not None and not str(kubeconfig).strip())
+        or not isinstance(names, list) or len(names) > 64
+    ):
+        raise AdapterError("INVALID_CERTIFICATE_TARGET", "certificate_state", "Expected explicit trusted context, cluster and bounded names")
+    namespace = target.get("namespace")
+    if not isinstance(namespace, str) or len(namespace) > 63 or not _DNS_LABEL.fullmatch(namespace):
+        raise AdapterError("INVALID_CERTIFICATE_TARGET", "certificate_state", "Invalid Certificate namespace")
+    for name in names:
+        if (not isinstance(name, str) or len(name) > 253 or not _DNS_SUBDOMAIN.fullmatch(name)
+                or any(len(label) > 63 or not _DNS_LABEL.fullmatch(label) for label in name.split("."))):
+            raise AdapterError("INVALID_CERTIFICATE_TARGET", "certificate_state", "Invalid Certificate name")
+    output = []
+    for name in sorted(set(names)):
+        command = ["kubectl", f"--context={context}", f"--namespace={namespace}", "--request-timeout=10s"]
+        if kubeconfig is not None:
+            command.append(f"--kubeconfig={kubeconfig}")
+        command += ["get", "certificates.cert-manager.io", name, "--output=json"]
+        try:
+            result = subprocess.run(command, capture_output=True, check=False, timeout=KUBECTL_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired as exc:
+            raise AdapterError("CERTIFICATE_STATE_TIMEOUT", "certificate_state", "Certificate status read timed out") from exc
+        except OSError as exc:
+            raise AdapterError("CERTIFICATE_STATE_UNAVAILABLE", "certificate_state", "Certificate status read could not be started") from exc
+        if result.returncode != 0:
+            raise AdapterError("CERTIFICATE_STATE_UNAVAILABLE", "certificate_state", "Certificate status is unavailable")
+        if len(result.stdout) > MAX_CERTIFICATE_BYTES:
+            raise AdapterError("CERTIFICATE_STATE_INVALID", "certificate_state", "Invalid Certificate status response")
+        try:
+            certificate = _parse_json(result.stdout, "certificate_state")
+        except AdapterError as exc:
+            raise AdapterError("CERTIFICATE_STATE_INVALID", "certificate_state", "Invalid Certificate status response") from exc
+        record = certificate_record(certificate, namespace)
+        if record["name"] != name:
+            raise AdapterError("CERTIFICATE_STATE_INVALID", "certificate_state", "Invalid Certificate status response")
+        output.append(record)
+    return output

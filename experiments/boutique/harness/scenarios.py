@@ -41,7 +41,7 @@ import json
 from pathlib import Path
 import re
 
-from services.planner.core import METRIC_ONLY_RATIONALE
+from services.planner.core import IDENTITY_FAILURE_RATIONALE, METRIC_ONLY_RATIONALE
 from services.planner.taxonomy import INELIGIBLE_CODES
 from services.planner.worker import EXHAUSTED, TERMINAL_RATIONALES
 
@@ -680,8 +680,8 @@ def decision_source(proposal, error_code=None, *, decided_by=None, model_action=
     if outcome in REPAIRS:
         return decided_by if decided_by in ("rule", "model") else "unconfirmed"
     rationale = proposal.get("rationale")
-    if rationale == METRIC_ONLY_RATIONALE:
-        return "rule"  # The Planner's metric-only rule escalates before any provider or model call.
+    if rationale in (METRIC_ONLY_RATIONALE, IDENTITY_FAILURE_RATIONALE):
+        return "rule"  # The Planner's metric-only and identity rules escalate before any provider or model call.
     if rationale in _FIXED_RATIONALES:
         if error_code in RULE_CODES and rationale == TERMINAL_RATIONALES[error_code]:
             return "rule"

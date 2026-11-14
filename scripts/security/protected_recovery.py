@@ -26,7 +26,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from experiments.boutique.harness.protected import (GUARD_READER_RBAC, STAGES, guard_reader_rbac, preflight,
-                                                    reviewed_references, staged_commands)
+                                                    reader_scope, reviewed_identities, reviewed_references,
+                                                    staged_commands)
 from scripts.security.boutique_security_manifest import NAMESPACE
 
 
@@ -52,7 +53,7 @@ def main(argv=None):
     if args.action == "plan":
         print(json.dumps(staged_commands(args.security_run, args.run_dir), indent=2))
         return 0
-    text = guard_reader_rbac(NAMESPACE, reviewed_references())
+    text = guard_reader_rbac(NAMESPACE, *reader_scope(reviewed_references(), reviewed_identities()))
     if args.check:
         same = GUARD_READER_RBAC.read_text(encoding="utf-8").replace("\r\n", "\n") == text
         print("deploy/sentinel/guard-reader-rbac.yaml is " + ("current" if same else "stale; regenerate it with rbac"))

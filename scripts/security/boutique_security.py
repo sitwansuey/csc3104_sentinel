@@ -1,7 +1,6 @@
 """Full Boutique with inspected shipping and cart traffic in a dedicated Calico kind lab."""
 
 import argparse
-import base64
 from copy import deepcopy
 import hashlib
 import json
@@ -29,7 +28,8 @@ from scripts.security.network_policy import (MATRIX_IMAGE, MATRIX_LABEL, committ
                                              matrix_destinations, matrix_sources, policy_differences, probe_targets,
                                              reviewed_security_policies, run_matrix)
 from experiments.boutique.traffic.storefront import StorefrontProbe
-from scripts.security.security_lab import CLIENT, ENVOY, INSPECTOR, ROUTES, certificates
+from scripts.security import cert_lifecycle
+from scripts.security.security_lab import CLIENT, ENVOY, INSPECTOR, ROUTES
 from runtime.boutique_observability import emit_observation, service_inventory
 from shared import provenance
 
@@ -37,9 +37,11 @@ CLUSTER = "sentinel-boutique-security"
 CONTEXT = "kind-" + CLUSTER
 CALICO_URL = "https://raw.githubusercontent.com/projectcalico/calico/v3.33.0/manifests/calico.yaml"
 CALICO_SHA = "2de8f47595fb9c41b3f47d7b767a1f8e72ecf84057af834738ff12689a234da5"
-# The certificate identities whose Secrets the lab creates (never committed).
-IDENTITIES = ("gateway", "upstream", "cart-upstream", "proxy-client", "client", "frontend-client", "checkoutservice-client",
-              VERIFIER_IDENTITY)
+# The certificate identities cert-manager issues into Secrets (never committed; P5.06).
+IDENTITIES = tuple(identity for identity, _ in cert_lifecycle.IDENTITIES)
+# The identities a test probe may present: the lab's own, and the refused test identities (P5.06).
+PROBE_IDENTITIES = ("client", "proxy-client", VERIFIER_IDENTITY, *cert_lifecycle.NEGATIVE_IDENTITIES,
+                    cert_lifecycle.OLD_CA_IDENTITY)
 # The grpcurl probe per route: its schema file and the read-only RPC used for
 # a valid call. A cart probe with a quantity sends AddItem instead.
 PROBE_RPCS = {"shipping": ("shipping.proto", "hipstershop.ShippingService/GetQuote"),
@@ -120,13 +122,18 @@ def local_manifest(tag, node, repository):
     return alias, image["Id"]
 
 
-def prepare(directory, candidate):
+def prepare(directory, candidate, *, profile="lab"):
+    # P5.06: refuse before any cluster command while a cert-manager pin is unresolved.
+    pins = cert_lifecycle.load_pins()
+    problems = cert_lifecycle.unresolved_pins(pins)
+    if problems:
+        raise ValueError("cert-manager pins are unresolved; run scripts/security/cert_lifecycle.py pins: "
+                         + "; ".join(problems))
     directory.mkdir(parents=True, exist_ok=False)
     directory.chmod(0o700)
     node = setup_cluster(directory)
     pki = directory / "pki"
     pki.mkdir(mode=0o700)
-    certificates(pki, extra_clients=("frontend-client", "checkoutservice-client", VERIFIER_IDENTITY))
     if hashlib.sha256(UPSTREAM.read_bytes()).hexdigest() != UPSTREAM_SHA256:
         raise ValueError("Pinned Boutique manifest checksum changed")
     resources = decoded_resources(kube("create", "--dry-run=client", "--validate=false", "-f", UPSTREAM, "-o", "json").stdout)
@@ -136,6 +143,10 @@ def prepare(directory, candidate):
     # generated policies differ from deploy/boutique/security-network-policies.json.
     policies = reviewed_security_policies(graph_from_manifest(connected_manifest(
         resources, {image: image for image in originals}, NAMESPACE)))
+    # The lab CA that seeds cert-manager's issuer (its key stays in this private folder), then the
+    # pinned cert-manager chart and images (P5.06).
+    ca = cert_lifecycle.make_ca(pki, "ca-1", command=command)
+    cert_lifecycle.install(directory, node, command, pins=pins)
     images = {}
     for original in sorted(originals):
         print("Preparing full application image: " + original, flush=True)
@@ -168,15 +179,9 @@ def prepare(directory, candidate):
     public = directory / "manifest.json"
     save(public, manifest)
     kube("apply", "-f", public)
-    # Identity-specific Secrets never enter the public manifest or source tree.
-    for identity in IDENTITIES:
-        secret = {"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "security-" + identity, "namespace": NAMESPACE},
-                  "type": "Opaque", "data": {name: base64.b64encode((pki / identity / name).read_bytes()).decode()
-                                             for name in ("ca.crt", "tls.crt", "tls.key")}}
-        path = pki / (identity + ".json")
-        save(path, secret)
-        path.chmod(0o600)
-        kube("apply", "-f", path)
+    # cert-manager issues every identity's Secret from the lab CA; keys never enter the
+    # public manifest or source tree, and Envoy reloads renewed files without a restart.
+    cert_lifecycle.issue(directory, ca, command, profile=profile)
     proto = {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "security-test-proto", "namespace": NAMESPACE},
              "data": {name: (ROOT / "experiments/workloads/security" / name).read_text()
                       for name in sorted({schema for schema, _ in PROBE_RPCS.values()})}}
@@ -193,7 +198,9 @@ def prepare(directory, candidate):
         inventory.append({"local_image": evidence["image_id"]})
     save(directory / "scan-inventory.json", inventory)
     save(directory / "session.json", {"cluster": CLUSTER, "namespace": NAMESPACE, "context": CONTEXT,
-                                       "calico": "3.33.0", "calico_sha256": CALICO_SHA})
+                                       "calico": "3.33.0", "calico_sha256": CALICO_SHA,
+                                       "certificates": {"issuer": "cert-manager", "version": pins["version"],
+                                                        "profile": profile, "ca": ca.name}})
 
 
 def probe_call(route="shipping", quantity=None):
@@ -208,7 +215,7 @@ def probe_call(route="shipping", quantity=None):
 
 
 def probe(directory, *, route="shipping", quantity=None, target=None, secure=True, certificate=True, identity="client"):
-    if identity not in {"client", "proxy-client", VERIFIER_IDENTITY}:
+    if identity not in PROBE_IDENTITIES:
         raise ValueError("Only the lab's test identities may be used")
     schema, method, request = probe_call(route, quantity)
     target = target or f"{GATEWAY_SERVICES[route]}:{ROUTES[route]['gateway_port']}"
@@ -394,13 +401,18 @@ def main(argv=None):
     parser.add_argument("--route", choices=sorted(ROUTES), default="shipping",
                         help="probe: the protected route to call through the gateway")
     parser.add_argument("--quantity", type=int, help="probe: send this item quantity (cart: AddItem instead of GetCart)")
+    parser.add_argument("--identity", choices=PROBE_IDENTITIES, default="client",
+                        help="probe: the client certificate to present (P5.06 negatives must be refused)")
+    parser.add_argument("--profile", choices=sorted(cert_lifecycle.PROFILES), default="lab",
+                        help="start: certificate lifetime (rotation renews every ten minutes)")
     args = parser.parse_args(argv)
     directory = args.directory.resolve()
     if args.action == "probe":
         # One authenticated call through the gateway from a short-lived test Pod;
         # exit status 0 only when the call succeeded.
-        result = probe(directory, route=args.route, quantity=args.quantity)
-        print(json.dumps({"route": args.route, "quantity": args.quantity, "succeeded": result["succeeded"]}), flush=True)
+        result = probe(directory, route=args.route, quantity=args.quantity, identity=args.identity)
+        print(json.dumps({"route": args.route, "quantity": args.quantity, "identity": args.identity,
+                          "succeeded": result["succeeded"]}), flush=True)
         return 0 if result["succeeded"] else 1
     if args.action == "stop":
         directory.mkdir(parents=True, exist_ok=True)
@@ -414,7 +426,7 @@ def main(argv=None):
             restore_context(previous)
         return
     if args.action == "start":
-        prepare(directory, args.candidate)
+        prepare(directory, args.candidate, profile=args.profile)
     if args.action == "serve":
         if not json.loads((directory / "validation.json").read_text()).get("passed"):
             raise ValueError("Run the live security tests before serving this run")

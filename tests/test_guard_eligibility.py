@@ -584,6 +584,206 @@ class ProtectedSidecarDecisionTests(unittest.TestCase):
                 self.assertIn("SECURITY_SIDECAR_COMMAND", decision["reason_codes"])
 
 
+ISSUER = {"group": "cert-manager.io", "kind": "ClusterIssuer", "name": "sentinel-lab-ca"}
+
+
+def certificate_record(namespace, **changes):
+    """One record of the trusted Certificate status reader (services/guard/adapters.py::certificate_record)."""
+    record = {"kind": "Certificate", "namespace": namespace, "name": "security-upstream", "uid": "cert-uid",
+              "generation": 2, "secret_name": "security-upstream", "dns_names": ["upstream.internal"],
+              "issuer": dict(ISSUER), "ready": "True", "ready_observed_generation": 2,
+              "not_before": "2026-10-10T11:00:00Z", "not_after": "2026-10-10T13:00:00Z", "revision": 5}
+    record.update(changes)
+    return record
+
+
+def certificate_identity(**changes):
+    entry = {"secret": "security-upstream", "certificate": "security-upstream", "issuer": dict(ISSUER),
+             "dns_names": ["upstream.internal"], "min_remaining_seconds": 1800}
+    entry.update(changes)
+    return entry
+
+
+class CertificateIdentityEligibilityTests(ProtectedSidecarEligibilityTests):
+    """P5.06: every P5.05 rule still holds, the Secret is checked through its Certificate, and identity failures escalate."""
+
+    def setUp(self):
+        super().setUp()
+        namespace = self.proposal["target"]["namespace"]
+        self.policy["security_constraints"]["certificate_identities"] = [certificate_identity()]
+        # The reader no longer reads the Secret: only the ConfigMap has a reference version.
+        for state in (self.baseline, self.live):
+            state["reference_versions"] = [record for record in state["reference_versions"] if record["kind"] != "Secret"]
+        self.baseline["certificates"] = [certificate_record(namespace, revision=4)]
+        self.live["certificates"] = [certificate_record(namespace)]
+        self.namespace = namespace
+
+    def identity(self, **changes):
+        self.live["certificates"] = [certificate_record(self.namespace, **changes)]
+
+    def test_safe_baseline_passes_all_enabled_checks(self):
+        super().test_safe_baseline_passes_all_enabled_checks()
+        for code in ("SECURITY_IDENTITY_SPEC", "SECURITY_IDENTITY_NOT_READY", "SECURITY_IDENTITY_EXPIRING",
+                     "SECURITY_IDENTITY_NOT_YET_VALID"):
+            self.assert_finding(code, "PASS")
+        [finding] = [item for item in self.assert_finding("BASELINE_REFERENCE_CHANGED", "PASS",
+                                                          path="live_state.certificates")
+                     if item["path"] == "live_state.certificates"]
+        self.assertEqual(finding["actual"], {"reference": "Secret/" + self.namespace + "/security-upstream",
+                                             "certificate": "security-upstream", "uid": "cert-uid", "generation": 2})
+
+    def test_a_renewal_is_not_a_changed_reference(self):
+        # A renewal brings a new key, serial, revision and validity, never a new UID or generation.
+        self.identity(revision=9, not_before="2026-10-10T12:00:00Z", not_after="2026-10-10T14:00:00Z")
+        self.assertEqual(self.failures(), [])
+        self.assertEqual(self.failures("UNKNOWN"), [])
+
+    def test_an_expiring_or_expired_identity_escalates(self):
+        for not_after, remaining in (("2026-10-10T12:30:00Z", 1760.0), ("2026-10-10T12:00:00Z", -40.0),
+                                     ("2026-10-09T12:00:00Z", -86440.0)):
+            with self.subTest(not_after=not_after):
+                self.identity(not_after=not_after)
+                [finding] = self.assert_finding("SECURITY_IDENTITY_EXPIRING", "UNKNOWN",
+                                                path="live_state.certificates[security-upstream].not_after")
+                self.assertEqual(finding["actual"], {"remaining_seconds": remaining, "revision": 5})
+                self.assertEqual(self.failures(), [])
+        # The margin boundary itself passes.
+        self.identity(not_after="2026-10-10T12:30:40Z")
+        self.assert_finding("SECURITY_IDENTITY_EXPIRING", "PASS")
+
+    def test_a_certificate_that_is_not_ready_escalates(self):
+        for changes in ({"ready": "False"}, {"ready": "Unknown"}, {"ready_observed_generation": 1},
+                        {"ready_observed_generation": None}):
+            with self.subTest(changes=changes):
+                self.identity(**changes)
+                self.assert_finding("SECURITY_IDENTITY_NOT_READY", "UNKNOWN")
+                self.assertEqual(self.failures(), [])
+
+    def test_a_certificate_without_a_validity_period_or_not_yet_valid_escalates(self):
+        self.identity(not_after=None)
+        self.assert_finding("SECURITY_IDENTITY_EXPIRING", "UNKNOWN")
+        self.identity(not_before="2026-10-10T12:05:00Z")
+        self.assert_finding("SECURITY_IDENTITY_NOT_YET_VALID", "UNKNOWN")
+
+    def test_another_issuer_secret_or_name_is_not_the_reviewed_identity(self):
+        for changes in ({"issuer": dict(ISSUER, name="sentinel-untrusted-ca")}, {"issuer": dict(ISSUER, kind="Issuer")},
+                        {"dns_names": ["wrong.internal"]}, {"dns_names": ["upstream.internal", "extra.internal"]},
+                        {"secret_name": "security-gateway"}):
+            with self.subTest(changes=changes):
+                self.identity(**changes)
+                self.assert_finding("SECURITY_IDENTITY_SPEC", "UNKNOWN")
+        self.identity(dns_names=["upstream.internal"])
+        self.assert_finding("SECURITY_IDENTITY_SPEC", "PASS")
+
+    def test_missing_certificate_evidence_escalates(self):
+        for live in (None, [], [certificate_record("other-namespace")]):
+            with self.subTest(live=live):
+                self.setUp()
+                if live is None:
+                    del self.live["certificates"]
+                else:
+                    self.live["certificates"] = live
+                self.assert_finding("SECURITY_IDENTITY_EVIDENCE_MISSING", "UNKNOWN")
+                self.assert_finding("BASELINE_REFERENCE_EVIDENCE_MISSING", "UNKNOWN", path="baseline.certificates")
+                self.assertEqual(self.failures(), [])
+
+    def test_a_secret_mount_without_its_reference_version_escalates(self):
+        # The Secret has no version record at all now; its Certificate's saved record is what is missing here.
+        del self.baseline["certificates"]
+        self.assert_finding("BASELINE_REFERENCE_EVIDENCE_MISSING", "UNKNOWN")
+        self.assertEqual(self.failures(), [])
+
+    def test_a_replaced_or_respecified_certificate_is_a_changed_reference(self):
+        for changes in ({"uid": "other-uid"}, {"generation": 3, "ready_observed_generation": 3}):
+            with self.subTest(changes=changes):
+                self.identity(**changes)
+                self.assert_finding("BASELINE_REFERENCE_CHANGED", path="live_state.certificates")
+
+    def test_malformed_certificate_status_is_invalid(self):
+        good = certificate_record(self.namespace)
+        for value in ("status", [dict(good, extra=True)], [dict(good, kind="Secret")], [dict(good, generation=0)],
+                      [dict(good, ready="yes")], [dict(good, not_after="tomorrow")], [dict(good, dns_names="a")],
+                      [dict(good, issuer={"name": "x"})], [good, deepcopy(good)], [dict(good, revision=-1)]):
+            with self.subTest(value=value):
+                self.live["certificates"] = value
+                findings = self.assert_finding("BASELINE_ELIGIBILITY_INVALID", path="live_state.certificates")
+                self.assertEqual({item["actual"] for item in findings}, {"malformed"})
+
+    def test_without_the_rule_the_secret_is_still_compared_by_its_own_version(self):
+        # A policy without certificate_identities keeps the P5.05 Secret comparison exactly.
+        del self.policy["security_constraints"]["certificate_identities"]
+        self.assert_finding("BASELINE_REFERENCE_EVIDENCE_MISSING", "UNKNOWN", path="baseline.reference_versions")
+        self.assertFalse([item for item in self.run_checks() if item["code"].startswith("SECURITY_IDENTITY")])
+
+    def test_an_identity_the_template_does_not_mount_is_skipped(self):
+        self.policy["security_constraints"]["certificate_identities"] = [certificate_identity(
+            secret="security-gateway", certificate="security-gateway", dns_names=["gateway.internal"])]
+        self.live["reference_versions"] = deepcopy(self.baseline["reference_versions"])
+        self.assert_finding("SECURITY_IDENTITIES", "SKIP")
+
+    def test_malformed_certificate_rules_are_refused(self):
+        entry = certificate_identity()
+        for value in ([], "security-upstream", [dict(entry, extra=True)], [dict(entry, secret="Bad_Name")],
+                      [dict(entry, issuer={"name": "x"})], [dict(entry, dns_names=[])],
+                      [dict(entry, dns_names=["a.internal", "a.internal"])], [dict(entry, min_remaining_seconds=299)],
+                      [dict(entry, min_remaining_seconds=True)], [entry, dict(entry, certificate="other")]):
+            with self.subTest(value=value):
+                policy = deepcopy(self.policy)
+                policy["security_constraints"]["certificate_identities"] = value
+                with self.assertRaises(GuardInputError):
+                    validate_policy(policy)
+
+
+class CertificateIdentityDecisionTests(unittest.TestCase):
+    """End to end through evaluate(): an identity that cannot serve gives ESCALATE, never ALLOW (P5.06)."""
+
+    def setUp(self):
+        self.proposal = fixture("data/sentinel/samples/messages/proposal.json")
+        self.live = fixture("data/sentinel/samples/observations.json")["failed-rollout"][-1]
+        self.policy = fixture("data/sentinel/samples/policy.json")
+        self.baseline = fixture("data/sentinel/samples/baseline.json")
+        self.dependencies = fixture("data/sentinel/samples/messages/dependency-result.json")
+        namespace = self.proposal["target"]["namespace"]
+        self.policy["security_constraints"] = {"certificate_identities": [certificate_identity()]}
+        spec = self.baseline["pod_template"]["spec"]
+        spec["volumes"] = [{"name": "upstream", "secret": {"secretName": "security-upstream"}}]
+        self.live["certificates"] = [certificate_record(namespace)]
+        self.namespace = namespace
+
+    def decide(self):
+        self.baseline["template_sha256"] = template_sha256(self.baseline["pod_template"])
+        self.proposal["parameters"]["template_sha256"] = self.baseline["template_sha256"]
+        approval = {"action_id": self.proposal["action_id"], "proposal_sha256": proposal_fingerprint(self.proposal),
+                    "policy_version": self.policy["policy_version"], "operator_id": "fixture-operator",
+                    "decision": "APPROVED", "approved_at": "2026-10-10T12:00:35Z", "expires_at": "2026-10-10T12:01:35Z"}
+        decision = evaluate(self.proposal, self.live, self.policy, self.baseline, self.dependencies, approval, now=NOW)
+        validate_message(decision)
+        return decision
+
+    def test_a_ready_identity_with_time_left_is_allowed(self):
+        decision = self.decide()
+        self.assertEqual(decision["verdict"], "ALLOW", decision["reason_codes"])
+
+    def test_an_expiring_or_not_ready_identity_escalates_even_when_approved(self):
+        for changes, code in (({"not_after": "2026-10-10T12:10:00Z"}, "SECURITY_IDENTITY_EXPIRING"),
+                              ({"not_after": "2026-10-10T11:50:00Z"}, "SECURITY_IDENTITY_EXPIRING"),
+                              ({"ready": "False"}, "SECURITY_IDENTITY_NOT_READY"),
+                              ({"issuer": dict(ISSUER, name="sentinel-untrusted-ca")}, "SECURITY_IDENTITY_SPEC")):
+            with self.subTest(code=code, changes=changes):
+                self.live["certificates"] = [certificate_record(self.namespace, **changes)]
+                decision = self.decide()
+                self.assertEqual(decision["verdict"], "ESCALATE")
+                self.assertIn(code, decision["reason_codes"])
+
+    def test_missing_status_escalates_and_malformed_status_is_rejected(self):
+        del self.live["certificates"]
+        self.assertEqual(self.decide()["verdict"], "ESCALATE")
+        self.live["certificates"] = [dict(certificate_record(self.namespace), ready=True)]
+        decision = self.decide()
+        self.assertEqual(decision["verdict"], "REJECT")
+        self.assertIn("BASELINE_ELIGIBILITY_INVALID", decision["reason_codes"])
+
+
 TRIVY = "aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c"
 SAFE = "demo/sentinel@sha256:" + "a" * 64
 WORSE = "demo/sentinel@sha256:" + "b" * 64

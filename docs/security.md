@@ -26,6 +26,10 @@ the default ports are taken; use `serve` to reopen the dashboard later, or give
 `test` other ports with `--storefront-port` and `--dashboard-port`. OpenSSL
 must be on PATH for certificate generation; if it fails to open an
 `openssl.cfg`, a stale `OPENSSL_CONF` environment variable is the usual cause.
+From P5.06 `start` also installs cert-manager with Helm (so `helm` must be on
+PATH) and refuses before any cluster command while a cert-manager pin in
+`deploy/cert-manager/pins.json` is unresolved; today all six are `TODO-PIN`
+(see [Certificate lifecycle](#certificate-lifecycle-p506)).
 The script owns a dedicated Calico/kind lab with mTLS and inspected shipping
 traffic. Only the shipping path is protected by mTLS and inspection in a live
 run so far. From P5.04 the code also protects the cart path the same way (see
@@ -795,9 +799,13 @@ None of it has run against a cluster yet (`L-PROTECTED-RECOVERY-OFFLINE` in
   (`tests/test_live_executor.py::LiveExecutorTests.test_the_authorizer_itself_refuses_the_executor_kubeconfig_as_reader`).
   The reader's Role,
   `deploy/sentinel/guard-reader-rbac.yaml`, is generated from the protected
-  shippingservice template and grants `get` on `configmap/security-upstream`
+  shippingservice template and granted `get` on `configmap/security-upstream`
   and `secret/security-upstream` only
-  (`experiments/boutique/harness/protected.py::guard_reader_rbac`).
+  (`experiments/boutique/harness/protected.py::guard_reader_rbac`). Since
+  P5.06 it grants `get` on `configmap/security-trust-bundle`,
+  `configmap/security-upstream` and
+  `certificates.cert-manager.io/security-upstream`, and on no Secret (see
+  [Certificate lifecycle](#certificate-lifecycle-p506)).
 - **Authenticated Verifier probe.** A new client identity,
   `sentinel-verifier-client`, gets its certificate and Secret like the lab's
   other identities. The gateway's SAN allowlist admits it; the services' own
@@ -885,15 +893,16 @@ tests that hold it:
   (`tests/test_protected_recovery.py::ProtectedRollbackTests.test_one_write_restores_the_protected_template_byte_for_byte`,
   `tests/test_protected_recovery.py::ProtectedRollbackTests.test_an_extra_container_or_another_envoy_digest_writes_nothing`).
 
-Residual risks, also in the threat model: the reader can read the named
-Secret's key bytes (RBAC has no metadata-only `get`, and kubectl fetches the
-whole object before selecting the UID and resourceVersion; the bytes never
-reach Python). The token lasts one hour. The run removes the reader's
+Residual risks, also in the threat model: until P5.06 the reader could
+read the named Secret's key bytes (RBAC has no metadata-only `get`, and
+kubectl fetches the whole object before selecting the UID and
+resourceVersion; the bytes never reached Python). P5.06 removed that read:
+the reader now gets the cert-manager Certificate that owns the Secret, which
+holds no key material. The token lasts one hour. The run removes the reader's
 kubeconfig file and deletes its ServiceAccount, Role and RoleBinding at the
 end, which revokes the token at once; `summary.json` records
 `guard_reader_rbac_deleted`, and when that is not `true` delete them by
-hand (below). P5.06 replaces these Secret reads with cert-manager
-Certificate status reads. The
+hand (below). The
 Verifier's client key is a Secret that any Pod in the namespace could mount.
 The sidecar rule pins the image, command, arguments and mounts and refuses
 lifecycle hooks, `exec` probes and unreviewed fields, but it does not pin
@@ -937,19 +946,24 @@ The preflight refuses, with one reason per line, unless the lab's
 folder's `session.json` names `sentinel-boutique-security`, the catalog's
 `protected` scope is that lab with shippingservice only, the committed
 Guard-reader RBAC matches the reviewed template, Envoy and grpcurl are pinned
-by digest, no reviewed file has a `TODO-PIN`, and the heavy-lab lock is free.
+by digest, no reviewed file has a `TODO-PIN`, the cert-manager pins are
+resolved and the lab's `session.json` says its identities come from
+cert-manager (P5.06), and the heavy-lab lock is free.
 The harness runs the same preflight before its first cluster command.
 
 Expected, stage (b): `PASS: protected baseline captured; ...`. The baseline's
-template holds `shipping-ingress` with the reviewed Envoy digest, and its
-`reference_versions` hold `ConfigMap/security-upstream` and
-`Secret/security-upstream`, read by the Guard reader.
-`protected-rbac-checks.json` has every row as expected: the Executor gets and
-patches `deployment/shippingservice` and gets no Secret or ConfigMap
-(`can-i get secrets`, `get secret/security-upstream` and `get
-configmap/security-upstream` all `no`); the reader gets
-`secret/security-upstream` and `configmap/security-upstream` and nothing
-else (`secret/security-gateway`, `secrets`, `list secrets` and the
+template holds `shipping-ingress` with the reviewed Envoy digest; its
+`reference_versions` hold `ConfigMap/security-trust-bundle` and
+`ConfigMap/security-upstream`, and its `certificates` hold the
+`security-upstream` Certificate's status (P5.06), all read by the Guard
+reader. `protected-rbac-checks.json` has every row as expected: the Executor
+gets and patches `deployment/shippingservice` and gets no Secret, ConfigMap
+or Certificate (`can-i get secrets`, `get secret/security-upstream`, `get
+configmap/security-upstream` and `get
+certificates.cert-manager.io/security-upstream` all `no`); the reader gets
+the two ConfigMaps and `certificates.cert-manager.io/security-upstream` and
+nothing else (`secret/security-upstream`, `secret/security-gateway`,
+`secrets`, `list secrets`, `list certificates.cert-manager.io` and the
 Deployment all `no`). `bypass-before.json` shows the plaintext Service, the
 Pod IP and the gateway outage all refused, and its `positive_control`
 shows the Verifier's authenticated quote succeeding before the outage and
@@ -979,8 +993,8 @@ not part of this run yet: the protected run's acceptance is one write.
 ### Owner sign-offs
 
 - the Guard rule `allowed_sidecars`, its codes and the argument above;
-- the reference reads moving to the Guard-reader identity, and the reader's
-  residual Secret read until P5.06;
+- the reference reads moving to the Guard-reader identity (its residual
+  Secret read is removed by P5.06, signed off separately below);
 - the Verifier client identity at the gateway and its probe policy. Its
   SAN is admitted on both gateway listeners (shipping 8443 and cart 8445)
   and its egress allows both route ports, so its key could also call the
@@ -993,3 +1007,267 @@ not part of this run yet: the protected run's acceptance is one write.
   gain `protected`). The runtime LabControl scopes now include the security
   cluster and shippingservice through it; `--protected` refuses
   `--dashboard` and `--ui-controls`, so no UI path reaches it today.
+
+## Certificate lifecycle (P5.06)
+
+Until P5.06 the lab's certificates were two-day OpenSSL fixtures made at
+`start`, never rotated, and Envoy read them from static file paths. Issue
+#70 asks for one certificate framework; P5.06 picks cert-manager for the
+Kubernetes security lab, loads every key pair through Envoy's file-based SDS
+so a renewal needs no restart, and makes expired, untrusted or misnamed
+identities escalate. All of it is code and offline tests. Nothing has run
+against a cluster, and the cert-manager pins are not resolved yet
+(`L-LAB-CERTS` in [limitations](limitations.md)). The standalone compose lab
+(`scripts/security/security_lab.py`) uses the same SDS configuration but keeps
+its two-day OpenSSL certificates.
+
+### What changed
+
+- **One issuer.** `boutique_security.py start` makes a lab CA in the run
+  folder's private `pki` directory (the key is owner-only, through
+  `services/guard/preview._private_file`), installs the pinned cert-manager
+  chart with Helm, seeds a CA ClusterIssuer `sentinel-lab-ca` with that CA
+  and requests one Certificate per lab identity
+  (`scripts/security/cert_lifecycle.py::certificates`): Secret
+  `security-<identity>`, the exact DNS SAN `<identity>.internal`, server or
+  client usage, a two-hour lifetime renewed an hour before expiry, and a new
+  private key on every renewal (`rotationPolicy: Always`).
+  `--profile rotation` renews every ten minutes instead (one-hour lifetime,
+  renewed 50 minutes before expiry): cert-manager refuses a lifetime under
+  one hour, so the design's 10-minute certificate cannot come from
+  cert-manager, and the expired test identity below is made locally. No key
+  enters `manifest.json`, `certificates.json` or the repository; the CA
+  Secret and test-identity Secrets are written to owner-only files in the
+  run folder and applied from there.
+- **File-based SDS.** Every Envoy (callers' egress sidecars, the services'
+  ingress sidecars, the gateway) names its key pair in
+  `tls_certificate_sds_secret_configs` and its trusted CAs in
+  `combined_validation_context.validation_context_sds_secret_config`, each an
+  SDS subscription to a file in its own configuration ConfigMap with
+  `watched_directory` on `/config`
+  (`scripts/security/security_lab.py::tls_context`,
+  `scripts/security/security_lab.py::sds_resource`). The SDS files name
+  paths only: `/pki/<identity>/tls.crt` and `tls.key`, watched on
+  `/pki/<identity>`, and `/trust/ca.crt`, watched on `/trust`. A directory
+  is watched, not a file, because the kubelet updates a Secret or ConfigMap
+  volume by swapping a symlinked directory. Identity Secrets are mounted as
+  whole read-only volumes, never with `subPath`, which the kubelet never
+  updates. The SAN matchers stay exact and in the static configuration, so
+  a renewed file cannot change which peers are accepted. Each Envoy's
+  access log adds `peer_serial` (the caller certificate's serial) and
+  `upstream_tls` (the reason a TLS connection to its upstream failed).
+- **Trust bundle and CA rollover.** Every Envoy also mounts the public
+  ConfigMap `security-trust-bundle` at `/trust`. A rollover has three steps
+  (`scripts/security/cert_lifecycle.py::rollover`): `start` makes a second
+  CA and puts both CAs in the bundle; `switch` points the ClusterIssuer at
+  the new CA and deletes each identity Secret so cert-manager reissues it;
+  `finish` leaves only the new CA in the bundle. The overlap lasts from
+  `start` until every certificate is reissued and every Envoy has reloaded;
+  after `finish`, a certificate from the old CA is refused.
+- **The Guard reads Certificates, not Secrets.** A new rule,
+  `security_constraints.certificate_identities`, names each reviewed
+  identity: its Secret, its Certificate, the issuer, the DNS names and
+  `min_remaining_seconds` (1800 in the protected run)
+  (`services/guard/eligibility.py::_certificate_identities`). For every
+  such Secret the template mounts, the Guard needs the Certificate's status
+  from the trusted reader (`live_state.certificates`,
+  `services/guard/adapters.py::read_certificate_status`): Ready for its
+  current generation, notBefore in the past, at least the margin left
+  before notAfter, and exactly the reviewed Secret, issuer and DNS names.
+  Each check that cannot pass is UNKNOWN, so the decision is ESCALATE and
+  nothing is written: `SECURITY_IDENTITY_EVIDENCE_MISSING`,
+  `SECURITY_IDENTITY_NOT_READY`, `SECURITY_IDENTITY_EXPIRING` (expired or
+  inside the margin), `SECURITY_IDENTITY_NOT_YET_VALID` and
+  `SECURITY_IDENTITY_SPEC`. Malformed status is
+  `BASELINE_ELIGIBILITY_INVALID` (FAIL, REJECT). A rollback restores the
+  template, not the identity, so none of these is something a rollback
+  could repair. For a Secret that a reviewed Certificate owns, the
+  reference check compares the Certificate's UID and generation with the
+  baseline's instead of the Secret's resourceVersion (see the argument
+  below). The Executor's check, the Coordinator's Guard state and the Guard
+  CLI read the Certificate with the reader identity and never read the
+  Secret (`runtime/live_executor.py::LiveGuardAuthorizer._attach_reference_versions`).
+  The reader's Role grants `get` on the two ConfigMaps and
+  `certificates.cert-manager.io/security-upstream` only
+  (`deploy/sentinel/guard-reader-rbac.yaml`).
+- **Observer and Planner.** The Observer labels a collected log line that
+  carries a TLS certificate refusal (verify failed, expired, unknown CA,
+  bad certificate, SAN mismatch) `CertificateRejected`
+  (`services/observer/core.py::_log_reason`). The Planner escalates any
+  incident with that signal by a code rule, before any provider or model
+  call, with a fixed rationale and `runbooks/identity-failure.md`; ROLLBACK,
+  RESTART and SCALE are never proposed for it
+  (`services/planner/core.py::certificate_rejected`). The evaluation counts
+  that ESCALATE as a rule decision.
+- **Pins.** `deploy/cert-manager/pins.json` pins cert-manager v1.18.2 by its
+  chart URL and SHA-256 and its five images by digest. Each unresolved value
+  is `TODO-PIN`; `python scripts/security/cert_lifecycle.py pins` prints the
+  commands that resolve them on a networked machine (`curl` and
+  `Get-FileHash` for the chart, `docker buildx imagetools inspect` for each
+  image). `boutique_security.py start` and the protected-recovery preflight
+  refuse until none is left, before any cluster command. Only digests reach
+  the Helm values (`scripts/security/cert_lifecycle.py::helm_values`), and
+  the chart is checked against its SHA-256 before Helm sees it. The version
+  number was chosen offline and is confirmed only when the resolution
+  commands succeed.
+
+### Why no existing check is weaker (owner sign-off)
+
+The rules for this are in the roadmap: a safety-critical change needs a
+written argument, tests that fail before and pass after, and an owner's
+sign-off. The new tests are in `tests/test_security_lab_context.py`,
+`tests/test_guard_eligibility.py` (`CertificateIdentityEligibilityTests`,
+`CertificateIdentityDecisionTests`), `tests/test_guard_references.py`,
+`tests/test_observer.py`, `tests/test_planner.py`,
+`tests/test_live_executor.py` and `tests/test_protected_recovery.py`.
+
+- A policy without `certificate_identities` behaves exactly as before: a
+  Secret is still compared by its own UID and resourceVersion
+  (`tests/test_guard_eligibility.py::CertificateIdentityEligibilityTests.test_without_the_rule_the_secret_is_still_compared_by_its_own_version`).
+  `CertificateIdentityEligibilityTests` reruns the whole eligibility and
+  sidecar suites with the rule configured.
+- One comparison changes, on purpose. For a Secret that a reviewed
+  Certificate owns, the reference check now compares the Certificate's UID
+  and generation instead of the Secret's resourceVersion. A renewal writes
+  a new key and certificate into the Secret, which moves its
+  resourceVersion; under the old check every renewal between the baseline
+  and the repair would have refused the repair, and renewals happen every
+  hour. The Certificate's UID changes only when it is replaced, and its
+  generation only when its spec (issuer, names, Secret, lifetime) changes;
+  both still FAIL the check
+  (`tests/test_guard_eligibility.py::CertificateIdentityEligibilityTests.test_a_replaced_or_respecified_certificate_is_a_changed_reference`,
+  `tests/test_protected_recovery.py::ProtectedRollbackTests.test_a_replaced_certificate_is_a_changed_reference`).
+  What the Guard no longer sees is a change to the Secret's content that
+  leaves the Certificate alone. That is covered in two ways: the new rule
+  requires the certificate to be Ready, unexpired and the reviewed identity,
+  and cert-manager's readiness checks are meant to set Ready to False when
+  the issued Secret no longer matches its Certificate (not yet observed
+  live here). The residual risk is trusting cert-manager's readiness check
+  for the Secret's content; the threat model records it.
+- The trusted CAs are a ConfigMap reference compared exactly as before, so
+  a CA rollover is a changed reference and refuses a repair until a new
+  baseline is captured.
+- The new rule adds UNKNOWN findings and, for malformed status, a FAIL. It
+  never turns another finding into a PASS. An identity failure ESCALATEs
+  even with a valid approval, because an approval cannot clear an
+  eligibility finding
+  (`tests/test_guard_eligibility.py::CertificateIdentityDecisionTests.test_an_expiring_or_not_ready_identity_escalates_even_when_approved`).
+- The reader lost its only Secret permission. Neither the Executor nor the
+  reader can read any Secret, and with the real adapters no `kubectl`
+  call names one
+  (`tests/test_live_executor.py::LiveExecutorTests.test_with_the_real_adapters_no_kubectl_call_names_a_secret`,
+  `tests/test_protected_recovery.py::GuardReaderTests.test_the_can_i_matrix_denies_every_secret_read_once_certificates_own_them`).
+  Status already in a snapshot is dropped, never trusted
+  (`tests/test_live_executor.py::LiveExecutorTests.test_certificate_status_already_in_the_snapshot_is_never_trusted`).
+- Envoy keeps every TLS rule it had: client certificates are required, the
+  SAN matchers are the same exact names in the static configuration, and
+  the minimum version is unchanged. Trust now comes from the bundle instead
+  of each identity's own `ca.crt`; outside a rollover the bundle is the
+  same single lab CA. During a rollover, two CAs are trusted on purpose.
+- The Planner rule only adds an ESCALATE before any provider call; without
+  the signal, the same incident still reaches the provider
+  (`tests/test_planner.py::IdentityFailureTests.test_without_the_signal_the_same_incident_is_a_rollback`).
+
+Residual risks, also in the threat model: the lab CA key sits in the run
+folder (owner-only) for the lab's life, so anyone who can read that folder
+can mint a trusted identity. While the cert-manager controller is down,
+a Certificate's Ready condition is stale, but the Guard checks notAfter
+itself. A `CertificateRejected` line labels evidence; it does not make an
+incident on its own. The gateway's log, where an upstream refusal appears,
+is not collected for a recovery target. The test identities' keys are
+Secrets that any Pod in the namespace could mount, like the Verifier's.
+Trust now lives in the ConfigMap `security-trust-bundle` rather than in
+each identity's Secret, so anyone who may write ConfigMaps in the
+namespace can add a CA that every Envoy trusts after its next reload; in
+the lab only the cluster admin can. The Guard compares the bundle as a
+reference, so a changed bundle refuses a repair, but nothing stops Envoy
+from loading it.
+
+### Live recipe (P5.06; not run)
+
+Run on the security lab only, from a new run folder, never alongside another
+heavy run. `python scripts/security/cert_lifecycle.py plan` prints these
+commands.
+
+```powershell
+# 0. On a networked machine: resolve the pins, edit deploy/cert-manager/pins.json, then check.
+python scripts/security/cert_lifecycle.py pins
+python scripts/security/cert_lifecycle.py pins --check
+
+# 1. Start the lab (the rotation profile renews every ten minutes; the default renews every hour).
+$lab = "data/experimentation/runs/cert-lifecycle-lab"
+python scripts/security/boutique_security.py start --directory $lab --profile rotation --exit-after-test
+python scripts/security/cert_lifecycle.py identity
+
+# 2. Rotation without a restart. Record restart counts, Certificate revisions and the gateway's served serial.
+kubectl --context kind-sentinel-boutique-security -n sentinel-boutique-security get pods -o jsonpath="{range .items[*]}{.metadata.name}{' '}{.status.containerStatuses[*].restartCount}{'\n'}{end}"
+kubectl --context kind-sentinel-boutique-security -n sentinel-boutique-security get certificates.cert-manager.io -o jsonpath="{range .items[*]}{.metadata.name}{' '}{.status.revision}{' '}{.status.notAfter}{'\n'}{end}"
+# In a second terminal, keep a port-forward open; the gateway sends its certificate before it asks for the client's.
+kubectl --context kind-sentinel-boutique-security -n sentinel-boutique-security port-forward service/security-gateway 18443:8443
+$null | openssl s_client -connect 127.0.0.1:18443 -servername gateway.internal 2>$null | openssl x509 -noout -serial
+kubectl --context kind-sentinel-boutique-security -n sentinel-boutique-security delete secret security-gateway security-frontend-client --wait=false
+kubectl --context kind-sentinel-boutique-security -n sentinel-boutique-security wait --for=condition=Ready certificates.cert-manager.io --all --timeout=300s
+# Wait about 90 s for the kubelet to update the volumes, then repeat the three reads and check out in the storefront.
+python scripts/security/boutique_security.py probe --directory $lab --route shipping
+
+# 3. Refused identities: an untrusted CA, a wrong SAN and a ten-minute certificate that has already expired.
+python scripts/security/cert_lifecycle.py negatives --directory $lab
+python scripts/security/boutique_security.py probe --directory $lab --identity negative-untrusted-ca
+python scripts/security/boutique_security.py probe --directory $lab --identity negative-wrong-san
+python scripts/security/boutique_security.py probe --directory $lab --identity negative-expired
+
+# 4. An expiring identity escalates with zero writes. Stop the controller, wait until the
+#    upstream certificate has under 30 minutes left (rotation profile: 30 to 60 minutes after
+#    its last renewal), then run the protected recovery.
+kubectl --context kind-sentinel-boutique-security -n cert-manager scale deployment/cert-manager --replicas=0
+python scripts/security/cert_lifecycle.py identity
+python scripts/test_boutique_live.py --protected --security-run $lab --protected-stage full --run-dir data/experimentation/runs/identity-expiring
+kubectl --context kind-sentinel-boutique-security -n cert-manager scale deployment/cert-manager --replicas=1
+
+# 5. CA rollover with an overlap (run after step 3: the test identities trust only the first CA).
+python scripts/security/cert_lifecycle.py rollover start --directory $lab
+python scripts/security/boutique_security.py probe --directory $lab --identity negative-old-ca
+python scripts/security/cert_lifecycle.py rollover switch --directory $lab
+python scripts/security/boutique_security.py probe --directory $lab --route shipping
+python scripts/security/cert_lifecycle.py rollover finish --directory $lab
+python scripts/security/boutique_security.py probe --directory $lab --identity negative-old-ca
+```
+
+Expected. Step 1: `identity` exits 0 and every Certificate is Ready.
+Step 2: every container's restart count is unchanged; the two Certificates'
+revisions went up by one; the gateway serves a new serial; the gateway's
+access log shows a new `peer_serial` for frontend's calls; checkout and the
+probe succeed throughout (a short gap while the kubelet syncs is a finding
+to record, not to retry away). Step 3: each probe exits 1. Step 4: once the
+margin is crossed, `identity` exits 1 with `SECURITY_IDENTITY_EXPIRING` for
+`security-upstream`; the protected run's Guard decision is ESCALATE with
+that code, `transport-stats.json` shows zero writes, and the run is recorded
+as the identity rule failing closed, not as a recovery. Left longer, the
+certificate expires and the gateway's access log shows `upstream_tls` with a
+verify failure, which the Observer would label `CertificateRejected` if that
+log were collected (it is not, for a recovery target). Step 5: the old-CA
+probe succeeds after `start`, every probe and checkout succeed after
+`switch` with every Certificate reissued from the new CA, and the old-CA
+probe exits 1 after `finish`; restart counts are unchanged throughout.
+A wrong SAN or an untrusted issuer on the upstream Certificate itself (patch
+its `dnsNames` or `issuerRef`) is refused by the gateway and gives
+`SECURITY_IDENTITY_SPEC` in `identity`; a protected run cannot reach the
+Guard in that state, because its baseline capture already fails through the
+gateway, so the Guard's decision for those two cases is shown offline only.
+
+### Owner sign-offs
+
+- the Guard rule `certificate_identities`, its codes, ESCALATE (not REJECT)
+  for an identity that cannot serve, and the 30-minute margin;
+- comparing an owned Secret through its Certificate's UID and generation, so
+  a renewal is not a changed reference, and trusting cert-manager's
+  readiness for the Secret's content (the argument above);
+- the trust bundle as a reviewed ConfigMap, and the rollover policy: both CAs
+  until every certificate is reissued, then the new one only, with a new
+  baseline after a rollover;
+- adding cert-manager v1.18.2 to the security lab, and resolving its six pins
+  by hand; until then the lab, and the P5.04 and P5.05 live recipes that
+  start it, refuse to start;
+- the Planner's identity rule and `runbooks/identity-failure.md`;
+- the lab CA key and the test keys living in the run folder for the lab's
+  life.

@@ -309,6 +309,49 @@ class GuardCliV2Tests(unittest.TestCase):
             {"kind": "ConfigMap", "namespace": "sentinel-demo", "name": "settings"}],
             context="team-context", cluster_id="sentinel-lab", kubeconfig=None)
 
+    def certificate_setup(self, *, not_after):
+        """P5.06: a live policy whose template mounts a Secret owned by a reviewed Certificate."""
+        self.configure_live()
+        issuer = {"group": "cert-manager.io", "kind": "ClusterIssuer", "name": "sentinel-lab-ca"}
+        self.policy["security_constraints"]["certificate_identities"] = [
+            {"secret": "security-upstream", "certificate": "security-upstream", "issuer": issuer,
+             "dns_names": ["upstream.internal"], "min_remaining_seconds": 1800}]
+        self.baseline["pod_template"]["spec"]["volumes"] = [
+            {"name": "upstream", "secret": {"secretName": "security-upstream"}}]
+        now = datetime.now(timezone.utc)
+        record = {"kind": "Certificate", "namespace": "sentinel-demo", "name": "security-upstream",
+                  "uid": "cert-uid", "generation": 2, "secret_name": "security-upstream",
+                  "dns_names": ["upstream.internal"], "issuer": issuer, "ready": "True",
+                  "ready_observed_generation": 2, "not_before": timestamp(now - timedelta(hours=1)),
+                  "not_after": timestamp(now + not_after), "revision": 3}
+        self.baseline["certificates"] = [record]
+        self.bind_template()
+        self.write_inputs()
+        return record
+
+    def test_an_owned_secret_is_read_through_its_certificate_never_itself(self):
+        record = self.certificate_setup(not_after=timedelta(hours=2))
+        with patch("services.guard.cli.read_deployment", return_value=self.live):
+            with patch("services.guard.cli.read_reference_versions") as refs:
+                with patch("services.guard.cli.read_certificate_status", return_value=[record]) as certificates:
+                    code, stdout, stderr = self.run_cli(self.args(live=True))
+        self.assertEqual((code, stderr), (0, ""))
+        self.assertEqual(json.loads(stdout)["verdict"], "ALLOW")
+        refs.assert_not_called()
+        certificates.assert_called_once_with(self.proposal["target"], ["security-upstream"],
+                                             context="team-context", cluster_id="sentinel-lab", kubeconfig=None)
+
+    def test_an_expiring_owned_certificate_escalates_from_the_cli(self):
+        record = self.certificate_setup(not_after=timedelta(minutes=10))
+        with patch("services.guard.cli.read_deployment", return_value=self.live):
+            with patch("services.guard.cli.read_reference_versions") as refs:
+                with patch("services.guard.cli.read_certificate_status", return_value=[record]):
+                    code, stdout, stderr = self.run_cli(self.args(live=True))
+        self.assertEqual((code, stderr), (3, ""))
+        self.assertEqual(json.loads(stdout)["verdict"], "ESCALATE")
+        self.assertIn("SECURITY_IDENTITY_EXPIRING", json.loads(stdout)["reason_codes"])
+        refs.assert_not_called()
+
     def test_mismatched_live_identity_skips_reference_and_preview_calls(self):
         self.configure_live()
         self.baseline["pod_template"]["spec"]["containers"][0]["envFrom"] = [{"configMapRef": {"name": "settings"}}]

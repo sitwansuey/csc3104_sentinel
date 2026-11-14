@@ -273,6 +273,94 @@ class LiveExecutorTests(unittest.TestCase):
         self.assertNotIn("reference_versions", check.inputs["live_state"])
         self.assertEqual(check.decision["verdict"], "ESCALATE")
 
+    # P5.06: a Secret owned by a reviewed cert-manager Certificate is never read; its Certificate status is.
+
+    def add_certificate_identity(self, **status):
+        """The add_config_reference template with its Secret owned by a reviewed Certificate; returns its record."""
+        self.add_config_reference()
+        namespace = self.proposal["target"]["namespace"]
+        issuer = {"group": "cert-manager.io", "kind": "ClusterIssuer", "name": "sentinel-lab-ca"}
+        self.policy["security_constraints"]["certificate_identities"] = [{
+            "secret": "security-upstream", "certificate": "security-upstream", "issuer": issuer,
+            "dns_names": ["upstream.internal"], "min_remaining_seconds": 1800}]
+        record = {"kind": "Certificate", "namespace": namespace, "name": "security-upstream", "uid": "cert-uid",
+                  "generation": 1, "secret_name": "security-upstream", "dns_names": ["upstream.internal"],
+                  "issuer": issuer, "ready": "True", "ready_observed_generation": 1,
+                  "not_before": "2026-10-10T11:00:00Z", "not_after": "2026-10-10T13:00:00Z", "revision": 2}
+        self.baseline["reference_versions"] = [item for item in self.baseline["reference_versions"]
+                                               if item["kind"] != "Secret"]
+        self.baseline["certificates"] = [deepcopy(record)]
+        self.save_inputs()
+        self.references.return_value = deepcopy(self.baseline["reference_versions"])
+        self.certificates = patch("runtime.live_executor.read_certificate_status",
+                                  return_value=[dict(deepcopy(record), **status)]).start()
+        return record
+
+    def test_an_owned_secret_is_read_through_its_certificate_by_the_reader_only(self):
+        self.add_certificate_identity(revision=3)  # renewed since the baseline: still the same identity
+        result = execute(self.proposal, self.build(reference_kubeconfig=self.reader, reference_context="guard-reader-lab"))
+        self.assertEqual(result["status"], "APPLIED", result)
+        self.assertEqual(len(self.cluster.writes), 1)
+        for call in self.references.call_args_list:
+            self.assertEqual({item["kind"] for item in call.args[1]}, {"ConfigMap"})
+        self.assertTrue(self.certificates.call_args_list)
+        for call in self.certificates.call_args_list:
+            self.assertEqual(call.args[1], ["security-upstream"])
+            self.assertEqual((call.kwargs["kubeconfig"], call.kwargs["context"]), (self.reader, "guard-reader-lab"))
+
+    def test_an_expiring_or_not_ready_certificate_escalates_and_writes_nothing(self):
+        for status, code in (({"not_after": "2026-10-10T12:10:00Z"}, "SECURITY_IDENTITY_EXPIRING"),
+                             ({"ready": "False"}, "SECURITY_IDENTITY_NOT_READY")):
+            with self.subTest(code=code):
+                self.add_certificate_identity(**status)
+                check = self.authorizer(reference_kubeconfig=self.reader).validate(self.proposal, self.snapshot, now=NOW)
+                self.assertEqual(check.decision["verdict"], "ESCALATE")
+                self.assertIn(code, check.decision["reason_codes"])
+                result = execute(self.proposal, self.build(reference_kubeconfig=self.reader,
+                                                           ledger=self.directory / (code + ".db")))
+                self.assertEqual(result["status"], "FAILED")
+                self.assertIn(code, result["details"])
+                self.assertEqual(self.cluster.write_attempts, [])
+
+    def test_certificate_status_already_in_the_snapshot_is_never_trusted(self):
+        record = self.add_certificate_identity()
+        snapshot = dict(deepcopy(self.snapshot), certificates=[record])
+        check = self.authorizer().validate(self.proposal, snapshot, now=NOW)
+        self.assertNotIn("certificates", check.inputs["live_state"])
+        self.assertEqual(check.decision["verdict"], "ESCALATE")
+        self.certificates.assert_not_called()
+
+    def test_with_the_real_adapters_no_kubectl_call_names_a_secret(self):
+        from services.guard.adapters import read_certificate_status as real_status, read_reference_versions as real_reader
+        record = self.add_certificate_identity()
+        self.references.side_effect = real_reader
+        self.certificates.side_effect = real_status
+        commands = []
+        certificate = {"apiVersion": "cert-manager.io/v1", "kind": "Certificate",
+                       "metadata": {"name": record["name"], "namespace": record["namespace"], "uid": record["uid"],
+                                    "generation": 1},
+                       "spec": {"secretName": "security-upstream", "dnsNames": ["upstream.internal"],
+                                "issuerRef": record["issuer"]},
+                       "status": {"conditions": [{"type": "Ready", "status": "True", "observedGeneration": 1}],
+                                  "notBefore": record["not_before"], "notAfter": record["not_after"], "revision": 2}}
+
+        def kubectl(command, **kwargs):
+            commands.append(command)
+            kind = command[command.index("get") + 1]
+            return SimpleNamespace(returncode=0, stdout=json.dumps(certificate).encode()
+                                   if kind == "certificates.cert-manager.io" else b"ConfigMap-uid\t7")
+
+        with patch("services.guard.adapters.subprocess.run", side_effect=kubectl):
+            result = execute(self.proposal, self.build(reference_kubeconfig=self.reader,
+                                                       reference_context="guard-reader-lab"))
+        self.assertEqual(result["status"], "APPLIED", result)
+        reads = [command for command in commands if "get" in command]
+        self.assertEqual(sorted({command[command.index("get") + 1] for command in reads}),
+                         ["certificates.cert-manager.io", "configmap"])
+        self.assertFalse([command for command in reads if "secret" in command[command.index("get") + 1]])
+        for command in reads:
+            self.assertIn("--kubeconfig=" + str(self.reader), command)
+
     def test_the_reader_must_be_a_separate_credential_file(self):
         alias = self.directory / "reader-alias.kubeconfig"
         os.link(self.kubeconfig, alias)

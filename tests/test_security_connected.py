@@ -19,7 +19,7 @@ from runtime.security_store import import_inspections, recent, update_alert
 from scripts.security import network_policy
 from scripts.security.boutique_security_manifest import (CALLERS, NAMESPACE, VERIFIER_IDENTITY, VERIFIER_PROBE_APP,
                                                           caller_config, overlay, proxy_config)
-from scripts.security.security_lab import ROUTES
+from scripts.security.security_lab import ROUTES, sds_resource
 from services.grpc_inspection import ROUTE_METHODS
 from scripts.test_boutique_live import BoutiqueExperiment
 from scripts.security.scan_image_security import archive_config_id
@@ -46,6 +46,18 @@ def deployment(manifest, name):
 def envoy_json(manifest, name):
     item = next(item for item in manifest["items"] if item["kind"] == "ConfigMap" and item["metadata"]["name"] == name)
     return json.loads(item["data"]["envoy.json"])["static_resources"]
+
+
+def key_file(tls):
+    """The certificate file behind a TLS context's SDS key pair (P5.06)."""
+    name = tls["common_tls_context"]["tls_certificate_sds_secret_configs"][0]["name"]
+    return sds_resource(name)["resources"][0]["tls_certificate"]["certificate_chain"]["filename"]
+
+
+def sans(tls):
+    """The SAN matchers of a TLS context, kept in its static default validation context (P5.06)."""
+    return (tls["common_tls_context"]["combined_validation_context"]["default_validation_context"]
+            ["match_typed_subject_alt_names"])
 
 
 def endpoint(cluster):
@@ -89,8 +101,7 @@ class ConnectedSecurityTests(unittest.TestCase):
                 for cluster in config["clusters"]:
                     tls = cluster["transport_socket"]["typed_config"]
                     self.assertEqual(tls["sni"], "gateway.internal")
-                    self.assertEqual(tls["common_tls_context"]["tls_certificates"][0]["certificate_chain"]["filename"],
-                                     "/pki/" + caller + "-client/tls.crt")
+                    self.assertEqual(key_file(tls), "/pki/" + caller + "-client/tls.crt")
                 # A route's egress listener forwards only that route's methods.
                 paths = {listener["name"]: {route["match"].get("path") for route in listener["filter_chains"][0]["filters"][0]
                                             ["typed_config"]["route_config"]["virtual_hosts"][0]["routes"]}
@@ -109,13 +120,12 @@ class ConnectedSecurityTests(unittest.TestCase):
         ingress = cart["containers"][1]
         self.assertEqual(ingress["ports"], [{"containerPort": 8446}])
         self.assertEqual(ingress["readinessProbe"], {"tcpSocket": {"port": 8446}, "periodSeconds": 3})
-        self.assertEqual({mount["mountPath"] for mount in ingress["volumeMounts"]}, {"/config", "/pki/cart-upstream"})
+        self.assertEqual({mount["mountPath"] for mount in ingress["volumeMounts"]}, {"/config", "/trust", "/pki/cart-upstream"})
         upstream = envoy_json(result, "security-cart-upstream")
         self.assertEqual(endpoint(upstream["clusters"][0]), ("127.0.0.1", 7070))
         tls = upstream["listeners"][0]["filter_chains"][0]["transport_socket"]["typed_config"]
         self.assertTrue(tls["require_client_certificate"])
-        self.assertEqual(tls["common_tls_context"]["validation_context"]["match_typed_subject_alt_names"],
-                         [{"san_type": "DNS", "matcher": {"exact": "proxy-client.internal"}}])
+        self.assertEqual(sans(tls), [{"san_type": "DNS", "matcher": {"exact": "proxy-client.internal"}}])
         services = {item["metadata"]["name"]: item["spec"] for item in result["items"] if item["kind"] == "Service"}
         self.assertEqual(services["security-cart-upstream"]["selector"], {"app": "cartservice"})
         self.assertEqual(services["security-cart-upstream"]["ports"][0]["port"], 8446)
@@ -160,8 +170,7 @@ class ConnectedSecurityTests(unittest.TestCase):
                 tls = config["static_resources"]["listeners"][0]["filter_chains"][0]["transport_socket"]["typed_config"]
                 with self.subTest(route=route, upstream=upstream):
                     self.assertTrue(tls["require_client_certificate"])
-                    sans = tls["common_tls_context"]["validation_context"]["match_typed_subject_alt_names"]
-                    self.assertEqual({san["matcher"]["exact"] for san in sans}, names)
+                    self.assertEqual({san["matcher"]["exact"] for san in sans(tls)}, names)
 
     def test_the_verifier_identity_is_accepted_at_the_gateway_only(self):
         # P5.05: the authenticated Verifier probe enters through the gateway like a real caller; no
@@ -170,8 +179,8 @@ class ConnectedSecurityTests(unittest.TestCase):
         verifier = VERIFIER_IDENTITY + ".internal"
 
         def accepted(name):
-            return [verifier in {san["matcher"]["exact"] for san in listener["filter_chains"][0]["transport_socket"]
-                                 ["typed_config"]["common_tls_context"]["validation_context"]["match_typed_subject_alt_names"]}
+            return [verifier in {san["matcher"]["exact"] for san in sans(listener["filter_chains"][0]["transport_socket"]
+                                                                          ["typed_config"])}
                     for listener in envoy_json(result, name)["listeners"]]
         self.assertEqual(accepted("security-gateway"), [True, True])
         for name in ("security-upstream", "security-cart-upstream"):
@@ -1122,8 +1131,10 @@ class SecurityLabValidationTests(unittest.TestCase):
             self.assertEqual(lab.main(["probe", "--directory", folder, "--route", "cart"]), 0)
             self.assertEqual(lab.main(["probe", "--directory", folder, "--route", "cart", "--quantity", "11"]), 1)
         command.assert_not_called()  # no port-forward, no kind, no cluster change
-        self.assertEqual(calls, [{"route": "cart", "quantity": None}, {"route": "cart", "quantity": 11}])
-        self.assertEqual(json.loads(out.getvalue().splitlines()[1]), {"route": "cart", "quantity": 11, "succeeded": False})
+        self.assertEqual(calls, [{"route": "cart", "quantity": None, "identity": "client"},
+                                 {"route": "cart", "quantity": 11, "identity": "client"}])
+        self.assertEqual(json.loads(out.getvalue().splitlines()[1]),
+                         {"route": "cart", "quantity": 11, "identity": "client", "succeeded": False})
         with redirect_stdout(io.StringIO()), patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
             lab.main(["probe", "--route", "redis"])
 
@@ -1169,10 +1180,30 @@ def dry_run_resources(extra_env=None):
     return json.dumps({"apiVersion": "v1", "kind": "List", "items": resources})
 
 
+def resolved_pins():
+    """deploy/cert-manager/pins.json with every TODO-PIN replaced by a well-formed test value."""
+    from scripts.security import cert_lifecycle
+    pins = cert_lifecycle.load_pins()
+    pins["chart"]["sha256"] = "c" * 64
+    for image in pins["images"].values():
+        image["digest"] = "sha256:" + "b" * 64
+    return pins
+
+
 class SecurityLabPrepareTests(unittest.TestCase):
-    def prepare(self, resources, folder):
+    def test_unresolved_cert_manager_pins_refuse_before_any_cluster_command(self):
+        from scripts.security import cert_lifecycle
+        with tempfile.TemporaryDirectory() as folder:
+            directory, commands, applied, error = self.prepare(dry_run_resources(), folder,
+                                                               pins=cert_lifecycle.load_pins())
+            self.assertFalse(directory.exists())
+        self.assertRegex(str(error), "cert-manager pins are unresolved")
+        self.assertEqual((commands, applied, self.issued), ([], [], []))
+
+    def prepare(self, resources, folder, *, pins=None):
         from scripts.security import boutique_security as lab
         commands, applied = [], []
+        self.issued = []
 
         def command(args, **kwargs):
             args = [str(arg) for arg in args]
@@ -1191,17 +1222,23 @@ class SecurityLabPrepareTests(unittest.TestCase):
                 applied.append(Path(args[2]).name)
             return SimpleNamespace(stdout="", returncode=0)
 
-        def certificates(pki, **kwargs):
-            self.assertIn(VERIFIER_IDENTITY, kwargs["extra_clients"])
-            for identity in ("gateway", "upstream", "cart-upstream", "proxy-client", "client", "frontend-client",
-                             "checkoutservice-client", VERIFIER_IDENTITY):
-                (pki / identity).mkdir()
-                for name in ("ca.crt", "tls.crt", "tls.key"):
-                    (pki / identity / name).write_bytes(b"test")
+        def make_ca(pki, name, **kwargs):
+            (pki / name).mkdir()
+            return pki / name
+
+        def install(directory, node, run, **kwargs):
+            commands.append(["cert-manager install", node])
+
+        def issue(directory, ca, run, **kwargs):
+            self.issued.append((ca.name, kwargs))
         directory = Path(folder) / "run"
         inspector = ("sentinel.local/security-inspector@sha256:" + "d" * 64, "sha256:" + "f" * 64)
-        with patch.object(lab, "setup_cluster", return_value="node-1"), \
-                patch.object(lab, "certificates", side_effect=certificates), \
+        resolved = pins or resolved_pins()
+        with patch.object(lab, "setup_cluster", side_effect=lambda folder: commands.append(["setup"]) or "node-1"), \
+                patch.object(lab.cert_lifecycle, "load_pins", return_value=resolved), \
+                patch.object(lab.cert_lifecycle, "make_ca", side_effect=make_ca), \
+                patch.object(lab.cert_lifecycle, "install", side_effect=install), \
+                patch.object(lab.cert_lifecycle, "issue", side_effect=issue), \
                 patch.object(lab, "command", side_effect=command), patch.object(lab, "kube", side_effect=kube), \
                 patch.object(lab, "local_manifest", return_value=inspector):
             try:
@@ -1241,10 +1278,10 @@ class SecurityLabPrepareTests(unittest.TestCase):
             proto = json.loads((directory / "proto.json").read_text(encoding="utf-8"))
         self.assertEqual(set(proto["data"]), {"cart.proto", "shipping.proto"})
         self.assertIn("service CartService", proto["data"]["cart.proto"])
-        # The cart sidecar's identity Secret is applied like the others; it never enters manifest.json.
-        self.assertIn("cart-upstream.json", applied)
-        self.assertIn(VERIFIER_IDENTITY + ".json", applied)
+        # P5.06: cert-manager issues every identity after the manifest; no Secret enters manifest.json.
+        self.assertEqual(self.issued, [("ca-1", {"profile": "lab"})])
         self.assertNotIn("Secret", {item["kind"] for item in manifest["items"]})
+        self.assertNotIn("BEGIN", json.dumps(manifest))
         cart = next(item for item in manifest["items"] if item["kind"] == "Deployment"
                     and item["metadata"]["name"] == "cartservice")["spec"]["template"]["spec"]
         self.assertEqual([container["name"] for container in cart["containers"]][-1], "cart-ingress")

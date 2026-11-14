@@ -193,8 +193,8 @@ class InspectionTests(unittest.TestCase):
         upstream = envoy_config(upstream=True, route="cart")["static_resources"]
         self.assertEqual(upstream["listeners"][0]["address"]["socket_address"]["port_value"], 8446)
         self.assertEqual(upstream["listeners"][0]["filter_chains"][0]["transport_socket"]["typed_config"]
-                         ["common_tls_context"]["tls_certificates"][0]["certificate_chain"]["filename"],
-                         "/pki/cart-upstream/tls.crt")
+                         ["common_tls_context"]["tls_certificate_sds_secret_configs"][0]["name"],
+                         "cart-upstream-cert")
         self.assertEqual(len(upstream["clusters"]), 1)  # no inspector on the ingress sidecar
 
     def test_tls_and_authz_configuration_does_not_allow_partial_or_fail_open(self):
@@ -211,7 +211,8 @@ class InspectionTests(unittest.TestCase):
         self.assertNotIn("admin", envoy_config())
         transport = config["clusters"][0]["transport_socket"]["typed_config"]
         self.assertEqual(transport["sni"], "upstream.internal")
-        self.assertTrue(transport["common_tls_context"]["validation_context"]["match_typed_subject_alt_names"])
+        self.assertTrue(transport["common_tls_context"]["combined_validation_context"]["default_validation_context"]
+                        ["match_typed_subject_alt_names"])
 
 
 class InspectorHTTPTests(unittest.TestCase):

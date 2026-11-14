@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from copy import deepcopy
 import json
+import re
 
 from shared.canonical import sha256_hex
 from shared.contracts import ContractError, validate_message
@@ -15,6 +16,18 @@ TARGET_FIELDS = ("cluster_id", "namespace", "kind", "name", "uid")
 # The largest reviewed minimum replica count a detection policy may name (P5.07).
 MAX_EXPECTED_REPLICAS = 10
 REPLICAS_BELOW_MINIMUM = "ReplicasBelowReviewedMinimum"
+# P5.06: a TLS peer refused a certificate (expired, unknown CA, bad or
+# mismatched identity). Envoy writes these reasons in its access log
+# (upstream_tls, scripts/security/security_lab.py) and in its own log lines;
+# BoringSSL and OpenSSL spell them with these tokens. A bare mention of a
+# certificate is not one of them.
+CERTIFICATE_REJECTED = "CertificateRejected"
+_CERTIFICATE_REJECTION = re.compile(
+    r"CERTIFICATE_VERIFY_FAILED|certificate verify failed|verify cert failed"
+    r"|certificate has expired|CERTIFICATE_EXPIRED|certificate is not yet valid"
+    r"|unknown ca(?![a-z])|UNKNOWN_CA|unable to get local issuer certificate|self[- ]signed certificate in certificate chain"
+    r"|BAD_CERTIFICATE|bad certificate|CERTIFICATE_REQUIRED|SAN matcher",
+    re.IGNORECASE)
 
 
 class ObservationError(ContractError):
@@ -553,6 +566,8 @@ def _container_failure_detail(pod_name, pod_phase, container):
 
 
 def _log_reason(text):
+    if _CERTIFICATE_REJECTION.search(text):
+        return CERTIFICATE_REJECTED
     return "StartupError" if "startup" in text.lower() else "ContainerLog"
 
 

@@ -20,7 +20,7 @@ _BASELINE_FIELDS = {
 _SECURITY_FIELDS = {
     "deny_privileged", "deny_host_access", "allowed_image_registries",
     "allowed_service_accounts", "forbid_service_account_change", "image_vulnerability_gate",
-    "allowed_sidecars",
+    "allowed_sidecars", "certificate_identities",
 }
 _DIGEST_IMAGE = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._:/-]*@sha256:[0-9a-f]{64}")
 _REGISTRY = re.compile(r"(?:localhost|[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)(?::[0-9]+)?")
@@ -47,6 +47,52 @@ _SIDECAR_PROBE_HANDLERS = {"httpGet", "tcpSocket", "grpc"}
 _SIDECAR_PROBE_TIMING = {"initialDelaySeconds", "timeoutSeconds", "periodSeconds", "successThreshold",
                          "failureThreshold", "terminationGracePeriodSeconds"}
 _DNS_LABEL = re.compile(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?")
+_DNS_NAME = re.compile(r"[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?")
+# P5.06: one reviewed cert-manager identity. The Secret it names is mounted by
+# the template; the Guard reads the Certificate that owns it (status and spec,
+# never key material) instead of the Secret. Its issuer and DNS names must be
+# exactly the reviewed ones, it must be Ready for its current generation, and
+# it must stay valid for at least min_remaining_seconds; otherwise UNKNOWN
+# (ESCALATE): a rollback cannot repair an identity that is wrong or expiring.
+_CERTIFICATE_FIELDS = {"secret", "certificate", "issuer", "dns_names", "min_remaining_seconds"}
+_ISSUER_FIELDS = {"group", "kind", "name"}
+# What the trusted Certificate status reader (services/guard/adapters.py) records; nothing else.
+_CERTIFICATE_RECORD_FIELDS = {
+    "kind", "namespace", "name", "uid", "generation", "secret_name", "dns_names", "issuer",
+    "ready", "ready_observed_generation", "not_before", "not_after", "revision",
+}
+_MAX_REMAINING_SECONDS = 366 * 24 * 60 * 60
+
+
+def _validate_certificate_identities(value, path):
+    """certificate_identities: [{secret, certificate, issuer {group, kind, name}, dns_names, min_remaining_seconds}]."""
+    if not isinstance(value, list) or not value:
+        raise GuardInputError(f"{path}: expected a nonempty list of reviewed certificate identities")
+    secrets, certificates = set(), set()
+    for index, entry in enumerate(value):
+        where = f"{path}[{index}]"
+        mapping(entry, where)
+        if set(entry) != _CERTIFICATE_FIELDS:
+            raise GuardInputError(f"{where}: expected exactly secret, certificate, issuer, dns_names and min_remaining_seconds")
+        for key in ("secret", "certificate"):
+            if not isinstance(entry[key], str) or not _DNS_NAME.fullmatch(entry[key]):
+                raise GuardInputError(f"{where}.{key}: expected a Kubernetes object name")
+        issuer = mapping(entry["issuer"], f"{where}.issuer")
+        if set(issuer) != _ISSUER_FIELDS or any(not isinstance(issuer[key], str) or not issuer[key] for key in _ISSUER_FIELDS):
+            raise GuardInputError(f"{where}.issuer: expected group, kind and name")
+        names = entry["dns_names"]
+        if (not isinstance(names, list) or not names or len(set(names)) != len(names)
+                or any(not isinstance(name, str) or not _DNS_NAME.fullmatch(name) for name in names)):
+            raise GuardInputError(f"{where}.dns_names: expected a nonempty list of distinct DNS names")
+        # At least the longest decision lifetime (decision_ttl_seconds is at most 300), so an
+        # ALLOW can never outlive the certificate it relied on.
+        remaining = entry["min_remaining_seconds"]
+        if type(remaining) is not int or not 300 <= remaining <= _MAX_REMAINING_SECONDS:
+            raise GuardInputError(f"{where}.min_remaining_seconds: expected an integer of at least 300 seconds")
+        if entry["secret"] in secrets or entry["certificate"] in certificates:
+            raise GuardInputError(f"{where}: duplicate Secret or Certificate")
+        secrets.add(entry["secret"])
+        certificates.add(entry["certificate"])
 
 
 def _validate_sidecars(value, path):
@@ -111,6 +157,8 @@ def validate_policy(policy):
                     raise GuardInputError(f"policy.{block}.{exc}") from exc
             elif key == "allowed_sidecars":
                 _validate_sidecars(item, path)
+            elif key == "certificate_identities":
+                _validate_certificate_identities(item, path)
             elif key in {"max_age_seconds", "min_healthy_duration_seconds"}:
                 if type(item) is not int or item < 0:
                     raise GuardInputError(f"{path}: expected a nonnegative integer")
@@ -311,17 +359,91 @@ def _references(spec, containers, namespace):
     return found, unsupported
 
 
-def _compatible_references(baseline, live_state, proposal, spec, containers):
+def _certificate_inventory(value, path):
+    """{Certificate name: record} from the trusted status reader's records; None when absent."""
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise GuardInputError(f"{path}: expected a list of Certificate status records")
+    result = {}
+    for index, record in enumerate(value):
+        where = f"{path}[{index}]"
+        mapping(record, where)
+        if set(record) != _CERTIFICATE_RECORD_FIELDS or record.get("kind") != "Certificate":
+            raise GuardInputError(f"{where}: expected Certificate status fields only")
+        for key in ("namespace", "name", "uid", "secret_name"):
+            string(record[key], f"{where}.{key}")
+        if type(record["generation"]) is not int or record["generation"] < 1:
+            raise GuardInputError(f"{where}.generation: expected a positive integer")
+        for key in ("ready_observed_generation", "revision"):
+            if record[key] is not None and (type(record[key]) is not int or record[key] < 0):
+                raise GuardInputError(f"{where}.{key}: expected a nonnegative integer or null")
+        if record["ready"] not in ("True", "False", "Unknown"):
+            raise GuardInputError(f"{where}.ready: expected True, False or Unknown")
+        if not isinstance(record["dns_names"], list) or any(not isinstance(name, str) for name in record["dns_names"]):
+            raise GuardInputError(f"{where}.dns_names: expected a list of strings")
+        issuer = mapping(record["issuer"], f"{where}.issuer")
+        if set(issuer) != _ISSUER_FIELDS or any(not isinstance(issuer[key], str) for key in _ISSUER_FIELDS):
+            raise GuardInputError(f"{where}.issuer: expected group, kind and name")
+        for key in ("not_before", "not_after"):
+            if record[key] is not None:
+                utc_timestamp(record[key], f"{where}.{key}")
+        if record["name"] in result:
+            raise GuardInputError(f"{where}: duplicate Certificate")
+        result[record["name"]] = record
+    return result
+
+
+def _managed_secrets(security_rules):
+    """{Secret name: Certificate name} for the reviewed cert-manager identities (P5.06)."""
+    return {entry["secret"]: entry["certificate"]
+            for entry in (security_rules or {}).get("certificate_identities", [])}
+
+
+def _compatible_references(baseline, live_state, proposal, spec, containers, managed=None):
+    """Each referenced ConfigMap and Secret must be the version verified with the baseline.
+
+    P5.06: a Secret that a reviewed cert-manager Certificate owns (managed) is
+    compared through that Certificate's UID and generation, which change only
+    when the Certificate is replaced or its spec changes; a renewal (a new key
+    and serial, the same reviewed identity) does not. The Guard reader never
+    reads that Secret. _certificate_identities() separately requires the
+    current certificate to be Ready, unexpired and the reviewed identity.
+    """
+    managed = managed or {}
+    namespace = proposal["target"]["namespace"]
     try:
-        refs, output = _references(spec, containers, proposal["target"]["namespace"])
+        refs, output = _references(spec, containers, namespace)
         saved = _reference_inventory(baseline.get("reference_versions"), "baseline.reference_versions")
         current = _reference_inventory(live_state.get("reference_versions"), "live_state.reference_versions")
+        if any(kind == "Secret" and name in managed for kind, _, name in refs):
+            saved_certificates = _certificate_inventory(baseline.get("certificates"), "baseline.certificates")
+            current_certificates = _certificate_inventory(live_state.get("certificates"), "live_state.certificates")
     except GuardInputError as exc:
         return [_invalid("baseline.reference_versions", str(exc))]
     if not refs:
         output.append(_result("BASELINE_REFERENCES", "baseline.pod_template.spec", [], [], "Template has no ConfigMap/Secret references.", "PASS"))
     for identity in sorted(refs):
         label = "/".join(identity)
+        if identity[0] == "Secret" and identity[2] in managed:
+            name = managed[identity[2]]
+            versions = []
+            for inventory in (saved_certificates, current_certificates):
+                record = (inventory or {}).get(name)
+                versions.append(None if record is None or record["namespace"] != namespace
+                                else (record["uid"], record["generation"]))
+            if None in versions:
+                output.append(_result("BASELINE_REFERENCE_EVIDENCE_MISSING", "baseline.certificates", label,
+                                      "saved and current Certificate UID/generation",
+                                      "The Certificate that owns this Secret lacks trusted version evidence.", "UNKNOWN"))
+            else:
+                output.append(_result("BASELINE_REFERENCE_CHANGED", "live_state.certificates",
+                                      {"reference": label, "certificate": name, "uid": versions[1][0],
+                                       "generation": versions[1][1]},
+                                      {"uid": versions[0][0], "generation": versions[0][1]},
+                                      "The Certificate that owns this Secret must be the one verified with the baseline.",
+                                      "PASS" if versions[0] == versions[1] else "FAIL"))
+            continue
         if saved is None or current is None or identity not in saved or identity not in current:
             output.append(_result("BASELINE_REFERENCE_EVIDENCE_MISSING", "baseline.reference_versions", label,
                                   "saved and current UID/resourceVersion", "Referenced configuration lacks trusted version evidence.", "UNKNOWN"))
@@ -624,6 +746,77 @@ def _sidecars(spec, containers, proposal, rules):
     return output
 
 
+def _certificate_identities(spec, containers, proposal, live_state, rules, checked_at):
+    """P5.06: every reviewed cert-manager identity the template mounts must be usable now.
+
+    Evidence is live_state.certificates from the trusted Certificate status
+    reader (Ready condition, notBefore, notAfter, revision, and the spec's
+    Secret, issuer and DNS names), never the Secret or its key. Each check
+    that cannot pass is UNKNOWN, so the Guard ESCALATEs and nothing is written:
+    a rollback restores the template, not the identity, so it cannot repair a
+    certificate that is missing, not Ready, about to expire, expired, not yet
+    valid, or no longer the reviewed identity (another issuer, Secret or DNS
+    name). Malformed evidence is BASELINE_ELIGIBILITY_INVALID (FAIL).
+    """
+    namespace = proposal["target"]["namespace"]
+    references, _ = _references(spec, containers, namespace)
+    mounted = {name for kind, _, name in references if kind == "Secret"}
+    entries = [entry for entry in rules["certificate_identities"] if entry["secret"] in mounted]
+    if not entries:
+        return [_result("SECURITY_IDENTITIES", "baseline.pod_template.spec", [], [],
+                        "The template mounts no reviewed certificate identity.", "SKIP")]
+    return certificate_findings(entries, live_state.get("certificates"), namespace, checked_at)
+
+
+def certificate_findings(entries, records, namespace, checked_at):
+    """The identity findings for reviewed certificate_identities entries against status records.
+
+    The pure core of _certificate_identities(), also used by
+    scripts/security/cert_lifecycle.py identity to show, read-only, what the
+    Guard would decide about the lab's live Certificates.
+    """
+    try:
+        current = _certificate_inventory(records, "live_state.certificates")
+    except GuardInputError as exc:
+        return [_invalid("live_state.certificates", str(exc))]
+    output = []
+    for entry in entries:
+        name = entry["certificate"]
+        path = f"live_state.certificates[{name}]"
+        record = (current or {}).get(name)
+        if record is None or record["namespace"] != namespace:
+            output.append(_result("SECURITY_IDENTITY_EVIDENCE_MISSING", "live_state.certificates", name,
+                                  "trusted Certificate status", "The certificate identity cannot be verified.", "UNKNOWN"))
+            continue
+
+        def check(code, where, actual, expected, okay, message, path=path):
+            output.append(_result(code, f"{path}.{where}", actual, expected, message, "PASS" if okay else "UNKNOWN"))
+
+        actual = {"secret": record["secret_name"], "issuer": record["issuer"], "dns_names": sorted(record["dns_names"])}
+        expected = {"secret": entry["secret"], "issuer": entry["issuer"], "dns_names": sorted(entry["dns_names"])}
+        check("SECURITY_IDENTITY_SPEC", "spec", actual, expected, actual == expected,
+              "The certificate must be the reviewed identity: its Secret, issuer and DNS names.")
+        ready = record["ready"] == "True" and record["ready_observed_generation"] == record["generation"]
+        check("SECURITY_IDENTITY_NOT_READY", "ready",
+              {"ready": record["ready"], "observed_generation": record["ready_observed_generation"],
+               "generation": record["generation"]}, "True for the current generation", ready,
+              "The certificate must be Ready for its current spec.")
+        if record["not_after"] is None or record["not_before"] is None:
+            check("SECURITY_IDENTITY_EXPIRING", "not_after", "unavailable",
+                  {"min_remaining_seconds": entry["min_remaining_seconds"]}, False,
+                  "The certificate's validity period is unavailable.")
+            continue
+        not_before = utc_timestamp(record["not_before"], f"{path}.not_before")
+        remaining = (utc_timestamp(record["not_after"], f"{path}.not_after") - checked_at).total_seconds()
+        check("SECURITY_IDENTITY_NOT_YET_VALID", "not_before", record["not_before"], "not after the check time",
+              not_before <= checked_at, "The certificate is not valid yet.")
+        check("SECURITY_IDENTITY_EXPIRING", "not_after",
+              {"remaining_seconds": remaining, "revision": record["revision"]},
+              {"min_remaining_seconds": entry["min_remaining_seconds"]}, remaining >= entry["min_remaining_seconds"],
+              "The certificate has expired or expires within the reviewed margin; its renewal is failing.")
+    return output
+
+
 def _template_images(containers, path):
     """{container name: image} for one Pod template; GuardInputError on a duplicate name or a missing image."""
     images = {}
@@ -705,12 +898,17 @@ def assess(proposal, live_state, baseline, policy, checked_at):
                 okay = isinstance(image, str) and _DIGEST_IMAGE.fullmatch(image) is not None
                 output.append(_result("BASELINE_IMAGE_DIGEST", f"{path}.image", image if isinstance(image, str) else "malformed", "repository@sha256:<64 lowercase hex characters>", "Rollback images must use immutable SHA-256 digests.", "PASS" if okay else "FAIL"))
         if baseline_rules.get("require_compatible_references", False):
-            output.extend(_compatible_references(baseline, live_state, proposal, spec, containers))
+            output.extend(_compatible_references(baseline, live_state, proposal, spec, containers,
+                                                 _managed_secrets(security_rules)))
     if security_rules is not None:
         try:
             output.extend(_security(spec, containers, live_state, security_rules))
             if "allowed_sidecars" in security_rules:
                 output.extend(_sidecars(spec, containers, proposal, security_rules))
+            if "certificate_identities" in security_rules:
+                output.extend(_certificate_identities(spec, containers, proposal,
+                                                      live_state if isinstance(live_state, dict) else {},
+                                                      security_rules, checked_at))
         except GuardInputError as exc:
             output.append(_result("SECURITY_TEMPLATE_INVALID", "baseline.pod_template.spec", "malformed", "valid security-policy inputs", str(exc)))
         # The CVE gate covers the actions that write the baseline template (P5.02). A SCALE starts

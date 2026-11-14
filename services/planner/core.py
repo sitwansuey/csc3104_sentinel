@@ -19,6 +19,13 @@ REPLICAS_BELOW_MINIMUM = "ReplicasBelowReviewedMinimum"
 METRIC_ONLY_RATIONALE = ("Only metric alerts show a problem: the Deployment and its Pods report no failure, so no "
                          "repair is justified. Decided by a code rule, not a provider. Operator review is required "
                          "(runbook resource-saturation). No repair is authorized.")
+# The Observer's signal for a TLS peer refusing a certificate (P5.06).
+CERTIFICATE_REJECTED = "CertificateRejected"
+# The fixed rationale of the identity-failure rule; a code rule, never a provider, writes it.
+IDENTITY_FAILURE_RATIONALE = ("A TLS peer refused a certificate (expired, untrusted CA or wrong identity). A rollback "
+                              "or restart reuses the same Secret reference and cannot repair it. Decided by a code "
+                              "rule, not a provider. Operator review is required (runbook identity-failure). No "
+                              "repair is authorized.")
 
 
 def metric_only(incident):
@@ -29,6 +36,11 @@ def metric_only(incident):
     """
     sources = {signal["source"] for signal in incident["signals"]}
     return METRIC_ALERT_SOURCE in sources and not sources & _WORKLOAD_FAILURE_SOURCES
+
+
+def certificate_rejected(incident):
+    """True when any incident signal is the Observer's CertificateRejected (P5.06)."""
+    return any(signal["reason"] == CERTIFICATE_REJECTED for signal in incident["signals"])
 
 
 def retrieve_runbooks(incident):
@@ -44,6 +56,8 @@ def retrieve_runbooks(incident):
         selected.append("resource-saturation")
     if any(signal["reason"] == REPLICAS_BELOW_MINIMUM for signal in incident["signals"]):
         selected.append("replicas-below-minimum")
+    if certificate_rejected(incident):
+        selected.append("identity-failure")
     return [{"id": name, "content": (folder / (name + ".md")).read_text(encoding="utf-8")} for name in selected]
 
 
@@ -179,7 +193,9 @@ def propose(incident: dict, baselines: list[dict], retriever, provider, *, diagn
 
     A metric-only incident (metric_only()) is escalated by a code rule before
     any provider call: when every Pod is ready, neither a rollback nor a restart
-    is a justified repair, whatever a provider or model would answer.
+    is a justified repair, whatever a provider or model would answer. So is an
+    incident with a CertificateRejected signal (certificate_rejected(), P5.06),
+    whatever else it shows: the repair is a certificate, never a template.
     """
     validate_message(incident)
     if incident["kind"] != "incident" or not isinstance(baselines, list):
@@ -192,9 +208,13 @@ def propose(incident: dict, baselines: list[dict], retriever, provider, *, diagn
     unchanged = _unchanged_baselines(suitable, live_template)
     evidence = [item["evidence_id"] for item in incident["signals"]]
     saturation = metric_only(incident)
-    runbooks = _retrieve(incident, retriever, diagnosis) if not saturation and suitable and (
+    identity = certificate_rejected(incident)
+    runbooks = _retrieve(incident, retriever, diagnosis) if not saturation and not identity and suitable and (
         diagnosis is None or diagnosis.get("prediction")) else None
-    if saturation:
+    if identity:
+        answer = {"action": "ESCALATE", "parameters": {}, "rationale": IDENTITY_FAILURE_RATIONALE,
+                  "evidence_refs": evidence}
+    elif saturation:
         answer = {"action": "ESCALATE", "parameters": {}, "rationale": METRIC_ONLY_RATIONALE,
                   "evidence_refs": evidence}
     elif not suitable or not runbooks or (diagnosis is not None and not diagnosis.get("prediction")):

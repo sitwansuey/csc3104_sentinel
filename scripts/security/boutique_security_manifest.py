@@ -3,7 +3,7 @@
 from copy import deepcopy
 import json
 
-from scripts.security.security_lab import ROUTES, envoy_config, tls_context
+from scripts.security.security_lab import CONFIG_DIR, ROUTES, TRUST_DIR, config_files, envoy_config, tls_context
 
 
 NAMESPACE = "sentinel-boutique-security"
@@ -31,6 +31,10 @@ VERIFIER_IDENTITY = "sentinel-verifier-client"
 VERIFIER_PROBE_APP = "sentinel-verifier-probe"
 PROBE_PROTO_CONFIGMAP = "security-test-proto"
 GATEWAY_SERVER_NAME = "gateway.internal"
+# P5.06: the public trust bundle (the lab CA, or the old and new CA during a
+# rollover) that every Envoy mounts at TRUST_DIR; keys stay in each identity's
+# cert-manager Secret, security-<identity>.
+TRUST_BUNDLE = "security-trust-bundle"
 DNS_RULE = {"to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}},
                     "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}}}],
             "ports": [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}]}
@@ -63,7 +67,8 @@ def proxy_config(upstream=False, route="shipping"):
     config = envoy_config(upstream=upstream, route=route)
     _address(config["static_resources"]["clusters"][0], "127.0.0.1" if upstream else UPSTREAM_SERVICES[route],
              spec["port"] if upstream else spec["upstream_port"])
-    validation = config["static_resources"]["listeners"][0]["filter_chains"][0]["transport_socket"]["typed_config"]["common_tls_context"]["validation_context"]
+    validation = (config["static_resources"]["listeners"][0]["filter_chains"][0]["transport_socket"]["typed_config"]
+                  ["common_tls_context"]["combined_validation_context"]["default_validation_context"])
     identities = ["proxy-client.internal"] if upstream else [
         "frontend-client.internal", "checkoutservice-client.internal", "client.internal", VERIFIER_IDENTITY + ".internal"]
     validation["match_typed_subject_alt_names"] = [{"san_type": "DNS", "matcher": {"exact": name}} for name in identities]
@@ -87,7 +92,8 @@ def overlay(base, *, envoy_image, inspector_image):
     def resource(kind, name, **fields):
         return {"apiVersion": "v1", "kind": kind, "metadata": {"name": name, "namespace": NAMESPACE}, **fields}
     def configmap(name, config):
-        items.append(resource("ConfigMap", name, data={"envoy.json": json.dumps(config)}))
+        # envoy.json and the SDS files it subscribes to; they name key paths, never keys (P5.06).
+        items.append(resource("ConfigMap", name, data=config_files(config)))
     def config_volume(name):
         return {"name": name, "configMap": {"name": name}}
     def key_volume(identity):
@@ -100,7 +106,8 @@ def overlay(base, *, envoy_image, inspector_image):
                                     "allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
                                     "capabilities": {"drop": ["ALL"]}},
                 "resources": deepcopy(ENVOY_RESOURCES),
-                "volumeMounts": [{"name": name, "mountPath": "/config", "readOnly": True}] + [
+                "volumeMounts": [{"name": name, "mountPath": CONFIG_DIR, "readOnly": True},
+                                 {"name": TRUST_BUNDLE, "mountPath": TRUST_DIR, "readOnly": True}] + [
                     {"name": identity, "mountPath": "/pki/" + identity, "readOnly": True} for identity in identities]}
     for item in items:
         name = item.get("metadata", {}).get("name")
@@ -118,7 +125,7 @@ def overlay(base, *, envoy_image, inspector_image):
             sidecar = envoy(config, [identity], [spec["egress_port"] for spec in ROUTES.values()])
             sidecar["name"] = "protected-egress"
             pod["containers"].append(sidecar)
-            pod.setdefault("volumes", []).extend([config_volume(config), key_volume(identity)])
+            pod.setdefault("volumes", []).extend([config_volume(config), config_volume(TRUST_BUNDLE), key_volume(identity)])
             pod.setdefault("securityContext", {})["fsGroup"] = 10001
     for caller in CALLERS:
         configmap("security-" + caller + "-egress", caller_config(caller + "-client"))
@@ -135,7 +142,7 @@ def overlay(base, *, envoy_image, inspector_image):
             raise ValueError("Reviewed " + route + " service is missing")
         workload = deployments[spec["service"]]["spec"]["template"]["spec"]
         workload["containers"].append(ingress)
-        workload.setdefault("volumes", []).extend([config_volume(name), key_volume(identity)])
+        workload.setdefault("volumes", []).extend([config_volume(name), config_volume(TRUST_BUNDLE), key_volume(identity)])
         workload.setdefault("securityContext", {})["fsGroup"] = 10001
         items.append(resource("Service", name, spec={"selector": {"app": spec["service"]},
                      "ports": [{"name": "grpc-tls", "port": port, "targetPort": port}]}))
@@ -160,7 +167,7 @@ def overlay(base, *, envoy_image, inspector_image):
     pod = {"automountServiceAccountToken": False, "terminationGracePeriodSeconds": 5,
            "securityContext": {"fsGroup": 10001, "seccompProfile": {"type": "RuntimeDefault"}},
            "containers": [gateway, inspector],
-           "volumes": [config_volume(name)] + [key_volume(key) for key in identities]
+           "volumes": [config_volume(name), config_volume(TRUST_BUNDLE)] + [key_volume(key) for key in identities]
                       + [{"name": "audit", "persistentVolumeClaim": {"claimName": "security-audit"}}]}
     items.append({"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": name, "namespace": NAMESPACE},
         "spec": {"replicas": 1, "strategy": {"type": "Recreate"}, "selector": {"matchLabels": {"app": name}},
@@ -207,18 +214,21 @@ def reviewed_sidecars(envoy_image):
 
     One entry per protected service, exactly as overlay() adds it: the
     route's ingress container, the reviewed Envoy digest, its command and
-    arguments, and its two
-    read-only mounts (its Envoy configuration ConfigMap and its identity's
-    Secret). tests/test_protected_recovery.py checks that this matches the
-    overlay's container, so a changed overlay needs a new review.
+    arguments, and its three
+    read-only mounts (its Envoy configuration ConfigMap, the trust bundle
+    ConfigMap and its identity's cert-manager Secret, P5.06).
+    tests/test_protected_recovery.py checks that this matches the overlay's
+    container, so a changed overlay needs a new review.
     """
     entries = []
     for route, spec in ROUTES.items():
         config, identity = UPSTREAM_SERVICES[route], spec["upstream_identity"]
         entries.append({"target": spec["service"], "name": INGRESS_CONTAINERS[route], "image": envoy_image,
                         "command": list(ENVOY_COMMAND), "args": list(ENVOY_ARGS),
-                        "mounts": [{"volume": config, "mount_path": "/config",
+                        "mounts": [{"volume": config, "mount_path": CONFIG_DIR,
                                     "source": {"kind": "ConfigMap", "name": config}},
+                                   {"volume": TRUST_BUNDLE, "mount_path": TRUST_DIR,
+                                    "source": {"kind": "ConfigMap", "name": TRUST_BUNDLE}},
                                    {"volume": identity, "mount_path": "/pki/" + identity,
                                     "source": {"kind": "Secret", "name": "security-" + identity}}]})
     return entries

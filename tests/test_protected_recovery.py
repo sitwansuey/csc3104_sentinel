@@ -24,7 +24,8 @@ from experiments.boutique.harness import protected
 from experiments.boutique.harness.connected import ConnectedBoutiqueExperiment
 from experiments.boutique.harness.protected import (GUARD_READER_RBAC, ProtectedBoutiqueExperiment, guard_reader_rbac,
                                                     preflight, protected_ceilings, protected_policy_constraints, rbac_matrix,
-                                                    reviewed_references, template_references)
+                                                    reader_scope, reviewed_identities, reviewed_references,
+                                                    template_references)
 from experiments.validation.demo_guard import load_fixtures
 from runtime.live_executor import build_adapters
 from scripts.security import boutique_security as lab, network_policy
@@ -36,7 +37,7 @@ from services.executor.core import execute
 from services.guard.core import proposal_fingerprint, template_sha256
 from services.guard.decisions import validate_policy
 from tests.support.executor_fake import FakeDeploymentAPI
-from tests.test_security_connected import APPLICATIONS, base, deployment, lab_items
+from tests.test_security_connected import APPLICATIONS, base, deployment, lab_items, resolved_pins
 
 ROOT = Path(__file__).resolve().parents[1]
 NOW = datetime(2026, 10, 10, 12, 0, 40, tzinfo=UTC)
@@ -77,6 +78,11 @@ class ReviewedSidecarTests(unittest.TestCase):
         self.assertEqual(constraints["allowed_image_registries"], ["us-central1-docker.pkg.dev", "docker.io"])
         self.assertEqual([entry["target"] for entry in constraints["allowed_sidecars"]], ["shippingservice"])
         self.assertEqual(constraints["allowed_sidecars"][0]["image"], ENVOY)
+        # P5.06: the identity behind the sidecar's Secret is a reviewed cert-manager Certificate.
+        self.assertEqual(constraints["certificate_identities"], [{
+            "secret": "security-upstream", "certificate": "security-upstream",
+            "issuer": {"group": "cert-manager.io", "kind": "ClusterIssuer", "name": "sentinel-lab-ca"},
+            "dns_names": ["upstream.internal"], "min_remaining_seconds": 1800}])
         policy = deepcopy(LIVE_POLICY)
         policy["security_constraints"].update(constraints)
         validate_policy(policy, require_live=True)
@@ -113,15 +119,23 @@ class GuardReaderTests(unittest.TestCase):
         references = template_references(protected_template(), NAMESPACE)
         self.assertEqual(references, reviewed_references())
         self.assertEqual([(item["kind"], item["name"]) for item in references],
-                         [("ConfigMap", "security-upstream"), ("Secret", "security-upstream")])
-        self.assertEqual(GUARD_READER_RBAC.read_text(encoding="utf-8").replace("\r\n", "\n"),
-                         guard_reader_rbac(NAMESPACE, references))
+                         [("ConfigMap", "security-trust-bundle"), ("ConfigMap", "security-upstream"),
+                          ("Secret", "security-upstream")])
+        # P5.06: the Secret is owned by the reviewed Certificate, so the reader reads the Certificate instead.
+        own, certificates = reader_scope(references, reviewed_identities())
+        self.assertEqual([item["kind"] for item in own], ["ConfigMap", "ConfigMap"])
+        self.assertEqual(certificates, ["security-upstream"])
+        committed = GUARD_READER_RBAC.read_text(encoding="utf-8").replace("\r\n", "\n")
+        self.assertEqual(committed, guard_reader_rbac(NAMESPACE, own, certificates))
+        self.assertNotIn("secrets", committed.split("kind: Role\n", 1)[1].split("---", 1)[0])
 
     def test_the_reader_role_grants_get_on_named_objects_only(self):
-        text = guard_reader_rbac(NAMESPACE, reviewed_references())
+        text = guard_reader_rbac(NAMESPACE, *reader_scope(reviewed_references(), reviewed_identities()))
         role = text.split("kind: Role\n", 1)[1].split("---", 1)[0]
         self.assertEqual(role.count("verbs: [\"get\"]"), 2)
         self.assertEqual(role.count("resourceNames:"), 2)
+        self.assertIn("apiGroups: [\"cert-manager.io\"]\n    resources: [\"certificates\"]", role)
+        self.assertNotIn("secrets", role)
         for word in ("list", "watch", "patch", "update", "delete", "create", "deployments", "pods", "*"):
             self.assertNotIn(word, role.replace("resourceNames", ""))
         self.assertIn("automountServiceAccountToken: false", text)
@@ -145,6 +159,24 @@ class GuardReaderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             template_references(template, NAMESPACE)
 
+    def test_the_can_i_matrix_denies_every_secret_read_once_certificates_own_them(self):
+        # P5.06: neither identity may read the identity Secret; the reader gets its Certificate only.
+        rows = rbac_matrix(NAMESPACE, ["shippingservice"], reviewed_references(), identities=reviewed_identities())
+        executor = [row for row in rows if row["identity"] == "executor"]
+        reader = [row for row in rows if row["identity"] == "reader"]
+        self.assertEqual({row["resource"] for row in executor if row["allowed"]}, {"deployment/shippingservice"})
+        self.assertEqual({row["resource"] for row in reader if row["allowed"]},
+                         {"configmap/security-trust-bundle", "configmap/security-upstream",
+                          "certificates.cert-manager.io/security-upstream"})
+        for identity in (executor, reader):
+            self.assertFalse([row for row in identity if row["resource"].startswith("secret") and row["allowed"]])
+        self.assertIn({"identity": "reader", "verb": "get", "resource": "secret/security-upstream", "allowed": False},
+                      reader)
+        self.assertIn({"identity": "reader", "verb": "list", "resource": "certificates.cert-manager.io",
+                       "allowed": False}, reader)
+        self.assertIn({"identity": "executor", "verb": "get", "resource": "certificates.cert-manager.io/security-upstream",
+                       "allowed": False}, executor)
+
     def test_the_can_i_matrix_denies_every_executor_read_of_configuration(self):
         rows = rbac_matrix(NAMESPACE, ["shippingservice"], reviewed_references())
         executor = [row for row in rows if row["identity"] == "executor"]
@@ -155,7 +187,7 @@ class GuardReaderTests(unittest.TestCase):
         self.assertIn({"identity": "executor", "verb": "get", "resource": "secret/security-upstream", "allowed": False},
                       executor)
         self.assertEqual({row["resource"] for row in reader if row["allowed"]},
-                         {"secret/security-upstream", "configmap/security-upstream"})
+                         {"secret/security-upstream", "configmap/security-upstream", "configmap/security-trust-bundle"})
         self.assertTrue({"secret/security-gateway", "secrets", "deployment/shippingservice"}
                         <= {row["resource"] for row in reader if not row["allowed"]})
         self.assertEqual({row["verb"] for row in reader if row["allowed"]}, {"get"})
@@ -244,9 +276,20 @@ class ProtectedRollbackTests(unittest.TestCase):
             spec["containers"][0]["image"] = "demo/sentinel@sha256:" + "a" * 64
             spec["containers"].append(deepcopy(sidecar))
             spec["volumes"] = deepcopy(shipping["volumes"])
-        self.references = [{"kind": kind, "namespace": target["namespace"], "name": "security-upstream",
-                            "uid": kind + "-uid", "resource_version": "5"} for kind in ("ConfigMap", "Secret")]
+        # P5.06: the reader reads the two ConfigMaps and the Certificate that owns the identity Secret.
+        self.policy["security_constraints"]["certificate_identities"] = reviewed_identities()
+        self.references = [{"kind": "ConfigMap", "namespace": target["namespace"], "name": name,
+                            "uid": name + "-uid", "resource_version": "5"}
+                           for name in ("security-trust-bundle", "security-upstream")]
         self.baseline["reference_versions"] = deepcopy(self.references)
+        self.certificate = {
+            "kind": "Certificate", "namespace": target["namespace"], "name": "security-upstream", "uid": "cert-uid",
+            "generation": 1, "secret_name": "security-upstream", "dns_names": ["upstream.internal"],
+            "issuer": {"group": "cert-manager.io", "kind": "ClusterIssuer", "name": "sentinel-lab-ca"},
+            "ready": "True", "ready_observed_generation": 1, "not_before": "2026-10-10T11:00:00Z",
+            "not_after": "2026-10-10T13:00:00Z", "revision": 3}
+        self.baseline["certificates"] = [deepcopy(self.certificate)]
+        self.live_certificate = deepcopy(self.certificate)
         self.baseline["health_evidence"] = {
             "source": "synthetic-verifier", "evidence_id": "synthetic-window", "status": "HEALTHY",
             "target": deepcopy(target), "template_sha256": "pending", "window_start": "2026-10-10T11:58:30Z",
@@ -255,6 +298,8 @@ class ProtectedRollbackTests(unittest.TestCase):
         patch("services.executor.kubernetes_adapter.KubectlDeploymentAPI", return_value=self.cluster).start()
         self.reader = patch("runtime.live_executor.read_reference_versions",
                             side_effect=lambda *args, **kwargs: deepcopy(self.references)).start()
+        self.certificate_reader = patch("runtime.live_executor.read_certificate_status",
+                                        side_effect=lambda *args, **kwargs: [deepcopy(self.live_certificate)]).start()
         patch("runtime.live_executor._utc_now", return_value=NOW).start()
         self.addCleanup(patch.stopall)
         (self.directory / "executor.kubeconfig").write_text("executor", encoding="utf-8")
@@ -288,8 +333,46 @@ class ProtectedRollbackTests(unittest.TestCase):
         written = self.cluster.snapshot["deployment"]["spec"]["template"]
         self.assertEqual(template_sha256(written), self.baseline["template_sha256"])
         self.assertEqual(written["spec"]["containers"][1], self.baseline["pod_template"]["spec"]["containers"][1])
-        for call in self.reader.call_args_list:
+        for call in self.reader.call_args_list + self.certificate_reader.call_args_list:
             self.assertEqual(call.kwargs["kubeconfig"], self.directory / "reader.kubeconfig")
+        # P5.06: the identity Secret is never read; its Certificate is.
+        self.assertTrue(self.certificate_reader.call_args_list)
+        for call in self.reader.call_args_list:
+            self.assertNotIn("Secret", {item["kind"] for item in call.args[1]})
+        for call in self.certificate_reader.call_args_list:
+            self.assertEqual(call.args[1], ["security-upstream"])
+
+    def test_a_renewed_certificate_still_restores_with_one_write(self):
+        # Rotation is not a changed reference: a new revision and serial, the same Certificate and spec.
+        self.live_certificate.update(revision=4, not_before="2026-10-10T11:50:00Z", not_after="2026-10-10T13:50:00Z")
+        result = self.run_execute()
+        self.assertEqual(result["status"], "APPLIED", result)
+        self.assertEqual(len(self.cluster.writes), 1)
+
+    def test_an_identity_that_cannot_serve_escalates_and_writes_nothing(self):
+        cases = (
+            ({"not_after": "2026-10-10T12:20:00Z"}, "SECURITY_IDENTITY_EXPIRING"),
+            ({"not_after": "2026-10-10T11:59:00Z"}, "SECURITY_IDENTITY_EXPIRING"),
+            ({"ready": "False"}, "SECURITY_IDENTITY_NOT_READY"),
+            ({"dns_names": ["wrong.internal"]}, "SECURITY_IDENTITY_SPEC"),
+            ({"issuer": {"group": "cert-manager.io", "kind": "ClusterIssuer", "name": "sentinel-untrusted-ca"}},
+             "SECURITY_IDENTITY_SPEC"),
+        )
+        for change, code in cases:
+            with self.subTest(code=code, change=change):
+                self.setUp()
+                self.live_certificate.update(change)
+                result = self.run_execute()
+                self.assertEqual(result["status"], "FAILED")
+                self.assertIn(code, result["details"])
+                self.assertEqual(self.cluster.write_attempts, [])
+
+    def test_a_replaced_certificate_is_a_changed_reference(self):
+        self.live_certificate.update(uid="other-uid")
+        result = self.run_execute()
+        self.assertEqual(result["status"], "FAILED")
+        self.assertIn("BASELINE_REFERENCE_CHANGED", result["details"])
+        self.assertEqual(self.cluster.write_attempts, [])
 
     def test_an_extra_container_or_another_envoy_digest_writes_nothing(self):
         for change in (
@@ -312,11 +395,13 @@ class ProtectedRollbackTests(unittest.TestCase):
         self.reader.assert_not_called()
 
 
-def security_run(folder, *, passed=True, verifier=True, cluster=protected.CLUSTER):
+def security_run(folder, *, passed=True, verifier=True, cluster=protected.CLUSTER, issuer="cert-manager"):
     run = Path(folder) / "security-run"
     run.mkdir()
-    (run / "session.json").write_text(json.dumps({"cluster": cluster, "namespace": NAMESPACE,
-                                                  "context": "kind-" + cluster}), encoding="utf-8")
+    session = {"cluster": cluster, "namespace": NAMESPACE, "context": "kind-" + cluster}
+    if issuer:
+        session["certificates"] = {"issuer": issuer, "version": "v1.18.2", "profile": "lab", "ca": "ca-1"}
+    (run / "session.json").write_text(json.dumps(session), encoding="utf-8")
     validation = {"passed": passed}
     if verifier:
         validation["verifier_identity_quote"] = {"succeeded": True}
@@ -330,9 +415,23 @@ class PreflightTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.folder = Path(temporary.name)
         self.lock = lab_lock.HeavyLabLock(self.folder / "lock", holder="test")
+        # Resolved cert-manager pins; the committed pins.json still carries TODO-PIN (tested below).
+        resolved = self.folder / "pins.json"
+        resolved.write_text(json.dumps(resolved_pins()), encoding="utf-8")
+        patch.object(protected.cert_lifecycle, "PINS", resolved).start()
+        self.addCleanup(patch.stopall)
 
     def test_a_ready_lab_passes(self):
         self.assertEqual(preflight(security_run(self.folder), stage="baseline", lock=self.lock), [])
+
+    def test_unresolved_cert_manager_pins_or_a_lab_without_cert_manager_refuse(self):
+        patch.stopall()
+        problems = preflight(security_run(self.folder), stage="baseline", lock=self.lock)
+        self.assertTrue(any("pins.json still has an unresolved TODO-PIN" in problem for problem in problems), problems)
+        folder = self.folder / "old"
+        folder.mkdir()
+        problems = preflight(security_run(folder, issuer=None), stage="baseline", lock=self.lock)
+        self.assertTrue(any("predates cert-manager identities" in problem for problem in problems), problems)
 
     def test_each_missing_precondition_refuses(self):
         cases = (
@@ -488,13 +587,16 @@ class ProtectedExperimentTests(unittest.TestCase):
         self.experiment.baseline = {"pod_template": template}
         deployment_state = {"metadata": {"name": "shippingservice"}, "spec": {"template": template}}
         with patch.object(ProtectedBoutiqueExperiment, "deployment", return_value=deployment_state), \
-                patch.object(protected, "read_reference_versions", return_value=["versions"]) as read:
+                patch.object(protected, "read_reference_versions", return_value=["versions"]) as read, \
+                patch.object(protected, "read_certificate_status", return_value=["status"]) as status:
             state = self.experiment.guard_state({"action": "ROLLBACK"})
-        self.assertEqual(state["reference_versions"], ["versions"])
-        self.assertEqual(read.call_args.kwargs["kubeconfig"], self.experiment.reader_credentials)
-        self.assertEqual(read.call_args.kwargs["context"], "sentinel-guard-reader-boutique-security")
-        self.assertEqual(sorted(item["kind"] for item in read.call_args.args[1]),
-                         ["ConfigMap", "ConfigMap", "Secret", "Secret"])
+        self.assertEqual((state["reference_versions"], state["certificates"]), (["versions"], ["status"]))
+        for call in (read.call_args, status.call_args):
+            self.assertEqual(call.kwargs["kubeconfig"], self.experiment.reader_credentials)
+            self.assertEqual(call.kwargs["context"], "sentinel-guard-reader-boutique-security")
+        # P5.06: the reader reads the ConfigMaps of both templates and the Certificate, never the Secret.
+        self.assertEqual(sorted(item["kind"] for item in read.call_args.args[1]), ["ConfigMap"] * 4)
+        self.assertEqual(status.call_args.args[1], ["security-upstream"])
 
     def test_preparation_refuses_before_any_cluster_command_when_preflight_fails(self):
         (self.experiment.security_run / "validation.json").write_text(json.dumps({"passed": False}), encoding="utf-8")
@@ -595,7 +697,7 @@ class ProtectedExperimentTests(unittest.TestCase):
         """The Executor's and the reader's can-i answers as the reviewed RBAC would give them."""
         experiment = self.experiment
         expected = {(row["identity"], row["verb"], row["resource"]): row["allowed"] for row in rbac_matrix(
-            NAMESPACE, experiment.executor_names(), reviewed_references())}
+            NAMESPACE, experiment.executor_names(), reviewed_references(), identities=reviewed_identities())}
 
         def kubectl(*arguments, **kwargs):
             if arguments[:2] == ("auth", "can-i"):

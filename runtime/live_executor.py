@@ -16,7 +16,8 @@ not the proposal's target refuses execution. --image-scans DIR (and optionally
 that gate escalates. --reference-kubeconfig PATH (P5.05) is the separate
 Guard-reader identity for ConfigMap and Secret versions; the Executor's own
 kubeconfig never reads them, so a template with references escalates without
-it. With --fence-after SECONDS it may send one
+it. A Secret that the policy's certificate_identities name (P5.06) is never
+read: the same reader reads its cert-manager Certificate status instead. With --fence-after SECONDS it may send one
 metadata-only fence for a write still in doubt after that long (0 fences at
 once). --transport rest (P5.08) reads and writes the Deployment over HTTPS
 instead of kubectl; kubectl stays the default. Exit codes: 0 APPLIED/NOOP, 2 FAILED, 3 CONFLICT,
@@ -37,7 +38,7 @@ from services.executor.store import (
     ActionConflict, LocalTargetCoordinator, SQLiteExecutionLedger, TargetBusy, target_key,
 )
 from services.guard.core import GuardInputError, assert_decision_usable, evaluate
-from services.guard.adapters import AdapterError, load_json, read_reference_versions
+from services.guard.adapters import AdapterError, load_json, read_certificate_status, read_reference_versions
 from services.guard.decisions import validate_policy
 from services.guard.eligibility import referenced_objects
 from services.guard.preview import server_dry_run as collect_server_preview
@@ -118,8 +119,9 @@ class LiveGuardAuthorizer:
         }
         baseline = inputs["baseline"]
         snapshot = inputs["live_state"]
-        if policy.get("baseline_constraints", {}).get("require_compatible_references"):
-            self._attach_reference_versions(snapshot, baseline, proposal)
+        if (policy.get("baseline_constraints", {}).get("require_compatible_references")
+                or "certificate_identities" in policy.get("security_constraints", {})):
+            self._attach_reference_versions(snapshot, baseline, proposal, policy)
         if "image_vulnerability_gate" in policy.get("security_constraints", {}):
             self._attach_image_scans(snapshot, baseline)
         decision = evaluate(**inputs, now=self.clock())
@@ -134,22 +136,32 @@ class LiveGuardAuthorizer:
             decision = evaluate(**inputs, now=self.clock())
         return GuardCheck(decision=decision, baseline=baseline, inputs=inputs)
 
-    def _attach_reference_versions(self, snapshot, baseline, proposal):
-        """Add reference_versions for both templates, read with the Guard-reader identity only.
+    def _attach_reference_versions(self, snapshot, baseline, proposal, policy=None):
+        """Add reference_versions (and certificates) for both templates, read with the Guard-reader identity only.
 
         A template with no ConfigMap or Secret references needs no read and no
         reader. With references but no reader, the versions stay absent, so the
         Guard reports BASELINE_REFERENCE_EVIDENCE_MISSING (UNKNOWN, ESCALATE):
         the Executor's own kubeconfig is never used for these reads (#69).
+        P5.06: a Secret named by the policy's certificate_identities is not
+        read at all; its Certificate's status goes into certificates instead,
+        read by the same reader. Values already in the snapshot are dropped,
+        never trusted.
         """
         snapshot.pop("reference_versions", None)
+        snapshot.pop("certificates", None)
+        managed = {entry["secret"]: entry["certificate"] for entry in
+                   (policy or {}).get("security_constraints", {}).get("certificate_identities", [])}
         references = []
         templates = [baseline.get("pod_template", {}) if isinstance(baseline, dict) else {},
                      snapshot["deployment"].get("spec", {}).get("template", {})]
         for template in templates:
             selected, _findings = referenced_objects(template, proposal["target"]["namespace"])
             references.extend(selected)
-        if not references:
+        certificates = sorted({managed[item["name"]] for item in references
+                               if item["kind"] == "Secret" and item["name"] in managed})
+        references = [item for item in references if not (item["kind"] == "Secret" and item["name"] in managed)]
+        if not references and not certificates:
             snapshot["reference_versions"] = []
             return
         if self.reference_kubeconfig is None:
@@ -159,7 +171,12 @@ class LiveGuardAuthorizer:
         snapshot["reference_versions"] = read_reference_versions(
             proposal["target"], references, context=self.reference_context,
             cluster_id=self.cluster_id, kubeconfig=self.reference_kubeconfig,
-        )
+        ) if references else []
+        if certificates:
+            snapshot["certificates"] = read_certificate_status(
+                proposal["target"], certificates, context=self.reference_context,
+                cluster_id=self.cluster_id, kubeconfig=self.reference_kubeconfig,
+            )
 
     def _attach_image_scans(self, snapshot, baseline):
         """Add image_scans for every container and initContainer image of the candidate and current templates.

@@ -9,7 +9,8 @@ import sys
 import tempfile
 
 from services.guard.core import evaluate_with_report
-from services.guard.adapters import AdapterError, load_json, read_deployment, read_reference_versions
+from services.guard.adapters import (AdapterError, load_json, read_certificate_status, read_deployment,
+                                     read_reference_versions)
 from services.guard.decisions import validate_policy
 from services.guard.eligibility import referenced_objects
 from services.guard.preview import _private_file, _same_deployment, server_dry_run
@@ -172,15 +173,26 @@ def main(argv: list[str] | None = None) -> int:
                 and _same_deployment(live_state.get("deployment"), proposal["target"],
                                      proposal["based_on_resource_version"])
             )
-            if matching_live and policy.get("baseline_constraints", {}).get("require_compatible_references", False):
+            managed = {entry["secret"]: entry["certificate"] for entry in
+                       policy.get("security_constraints", {}).get("certificate_identities", [])}
+            if matching_live and (policy.get("baseline_constraints", {}).get("require_compatible_references", False)
+                                  or managed):
                 template = baseline.get("pod_template") if isinstance(baseline, dict) else None
                 refs, _findings = referenced_objects(template, proposal["target"]["namespace"])
+                # P5.06: a Secret owned by a reviewed Certificate is never read; its Certificate status is.
+                certificates = sorted({managed[ref["name"]] for ref in refs
+                                       if ref["kind"] == "Secret" and ref["name"] in managed})
+                refs = [ref for ref in refs if not (ref["kind"] == "Secret" and ref["name"] in managed)]
                 # Unsupported/malformed references are independently rediscovered
                 # by the pure evaluator; an empty list never overrides findings.
                 live_state["reference_versions"] = read_reference_versions(
                     proposal["target"], refs, context=args.context,
                     cluster_id=args.cluster_id, kubeconfig=args.kubeconfig,
                 ) if refs else []
+                if certificates:
+                    live_state["certificates"] = read_certificate_status(
+                        proposal["target"], certificates, context=args.context,
+                        cluster_id=args.cluster_id, kubeconfig=args.kubeconfig)
             if matching_live and args.image_scans is not None:
                 live_state["image_scans"] = _image_scans(args, baseline, live_state)
         else:

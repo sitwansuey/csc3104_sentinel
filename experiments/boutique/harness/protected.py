@@ -9,14 +9,16 @@ Guard, Executor and Verifier as the connected lab, with three changes:
   sidecar only (services/guard/eligibility.py allowed_sidecars), its digest,
   its exact ConfigMap and Secret mounts, and the registries of Boutique and
   Envoy only.
-- The identity that reads the referenced ConfigMap and Secret versions is a
-  separate ServiceAccount, sentinel-guard-reader, with get on exactly those
-  names (deploy/sentinel/guard-reader-rbac.yaml). The Executor keeps get and
-  patch on its named Deployments only and never reads a Secret (#69). The
-  reader can still read the key bytes of the Secrets it names: that residual
-  risk is short-lived (a one-hour token; the run deletes the reader's
-  ServiceAccount, Role and RoleBinding at the end, which revokes it) and is
-  removed by P5.06, which reads cert-manager Certificate status instead.
+- The identity that reads the referenced ConfigMap versions is a separate
+  ServiceAccount, sentinel-guard-reader, with get on exactly those names
+  (deploy/sentinel/guard-reader-rbac.yaml). The Executor keeps get and patch
+  on its named Deployments only and never reads a Secret (#69). Since P5.06
+  the reader reads no Secret either: the sidecar's identity Secret belongs to
+  a cert-manager Certificate, and the reader gets that Certificate (Ready,
+  notBefore, notAfter, revision, issuer and DNS names), which holds no key
+  material. The Guard escalates an identity that is not Ready, expiring or
+  not the reviewed one (certificate_identities). The token lasts one hour and
+  the run deletes the reader's ServiceAccount, Role and RoleBinding at its end.
 - The Verifier's health probe is authenticated: its Pod presents the
   sentinel-verifier-client certificate to the gateway, whose SAN allowlist
   admits it, and NetworkPolicy lets it reach the gateway's route ports only.
@@ -41,10 +43,11 @@ from experiments.boutique.harness import targets
 from experiments.boutique.harness.connected import APPLICATIONS, ConnectedBoutiqueExperiment, command
 from experiments.boutique.harness.scenarios import CatalogError, load
 from experiments.recovery.live import require, save, utc
+from scripts.security import cert_lifecycle
 from scripts.security.boutique_security_manifest import (ENVOY_RESOURCES, GATEWAY, NAMESPACE, VERIFIER_IDENTITY,
                                                          reviewed_sidecars, verifier_probe_pod)
 from scripts.security.security_lab import CLIENT, ENVOY
-from services.guard.adapters import read_reference_versions
+from services.guard.adapters import read_certificate_status, read_reference_versions
 from services.guard.common import quantity
 from services.guard.eligibility import referenced_objects
 from services.guard.preview import _private_file
@@ -66,11 +69,13 @@ _NAME = re.compile(r"[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?")
 _DIGEST = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._:/-]*@sha256:[0-9a-f]{64}")
 
 
-def guard_reader_rbac(namespace, references):
-    """The Guard-reader ServiceAccount, Role and RoleBinding: get on exactly these ConfigMaps and Secrets.
+def guard_reader_rbac(namespace, references, certificates=()):
+    """The Guard-reader ServiceAccount, Role and RoleBinding: get on exactly these objects.
 
-    references are referenced_objects() identities of the protected baseline
-    template. No list or watch, no other resource and no other name: kubectl
+    references are the ConfigMap and Secret identities the reader must read
+    itself (reader_scope() leaves out every Secret that a reviewed Certificate
+    owns) and certificates the names of those cert-manager Certificates
+    (P5.06). No list or watch, no other resource and no other name: kubectl
     auth can-i get secrets (without a name) is no.
     """
     if not isinstance(namespace, str) or not _NAME.fullmatch(namespace):
@@ -81,20 +86,23 @@ def guard_reader_rbac(namespace, references):
                 or reference["namespace"] != namespace or not _NAME.fullmatch(reference["name"])):
             raise ValueError("The Guard reader reads only named ConfigMaps and Secrets in its namespace")
         names[reference["kind"]].add(reference["name"])
-    if not any(names.values()):
+    certificates = sorted(set(certificates))
+    if any(not isinstance(name, str) or not _NAME.fullmatch(name) for name in certificates):
+        raise ValueError("The Guard reader reads only named Certificates in its namespace")
+    if not any(names.values()) and not certificates:
         raise ValueError("A template without references needs no Guard reader")
     rules = "".join(
-        f"  - apiGroups: [\"\"]\n    resources: [\"{resource}\"]\n    resourceNames: {json.dumps(sorted(values))}\n"
+        f"  - apiGroups: [\"{group}\"]\n    resources: [\"{resource}\"]\n    resourceNames: {json.dumps(sorted(values))}\n"
         "    verbs: [\"get\"]\n"
-        for resource, values in (("configmaps", names["ConfigMap"]), ("secrets", names["Secret"])) if values)
+        for group, resource, values in (("", "configmaps", names["ConfigMap"]), ("", "secrets", names["Secret"]),
+                                        ("cert-manager.io", "certificates", certificates)) if values)
     return (
-        "# Generated by experiments/boutique/harness/protected.py guard_reader_rbac (P5.05).\n"
-        "# The Guard's reference reader: get on exactly the ConfigMaps and Secrets that the\n"
-        "# protected template references, so the Executor never needs to read a Secret (#69).\n"
-        "# Residual risk: this identity can read the named Secrets' key bytes. It is used\n"
-        "# only by the Guard's metadata reads, with a one-hour token; the run deletes these\n"
-        "# objects at its end, which revokes the token (protected.py delete_reader_rbac).\n"
-        "# P5.06 replaces these Secret reads with cert-manager Certificate status reads.\n"
+        "# Generated by experiments/boutique/harness/protected.py guard_reader_rbac (P5.05, P5.06).\n"
+        "# The Guard's reference reader: get on exactly the ConfigMaps that the protected\n"
+        "# template references and the cert-manager Certificates that own its Secrets, so\n"
+        "# neither the Executor (#69) nor this reader reads a Secret or its key; a\n"
+        "# Certificate holds no key material. The token lasts one hour; the run deletes\n"
+        "# these objects at its end, which revokes it (protected.py delete_reader_rbac).\n"
         "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n"
         f"  name: {GUARD_READER}\n  namespace: {namespace}\nautomountServiceAccountToken: false\n---\n"
         "apiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata:\n"
@@ -113,29 +121,42 @@ def template_references(template, namespace):
     return references
 
 
-def rbac_matrix(namespace, executor_names, references, *, other_secret="security-gateway"):
+def rbac_matrix(namespace, executor_names, references, *, identities=(), other_secret="security-gateway"):
     """The expected kubectl auth can-i answers for the Executor and the Guard reader.
 
     Rows are (identity, verb, resource, expected). The Executor gets and
     patches its Deployments and reads nothing else, Secrets least of all; the
     reader gets exactly its named ConfigMaps and Secrets and nothing else.
+    P5.06: identities are the Guard's certificate_identities. A Secret that one
+    of them owns is read by neither identity; the reader gets that
+    Certificate instead, and nothing else of cert-manager's.
     """
+    owned = {entry["secret"]: entry["certificate"] for entry in identities}
     secrets = sorted(item["name"] for item in references if item["kind"] == "Secret")
+    readable = [name for name in secrets if name not in owned]
+    certificates = sorted(owned[name] for name in secrets if name in owned)
     configs = sorted(item["name"] for item in references if item["kind"] == "ConfigMap")
     if other_secret in secrets:
         raise ValueError("The out-of-scope Secret must be one the reader may not read")
+    certificate = "certificates.cert-manager.io/"
     rows = [("executor", verb, "deployment/" + name, True) for name in sorted(executor_names) for verb in ("get", "patch")]
     rows += [("executor", "get", "secrets", False), ("executor", "list", "secrets", False),
              *(("executor", "get", "secret/" + name, False) for name in secrets),
              *(("executor", "get", "configmap/" + name, False) for name in configs),
+             *(("executor", "get", certificate + name, False) for name in certificates),
              ("executor", "delete", "deployment/" + sorted(executor_names)[0], False),
              ("executor", "patch", "deployment/paymentservice", False), ("executor", "create", "pods/exec", False)]
-    rows += [*(("reader", "get", "secret/" + name, True) for name in secrets),
+    patched = (("secret/" + readable[0]) if readable else ("configmap/" + configs[0]) if configs
+               else certificate + certificates[0])
+    rows += [*(("reader", "get", "secret/" + name, name not in owned) for name in secrets),
              *(("reader", "get", "configmap/" + name, True) for name in configs),
+             *(("reader", "get", certificate + name, True) for name in certificates),
              ("reader", "get", "secret/" + other_secret, False), ("reader", "get", "secrets", False),
              ("reader", "list", "secrets", False), ("reader", "watch", "secrets", False),
-             ("reader", "list", "configmaps", False), ("reader", "patch", "secret/" + secrets[0], False)
-             if secrets else ("reader", "patch", "configmap/" + configs[0], False),
+             ("reader", "list", "configmaps", False), ("reader", "patch", patched, False),
+             *((("reader", "list", "certificates.cert-manager.io", False),
+                ("reader", "patch", certificate + certificates[0], False),
+                ("reader", "get", "certificaterequests.cert-manager.io", False)) if certificates else ()),
              *(("reader", verb, "deployment/" + name, False) for name in sorted(executor_names) for verb in ("get", "patch")),
              ("reader", "create", "pods", False)]
     return [{"identity": identity, "verb": verb, "resource": resource, "allowed": allowed}
@@ -168,9 +189,32 @@ def protected_ceilings(ceilings):
 
 
 def protected_policy_constraints(executor_names):
-    """The Guard's security_constraints additions for the protected template (allowed_sidecars, registries)."""
-    return {"allowed_image_registries": list(PROTECTED_REGISTRIES),
-            "allowed_sidecars": [entry for entry in reviewed_sidecars(ENVOY) if entry["target"] in executor_names]}
+    """The Guard's security_constraints additions for the protected template.
+
+    allowed_sidecars and registries (P5.05), and certificate_identities
+    (P5.06): the cert-manager identity behind every Secret a reviewed sidecar
+    mounts, so the Guard escalates when it is not Ready, expiring or not the
+    reviewed identity.
+    """
+    sidecars = [entry for entry in reviewed_sidecars(ENVOY) if entry["target"] in executor_names]
+    return {"allowed_image_registries": list(PROTECTED_REGISTRIES), "allowed_sidecars": sidecars,
+            "certificate_identities": reviewed_identities(sidecars)}
+
+
+def reviewed_identities(sidecars=None):
+    """The Guard's certificate_identities for the Secrets that the reviewed sidecars mount (P5.06)."""
+    sidecars = reviewed_sidecars(ENVOY) if sidecars is None else sidecars
+    names = sorted({mount["source"]["name"][len("security-"):] for entry in sidecars for mount in entry["mounts"]
+                    if mount["source"]["kind"] == "Secret" and mount["source"]["name"].startswith("security-")})
+    return cert_lifecycle.guard_identities(names)
+
+
+def reader_scope(references, identities):
+    """(references the reader reads itself, Certificates it reads instead of their Secrets) for one template."""
+    owned = {entry["secret"]: entry["certificate"] for entry in identities}
+    own = [item for item in references if not (item["kind"] == "Secret" and item["name"] in owned)]
+    return own, sorted({owned[item["name"]] for item in references
+                        if item["kind"] == "Secret" and item["name"] in owned})
 
 
 def preflight(security_run, *, stage, catalog=None, lock=None):
@@ -189,6 +233,11 @@ def preflight(security_run, *, stage, catalog=None, lock=None):
         if "TODO-PIN" in path.read_text(encoding="utf-8"):
             problems.append(path.name + " still has an unresolved TODO-PIN")
     try:
+        if cert_lifecycle.unresolved_pins(cert_lifecycle.load_pins(cert_lifecycle.PINS)):
+            problems.append("deploy/cert-manager/pins.json still has an unresolved TODO-PIN (cert_lifecycle.py pins)")
+    except (OSError, ValueError, AttributeError, TypeError):
+        problems.append("deploy/cert-manager/pins.json cannot be read")
+    try:
         scope = (catalog or load())["scopes"][PROTECTED_SCOPE]
         if (scope["cluster_id"], scope["context"], scope["namespace"]) != (CLUSTER, CONTEXT, NAMESPACE):
             problems.append("the catalog's protected scope is not the security lab")
@@ -197,7 +246,7 @@ def preflight(security_run, *, stage, catalog=None, lock=None):
     except (KeyError, CatalogError):
         problems.append("the catalog has no protected scope")
     try:
-        expected = guard_reader_rbac(NAMESPACE, reviewed_references())
+        expected = guard_reader_rbac(NAMESPACE, *reader_scope(reviewed_references(), reviewed_identities()))
         if GUARD_READER_RBAC.read_text(encoding="utf-8").replace("\r\n", "\n") != expected:
             problems.append("deploy/sentinel/guard-reader-rbac.yaml differs from the reviewed protected template")
     except (OSError, ValueError) as error:
@@ -218,6 +267,8 @@ def preflight(security_run, *, stage, catalog=None, lock=None):
                 problems.append("the security lab's own validation has not passed")
             if not (validation.get("verifier_identity_quote") or {}).get("succeeded"):
                 problems.append("the security lab predates the Verifier identity; restart it with this revision")
+            if (session.get("certificates") or {}).get("issuer") != "cert-manager":
+                problems.append("the security lab predates cert-manager identities (P5.06); restart it with this revision")
     try:
         (lock or lab_lock.HeavyLabLock(holder="P5.05 protected recovery")).check()
     except lab_lock.LabLockError as error:
@@ -359,17 +410,29 @@ class ProtectedBoutiqueExperiment(ConnectedBoutiqueExperiment):
             _private_file(path)
             json.dump(private, stream)
 
-    def read_references(self, template, current=None):
-        """Reference versions of one or two templates, read with the Guard reader only."""
+    def reader_scope(self, template, current=None):
+        """(ConfigMap and Secret references, Certificate names) the reader reads for one or two templates."""
         references = template_references(template, self.namespace)
         if current is not None:
             references += template_references(current, self.namespace)
+        return reader_scope(references, reviewed_identities())
+
+    def read_references(self, template, current=None):
+        """Reference versions of one or two templates, read with the Guard reader only; never an owned Secret."""
+        references, _ = self.reader_scope(template, current)
         return read_reference_versions(self.target, references, context=self.reader_context,
+                                       cluster_id=self.cluster_id, kubeconfig=self.reader_credentials)
+
+    def read_certificates(self, template, current=None):
+        """The status of the Certificates behind those templates' identity Secrets, read with the Guard reader (P5.06)."""
+        _, certificates = self.reader_scope(template, current)
+        return read_certificate_status(self.target, certificates, context=self.reader_context,
                                        cluster_id=self.cluster_id, kubeconfig=self.reader_credentials)
 
     def measured_baseline(self, template, samples):
         baseline = super().measured_baseline(template, samples)
         baseline["reference_versions"] = self.read_references(template)
+        baseline["certificates"] = self.read_certificates(template)
         return baseline
 
     def executor_policy(self):
@@ -382,6 +445,8 @@ class ProtectedBoutiqueExperiment(ConnectedBoutiqueExperiment):
         state = super().guard_state(proposal)
         state["reference_versions"] = self.read_references(self.baseline["pod_template"],
                                                            state["deployment"]["spec"]["template"])
+        state["certificates"] = self.read_certificates(self.baseline["pod_template"],
+                                                       state["deployment"]["spec"]["template"])
         return state
 
     def reader_inputs(self):
@@ -407,7 +472,7 @@ class ProtectedBoutiqueExperiment(ConnectedBoutiqueExperiment):
         """The Executor's base can-i checks, then the full Executor and Guard-reader matrix."""
         super().permissions()
         references = template_references(self.baseline["pod_template"], self.namespace)
-        rows = rbac_matrix(self.namespace, self.executor_names(), references)
+        rows = rbac_matrix(self.namespace, self.executor_names(), references, identities=reviewed_identities())
         results = []
         for row in rows:
             restricted = self.credentials if row["identity"] == "executor" else self.reader_credentials
@@ -418,7 +483,7 @@ class ProtectedBoutiqueExperiment(ConnectedBoutiqueExperiment):
                     f"RBAC can-i for {row['identity']} {row['verb']} {row['resource']} was {answer or 'unknown'}")
             results.append(row)
         save(self.directory / "protected-rbac-checks.json", results)
-        self.check("Executor and Guard-reader RBAC can-i matrix: no Executor Secret read; reader gets only its names",
+        self.check("Executor and Guard-reader RBAC can-i matrix: no Secret read by either; reader gets only its names",
                    rows=len(results))
         self.bypass_checks("before")
 

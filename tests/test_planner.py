@@ -117,3 +117,65 @@ class MetricOnlyTests(unittest.TestCase):
         self.assertEqual([item['id'] for item in retrieve_runbooks(self.incident)], ['failed-rollout'])
         content = retrieve_runbooks(self.metric_only)[-1]['content']
         self.assertIn('Do not roll back or restart on a usage alert alone', content)
+
+
+def certificate_signal(evidence_id='E-TLS-1'):
+    return {'evidence_id': evidence_id, 'source': 'container_log', 'reason': 'CertificateRejected',
+            'detail': 'pod/shipping-ingress: TLS_error:|CERTIFICATE_VERIFY_FAILED:TLS_error_end',
+            'at': '2026-10-10T12:00:30Z'}
+
+
+class IdentityFailureTests(unittest.TestCase):
+    """P5.06: a CertificateRejected signal is escalated by a code rule; no provider can turn it into a repair."""
+
+    def setUp(self):
+        self.incident = json.loads((ROOT / 'data/sentinel/samples/messages/incident.json').read_text())
+        self.baseline = json.loads((ROOT / 'data/sentinel/samples/baseline.json').read_text())
+        # A rollout failure and a refused certificate together: the identity still decides.
+        self.rejected = dict(self.incident, signals=[*self.incident['signals'], certificate_signal()])
+
+    def test_certificate_rejected_escalates_and_never_reaches_a_provider(self):
+        from services.planner.core import IDENTITY_FAILURE_RATIONALE, certificate_rejected
+        self.assertTrue(certificate_rejected(self.rejected))
+        for action in ('ROLLBACK', 'RESTART', 'SCALE'):
+            def provider(context, action=action):
+                self.fail('A certificate failure must not reach a provider asking for ' + action)
+            for live_template in (None, deepcopy(self.baseline['pod_template'])):
+                with self.subTest(action=action, live_template=live_template is not None):
+                    result = propose(self.rejected, [self.baseline], retrieve_runbooks, provider,
+                                     live_template=live_template)
+                    validate_message(result)
+                    self.assertEqual((result['action'], result['parameters'], result['rationale']),
+                                     ('ESCALATE', {}, IDENTITY_FAILURE_RATIONALE))
+                    self.assertEqual(result['evidence_refs'],
+                                     [signal['evidence_id'] for signal in self.rejected['signals']])
+
+    def test_certificate_rejected_escalates_in_agent_mode_too(self):
+        diagnosis = {'incident_id': self.rejected['incident_id'],
+                     'prediction': {'1': {'root cause component': 'demo-api',
+                                          'root cause reason': 'faulty configuration rollout'}}}
+        result = propose(self.rejected, [self.baseline], lambda query: self.fail('no retrieval'),
+                         lambda context: {'action': 'ROLLBACK', 'parameters': {}, 'rationale': 'model'},
+                         diagnosis=diagnosis)
+        self.assertEqual(result['action'], 'ESCALATE')
+
+    def test_without_the_signal_the_same_incident_is_a_rollback(self):
+        # The control: the rule, not the evidence around it, made the difference.
+        from services.planner.core import certificate_rejected
+        self.assertFalse(certificate_rejected(self.incident))
+        self.assertEqual(propose(self.incident, [self.baseline], retrieve_runbooks, mock_provider)['action'], 'ROLLBACK')
+        other = dict(self.incident, signals=[*self.incident['signals'],
+                                             dict(certificate_signal(), reason='ContainerLog')])
+        self.assertEqual(propose(other, [self.baseline], retrieve_runbooks, mock_provider)['action'], 'ROLLBACK')
+
+    def test_the_identity_failure_runbook_is_retrieved_and_forbids_a_rollback(self):
+        ids = [item['id'] for item in retrieve_runbooks(self.rejected)]
+        self.assertEqual(ids, ['failed-rollout', 'identity-failure'])
+        content = retrieve_runbooks(self.rejected)[-1]['content']
+        self.assertIn('never propose a rollback or a restart for this signal', content)
+
+    def test_the_evaluation_counts_the_identity_rule_as_a_rule_decision(self):
+        from experiments.boutique.harness import scenarios
+        from services.planner.core import IDENTITY_FAILURE_RATIONALE
+        proposal = {'action': 'ESCALATE', 'parameters': {}, 'rationale': IDENTITY_FAILURE_RATIONALE}
+        self.assertEqual(scenarios.decision_source(proposal, None, incident=self.rejected), 'rule')

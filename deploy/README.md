@@ -23,6 +23,7 @@ acceptance run passed yet ([distributed acceptance](../docs/distributed-acceptan
 | `docker/` | Sentinel component, worker, security inspector and packaged-demo Dockerfiles; repository-root build context |
 | `workloads/` | Small demo workload Kubernetes manifests |
 | `chaos-mesh/` | Pinned lab installation values; see `docs/chaos.md` |
+| `cert-manager/` | The security lab's cert-manager pins (chart version, chart SHA-256, image digests; P5.06). Unresolved values are `TODO-PIN` and the lab refuses to start until `python scripts/security/cert_lifecycle.py pins --check` passes; see `docs/security.md` |
 
 Workload Dockerfiles remain alongside their application sources in `experiments/workloads/`. The Verifier lab uses the repository root as its build context and installs its own SDK requirements:
 
@@ -35,9 +36,10 @@ The small `experiments/workloads/demo/` and `experiments/workloads/otel/` applic
 ## Guard reader (P5.05)
 
 `sentinel/guard-reader-rbac.yaml` is the protected security lab's Guard-reader
-identity: get on exactly the ConfigMap and Secret that the protected
-shippingservice template references, so the Executor's Role never needs to
-read a Secret (#69). It is generated, not hand-written:
+identity: get on exactly the ConfigMaps that the protected shippingservice
+template references and, since P5.06, the cert-manager Certificate that owns
+its Secret, so neither the Executor's Role (#69) nor the reader reads a
+Secret. It is generated, not hand-written:
 `python scripts/security/protected_recovery.py rbac --check` fails when it no
 longer matches the reviewed template. The protected harness applies it; it has
 not been applied to a live cluster yet. See

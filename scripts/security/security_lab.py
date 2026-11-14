@@ -39,6 +39,12 @@ ROUTES = {
 # the inspector's default inflight bound (runtime/security_inspector.py). A
 # call over this bound fails ext_authz, which answers 503 (a denial).
 INSPECTOR_CONNECTIONS = 32
+# P5.06: every Envoy reads its configuration and SDS files from CONFIG_DIR,
+# each identity's key pair from /pki/<identity> and the trusted CAs from
+# TRUST_DIR (a public bundle that holds the old and new CA during a rollover).
+CONFIG_DIR = "/config"
+TRUST_DIR = "/trust"
+TRUST_SDS = "trust-bundle"
 
 
 def run(args, *, timeout=300, required=True):
@@ -54,14 +60,80 @@ def save(path, data):
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
+def sds_source(name):
+    """P5.06: an SDS subscription to one file in the Envoy's own configuration directory.
+
+    The file names only paths, never key material. watched_directory (not the
+    file itself) is watched, because the kubelet updates a ConfigMap or
+    Secret volume by swapping a symlinked directory, which a file watch misses.
+    """
+    return {"path_config_source": {"path": f"{CONFIG_DIR}/sds-{name}.json",
+                                   "watched_directory": {"path": CONFIG_DIR}},
+            "resource_api_version": "V3"}
+
+
+def sds_resource(name):
+    """The one SDS Secret resource behind sds_source(name): an identity's key pair or the trust bundle.
+
+    Envoy rereads the files when their mounted directory changes, so a
+    certificate renewed by cert-manager (or a trust bundle edited for a CA
+    rollover) is served without restarting Envoy. The identity directory is a
+    whole Secret volume mounted without subPath: the kubelet never updates a
+    subPath mount.
+    """
+    if name == TRUST_SDS:
+        secret = {"validation_context": {"trusted_ca": {"filename": TRUST_DIR + "/ca.crt"},
+                                         "watched_directory": {"path": TRUST_DIR}}}
+    elif name.endswith("-cert"):
+        identity = name[:-len("-cert")]
+        secret = {"tls_certificate": {"certificate_chain": {"filename": f"/pki/{identity}/tls.crt"},
+                                      "private_key": {"filename": f"/pki/{identity}/tls.key"},
+                                      "watched_directory": {"path": f"/pki/{identity}"}}}
+    else:
+        raise ValueError("Unknown SDS resource")
+    return {"resources": [{"@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret",
+                           "name": name, **secret}]}
+
+
+def sds_names(config):
+    """The SDS resource names an Envoy configuration subscribes to, sorted."""
+    names = set()
+
+    def walk(value):
+        if isinstance(value, dict):
+            for item in value.get("tls_certificate_sds_secret_configs", []):
+                names.add(item["name"])
+            if "validation_context_sds_secret_config" in value:
+                names.add(value["validation_context_sds_secret_config"]["name"])
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+    walk(config)
+    return sorted(names)
+
+
+def config_files(config):
+    """Every file of one Envoy's configuration directory: envoy.json and its SDS resources (no keys)."""
+    files = {"envoy.json": json.dumps(config)}
+    files.update({f"sds-{name}.json": json.dumps(sds_resource(name)) for name in sds_names(config)})
+    return files
+
+
 def tls_context(identity, *, client=False, server_name=None):
+    # P5.06: the key pair and the trusted CAs come from file-based SDS, so they
+    # rotate without a restart. The SAN matchers stay here, in the reviewed
+    # static configuration, never in a file that a rotation could replace.
     common = {"tls_params": {"tls_minimum_protocol_version": "TLSv1_2"},
-              "tls_certificates": [{"certificate_chain": {"filename": f"/pki/{identity}/tls.crt"},
-                                    "private_key": {"filename": f"/pki/{identity}/tls.key"}}],
-              "validation_context": {"trusted_ca": {"filename": f"/pki/{identity}/ca.crt"}},
+              "tls_certificate_sds_secret_configs": [{"name": identity + "-cert",
+                                                      "sds_config": sds_source(identity + "-cert")}],
+              "combined_validation_context": {
+                  "default_validation_context": {},
+                  "validation_context_sds_secret_config": {"name": TRUST_SDS, "sds_config": sds_source(TRUST_SDS)}},
               "alpn_protocols": ["h2"]}
     if client:
-        common["validation_context"]["match_typed_subject_alt_names"] = [
+        common["combined_validation_context"]["default_validation_context"]["match_typed_subject_alt_names"] = [
             {"san_type": "DNS", "matcher": {"exact": server_name}}]
         return {"@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext",
                 "sni": server_name, "common_tls_context": common}
@@ -131,7 +203,12 @@ def envoy_config(*, upstream=False, route="shipping"):
                "access_log": [{"name": "envoy.access_loggers.stdout", "typed_config": {
                    "@type": "type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog",
                    "log_format": {"json_format": {"route": "%ROUTE_NAME%", "status": "%RESPONSE_CODE%",
-                       "grpc_status": "%GRPC_STATUS%", "flags": "%RESPONSE_FLAGS%", "duration_ms": "%DURATION%"}}}}]}
+                       "grpc_status": "%GRPC_STATUS%", "flags": "%RESPONSE_FLAGS%", "duration_ms": "%DURATION%",
+                       # P5.06: the caller certificate's serial shows a rotated client key in use
+                       # without a restart; a refused upstream certificate is logged with its TLS
+                       # reason, which the Observer reads as CertificateRejected.
+                       "peer_serial": "%DOWNSTREAM_PEER_SERIAL%",
+                       "upstream_tls": "%UPSTREAM_TRANSPORT_FAILURE_REASON%"}}}}]}
     return {"static_resources": {"listeners": [{"name": name, "address": {"socket_address": {
         "address": "0.0.0.0", "port_value": port}}, "filter_chains": [{
             "transport_socket": {"name": "envoy.transport_sockets.tls", "typed_config": tls_context(identity)},
@@ -170,6 +247,10 @@ def certificates(directory, *, extra_clients=()):
         folder.chmod(0o755)
         for file in folder.iterdir():
             file.chmod(0o444)
+    # The public trust bundle every Envoy reads through SDS (TRUST_DIR).
+    trust = directory / "trust"
+    trust.mkdir(mode=0o755)
+    shutil.copyfile(ca / "ca.crt", trust / "ca.crt")
     (ca / "ca.key").chmod(0o600)
 
 
@@ -197,7 +278,11 @@ def prepare(directory, port):
     images["inspector"] = json.loads(run(["docker", "image", "inspect", INSPECTOR]).stdout)[0]["Id"]
     save(directory / "images.json", images)
     for side in ("gateway", "upstream"):
-        save(directory / f"{side}.json", envoy_config(upstream=side == "upstream"))
+        # P5.06: envoy.json and its SDS files, which name key paths only.
+        folder = directory / (side + "-config")
+        folder.mkdir()
+        for name, text in config_files(envoy_config(upstream=side == "upstream")).items():
+            (folder / name).write_text(text + "\n", encoding="utf-8")
     data = directory / "data"
     data.mkdir()
     if os.name != "nt":
@@ -212,9 +297,10 @@ def prepare(directory, port):
     services = {}
     for side in ("gateway", "upstream"):
         services[side] = {**base, "image": images["envoy"], "user": "10001:10001", "entrypoint": ["envoy"],
-                          "command": ["-c", f"/etc/envoy/{side}.json", "--concurrency", "2", "--log-level", "warn"],
+                          "command": ["-c", CONFIG_DIR + "/envoy.json", "--concurrency", "2", "--log-level", "warn"],
                           "networks": ["front", "backend"] if side == "gateway" else ["backend"],
-                          "volumes": [mount(directory / f"{side}.json", f"/etc/envoy/{side}.json"),
+                          "volumes": [mount(directory / (side + "-config"), CONFIG_DIR),
+                                      mount(directory / "trust", TRUST_DIR),
                                       mount(directory / side, f"/pki/{side}")]}
     services["gateway"]["volumes"].append(mount(directory / "proxy-client", "/pki/proxy-client"))
     services["gateway"]["ports"] = [f"127.0.0.1:{port}:8443"]
