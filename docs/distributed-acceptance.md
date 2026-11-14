@@ -183,7 +183,7 @@ and a sample of each Chaos Mesh object, offline.
 | S5 | fault point `coordinator.after_commit_before_reply` (exit), then `kubectl delete pod` of the Coordinator | S5 | RECOVERED, exactly 1 write, Coordinator RTO to Ready measured |
 | S6 | NetworkChaos partition between the Coordinator and every worker for three leases, approval given meanwhile | S6 | 0 writes during the partition, every incident terminal after it |
 | S7 | TimeChaos -300 s on both Executors | S7 | FAILED, none RECOVERED, 0 writes |
-| S8 | fault point `executor.before_patch`, revoke the approval, then 8 s NetworkChaos delay on the holder's API traffic | S8 | not RECOVERED, 0 template writes, a seal (fence) from the other Executor's Pod, then a PATCH from the holder's Pod refused with 409 or 422, and no change to the target after the seal |
+| S8 | fault point `executor.before_submit` (after the adapter's pre-read, before its PATCH), revoke the approval, wait for the seal, release the holder | S8 | not RECOVERED, 0 template writes, a seal by the other Executor (its fence in the audit log, or the Coordinator's records of a seal past V0 with nothing to send), then a PATCH from the holder's Pod refused by the API server with 409 or 422, and no change to the target after the seal |
 | S9 | the Executor reads a Secret, patches another Deployment, opens pods/exec and changes `spec.replicas`; the Guard patches the target; the Planner and an Executor open TCP connections they must not | design S9 | every probe as expected (each request denied or timed out, the Verifier's allowed control open), 0 writes |
 
 The Expected column is checked, not just printed: each is a predicate over
@@ -195,10 +195,14 @@ pass with the incident FAILED and no write, or S8 pass without any seal. A
 write here is a Sentinel template write in the audit log. S2 and S8 tell the
 two Executors apart by the Pod name the API server binds into each token
 (both use the `sentinel-executor` ServiceAccount), so without that audit
-field they fail rather than pass. In S8 the seal is an annotation change,
-which raises the Deployment's generation, so "no change after the seal"
-means the target's generation before the operator's restore equals the
-generation the seal stored.
+field they fail rather than pass. In S8 a seal that fences is an annotation
+change, which raises the Deployment's generation, so "no change after the
+seal" means the target's generation before the operator's restore equals
+the generation the seal stored; a seal that sent nothing (the target was
+already past V0) leaves it at the generation last stored before the seal.
+How the seal was proven is the run's `seal_path` (`fenced` or
+`advanced_without_evidence`); see
+[S8 at 7ce9863](#s8-at-7ce9863-deploy-14-05-safe-but-the-stale-patch-never-reached-the-api-server).
 
 S2 here is the stall of the file-mode catalogue, done with `docker pause` of
 the holder's node, which is the A6 design's S3; S3 here is the network
@@ -880,8 +884,8 @@ selects Pods only in `sentinel-dist`, by their `app` label, which is the
 Deployment's name and its Pod template's label in the manifests and on the
 live Pods. `sentinel-dist` carries `chaos-mesh.org/inject=enabled`;
 `sentinel-dist-workload` does not, and no chaos aims at it, so that is
-right (S8's delay reaches the API server by `externalTargets`, an address,
-not a Pod selector). The harness makes no StressChaos (`chaos` refuses it);
+right (S8's delay, until 14 Nov 2026, reached the API server by
+`externalTargets`, an address, not a Pod selector; S8 now injects no chaos). The harness makes no StressChaos (`chaos` refuses it);
 `teardown` and the leftover check still look for one.
 
 To confirm live, not assumed: that Chaos Mesh 2.8.2 records both ends of a
@@ -899,7 +903,7 @@ limit.
 Tests: `tests/test_kind_chaos_confirmation.py`, with a fake cluster whose
 Chaos Mesh selects after half its delay and injects after all of it, as the
 live controller does. For each fault kind (pod-kill in S1a, pod-failure in
-S1b and S1c, partition in S3, S4 and S6, delay in S8, TimeChaos in S7,
+S1b and S1c, partition in S3, S4 and S6, delay in S8 (since removed), TimeChaos in S7,
 `docker pause` in S2): the scenario goes on only once the fault is in
 effect, and a fault that never takes effect stops the run with a harness
 error and leaves nothing behind. Also: a fault that ended before its
@@ -1396,6 +1400,140 @@ wait's error, and a wait that raises over a good restore raises as before.
 At 0b5529f 16 of these 17 tests fail; the one that passes is that last
 regression check. Not yet re-run live; the S7 r4 target
 must be restored by hand or the lab torn down before the next run.
+
+### S8 at 7ce9863 (deploy 14): 0/5, safe, but the stale PATCH never reached the API server
+
+On 14 Nov 2026 S8 ran live for the first time, five times, on
+`kind-sentinel-dist` from deploy 14 at 7ce9863 (run directory
+`sentinel-dist-20261114T164045`). 0 of 5 passed. All five held their
+invariants (5/5), none had a Sentinel template write, and no harness error
+was raised. Every incident ended FAILED on the Coordinator's
+`fence_result` from the other Executor, about 1.6 to 4 s after the
+revocation. Each run's `records.json` has the `executor.seal` outbox event,
+its receipt naming the sealing Executor, and the VALIDATING to FAILED
+transition caused by `fence_result`; that Executor's log has
+`executor.seal.sealed` with its basis and fence epoch.
+
+All five failed the expectation, in two ways:
+
+- r1 and r2: the seal's basis was ADVANCED_WITHOUT_EVIDENCE. `demo-api`
+  was crash-looping (`STARTUP_FAILURE=true`), so the Deployment
+  controller's status writes had moved its resourceVersion after the plan.
+  The seal therefore sent nothing (`services/executor/core.py::seal`,
+  `reconciliation.py` R5), and the expectation reported "no seal or fence
+  from the other Executor's Pod in the audit log".
+- r3 to r5: the seal's basis was FENCED. The fence PATCH from the other
+  Executor's Pod is in the audit log with 200. The expectation reported "no
+  PATCH from the holder's Pod refused (409 or 422) after the seal".
+
+In all five the holder, once released from `executor.before_patch`, sent
+no PATCH at all: the audit log has no request from its Pod other than
+reads. That point is in front of the live adapter's `conditional_restore`,
+and the adapter reads the Deployment first. The read saw the moved
+resourceVersion and raised `ConditionalWriteConflict` with nothing sent.
+The holder's result was then refused (`worker.status` released, reason
+`lease_not_current`). The 8 s NetworkChaos delay only delayed that read.
+
+So the runs were safe, but they did not test what S8 is for. The earlier
+layers stopped the holder: the adapter's pre-read and the lease check. The
+design's claim (A4) is that a fence or a resourceVersion move defeats a
+stale holder's PATCH that is already past its own read. That race was not
+exercised, and as built S8 could never show the API server refusing a
+stale PATCH.
+
+What changed:
+
+- **A new fault point, `executor.before_submit`** (`runtime/fault_points.py`).
+  It is reached inside `KubectlDeploymentAPI.conditional_restore`, after
+  the pre-read and the local UID/resourceVersion check have passed and
+  before the PATCH is sent. The adapter has an optional `before_submit`
+  hook, `None` by default, and only the lab's `CheckpointCluster` sets it,
+  so `services/` still does not import `runtime`. The hook uses the same
+  gate as every other point: it does nothing unless a bound lab fault run
+  armed it, and production never enables it. The adapter's safety logic is
+  unchanged: the pre-read, both test operations and no retry of a mutating
+  request. A fence never reaches the hook.
+- **S8 holds the holder at the new point** (`kind_acceptance_live.py::s8`).
+  It revokes the approval, waits for a seal newer than earlier runs', and
+  then releases the holder. The holder's PATCH then goes out with the
+  version it read, and only the API server's test can refuse it. The run
+  then waits up to 60 s for that PATCH in the audit log and records it in
+  `notes.holder_patch`. If the PATCH never shows, the expectation fails the
+  run; it is not reported as a harness error.
+- **The 8 s NetworkChaos delay is gone.** In the A4 design it was there to
+  make the stale PATCH reach the API server after the seal. The hold now
+  does that by itself, because the holder is released only after the seal
+  is recorded. The delay would also slow every packet to the API server,
+  connection setup included. A request near kubectl's 10 s timeout could
+  then end as an unknown outcome instead of the API server's answer, which
+  is the answer S8 needs. One moving part fewer is also one harness failure
+  fewer. `delay_to_api_server` stays as a builder, and `plan` still shows
+  its sample, but no scenario uses it.
+- **The expectation accepts either proof of the seal by the other
+  Executor** (`kind_acceptance.py::s8_seal`). The proof is recorded as
+  `seal_path` and `seal` in the summary:
+  - `fenced`: a Sentinel fence on the target from that Executor's Pod in
+    the audit log.
+  - `advanced_without_evidence`: the Coordinator's records. These are an
+    accepted `fence_result` SEALED for the run's action, produced by that
+    Executor (the message's authenticated producer), at a resourceVersion
+    that is not the proposal's V0; the `executor.seal` delivery for that
+    action, owned by the same Executor and finished with a result; and the
+    action's move to FAILED caused by that very message (its event key).
+    The records now carry these accepted seal answers (`seals`, from
+    `invariants.collect`, scoped to the run's actions). The seal's time is
+    the Coordinator's time of that move; the API server shares its clock,
+    since the nodes are containers on one Docker host.
+
+  Then the expectation requires a PATCH from the holder's Pod after the
+  seal that the API server refused with 409 or 422. It also requires no
+  template write, not RECOVERED, and no change to the target's generation
+  after the seal. A run fails when the holder wrote anything to the
+  target, when no seal by the other Executor is proven, when the holder
+  sealed (a fence from its Pod, or an accepted `fence_result` it produced),
+  or when the holder sent no PATCH after the seal. That last message says
+  the stale-PATCH race was not exercised. The invariants are unchanged.
+
+Tests (offline, with fakes):
+
+- `tests/test_fault_points.py`: the point is registered, and the adapter's
+  hook is unset until the lab proxy sets it. Armed but with the gate off,
+  it is inert, and the restore commits. A restore held there has already
+  read. While it is held, the target moves, either by a status write (a
+  seal that sends nothing) or by the other Executor's real fence. Released,
+  the restore still sends one PATCH with the old resourceVersion test.
+  The simulated API server (`tests/support/sim_apiserver.py`) refuses it
+  and commits nothing; the adapter raises `WriteOutcomeUnknown` and does
+  not retry. A restore whose pre-read already sees the move never reaches
+  the point: this is the 7ce9863 holder's path.
+- `tests/test_k8s_executor_adapter.py`: the hook runs after one read and
+  before the patch, which still carries both tests. A local mismatch and a
+  fence never reach it.
+- `tests/test_kind_acceptance.py`: the S8 table. These pass: the fenced
+  path with the holder's 422, and the records path with the holder's 409
+  or 422. These fail: no proof of a seal, including each part of the
+  records proof missing or wrong (APPLIED, UNSEALED, still at V0, another
+  producer, no delivery, another owner, unfinished, no result, FAILED for
+  another cause); a holder that sent no PATCH after the seal (on either
+  path, refused only before the seal, or only reading); a holder whose
+  PATCH wrote with 200, or was refused with 403 or failed with 500; a seal
+  by the holder itself (its fence, or its accepted `fence_result`); a
+  generation changed after the seal; RECOVERED; and no holder recorded.
+  Also: the run's records carry each accepted seal answer with its
+  producer and V0, and an earlier run's seal is scoped out.
+- `tests/test_kind_chaos_confirmation.py`: S8 holds at
+  `executor.before_submit` and is still held when the approval is
+  revoked. It creates no chaos, releases the holder once and records its
+  PATCH. A PATCH that never shows is left to the expectation. `run_one`
+  writes `seal_path` for S8 and none for other scenarios.
+
+Against 7ce9863's product code, 23 of these tests fail or error. The
+expectation tests error because `expectation` there takes no records; the
+others fail on the missing point, the missing hook or the old S8. Two
+guard tests pass both before and after: the gate-off case and the
+pre-read-conflict case. Not yet re-run live: the new point is in the
+worker image, so the image needs a rebuild and a redeploy before S8 runs
+again.
 
 ## Results
 
