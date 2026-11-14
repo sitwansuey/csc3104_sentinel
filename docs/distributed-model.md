@@ -290,19 +290,23 @@ with `store_changed`, and made zero claims after detection.
 | 15 r2 / `restore-a5f219178576` | FAIL (harness) | 122 | 36.365 / 42.158 | executor-a, planner-1, verifier-1 cleared; harness wait stalled | Not reached |
 | 16 r1 / `restore-cf0b0acc0582` | PASS | 61 | 46.566 / 49.076 | executor-b, verifier-1, planner-1, guard-1, executor-a; replayed incident RECOVERED | RECOVERED |
 | 16 r2 / `restore-2932721b4c66` | FAIL (review required) | 113 | 38.003 / 40.165 | executor-a, planner-1, verifier-1, guard-1 cleared; four results still under review | Not reached |
+| 17 r1 / `restore-e5cf86880cc0` | FAIL (harness) | 120 | 38.453 / 42.587 | executor-b, planner-1, verifier-1, guard-1 cleared; one action approved again; a Guard result never resent | Not reached |
 
 - Smoke: the harness waited for executor-b to have no missing result, although the staged replay had returned and an unrelated review item remained; timed out at 120 s and left workers stopped. Fixed e9707ae: wait for the staged results and re-check later replays, including those of an already cleared worker.
 - Deploy 15 r2: two Verifier dependency results shared the harness's key; one returned, but the other kept the wait open while a Guard result became replayable. The 120 s wait timed out and the lab did not settle. Fixed 7244e41: include accepted generation/commit in the key and allow review-only items 60 s to become replays.
 
-- Deploy 16 r2 at 7244e41: after staged replays, four acknowledged results remained under review (Guard, Executor and two Verifier results) when the 60 s wait expired. The drill stopped for manual review and the lab did not settle; no fix is recorded in the supplied sources.
+- Deploy 16 r2 at 7244e41: every result of a later action, its approval included, had been acknowledged after the backup. Replays re-ran its proposal and first Guard pass, then it waited for an approval the restore had dropped, so its other results stayed under review past the 60 s wait. Fixed 8bad459: replay staging approves again, as the operator resuming the lab, any action waiting for approval, and lists those approvals.
+- Deploy 17 r1 at 8bad459: the action was approved again, but the Guard's acknowledged result for its second pass was never resent. After a new approval the Guard answers a new request with a new result, so the lost result is redone rather than replayed, and the restore check keeps listing the old one as missing. Not fixed: the drill would have to treat a result superseded by new work as recovered, which needs an owner decision on what "recovered" means after a restore.
 
-At the 14 Nov 2026, 12:39:40 UTC source snapshot, deploys 15 and 16 each
-have two finished restore summaries; neither has a third. The operator notes report an offline full test suite overlapping
-deploy 16's later drills; host CPU load is a possible timing confound.
-The failed attempts demonstrate detection, not successful replay or
-fresh-incident recovery. Staged acceptance remains
-an operator procedure; the restore check's exit 1 lists rollback/lost
-results and is not by itself a failed drill.
+Across the six restore attempts the part P4.02 asks for held every time:
+every worker logged the rollback, answered readyz 503 with `store_changed`
+and made no claim after it; between 61 and 122 Coordinator commits were
+lost; and the restore check exited 1 with the replay and review listing.
+Automatic staged acceptance through to a fresh RECOVERED incident completed
+in two of the six (deploy 15 r1, deploy 16 r1). Staged acceptance therefore
+stays an operator procedure ([remote workers](remote-workers.md)); the drill
+automates it only partly. An offline full test suite overlapped deploy 16's
+later drills, so host CPU load is a possible timing confound for those.
 
 ## Time and ordering
 
@@ -1040,7 +1044,7 @@ four nodes are containers on one Docker host, not separate machines.
 | P3.05 | Done: an admission policy limiting which fields the Executor identity may change, with a monotonic fence epoch (`deploy/sentinel/executor-admission.yaml`), checked structurally offline and run live once in a disposable namespace (`scripts/validation/test_executor_admission_live.py`, 24 of 24 probes as expected, including a seal from a fresh store denied by a higher stored epoch; `C-ADMISSION-POLICY-LIVE`). P4.01 installs it in sentinel-dist-workload, where S9 passed 5/5. Left: installing it in the Boutique lab namespaces; the owners' choice between seeding a store's epoch from the annotation and fencing by resourceVersion only; and their sign-off on the choices listed in `L-EXECUTOR-FIELD-LIMITS` (no epoch required on a template change, the identity matched in any namespace, a malformed stored epoch failing closed, evidence changeable without a template change, no resourceNames on the binding) |
 | P3.06 | Done in code; measured in file mode and the four-node kind lab on one host ([P4.02](#measured-on-the-four-node-kind-lab-p402)) |
 | P4.01 | S0-S9 ran on four kind nodes on one Docker host: 71/80 completed runs passed as recorded, all 80 passed invariants; failures and fixes are [above](#four-node-kind-acceptance-p401). Unscored; owners' review for #59, #61 and #63 remains |
-| P4.02 | Measured on the four-node kind lab, one Docker host: restart S5 x5 and partition 120 s x3 plus smoke passed; restore smoke failed, deploy 15 passed 1/2 (both failures harness issues, fixed e9707ae and 7244e41). Deploy 16 passed 1/2; r2 stopped with unresolved review items (no recorded fix). Neither deploy has a third finished restore summary. Unscored; owner sign-off pending ([measurements](#measured-on-the-four-node-kind-lab-p402)) |
+| P4.02 | Measured on the four-node kind lab, one Docker host: restart S5 x5 and partition 120 s x3 plus smoke passed; restore detection and the restore-check listing held in 6/6 attempts (RPO 61-122 lost commits); automatic staged acceptance to a fresh RECOVERED incident completed in 2/6, each failure a harness staging gap (three fixed: e9707ae, 7244e41, 8bad459; one documented). Unscored; owner sign-off pending ([measurements](#measured-on-the-four-node-kind-lab-p402)) |
 | P5.01 | A replicated Coordinator on a replicated database |
 
 P1.10 (the decision table, peer adoption and SUPERSEDED) and P1.07 (structured
