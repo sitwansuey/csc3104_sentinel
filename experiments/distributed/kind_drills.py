@@ -413,6 +413,9 @@ def run_check(lab, scratch, journals, previous, steps, *, restored=None):
     return recorded
 
 
+REVIEW_WAIT_SECONDS = 60  # How long review-only items may take to become replays after the last replay returned.
+
+
 def check_replays(lab, scratch, journals, previous, initial, steps, report):
     """Clear a replay holder, verify its results are back, then reconsider review items.
 
@@ -436,7 +439,21 @@ def check_replays(lab, scratch, journals, previous, initial, steps, report):
             return
         staged = {replay_key(journal, item) for journal in checked["report"]["journals"]
                   for item in journal["missing"] if item["redrive"] == "replay"}
-        if not staged or any(identity not in WORKERS for identity, *_ in staged):
+        if not staged:
+            # A returned replay can take the Coordinator a moment to ask for the next result in the chain:
+            # give review items a bounded chance to turn into replays (or be made up) before manual review.
+            def moved():
+                current = run_check(lab, scratch, journals, previous, steps)
+                report["rechecks"].append(current)
+                items = [item for journal in current["report"]["journals"] for item in journal["missing"]]
+                return current if not items or any(item["redrive"] == "replay" for item in items) else None
+            try:
+                checked = steps.call("wait for review items to become replays", lab.wait, moved, REVIEW_WAIT_SECONDS,
+                                     "Restore check review items did not become replays", interval=2)
+            except TimeoutError:
+                raise ka.AcceptanceError("Restore check has unresolved review items; workers require manual review")                     from None
+            continue
+        if any(identity not in WORKERS for identity, *_ in staged):
             raise ka.AcceptanceError("Restore check has unresolved review items; workers require manual review")
         # A worker already cleared resends its saved result by itself when it claims; only new holders are cleared.
         for identity in sorted({identity for identity, *_ in staged} - cleared):
@@ -457,8 +474,13 @@ def check_replays(lab, scratch, journals, previous, initial, steps, report):
 
 
 def replay_key(journal, item):
-    """One acknowledged result in a restore check: the worker, the result kind, its action and topic."""
-    return (Path(journal["journal"]).parent.name, item.get("kind"), item.get("action_id"), item.get("topic"))
+    """One acknowledged result in a restore check.
+
+    A worker can hold several results of one kind for one action and topic (a Verifier's two
+    dependency_result answers), so the commit and store generation that acknowledged it tell them apart.
+    """
+    return (Path(journal["journal"]).parent.name, item.get("kind"), item.get("action_id"), item.get("topic"),
+            item.get("accepted_generation"), item.get("accepted_commit"))
 
 
 def detection(lab, since, restored_at, backup, steps, report, *, timeout=120, offset_seconds=0):

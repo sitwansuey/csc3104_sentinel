@@ -604,6 +604,55 @@ class RestoreTests(DirectoryTest):
         self.assertEqual(lab.cleared.count("executor-b"), 1)
         self.assertEqual(sorted(lab.cleared), sorted(drills.WORKERS))
 
+    def test_one_of_two_like_results_returning_ends_the_wait(self):
+        # Live (14 Nov 2026, deploy 15 restore 2): verifier-1 held two dependency_result items for one action and
+        # topic. Its replayed one came back, but the other, under the same (worker, kind, action, topic), kept the
+        # wait open while guard-1's result, which the Coordinator needed first, had become a replay.
+        def report(items):
+            journals = [{"journal": identity + "/transport.db", "acknowledged": 2, "unsent": 0,
+                         "missing": [{"kind": kind, "action_id": "ACT-2", "topic": topic, "redrive": redrive,
+                                      "accepted_generation": "gen", "accepted_commit": commit}
+                                     for who, kind, topic, commit, redrive in items if who == identity]}
+                        for identity in drills.WORKERS]
+            return {"report": {"journals": journals}, "exit_code": 1}
+        first = ("verifier-1", "dependency_result", "dependency.request", 3079)
+        second = ("verifier-1", "dependency_result", "dependency.request", 3102)
+        guard = ("guard-1", "guard_result", "guard.request", 3050)
+        lab = RestoreLab(self.directory)
+
+        def recheck(*args, **kwargs):
+            if "guard-1" in lab.cleared:
+                return report([])
+            return report([second + ("review",), guard + ("replay",)])
+        steps_report = {}
+        with unittest.mock.patch.object(drills, "run_check", side_effect=recheck):
+            drills.check_replays(lab, self.directory, [], {"generation": "gen", "commit_counter": 100},
+                                 report([first + ("replay",), second + ("review",), guard + ("review",)]),
+                                 drills.Steps(lab, steps_report), steps_report)
+        self.assertEqual(lab.cleared[:2], ["verifier-1", "guard-1"])
+        self.assertEqual(sorted(lab.cleared), sorted(drills.WORKERS))
+
+    def test_review_items_get_a_bounded_chance_to_become_replays(self):
+        def report(redrive):
+            journals = [{"journal": identity + "/transport.db", "acknowledged": 2, "unsent": 0,
+                         "missing": [{"kind": "proposal", "action_id": "ACT-2", "topic": "planner.request",
+                                      "redrive": redrive, "accepted_generation": "gen", "accepted_commit": 1}]
+                         if identity == "planner-1" else []} for identity in drills.WORKERS]
+            return {"report": {"journals": journals}, "exit_code": 1}
+        lab = RestoreLab(self.directory)
+        sequence = iter([report("review"), report("replay"), report("replay"), report("review")])
+
+        def recheck(*args, **kwargs):
+            if "planner-1" in lab.cleared:
+                return {"report": {"journals": [{"journal": i + "/transport.db", "missing": []}
+                                                for i in drills.WORKERS]}, "exit_code": 0}
+            return next(sequence)
+        steps_report = {}
+        with unittest.mock.patch.object(drills, "run_check", side_effect=recheck):
+            drills.check_replays(lab, self.directory, [], {"generation": "gen", "commit_counter": 100},
+                                 report("review"), drills.Steps(lab, steps_report), steps_report)
+        self.assertEqual(lab.cleared[0], "planner-1")
+
     def test_a_replay_that_never_returns_still_times_out_without_clearing_peers(self):
         lab = RestoreLab(self.directory)
         stuck = {"report": check_report(verifier_missing=False), "exit_code": 1}
@@ -618,10 +667,12 @@ class RestoreTests(DirectoryTest):
         lab = RestoreLab(self.directory)
         checked = {"report": check_report(executor_missing=False), "exit_code": 1}
         report = {}
-        with self.assertRaisesRegex(ka.AcceptanceError, "manual review"):
+        # Review items that never turn into replays, however often the store is read again.
+        with unittest.mock.patch.object(drills, "run_check", return_value=checked),                 self.assertRaisesRegex(ka.AcceptanceError, "manual review"):
             drills.check_replays(lab, self.directory, [], {"generation": "gen", "commit_counter": 100},
                                  checked, drills.Steps(lab, report), report)
         self.assertEqual(lab.cleared, [])
+        self.assertGreaterEqual(lab.now, drills.REVIEW_WAIT_SECONDS)
 
     def test_detection_failure_still_runs_check_but_never_accepts(self):
         lab = RestoreLab(self.directory, detect=False)
