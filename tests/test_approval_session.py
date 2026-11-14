@@ -548,6 +548,23 @@ class HarnessApprovalTests(unittest.TestCase):
         reader = build.call_args.kwargs["approval_reader"]
         self.assertEqual((type(reader), reader.identity), (ApprovalClient, LAB_EXECUTOR))
 
+    def test_the_crash_worker_reads_the_cve_gate_inputs_the_run_has(self):
+        # Live (14 Nov 2026, connected lab, C1 with --image-scans): the worker's Executor had no scans, its Guard
+        # re-check failed closed, and it never reached its post-write boundary.
+        from experiments.recovery import live
+        experiment = self.make()
+        config = experiment.directory / "worker.json"
+        scans, exceptions = experiment.directory / "scans", experiment.directory / "cve-exceptions.json"
+        for gate, expected in (({}, (None, None)),
+                               ({"image_scans": str(scans), "cve_exceptions": str(exceptions)}, (scans, exceptions))):
+            config.write_text(json.dumps({"directory": str(experiment.directory), "folder": str(experiment.directory),
+                                          "credentials": "unused", **gate}), encoding="utf-8")
+            with self.subTest(gate=bool(gate)), patch.object(live, "executor_client_from_environment"),                     patch.object(live, "build_adapters", side_effect=RuntimeError("stop before Kubernetes")) as build:
+                with self.assertRaisesRegex(RuntimeError, "stop before Kubernetes"):
+                    live.crash_worker(config)
+                self.assertEqual((build.call_args.kwargs["image_scans"], build.call_args.kwargs["cve_exceptions"]),
+                                 expected)
+
     def test_crash_restart_passes_the_executor_token_only_through_the_worker_environment(self):
         from experiments.recovery import live
         experiment = self.make()

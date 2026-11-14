@@ -578,7 +578,12 @@ class Experiment:
         configuration = {"directory": str(self.directory), "folder": str(folder), "credentials": str(self.credentials),
                          "cluster_id": self.cluster_id, "context": self.restricted_context,
                          **{key: str(path) for key, path in self.baseline_inputs().items()
-                            if key == "baselines" and path is not None}}
+                            if key == "baselines" and path is not None},
+                         # The CVE gate's inputs (P5.02): without them the worker's own Guard re-check of a run whose
+                         # policy has the gate on has no scans, fails closed and never reaches its write.
+                         **{key: str(path) for key, path in (("image_scans", self.image_scans),
+                                                             ("cve_exceptions", self.cve_exceptions))
+                            if path is not None}}
         save(folder / "worker.json", configuration)
         # The Executor token reaches the worker only through its environment, never argv or worker.json.
         worker = subprocess.run([sys.executable, str(self.entrypoint), "--crash-worker", str(folder / "worker.json")],
@@ -669,7 +674,9 @@ def crash_worker(configuration):
         policy=Path(config.get("policy", directory / "policy.json")), dependencies=folder / "dependencies.json",
         **({"baselines": config["baselines"]} if "baselines" in config else
            {"baseline": directory / "baseline.json"}),
-        approval_reader=executor_client_from_environment(), server_dry_run=True)
+        approval_reader=executor_client_from_environment(), server_dry_run=True,
+        image_scans=Path(config["image_scans"]) if "image_scans" in config else None,
+        cve_exceptions=Path(config["cve_exceptions"]) if "cve_exceptions" in config else None)
     actual = adapters.cluster
 
     class CrashAfterWrite:
