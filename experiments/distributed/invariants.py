@@ -302,6 +302,9 @@ def collect(topology, *, terminal_in_time, cluster_writes=None):
         "message_digests": [digest(json.loads(row["payload"]))
                             for row in _rows(coordinator, "SELECT payload FROM messages")],
         "revocations": [json.loads(row["record"]) for row in _rows(coordinator, "SELECT record FROM approval_revocations")],
+        # Approval identities only: S8 distinguishes a later approved action from the revoked action.
+        "approvals": _rows(coordinator, "SELECT id AS approval_id, action_id FROM approvals"),
+        "managed_approvals": _rows(coordinator, "SELECT approval_id FROM managed_approvals"),
         # Every accepted seal answer (fence_result) with who sent it and the version its action was planned on.
         "seals": [seal(row) for row in _rows(coordinator, "SELECT m.seq, m.event_key, m.producer, m.payload, a.proposal "
                                              "FROM messages m LEFT JOIN actions a ON a.action_id = m.action_id "
