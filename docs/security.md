@@ -636,6 +636,18 @@ FAILED or MISSING). `--scan-queue` writes the running digests, those needing a
 scan first, in the format `watch_security.py --inventory` reads; `--journal`
 raises the dashboard's `SCAN_STALE` alert for each digest that is not FRESH.
 
+An index mismatch stays UNKNOWN unless `--platform-indexes <file>` supplies
+recorded registry proof. The JSON format is
+`{"schema":"sentinel-platform-indexes-v1","indexes":[{"image":"repository@sha256:<index>","index_file":"relative/index.json"}]}`.
+Save each index's exact bytes with `docker buildx imagetools inspect <image> --raw`
+(without adding a newline). The inventory verifies the bytes against the image
+digest and reads Nodes with the same read-only GET. Both spec and Pod references
+must select the same manifest in the same repository for that Pod's node OS and
+architecture. Missing proof, unknown nodes and ambiguous platform variants stay
+UNKNOWN. The inventory retains the spec reference for scanning and admission and
+records the platform manifest evidence in `platform_resolution`. Saved
+`--from-json` snapshots must include the Nodes when using this option.
+
 ### Live recipe (not run)
 
 Run on `kind-sentinel-boutique-connected` only, with the connected lab up and
