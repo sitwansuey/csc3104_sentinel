@@ -177,7 +177,7 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-PROTECTED-RECOVERY-OFFLINE](docs/limitations.md#l-protected-recovery-offline): Guarded recovery on the protected template is tested offline only (limitation, open; planned P5.05, P5.06)
 - [L-UNGATED-CVES](docs/limitations.md#l-ungated-cves): Workload image CVEs are gated only in offline tests; no live run uses the CVE gate (limitation, open; planned P5.02, P5.03)
 - [L-NO-RELEASE](docs/limitations.md#l-no-release): No tagged, scanned release image (limitation, open; planned P2.09, P2.10)
-- [L-LAB-CERTS](docs/limitations.md#l-lab-certs): Security lab certificate rotation with cert-manager is code only; its pins are unresolved and nothing has run live (limitation, open; planned P5.06)
+- [L-LAB-CERTS](docs/limitations.md#l-lab-certs): Security lab certificate rotation with cert-manager is code only; its pins are lab-resolved and nothing has run live (limitation, open; planned P5.06)
 - [L-RESTORE-DETECTION](docs/limitations.md#l-restore-detection): A Coordinator restored from a backup is detected, but lost acknowledged results are re-driven by hand (limitation, mitigated; planned P4.02)
 - [L-HOST-LOCAL-EXECUTOR](docs/limitations.md#l-host-local-executor): The Executor ledger and target locks are host-local (limitation, mitigated; planned P3.04, P4.01)
 - [L-NO-FENCING](docs/limitations.md#l-no-fencing): Abandoned or revoked Executor writes are fenced only by a seal, run live on one Docker host (limitation, mitigated; planned P3.04, P3.05, P4.01)
