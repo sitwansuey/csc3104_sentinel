@@ -978,13 +978,20 @@ What changed (offline, `experiments/distributed/kind_acceptance.py` and
   still failing, the wait ends in `ReadUnavailable`, a harness error naming
   the read, its attempts and its last class, not in "not reached in time",
   which would be the system's answer. A single read outside a wait (a
-  strict query before a run, a database copy, a Pod's name for its logs, a
-  fault point, an S9 probe's exec, the proposal read before S6's approval
-  and S8's revocation) is asked again for up to `READ_RETRY_SECONDS`
-  (180 s, a replaced Pod's Ready time). Each run of failed reads is kept in
-  the summary's `read_outages` (what, since, attempts, last class, seconds,
-  whether it recovered). `Lab.settle` reads once per pass, as before, and a
-  failed read keeps the lab unsettled.
+  strict query before a run, a database copy, a Pod's name for its logs,
+  an S9 probe's exec, the proposal read before S6's approval and S8's
+  revocation) is asked again for up to `READ_RETRY_SECONDS` (180 s, a
+  replaced Pod's Ready time). Whether a fault point was reached is read in
+  `first_reached`'s wait, bounded by that step's timeout; arming,
+  disarming and releasing one are not asked again. Only the wait's own
+  expiry, before a single attempt ran, makes `Lab.read` a
+  `ReadUnavailable`: any other error from the attempt is raised as it is,
+  so an approval or revocation POST that timed out after it was sent ends
+  the run as `TimeoutError`, not as a read that never happened. Each run of
+  failed reads is kept in the summary's `read_outages` (what, since,
+  attempts, last class, seconds, whether it recovered), also when the Pod
+  answered and the attempt then failed some other way. `Lab.settle` reads
+  once per pass, as before, and a failed read keeps the lab unsettled.
 - **The operator thread outlives every failure** (`_operator`). Each failed
   attempt is caught, logged by class (`dist_acceptance.operator.failed`,
   class only) and tried again on the next tick. The summary's `operator`
@@ -1008,10 +1015,12 @@ What changed (offline, `experiments/distributed/kind_acceptance.py` and
   container's restart count.
 - **S6, S8 and S9 were checked for the same pattern.** S6 partitions the
   Coordinator from the workers only; the harness reads it through kubectl
-  exec and approves over the port-forward, which the partition does not
-  cut, so S6 is expected to read normally, and a failed read is ridden out
-  like any other. Only the reads before S6's approval and S8's revocation
-  are asked again, never the POST itself, so neither is sent twice. S8's
+  exec and approves over the port-forward. That the partition cuts neither
+  is an assumption still to confirm live; if it holds, S6 reads normally,
+  and a failed read is ridden out like any other. Only the reads before
+  S6's approval and S8's revocation are asked again, never the POST
+  itself, so neither is sent twice (the operator thread, as before, may
+  approve again after a failed POST). S8's
   delay applies to the holder's traffic to the API server, not to the
   harness's; its seal wait reads through `Lab.wait`. S9 runs each probe
   again when kubectl could not start it (the Pod restarting), and
@@ -1035,7 +1044,9 @@ that never answer end in `ReadUnavailable` within the step's deadline; a
 query error or a denial is raised after one attempt; the operator survives
 N failed reads (each transient class) and then approves once, a transient
 outage past the bound is fatal once while the thread keeps going, a query
-error or an unexpected error is fatal and a refusal is not; a real thread
+error or an unexpected error is fatal and a refusal is not; an approval
+or revocation POST that times out in S6 or S8 is a `TimeoutError`, sent
+once, not an unread proposal; a real thread
 stays alive through failures; `run_one` puts the operator's record in the
 summary, fails the run on a fatal one and records a terminal wait that
 ended in `ReadUnavailable`; and S5 against a scripted Coordinator that

@@ -226,6 +226,8 @@ class OperatorLab(acceptance.Lab):
                 if getattr(lab, "refuse", None):
                     raise ProtocolError(409, "approval refused")
                 lab.posts.append((operation, body["action_id"]))
+                if getattr(lab, "time_out", None):  # Sent, but no reply came back within the client's timeout.
+                    raise TimeoutError("timed out")
         return Client()
 
 
@@ -301,6 +303,40 @@ class OperatorThreadTests(unittest.TestCase):
         self.assertEqual(lab.posts, [("create", "ACT-1")])
         self.assertEqual(record["attempts_failed"], 3)
         self.assertFalse(thread.is_alive())
+
+
+class ApprovalPostTimeoutTests(unittest.TestCase):
+    """S6 and S8 read the proposal in Lab.read and post inside it: a POST's own timeout is not a read that never ran."""
+
+    def test_a_post_that_times_out_in_s6_is_a_timeout_sent_once_not_an_unread_proposal(self):
+        # The state wait answers; then the proposal's read fails twice while the Coordinator is cut off.
+        lab = operator_lab(FlakyKubectl([None] + [done(code=1, stderr=CONTAINER_GONE)] * 2, rows=AWAITING))
+        lab.time_out = True
+        run = live.Run(lab, acceptance.SCENARIOS["S6"], 1, "v1")
+        run.since = acceptance.stamp(BASE)
+        with patch.object(run, "create", lambda document, **_: document):
+            with self.assertRaises(TimeoutError) as caught:
+                live.s6(run)
+        self.assertNotIsInstance(caught.exception, acceptance.AcceptanceError)
+        self.assertEqual(str(caught.exception), "timed out")
+        self.assertEqual(lab.posts, [("create", "ACT-1")])  # Sent once: its outcome is unknown, never re-sent.
+        [outage] = lab.read_outages  # The proposal's two failed reads before it, waited out.
+        self.assertEqual((outage["what"], outage["attempts"], outage["recovered"]),
+                         ("the proposal to approve", 2, True))
+
+    def test_a_revocation_that_times_out_is_a_timeout_sent_once(self):
+        lab = operator_lab(FlakyKubectl(rows=[{"id": 7}]))
+        lab.time_out = True
+        with self.assertRaises(TimeoutError) as caught:
+            lab.read("the approval to revoke", lambda: lab.revoke("ACT-1"))
+        self.assertNotIsInstance(caught.exception, acceptance.ReadUnavailable)
+        self.assertEqual(lab.posts, [("revoke", "ACT-1")])
+
+    def test_only_a_bound_that_left_no_time_for_one_attempt_is_an_unread_value(self):
+        lab = operator_lab(FlakyKubectl(rows=AWAITING))
+        with self.assertRaisesRegex(acceptance.ReadUnavailable, "the proposal to approve: no time was left"):
+            lab.read("the proposal to approve", lambda: lab.approve("ACT-1", "v1"), within=0)
+        self.assertEqual((lab.posts, lab.read_outages), ([], []))
 
 
 class FailingOperatorLab(FakeLab):

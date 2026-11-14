@@ -1349,6 +1349,10 @@ class Lab:
                 self.sleep(max(0.0, min(pause, deadline - self.monotonic())))
                 pause = min(pause * 2, max(interval, READ_BACKOFF_SECONDS))
                 continue
+            except Exception:
+                if outage is not None:  # The Pod answered, then something else failed: the outage is still kept.
+                    self._end_outage(outage, recovered=True)
+                raise
             if outage is not None:
                 self._end_outage(outage, recovered=True)
                 outage, pause = None, interval
@@ -1366,12 +1370,22 @@ class Lab:
 
         within is the bound in seconds (READ_RETRY_SECONDS when None): once it
         passes with the reads still failing, ReadUnavailable names what could
-        not be read. A falsy value is returned, not waited past.
+        not be read. A falsy value is returned, not waited past. Any other
+        error from attempt() is raised as it is, a TimeoutError among them (an
+        approval POST's socket timeout in S6 and S8): only the wait's own
+        expiry before a single attempt ran is a read that never happened.
         """
         within = READ_RETRY_SECONDS if within is None else within
+        attempted = []
+
+        def once():
+            attempted.append(True)
+            return (attempt(),)
         try:
-            (value,) = self.wait(lambda: (attempt(),), within, what, interval=1.0)
-        except TimeoutError:  # Only when within left no time for one attempt.
+            (value,) = self.wait(once, within, what, interval=1.0)
+        except TimeoutError:
+            if attempted:  # attempt() raised it: whatever it did is not a read that never ran.
+                raise
             raise ReadUnavailable(f"{what}: no time was left to read it") from None
         return value
 
