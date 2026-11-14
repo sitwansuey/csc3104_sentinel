@@ -93,7 +93,7 @@ def overlay(base, *, envoy_image, inspector_image):
         return {"apiVersion": "v1", "kind": kind, "metadata": {"name": name, "namespace": NAMESPACE}, **fields}
     def configmap(name, config):
         # envoy.json and the SDS files it subscribes to; they name key paths, never keys (P5.06).
-        items.append(resource("ConfigMap", name, data=config_files(config)))
+        items.append(resource("ConfigMap", name, data=config_files(config, node=name)))
     def config_volume(name):
         return {"name": name, "configMap": {"name": name}}
     def key_volume(identity):

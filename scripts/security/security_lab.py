@@ -114,9 +114,14 @@ def sds_names(config):
     return sorted(names)
 
 
-def config_files(config):
-    """Every file of one Envoy's configuration directory: envoy.json and its SDS resources (no keys)."""
-    files = {"envoy.json": json.dumps(config)}
+def config_files(config, node="sentinel-security-lab"):
+    """Every file of one Envoy's configuration directory: envoy.json and its SDS resources (no keys).
+
+    Envoy refuses an SDS secret source unless the bootstrap names its node ("TlsCertificateSdsApi: node 'id'
+    and 'cluster' are required"; seen live on 14 Nov 2026), so envoy.json carries one; with file-based SDS and
+    no management server the name only labels this Envoy.
+    """
+    files = {"envoy.json": json.dumps({"node": {"id": node, "cluster": node}, **config})}
     files.update({f"sds-{name}.json": json.dumps(sds_resource(name)) for name in sds_names(config)})
     return files
 
