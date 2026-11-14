@@ -96,8 +96,6 @@ INJECTION_SPREAD_SECONDS = 5
 DETECTION_SECONDS = 180
 # Coordinator states after which the runner never acts on an incident again.
 SETTLED = frozenset({"RECOVERED", "NEEDS_REVIEW", "FAILED"})
-STOP_REASONS = ("REJECTED", "ESCALATED", "BLOCKER_NOT_RECOVERED", "REPLAN_BUDGET_EXHAUSTED", "REPLAN_REFUSED",
-                "DEPENDENCY_DEADLOCK", "APPROVAL_REFUSED", "CHAOS_WINDOW_EXHAUSTED")
 # The worst case between a chaos lane's approval and its outcome (chaos_window): the Executor's write, and
 # verify_lane's rollout wait (its kubectl timeout); the Verifier's observation budget is added from the policy.
 EXECUTION_ALLOWANCE_SECONDS = 60
