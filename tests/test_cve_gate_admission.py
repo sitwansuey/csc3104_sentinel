@@ -6,6 +6,7 @@ structurally; no API server has evaluated it, and kubectl is never called.
 
 from contextlib import closing, redirect_stdout
 from datetime import UTC, datetime, timedelta
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -307,6 +308,56 @@ class InventoryTests(Workspace):
                              pod("cartservice-1", {"app": "cartservice"}, ("server", CART_WORSE))]}
         [entry] = image_inventory.workloads(objects)
         self.assertEqual(entry["status"], "UNKNOWN")
+
+    def test_index_mismatch_requires_verified_manifests_on_every_pods_node_platform(self):
+        objects = {"items": [deployment("cartservice", ("server", CART)),
+                             pod("cartservice-1", {"app": "cartservice"}, ("server", CART_WORSE)),
+                             {"kind": "Node", "metadata": {"name": "node"}, "status": {"nodeInfo": {
+                                 "operatingSystem": "linux", "architecture": "amd64"}}}]}
+        objects["items"][1]["spec"]["nodeName"] = "node"
+        manifest = CART.split("@")[0] + "@sha256:" + "1" * 64
+        mapping = {image: {("linux", "amd64"): manifest} for image in (CART, CART_WORSE)}
+        [entry] = image_inventory.workloads(objects, platform_manifests=mapping)
+        self.assertEqual(entry["digest"], CART)  # keep the exact pinned spec for admission
+        self.assertEqual(entry["platform_resolution"][0]["manifest"], manifest)
+        for change in ("missing", "different", "platform", "node", "unknown", "repository"):
+            with self.subTest(change=change):
+                data = json.loads(json.dumps(objects))
+                proof = {image: dict(platforms) for image, platforms in mapping.items()}
+                if change == "missing":
+                    proof.pop(CART_WORSE)
+                elif change == "different":
+                    proof[CART_WORSE][("linux", "amd64")] = CART_WORSE
+                elif change == "platform":
+                    data["items"][2]["status"]["nodeInfo"]["architecture"] = "arm64"
+                elif change == "node":
+                    data["items"][1]["spec"].pop("nodeName")
+                elif change == "unknown":
+                    data["items"][1]["status"]["containerStatuses"].append({"name": "server", "imageID": "sha256:123"})
+                else:
+                    other = "other.example/cart@" + CART_WORSE.split("@")[1]
+                    data["items"][1]["status"]["containerStatuses"][0]["imageID"] = other
+                    proof[other] = proof.pop(CART_WORSE)
+                [entry] = image_inventory.workloads(data, platform_manifests=proof)
+                self.assertEqual(entry["status"], "UNKNOWN")
+
+    def test_recorded_indexes_require_exact_digest_bytes_and_unique_platform_selection(self):
+        child = {"digest": "sha256:" + "1" * 64, "platform": {"os": "linux", "architecture": "amd64"}}
+        index = {"mediaType": "application/vnd.oci.image.index.v1+json", "manifests": [child]}
+        for ambiguous in (False, True):
+            index["manifests"] = [child] * (2 if ambiguous else 1)
+            raw = json.dumps(index).encode()
+            image = "docker.io/library/redis@sha256:" + hashlib.sha256(raw).hexdigest()
+            recorded = self.directory / "index.json"
+            recorded.write_bytes(raw)
+            mapping = self.write("mapping.json", {"schema": "sentinel-platform-indexes-v1", "indexes": [
+                {"image": image, "index_file": "index.json"}]})
+            manifests = image_inventory.load_platform_manifests(mapping)
+            self.assertEqual(manifests[image][("linux", "amd64")], None if ambiguous else
+                             "docker.io/library/redis@" + child["digest"])
+            recorded.write_bytes(raw + b"\n")
+            with self.assertRaisesRegex(ValueError, "digest mismatch"):
+                image_inventory.load_platform_manifests(mapping)
 
     def test_scan_ages_new_digests_and_the_queue(self):
         self.write_scan("cart.json", scan(CART, age=60))

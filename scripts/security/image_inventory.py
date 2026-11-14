@@ -6,6 +6,8 @@ the spec image and the repository digest it resolves to: the spec image when
 it is pinned by digest, otherwise the one repo digest the Pods report in
 containerStatuses[].imageID. Anything else (a bare config ID, Pods that
 disagree, no Pod) stays UNKNOWN; it is never guessed.
+With --platform-indexes, recorded registry index bytes are hash-verified and
+Nodes are also read to prove spec/Pod equivalence for each node's platform.
 
 Each resolved digest gets the age and state of its newest scan in --scans
 (FRESH, STALE, FAILED or MISSING). --scan-queue lists the running digests,
@@ -54,10 +56,11 @@ def check_context(context):
     return context
 
 
-def read_live(context, namespace, *, runner=subprocess.run):
-    """Deployments and Pods of one namespace, read-only."""
+def read_live(context, namespace, *, runner=subprocess.run, include_nodes=False):
+    """Deployments and Pods of one namespace, optionally Nodes, read-only."""
     check_context(context)
-    result = runner(["kubectl", "--context", context, "--namespace", namespace, "get", "deployments,pods",
+    result = runner(["kubectl", "--context", context, "--namespace", namespace, "get",
+                     "deployments,pods,nodes" if include_nodes else "deployments,pods",
                      "--output", "json"], capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
     if result.returncode:
         raise RuntimeError("kubectl get deployments,pods failed")
@@ -94,22 +97,73 @@ def _selects(selector, labels):
         labels.get(key) == value for key, value in match.items())
 
 
-def workloads(objects):
+def load_platform_manifests(path):
+    """Verify recorded registry index bytes against their pinned digests; no network or aliases."""
+    document = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(document, dict) or document.get("schema") != "sentinel-platform-indexes-v1":
+        raise ValueError("Expected sentinel-platform-indexes-v1")
+    result = {}
+    for record in document["indexes"]:
+        image = canonical_image(record["image"])
+        if image is None or image in result:
+            raise ValueError("Invalid or duplicate index reference")
+        raw = (path.parent / record["index_file"]).read_bytes()
+        if "sha256:" + hashlib.sha256(raw).hexdigest() != image.split("@")[1]:
+            raise ValueError("Recorded registry index digest mismatch")
+        index = json.loads(raw)
+        if index.get("mediaType") not in ("application/vnd.oci.image.index.v1+json",
+                                          "application/vnd.docker.distribution.manifest.list.v2+json"):
+            raise ValueError("Expected a registry image index")
+        platforms = {}
+        for child in index["manifests"]:
+            platform = child.get("platform", {})
+            key = (platform.get("os"), platform.get("architecture"))
+            if not all(isinstance(part, str) and part != "unknown" for part in key):
+                continue
+            manifest = canonical_image(image.split("@")[0] + "@" + child["digest"])
+            if manifest is None:
+                raise ValueError("Invalid platform manifest")
+            # NodeInfo has no variant: multiple arm variants cannot establish equivalence.
+            platforms[key] = manifest if key not in platforms else None
+        result[image] = platforms
+    return result
+
+
+def workloads(objects, *, platform_manifests=None):
     """One entry per Deployment container, plus containers of Pods no Deployment selects."""
     items = objects.get("items", []) if isinstance(objects, dict) else []
     deployments = [item for item in items if isinstance(item, dict) and item.get("kind") == "Deployment"]
     pods = [item for item in items if isinstance(item, dict) and item.get("kind") == "Pod"]
+    nodes = {item.get("metadata", {}).get("name"): item.get("status", {}).get("nodeInfo", {})
+             for item in items if isinstance(item, dict) and item.get("kind") == "Node"}
+    platform_manifests = platform_manifests or {}
     claimed, result = set(), []
 
     def entry(kind, name, container, image, observed):
         pinned = canonical_image(image)
-        digests = {digest for digest in observed if digest is not None}
-        digest = pinned if pinned is not None else (next(iter(digests)) if len(digests) == 1 and None not in observed
+        digests = {digest for digest, node in observed if digest is not None}
+        digest = pinned if pinned is not None else (next(iter(digests)) if len(digests) == 1 and all(d for d, n in observed)
                                                      else None)
+        proof = []
         if pinned is not None and digests - {pinned}:
             digest = None  # the Pods run something other than the pinned spec: a rollout or a drift
-        return {"kind": kind, "name": name, "container": container, "image": image if isinstance(image, str) else None,
-                "digest": digest, "status": "RESOLVED" if digest is not None else "UNKNOWN"}
+            for observed_digest, node in observed:
+                info = nodes.get(node, {})
+                platform = (info.get("operatingSystem"), info.get("architecture"))
+                manifest = platform_manifests.get(pinned, {}).get(platform)
+                actual = platform_manifests.get(observed_digest, {}).get(platform, observed_digest)
+                if (manifest is None or manifest != actual or observed_digest is None
+                        or pinned.split("@")[0] != observed_digest.split("@")[0]):
+                    break
+                proof.append({"node": node, "platform": "/".join(platform), "observed": observed_digest,
+                              "manifest": manifest})
+            else:
+                digest = pinned
+        result = {"kind": kind, "name": name, "container": container, "image": image if isinstance(image, str) else None,
+                  "digest": digest, "status": "RESOLVED" if digest is not None else "UNKNOWN"}
+        if digest is not None and proof:
+            result["platform_resolution"] = proof
+        return result
 
     for deployment in sorted(deployments, key=lambda item: item.get("metadata", {}).get("name", "")):
         name = deployment.get("metadata", {}).get("name")
@@ -118,20 +172,22 @@ def workloads(objects):
         claimed.update(id(pod) for pod in owned)
         spec = deployment.get("spec", {}).get("template", {}).get("spec", {})
         for container, image in _containers(spec):
-            observed = [_repo_digest(image_id) for pod in owned for status_name, image_id in _statuses(pod)
+            observed = [(_repo_digest(image_id), pod.get("spec", {}).get("nodeName"))
+                        for pod in owned for status_name, image_id in _statuses(pod)
                         if status_name == container]
             result.append(entry("Deployment", name, container, image, observed))
     for pod in sorted(pods, key=lambda item: item.get("metadata", {}).get("name", "")):
         if id(pod) in claimed:
             continue
         for container, image in _containers(pod.get("spec", {})):
-            observed = [_repo_digest(image_id) for status_name, image_id in _statuses(pod) if status_name == container]
+            observed = [(_repo_digest(image_id), pod.get("spec", {}).get("nodeName"))
+                        for status_name, image_id in _statuses(pod) if status_name == container]
             result.append(entry("Pod", pod.get("metadata", {}).get("name"), container, image, observed))
     return result
 
 
-def build(objects, *, namespace, scans, previous=None, max_age=DEFAULT_MAX_AGE, now):
-    entries = workloads(objects)
+def build(objects, *, namespace, scans, previous=None, max_age=DEFAULT_MAX_AGE, now, platform_manifests=None):
+    entries = workloads(objects, platform_manifests=platform_manifests)
     digests = sorted({item["digest"] for item in entries if item["digest"] is not None})
     newest = newest_scans(scans, digests) if scans is not None else {}
     known = set(previous.get("digests", {})) if isinstance(previous, dict) else set()
@@ -178,6 +234,8 @@ def main(argv=None):
     parser.add_argument("--namespace", default="sentinel-boutique-connected")
     parser.add_argument("--scans", type=Path, help="Directory of scan summaries")
     parser.add_argument("--previous", type=Path, help="The last inventory, to find new digests")
+    parser.add_argument("--platform-indexes", type=Path,
+                        help="Recorded registry indexes with verified digest bytes; also reads Nodes to select platforms")
     parser.add_argument("--max-scan-age", type=int, default=DEFAULT_MAX_AGE, metavar="SECONDS")
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--scan-queue", type=Path, help="Write the digests to scan, for watch_security.py --inventory")
@@ -186,10 +244,11 @@ def main(argv=None):
     if not 0 < args.max_scan_age <= 30 * 86400:
         parser.error("--max-scan-age must be 1 second to 30 days")
     objects = (json.loads(args.from_json.read_text(encoding="utf-8-sig")) if args.from_json is not None
-               else read_live(args.context, args.namespace))
+               else read_live(args.context, args.namespace, include_nodes=args.platform_indexes is not None))
     previous = json.loads(args.previous.read_text(encoding="utf-8")) if args.previous and args.previous.is_file() else None
     inventory = build(objects, namespace=args.namespace, scans=args.scans, previous=previous,
-                      max_age=args.max_scan_age, now=datetime.now(UTC))
+                      max_age=args.max_scan_age, now=datetime.now(UTC),
+                      platform_manifests=load_platform_manifests(args.platform_indexes) if args.platform_indexes else None)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(inventory, indent=2) + "\n", encoding="utf-8")
     if args.scan_queue is not None and inventory["scan_queue"]:
