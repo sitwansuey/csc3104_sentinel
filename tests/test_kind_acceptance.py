@@ -478,9 +478,13 @@ class EvidenceTests(unittest.TestCase):
         self.assertIn("| S5 | 1 | 1/1 | 1/1 | 1/1 | 1 | - | 7.5-7.5 / 9.2-9.2 |", table)
         self.assertEqual(table.count("not yet run"), 10)
 
-    def test_the_documented_table_is_the_empty_one(self):
-        document = (acceptance.ROOT / "docs/distributed-acceptance.md").read_text(encoding="utf-8")
-        self.assertIn(acceptance.results_table([]), document.replace("\r\n", "\n"))
+    def test_the_documented_results_are_the_recorded_unscored_ones(self):
+        # The live runs have happened: the document records their results, never the empty table, and says
+        # they are unscored.
+        document = (acceptance.ROOT / "docs/distributed-acceptance.md").read_text(encoding="utf-8").replace("\r\n", "\n")
+        self.assertIn("\n## Results (P4.01)\n", document)
+        self.assertNotIn(acceptance.results_table([]), document)
+        self.assertIn("unscored", document[document.index("## Results (P4.01)"):])
 
     def test_evidence_with_a_secret_name_token_or_jwt_is_refused_and_nothing_is_written(self):
         tokens = {"executor-a": {"delivery-token": "x" * 43}}
