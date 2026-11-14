@@ -1,0 +1,6 @@
+{
+  "passed": true,
+  "deployment_unchanged": true,
+  "executor_writes": 0,
+  "basis": "Guard CLI only; UID and resourceVersion unchanged across the checks"
+}

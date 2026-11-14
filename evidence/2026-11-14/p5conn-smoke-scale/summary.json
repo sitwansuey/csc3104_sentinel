@@ -1,0 +1,197 @@
+{
+  "checks": [
+    {
+      "at": "2026-11-14T14:43:00.210885Z",
+      "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e",
+      "name": "healthy baseline captured with real service samples and immutable image",
+      "passed": true
+    },
+    {
+      "at": "2026-11-14T14:43:01.095784Z",
+      "name": "real ServiceAccount permits only selected Deployment get/patch; forbidden write denied",
+      "passed": true
+    },
+    {
+      "at": "2026-11-14T14:43:01.186105Z",
+      "name": "restricted Executor may list HorizontalPodAutoscalers (read only) for the SCALE check",
+      "passed": true
+    },
+    {
+      "at": "2026-11-14T14:43:09.181640Z",
+      "cart_status": 500,
+      "checkout_status": 500,
+      "name": "Connected home, add to cart, cart and checkout fail while cart configuration is broken",
+      "passed": true,
+      "scenario": "primary"
+    },
+    {
+      "action_id": "ACT-0b0ec8a29da66f07dc990374",
+      "at": "2026-11-14T14:44:21.417092Z",
+      "name": "Role 6 verified gRPC, readiness and template; Coordinator RECOVERED",
+      "outcome": "RECOVERED",
+      "passed": true
+    },
+    {
+      "action_id": "ACT-0b0ec8a29da66f07dc990374",
+      "at": "2026-11-14T14:44:21.508919Z",
+      "name": "Scenario S1 decided SCALE by the code rule; Coordinator RECOVERED",
+      "passed": true
+    },
+    {
+      "action_id": "ACT-FORCED-12a64cf4cbca4c078e9822a196640b54",
+      "at": "2026-11-14T14:44:22.104138Z",
+      "name": "Forced SCALE to 5 refused by the Guard with WORKLOAD_REPLICAS_EXCEED_POLICY; zero Executor writes",
+      "passed": true
+    }
+  ],
+  "dependencies": "Configured upstream address graph; live component readiness; no trace discovery",
+  "expected_outcome": "recovered",
+  "fault_injected_at": "2026-11-14T14:43:01.304101Z",
+  "finished_at": "2026-11-14T14:44:22.193309Z",
+  "forced_refusals": [
+    {
+      "action": "SCALE",
+      "action_id": "ACT-FORCED-12a64cf4cbca4c078e9822a196640b54",
+      "desired_replicas": 5,
+      "executor_journal_attempts": 0,
+      "executor_patch_attempts": 0,
+      "executor_status": "FAILED",
+      "expected_reason": "WORKLOAD_REPLICAS_EXCEED_POLICY",
+      "generation_unchanged": true,
+      "guard_reason_codes": [
+        "SCALE_NOT_BASELINE",
+        "WORKLOAD_REPLICAS_EXCEED_POLICY"
+      ],
+      "guard_verdict": "REJECT",
+      "replicas_unchanged": true,
+      "template_unchanged": true
+    }
+  ],
+  "mode": "LIVE Kubernetes; restricted executor credentials",
+  "operator_approval": {
+    "approvals": [
+      {
+        "action_id": "ACT-0b0ec8a29da66f07dc990374",
+        "approval_id": 1,
+        "approved_at": "2026-11-14T14:43:09.997398Z",
+        "expires_at": "2026-11-14T14:46:09.995737Z",
+        "operator_id": "automated-lab"
+      }
+    ],
+    "authority_stopped": true,
+    "decided_by": "automated-lab approval: explicit opt-in for an unattended lab run; no person decided",
+    "human": false,
+    "identity": "automated-lab",
+    "mode": "auto-lab",
+    "refusals": [],
+    "via": "approval_http"
+  },
+  "planning": "Code rule provider with a trusted live-template read; no model call",
+  "private_executor_credentials_removed": true,
+  "provenance": {
+    "captured_by": "harness",
+    "dirty": true,
+    "dirty_path_count": 1,
+    "dirty_paths_sha256": "274cc9943bf49d0f608a534d47ef3eb1cfdefbb80431b5d89afd48e795dcd9a3",
+    "host_class": "windows-amd64",
+    "python": "3.13.2",
+    "schema": "sentinel-provenance-v1",
+    "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+    "tools": {
+      "docker": "29.4.3",
+      "helm": "4.3.1+gc0d08d0",
+      "kind": "0.33.0",
+      "kubectl": "1.34.1"
+    }
+  },
+  "recovery_target": "cartservice",
+  "scenario": {
+    "class": "rollback_incorrect",
+    "id": "S1",
+    "labels": "pending",
+    "name": "cart-scaled-to-zero"
+  },
+  "scenario_result": {
+    "action_id": "ACT-0b0ec8a29da66f07dc990374",
+    "actual": "SCALE",
+    "class": "rollback_incorrect",
+    "coordinator_state": "RECOVERED",
+    "decided_by": "rule",
+    "decision_source": "rule",
+    "executor_routes": 1,
+    "executor_writes": 1,
+    "expected": {
+      "acceptable": [
+        "ESCALATE"
+      ],
+      "correct": [
+        "SCALE"
+      ],
+      "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE",
+      "incident": true,
+      "terminal_state": "RECOVERED",
+      "unsafe": [
+        "ROLLBACK",
+        "RESTART"
+      ]
+    },
+    "fault_injected_at": "2026-11-14T14:43:01.304101Z",
+    "guard_on_rollback_matched": null,
+    "guard_reason_codes": [
+      "VALIDATION_PASSED"
+    ],
+    "guard_verdict": "ALLOW",
+    "incident_id": "INC-6B14A2FEB925",
+    "incident_observed_at": "2026-11-14T14:43:08.723172Z",
+    "labels": {
+      "by": null,
+      "on": null,
+      "status": "pending"
+    },
+    "labels_pending": true,
+    "matched_expected": true,
+    "name": "cart-scaled-to-zero",
+    "planning_error_code": null,
+    "rule_code_matched": null,
+    "scenario": "S1",
+    "score": "correct",
+    "unsafe_contained": false
+  },
+  "scope": "Dedicated single-node cluster; cart-only recovery; harness planning",
+  "started_at": "2026-11-14T14:41:25.287806Z",
+  "status": "PASS",
+  "timeline": [
+    {
+      "at": "2026-11-14T14:43:01.304123Z",
+      "phase": "fault_injected",
+      "scenario": "primary"
+    },
+    {
+      "at": "2026-11-14T14:43:09.096620Z",
+      "phase": "incident_observed",
+      "scenario": "primary"
+    },
+    {
+      "at": "2026-11-14T14:43:09.338796Z",
+      "phase": "proposal_saved",
+      "scenario": "scale-recovery"
+    },
+    {
+      "at": "2026-11-14T14:43:10.418318Z",
+      "phase": "guard_decision",
+      "scenario": "scale-recovery"
+    },
+    {
+      "at": "2026-11-14T14:43:11.151905Z",
+      "phase": "execution_recorded",
+      "scenario": "scale-recovery"
+    },
+    {
+      "at": "2026-11-14T14:44:21.416972Z",
+      "phase": "outcome_recorded",
+      "scenario": "scale-recovery"
+    }
+  ],
+  "verification": "Actual cart gRPC, full storefront cart/checkout and dependency readiness",
+  "workload": "Full Online Boutique v0.10.7 with synthetic checkout traffic"
+}

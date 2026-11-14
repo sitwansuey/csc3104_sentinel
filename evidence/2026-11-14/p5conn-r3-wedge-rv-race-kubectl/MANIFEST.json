@@ -1,0 +1,28 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "p5conn-r3-wedge-rv-race-kubectl",
+  "class": "executor-wedge",
+  "captured_at": "2026-11-14T15:43:29.334357Z",
+  "source_run_dir_name": "r3-wedge-rv-race-kubectl",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+    "basis": "connected-lab Phase 5 session attempt 7 (14 Nov 2026) run from integration/phase5 at 7b35066, clean worktree plus untracked scratch runner"
+  },
+  "files": [
+    {
+      "path": "manifests.json",
+      "sha256": "77f0457a22f91e39223c3670870aa1409fd46cc3415cd834be10d54c1767c521",
+      "bytes": 2416,
+      "redactions": 0
+    },
+    {
+      "path": "rv-race.json",
+      "sha256": "554f2507d98f97bf25f279cfb14ddea1a4bae675cee9ba4969a3a646c21d5c88",
+      "bytes": 2822,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

@@ -28,12 +28,12 @@ value that no bundle records is shown as "not recorded".
 <!-- BEGIN GENERATED:evaluation-setup -->
 | Item | Recorded in the evidence |
 | --- | --- |
-| Bundles | 188 current: 66 with recorded provenance, 122 inferred (superseded and withdrawn bundles left out) |
+| Bundles | 240 current: 90 with recorded provenance, 150 inferred (superseded and withdrawn bundles left out) |
 | Captured | 2026-11-10 to 2026-11-14 |
-| Source revisions | 17 distinct in recorded bundles, 24 in inferred ones |
-| Host class | not recorded x13, windows-amd64 x51; 124 bundles record no provenance block |
+| Source revisions | 18 distinct in recorded bundles, 25 in inferred ones |
+| Host class | not recorded x13, windows-amd64 x75; 152 bundles record no provenance block |
 | Tools | docker 29.4.3; helm 4.3.1+gc0d08d0; kind 0.33.0; kubectl 1.34.1; ollama 0.40.16 |
-| Python | 3.12.3 x2, 3.13.2 x49 |
+| Python | 3.12.3 x2, 3.13.2 x73 |
 | Chaos Mesh (chaos-batch attempts) | 2.8.2 x13 |
 | Kubernetes server (chaos-batch attempts) | v1.37.0 x13 |
 | Models loaded (runs) | qwen3:14b bdbd181c33f2 Q4_K_M on Ollama 0.40.16 x20 |
@@ -187,13 +187,13 @@ Guard rejection runs. Per-run tables, with every bundle id, are in
 and [two simultaneous faults](dual-fault.md).
 
 <!-- BEGIN GENERATED:evaluation-live -->
-**Live recovery runs by class.** PASS means the run's own checks passed; an expected escalation passes without a repair. Only these classes are counted here and in the live-run lines of the threats to validity; current bundles of other classes, counted in [runs by class](results.md#runs-by-class) only: executor-admission x1, executor-wedge x7, kind-lab-session x3, observer-acceptance x3, ui-session x7, worker-container x2.
+**Live recovery runs by class.** PASS means the run's own checks passed; an expected escalation passes without a repair. Only these classes are counted here and in the live-run lines of the threats to validity; current bundles of other classes, counted in [runs by class](results.md#runs-by-class) only: cve-gate x4, executor-admission x1, executor-wedge x31, kind-lab-session x3, observer-acceptance x3, scale-recovery x4, ui-session x7, worker-container x2.
 
 | Class | Runs | PASS | Other outcomes | Passed as an expected escalation | Revisions | Planner | Approval |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| connected-harness | 12 | 10/12 | FAILED x2 | 0 | 7 | not recorded x12 | auto-lab x6, not recorded x5, reject x1 |
+| connected-harness | 20 | 18/20 | FAILED x2 | 0 | 8 | not recorded x20 | auto-lab x14, not recorded x5, reject x1 |
 | agent | 41 | 28/41 | FAILED x13 | 3 | 13 | model qwen3:14b x36, model qwen3:does-not-exist x1, model sentinel-not-installed:latest x2, not recorded x2 | auto-lab x13, not recorded x8, not-requested x4, pre-authorised x16 |
-| chaos-recovery | 12 | 7/12 | FAILED x5 | 1 | 2 | code rule, no model x11, not recorded x1 | auto-lab x10, not-requested x2 |
+| chaos-recovery | 24 | 19/24 | FAILED x5 | 5 | 3 | code rule, no model x19, not recorded x5 | auto-lab x14, not-requested x10 |
 | scenario-pair | 8 | 8/8 | none | 0 | 1 | code rule, no model x8 | auto-lab x8 |
 | guard-rejection | 4 | 4/4 | none | 0 | 4 | not recorded x4 | not recorded x3, not-requested x1 |
 | shipping-lab | 2 | 2/2 | none | 0 | 2 | operator-authored proposal, no model x2 | not recorded x2 |
@@ -206,11 +206,11 @@ and [two simultaneous faults](dual-fault.md).
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | N1 | agent | model qwen3:14b | 2 | 1/2 | ESCALATE x2 | 1/2 | 0 | NEEDS_REVIEW x2 | pending x2 |
 | N2 | agent | model qwen3:14b | 1 | 1/1 | ESCALATE x1 | 0/1 | 0 | NEEDS_REVIEW x1 | pending x1 |
-| N2 | chaos-recovery | code rule, no model | 10 | 5/10 | RESTART x10 | 5/10 | 10 | RECOVERED x10 | pending x10 |
-| N3 | chaos-recovery | code rule, no model | 1 | 1/1 | ESCALATE x1 | 1/1 | 0 | NEEDS_REVIEW x1 | pending x1 |
+| N2 | chaos-recovery | code rule, no model | 14 | 9/14 | RESTART x14 | 9/14 | 14 | RECOVERED x14 | pending x14 |
+| N3 | chaos-recovery | code rule, no model | 5 | 5/5 | ESCALATE x5 | 5/5 | 0 | NEEDS_REVIEW x5 | pending x5 |
 | R1 | agent | model qwen3:14b | 5 | 5/5 | ROLLBACK x5 | 5/5 | 5 | RECOVERED x5 | pending x5 |
 | R2 | agent | model qwen3:14b | 2 | 1/2 | ESCALATE x1, ROLLBACK x1 | 1/2 | 1 | NEEDS_REVIEW x1, RECOVERED x1 | pending x2 |
-| T1 | chaos-recovery | not recorded | 1 | 1/1 | NO_INCIDENT x1 | 1/1 | 0 | no incident x1 | pending x1 |
+| T1 | chaos-recovery | not recorded | 5 | 5/5 | NO_INCIDENT x5 | 5/5 | 0 | no incident x5 | pending x5 |
 
 **Two simultaneous faults (scenario pairs).**
 
@@ -221,7 +221,7 @@ and [two simultaneous faults](dual-fault.md).
 | shipping-config+cart-pod | none | 3 | 3/3 | RECOVERED x3 | RECOVERED x3 | cartservice 1, shippingservice 1 x3 | n/a x3 | pending x3 |
 | shipping-config+cart-pod | shippingservice | 1 | 1/1 | RECOVERED x1 | RECOVERED x1 | cartservice 1, shippingservice 1 x1 | n/a x1 | pending x1 |
 
-- Forced wrong actions in catalog runs: 18/23 refused by the Guard with no Executor write, 5 stopped without a Guard refusal and with no write, 0 with an Executor write, 0 unmeasured.
+- Forced wrong actions in catalog runs: 30/35 refused by the Guard with no Executor write, 5 stopped without a Guard refusal and with no write, 0 with an Executor write, 0 unmeasured.
 - Chaos Mesh injection-only batches: injected 9/29, cleaned up 12/29.
 <!-- END GENERATED:evaluation-live -->
 
@@ -293,31 +293,31 @@ Per-stage times from the newest latency ledger (`scripts/latency_report.py`).
 Model time is part of planning, not an extra stage.
 
 <!-- BEGIN GENERATED:evaluation-latency -->
-From `evidence/evaluation/latency/2026-11-13b/timings.json`. A stage with no data shows n/a.
+From `evidence/evaluation/latency/2026-11-15/timings.json`. A stage with no data shows n/a.
 
 - agent: 41 runs, 28 PASS; stopped at: planning x11; verification x2.
-- harness: 12 runs, 10 PASS; stopped at: after_recovery x1; decision x1.
+- harness: 20 runs, 18 PASS; stopped at: after_recovery x1; decision x1.
 
 | Mode | Stage | n | Median s | p90 s | Min s | Max s | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | agent | detection: start -> incident observed | 40 | 7.3 | 9.7 | 5.0 | 10.2 | bundle; start: first failing snapshot x20, injection x20 |
-| agent | planning: incident -> last planning record | 22 | 27.7 | 57.9 | 16.4 | 76.2 | bundle + run folder |
+| agent | planning: incident -> last planning record | 22 | 27.7 | 57.9 | 16.5 | 76.2 | bundle + run folder |
 | agent | model calls: sum per run (part of planning) | 29 | 43.1 | 66.6 | 21.9 | 109.3 | bundle |
-| agent | Guard: planning end -> ALLOW (incl. lab approval) | 19 | 0.7 | 0.9 | 0.4 | 1.1 | bundle + run folder |
+| agent | Guard: planning end -> ALLOW (incl. lab approval) | 19 | 0.7 | 0.9 | 0.2 | 1.0 | bundle + run folder |
 | agent | incident -> Guard ALLOW (planning + Guard) | 27 | 44.3 | 76.9 | 23.3 | 355.8 | bundle |
 | agent | execution: ALLOW -> Executor result | 27 | 0.7 | 0.8 | 0.5 | 0.8 | bundle |
 | agent | verification: Executor result -> outcome window end | 27 | 43.3 | 55.2 | 8.0 | 62.5 | bundle |
 | agent | fault to repair: start -> Executor result | 27 | 52.3 | 84.8 | 31.5 | 363.7 | bundle; start: first failing snapshot x13, injection x14 |
 | agent | total: start -> outcome window end | 27 | 85.7 | 147.4 | 56.9 | 407.0 | bundle; start: first failing snapshot x13, injection x14 |
-| harness | detection: start -> incident observed | 12 | 7.3 | 9.6 | 5.7 | 9.7 | bundle; start: first failing snapshot x4, injection x8 |
-| harness | planning: incident -> last planning record | 8 | 2.6 | 4.4 | 2.4 | 4.4 | bundle |
+| harness | detection: start -> incident observed | 20 | 7.3 | 7.6 | 5.1 | 9.7 | bundle; start: first failing snapshot x4, injection x16 |
+| harness | planning: incident -> last planning record | 16 | 3.0 | 4.2 | 2.4 | 4.4 | bundle |
 | harness | model calls: sum per run (part of planning) | 0 | n/a | n/a | n/a | n/a | - |
-| harness | Guard: planning end -> ALLOW (incl. lab approval) | 7 | 0.4 | 0.9 | 0.3 | 0.9 | bundle |
-| harness | incident -> Guard ALLOW (planning + Guard) | 11 | 3.0 | 3.1 | 2.8 | 5.4 | bundle |
-| harness | execution: ALLOW -> Executor result | 11 | 0.6 | 0.7 | 0.6 | 1.0 | bundle |
-| harness | verification: Executor result -> outcome window end | 11 | 26.6 | 91.1 | 24.1 | 102.3 | bundle |
-| harness | fault to repair: start -> Executor result | 11 | 11.0 | 13.0 | 10.5 | 13.3 | bundle; start: first failing snapshot x4, injection x7 |
-| harness | total: start -> outcome window end | 11 | 37.3 | 104.4 | 35.0 | 114.4 | bundle; start: first failing snapshot x4, injection x7 |
+| harness | Guard: planning end -> ALLOW (incl. lab approval) | 15 | 0.5 | 0.7 | 0.3 | 0.9 | bundle |
+| harness | incident -> Guard ALLOW (planning + Guard) | 19 | 3.1 | 4.8 | 2.8 | 5.4 | bundle |
+| harness | execution: ALLOW -> Executor result | 19 | 0.7 | 0.9 | 0.6 | 1.0 | bundle |
+| harness | verification: Executor result -> outcome window end | 19 | 26.7 | 91.1 | 24.1 | 102.3 | bundle |
+| harness | fault to repair: start -> Executor result | 19 | 11.0 | 13.0 | 9.4 | 13.3 | bundle; start: first failing snapshot x4, injection x15 |
+| harness | total: start -> outcome window end | 19 | 37.3 | 104.4 | 35.0 | 114.4 | bundle; start: first failing snapshot x4, injection x15 |
 
 | Mode | Measure | n | Median s | p90 s | Max s |
 | --- | --- | --- | --- | --- | --- |
@@ -340,14 +340,14 @@ counts cover the classes in the live table above. The
 and open defects.
 
 <!-- BEGIN GENERATED:evaluation-threats -->
-- **Labels are pending.** Catalog pre-registration sign-off: pending. Replay label sets signed: 0/74. Catalog scenario runs by label status: pending x22. Pair runs by label status: pending x8. Guard fixture evaluation: PRELIMINARY_NOT_FROZEN. RCAEval freeze file: not committed. A row whose labels are not signed is unscored: it says what happened, not whether it was right.
-- **One host.** Live runs naming a single-node cluster in their scope: 46/89 (a run whose scope names no single-node cluster is not thereby on several machines). Host classes recorded by live runs: windows-amd64 x51 (38 of 89 record no provenance block). A host class is not a machine identity. No committed distributed run records single_host false (a second machine). File and kind distributed runs recording single_host true: 39/39. sentinel-dist: 80 runs, on four kind nodes that are containers on one Docker host.
-- **Planner.** Live runs by planner: code rule, no model x19, model qwen3:14b x36, model qwen3:does-not-exist x1, model sentinel-not-installed:latest x2, not recorded x23, operator-authored proposal, no model x8. Distributed runs with the synthetic planner: file and kind 39/39, sentinel-dist 80/80; those runs test coordination and fencing, not planning.
-- **Approvals.** Live runs by approval: auto-lab x37, not recorded x28, not-requested x7, pre-authorised x16, reject x1. auto-lab is the harness approving through the authenticated API under the automated-lab identity: no person decides. pre-authorised is a run whose summary records approval given in advance for the whole run, not a person approving each action. Live runs that record a person approving: 0/89.
-- **Small n, correlated repetitions.** Catalog scenarios run live: 6, at most 11 runs each. Repeated runs share the host, the cluster, the model and often the revision, so they are not independent trials; where an interval is given, read it rather than the point value.
-- **Provenance.** 122/188 current bundles have inferred provenance: their source revision is a best guess, not a recorded commit.
+- **Labels are pending.** Catalog pre-registration sign-off: pending. Replay label sets signed: 0/74. Catalog scenario runs by label status: pending x34. Pair runs by label status: pending x8. Guard fixture evaluation: PRELIMINARY_NOT_FROZEN. RCAEval freeze file: not committed. A row whose labels are not signed is unscored: it says what happened, not whether it was right.
+- **One host.** Live runs naming a single-node cluster in their scope: 66/109 (a run whose scope names no single-node cluster is not thereby on several machines). Host classes recorded by live runs: windows-amd64 x71 (38 of 109 record no provenance block). A host class is not a machine identity. No committed distributed run records single_host false (a second machine). File and kind distributed runs recording single_host true: 39/39. sentinel-dist: 80 runs, on four kind nodes that are containers on one Docker host.
+- **Planner.** Live runs by planner: code rule, no model x27, model qwen3:14b x36, model qwen3:does-not-exist x1, model sentinel-not-installed:latest x2, not recorded x35, operator-authored proposal, no model x8. Distributed runs with the synthetic planner: file and kind 39/39, sentinel-dist 80/80; those runs test coordination and fencing, not planning.
+- **Approvals.** Live runs by approval: auto-lab x49, not recorded x28, not-requested x15, pre-authorised x16, reject x1. auto-lab is the harness approving through the authenticated API under the automated-lab identity: no person decides. pre-authorised is a run whose summary records approval given in advance for the whole run, not a person approving each action. Live runs that record a person approving: 0/109.
+- **Small n, correlated repetitions.** Catalog scenarios run live: 6, at most 15 runs each. Repeated runs share the host, the cluster, the model and often the revision, so they are not independent trials; where an interval is given, read it rather than the point value.
+- **Provenance.** 150/240 current bundles have inferred provenance: their source revision is a best guess, not a recorded commit.
 - **Replay inputs.** Of 74 replay cases, 10 derived and 12 adversarial ones are synthetic, and every case's cluster state is reconstructed, not recorded. Replay judges decisions only; recovery comes from live runs.
-- **One model family, one application.** Models loaded in live runs: qwen3:14b x20. Pre-registered replay runs committed: 4/5. RCAEval reports committed: not yet run. Workloads named by live runs: Full Online Boutique v0.10.7 with synthetic checkout traffic x77, Online Boutique shippingservice v0.10.7 x8, not recorded x4.
+- **One model family, one application.** Models loaded in live runs: qwen3:14b x20. Pre-registered replay runs committed: 4/5. RCAEval reports committed: not yet run. Workloads named by live runs: Full Online Boutique v0.10.7 with synthetic checkout traffic x97, Online Boutique shippingservice v0.10.7 x8, not recorded x4.
 <!-- END GENERATED:evaluation-threats -->
 
 ## Interpretation

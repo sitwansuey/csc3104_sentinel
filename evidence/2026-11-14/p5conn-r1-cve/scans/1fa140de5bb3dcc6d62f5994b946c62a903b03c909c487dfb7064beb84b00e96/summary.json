@@ -1,0 +1,242 @@
+{
+  "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/checkoutservice@sha256:f0e72ff7b438dd2e8776fb142d5132cfa5ba02c523466f1491270c576412d33f",
+  "scan_source": "remote_manifest",
+  "status": "FINDINGS",
+  "scanner": "Trivy",
+  "counts": {
+    "UNKNOWN": 3,
+    "LOW": 1,
+    "MEDIUM": 18,
+    "HIGH": 6,
+    "CRITICAL": 0
+  },
+  "findings": [
+    {
+      "id": "CVE-2026-111943",
+      "package": "stdlib",
+      "installed": "v1.27.0",
+      "fixed": "1.26.10, 1.27.3",
+      "severity": "HIGH",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-78661",
+      "package": "golang.org/x/net",
+      "installed": "v0.58.0",
+      "fixed": "0.62.0",
+      "severity": "HIGH",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-78667",
+      "package": "stdlib",
+      "installed": "v1.27.0",
+      "fixed": "1.26.9, 1.27.2",
+      "severity": "HIGH",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-78669",
+      "package": "golang.org/x/net",
+      "installed": "v0.58.0",
+      "fixed": "0.60.0",
+      "severity": "HIGH",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-78669",
+      "package": "stdlib",
+      "installed": "v1.27.0",
+      "fixed": "1.26.9, 1.27.2",
+      "severity": "HIGH",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-97031",
+      "package": "stdlib",
+      "installed": "v1.27.0",
+      "fixed": "1.26.9, 1.27.2",
+      "severity": "HIGH",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-128085",
+      "package": "go.opentelemetry.io/otel/sdk",
+      "installed": "v1.46.0",
+      "fixed": "1.47.0",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-128085",
+      "package": "go.opentelemetry.io/otel/trace",
+      "installed": "v1.46.0",
+      "fixed": "1.47.0",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-56855",
+      "package": "golang.org/x/crypto",
+      "installed": "v0.55.0",
+      "fixed": "0.56.0",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-56866",
+      "package": "stdlib",
+      "installed": "v1.27.0",
+      "fixed": "1.26.9, 1.27.2",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-78659",
+      "package": "golang.org/x/net",
+      "installed": "v0.58.0",
+      "fixed": "0.60.0",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-78659",
+      "package": "stdlib",
+      "installed": "v1.27.0",
+      "fixed": "1.26.9, 1.27.2",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-78660",
+      "package": "golang.org/x/net",
+      "installed": "v0.58.0",
+      "fixed": "0.60.0",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-78660",
+      "package": "stdlib",
+      "installed": "v1.27.0",
+      "fixed": "1.26.9, 1.27.2",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-78662",
+      "package": "golang.org/x/crypto",
+      "installed": "v0.55.0",
+      "fixed": "0.56.0",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-78663",
+      "package": "golang.org/x/net",
+      "installed": "v0.58.0",
+      "fixed": "0.60.0",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-78663",
+      "package": "stdlib",
+      "installed": "v1.27.0",
+      "fixed": "1.26.9, 1.27.2",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-94439",
+      "package": "stdlib",
+      "installed": "v1.27.0",
+      "fixed": "1.26.9, 1.27.2",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-94440",
+      "package": "stdlib",
+      "installed": "v1.27.0",
+      "fixed": "1.26.9, 1.27.2",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-94448",
+      "package": "stdlib",
+      "installed": "v1.27.0",
+      "fixed": "1.26.9, 1.27.2",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-97030",
+      "package": "stdlib",
+      "installed": "v1.27.0",
+      "fixed": "1.26.9, 1.27.2",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-97032",
+      "package": "golang.org/x/net",
+      "installed": "v0.58.0",
+      "fixed": "0.60.0",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-97032",
+      "package": "stdlib",
+      "installed": "v1.27.0",
+      "fixed": "1.26.9, 1.27.2",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-97045",
+      "package": "golang.org/x/net",
+      "installed": "v0.58.0",
+      "fixed": "0.62.0",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-56857",
+      "package": "stdlib",
+      "installed": "v1.27.0",
+      "fixed": "1.26.9, 1.27.2",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-97054",
+      "package": "stdlib",
+      "installed": "v1.27.0",
+      "fixed": "1.26.11, 1.27.4",
+      "severity": "UNKNOWN",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "DSA-6572-1",
+      "package": "ca-certificates",
+      "installed": "20250419",
+      "fixed": "20250419+deb13u1",
+      "severity": "UNKNOWN",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "GO-2026-5932",
+      "package": "golang.org/x/crypto",
+      "installed": "v0.55.0",
+      "fixed": "0.58.1-0.20261009181718-2f1f834330b2",
+      "severity": "UNKNOWN",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    }
+  ],
+  "automatic_patching": false,
+  "scanned_at": "2026-11-14T15:05:00.012628Z",
+  "scanner_image": "aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c"
+}

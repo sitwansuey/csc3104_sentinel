@@ -1,0 +1,174 @@
+{
+  "checks": [
+    {
+      "name": "the denied write stays in doubt before the settle delay",
+      "observed": [
+        "NEEDS_RECONCILIATION",
+        "UNCHANGED_IN_DOUBT"
+      ],
+      "passed": true
+    },
+    {
+      "name": "the denied write left the resource version unchanged",
+      "passed": true
+    },
+    {
+      "name": "first action resolves as CONFLICT/FENCED",
+      "observed": [
+        "CONFLICT",
+        "FENCED"
+      ],
+      "passed": true
+    },
+    {
+      "name": "ledger releases the workload",
+      "passed": true
+    },
+    {
+      "name": "exactly one fence was sent",
+      "passed": true
+    },
+    {
+      "name": "the fence marker names the first action",
+      "passed": true
+    },
+    {
+      "name": "the spec is unchanged, so the fence started no rollout",
+      "passed": true
+    },
+    {
+      "name": "the Pod template is unchanged",
+      "passed": true
+    },
+    {
+      "name": "the admission policy is removed",
+      "passed": true
+    },
+    {
+      "name": "a new proposal for the workload is admitted",
+      "passed": true
+    },
+    {
+      "name": "the new proposal is APPLIED",
+      "passed": true
+    },
+    {
+      "name": "the baseline template is restored",
+      "passed": true
+    }
+  ],
+  "context": "kind-sentinel-boutique-connected",
+  "finished_at": "2026-11-14T15:44:11.179618Z",
+  "ground_truth": [
+    {
+      "evidence_action_id": null,
+      "fence_action_id": null,
+      "field_managers": [],
+      "generation": 2,
+      "label": "before first action",
+      "resource_version": "345815",
+      "spec_sha256": "bc166f5ca1495d62bb803f9d2a5d317795e4bd75eff83b9b9fe7acfb7f3f6109",
+      "template_is_baseline": false,
+      "uid_is_original": true
+    },
+    {
+      "evidence_action_id": null,
+      "fence_action_id": null,
+      "field_managers": [],
+      "generation": 2,
+      "label": "after the denied write",
+      "resource_version": "345815",
+      "spec_sha256": "bc166f5ca1495d62bb803f9d2a5d317795e4bd75eff83b9b9fe7acfb7f3f6109",
+      "template_is_baseline": false,
+      "uid_is_original": true
+    },
+    {
+      "evidence_action_id": null,
+      "fence_action_id": "ACT-WEDGE-first-26766ceac0bc",
+      "field_managers": [],
+      "generation": 3,
+      "label": "after first action",
+      "resource_version": "345886",
+      "spec_sha256": "bc166f5ca1495d62bb803f9d2a5d317795e4bd75eff83b9b9fe7acfb7f3f6109",
+      "template_is_baseline": false,
+      "uid_is_original": true
+    },
+    {
+      "evidence_action_id": "ACT-WEDGE-second-c7f66c998349",
+      "fence_action_id": "ACT-WEDGE-first-26766ceac0bc",
+      "field_managers": [],
+      "generation": 4,
+      "label": "after second action",
+      "resource_version": "345894",
+      "spec_sha256": "33c67444181a5c6f05f08322882ea4eb0831cd241a5ab95d2ca0645b4b3df31f",
+      "template_is_baseline": true,
+      "uid_is_original": true
+    }
+  ],
+  "namespace": "sentinel-wedge-2c26faff",
+  "namespace_deleted": true,
+  "patch_processes_for_first_action": 2,
+  "policy_deleted": true,
+  "policy_enforced_after_probes": 2,
+  "policy_lifted_after_probes": 2,
+  "private_credentials_removed": true,
+  "reconcile_pass_statuses": [
+    "CONFLICT",
+    "CONFLICT",
+    "CONFLICT",
+    "CONFLICT",
+    "CONFLICT"
+  ],
+  "results": [
+    {
+      "basis": "UNCHANGED_IN_DOUBT",
+      "fence_attempts": 0,
+      "label": "execute",
+      "passes": 1,
+      "patch_processes": 1,
+      "status": "NEEDS_RECONCILIATION",
+      "successful_fences": 0,
+      "successful_writes": 0,
+      "write_attempts": 1
+    },
+    {
+      "basis": "UNCHANGED_IN_DOUBT",
+      "fence_attempts": 0,
+      "label": "reconcile before the settle delay",
+      "passes": 1,
+      "patch_processes": 0,
+      "status": "NEEDS_RECONCILIATION",
+      "successful_fences": 0,
+      "successful_writes": 0,
+      "write_attempts": 0
+    },
+    {
+      "basis": "FENCED",
+      "fence_attempts": 1,
+      "label": "reconcile",
+      "passes": 5,
+      "patch_processes": 1,
+      "status": "CONFLICT",
+      "successful_fences": 1,
+      "successful_writes": 0,
+      "write_attempts": 0
+    },
+    {
+      "basis": "EVIDENCE_MATCH",
+      "fence_attempts": 0,
+      "label": "second execute",
+      "passes": 1,
+      "patch_processes": 1,
+      "status": "APPLIED",
+      "successful_fences": 0,
+      "successful_writes": 1,
+      "write_attempts": 1
+    }
+  ],
+  "scenario": "admission-deny",
+  "scope": "one disposable namespace on a local kind cluster; containers on one host, not separate machines; Guard not under test",
+  "started_at": "2026-11-14T15:43:34.517971Z",
+  "status": "PASS",
+  "time_to_resolution_seconds": 31.938,
+  "transport": "kubectl"
+}

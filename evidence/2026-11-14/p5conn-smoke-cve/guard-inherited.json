@@ -1,0 +1,2004 @@
+[
+  {
+    "schema_version": "1.0",
+    "kind": "guard_report",
+    "incident_id": "INC-FALSE-ALARM-0771B83CA977",
+    "action_id": "ACT-LIVE-51706ec48a3f467396948d9b7e28371d",
+    "verdict": "REJECT",
+    "checked_at": "2026-11-14T14:50:50.448835Z",
+    "valid_until": "2026-11-14T14:51:10.448835Z",
+    "proposal_sha256": "d782ee9215def84a6659d4917f835d8ee94f2752056f1e991edf4315e6507008",
+    "inputs_sha256": "7d9f41a2f7e9c5e7086137c5ae55323d4de37dde934f4aec721b8f15831c71f3",
+    "decision_sha256": "d8d9cd67947b001fe905bdfdd288ee02925f4f30cd4c36127eca59dd352be555",
+    "checks": [
+      {
+        "code": "OPERATOR_APPROVAL_REQUIRED",
+        "status": "UNKNOWN",
+        "path": "approval",
+        "actual": "check failed",
+        "expected": "valid current trusted input",
+        "message": "Refresh the indicated input or correct the policy violation, then revalidate."
+      },
+      {
+        "code": "TARGET_POLICY",
+        "status": "PASS",
+        "path": "policy.targets",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "ACTION_POLICY",
+        "status": "PASS",
+        "path": "proposal.action",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "LIVE_IDENTITY_VERSION",
+        "status": "PASS",
+        "path": "live_state.deployment.metadata",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "LIVE_TIMESTAMP",
+        "status": "PASS",
+        "path": "live_state.captured_at",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "BASELINE_IDENTITY_HASH",
+        "status": "PASS",
+        "path": "baseline",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "DEPENDENCY_VALIDATION",
+        "status": "PASS",
+        "path": "dependencies",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "ROLLBACK_ALREADY_AT_BASELINE",
+        "status": "FAIL",
+        "path": "live_state.deployment.spec.template",
+        "actual": {
+          "template_sha256": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d"
+        },
+        "expected": {
+          "different_from_baseline_sha256": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d"
+        },
+        "message": "The Deployment already uses the saved baseline; rollback would make no template change."
+      },
+      {
+        "code": "BASELINE_AGE",
+        "status": "PASS",
+        "path": "baseline.healthy_observed_at",
+        "actual": 163.762719,
+        "expected": {
+          "min_age_seconds": 0,
+          "max_age_seconds": 1800
+        },
+        "message": "Baseline health evidence must be recent and not in the future."
+      },
+      {
+        "code": "BASELINE_HEALTH_STATUS",
+        "status": "PASS",
+        "path": "baseline.health_evidence.status",
+        "actual": "HEALTHY",
+        "expected": "HEALTHY",
+        "message": "Baseline must have a healthy verification result."
+      },
+      {
+        "code": "BASELINE_HEALTH_TARGET",
+        "status": "PASS",
+        "path": "baseline.health_evidence.target",
+        "actual": {
+          "cluster_id": "sentinel-boutique-connected",
+          "kind": "Deployment",
+          "name": "cartservice",
+          "namespace": "sentinel-boutique-connected",
+          "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+        },
+        "expected": {
+          "cluster_id": "sentinel-boutique-connected",
+          "kind": "Deployment",
+          "name": "cartservice",
+          "namespace": "sentinel-boutique-connected",
+          "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+        },
+        "message": "Health evidence must identify the exact recovery target."
+      },
+      {
+        "code": "BASELINE_HEALTH_TEMPLATE",
+        "status": "PASS",
+        "path": "baseline.health_evidence.template_sha256",
+        "actual": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d",
+        "expected": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d",
+        "message": "Health evidence must identify the exact saved template."
+      },
+      {
+        "code": "BASELINE_HEALTH_WINDOW",
+        "status": "PASS",
+        "path": "baseline.health_evidence.window_end",
+        "actual": "2026-11-14T14:48:06.686116Z",
+        "expected": "ordered, nonfuture, ending at healthy_observed_at",
+        "message": "Health window must be ordered, nonfuture and consistent with the saved baseline."
+      },
+      {
+        "code": "BASELINE_HEALTH_SOURCE",
+        "status": "PASS",
+        "path": "baseline.health_evidence.source",
+        "actual": "sentinel-boutique-connected-checkout",
+        "expected": [
+          "sentinel-boutique-connected-checkout"
+        ],
+        "message": "Health evidence must originate from a configured verifier."
+      },
+      {
+        "code": "BASELINE_HEALTH_DURATION",
+        "status": "PASS",
+        "path": "baseline.health_evidence.window_start",
+        "actual": 33.361854,
+        "expected": {
+          "min_seconds": 10
+        },
+        "message": "Health verification must cover the configured stability window."
+      },
+      {
+        "code": "BASELINE_IMAGE_DIGEST",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].image",
+        "actual": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e",
+        "expected": "repository@sha256:<64 lowercase hex characters>",
+        "message": "Rollback images must use immutable SHA-256 digests."
+      },
+      {
+        "code": "BASELINE_REFERENCES",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec",
+        "actual": [],
+        "expected": [],
+        "message": "Template has no ConfigMap/Secret references."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.hostNetwork",
+        "actual": false,
+        "expected": false,
+        "message": "Rollback must not share host namespaces."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.hostPID",
+        "actual": false,
+        "expected": false,
+        "message": "Rollback must not share host namespaces."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.hostIPC",
+        "actual": false,
+        "expected": false,
+        "message": "Rollback must not share host namespaces."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].ports[0].hostPort",
+        "actual": 0,
+        "expected": 0,
+        "message": "Rollback must not bind a host port."
+      },
+      {
+        "code": "SECURITY_ROOT_USER",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.securityContext.runAsUser",
+        "actual": 1000,
+        "expected": "nonzero UID",
+        "message": "Rollback must not explicitly select the root user."
+      },
+      {
+        "code": "SECURITY_ROOT_USER",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.securityContext.runAsNonRoot",
+        "actual": true,
+        "expected": true,
+        "message": "Rollback must not explicitly allow a root user."
+      },
+      {
+        "code": "SECURITY_PRIVILEGED",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].securityContext.privileged",
+        "actual": false,
+        "expected": false,
+        "message": "Privileged containers are forbidden."
+      },
+      {
+        "code": "SECURITY_PRIVILEGE_ESCALATION",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].securityContext.allowPrivilegeEscalation",
+        "actual": false,
+        "expected": false,
+        "message": "Explicitly disable privilege escalation."
+      },
+      {
+        "code": "SECURITY_CAPABILITIES",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].securityContext.capabilities.add",
+        "actual": [],
+        "expected": [],
+        "message": "Additional Linux capabilities are forbidden."
+      },
+      {
+        "code": "SECURITY_IMAGE_REGISTRY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].image",
+        "actual": "us-central1-docker.pkg.dev",
+        "expected": [
+          "us-central1-docker.pkg.dev"
+        ],
+        "message": "Image registry must match an exact configured host."
+      },
+      {
+        "code": "SECURITY_SERVICE_ACCOUNT",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.serviceAccountName",
+        "actual": "cartservice",
+        "expected": [
+          "cartservice"
+        ],
+        "message": "Rollback service account must be allowlisted."
+      },
+      {
+        "code": "SECURITY_SERVICE_ACCOUNT_CHANGE",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.serviceAccountName",
+        "actual": "cartservice",
+        "expected": "cartservice",
+        "message": "Rollback must preserve the current service account."
+      },
+      {
+        "code": "IMAGE_SCANS_MISSING",
+        "status": "UNKNOWN",
+        "path": "live_state.image_scans",
+        "actual": null,
+        "expected": "trusted scan summaries for every image",
+        "message": "No trusted image scan evidence was supplied; the CVE gate cannot pass."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.requests.cpu",
+        "actual": "200m",
+        "expected": "200m",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): cpu request 200m is within policy maximum 200m."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.limits.cpu",
+        "actual": "300m",
+        "expected": "500m",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): cpu limit 300m is within policy maximum 500m."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.requests.memory",
+        "actual": "64Mi",
+        "expected": "64Mi",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): memory request 64Mi is within policy maximum 64Mi."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.limits.memory",
+        "actual": "128Mi",
+        "expected": "128Mi",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): memory limit 128Mi is within policy maximum 128Mi."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.spec.replicas",
+        "actual": 1,
+        "expected": 2,
+        "message": "max_replicas: calculated 1, configured maximum 2."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.spec.strategy",
+        "actual": 0,
+        "expected": 1,
+        "message": "max_surge_replicas: calculated 0, configured maximum 1."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.effective_requests.cpu",
+        "actual": "200m",
+        "expected": "250m",
+        "message": "Effective Pod cpu request includes concurrent apps, restartable init sidecars, initialization peak and overhead."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.effective_requests.memory",
+        "actual": "64Mi",
+        "expected": "128Mi",
+        "message": "Effective Pod memory request includes concurrent apps, restartable init sidecars, initialization peak and overhead."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.rollout_requests.cpu",
+        "actual": {
+          "request_bound": "200m",
+          "priced_replicas": 1,
+          "per_pod_max": "200m"
+        },
+        "expected": "1000m",
+        "message": "Conservative snapshot estimate: max(current, candidate) effective request times max(desired + surge, observed replicas), plus observed terminating replicas; this is not a schedulability guarantee."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.rollout_requests.memory",
+        "actual": {
+          "request_bound": "64Mi",
+          "priced_replicas": 1,
+          "per_pod_max": "64Mi"
+        },
+        "expected": "512Mi",
+        "message": "Conservative snapshot estimate: max(current, candidate) effective request times max(desired + surge, observed replicas), plus observed terminating replicas; this is not a schedulability guarantee."
+      },
+      {
+        "code": "SERVER_DRY_RUN_DISABLED",
+        "status": "SKIP",
+        "path": "preview",
+        "actual": null,
+        "expected": "optional",
+        "message": "Server preview is not required by policy."
+      }
+    ],
+    "input_fingerprints": {
+      "proposal": "d782ee9215def84a6659d4917f835d8ee94f2752056f1e991edf4315e6507008",
+      "live_state": "50bcfb381be885cf581fb077bb3e9ceab5e71b5d77a5880bfea5ec8c9f08dd80",
+      "policy": "efe36732e9d75976b9dc256f0d86613919d33ec290d8457a51087a46027c850c",
+      "baseline": "9578cedc193523d65dbba936193a1c98446cce238ea0b98c0f3b7f7ec4a27235",
+      "dependencies": "1a24913cca5e9acff549f4ccb56fc95269d6414db63161d0d2bda93d7a64bcfa",
+      "approval": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "preview": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "kind": "guard_report",
+    "incident_id": "INC-8D8C57C2BBC6",
+    "action_id": "ACT-LIVE-92b6e80e05e14d82afdd0fc353636f5c",
+    "verdict": "ALLOW",
+    "checked_at": "2026-11-14T14:49:39.551292Z",
+    "valid_until": "2026-11-14T14:49:59.551292Z",
+    "proposal_sha256": "b4f496345bfb1b2f43e2b6728cd31f95fb88cde4779f6ed0517029ac0eb26030",
+    "inputs_sha256": "6234b9553488560377e366517f0c3e309d6c62376cd79029ca35fc5304dfe584",
+    "decision_sha256": "aabd95d5d07cba1fa46f0203637372894a62b1d76536d0e1476f5a2beafc085f",
+    "checks": [
+      {
+        "code": "TARGET_POLICY",
+        "status": "PASS",
+        "path": "policy.targets",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "ACTION_POLICY",
+        "status": "PASS",
+        "path": "proposal.action",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "LIVE_IDENTITY_VERSION",
+        "status": "PASS",
+        "path": "live_state.deployment.metadata",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "LIVE_TIMESTAMP",
+        "status": "PASS",
+        "path": "live_state.captured_at",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "BASELINE_IDENTITY_HASH",
+        "status": "PASS",
+        "path": "baseline",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "DEPENDENCY_VALIDATION",
+        "status": "PASS",
+        "path": "dependencies",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "APPROVAL_CHECK",
+        "status": "PASS",
+        "path": "approval",
+        "actual": "see authoritative record",
+        "expected": "matching current approval when required",
+        "message": "Approval cannot override a hard rejection."
+      },
+      {
+        "code": "ROLLBACK_CHANGES_TEMPLATE",
+        "status": "PASS",
+        "path": "live_state.deployment.spec.template",
+        "actual": {
+          "template_sha256": "366dfaf4eb87efa99ecc6b4ba04310024b5227450564456373252bf73ea3577c"
+        },
+        "expected": {
+          "different_from_baseline_sha256": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d"
+        },
+        "message": "Rollback would restore a different, previously verified template."
+      },
+      {
+        "code": "BASELINE_AGE",
+        "status": "PASS",
+        "path": "baseline.healthy_observed_at",
+        "actual": 92.865176,
+        "expected": {
+          "min_age_seconds": 0,
+          "max_age_seconds": 1800
+        },
+        "message": "Baseline health evidence must be recent and not in the future."
+      },
+      {
+        "code": "BASELINE_HEALTH_STATUS",
+        "status": "PASS",
+        "path": "baseline.health_evidence.status",
+        "actual": "HEALTHY",
+        "expected": "HEALTHY",
+        "message": "Baseline must have a healthy verification result."
+      },
+      {
+        "code": "BASELINE_HEALTH_TARGET",
+        "status": "PASS",
+        "path": "baseline.health_evidence.target",
+        "actual": {
+          "cluster_id": "sentinel-boutique-connected",
+          "kind": "Deployment",
+          "name": "cartservice",
+          "namespace": "sentinel-boutique-connected",
+          "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+        },
+        "expected": {
+          "cluster_id": "sentinel-boutique-connected",
+          "kind": "Deployment",
+          "name": "cartservice",
+          "namespace": "sentinel-boutique-connected",
+          "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+        },
+        "message": "Health evidence must identify the exact recovery target."
+      },
+      {
+        "code": "BASELINE_HEALTH_TEMPLATE",
+        "status": "PASS",
+        "path": "baseline.health_evidence.template_sha256",
+        "actual": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d",
+        "expected": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d",
+        "message": "Health evidence must identify the exact saved template."
+      },
+      {
+        "code": "BASELINE_HEALTH_WINDOW",
+        "status": "PASS",
+        "path": "baseline.health_evidence.window_end",
+        "actual": "2026-11-14T14:48:06.686116Z",
+        "expected": "ordered, nonfuture, ending at healthy_observed_at",
+        "message": "Health window must be ordered, nonfuture and consistent with the saved baseline."
+      },
+      {
+        "code": "BASELINE_HEALTH_SOURCE",
+        "status": "PASS",
+        "path": "baseline.health_evidence.source",
+        "actual": "sentinel-boutique-connected-checkout",
+        "expected": [
+          "sentinel-boutique-connected-checkout"
+        ],
+        "message": "Health evidence must originate from a configured verifier."
+      },
+      {
+        "code": "BASELINE_HEALTH_DURATION",
+        "status": "PASS",
+        "path": "baseline.health_evidence.window_start",
+        "actual": 33.361854,
+        "expected": {
+          "min_seconds": 10
+        },
+        "message": "Health verification must cover the configured stability window."
+      },
+      {
+        "code": "BASELINE_IMAGE_DIGEST",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].image",
+        "actual": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e",
+        "expected": "repository@sha256:<64 lowercase hex characters>",
+        "message": "Rollback images must use immutable SHA-256 digests."
+      },
+      {
+        "code": "BASELINE_REFERENCES",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec",
+        "actual": [],
+        "expected": [],
+        "message": "Template has no ConfigMap/Secret references."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.hostNetwork",
+        "actual": false,
+        "expected": false,
+        "message": "Rollback must not share host namespaces."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.hostPID",
+        "actual": false,
+        "expected": false,
+        "message": "Rollback must not share host namespaces."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.hostIPC",
+        "actual": false,
+        "expected": false,
+        "message": "Rollback must not share host namespaces."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].ports[0].hostPort",
+        "actual": 0,
+        "expected": 0,
+        "message": "Rollback must not bind a host port."
+      },
+      {
+        "code": "SECURITY_ROOT_USER",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.securityContext.runAsUser",
+        "actual": 1000,
+        "expected": "nonzero UID",
+        "message": "Rollback must not explicitly select the root user."
+      },
+      {
+        "code": "SECURITY_ROOT_USER",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.securityContext.runAsNonRoot",
+        "actual": true,
+        "expected": true,
+        "message": "Rollback must not explicitly allow a root user."
+      },
+      {
+        "code": "SECURITY_PRIVILEGED",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].securityContext.privileged",
+        "actual": false,
+        "expected": false,
+        "message": "Privileged containers are forbidden."
+      },
+      {
+        "code": "SECURITY_PRIVILEGE_ESCALATION",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].securityContext.allowPrivilegeEscalation",
+        "actual": false,
+        "expected": false,
+        "message": "Explicitly disable privilege escalation."
+      },
+      {
+        "code": "SECURITY_CAPABILITIES",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].securityContext.capabilities.add",
+        "actual": [],
+        "expected": [],
+        "message": "Additional Linux capabilities are forbidden."
+      },
+      {
+        "code": "SECURITY_IMAGE_REGISTRY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].image",
+        "actual": "us-central1-docker.pkg.dev",
+        "expected": [
+          "us-central1-docker.pkg.dev"
+        ],
+        "message": "Image registry must match an exact configured host."
+      },
+      {
+        "code": "SECURITY_SERVICE_ACCOUNT",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.serviceAccountName",
+        "actual": "cartservice",
+        "expected": [
+          "cartservice"
+        ],
+        "message": "Rollback service account must be allowlisted."
+      },
+      {
+        "code": "SECURITY_SERVICE_ACCOUNT_CHANGE",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.serviceAccountName",
+        "actual": "cartservice",
+        "expected": "cartservice",
+        "message": "Rollback must preserve the current service account."
+      },
+      {
+        "code": "IMAGE_CVE_INHERITED",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].image",
+        "actual": {
+          "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e",
+          "ids": [
+            "CVE-2026-45447",
+            "CVE-2026-84782"
+          ],
+          "id_count": 2
+        },
+        "expected": {
+          "mode": "non_regression",
+          "block_severities": [
+            "CRITICAL",
+            "HIGH"
+          ]
+        },
+        "message": "The current image already has these findings; non-regression mode allows them."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.requests.cpu",
+        "actual": "200m",
+        "expected": "200m",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): cpu request 200m is within policy maximum 200m."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.limits.cpu",
+        "actual": "300m",
+        "expected": "500m",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): cpu limit 300m is within policy maximum 500m."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.requests.memory",
+        "actual": "64Mi",
+        "expected": "64Mi",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): memory request 64Mi is within policy maximum 64Mi."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.limits.memory",
+        "actual": "128Mi",
+        "expected": "128Mi",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): memory limit 128Mi is within policy maximum 128Mi."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.spec.replicas",
+        "actual": 1,
+        "expected": 2,
+        "message": "max_replicas: calculated 1, configured maximum 2."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.spec.strategy",
+        "actual": 0,
+        "expected": 1,
+        "message": "max_surge_replicas: calculated 0, configured maximum 1."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.effective_requests.cpu",
+        "actual": "200m",
+        "expected": "250m",
+        "message": "Effective Pod cpu request includes concurrent apps, restartable init sidecars, initialization peak and overhead."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.effective_requests.memory",
+        "actual": "64Mi",
+        "expected": "128Mi",
+        "message": "Effective Pod memory request includes concurrent apps, restartable init sidecars, initialization peak and overhead."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.rollout_requests.cpu",
+        "actual": {
+          "request_bound": "200m",
+          "priced_replicas": 1,
+          "per_pod_max": "200m"
+        },
+        "expected": "1000m",
+        "message": "Conservative snapshot estimate: max(current, candidate) effective request times max(desired + surge, observed replicas), plus observed terminating replicas; this is not a schedulability guarantee."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.rollout_requests.memory",
+        "actual": {
+          "request_bound": "64Mi",
+          "priced_replicas": 1,
+          "per_pod_max": "64Mi"
+        },
+        "expected": "512Mi",
+        "message": "Conservative snapshot estimate: max(current, candidate) effective request times max(desired + surge, observed replicas), plus observed terminating replicas; this is not a schedulability guarantee."
+      },
+      {
+        "code": "APPROVAL_LIFETIME",
+        "status": "PASS",
+        "path": "approval.expires_at",
+        "actual": 179.974042,
+        "expected": {
+          "max_seconds": 300
+        },
+        "message": "Approval lifetime must fit reviewed policy."
+      },
+      {
+        "code": "SERVER_DRY_RUN_DISABLED",
+        "status": "SKIP",
+        "path": "preview",
+        "actual": null,
+        "expected": "optional",
+        "message": "Server preview is not required by policy."
+      }
+    ],
+    "input_fingerprints": {
+      "proposal": "b4f496345bfb1b2f43e2b6728cd31f95fb88cde4779f6ed0517029ac0eb26030",
+      "live_state": "a0bd22fa81c993b9d83d95d562ce267132b9b0a62fdd3bc034e4a2f8384f6d05",
+      "policy": "efe36732e9d75976b9dc256f0d86613919d33ec290d8457a51087a46027c850c",
+      "baseline": "9578cedc193523d65dbba936193a1c98446cce238ea0b98c0f3b7f7ec4a27235",
+      "dependencies": "3820741d817646eeb5ec7906e38c3604750d6aa8e0d56cf4cbdb8a8c2989ca5e",
+      "approval": "46c7c1784a414cc2e25f94a234699eb9eee082ba417e3606c0ee36d174b9ab25",
+      "preview": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "kind": "guard_report",
+    "incident_id": "INC-8D8C57C2BBC6",
+    "action_id": "ACT-LIVE-92b6e80e05e14d82afdd0fc353636f5c",
+    "verdict": "ESCALATE",
+    "checked_at": "2026-11-14T14:49:39.414724Z",
+    "valid_until": "2026-11-14T14:49:59.414724Z",
+    "proposal_sha256": "b4f496345bfb1b2f43e2b6728cd31f95fb88cde4779f6ed0517029ac0eb26030",
+    "inputs_sha256": "847635264d5c7c0abfc46dfd9df6940b2f37f57b2612782d497b62a106d0ceb4",
+    "decision_sha256": "7aa15abdb1bcb28610c355a94bb42d4015fd5ed38327132c0a26fe5795c7b06e",
+    "checks": [
+      {
+        "code": "OPERATOR_APPROVAL_REQUIRED",
+        "status": "UNKNOWN",
+        "path": "approval",
+        "actual": "check failed",
+        "expected": "valid current trusted input",
+        "message": "Refresh the indicated input or correct the policy violation, then revalidate."
+      },
+      {
+        "code": "TARGET_POLICY",
+        "status": "PASS",
+        "path": "policy.targets",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "ACTION_POLICY",
+        "status": "PASS",
+        "path": "proposal.action",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "LIVE_IDENTITY_VERSION",
+        "status": "PASS",
+        "path": "live_state.deployment.metadata",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "LIVE_TIMESTAMP",
+        "status": "PASS",
+        "path": "live_state.captured_at",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "BASELINE_IDENTITY_HASH",
+        "status": "PASS",
+        "path": "baseline",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "DEPENDENCY_VALIDATION",
+        "status": "PASS",
+        "path": "dependencies",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "ROLLBACK_CHANGES_TEMPLATE",
+        "status": "PASS",
+        "path": "live_state.deployment.spec.template",
+        "actual": {
+          "template_sha256": "366dfaf4eb87efa99ecc6b4ba04310024b5227450564456373252bf73ea3577c"
+        },
+        "expected": {
+          "different_from_baseline_sha256": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d"
+        },
+        "message": "Rollback would restore a different, previously verified template."
+      },
+      {
+        "code": "BASELINE_AGE",
+        "status": "PASS",
+        "path": "baseline.healthy_observed_at",
+        "actual": 92.728608,
+        "expected": {
+          "min_age_seconds": 0,
+          "max_age_seconds": 1800
+        },
+        "message": "Baseline health evidence must be recent and not in the future."
+      },
+      {
+        "code": "BASELINE_HEALTH_STATUS",
+        "status": "PASS",
+        "path": "baseline.health_evidence.status",
+        "actual": "HEALTHY",
+        "expected": "HEALTHY",
+        "message": "Baseline must have a healthy verification result."
+      },
+      {
+        "code": "BASELINE_HEALTH_TARGET",
+        "status": "PASS",
+        "path": "baseline.health_evidence.target",
+        "actual": {
+          "cluster_id": "sentinel-boutique-connected",
+          "kind": "Deployment",
+          "name": "cartservice",
+          "namespace": "sentinel-boutique-connected",
+          "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+        },
+        "expected": {
+          "cluster_id": "sentinel-boutique-connected",
+          "kind": "Deployment",
+          "name": "cartservice",
+          "namespace": "sentinel-boutique-connected",
+          "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+        },
+        "message": "Health evidence must identify the exact recovery target."
+      },
+      {
+        "code": "BASELINE_HEALTH_TEMPLATE",
+        "status": "PASS",
+        "path": "baseline.health_evidence.template_sha256",
+        "actual": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d",
+        "expected": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d",
+        "message": "Health evidence must identify the exact saved template."
+      },
+      {
+        "code": "BASELINE_HEALTH_WINDOW",
+        "status": "PASS",
+        "path": "baseline.health_evidence.window_end",
+        "actual": "2026-11-14T14:48:06.686116Z",
+        "expected": "ordered, nonfuture, ending at healthy_observed_at",
+        "message": "Health window must be ordered, nonfuture and consistent with the saved baseline."
+      },
+      {
+        "code": "BASELINE_HEALTH_SOURCE",
+        "status": "PASS",
+        "path": "baseline.health_evidence.source",
+        "actual": "sentinel-boutique-connected-checkout",
+        "expected": [
+          "sentinel-boutique-connected-checkout"
+        ],
+        "message": "Health evidence must originate from a configured verifier."
+      },
+      {
+        "code": "BASELINE_HEALTH_DURATION",
+        "status": "PASS",
+        "path": "baseline.health_evidence.window_start",
+        "actual": 33.361854,
+        "expected": {
+          "min_seconds": 10
+        },
+        "message": "Health verification must cover the configured stability window."
+      },
+      {
+        "code": "BASELINE_IMAGE_DIGEST",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].image",
+        "actual": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e",
+        "expected": "repository@sha256:<64 lowercase hex characters>",
+        "message": "Rollback images must use immutable SHA-256 digests."
+      },
+      {
+        "code": "BASELINE_REFERENCES",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec",
+        "actual": [],
+        "expected": [],
+        "message": "Template has no ConfigMap/Secret references."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.hostNetwork",
+        "actual": false,
+        "expected": false,
+        "message": "Rollback must not share host namespaces."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.hostPID",
+        "actual": false,
+        "expected": false,
+        "message": "Rollback must not share host namespaces."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.hostIPC",
+        "actual": false,
+        "expected": false,
+        "message": "Rollback must not share host namespaces."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].ports[0].hostPort",
+        "actual": 0,
+        "expected": 0,
+        "message": "Rollback must not bind a host port."
+      },
+      {
+        "code": "SECURITY_ROOT_USER",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.securityContext.runAsUser",
+        "actual": 1000,
+        "expected": "nonzero UID",
+        "message": "Rollback must not explicitly select the root user."
+      },
+      {
+        "code": "SECURITY_ROOT_USER",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.securityContext.runAsNonRoot",
+        "actual": true,
+        "expected": true,
+        "message": "Rollback must not explicitly allow a root user."
+      },
+      {
+        "code": "SECURITY_PRIVILEGED",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].securityContext.privileged",
+        "actual": false,
+        "expected": false,
+        "message": "Privileged containers are forbidden."
+      },
+      {
+        "code": "SECURITY_PRIVILEGE_ESCALATION",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].securityContext.allowPrivilegeEscalation",
+        "actual": false,
+        "expected": false,
+        "message": "Explicitly disable privilege escalation."
+      },
+      {
+        "code": "SECURITY_CAPABILITIES",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].securityContext.capabilities.add",
+        "actual": [],
+        "expected": [],
+        "message": "Additional Linux capabilities are forbidden."
+      },
+      {
+        "code": "SECURITY_IMAGE_REGISTRY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].image",
+        "actual": "us-central1-docker.pkg.dev",
+        "expected": [
+          "us-central1-docker.pkg.dev"
+        ],
+        "message": "Image registry must match an exact configured host."
+      },
+      {
+        "code": "SECURITY_SERVICE_ACCOUNT",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.serviceAccountName",
+        "actual": "cartservice",
+        "expected": [
+          "cartservice"
+        ],
+        "message": "Rollback service account must be allowlisted."
+      },
+      {
+        "code": "SECURITY_SERVICE_ACCOUNT_CHANGE",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.serviceAccountName",
+        "actual": "cartservice",
+        "expected": "cartservice",
+        "message": "Rollback must preserve the current service account."
+      },
+      {
+        "code": "IMAGE_CVE_INHERITED",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].image",
+        "actual": {
+          "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e",
+          "ids": [
+            "CVE-2026-45447",
+            "CVE-2026-84782"
+          ],
+          "id_count": 2
+        },
+        "expected": {
+          "mode": "non_regression",
+          "block_severities": [
+            "CRITICAL",
+            "HIGH"
+          ]
+        },
+        "message": "The current image already has these findings; non-regression mode allows them."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.requests.cpu",
+        "actual": "200m",
+        "expected": "200m",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): cpu request 200m is within policy maximum 200m."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.limits.cpu",
+        "actual": "300m",
+        "expected": "500m",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): cpu limit 300m is within policy maximum 500m."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.requests.memory",
+        "actual": "64Mi",
+        "expected": "64Mi",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): memory request 64Mi is within policy maximum 64Mi."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.limits.memory",
+        "actual": "128Mi",
+        "expected": "128Mi",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): memory limit 128Mi is within policy maximum 128Mi."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.spec.replicas",
+        "actual": 1,
+        "expected": 2,
+        "message": "max_replicas: calculated 1, configured maximum 2."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.spec.strategy",
+        "actual": 0,
+        "expected": 1,
+        "message": "max_surge_replicas: calculated 0, configured maximum 1."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.effective_requests.cpu",
+        "actual": "200m",
+        "expected": "250m",
+        "message": "Effective Pod cpu request includes concurrent apps, restartable init sidecars, initialization peak and overhead."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.effective_requests.memory",
+        "actual": "64Mi",
+        "expected": "128Mi",
+        "message": "Effective Pod memory request includes concurrent apps, restartable init sidecars, initialization peak and overhead."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.rollout_requests.cpu",
+        "actual": {
+          "request_bound": "200m",
+          "priced_replicas": 1,
+          "per_pod_max": "200m"
+        },
+        "expected": "1000m",
+        "message": "Conservative snapshot estimate: max(current, candidate) effective request times max(desired + surge, observed replicas), plus observed terminating replicas; this is not a schedulability guarantee."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.rollout_requests.memory",
+        "actual": {
+          "request_bound": "64Mi",
+          "priced_replicas": 1,
+          "per_pod_max": "64Mi"
+        },
+        "expected": "512Mi",
+        "message": "Conservative snapshot estimate: max(current, candidate) effective request times max(desired + surge, observed replicas), plus observed terminating replicas; this is not a schedulability guarantee."
+      },
+      {
+        "code": "SERVER_DRY_RUN_DISABLED",
+        "status": "SKIP",
+        "path": "preview",
+        "actual": null,
+        "expected": "optional",
+        "message": "Server preview is not required by policy."
+      }
+    ],
+    "input_fingerprints": {
+      "proposal": "b4f496345bfb1b2f43e2b6728cd31f95fb88cde4779f6ed0517029ac0eb26030",
+      "live_state": "f44829faf04f60d2ad168b2d94fb7e4c97d83d5d31e8b543dc964f2d53dcb697",
+      "policy": "efe36732e9d75976b9dc256f0d86613919d33ec290d8457a51087a46027c850c",
+      "baseline": "9578cedc193523d65dbba936193a1c98446cce238ea0b98c0f3b7f7ec4a27235",
+      "dependencies": "3820741d817646eeb5ec7906e38c3604750d6aa8e0d56cf4cbdb8a8c2989ca5e",
+      "approval": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "preview": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "kind": "guard_report",
+    "incident_id": "INC-D075ED17F8AC",
+    "action_id": "ACT-LIVE-728313edefc24edab442017736af8759",
+    "verdict": "ALLOW",
+    "checked_at": "2026-11-14T14:48:19.768717Z",
+    "valid_until": "2026-11-14T14:48:39.768717Z",
+    "proposal_sha256": "0e946e05d828a7b3db2af63458d8ccca0f4a27378bbf0583473ae5dfc5eef355",
+    "inputs_sha256": "a36ceea2f0853c142ae8df3fede1f3e44b7a893f6e9509822995cebcb9f8ded9",
+    "decision_sha256": "4372ee54dc4b64e595bf3ba9a56fa7cd87c986bb0e1a27ecda2eb2cb5adda2a0",
+    "checks": [
+      {
+        "code": "TARGET_POLICY",
+        "status": "PASS",
+        "path": "policy.targets",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "ACTION_POLICY",
+        "status": "PASS",
+        "path": "proposal.action",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "LIVE_IDENTITY_VERSION",
+        "status": "PASS",
+        "path": "live_state.deployment.metadata",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "LIVE_TIMESTAMP",
+        "status": "PASS",
+        "path": "live_state.captured_at",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "BASELINE_IDENTITY_HASH",
+        "status": "PASS",
+        "path": "baseline",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "DEPENDENCY_VALIDATION",
+        "status": "PASS",
+        "path": "dependencies",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "APPROVAL_CHECK",
+        "status": "PASS",
+        "path": "approval",
+        "actual": "see authoritative record",
+        "expected": "matching current approval when required",
+        "message": "Approval cannot override a hard rejection."
+      },
+      {
+        "code": "ROLLBACK_CHANGES_TEMPLATE",
+        "status": "PASS",
+        "path": "live_state.deployment.spec.template",
+        "actual": {
+          "template_sha256": "366dfaf4eb87efa99ecc6b4ba04310024b5227450564456373252bf73ea3577c"
+        },
+        "expected": {
+          "different_from_baseline_sha256": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d"
+        },
+        "message": "Rollback would restore a different, previously verified template."
+      },
+      {
+        "code": "BASELINE_AGE",
+        "status": "PASS",
+        "path": "baseline.healthy_observed_at",
+        "actual": 13.082601,
+        "expected": {
+          "min_age_seconds": 0,
+          "max_age_seconds": 1800
+        },
+        "message": "Baseline health evidence must be recent and not in the future."
+      },
+      {
+        "code": "BASELINE_HEALTH_STATUS",
+        "status": "PASS",
+        "path": "baseline.health_evidence.status",
+        "actual": "HEALTHY",
+        "expected": "HEALTHY",
+        "message": "Baseline must have a healthy verification result."
+      },
+      {
+        "code": "BASELINE_HEALTH_TARGET",
+        "status": "PASS",
+        "path": "baseline.health_evidence.target",
+        "actual": {
+          "cluster_id": "sentinel-boutique-connected",
+          "kind": "Deployment",
+          "name": "cartservice",
+          "namespace": "sentinel-boutique-connected",
+          "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+        },
+        "expected": {
+          "cluster_id": "sentinel-boutique-connected",
+          "kind": "Deployment",
+          "name": "cartservice",
+          "namespace": "sentinel-boutique-connected",
+          "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+        },
+        "message": "Health evidence must identify the exact recovery target."
+      },
+      {
+        "code": "BASELINE_HEALTH_TEMPLATE",
+        "status": "PASS",
+        "path": "baseline.health_evidence.template_sha256",
+        "actual": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d",
+        "expected": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d",
+        "message": "Health evidence must identify the exact saved template."
+      },
+      {
+        "code": "BASELINE_HEALTH_WINDOW",
+        "status": "PASS",
+        "path": "baseline.health_evidence.window_end",
+        "actual": "2026-11-14T14:48:06.686116Z",
+        "expected": "ordered, nonfuture, ending at healthy_observed_at",
+        "message": "Health window must be ordered, nonfuture and consistent with the saved baseline."
+      },
+      {
+        "code": "BASELINE_HEALTH_SOURCE",
+        "status": "PASS",
+        "path": "baseline.health_evidence.source",
+        "actual": "sentinel-boutique-connected-checkout",
+        "expected": [
+          "sentinel-boutique-connected-checkout"
+        ],
+        "message": "Health evidence must originate from a configured verifier."
+      },
+      {
+        "code": "BASELINE_HEALTH_DURATION",
+        "status": "PASS",
+        "path": "baseline.health_evidence.window_start",
+        "actual": 33.361854,
+        "expected": {
+          "min_seconds": 10
+        },
+        "message": "Health verification must cover the configured stability window."
+      },
+      {
+        "code": "BASELINE_IMAGE_DIGEST",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].image",
+        "actual": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e",
+        "expected": "repository@sha256:<64 lowercase hex characters>",
+        "message": "Rollback images must use immutable SHA-256 digests."
+      },
+      {
+        "code": "BASELINE_REFERENCES",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec",
+        "actual": [],
+        "expected": [],
+        "message": "Template has no ConfigMap/Secret references."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.hostNetwork",
+        "actual": false,
+        "expected": false,
+        "message": "Rollback must not share host namespaces."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.hostPID",
+        "actual": false,
+        "expected": false,
+        "message": "Rollback must not share host namespaces."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.hostIPC",
+        "actual": false,
+        "expected": false,
+        "message": "Rollback must not share host namespaces."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].ports[0].hostPort",
+        "actual": 0,
+        "expected": 0,
+        "message": "Rollback must not bind a host port."
+      },
+      {
+        "code": "SECURITY_ROOT_USER",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.securityContext.runAsUser",
+        "actual": 1000,
+        "expected": "nonzero UID",
+        "message": "Rollback must not explicitly select the root user."
+      },
+      {
+        "code": "SECURITY_ROOT_USER",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.securityContext.runAsNonRoot",
+        "actual": true,
+        "expected": true,
+        "message": "Rollback must not explicitly allow a root user."
+      },
+      {
+        "code": "SECURITY_PRIVILEGED",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].securityContext.privileged",
+        "actual": false,
+        "expected": false,
+        "message": "Privileged containers are forbidden."
+      },
+      {
+        "code": "SECURITY_PRIVILEGE_ESCALATION",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].securityContext.allowPrivilegeEscalation",
+        "actual": false,
+        "expected": false,
+        "message": "Explicitly disable privilege escalation."
+      },
+      {
+        "code": "SECURITY_CAPABILITIES",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].securityContext.capabilities.add",
+        "actual": [],
+        "expected": [],
+        "message": "Additional Linux capabilities are forbidden."
+      },
+      {
+        "code": "SECURITY_IMAGE_REGISTRY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].image",
+        "actual": "us-central1-docker.pkg.dev",
+        "expected": [
+          "us-central1-docker.pkg.dev"
+        ],
+        "message": "Image registry must match an exact configured host."
+      },
+      {
+        "code": "SECURITY_SERVICE_ACCOUNT",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.serviceAccountName",
+        "actual": "cartservice",
+        "expected": [
+          "cartservice"
+        ],
+        "message": "Rollback service account must be allowlisted."
+      },
+      {
+        "code": "SECURITY_SERVICE_ACCOUNT_CHANGE",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.serviceAccountName",
+        "actual": "cartservice",
+        "expected": "cartservice",
+        "message": "Rollback must preserve the current service account."
+      },
+      {
+        "code": "IMAGE_CVE_INHERITED",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].image",
+        "actual": {
+          "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e",
+          "ids": [
+            "CVE-2026-45447",
+            "CVE-2026-84782"
+          ],
+          "id_count": 2
+        },
+        "expected": {
+          "mode": "non_regression",
+          "block_severities": [
+            "CRITICAL",
+            "HIGH"
+          ]
+        },
+        "message": "The current image already has these findings; non-regression mode allows them."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.requests.cpu",
+        "actual": "200m",
+        "expected": "200m",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): cpu request 200m is within policy maximum 200m."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.limits.cpu",
+        "actual": "300m",
+        "expected": "500m",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): cpu limit 300m is within policy maximum 500m."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.requests.memory",
+        "actual": "64Mi",
+        "expected": "64Mi",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): memory request 64Mi is within policy maximum 64Mi."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.limits.memory",
+        "actual": "128Mi",
+        "expected": "128Mi",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): memory limit 128Mi is within policy maximum 128Mi."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.spec.replicas",
+        "actual": 1,
+        "expected": 2,
+        "message": "max_replicas: calculated 1, configured maximum 2."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.spec.strategy",
+        "actual": 0,
+        "expected": 1,
+        "message": "max_surge_replicas: calculated 0, configured maximum 1."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.effective_requests.cpu",
+        "actual": "200m",
+        "expected": "250m",
+        "message": "Effective Pod cpu request includes concurrent apps, restartable init sidecars, initialization peak and overhead."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.effective_requests.memory",
+        "actual": "64Mi",
+        "expected": "128Mi",
+        "message": "Effective Pod memory request includes concurrent apps, restartable init sidecars, initialization peak and overhead."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.rollout_requests.cpu",
+        "actual": {
+          "request_bound": "200m",
+          "priced_replicas": 1,
+          "per_pod_max": "200m"
+        },
+        "expected": "1000m",
+        "message": "Conservative snapshot estimate: max(current, candidate) effective request times max(desired + surge, observed replicas), plus observed terminating replicas; this is not a schedulability guarantee."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.rollout_requests.memory",
+        "actual": {
+          "request_bound": "64Mi",
+          "priced_replicas": 1,
+          "per_pod_max": "64Mi"
+        },
+        "expected": "512Mi",
+        "message": "Conservative snapshot estimate: max(current, candidate) effective request times max(desired + surge, observed replicas), plus observed terminating replicas; this is not a schedulability guarantee."
+      },
+      {
+        "code": "APPROVAL_LIFETIME",
+        "status": "PASS",
+        "path": "approval.expires_at",
+        "actual": 179.984485,
+        "expected": {
+          "max_seconds": 300
+        },
+        "message": "Approval lifetime must fit reviewed policy."
+      },
+      {
+        "code": "SERVER_DRY_RUN_DISABLED",
+        "status": "SKIP",
+        "path": "preview",
+        "actual": null,
+        "expected": "optional",
+        "message": "Server preview is not required by policy."
+      }
+    ],
+    "input_fingerprints": {
+      "proposal": "0e946e05d828a7b3db2af63458d8ccca0f4a27378bbf0583473ae5dfc5eef355",
+      "live_state": "2f61c92c8753d7669fabf4819ba8aa223bf36cda0d5e2a1da2af7bd3de7078a2",
+      "policy": "efe36732e9d75976b9dc256f0d86613919d33ec290d8457a51087a46027c850c",
+      "baseline": "9578cedc193523d65dbba936193a1c98446cce238ea0b98c0f3b7f7ec4a27235",
+      "dependencies": "18ddb96cc466adfb1e89e09d71ffcfebcb64dac7ac0ad7fa52316c4e31e02124",
+      "approval": "42588b7f2974259eec8ef2c35d55f3d457ac518204e5724635d4b885de409be1",
+      "preview": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "kind": "guard_report",
+    "incident_id": "INC-D075ED17F8AC",
+    "action_id": "ACT-LIVE-728313edefc24edab442017736af8759",
+    "verdict": "ESCALATE",
+    "checked_at": "2026-11-14T14:48:19.419182Z",
+    "valid_until": "2026-11-14T14:48:39.419182Z",
+    "proposal_sha256": "0e946e05d828a7b3db2af63458d8ccca0f4a27378bbf0583473ae5dfc5eef355",
+    "inputs_sha256": "ce647434c95221542252fea9ebd914ba333fdc90b008b8e6ef56525a4c31572f",
+    "decision_sha256": "57495c8e0fd3e994aec8ef2f45757a584a89ea5b32111835010a71ed6ca10bf0",
+    "checks": [
+      {
+        "code": "OPERATOR_APPROVAL_REQUIRED",
+        "status": "UNKNOWN",
+        "path": "approval",
+        "actual": "check failed",
+        "expected": "valid current trusted input",
+        "message": "Refresh the indicated input or correct the policy violation, then revalidate."
+      },
+      {
+        "code": "TARGET_POLICY",
+        "status": "PASS",
+        "path": "policy.targets",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "ACTION_POLICY",
+        "status": "PASS",
+        "path": "proposal.action",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "LIVE_IDENTITY_VERSION",
+        "status": "PASS",
+        "path": "live_state.deployment.metadata",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "LIVE_TIMESTAMP",
+        "status": "PASS",
+        "path": "live_state.captured_at",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "BASELINE_IDENTITY_HASH",
+        "status": "PASS",
+        "path": "baseline",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "DEPENDENCY_VALIDATION",
+        "status": "PASS",
+        "path": "dependencies",
+        "actual": "validated",
+        "expected": "matching reviewed input",
+        "message": "Core check completed."
+      },
+      {
+        "code": "ROLLBACK_CHANGES_TEMPLATE",
+        "status": "PASS",
+        "path": "live_state.deployment.spec.template",
+        "actual": {
+          "template_sha256": "366dfaf4eb87efa99ecc6b4ba04310024b5227450564456373252bf73ea3577c"
+        },
+        "expected": {
+          "different_from_baseline_sha256": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d"
+        },
+        "message": "Rollback would restore a different, previously verified template."
+      },
+      {
+        "code": "BASELINE_AGE",
+        "status": "PASS",
+        "path": "baseline.healthy_observed_at",
+        "actual": 12.733066,
+        "expected": {
+          "min_age_seconds": 0,
+          "max_age_seconds": 1800
+        },
+        "message": "Baseline health evidence must be recent and not in the future."
+      },
+      {
+        "code": "BASELINE_HEALTH_STATUS",
+        "status": "PASS",
+        "path": "baseline.health_evidence.status",
+        "actual": "HEALTHY",
+        "expected": "HEALTHY",
+        "message": "Baseline must have a healthy verification result."
+      },
+      {
+        "code": "BASELINE_HEALTH_TARGET",
+        "status": "PASS",
+        "path": "baseline.health_evidence.target",
+        "actual": {
+          "cluster_id": "sentinel-boutique-connected",
+          "kind": "Deployment",
+          "name": "cartservice",
+          "namespace": "sentinel-boutique-connected",
+          "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+        },
+        "expected": {
+          "cluster_id": "sentinel-boutique-connected",
+          "kind": "Deployment",
+          "name": "cartservice",
+          "namespace": "sentinel-boutique-connected",
+          "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+        },
+        "message": "Health evidence must identify the exact recovery target."
+      },
+      {
+        "code": "BASELINE_HEALTH_TEMPLATE",
+        "status": "PASS",
+        "path": "baseline.health_evidence.template_sha256",
+        "actual": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d",
+        "expected": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d",
+        "message": "Health evidence must identify the exact saved template."
+      },
+      {
+        "code": "BASELINE_HEALTH_WINDOW",
+        "status": "PASS",
+        "path": "baseline.health_evidence.window_end",
+        "actual": "2026-11-14T14:48:06.686116Z",
+        "expected": "ordered, nonfuture, ending at healthy_observed_at",
+        "message": "Health window must be ordered, nonfuture and consistent with the saved baseline."
+      },
+      {
+        "code": "BASELINE_HEALTH_SOURCE",
+        "status": "PASS",
+        "path": "baseline.health_evidence.source",
+        "actual": "sentinel-boutique-connected-checkout",
+        "expected": [
+          "sentinel-boutique-connected-checkout"
+        ],
+        "message": "Health evidence must originate from a configured verifier."
+      },
+      {
+        "code": "BASELINE_HEALTH_DURATION",
+        "status": "PASS",
+        "path": "baseline.health_evidence.window_start",
+        "actual": 33.361854,
+        "expected": {
+          "min_seconds": 10
+        },
+        "message": "Health verification must cover the configured stability window."
+      },
+      {
+        "code": "BASELINE_IMAGE_DIGEST",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].image",
+        "actual": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e",
+        "expected": "repository@sha256:<64 lowercase hex characters>",
+        "message": "Rollback images must use immutable SHA-256 digests."
+      },
+      {
+        "code": "BASELINE_REFERENCES",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec",
+        "actual": [],
+        "expected": [],
+        "message": "Template has no ConfigMap/Secret references."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.hostNetwork",
+        "actual": false,
+        "expected": false,
+        "message": "Rollback must not share host namespaces."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.hostPID",
+        "actual": false,
+        "expected": false,
+        "message": "Rollback must not share host namespaces."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.hostIPC",
+        "actual": false,
+        "expected": false,
+        "message": "Rollback must not share host namespaces."
+      },
+      {
+        "code": "SECURITY_HOST_ACCESS",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].ports[0].hostPort",
+        "actual": 0,
+        "expected": 0,
+        "message": "Rollback must not bind a host port."
+      },
+      {
+        "code": "SECURITY_ROOT_USER",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.securityContext.runAsUser",
+        "actual": 1000,
+        "expected": "nonzero UID",
+        "message": "Rollback must not explicitly select the root user."
+      },
+      {
+        "code": "SECURITY_ROOT_USER",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.securityContext.runAsNonRoot",
+        "actual": true,
+        "expected": true,
+        "message": "Rollback must not explicitly allow a root user."
+      },
+      {
+        "code": "SECURITY_PRIVILEGED",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].securityContext.privileged",
+        "actual": false,
+        "expected": false,
+        "message": "Privileged containers are forbidden."
+      },
+      {
+        "code": "SECURITY_PRIVILEGE_ESCALATION",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].securityContext.allowPrivilegeEscalation",
+        "actual": false,
+        "expected": false,
+        "message": "Explicitly disable privilege escalation."
+      },
+      {
+        "code": "SECURITY_CAPABILITIES",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].securityContext.capabilities.add",
+        "actual": [],
+        "expected": [],
+        "message": "Additional Linux capabilities are forbidden."
+      },
+      {
+        "code": "SECURITY_IMAGE_REGISTRY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].image",
+        "actual": "us-central1-docker.pkg.dev",
+        "expected": [
+          "us-central1-docker.pkg.dev"
+        ],
+        "message": "Image registry must match an exact configured host."
+      },
+      {
+        "code": "SECURITY_SERVICE_ACCOUNT",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.serviceAccountName",
+        "actual": "cartservice",
+        "expected": [
+          "cartservice"
+        ],
+        "message": "Rollback service account must be allowlisted."
+      },
+      {
+        "code": "SECURITY_SERVICE_ACCOUNT_CHANGE",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.serviceAccountName",
+        "actual": "cartservice",
+        "expected": "cartservice",
+        "message": "Rollback must preserve the current service account."
+      },
+      {
+        "code": "IMAGE_CVE_INHERITED",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].image",
+        "actual": {
+          "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e",
+          "ids": [
+            "CVE-2026-45447",
+            "CVE-2026-84782"
+          ],
+          "id_count": 2
+        },
+        "expected": {
+          "mode": "non_regression",
+          "block_severities": [
+            "CRITICAL",
+            "HIGH"
+          ]
+        },
+        "message": "The current image already has these findings; non-regression mode allows them."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.requests.cpu",
+        "actual": "200m",
+        "expected": "200m",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): cpu request 200m is within policy maximum 200m."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.limits.cpu",
+        "actual": "300m",
+        "expected": "500m",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): cpu limit 300m is within policy maximum 500m."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.requests.memory",
+        "actual": "64Mi",
+        "expected": "64Mi",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): memory request 64Mi is within policy maximum 64Mi."
+      },
+      {
+        "code": "RESOURCE_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.spec.containers[0].resources.limits.memory",
+        "actual": "128Mi",
+        "expected": "128Mi",
+        "message": "Container 'server' (baseline.pod_template.spec.containers[0]): memory limit 128Mi is within policy maximum 128Mi."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.spec.replicas",
+        "actual": 1,
+        "expected": 2,
+        "message": "max_replicas: calculated 1, configured maximum 2."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.spec.strategy",
+        "actual": 0,
+        "expected": 1,
+        "message": "max_surge_replicas: calculated 0, configured maximum 1."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.effective_requests.cpu",
+        "actual": "200m",
+        "expected": "250m",
+        "message": "Effective Pod cpu request includes concurrent apps, restartable init sidecars, initialization peak and overhead."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "baseline.pod_template.effective_requests.memory",
+        "actual": "64Mi",
+        "expected": "128Mi",
+        "message": "Effective Pod memory request includes concurrent apps, restartable init sidecars, initialization peak and overhead."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.rollout_requests.cpu",
+        "actual": {
+          "request_bound": "200m",
+          "priced_replicas": 1,
+          "per_pod_max": "200m"
+        },
+        "expected": "1000m",
+        "message": "Conservative snapshot estimate: max(current, candidate) effective request times max(desired + surge, observed replicas), plus observed terminating replicas; this is not a schedulability guarantee."
+      },
+      {
+        "code": "WORKLOAD_WITHIN_POLICY",
+        "status": "PASS",
+        "path": "live_state.deployment.rollout_requests.memory",
+        "actual": {
+          "request_bound": "64Mi",
+          "priced_replicas": 1,
+          "per_pod_max": "64Mi"
+        },
+        "expected": "512Mi",
+        "message": "Conservative snapshot estimate: max(current, candidate) effective request times max(desired + surge, observed replicas), plus observed terminating replicas; this is not a schedulability guarantee."
+      },
+      {
+        "code": "SERVER_DRY_RUN_DISABLED",
+        "status": "SKIP",
+        "path": "preview",
+        "actual": null,
+        "expected": "optional",
+        "message": "Server preview is not required by policy."
+      }
+    ],
+    "input_fingerprints": {
+      "proposal": "0e946e05d828a7b3db2af63458d8ccca0f4a27378bbf0583473ae5dfc5eef355",
+      "live_state": "3f7ccb59d6bbe757be875ebce8d9a1d2e73085791ea30e2e9c815d15db95c608",
+      "policy": "efe36732e9d75976b9dc256f0d86613919d33ec290d8457a51087a46027c850c",
+      "baseline": "9578cedc193523d65dbba936193a1c98446cce238ea0b98c0f3b7f7ec4a27235",
+      "dependencies": "18ddb96cc466adfb1e89e09d71ffcfebcb64dac7ac0ad7fa52316c4e31e02124",
+      "approval": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "preview": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+    }
+  }
+]

@@ -1,0 +1,31 @@
+{
+  "incident_id": "INC-D598F5771368",
+  "kind": "incident",
+  "observed_at": "2026-11-14T15:22:09.552442Z",
+  "observed_generation": 81,
+  "observed_resource_version": "341932",
+  "schema_version": "1.0",
+  "signals": [
+    {
+      "at": "2026-11-14T15:22:02.250167Z",
+      "detail": "Deployment sentinel-boutique-connected/cartservice spec.replicas is 0, below the reviewed minimum 1; resourceVersion 341928, generation 81",
+      "evidence_id": "E-9AE530C0B69D",
+      "reason": "ReplicasBelowReviewedMinimum",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-14T15:22:09.552442Z",
+      "detail": "Deployment sentinel-boutique-connected/cartservice spec.replicas is 0, below the reviewed minimum 1; resourceVersion 341932, generation 81",
+      "evidence_id": "E-DF958B10FAE1",
+      "reason": "ReplicasBelowReviewedMinimum",
+      "source": "deployment_status"
+    }
+  ],
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "cartservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+  }
+}

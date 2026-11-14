@@ -227,6 +227,8 @@ def outcome(bundle):
                                                        "INCOMPLETE")
     if bundle.run_class == "worker-container":
         return container_record(bundle)["outcome"]
+    if bundle.run_class == "cve-gate":
+        return cve_gate_outcome(bundle)
     if bundle.run_class == "kind-lab-session":
         return lab_session_record(bundle)["outcome"]
     if bundle.run_class == "distributed-acceptance":
@@ -238,6 +240,31 @@ def outcome(bundle):
     summary = bundle.json("summary.json") or bundle.json("data/evidence/summary.json") or {}
     status = summary.get("status")
     return status if status in OUTCOMES else "INCOMPLETE"
+
+
+def cve_gate_outcome(bundle):
+    """P5.02 Audit-then-Deny round: PASS only when every gate proof the round records holds.
+
+    The unscanned digest denied under Deny, the Guard-only zero-write check, the worse image rejected
+    with IMAGE_CVE_REGRESSION, and at least one ALLOW that names IMAGE_CVE_INHERITED. A missing record is
+    INCOMPLETE; any proof that does not hold is FAILED.
+    """
+    deny, zero = bundle.json("admission-deny.json"), bundle.json("zero-write.json")
+    regression, inherited = bundle.json("guard-regression.json"), bundle.json("guard-inherited.json")
+    if not (isinstance(deny, dict) and isinstance(zero, dict) and isinstance(regression, dict)
+            and isinstance(inherited, list)):
+        return "INCOMPLETE"
+    def code(report, name, status):
+        return any(isinstance(check, dict) and check.get("code") == name and check.get("status") == status
+                   for check in report.get("checks", []) if isinstance(report, dict))
+    passed = (deny.get("passed") is True and deny.get("unscanned_digest_denied") is True
+              and zero.get("passed") is True and zero.get("executor_writes") == 0
+              and regression.get("verdict") == "REJECT" and code(regression, "IMAGE_CVE_REGRESSION", "FAIL")
+              and any(isinstance(report, dict) and report.get("verdict") == "ALLOW"
+                      and any(isinstance(check, dict) and check.get("code") == "IMAGE_CVE_INHERITED"
+                              for check in report.get("checks", []))
+                      for report in inherited))
+    return "PASS" if passed else "FAILED"
 
 
 def summary_of(bundle):

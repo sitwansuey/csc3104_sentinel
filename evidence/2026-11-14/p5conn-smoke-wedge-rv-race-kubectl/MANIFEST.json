@@ -1,0 +1,28 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "p5conn-smoke-wedge-rv-race-kubectl",
+  "class": "executor-wedge",
+  "captured_at": "2026-11-14T14:44:23.213543Z",
+  "source_run_dir_name": "smoke-wedge-rv-race-kubectl",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+    "basis": "connected-lab Phase 5 session attempt 7 (14 Nov 2026) run from integration/phase5 at 7b35066, clean worktree plus untracked scratch runner"
+  },
+  "files": [
+    {
+      "path": "manifests.json",
+      "sha256": "cd9a865f599c0d18b7e58d8112ad61f5316ae0341715a650c18e405c127846e5",
+      "bytes": 2416,
+      "redactions": 0
+    },
+    {
+      "path": "rv-race.json",
+      "sha256": "4d62f8e7fe2a830d44376e10779a795138bddaa9bfb986d9fd4838f8363d9767",
+      "bytes": 2822,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}
