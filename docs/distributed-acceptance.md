@@ -941,11 +941,26 @@ message named only the context flag (the first argument), not the verb or
 the reason, so which read failed in the main thread, and whether it failed
 because the Pod was gone, its container was not running or the kubelet
 refused the connection, is not known beyond exit status 1 and the time.
-The code at b37017e also does not fully explain the operator thread's
+Read on its own, the code at b37017e did not explain the operator thread's
 traceback: that thread suppressed `AcceptanceError`, and `Lab.query`
-returned no rows for any failed read unless `strict`. That last point was
-a gap of its own: a Coordinator being replaced and a broken query both read
-as "no incident yet", so a wait could not tell an outage from an answer.
+returned no rows for any failed read unless `strict`. The likely
+explanation, found after the next S5 stop
+([below](#s5-r1-refused-at-its-first-poll-one-module-run-twice)), is that
+the harness ran as two modules. Run with `python -m`, `kind_acceptance.py`
+is `__main__`; `main()` built its `Shell` there, so a failed kubectl call
+raised `__main__`'s `AcceptanceError`, while the operator thread's
+`suppress` and `Lab.query`'s `except` named the class of the
+`kind_acceptance` module that `kind_acceptance_live` imports by name.
+Neither matched, so the operator thread died with the traceback and the
+main thread's read raised instead of returning no rows. This fits every
+part of the output kept, and the traceback as quoted names the class with
+no module, which is how Python prints a class defined in `__main__` (the
+imported module's would print as
+`experiments.distributed.kind_acceptance.AcceptanceError`); it is not
+proved, because kubectl's stderr and the full traceback were not kept.
+Returning no rows for a failed read was a gap of its own all the same: a
+Coordinator being replaced and a broken query both read as "no incident
+yet", so a wait could not tell an outage from an answer.
 Whatever the exact path, the harness did not expect the Coordinator to be
 unreadable in S5, where it is unreadable twice by design (while its
 container restarts and while its Pod is replaced), nor in S6, and treated a
@@ -1053,7 +1068,68 @@ ended in `ReadUnavailable`; and S5 against a scripted Coordinator that
 exits, restarts, is deleted and replaced (with one refused Pod list in
 between) measures Ready from the replacement, and stops with
 `ReadUnavailable` when the replacement never answers. At b37017e every one
-of these tests fails.
+of these tests fails. They import the harness by name, so all of them use
+one module; none of them would have seen the failure below.
+
+### S5 r1 refused at its first poll: one module run twice
+
+On 14 Nov 2026 the matrix was started again on `kind-sentinel-dist` with
+the changes above (`python -m experiments.distributed.kind_acceptance run`
+with `--scenarios S5,...`). In S5 r1 the Coordinator exited at its fault
+point, as the scenario intends. On the very next poll in
+`Lab.first_reached`, at 07:29:46Z, the harness printed `Refused: kubectl
+exec failed (exit 1): container not running` and exited 2. No S5 summary
+was written and the target was not restored: `run_one` never reached
+`Lab.restore` or `Lab.settle`. The heavy-lab lock is released by `main`'s
+`with` on any exception. What `Run.cleanup` did in `run_one`'s `finally`
+is not known from the output.
+
+The failure was classified correctly: "container not running" is a
+`TransientRead`, which `Lab.first_reached` and `Lab.wait` exist to ask
+again. They did not, because the harness was two modules. Run with `-m`,
+the file is the module `__main__`. `main()` built its `Shell` from
+`__main__` and then imported `kind_acceptance_live`, which imports
+`experiments.distributed.kind_acceptance` by name: a second module object,
+with its own `Shell`, `TransientRead`, `ReadUnavailable` and
+`AcceptanceError`. `Lab` comes from that second module. So `Shell.run`
+raised `__main__.TransientRead`, and `Lab.first_reached`, `Lab.wait`,
+`Lab.read`, `run_one`'s `except`, `Run.cleanup`'s failures and every
+`suppress(AcceptanceError, ...)`, which name the imported module's classes,
+matched none of it. Only `main`'s own `except AcceptanceError`, in
+`__main__`, caught it, and refused. The offline tests import the module by
+name, so in them every class is one class. This is very likely also what
+stopped the [b37017e S5 run](#s2-s9-matrix-b37017e-reads-while-the-coordinator-pod-was-replaced).
+
+What changed. The `__main__` block of `kind_acceptance.py` imports
+`experiments.distributed.kind_acceptance` and runs that module's `main`,
+so no class defined in `__main__` is used; the command line is unchanged.
+`experiments/boutique/harness/live.py`, which `connected.py`,
+`chaos_recovery.py` and `multi_fault.py` import by name, does the same.
+It was not seen to fail: its documented entry point,
+`scripts/test_boutique_live.py`, already runs the imported module, and run
+with `-m` it shares no exception class or state that way. Every other
+module with a `__main__` block was checked: none of the modules it imports
+imports it again by name, except `agent/datasets/evaluate.py`, from which
+`baselines.py` imports two functions that raise only `ValueError`, and
+whose documented entry point is `scripts/evaluate_rcaeval.py`.
+
+Tests: `tests/test_main_module_identity.py` starts the documented command
+line in a child process (`python -m experiments.distributed.kind_acceptance
+run --context kind-sentinel-dist --scenarios S5`), with a fake kubectl and
+a fake `live.run` installed by a `sitecustomize`
+(`tests/support/kind_cli_hook.py`), so no command reaches a cluster and the
+heavy-lab lock is taken in the child's own temporary folder. The fake run
+builds the `Lab` as `live.run` does and polls a fault point with
+`Lab.first_reached`; the first exec finds the container not running. The
+poll is asked again, the run goes on and the outage is recorded once, with
+the `Shell` the CLI built being the imported module's; at bc4dc70 the same
+child prints the live refusal word for word and exits 2. An
+`AcceptanceError` of the imported module is refused by `main` with exit 2;
+at bc4dc70 it is a traceback and exit 1. A sweep over every module with a
+`__main__` block requires each one that a module it imports imports again
+by name to run its imported module, with `agent/datasets/evaluate.py`
+listed as safe and why; at bc4dc70 it fails for `kind_acceptance` and the
+Boutique harness. Not yet re-run live.
 
 ## Results
 
@@ -1155,6 +1231,11 @@ quoted. P4.02 adds the measured RTO and RPO table to the
   harness error past it, in the main thread, the operator thread and S5, as
   listed under
   [S2-S9 matrix](#s2-s9-matrix-b37017e-reads-while-the-coordinator-pod-was-replaced).
+- `tests/test_main_module_identity.py`: the documented `python -m` command
+  line, in a child process with a fake kubectl, uses one module, so a
+  transient read from the `Shell` it built is asked again; and every entry
+  point imported again by name runs its imported module, as listed under
+  [S5 r1 refused](#s5-r1-refused-at-its-first-poll-one-module-run-twice).
 - `tests/test_kind_acceptance.py` also checks that S6 starts its operator
   only after its runner returns, while S0 approves from the start, and that
   `deploy` applies Sentinel without the workload and stops when the target's
