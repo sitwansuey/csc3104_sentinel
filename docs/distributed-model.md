@@ -578,7 +578,7 @@ would move judgement into the sampling loop
   (`services/executor/kubernetes_adapter.py:33::PROCESS_TIMEOUT_SECONDS::= 15`).
 - The UID and resourceVersion test in every patch is checked by the API
   server inside the update it guards
-  (`services/executor/kubernetes_adapter.py:179-181::KubectlDeploymentAPI.conditional_restore::/metadata/uid`).
+  (`services/executor/kubernetes_adapter.py:184-186::KubectlDeploymentAPI.conditional_restore::/metadata/uid`).
   On its own it stops a write based on a stale read, but not a writer whose
   read is still current and whose lease expired or whose approval was revoked
   after its last check. The seal below closes that gap.
@@ -607,7 +607,7 @@ would move judgement into the sampling loop
   the settle delay, a reconcile pass journals a fresh nonce and then sends a
   patch with the same UID and resourceVersion tests that only adds this
   action's fence annotation (sentinel.io/fence)
-  (`services/executor/kubernetes_adapter.py:214-216::KubectlDeploymentAPI.fence::/metadata/uid`).
+  (`services/executor/kubernetes_adapter.py:221-223::KubectlDeploymentAPI.fence::/metadata/uid`).
   etcd commits at most one request conditioned on V0. If the fence commits,
   its own test proves our write had not committed before it, and the moved
   version means it never can: CONFLICT with basis FENCED, and the workload is

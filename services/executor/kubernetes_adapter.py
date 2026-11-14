@@ -89,6 +89,11 @@ class KubectlDeploymentAPI:
         self._allowed = frozenset(canonical_json(target) for target in deepcopy(allowed_targets))
         self.stats = {"read_attempts": 0, "write_attempts": 0, "successful_writes": 0,
                       "fence_attempts": 0, "successful_fences": 0}
+        # Lab test hook, None in every other run: a bound lab fault run's wrapper
+        # (runtime/fault_points.py::CheckpointCluster) sets it to the fault point
+        # executor.before_submit. It runs after the pre-read and local UID/RV check
+        # of a template write and before its PATCH is sent; it changes neither.
+        self.before_submit = None
 
     def _target(self, target):
         if not _target_shape(target, self.cluster_id) or canonical_json(target) not in self._allowed:
@@ -184,6 +189,8 @@ class KubectlDeploymentAPI:
         def confirms(admitted):
             return (admitted["metadata"].get("annotations", {}).get(ACTION_ANNOTATION) == annotation
                     and fingerprint(admitted["spec"]["template"]) == evidence["template_sha256"])
+        if self.before_submit is not None:
+            self.before_submit()  # Lab runs only; the patch above still tests the UID and V0 read here.
         applied = self._submit(target, version, patch, confirms, prefix="sentinel-execution-",
                                counter="write_attempts")
         self.stats["successful_writes"] += 1

@@ -36,8 +36,8 @@ from experiments.distributed.kind_acceptance import (
     SCENARIOS, TARGET, WORKLOAD,
     AcceptanceError, Lab, ReadUnavailable, RunView, TransientRead,
     approval_permissions, certificate_names, cluster_identity, config_map, control_plane_window, coordinator_recovery,
-    credentials, delay_to_api_server, expectation, partition, pod_facts, pod_failure, pod_kill, load_summaries,
-    preflight, ready_since, render_admission, render_api_server_policy, results_table, secret_documents,
+    credentials, expectation, holder_patches, partition, pod_facts, pod_failure, pod_kill, load_summaries,
+    preflight, ready_since, render_admission, render_api_server_policy, results_table, s8_seal, secret_documents,
     scope_records, secret_name, selector_apps, shift, stamp, takeover_seconds, target_inputs, time_skew,
     transient_failure)
 from runtime.service_identity import ProtocolError
@@ -281,7 +281,7 @@ class Run:
         self.cleaned = None  # cleanup's {"actions", "problems"}.
         self.since = None
         self.offset = None  # The control-plane clock minus the harness's at the start (Lab.clock_offset).
-        self.api_endpoint = None  # The API server endpoint address deploy recorded (S8's delay target).
+        self.api_endpoint = None  # The API server endpoint address deploy recorded (no scenario delays it now).
         self.notes, self.fault_at, self.stalled = {}, None, None
         self.saved_logs = {}  # Logs of a Pod this run deletes, read before it goes.
 
@@ -768,13 +768,34 @@ def newer_seal(ownership, before):
                  if item["sealed_epoch"] > before and not item["seal_required"]), None)
 
 
+S8_PATCH_SECONDS = 60  # How long S8 looks in the audit log for the released holder's PATCH.
+
+
 def s8(run):
-    stem = "executor.before_patch"
+    """Revoke while the holder is held between its pre-read and its PATCH; the other Executor seals; release.
+
+    The point is inside the live adapter's conditional_restore, after its
+    pre-read and local UID/resourceVersion check passed and before the PATCH
+    is sent (runtime/fault_points.py::CheckpointCluster). Released only once
+    the seal is recorded, the holder sends its PATCH with the version it
+    read, and only the API server's UID/resourceVersion test can refuse it:
+    the A4 race. At 7ce9863 the hold was before that read, which then saw
+    the moved version and sent nothing (docs/distributed-acceptance.md).
+
+    No NetworkChaos delay any more (the A4 design's 8 s delay to the API
+    server, until 14 Nov 2026): the delay was there to make the PATCH arrive
+    after the seal, and the hold now does that by itself, released only after
+    the seal. Every packet to the API server, connection setup included,
+    would still be delayed, so a request near kubectl's 10 s timeout could
+    end as an unknown outcome instead of the API server's answer that S8
+    needs; one moving part fewer is also one fewer harness failure.
+    """
+    stem = "executor.before_submit"
     holder = _holder(run, stem)
     row = run.lab.wait_state({"READY"}, 60)
     # target_ownership outlives the run, so an earlier S8's seal is already there: wait for a newer one.
     before = max((item["sealed_epoch"] for item in run.lab.ownership(strict=True)), default=0)
-    run.mark()
+    since = run.mark()
     # As in S6, only the reads before the POST are asked again; a revocation cut in transit is reconciled from the
     # store and sent again only when not recorded (Lab._send), with every attempt in notes.approval_attempts.
     action_id = row["active_action_id"]
@@ -784,12 +805,16 @@ def s8(run):
                           "the other Executor did not seal the target", interval=2)
     run.notes["seal"] = {"epoch": sealed["epoch"], "sealed_epoch": sealed["sealed_epoch"],
                          "sealed_epoch_before": before}
-    # As in the A4 design: the stale holder's patch reaches the API server 8 s late, after the seal.
-    slow = run.create(delay_to_api_server(run.name("slow"), _app(holder), run.api_endpoint, 120),
-                      expect=_holder_uid(run, holder))
-    _release(run, holder, stem)  # Only once the delay is confirmed in effect on the holder's Pod.
-    run.lab.wait_terminal(min(120, run.window_left(slow)))
-    run.remove(slow)
+    _release(run, holder, stem)  # Only once the seal is recorded: the PATCH it now sends carries a stale version.
+    # The incident is usually FAILED already (the seal's fence_result), so wait for the PATCH itself; a holder
+    # that sends none is left to the expectation, which fails the run for it, not reported as a harness error.
+    try:
+        patch = run.lab.wait(lambda: next(iter(holder_patches(run.audit_rows(since)[0], holder)), None),
+                             S8_PATCH_SECONDS, "a PATCH of the target from the holder's Pod", interval=2)
+    except TimeoutError:
+        patch = None
+    run.notes["holder_patch"] = {key: patch[key] for key in ("at", "code", "effect")} if patch else None
+    run.lab.wait_terminal(120)
 
 
 def _kubectl_in(*args):
@@ -1181,7 +1206,8 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
     invariants_passed = all(item["passed"] for item in results)
     failures = expectation(scenario.name, incidents=records["incidents"], rows=rows, notes=run.notes,
                            stalled=run.stalled, takeover=takeover, recovery=recovery,
-                           generation_at_end=generation_at_end)
+                           generation_at_end=generation_at_end, records=records)
+    seal = s8_seal(rows, records, run.stalled) if scenario.name == "S8" else None
     unsettled = settled is not None and not settled["settled"]
     passed = invariants_passed and not failures and not problems and error is None and not unsettled
     summary = {"schema": "sentinel-dist-acceptance-run-v1", "scenario": scenario.name, "title": scenario.title,
@@ -1202,6 +1228,7 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
                                       "generation": {"before": generations[0], "before_restore": generation_at_end,
                                                      "after": generations[1]}},
                "clock": {"control_plane_minus_harness": offsets, "fault_at_cluster_clock": fault_at},
+               "seal_path": seal and seal["path"], "seal": seal,
                "takeover_seconds": takeover, "coordinator_recovery": recovery, "operator_actions": operator_actions,
                "operator": operator, "read_outages": lab.read_outages[outages_before:],
                "approval_attempts": lab.approval_attempts[attempts_before:], "cleanup": cleaned,

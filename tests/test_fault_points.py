@@ -1,6 +1,7 @@
 """Fault points are inert outside lab runs, fire once when armed, and only at named points."""
 from contextlib import ExitStack
 from datetime import UTC, datetime
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -10,6 +11,11 @@ import unittest
 from unittest.mock import Mock, call, patch
 
 from runtime import fault_points
+from services.executor.core import ConditionalWriteConflict
+from services.executor.kubernetes_adapter import KubectlDeploymentAPI, WriteOutcomeUnknown
+from services.executor.reconciliation import fence_marker
+from tests.support import executor_model as model
+from tests.support.sim_apiserver import SimAPIServer, SimKubectl
 
 
 class FaultPointTests(unittest.TestCase):
@@ -137,9 +143,138 @@ class FaultPointTests(unittest.TestCase):
         with patch.object(fault_points, "checkpoint", side_effect=order.append):
             fault_points.CheckpointLedger(ledger).start_write("A", "1")
             self.assertEqual(fault_points.CheckpointCluster(cluster).conditional_restore(target={}), "applied")
+            cluster.before_submit()  # The hook the proxy gave the adapter: its point inside conditional_restore.
         self.assertEqual(order, ["start_write", "executor.after_start_write", "executor.before_patch", "patch",
-                                 "executor.after_patch_before_save"])
+                                 "executor.after_patch_before_save", "executor.before_submit"])
         self.assertEqual(fault_points.CheckpointLedger(ledger).other, "kept")
+
+
+class BeforeSubmitTests(unittest.TestCase):
+    """executor.before_submit holds the real adapter after its pre-read, so a released PATCH carries a stale version.
+
+    The adapter is the production KubectlDeploymentAPI, the API server the
+    test simulator (tests/support/sim_apiserver.py), which refuses a JSON
+    Patch whose test operation fails and commits nothing, as the API server
+    does with 409/422.
+    """
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.run_dir = Path(directory.name)
+        fixtures = model.load_fixtures()
+        self.proposal = fixtures["proposal"]
+        self.target = self.proposal["target"]
+        self.template = fixtures["baseline"]["pod_template"]
+        self.evidence = {"action_id": self.proposal["action_id"], "proposal_sha256": "a" * 64,
+                         "target_uid": self.target["uid"],
+                         "template_sha256": self.proposal["parameters"]["template_sha256"], "attempt_id": "b" * 32}
+        self.server = SimAPIServer.from_snapshot(fixtures["live_state"])
+        self.version = self.proposal["based_on_resource_version"]
+        self.assertEqual(self.server.resource_version, self.version)
+
+    def environment(self, **changes):
+        values = {fault_points.ENV_DIRECTORY: str(self.run_dir), fault_points.ENV_CLUSTER: "sentinel-dist",
+                  fault_points.ENV_PROCESS: "executor-a", fault_points.ENV_CLOCK_OFFSET: "", **changes}
+        return patch.dict(os.environ, values)
+
+    def adapter(self, host):
+        runner = SimKubectl(self.server, host=host, action_id=self.proposal["action_id"])
+        return KubectlDeploymentAPI(context="sim", cluster_id=self.target["cluster_id"], kubeconfig="unused",
+                                    allowed_targets=[self.target], runner=runner), runner
+
+    def restore(self, cluster):
+        return cluster.conditional_restore(target=self.target, version=self.version, template=self.template,
+                                           evidence=self.evidence)
+
+    def test_the_point_is_registered_and_the_adapter_hook_is_unset_outside_the_lab_proxy(self):
+        self.assertIn("executor.before_submit", fault_points.NAMES)
+        api, _ = self.adapter("A")
+        self.assertIsNone(api.before_submit)  # Production builds never set it (runtime/worker_service.py, lab only).
+        fault_points.CheckpointCluster(api)
+        self.assertIsNotNone(api.before_submit)
+
+    def test_inert_when_the_gate_is_off_even_when_armed(self):
+        (self.run_dir / "executor.before_submit.action").write_text("block", encoding="utf-8")
+        for changes in ({fault_points.ENV_DIRECTORY: ""}, {fault_points.ENV_CLUSTER: "sentinel-lab"}):
+            with self.subTest(changes=changes):
+                self.server = SimAPIServer.from_snapshot(model.load_fixtures()["live_state"])
+                api, runner = self.adapter("A")
+                with self.environment(**changes):
+                    self.restore(fault_points.CheckpointCluster(api))
+                self.assertEqual([request.state for request in self.server.requests], ["committed"])
+        self.assertTrue((self.run_dir / "executor.before_submit.action").exists())  # Never taken.
+
+    def held_restore(self, move):
+        """Hold a restore at executor.before_submit, move the target, release.
+
+        Returns the adapter's runner, what the release raised, the kubectl
+        verbs sent while held and the Deployment as the move left it.
+        """
+        for old in ("reached", "release"):  # As the harness arms a point: no earlier hold passes this one through.
+            (self.run_dir / f"executor.before_submit.{old}").unlink(missing_ok=True)
+        (self.run_dir / "executor.before_submit.action").write_text("block", encoding="utf-8")
+        api, runner = self.adapter("A")
+        cluster = fault_points.CheckpointCluster(api)
+        outcome = {}
+
+        def run():
+            with self.environment():
+                try:
+                    outcome["result"] = self.restore(cluster)
+                except Exception as error:  # noqa: BLE001 - the test inspects whatever the release raised
+                    outcome["error"] = error
+        worker = threading.Thread(target=run)
+        worker.start()
+        reached = self.run_dir / "executor.before_submit.reached"
+        deadline = time.monotonic() + 10
+        while not reached.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertTrue(reached.exists(), "the restore never reached executor.before_submit")
+        held = [command[command.index("--request-timeout=10s") + 1] for command in runner.calls]
+        move()
+        sealed = json.loads(json.dumps(self.server.deployment))
+        (self.run_dir / "executor.before_submit.release").write_text("go", encoding="utf-8")
+        worker.join(10)
+        self.assertFalse(worker.is_alive())
+        return runner, outcome.get("error"), held, sealed
+
+    def test_a_held_restore_has_read_and_its_release_sends_the_stale_patch_which_the_server_refuses(self):
+        def status_write():  # A crash-looping target's own status write: the seal would send nothing.
+            self.server.external_write(lambda d: d.setdefault("status", {}).update(restarts=7), actor="controller")
+
+        def fence():  # The other Executor's seal finds V0 and sends its metadata-only fence.
+            other, _ = self.adapter("B")
+            other.fence(target=self.target, version=self.version, marker=fence_marker(
+                self.proposal["action_id"], "c" * 32, 2))
+        for name, move in (("advanced_without_evidence", status_write), ("fenced", fence)):
+            with self.subTest(seal_path=name):
+                self.server = SimAPIServer.from_snapshot(model.load_fixtures()["live_state"])
+                runner, error, held, sealed = self.held_restore(move)
+                self.assertEqual(held, ["get"])  # Held after its pre-read, before any PATCH.
+                self.assertNotEqual(self.server.resource_version, self.version)
+                patches = [request for request in self.server.requests if request.host == "A"]
+                self.assertEqual(len(patches), 1)  # Released, it still sent its PATCH: the race reached the server.
+                self.assertIn({"op": "test", "path": "/metadata/resourceVersion", "value": self.version},
+                              patches[0].operations)
+                self.assertEqual(patches[0].state, "rejected")  # The API server's RV test refused it.
+                self.assertIsInstance(error, WriteOutcomeUnknown)  # kubectl's error: never retried, reconciled.
+                self.assertEqual(self.server.committed(host="A", kind=None), [])
+                self.assertEqual(self.server.deployment, sealed)  # Nothing changed after the seal, generation too.
+                self.assertEqual(sealed["spec"]["template"],
+                                 model.load_fixtures()["live_state"]["deployment"]["spec"]["template"])
+                self.assertEqual(len(self.server.committed(host="B", kind="fence")), int(name == "fenced"))
+                self.assertEqual([command[command.index("--request-timeout=10s") + 1] for command in runner.calls],
+                                 ["get", "patch"])  # One read, one PATCH, no retry.
+
+    def test_a_restore_that_finds_the_target_moved_at_its_pre_read_never_reaches_the_point(self):
+        (self.run_dir / "executor.before_submit.action").write_text("block", encoding="utf-8")
+        self.server.external_write(lambda d: d.setdefault("status", {}).update(restarts=7), actor="controller")
+        api, _ = self.adapter("A")
+        with self.environment(), self.assertRaises(ConditionalWriteConflict):
+            self.restore(fault_points.CheckpointCluster(api))
+        self.assertFalse((self.run_dir / "executor.before_submit.reached").exists())
+        self.assertEqual(self.server.requests, [])  # Zero-write: the 7ce9863 S8 holder's path.
 
 
 class CoordinatorFaultPointTests(unittest.TestCase):

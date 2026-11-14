@@ -185,6 +185,27 @@ class KubernetesExecutorAdapterTests(unittest.TestCase):
                 self.assertEqual(adapter.stats["write_attempts"], 0)
                 self.assertEqual(self.runner.patches, [])
 
+    def test_the_lab_before_submit_hook_runs_after_the_pre_read_and_local_check_and_before_the_patch(self):
+        self.assertIsNone(self.adapter.before_submit)  # Unset unless a lab fault run's proxy sets it.
+        seen = []
+        self.adapter.before_submit = lambda: seen.append([command[command.index("--request-timeout=10s") + 1]
+                                                          for command, _ in self.runner.commands])
+        self.restore()
+        self.assertEqual(seen, [["get"]])  # Read, checked, nothing sent yet.
+        self.assertEqual(len(self.runner.patches), 1)
+        self.assertEqual(self.runner.patches[0][:2], [
+            {"op": "test", "path": "/metadata/uid", "value": self.target["uid"]},
+            {"op": "test", "path": "/metadata/resourceVersion", "value": self.version}])
+        self.runner = Runner(self.deployment)
+        self.runner.deployment["metadata"]["resourceVersion"] = "changed"
+        adapter, seen[:] = self.make_adapter(), []
+        adapter.before_submit = lambda: seen.append("reached")
+        with self.assertRaises(ConditionalWriteConflict):  # A local mismatch stays a zero-write conflict.
+            self.restore(adapter)
+        self.runner.deployment["metadata"]["resourceVersion"] = self.version
+        adapter.fence(target=self.target, version=self.version, marker=fence_marker("ACT-LIVE-001", "c" * 32))
+        self.assertEqual(seen, [])  # Neither a refused restore nor a fence reaches it.
+
     def test_evidence_must_bind_uid_template_hash_and_attempt_nonce_before_any_api_call(self):
         for changes in ({"target_uid": "wrong"}, {"template_sha256": "a" * 64},
                         {"proposal_sha256": "invalid"}, {"attempt_id": "not-a-nonce"},

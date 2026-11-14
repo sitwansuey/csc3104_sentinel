@@ -8,7 +8,8 @@ Deployment returns at once). The Planner Pod was never killed and, its hold drop
 released either: it stayed blocked until the fault point's own 600 s limit, its incident stayed OPEN and the
 next run was refused. These tests drive the real scenario runners, Run and Lab over a fake cluster whose Chaos
 Mesh acts after a delay in virtual time, as the live controller does, for every fault kind the harness uses:
-PodChaos pod-kill and pod-failure, NetworkChaos partition and delay, TimeChaos and docker pause.
+PodChaos pod-kill and pod-failure, NetworkChaos partition, TimeChaos and docker pause. S8 injects no chaos
+since 14 Nov 2026 (its NetworkChaos delay is gone): its hold, release and wait are checked here too.
 """
 from datetime import UTC, datetime, timedelta
 import json
@@ -518,23 +519,54 @@ class PartitionTests(Harness):
                 self.assertEqual(in_effect_at(lab, "approve"), [])  # S6 never approved without its partition.
 
 
-class DelayTests(Harness):
-    def test_s8_delays_the_holder_before_it_is_released(self):
+HOLDER_PATCH = {"verb": "patch", "namespace": acceptance.WORKLOAD, "name": acceptance.TARGET,
+                "resource": "deployments", "pod": "sentinel-executor-a-00001", "sentinel": True, "effect": "denied",
+                "code": 422, "at": "2026-11-13T20:59:40Z"}
+
+
+class HeldPatchTests(Harness):
+    """S8 holds the holder after its pre-read (executor.before_submit), releases it after the seal, waits for its PATCH."""
+
+    def s8(self, rows):
         cluster = FakeCluster(latency=2.0)
-        lab, run, error = self.scenario(cluster, "S8")
-        self.assertIsNone(error)
-        [entry] = run.notes["chaos"]
-        [effective] = [effective for identity, stem, effective in cluster.releases
-                       if (identity, stem) == ("executor-a", "executor.before_patch")]
-        self.assertIn(entry["name"], effective)
-        self.assertConfirmedBeforeRemoval(cluster)
+        lab = ScenarioLab(cluster, self.directory, rows=rows)
+        released_at_revoke = []
+        revoke = lab.revoke
+
+        def watched(action_id):
+            released_at_revoke.extend(cluster.releases)
+            return revoke(action_id)
+        lab.revoke = watched
+        run = live.Run(lab, acceptance.SCENARIOS["S8"], 1, "v1")
+        run.since = "2026-11-13T20:58:59Z"
+        try:
+            live.RUNNERS["S8"](run)
+        finally:
+            run.cleanup()
+        return cluster, lab, run, released_at_revoke
+
+    def test_s8_holds_after_the_pre_read_and_releases_the_holder_only_after_the_seal_without_chaos(self):
+        cluster, lab, run, released_at_revoke = self.s8([HOLDER_PATCH])
+        self.assertEqual(run.notes["fault_point"], "executor.before_submit")
+        self.assertEqual(released_at_revoke, [])  # Still held when the approval was revoked.
+        self.assertEqual([(identity, stem) for identity, stem, _ in cluster.releases],
+                         [("executor-a", "executor.before_submit")])
+        self.assertEqual(run.notes["seal"]["sealed_epoch"], 1)
+        self.assertNotIn("chaos", run.notes)  # No NetworkChaos delay any more.
+        self.assertEqual(cluster.history, [])
+        self.assertEqual(run.notes["holder_patch"], {"at": "2026-11-13T20:59:40Z", "code": 422, "effect": "denied"})
+        steps = [what for what, _ in lab.seen]
+        self.assertLess(steps.index("revoke"), steps.index("audit"))
+        self.assertLess(steps.index("audit"), steps.index("wait_terminal"))
         self.assertNothingLeft(cluster)
 
-    def test_a_delay_that_never_takes_effect_stops_the_run_and_releases_the_holder(self):
-        cluster = FakeCluster(injects=False)
-        lab, run, error = self.scenario(cluster, "S8")
-        self.assertStoppedWithoutEffect(cluster, error, run)
-        self.assertIn(("executor-a", "executor.before_patch"), [(i, s) for i, s, _ in cluster.releases])
+    def test_a_holder_whose_patch_never_shows_is_left_to_the_expectation_not_a_harness_error(self):
+        other = dict(HOLDER_PATCH, pod="sentinel-executor-b-00002")  # The other Executor's PATCH is not the holder's.
+        cluster, lab, run, _ = self.s8([other])
+        self.assertIsNone(run.notes["holder_patch"])
+        self.assertIn(("executor-a", "executor.before_submit"), [(i, s) for i, s, _ in cluster.releases])
+        self.assertEqual([what for what, _ in lab.seen][-1], "wait_terminal")
+        self.assertNothingLeft(cluster)
 
 
 class TimeChaosTests(Harness):
@@ -730,6 +762,30 @@ class CleanupTests(Harness):
         self.assertTrue(summary["cleanup"]["problems"])
         self.assertIn("cleanup: TimeChaos s7-r1-skew could not be removed", summary["harness_error"])
         self.assertEqual(live.left_behind(summary)[0], summary["cleanup"]["problems"][0])
+        self.assertEqual((summary["seal_path"], summary["seal"]), (None, None))  # S8 only.
+
+    def test_run_one_records_s8s_seal_path_and_checks_the_holders_patch(self):
+        def log(path):
+            fence = dict(HOLDER_PATCH, pod="sentinel-executor-b-00002", effect="fence", code=200, generation=3,
+                         at="2026-11-13T20:59:30Z")
+            rows = [dict(HOLDER_PATCH, pod=None, sentinel=False, effect="template_write", code=200, generation=2,
+                         at="2026-11-13T20:59:01Z"), *([fence] if path else []), HOLDER_PATCH]
+            found = {"rows": [dict(row, audit_id="x", user=None, node=None, subresource=None, reason=None,
+                                   decision=None, admission_denied=False, dry_run=False, paths=[], marker="none",
+                                   action_id="ACT-1", fence_epoch=None, resource_version=None,
+                                   generation=row.get("generation")) for row in rows],
+                     "skipped": 0, "first_at": "2026-11-13T09:00:00Z", "files": 1}
+            return lambda lab, since, until: found
+        for path, seal_path in ((True, "fenced"), (False, None)):
+            with self.subTest(fence=path), patch.object(RunLab, "audit_log", log(path)), patch.object(
+                    RunLab, "audit_rows", lambda lab, since, until: (lab.audit_log(since, until)["rows"], 0)):
+                summary = self.run_one(FakeCluster(latency=1.0), "S8")
+                self.assertEqual(summary["seal_path"], seal_path)
+                self.assertEqual(summary["notes"]["holder_patch"]["code"], 422)
+                failures = summary["expectation"]["failures"]
+                self.assertEqual(any(item.startswith("no seal by the other Executor") for item in failures), not path)
+                self.assertFalse([item for item in failures if "holder" in item])  # Its PATCH was refused after.
+                self.assertFalse(summary["passed"])  # The stub copies no records: no incident, not met.
 
     def test_run_one_records_an_unexpected_lookup_error_and_still_cleans_up(self):
         cluster = FakeCluster(latency=1.0)
