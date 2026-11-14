@@ -112,15 +112,20 @@ executor-a's lease and the run failed; there was still one write.
 - A post refused with 404, any 409, or 403 `not_lease_owner`
   (`lease_refusal`) releases the saved result at once: `transport.db` keeps
   the result and forgets the delivery and its lease token, the worker logs
-  `transport.result.released` (WARNING, with the reason class), and the pass
-  goes on to claim. A pass that does nothing else reports
-  `{"status": "released", "reason": ...}`.
+  `transport.result.released` (WARNING, with the reason class), and the
+  worker goes on to claim. A saved result re-sent at the start of a pass and
+  released there does not end the pass: it claims in the same pass and
+  reports the claim's status. A result released on the pass's own claim
+  (refused when first posted, or on the lease check before posting) ends the
+  pass with `{"status": "released", "reason": ...}`, and the next pass claims.
 - When the lease check just after saving a result already fails that way
   (the renewal thread or the final renewal got the refusal), the result is
   released without being posted at all.
-- Any other failure, including a 403 for a role or a report, a 5xx or a
-  timeout, keeps the back-off retry, now bounded: once a result has failed 10
-  posts over at least 300 s, the next pass releases it the same way and logs
+- Any other failure, including a 403 for a role or a report, a 5xx, a
+  timeout or a connection error, keeps the back-off retry, now bounded: once
+  a result has failed at least 10 posts over at least 300 s (both; with the
+  15 s full-jitter back-off cap, about 40 posts), the next pass releases
+  it the same way and logs
   `transport.result.abandoned` with the error class, HTTP status, attempts
   and age. By then the 30 s default lease has long expired, so the worker
   does not hand the delivery back with `retry`. The counts are kept in
@@ -167,9 +172,14 @@ of eight `retry` lines
 pauses an Executor after its write commits until its lease runs out; the
 other Executor claims the command and reports APPLIED with no write of its
 own, and the paused one releases its APPLIED result without posting it and
-keeps its ledger row. `test_lease_conflicts_on_the_final_check_drop_the_delivery_without_posting_the_result`
+keeps its ledger row.
+`test_an_executor_whose_write_is_in_doubt_keeps_it_open_in_its_ledger_when_its_result_is_refused`
+times the write out: after the release the row stays UNCERTAIN, still
+listed for the settle sweep and still undelivered.
+`test_lease_conflicts_on_the_final_check_drop_the_delivery_without_posting_the_result`
 and `test_a_result_that_keeps_failing_is_dropped_after_the_bound_so_the_worker_claims_again`
-cover the final check and the bound. See
+(for a 5xx, a role 403, a timeout and a refused connection) cover the final
+check and the bound. See
 [L-WORKER-LOST-LEASE-LOOP](limitations.md#l-worker-lost-lease-loop).
 
 Use one process per worker state directory and persist that directory on its own

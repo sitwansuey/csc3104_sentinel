@@ -733,6 +733,28 @@ class RemoteWorkerTests(unittest.TestCase):
         self.assertEqual([(line["reason"], line["level"]) for line in released], [("not_lease_owner", "warning")])
         self.assertFalse(any(secret in logs.getvalue() for secret in self.secrets()))
 
+    def test_an_executor_whose_write_is_in_doubt_keeps_it_open_in_its_ledger_when_its_result_is_refused(self):
+        """Release forgets the lease, never the ledger row of a write that may have landed."""
+        self.authorize()
+        operations = []
+        client, _refusing = self.refusing_client("executor", operations)
+        worker = self.worker("executor", ExecutorAdapter(self.f.adapters), client=client)
+        with patch.object(self.f.cluster, "conditional_restore",
+                          side_effect=TimeoutError("request completion is unknown")):
+            self.assertEqual(worker.once(), {"status": "released", "reason": "not_lease_owner"})
+        self.assertEqual(worker.once(), {"status": "idle"})
+        self.assertEqual((operations.count("result"), operations.count("claim")), (1, 2))
+        self.assertEqual(self.saved_rows(worker), [(True, "execution_result", 0)])
+        row = self.f.ledger.get(self.proposal["action_id"])
+        self.assertEqual((row["phase"], row["attempts"], row["result"]["status"], row["delivered"]),
+                         ("UNCERTAIN", 1, "NEEDS_RECONCILIATION", 0))
+        # The row is still open: the sweep keeps reconciling it and its result is still undelivered.
+        self.assertEqual([proposal["action_id"] for proposal in self.f.ledger.pending_proposals()],
+                         [self.proposal["action_id"]])
+        self.assertEqual([result["status"] for result in self.f.ledger.undelivered_results()],
+                         ["NEEDS_RECONCILIATION"])
+        self.assertEqual(self.f.cluster.writes, [])
+
     def test_a_planner_refused_as_not_lease_owner_drops_the_delivery_and_claims_again(self):
         RemoteIngress(self.client("observer"))(self.incident)
         operations = []
@@ -824,13 +846,16 @@ class RemoteWorkerTests(unittest.TestCase):
         self.assertNotIn("result", operations)
 
     def test_a_result_that_keeps_failing_is_dropped_after_the_bound_so_the_worker_claims_again(self):
-        for status, message in ((503, "Coordinator unavailable; retry the saved request"),
-                                (403, "Only the Guard may submit an authorization report")):
-            with self.subTest(status=status), ExitStack() as stack:
+        # Not only refusals: a post that times out or cannot connect is bounded the same way.
+        for error in (ProtocolError(503, "Coordinator unavailable; retry the saved request"),
+                      ProtocolError(403, "Only the Guard may submit an authorization report"),
+                      TimeoutError("the result post timed out"),
+                      ConnectionRefusedError("the Coordinator refused the connection")):
+            with self.subTest(error=repr(error)), ExitStack() as stack:
                 directory = Path(stack.enter_context(tempfile.TemporaryDirectory()))
                 journal = WorkerJournal(directory / "transport.db")
                 stack.callback(journal.close)
-                client = LeaseLostClient(None, result_error=ProtocolError(status, message))
+                client = LeaseLostClient(None, result_error=error)
                 adapter = Mock(spec=["process"])
                 adapter.process.return_value = (fixture_proposal(), None)
                 clock = [100.0]
@@ -839,10 +864,10 @@ class RemoteWorkerTests(unittest.TestCase):
                                       result_retry_attempts=3, result_retry_seconds=60)
                 logs = self.captured_logs()
                 for _ in range(2):  # Within the bound the saved result is retried, as before.
-                    with self.assertRaises(ProtocolError):
+                    with self.assertRaises(type(error)):
                         worker.once()
                     clock[0] += 20
-                with self.assertRaises(ProtocolError):  # Three attempts, but only 40 s.
+                with self.assertRaises(type(error)):  # Three attempts, but only 40 s.
                     worker.once()
                 self.assertEqual(client.operations.count("claim"), 1)
                 clock[0] += 20
@@ -856,7 +881,7 @@ class RemoteWorkerTests(unittest.TestCase):
                 abandoned = [json.loads(line) for line in logs.getvalue().splitlines()
                              if '"transport.result.abandoned"' in line]
                 self.assertEqual([(line["attempts"], line["error_type"]) for line in abandoned],
-                                 [(4, "ProtocolError")])
+                                 [(4, type(error).__name__)])
 
     def test_the_worker_service_loop_no_longer_retries_a_refused_result_for_minutes(self):
         """The live log: worker.status retry ProtocolError on every pass for one delivery, no claims."""
