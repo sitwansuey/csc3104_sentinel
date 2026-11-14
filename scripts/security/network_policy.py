@@ -627,4 +627,5 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    from scripts.security import network_policy as _canonical
+    raise SystemExit(_canonical.main())

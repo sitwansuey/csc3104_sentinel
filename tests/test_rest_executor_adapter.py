@@ -584,6 +584,14 @@ class RESTAdapterTests(unittest.TestCase):
             target=self.target, version=version or self.sim.resource_version, template=self.template,
             evidence=evidence_for(self.target, self.template))
 
+    def test_inherited_restore_initializes_and_runs_the_before_submit_hook(self):
+        self.assertIsNone(self.adapter.before_submit)
+        seen = []
+        self.adapter.before_submit = lambda: seen.append(self.adapter.stats["write_attempts"])
+        self.restore()
+        self.assertEqual(seen, [0])
+        self.assertEqual(self.adapter.stats["successful_writes"], 1)
+
     def test_status_codes_split_into_definite_rejections_and_unknown_outcomes(self):
         self.assertEqual(DEFINITE_REJECTIONS, {400, 401, 403, 404, 409, 422, 429})
         for code in sorted(DEFINITE_REJECTIONS):

@@ -206,7 +206,7 @@ class RepeatedRunTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         # The operator is the deterministic one in StoreLab.advance, not a thread on the wall clock.
-        operator = patch.object(live, "_operator", lambda lab, version, stopping: None)
+        operator = patch.object(live, "_operator", lambda lab, version, stopping, record: None)
         operator.start()
         self.addCleanup(operator.stop)
 
@@ -364,10 +364,14 @@ class SettledTests(unittest.TestCase):
 
             def json(self, *args, namespace=None):
                 return {"items": []}
-        lab = acceptance.Lab(NoPods(), tempfile.gettempdir())
-        self.assertEqual(lab.query("SELECT 1"), [])  # While waiting, a Coordinator that is down reads as nothing.
-        with self.assertRaisesRegex(acceptance.AcceptanceError, "Coordinator's database could not be read"):
+        now = [0.0]
+        lab = acceptance.Lab(NoPods(), tempfile.gettempdir(), sleep=lambda seconds: now.__setitem__(0, now[0] + seconds),
+                             monotonic=lambda: now[0])
+        with self.assertRaises(acceptance.TransientRead):  # A Coordinator that is down never reads as nothing.
+            lab.query("SELECT 1")
+        with self.assertRaisesRegex(acceptance.ReadUnavailable, "Coordinator's database could not be read"):
             lab.begin_run(BASELINE, POLICY)  # Before a run, it must not read as "no earlier incident".
+        self.assertGreaterEqual(now[0], acceptance.READ_RETRY_SECONDS)  # Asked again until its bound, not once.
         with self.assertRaisesRegex(acceptance.AcceptanceError, "Observer's database could not be read"):
             lab.undelivered(strict=True)  # Nor may an unreadable Observer outbox read as empty.
 

@@ -244,10 +244,17 @@ deployment are independent: each waits for, approves and checks only its
 own incidents, settles after its restore, and refuses to start on a lab an
 earlier run left unsettled (the 13 Nov 2026 symptom, in which runs after a passing S0 took
 its RECOVERED incident as theirs).
+`tests/test_kind_chaos_confirmation.py` drives the real scenario runners,
+`Run` and `Lab` over a fake cluster whose Chaos Mesh acts after a delay:
+every fault (pod-kill, pod-failure, partition, delay, TimeChaos, `docker
+pause`) must be confirmed in effect before a scenario goes on, a fault that
+never takes effect stops the run with a harness error, and cleanup leaves no
+chaos object, paused node or blocked fault point (the 13 Nov 2026 S1a
+symptom, in which the PodChaos was deleted before Chaos Mesh acted).
 `tests/test_distributed_audit.py` checks the audit sanitiser, I7 and the
 extract's completeness checks on the fixtures in
 `tests/fixtures/distributed_audit/`. The harness has run against the cluster
-only for S0 so far ([first live attempts](distributed-acceptance.md#first-live-attempts)).
+for S0 and the first S1a run so far ([first live attempts](distributed-acceptance.md#first-live-attempts)).
 `tests/test_lab_lock.py` covers the shared heavy-lab lock
 (`experiments/lab_lock.py`) and the three harnesses that take it (P4.01
 `deploy` and `run`, the P4.03 install and chaos scenario runs, the P4.05
@@ -276,7 +283,8 @@ corpus manifest, policy set, configuration or model digest.
 `tests/test_retrieval_contamination.py` checks that no label reaches the
 runbooks, `agent/knowledge` or any prompt built from a case's inputs. These
 use a scripted model; the [replay guide](evaluation/replay/README.md) has the
-commands and the model batch that has not run.
+commands and the model batch, whose `qwen3:14b` runs are committed (unscored)
+and whose `qwen3:8b` run was not made.
 
 The Planner handoff checks inject unavailable/invalid providers, restart during
 backoff, exhaust attempts after a worker death, fence a replaced lease and replay

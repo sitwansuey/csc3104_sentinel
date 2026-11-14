@@ -403,6 +403,8 @@ class ScopeTests(unittest.TestCase):
             "actions": [{"action_id": "A0", "incident_id": "old"}, {"action_id": "A1", "incident_id": "new"}],
             "outbox": [{"id": 1, "action_id": "A0"}, {"id": 2, "action_id": "A1"}],
             "revocations": [{"action_id": "A0", "revoked_at": "2026-11-13T09:00:30Z"}],
+            "approvals": [{"approval_id": 1, "action_id": "A0"}, {"approval_id": 2, "action_id": "A1"}],
+            "managed_approvals": [{"approval_id": 1}, {"approval_id": 2}],
             "receipts": [{"event_id": 1}]}
         scoped = acceptance.scope_records(records, "2026-11-13T10:00:00Z")
         self.assertEqual([row["incident_id"] for row in scoped["incidents"]], ["new"])
@@ -410,9 +412,49 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual([row["seq"] for row in scoped["transitions"]], [3])
         self.assertEqual([row["id"] for row in scoped["outbox"]], [2])
         self.assertEqual((scoped["revocations"], scoped["receipts"]), ([], [{"event_id": 1}]))
+        self.assertEqual(scoped["approvals"], [{"approval_id": 2, "action_id": "A1"}])
+        self.assertEqual(scoped["managed_approvals"], [{"approval_id": 2}])
         self.assertFalse(acceptance.invariants.i3(scoped)["passed"])  # The new incident is still OPEN.
         self.assertFalse(acceptance.invariants.i3(acceptance.scope_records(records, "2026-11-13T11:00:00Z"))[
             "passed"])  # No incident in this run is a failure, not a pass on the old one.
+        records["seals"] = [{"action_id": "A0", "producer": "executor-b"}, {"action_id": "A1", "producer": "executor-a"}]
+        self.assertEqual(acceptance.scope_records(records, "2026-11-13T10:00:00Z")["seals"],
+                         [{"action_id": "A1", "producer": "executor-a"}])  # An earlier run's seal is never this one's.
+
+    def test_the_records_carry_each_accepted_seal_answer_with_its_producer_and_v0(self):
+        from services.coordinator.store import SQLiteStore
+        with tempfile.TemporaryDirectory() as directory:
+            view = acceptance.RunView(directory, {})
+            with SQLiteStore(view.paths["coordinator"] / "coordinator.db") as store:
+                store.add_incident("I1", {"name": "demo-api"}, "OPEN")
+                store.add_action("A1", "I1", {"based_on_resource_version": "1200", "action_id": "A1"}, "READY")
+                answer = {"kind": "fence_result", "incident_id": "I1", "action_id": "A1", "epoch": 2,
+                          "outcome": "SEALED", "resource_version": "1207", "target": {"name": "demo-api"},
+                          "recorded_at": "2026-11-13T10:00:41Z", "schema_version": "1.0"}
+                store.add_message('["fence_result","A1","2026-11-13T10:00:41Z"]', json.dumps(answer),
+                                  high_water=4, answers=44, producer="executor-b", incident_id="I1")
+                store.add_message('["incident","I1",""]', json.dumps({"kind": "incident", "incident_id": "I1"}),
+                                  high_water=0, producer="observer-1")
+            records = acceptance.invariants.collect(view, terminal_in_time=True, cluster_writes=[])
+        self.assertEqual(records["seals"], [{
+            "seq": 1, "event_key": '["fence_result","A1","2026-11-13T10:00:41Z"]', "producer": "executor-b",
+            "incident_id": "I1", "action_id": "A1", "epoch": 2, "outcome": "SEALED", "resource_version": "1207",
+            "recorded_at": "2026-11-13T10:00:41Z", "based_on_resource_version": "1200"}])
+
+
+    def test_the_records_carry_approval_identities_and_their_managed_marker_without_payloads(self):
+        from services.coordinator.store import SQLiteStore
+        with tempfile.TemporaryDirectory() as directory:
+            view = acceptance.RunView(directory, {})
+            with SQLiteStore(view.paths["coordinator"] / "coordinator.db") as store:
+                store.add_incident("I1", {"name": "demo-api"}, "OPEN")
+                store.add_action("A1", "I1", {"action_id": "A1"}, "READY")
+                store.add_approval("A1", {"action_id": "A1"}, managed=True)
+                store.add_approval("A1", {"action_id": "A1"})
+            records = acceptance.invariants.collect(view, terminal_in_time=True, cluster_writes=[])
+        self.assertEqual(records["approvals"], [{"approval_id": 1, "action_id": "A1"},
+                                                {"approval_id": 2, "action_id": "A1"}])
+        self.assertEqual(records["managed_approvals"], [{"approval_id": 1}])
 
 
 class EvidenceTests(unittest.TestCase):
@@ -521,13 +563,15 @@ class LabTests(unittest.TestCase):
                 self.assertEqual(command[command.index("--") + 1:command.index("--") + 3],
                                  ["python", "-c"])  # No shell: the images have none.
 
-    def test_a_query_while_the_coordinator_is_down_is_empty_and_parameters_are_not_spliced(self):
+    def test_a_query_while_the_coordinator_is_down_is_a_transient_read_and_parameters_are_not_spliced(self):
         def handler(command):
             if "get" in command and "pods" in command:
                 return done(json.dumps({"items": []}))
             return done()
         lab, _ = self.lab(handler)
-        self.assertEqual(lab.query("SELECT 1"), [])
+        # Never [] (no incident yet): a wait asks again, and a read that stays down fails the run.
+        with self.assertRaisesRegex(acceptance.TransientRead, "no running Pod"):
+            lab.query("SELECT 1")
 
         def up(command):
             if "get" in command and "pods" in command:
@@ -778,34 +822,299 @@ class ExpectationTests(unittest.TestCase):
                 audit_row("fence", pod=B_POD, generation=3, at="2026-11-13T10:00:40Z", action_id="ACT-1"),
                 audit_row("denied", code=422, at="2026-11-13T10:00:49Z")]
 
-    def test_s8_needs_the_other_executors_seal_then_the_holders_refused_patch(self):
+    S8_KEY = '["fence_result","ACT-1","2026-11-13T10:00:41.100000Z"]'
+
+    def s8_records(self, **seal):
+        """The Coordinator's records of a seal by executor-b that sent nothing (advanced without evidence)."""
+        return {"actions": [{"action_id": "ACT-1", "incident_id": "I0", "state": "FAILED"}],
+                "revocations": [{"action_id": "ACT-1", "revoked_at": "2026-11-13T10:00:30Z"}],
+                "outbox": [{"id": 41, "topic": "executor.request", "action_id": "ACT-1", "delivered": 1},
+                           {"id": 44, "topic": "executor.seal", "action_id": "ACT-1", "delivered": 1}],
+                "receipts": [{"event_id": 41, "delivery_id": "d41", "owner": "executor-a", "attempts": 1,
+                              "finished": 1.0, "result_digest": None},
+                             {"event_id": 44, "delivery_id": "d44", "owner": "executor-b", "attempts": 1,
+                              "finished": 2.0, "result_digest": "e" * 64}],
+                "transitions": [{"seq": 9, "incident_id": "I0", "action_id": "ACT-1", "from_state": "VALIDATING",
+                                 "to_state": "FAILED", "cause": self.S8_KEY,
+                                 "recorded_at": "2026-11-13T10:00:41.300000Z"}],
+                "seals": [dict({"seq": 30, "event_key": self.S8_KEY, "producer": "executor-b", "incident_id": "I0",
+                                "action_id": "ACT-1", "epoch": 2, "outcome": "SEALED", "resource_version": "1207",
+                                "recorded_at": "2026-11-13T10:00:41.100000Z",
+                                "based_on_resource_version": "1200"}, **seal)]}
+
+    def s8(self, rows, records=None, stalled="executor-a", generation_at_end=3, states=("FAILED",)):
+        # The fenced path needs the revoked action identity, but no Coordinator seal proof.
+        records = records if records is not None else dict(self.s8_records(), seals=[])
+        return self.check("S8", list(states), rows, stalled=stalled, generation_at_end=generation_at_end,
+                          records=records)
+
+    NO_SEAL = ("no seal by the other Executor: no fence from its Pod in the audit log, and no Coordinator record of "
+               "its seal (executor.seal delivery, fence_result SEALED past V0, action FAILED on it)")
+    NO_PATCH = ("the holder's Pod sent no PATCH to the target after the seal: its stale PATCH never reached the API "
+                "server, so the race S8 is for was not exercised")
+    NOT_REFUSED = "no PATCH from the holder's Pod refused (409 or 422) after the seal"
+
+    def test_s8_passes_on_a_fence_by_the_other_executor_then_the_holders_refused_patch(self):
         rows = self.s8_rows()
-        self.assertEqual(self.check("S8", ["FAILED"], rows, stalled="executor-a", generation_at_end=3), [])
-        cases = {
-            "no seal or fence from the other Executor's Pod in the audit log": [rows[0], rows[2]],
-            "no PATCH from the holder's Pod refused (409 or 422) after the seal": rows[:2],
+        self.write_invariants_pass(["FAILED"], rows)
+        self.assertEqual(self.s8(rows), [])
+        self.assertIsNone(acceptance.s8_seal(rows, None, "executor-a"))  # No revoked action identity.
+        self.assertEqual(acceptance.s8_seal(rows, dict(self.s8_records(), seals=[]), "executor-a"),
+                         {"path": "fenced", "sealer": "executor-b", "at": "2026-11-13T10:00:40Z", "generation": 3})
+        self.assertEqual(self.s8(rows, self.s8_records()), [])  # The audit's fence decides the path.
+        self.assertEqual(acceptance.s8_seal(rows, self.s8_records(), "executor-a")["path"], "fenced")
+
+    def test_s8_passes_on_records_of_a_seal_past_v0_with_nothing_sent_then_the_holders_refused_patch(self):
+        for code in (409, 422):
+            with self.subTest(code=code):
+                rows = [self.s8_rows()[0], audit_row("denied", code=code, at="2026-11-13T10:00:49Z")]
+                self.write_invariants_pass(["FAILED"], rows)
+                self.assertEqual(self.s8(rows, self.s8_records(), generation_at_end=2), [])
+                self.assertEqual(acceptance.s8_seal(rows, self.s8_records(), "executor-a"),
+                                 {"path": "advanced_without_evidence", "sealer": "executor-b",
+                                  "at": "2026-11-13T10:00:41.300000Z", "generation": None})
+
+    def test_s8_fails_without_proof_of_a_seal_by_the_other_executor(self):
+        rows = [self.s8_rows()[0], self.s8_rows()[2]]
+        self.write_invariants_pass(["FAILED"], rows)
+        self.assertEqual(self.s8(rows, generation_at_end=2), [self.NO_SEAL])
+        records = self.s8_records()
+        unproven = {
+            "an APPLIED seal": dict(self.s8_records(outcome="APPLIED")),
+            "an UNSEALED seal": dict(self.s8_records(outcome="UNSEALED")),
+            "a seal still at V0": dict(self.s8_records(resource_version="1200")),
+            "a seal with no version": dict(self.s8_records(resource_version=None)),
+            "a seal answer from a worker that is not an Executor": dict(self.s8_records(producer="guard-1")),
+            "no executor.seal delivery": dict(records, outbox=records["outbox"][:1]),
+            "a delivery another worker owns": dict(records, receipts=[records["receipts"][0],
+                                                                      dict(records["receipts"][1], owner="guard-1")]),
+            "a delivery never finished": dict(records, receipts=[records["receipts"][0],
+                                                                 dict(records["receipts"][1], finished=None)]),
+            "a delivery with no result": dict(records, receipts=[records["receipts"][0],
+                                                                 dict(records["receipts"][1], result_digest=None)]),
+            "a FAILED caused by something else": dict(records, transitions=[
+                dict(records["transitions"][0], cause='["execution_result","ACT-1","2026-11-13T10:00:41Z"]')]),
+            "no move to FAILED": dict(records, transitions=[dict(records["transitions"][0], to_state="NEEDS_REVIEW")]),
         }
-        for message, changed in cases.items():
-            with self.subTest(message=message):
+        for name, changed in unproven.items():
+            with self.subTest(case=name):
+                self.assertIsNone(acceptance.s8_seal(rows, changed, "executor-a"))
+                self.assertIn(self.NO_SEAL, self.s8(rows, changed, generation_at_end=2))
+
+    def test_s8_fails_when_the_holder_sealed_its_own_action(self):
+        rows = self.s8_rows()
+        by_holder = [rows[0], dict(rows[1], pod="sentinel-executor-a-7c8d9e6f5-a1a1a"), rows[2]]
+        self.assertEqual(self.s8(by_holder), ["a fence from the holder's own Pod: the holder sealed", self.NO_SEAL])
+        records = self.s8_records(producer="executor-a")
+        records["receipts"][1]["owner"] = "executor-a"
+        self.assertEqual(self.s8([rows[0], rows[2]], records, generation_at_end=2),
+                         ["the holder's own fence_result was accepted: the holder sealed", self.NO_SEAL])
+        self.assertIsNone(acceptance.s8_seal([rows[0], rows[2]], records, "executor-a"))
+
+    def test_s8_fails_when_the_holders_stale_patch_never_reached_the_api_server(self):
+        rows = self.s8_rows()
+        for name, records, changed, generation in (
+                ("fenced", None, rows[:2], 3),
+                ("advanced_without_evidence", self.s8_records(), rows[:1], 2),
+                ("refused only before the seal", None, [rows[0], rows[1], dict(rows[2], at="2026-11-13T10:00:39Z")], 3),
+                ("a GET only", None, [*rows[:2], dict(rows[2], verb="get", effect="request", code=200)], 3)):
+            with self.subTest(case=name):
                 self.write_invariants_pass(["FAILED"], changed)
-                self.assertEqual(self.check("S8", ["FAILED"], changed, stalled="executor-a", generation_at_end=3),
-                                 [message])
-        sealed_by_holder = [rows[0], dict(rows[1], pod="sentinel-executor-a-7c8d9e6f5-a1a1a"), rows[2]]
-        self.assertIn("no seal or fence from the other Executor's Pod in the audit log",
-                      self.check("S8", ["FAILED"], sealed_by_holder, stalled="executor-a", generation_at_end=3))
-        refused_first = [rows[0], rows[1], dict(rows[2], at="2026-11-13T10:00:39Z")]
-        self.assertEqual(self.check("S8", ["FAILED"], refused_first, stalled="executor-a", generation_at_end=3),
-                         ["no PATCH from the holder's Pod refused (409 or 422) after the seal"])
+                self.assertEqual(self.s8(changed, records, generation_at_end=generation), [self.NO_PATCH])
+
+    def test_s8_fails_when_the_holder_wrote_or_its_patch_was_not_refused_by_the_api_server(self):
+        rows = self.s8_rows()
+        wrote = [rows[0], rows[1], audit_row("template_write", at="2026-11-13T10:00:49Z", generation=4)]
+        self.assertEqual(self.s8(wrote, generation_at_end=4), [
+            "1 Sentinel template write(s), expected 0", "the holder's Pod changed the target", self.NOT_REFUSED,
+            "the target's generation is 4 at the holder PATCH / first later incident and 3 after the seal: "
+            "something changed it before that boundary"])
+        records_wrote = [rows[0], dict(wrote[2])]
+        self.assertIn("the holder's Pod changed the target", self.s8(records_wrote, self.s8_records(),
+                                                                       generation_at_end=4))
         forbidden = [rows[0], rows[1], dict(rows[2], code=403)]
-        self.assertEqual(self.check("S8", ["FAILED"], forbidden, stalled="executor-a", generation_at_end=3),
-                         ["no PATCH from the holder's Pod refused (409 or 422) after the seal"])
-        self.assertEqual(self.check("S8", ["FAILED"], rows, stalled="executor-a", generation_at_end=4),
-                         ["the target's generation is 4 at the end and 3 after the seal: something changed it after "
-                          "the seal"])
-        self.assertEqual(self.check("S8", ["RECOVERED"], rows, stalled="executor-a", generation_at_end=3),
-                         ["expected not RECOVERED (states: RECOVERED)"])
-        self.assertEqual(self.check("S8", ["FAILED"], rows, stalled=None, generation_at_end=3),
-                         ["no seal or fence from the other Executor's Pod in the audit log"])
+        self.assertEqual(self.s8(forbidden), [self.NOT_REFUSED])
+        failed = [rows[0], rows[1], dict(rows[2], effect="failed", code=500)]
+        self.assertEqual(self.s8(failed), [self.NOT_REFUSED])
+
+    def test_s8_needs_the_target_unchanged_after_the_seal_and_not_recovered(self):
+        rows = self.s8_rows()
+        change = audit_row("metadata_write", pod=None, sentinel=False, generation=4, at="2026-11-13T10:00:45Z")
+        self.assertEqual(self.s8([*rows, change], generation_at_end=4),
+                         ["the target's generation is 4 at the holder PATCH / first later incident and 3 after the "
+                          "seal: something changed it before that boundary"])
+        advanced = [rows[0], rows[2], dict(change, generation=3)]
+        self.assertEqual(self.s8(advanced, self.s8_records(), generation_at_end=3),
+                         ["the target's generation is 3 at the holder PATCH / first later incident and 2 after the "
+                          "seal: something changed it before that boundary"])
+        self.assertEqual(self.s8(rows, states=("RECOVERED",)), ["expected not RECOVERED (states: RECOVERED)"])
+        self.assertEqual(self.s8(rows, stalled=None), ["no paused holder was recorded"])
+        self.assertIsNone(acceptance.s8_seal(rows, self.s8_records(), None))
+
+    def s8_deploy15(self, *, writer=B_POD, approved=True, same_incident=False):
+        """Deploy 15 r4/r5: the revoked incident failed, then the still-faulted target opened another."""
+        rows = self.s8_rows()
+        records = self.s8_records()
+        records["revocations"] = [{"action_id": "ACT-1", "revoked_at": "2026-11-13T10:00:30Z"}]
+        later_id = "I0" if same_incident else "I1"
+        records["incidents"] = [{"incident_id": "I0", "state": "FAILED"},
+                                {"incident_id": "I1", "state": "RECOVERED"}]
+        records["actions"].append({"action_id": "ACT-2", "incident_id": later_id, "state": "RECOVERED"})
+        records["transitions"].append({"seq": 10, "incident_id": "I1", "action_id": None,
+                                       "from_state": None, "to_state": "OPEN", "cause": "incident",
+                                       "recorded_at": "2026-11-13T10:01:02Z"})
+        records["transitions"].append({"seq": 1, "incident_id": "I0", "action_id": None,
+                                       "from_state": None, "to_state": "OPEN", "cause": "incident",
+                                       "recorded_at": "2026-11-13T10:00:01Z"})
+        records["approvals"] = [{"approval_id": 2, "action_id": "ACT-2"}] if approved else []
+        records["managed_approvals"] = [{"approval_id": 2}] if approved else []
+        rows.append(audit_row("template_write", pod=writer, action_id="ACT-2", generation=4,
+                              at="2026-11-13T10:01:14Z"))
+        return rows, records
+
+    def deploy15_failures(self, rows, records):
+        return acceptance.expectation("S8", incidents=records["incidents"], rows=rows, records=records,
+                                      stalled="executor-a", generation_at_end=4)
+
+    def test_s8_deploy15_r4_allows_a_later_approved_incident_written_by_the_holder(self):
+        rows, records = self.s8_deploy15(writer=audit_row("request")["pod"])
+        self.assertEqual(self.deploy15_failures(rows, records), [])
+        self.assertEqual(acceptance.s8_later_incidents(rows, records), [
+            {"incident_id": "I1", "action_id": "ACT-2", "state": "RECOVERED", "writes": 1,
+             "opened_at": "2026-11-13T10:01:02Z", "approved": True}])
+
+    def test_s8_deploy15_r5_allows_a_later_approved_incident_written_by_the_other_executor(self):
+        rows, records = self.s8_deploy15(writer=B_POD)
+        self.assertEqual(self.deploy15_failures(rows, records), [])
+        self.assertEqual(acceptance.s8_later_incidents(rows, records)[0]["writes"], 1)
+
+    def test_s8_deploy15_still_rejects_a_write_of_the_revoked_action(self):
+        rows, records = self.s8_deploy15()
+        rows[-1]["action_id"] = "ACT-1"
+        self.assertIn("1 Sentinel template write(s), expected 0", self.deploy15_failures(rows, records))
+
+    def test_s8_deploy15_still_rejects_an_unattributable_holder_write(self):
+        for action_id in (None, "unannotated", "unknown-action"):
+            with self.subTest(action_id=action_id):
+                rows, records = self.s8_deploy15(writer=audit_row("request")["pod"])
+                rows[-1]["action_id"] = action_id
+                self.assertIn("the holder's Pod changed the target", self.deploy15_failures(rows, records))
+
+    def test_s8_deploy15_rejects_a_write_without_a_separate_approved_later_incident(self):
+        for approved, same_incident in ((False, False), (True, True)):
+            for writer in (B_POD, audit_row("request")["pod"]):
+                with self.subTest(approved=approved, same_incident=same_incident, writer=writer):
+                    rows, records = self.s8_deploy15(writer=writer, approved=approved, same_incident=same_incident)
+                    self.assertTrue(self.deploy15_failures(rows, records))
+
+    def test_s8_deploy15_rejects_a_generation_change_before_the_holders_refused_patch(self):
+        rows, records = self.s8_deploy15()
+        rows.append(audit_row("metadata_write", pod=None, sentinel=False, generation=4,
+                              at="2026-11-13T10:00:45Z"))
+        self.assertTrue(any("generation" in failure for failure in self.deploy15_failures(rows, records)))
+
+    def test_s8_needs_a_single_revoked_action_in_the_run_records(self):
+        rows, records = self.s8_deploy15()
+        for revocations in ([], [{"action_id": "missing"}],
+                            [{"action_id": "ACT-1"}, {"action_id": "ACT-2"}]):
+            with self.subTest(revocations=revocations):
+                changed = dict(records, revocations=revocations)
+                self.assertIn("no single revoked action identified in the run's records",
+                              self.deploy15_failures(rows, changed))
+                self.assertIsNone(acceptance.s8_seal(rows, changed, "executor-a"))
+
+    def test_s8_seal_and_refused_patch_must_belong_to_the_revoked_action(self):
+        rows, records = self.s8_deploy15()
+        # Another action's fence or accepted seal cannot prove this action was sealed.
+        changed = [rows[0], dict(rows[1], action_id="ACT-2"), *rows[2:]]
+        self.assertIsNone(acceptance.s8_seal(changed, dict(records, seals=[]), "executor-a"))
+        records["seals"][0].update(action_id="ACT-2", incident_id="I1")
+        self.assertIsNone(acceptance.s8_seal(changed, records, "executor-a"))
+        # Neither another action's refused PATCH nor an unattributable refusal exercises this race.
+        for action_id in ("ACT-2", "unannotated", None):
+            with self.subTest(action_id=action_id):
+                changed = [*rows[:2], dict(rows[2], action_id=action_id), rows[3]]
+                self.assertIn(self.NO_PATCH, self.deploy15_failures(changed, records))
+
+    def test_s8_later_incident_requires_terminal_then_open_then_write(self):
+        for case in ("no terminal", "no opening", "opened before terminal", "wrote before opening"):
+            with self.subTest(case=case):
+                rows, records = self.s8_deploy15()
+                if case == "no terminal":
+                    records["transitions"] = records["transitions"][1:]
+                elif case == "no opening":
+                    records["transitions"] = records["transitions"][:1]
+                elif case == "opened before terminal":
+                    records["transitions"][1]["recorded_at"] = "2026-11-13T10:00:20Z"
+                else:
+                    rows[-1]["at"] = "2026-11-13T10:01:01Z"
+                self.assertTrue(self.deploy15_failures(rows, records))
+
+    def test_s8_later_approval_must_match_the_action_or_be_a_completed_operator_approval(self):
+        rows, records = self.s8_deploy15()
+        for approvals, managed in (([], []), (records["approvals"], []),
+                                    ([{"approval_id": 2, "action_id": "ACT-1"}], records["managed_approvals"])):
+            with self.subTest(approvals=approvals, managed=managed):
+                changed = dict(records, approvals=approvals, managed_approvals=managed)
+                self.assertTrue(self.deploy15_failures(rows, changed))
+                self.assertEqual(acceptance.expectation(
+                    "S8", incidents=records["incidents"], rows=rows, records=changed, stalled="executor-a",
+                    operator_actions=[{"operator_action": "approve", "action_id": "ACT-2"}]), [])
+
+    def test_s8_generation_boundary_can_be_the_first_later_incident_opening(self):
+        rows, records = self.s8_deploy15()
+        rows[2]["at"] = "2026-11-13T10:01:30Z"  # The later action wrote before the holder's refusal appeared.
+        self.assertEqual(self.deploy15_failures(rows, records), [])
+        rows.append(audit_row("metadata_write", pod=None, sentinel=False, generation=4,
+                              at="2026-11-13T10:01:01Z"))
+        self.assertTrue(any("generation" in item for item in self.deploy15_failures(rows, records)))
+
+    def test_s8_generation_is_known_and_dry_runs_do_not_change_it(self):
+        rows, records = self.s8_deploy15()
+        rows.insert(2, dict(audit_row("dry_run", generation=4, at="2026-11-13T10:00:45Z"), dry_run=True))
+        self.assertEqual(self.deploy15_failures(rows, records), [])
+        rows[1]["generation"] = None  # A fence without its generation cannot establish the baseline.
+        self.assertTrue(any("generation" in item for item in self.deploy15_failures(rows, records)))
+
+    def test_s8_later_approved_incident_is_allowed_on_the_advanced_without_evidence_path(self):
+        rows, records = self.s8_deploy15()
+        rows = [rows[0], *rows[2:]]
+        self.assertEqual(self.deploy15_failures(rows, records), [])
+        self.assertEqual(acceptance.s8_seal(rows, records, "executor-a")["path"], "advanced_without_evidence")
+
+    def test_s8_unattributable_holder_metadata_and_unclassified_writes_fail_closed(self):
+        for effect in ("metadata_write", "unclassified"):
+            with self.subTest(effect=effect):
+                rows, records = self.s8_deploy15(writer=audit_row("request")["pod"])
+                rows[-1].update(effect=effect, action_id="unannotated")
+                self.assertIn("the holder's Pod changed the target", self.deploy15_failures(rows, records))
+
+    def test_s8_run_summary_records_later_incidents_with_either_approval_source(self):
+        for writer, operator_approval in ((audit_row("request")["pod"], False), (B_POD, True)):
+            with self.subTest(writer=writer, operator_approval=operator_approval):
+                rows, records = self.s8_deploy15(writer=writer, approved=not operator_approval)
+                records["access"] = []
+                lab = FakeLab(rows)
+
+                def scenario(run, operator_approval=operator_approval):
+                    run.stalled = "executor-a"
+                    if operator_approval:
+                        run.lab.approvals.append({"action_id": "ACT-2", "at": "2026-11-13T10:01:05Z"})
+
+                with tempfile.TemporaryDirectory() as directory, patch.dict(live.RUNNERS, {"S8": scenario}), \
+                        patch.object(live.invariants, "collect", return_value=records), \
+                        patch.object(live, "_operator", lambda *args: None), \
+                        patch.object(live, "git_revision", lambda: "abc123"):
+                    summary = live.run_one(lab, acceptance.SCENARIOS["S8"], 1,
+                                           {"policy_version": "v1"}, {}, {}, Path(directory))
+                    [saved] = Path(directory).glob("*/*/summary.json")
+                    written = json.loads(saved.read_text(encoding="utf-8"))
+                self.assertTrue(summary["expectation"]["met"], summary["expectation"])
+                self.assertEqual(summary["seal_path"], "fenced")
+                self.assertEqual(written["later_incidents"], summary["later_incidents"])
+                self.assertEqual(summary["later_incidents"], [
+                    {"incident_id": "I1", "action_id": "ACT-2", "state": "RECOVERED", "writes": 1,
+                     "opened_at": "2026-11-13T10:01:02Z", "approved": True}])
 
     def test_s9_needs_every_probe_and_no_write(self):
         self.assertEqual(self.check("S9", [], [], notes={"probes": []}), ["not every denial probe behaved as expected"])
@@ -898,15 +1207,15 @@ class FakeLab:
         self.rows, self.fail_collect, self.fail_wait, self.steps = rows, fail_collect, fail_wait, []
         self.ticks = iter(range(0, 100000, 5))
         self.generations, self.first_at, self.offset = iter(generations), first_at, offset
-        self.window, self.approvals = None, []
+        self.window, self.approvals, self.read_outages, self.approval_attempts = None, [], [], []
 
     def begin_run(self, baseline, policy=None):
         self.steps.append("begin")
         return frozenset({"INC-EARLIER"})
 
-    def settle(self, baseline):
+    def settle(self, baseline, *, leftovers=None):
         self.steps.append("settle")
-        return {"settled": True, "seconds": 20.0, "target": [], "open": []}
+        return {"settled": True, "seconds": 20.0, "target": [], "open": [], "leftovers": leftovers()}
 
     def clock_offset(self):
         self.steps.append("offset")
@@ -1015,7 +1324,8 @@ class RunOneTests(unittest.TestCase):
                 lab = FakeLab(self.rows)
                 with tempfile.TemporaryDirectory() as directory, \
                         patch.object(live, "git_revision", lambda: "abc123"), \
-                        patch.object(live, "_operator", lambda lab, version, stopping: lab.steps.append("approver")), \
+                        patch.object(live, "_operator",
+                                     lambda lab, version, stopping, record: lab.steps.append("approver")), \
                         patch.dict(live.RUNNERS, {name: lambda run: (time.sleep(0.2), run.lab.steps.append("runner"))}):
                     live.run_one(lab, acceptance.SCENARIOS[name], 1, self.deployed, {}, self.tokens, Path(directory))
                 self.assertEqual([step for step in lab.steps if step in ("runner", "approver")], expected)

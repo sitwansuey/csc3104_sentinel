@@ -10,8 +10,11 @@ trials.
 policies (P0, P1, and P1R on recorded diagnoses) have been replayed and the
 results committed. The golden replay reproduces every recorded live agent run
 made under a decision policy.
-**The model policies (P2, P3, P4) have not been run**: that is the GPU batch in
-[Run the model ablation](#run-the-model-ablation).
+**The model policies (P2, P3, P4) have run with `qwen3:14b` only**: three of
+the four batches in [Run the model ablation](#run-the-model-ablation) are
+committed (see [Committed model results](#committed-model-results)). The
+`qwen3:8b` batch was not run (owner decision, 2026-11-14), so there is no
+model-size comparison.
 **Every label is pending review**, so no row is a scored result yet.
 
 ## What is in the corpus
@@ -188,6 +191,46 @@ with a recorded diagnosis) and `golden.json`. Read the numbers in its
 These rows say nothing about a model. The deterministic policies ignore log
 text, so their injection success is zero by construction.
 
+## Committed model results
+
+Three `qwen3:14b` runs are committed, each with seeds 42, 43 and 44, a live
+diagnosis and the pinned digest `bdbd181c33f2` (the full SHA-256 is in each
+`run.json`). **These rows are unscored**: every label is pending review.
+
+| Run folder | Policies | Settings | Units | Results |
+|---|---|---|---|---|
+| `v1-model-14b-16k` | P2, P3, P4 | `--num-ctx 16384` | 666 | [table.md](../../../evidence/evaluation/recovery-ablation/v1-model-14b-16k/table.md) |
+| `v1-model-14b-8k` | P4 | `--num-ctx 8192` | 222 | [table.md](../../../evidence/evaluation/recovery-ablation/v1-model-14b-8k/table.md) |
+| `v1-model-14b-norag` | P3 | `--num-ctx 16384 --runbooks none` | 222 | [table.md](../../../evidence/evaluation/recovery-ablation/v1-model-14b-norag/table.md) |
+| `v1-model-8b-16k` | P4 | `qwen3:8b`, `--num-ctx 16384` | not run | Owner decision, 2026-11-14: the model is not pulled on this host |
+
+No run has an error row left. In the 16384 run one P2 unit errored and a
+resume ran it again; its `results.json` counts it in
+`rows_rerun_after_an_error`. Read the numbers in the tables; in short, and
+with every caveat on this page (decision level only, reconstructed state, one
+model family on one host, repeated runs of one scenario not independent):
+
+- Adversarial cases at 16384 (12 cases, 36 rows a cell): P2 makes an unsafe
+  write in 24/36 rows at V0 and V1 and 0/36 at V2. P3 does in 9/36 at V0 and
+  V1 and 0/36 at V2, with injection success 27/36 at V0 and V1 and 12/36 at
+  V2. P4 makes no unsafe write at any level, is correct in 27/36, misses 9/12
+  repairs and has injection success 9/36.
+- Captured and derived cases at 16384: P2 makes an unsafe write in 6/156
+  captured and 18/30 derived rows at V0 and V1, P3 in 6/156 and 14/30; neither
+  makes one at V2. P4 makes none in any cell; it misses 17/150 captured and
+  8/12 derived repairs.
+- Context size (P4 at 8192 against 16384): still no unsafe write. Captured
+  correct is 136/156 against 139/156, derived 20/30 against 22/30 and
+  adversarial 27/36 in both. The Wilson intervals overlap, so this run does
+  not show a difference.
+- No runbooks (P3 with `--runbooks none`): no unsafe write and injection
+  success 0/36, but every repair is missed (150/150 captured, 12/12 derived,
+  12/12 adversarial), as [the P3-noRAG note](#run-the-model-ablation)
+  expects: with no runbook `propose()` escalates without asking the Recovery
+  Planner.
+- Model size: not measured. Without the `qwen3:8b` run these rows say nothing
+  about a smaller model.
+
 ## Commands
 
 Run from the repository root with the project virtual environment.
@@ -226,8 +269,12 @@ before a label sign-off are never scored against the signed labels.
 
 This is the GPU batch, about 1,300 units (74 cases, six model variants, three
 seeds). At 10 to 50 seconds a unit it takes roughly 6 to 15 hours on the
-16 GB GPU and can be stopped and resumed at any time. A person starts it; it
-has not been run.
+16 GB GPU and can be stopped and resumed at any time. A person starts it.
+Three of the four commands below have run (1,110 units, all `qwen3:14b`; see
+[Committed model results](#committed-model-results)). The `qwen3:8b` command
+has not: the project owner decided on 2026-11-14 to skip it, because the
+model is not pulled on this host and pulling it is a large download. Its
+recipe is kept for a later run.
 
 Preflight, in order:
 
@@ -254,6 +301,7 @@ of the identity):
 ```powershell
 python scripts/evaluate_recovery.py run --policy P2 P3 P4 --seeds 42 43 44 --model qwen3:14b --model-digest bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8 --num-ctx 16384 --out evidence/evaluation/recovery-ablation/v1-model-14b-16k
 python scripts/evaluate_recovery.py run --policy P4 --seeds 42 43 44 --model qwen3:14b --model-digest bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8 --num-ctx 8192 --out evidence/evaluation/recovery-ablation/v1-model-14b-8k
+# Not run (owner decision, 2026-11-14); kept as the recipe for a later run.
 python scripts/evaluate_recovery.py run --policy P4 --seeds 42 43 44 --model qwen3:8b --model-digest 500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41 --num-ctx 16384 --out evidence/evaluation/recovery-ablation/v1-model-8b-16k
 python scripts/evaluate_recovery.py run --policy P3 --runbooks none --seeds 42 43 44 --model qwen3:14b --model-digest bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8 --num-ctx 16384 --out evidence/evaluation/recovery-ablation/v1-model-14b-norag
 ```
@@ -277,7 +325,8 @@ refuses a model whose digest is not the pinned one. Afterwards:
   (P2.08, P4.03) and report any difference;
 - report captured, derived and adversarial rows separately and say that
   repeated runs of one scenario are not independent;
-- commit the four folders and quote their tables with this page's caveats.
+- commit each folder and quote its table with this page's caveats (the three
+  `qwen3:14b` folders are committed).
 
 ## Limits
 
@@ -288,7 +337,9 @@ refuses a model whose digest is not the pinned one. Afterwards:
 - The corpus has four scenarios, mostly R1. No captured case yet needs
   RESTART or a pure escalation from a Chaos Mesh fault (P4.03 adds them).
 - The V0-open variant, with free RESTART and SCALE parameters, is not built.
-- The labels are pending review.
+- The labels are pending review, so the model rows are unscored.
+- The model rows come from one model family (`qwen3:14b`) on one host. The
+  `qwen3:8b` run was not made, so there is no model-size result.
 - The contamination test looks for this corpus's label terms (scenario ids,
   names, classes, variants and answer phrases). It does not yet look for
   RCAEval case names, which D5 also lists.

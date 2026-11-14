@@ -109,7 +109,7 @@ exchange and stops claiming, unless other workers' requests have already made
 up the lost commits (below).
 
 **Recovery time (RTO): bounded worker back-off.** After failed passes in a
-row a worker waits a random time between 0 and its poll interval × 2^failures,
+row a worker waits a random time between 0 and its poll interval Ã— 2^failures,
 at most 15 s (`runtime/worker_service.py:75::backoff_seconds::return random() * min(`).
 So once a restarted Coordinator is ready, every worker reaches it within the
 attempt it may have had in flight, at most 15 s of waiting and one more
@@ -270,10 +270,10 @@ so their tests are unchanged.
 | Finding newer than the stored one | Verifier vs Verifier | A finding answering a dependency request: that request is the newest. A finding pushed through `ingest`: timestamps are compared only when the same identity produced both (one clock); across identities the later acceptance wins (`services/coordinator/core.py:174::_apply::previous["producer"] == producer`) | One producer's clock must not step back |
 | Health window after the write | Verifier vs Executor (`window_start >= recorded_at`) | The answered verifier request was issued after the current execution was accepted (`services/coordinator/core.py:265::_apply::_issued_after(store, answers, "execution_result"`) | See the Verifier below |
 | Approval not before the Guard decision | Coordinator vs Guard | Not compared for a sequenced decision: AWAITING_APPROVAL already proves the decision was accepted first (`services/coordinator/core.py:570::approve::meta["answers"] is None`) | Nothing |
-| Approval not from the future | Coordinator vs Guard or Executor | `approved_at > checked_at + ε` (`services/guard/core.py:160::_approval_reasons::approved_at > checked_at + skew`) | Skew up to ε is tolerated |
-| Approval expiry | Coordinator or operator vs Guard or Executor | Expired once `checked_at + ε >= expires_at` (`services/guard/core.py:162::_approval_reasons::checked_at + skew >= expires_at`), and a decision's `valid_until` ends ε before the expiry (`services/guard/decisions.py:317::_valid_until::-skew`) | An approval can end up to 2ε early, never late |
-| Finding not from the future | Verifier vs Guard or Executor | `checked_at > now + ε` is UNKNOWN (`services/guard/core.py:250::_evaluate_core::dependency_at > checked_at + skew`) | Skew up to ε is tolerated |
-| Finding not too old | Verifier vs Guard or Executor | Age counts ε as well (`services/guard/core.py:253::_evaluate_core::checked_at + skew - dependency_at`), and so does `valid_until` (`services/guard/decisions.py:299::_valid_until::policy[key] - margin`) | Evidence can look up to 2ε older, never younger |
+| Approval not from the future | Coordinator vs Guard or Executor | `approved_at > checked_at + Îµ` (`services/guard/core.py:160::_approval_reasons::approved_at > checked_at + skew`) | Skew up to Îµ is tolerated |
+| Approval expiry | Coordinator or operator vs Guard or Executor | Expired once `checked_at + Îµ >= expires_at` (`services/guard/core.py:162::_approval_reasons::checked_at + skew >= expires_at`), and a decision's `valid_until` ends Îµ before the expiry (`services/guard/decisions.py:317::_valid_until::-skew`) | An approval can end up to 2Îµ early, never late |
+| Finding not from the future | Verifier vs Guard or Executor | `checked_at > now + Îµ` is UNKNOWN (`services/guard/core.py:250::_evaluate_core::dependency_at > checked_at + skew`) | Skew up to Îµ is tolerated |
+| Finding not too old | Verifier vs Guard or Executor | Age counts Îµ as well (`services/guard/core.py:253::_evaluate_core::checked_at + skew - dependency_at`), and so does `valid_until` (`services/guard/decisions.py:299::_valid_until::policy[key] - margin`) | Evidence can look up to 2Îµ older, never younger |
 
 The issued-after checks in the rows for the Guard ALLOW, the execution and the
 health window are implied by the newest-request check
@@ -283,7 +283,7 @@ NOOP result a new verifier request. So it is the newest-request check that
 enforces those orders; the explicit checks are kept as defence in depth and
 no test makes them fail on their own.
 
-ε is the Guard policy field `max_clock_skew_seconds` (0 to 60 s; 0, the
+Îµ is the Guard policy field `max_clock_skew_seconds` (0 to 60 s; 0, the
 default, keeps the strict comparison; `services/guard/core.py::clock_skew`).
 The live-profile policy of the multi-process harness sets 2 s
 (`experiments/distributed/fixtures.py::live_policy`). The reviewed live
@@ -295,12 +295,12 @@ the skew between two processes:
 - The Executor's local Guard re-check runs with its own clock against an
   approval stamped by the Coordinator and a finding stamped by the Verifier
   (`services/executor/core.py:635::execute::authorizer.validate`, which reads
-  the host clock in `runtime/live_executor.py::LiveGuardAuthorizer.validate`). With more than ε of
+  the host clock in `runtime/live_executor.py::LiveGuardAuthorizer.validate`). With more than Îµ of
   skew it refuses, and the Executor reports FAILED with no write. The
   Coordinator now accepts that FAILED result in order, so the action ends
   FAILED instead of wedging. This is what S7 shows: with both Executors
   300 s behind and operator approval required, the action ends FAILED with no
-  write. An Executor host whose whole clock is off by more than ε therefore
+  write. An Executor host whose whole clock is off by more than Îµ therefore
   cannot complete an approved action; only a peer within the bound can (S7b).
 - The Verifier starts a job only once its clock has passed the Executor's
   `recorded_at`, and counts only readings stamped after it
@@ -315,27 +315,27 @@ the skew between two processes:
   answer only makes it retry the command or report one more uncertain
   result, which the Coordinator orders by sequence.
 
-**The skew bound ε, measured.** Every Coordinator reply carries its clock
+**The skew bound Îµ, measured.** Every Coordinator reply carries its clock
 (`X-Sentinel-Server-Time`, `runtime/worker_http.py::handler`). Each worker
-estimates its offset with Cristian's algorithm over every exchange: θ =
-server time − (send time + RTT/2), where the round-trip time is measured on
-the monotonic clock, so the true offset lies within RTT/2 of θ if the reply was
+estimates its offset with Cristian's algorithm over every exchange: Î¸ =
+server time âˆ’ (send time + RTT/2), where the round-trip time is measured on
+the monotonic clock, so the true offset lies within RTT/2 of Î¸ if the reply was
 stamped during the round trip. It keeps the tightest of its last eight samples
 (`runtime/worker_http.py::ClockEstimator`) and reports it on every request
 (`X-Sentinel-Clock-Estimate`). While the worker's clock runs steadily every
-sample's interval θ ± RTT/2 holds the true offset, so any two overlap. A new
+sample's interval Î¸ Â± RTT/2 holds the true offset, so any two overlap. A new
 sample whose interval misses the estimate's means the clock has stepped (an
 NTP step, a VM resume): the older samples are dropped and the new sample is
 the estimate from that exchange on. A worker without a bound of its own
 measures once before its first claim, so a Coordinator with a bound does not
 refuse that claim for lack of an estimate. The Coordinator stores each worker's latest
-estimate and the largest |θ| it has reported
+estimate and the largest |Î¸| it has reported
 (`services/coordinator/store.py::SQLiteStore.record_worker_clock`).
 
 The bound is enforced, and fails closed, only where it is configured:
 
 - A worker with `max_clock_skew_seconds` in its configuration claims new work
-  only while |θ| + RTT/2 ≤ ε, both for the tightest sample and for the
+  only while |Î¸| + RTT/2 â‰¤ Îµ, both for the tightest sample and for the
   newest one. Otherwise it reports the status `clock_skew`, measures again on
   its next pass, and its `/readyz` answers 503
   (`runtime/remote_worker.py::RemoteWorker.clock_status`,
@@ -415,6 +415,7 @@ hour off.
 | A worker result and its acknowledgment commit together; a resend is a replay | Result digest stored on the receipt | `runtime/worker_transport.py::Delivery.finish` |
 | A worker never redoes finished work after a lost response | Result saved before it is sent | `runtime/remote_worker.py::RemoteWorker.once` |
 | Only the current lease holder can renew or report | Owner, role and lease token must match; renewal cannot revive finished or expired work | `runtime/worker_transport.py::Delivery.renew` |
+| A worker that lost its lease stops posting under it and claims again, keeping its evidence | A refusal that can never change (404, 409, or 403 `not_lease_owner`) releases the saved result: the result stays in the transport journal and the Executor's ledger, the delivery and its token are forgotten. Any other failed post is retried with back-off until it has failed at least 10 posts over at least 300 s, then released (`transport.result.abandoned`) | `runtime/remote_worker.py::lease_refusal`, `runtime/remote_worker.py::RemoteWorker._release` |
 | The Kubernetes write happens at most once per action on one ledger | Write intent is journalled before the call; an unclear outcome is reconciled by reading, never by writing again, through a pure decision table | `services/executor/core.py:653-666::execute::start_write`, `services/executor/reconciliation.py::classify` |
 
 Tests: `tests/test_coordinator.py::CoordinatorTests.test_changed_payload_under_stable_id_is_rejected`,
@@ -422,10 +423,23 @@ Tests: `tests/test_coordinator.py::CoordinatorTests.test_changed_payload_under_s
 `tests/test_worker_transport.py::TransportTests.test_renew_cannot_revive_expired_replaced_or_wrong_role_work`,
 `tests/test_executor.py::ExecutorTests.test_crash_after_write_intent_but_before_commit_does_not_repeat_mutation`,
 `tests/test_executor_reconciliation_table.py::DecisionTableTests.test_exhaustive_product_never_claims_more_than_the_evidence`,
+`tests/test_remote_workers.py::RemoteWorkerTests.test_a_lost_lease_executor_that_wrote_leaves_evidence_the_next_owner_adopts_without_a_second_write`,
 and the in-flight-write model checker `tests/test_executor_reconcile_model.py::ModelCheckerTests`.
 
 Together these give effectively-once state transitions at the Coordinator.
 Delivery to workers is at least once, and receivers deduplicate by action id.
+
+A worker's lease ends on the Coordinator's clock. A worker that stops
+renewing (a paused node, in P4.01 S2) loses it whether or not it keeps
+posting, and once another worker claims the request every renewal or result
+from the old holder gets 403 `not_lease_owner`, for good. Until P4.01 the
+worker released a saved result only on 404 or 409, so that 403 kept it
+re-posting one result on every pass and claiming nothing (live at 3ba0d12).
+It now releases on that 403 too, never posts under a lease its last check
+found lost, and bounds every other retry, while the transport journal and
+the Executor's ledger keep what was done, so the next owner reconciles from
+the cluster's evidence. The safety argument is in
+[A lost lease](remote-workers.md#a-lost-lease).
 
 ### The Verifier samples within one claimed pass
 
@@ -564,7 +578,7 @@ would move judgement into the sampling loop
   (`services/executor/kubernetes_adapter.py:36::PROCESS_TIMEOUT_SECONDS::= 15`).
 - The UID and resourceVersion test in every patch is checked by the API
   server inside the update it guards
-  (`services/executor/kubernetes_adapter.py:204-206::KubectlDeploymentAPI.conditional_restore::/metadata/uid`).
+  (`services/executor/kubernetes_adapter.py:209-211::KubectlDeploymentAPI.conditional_restore::/metadata/uid`).
   On its own it stops a write based on a stale read, but not a writer whose
   read is still current and whose lease expired or whose approval was revoked
   after its last check. The seal below closes that gap.
@@ -662,7 +676,7 @@ would move judgement into the sampling loop
   the settle delay, a reconcile pass journals a fresh nonce and then sends a
   patch with the same UID and resourceVersion tests that only adds this
   action's fence annotation (sentinel.io/fence)
-  (`services/executor/kubernetes_adapter.py:287-289::KubectlDeploymentAPI.fence::/metadata/uid`).
+  (`services/executor/kubernetes_adapter.py:294-296::KubectlDeploymentAPI.fence::/metadata/uid`).
   etcd commits at most one request conditioned on V0. If the fence commits,
   its own test proves our write had not committed before it, and the moved
   version means it never can: CONFLICT with basis FENCED, and the workload is
@@ -966,9 +980,9 @@ Results on this code base (file mode, one Windows host):
 | S1b, S1c: an Executor crashes after its write intent or after its patch, and its peer finishes the action | RECOVERED with one write. The peer adopted a committed write by its evidence annotation, so the redelivery defect (CONFLICT for an applied write) did not reproduce. Before P3.04 no command reached the crashed host once it restarted, so its ledger kept the action WRITE_STARTED (I6 failed) and it would refuse any later action on that workload (`services/executor/store.py::SQLiteExecutionLedger.prepare`). Since P3.04 the restarted host settles the row from the evidence on the Deployment before it claims anything: every invariant held in 3 of 3 runs of each |
 | S1e: the crashed Executor is the only one that comes back | It fenced its own in-doubt write; FAILED with no write |
 | S2: the lease holder stalls before its patch (SIGSTOP on Linux; a blocked fault point and a blackholed link on Windows, which has no suspend without psutil) | The peer wrote; the stale host's patch was refused and it adopted the peer's write, so on this base a peer's write did not wedge the losing host |
-| S7: both Executors 300 s behind, no skew bound, operator approval required | Before P3.03, the clock-skew wedge: the write landed, the result was refused with HTTP 400 for the whole run, and the incident stayed READY (I3 and I5 failed). Now the Executor's own Guard re-check sees the Coordinator-stamped approval 300 s in its future and refuses, its FAILED result is accepted in order, and the action ends FAILED with no write and no HTTP 400 in 3 of 3 runs, every invariant held; each Executor measured θ = 300.005 to 300.012 s (uncertainty at most 0.013 s), the other workers at most 0.015 s. It does not recover: no Executor is within the bound |
+| S7: both Executors 300 s behind, no skew bound, operator approval required | Before P3.03, the clock-skew wedge: the write landed, the result was refused with HTTP 400 for the whole run, and the incident stayed READY (I3 and I5 failed). Now the Executor's own Guard re-check sees the Coordinator-stamped approval 300 s in its future and refuses, its FAILED result is accepted in order, and the action ends FAILED with no write and no HTTP 400 in 3 of 3 runs, every invariant held; each Executor measured Î¸ = 300.005 to 300.012 s (uncertainty at most 0.013 s), the other workers at most 0.015 s. It does not recover: no Executor is within the bound |
 | S8: the approval is revoked while the lease holder is stopped at `executor.before_patch`, after its last checks | The Coordinator withdrew the claimed command and queued a seal; the other Executor fenced the target at the planned resourceVersion; the paused patch was refused when it resumed (CONFLICT). FAILED with no template write, every invariant held, in 3 of 3 runs |
-| S7b: executor-a 5 s behind, bound 2 s for every worker and the Coordinator | executor-a measured θ = 5.006 to 5.016 s, reported `clock_skew`, answered `/readyz` with 503 and never claimed; executor-b did the work. RECOVERED with one write in 3 of 3 runs, every invariant held |
+| S7b: executor-a 5 s behind, bound 2 s for every worker and the Coordinator | executor-a measured Î¸ = 5.006 to 5.016 s, reported `clock_skew`, answered `/readyz` with 503 and never claimed; executor-b did the work. RECOVERED with one write in 3 of 3 runs, every invariant held |
 
 S1b and S1c were asserted as known failures until P3.04 settled the orphaned
 ledger; they now assert that every invariant holds.

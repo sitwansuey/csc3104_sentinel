@@ -42,7 +42,7 @@ FIELDS = frozenset({
     "identity", "role", "operation", "outcome", "reason", "status", "http_status",
     "method", "path", "error_type", "error_ref", "duration_ms", "fence_epoch", "basis",
     "trace_id", "span_id", "parent_span_id", "span_name", "from_state", "to_state", "cause", "seq", "outbox_high_water",
-    "replay", "message_kind", "port", "schema_version",
+    "replay", "message_kind", "port", "schema_version", "attempts",
     "store_generation", "commit_counter", "previous_generation", "previous_commit",
 })
 SECRET_KEY = re.compile(r"(?i)token|authori[sz]ation|secret|password|passwd|credential|cookie|payload|body")

@@ -1,0 +1,277 @@
+{
+  "schema": "sentinel-dist-lab-v1",
+  "context": "kind-sentinel-dist",
+  "deployed_at": "2026-11-14T08:12:53.443100Z",
+  "target": {
+    "cluster_id": "sentinel-dist",
+    "namespace": "sentinel-dist-workload",
+    "kind": "Deployment",
+    "name": "demo-api",
+    "uid": "5f569368-3fc1-4df1-862c-70823dca3ebb"
+  },
+  "target_image": "docker.io/library/sentinel-demo@sha256:8e22dda818dcdd626e66809b0e17a1b97189f4d98e793397fa4eeb8063d82064",
+  "baseline_window": [
+    {
+      "at": "2026-11-14T08:11:56.193351Z",
+      "template_sha256": "9962bde0dc29003a0424c51a8220de546f2cbcd90ea9182ea8a8130d4c0ed5f1",
+      "ready_replicas": 1,
+      "available_replicas": 1,
+      "desired_replicas": 1,
+      "health_ok": true,
+      "resource_version": "149290"
+    },
+    {
+      "at": "2026-11-14T08:12:06.359212Z",
+      "template_sha256": "9962bde0dc29003a0424c51a8220de546f2cbcd90ea9182ea8a8130d4c0ed5f1",
+      "ready_replicas": 1,
+      "available_replicas": 1,
+      "desired_replicas": 1,
+      "health_ok": true,
+      "resource_version": "149290"
+    },
+    {
+      "at": "2026-11-14T08:12:16.516662Z",
+      "template_sha256": "9962bde0dc29003a0424c51a8220de546f2cbcd90ea9182ea8a8130d4c0ed5f1",
+      "ready_replicas": 1,
+      "available_replicas": 1,
+      "desired_replicas": 1,
+      "health_ok": true,
+      "resource_version": "149290"
+    },
+    {
+      "at": "2026-11-14T08:12:26.680129Z",
+      "template_sha256": "9962bde0dc29003a0424c51a8220de546f2cbcd90ea9182ea8a8130d4c0ed5f1",
+      "ready_replicas": 1,
+      "available_replicas": 1,
+      "desired_replicas": 1,
+      "health_ok": true,
+      "resource_version": "149290"
+    }
+  ],
+  "policy_version": "sentinel-dist-acceptance-1",
+  "api_server": {
+    "service": "<private-ip>",
+    "endpoint": "<private-ip>"
+  },
+  "placement": {
+    "pods": {
+      "sentinel-coordinator": {
+        "pod": "sentinel-coordinator-77f69bd4ff-gz9f6",
+        "node": "sentinel-dist-worker3",
+        "host": "c"
+      },
+      "sentinel-observer-1": {
+        "pod": "sentinel-observer-1-66df84cdb7-x8cnh",
+        "node": "sentinel-dist-worker3",
+        "host": "c"
+      },
+      "sentinel-planner-1": {
+        "pod": "sentinel-planner-1-7c5b54fbd5-kx8q5",
+        "node": "sentinel-dist-worker3",
+        "host": "c"
+      },
+      "sentinel-guard-1": {
+        "pod": "sentinel-guard-1-855cf6588d-c4tbw",
+        "node": "sentinel-dist-worker3",
+        "host": "c"
+      },
+      "sentinel-executor-a": {
+        "pod": "sentinel-executor-a-6b7fdf7cfb-tsxjn",
+        "node": "sentinel-dist-worker",
+        "host": "a"
+      },
+      "sentinel-executor-b": {
+        "pod": "sentinel-executor-b-7b46d445db-tv5cm",
+        "node": "sentinel-dist-worker2",
+        "host": "b"
+      },
+      "sentinel-verifier-1": {
+        "pod": "sentinel-verifier-1-f45b888b7-tkmb2",
+        "node": "sentinel-dist-worker3",
+        "host": "c"
+      }
+    },
+    "pinned": {
+      "sentinel-coordinator": "c",
+      "sentinel-executor-a": "a",
+      "sentinel-executor-b": "b"
+    },
+    "pinned_on_distinct_nodes": true
+  },
+  "rbac_checks": [
+    {
+      "account": "sentinel-executor",
+      "verb": "get",
+      "resource": "deployment/demo-api",
+      "namespace": "sentinel-dist-workload",
+      "answer": "yes",
+      "expected": "yes"
+    },
+    {
+      "account": "sentinel-executor",
+      "verb": "patch",
+      "resource": "deployment/demo-api",
+      "namespace": "sentinel-dist-workload",
+      "answer": "yes",
+      "expected": "yes"
+    },
+    {
+      "account": "sentinel-executor",
+      "verb": "delete",
+      "resource": "deployment/demo-api",
+      "namespace": "sentinel-dist-workload",
+      "answer": "no",
+      "expected": "no"
+    },
+    {
+      "account": "sentinel-executor",
+      "verb": "patch",
+      "resource": "deployment/sentinel-coordinator",
+      "namespace": "sentinel-dist",
+      "answer": "no",
+      "expected": "no"
+    },
+    {
+      "account": "sentinel-executor",
+      "verb": "get",
+      "resource": "secrets",
+      "namespace": "sentinel-dist",
+      "answer": "no",
+      "expected": "no"
+    },
+    {
+      "account": "sentinel-executor",
+      "verb": "create",
+      "resource": "pods/exec",
+      "namespace": "sentinel-dist-workload",
+      "answer": "no",
+      "expected": "no"
+    },
+    {
+      "account": "sentinel-executor",
+      "verb": "list",
+      "resource": "pods",
+      "namespace": "sentinel-dist-workload",
+      "answer": "no",
+      "expected": "no"
+    },
+    {
+      "account": "sentinel-guard",
+      "verb": "get",
+      "resource": "deployment/demo-api",
+      "namespace": "sentinel-dist-workload",
+      "answer": "yes",
+      "expected": "yes"
+    },
+    {
+      "account": "sentinel-guard",
+      "verb": "patch",
+      "resource": "deployment/demo-api",
+      "namespace": "sentinel-dist-workload",
+      "answer": "no",
+      "expected": "no"
+    },
+    {
+      "account": "sentinel-verifier",
+      "verb": "get",
+      "resource": "deployment/demo-api",
+      "namespace": "sentinel-dist-workload",
+      "answer": "yes",
+      "expected": "yes"
+    },
+    {
+      "account": "sentinel-verifier",
+      "verb": "patch",
+      "resource": "deployment/demo-api",
+      "namespace": "sentinel-dist-workload",
+      "answer": "no",
+      "expected": "no"
+    },
+    {
+      "account": "sentinel-planner",
+      "verb": "get",
+      "resource": "deployment/demo-api",
+      "namespace": "sentinel-dist-workload",
+      "answer": "no",
+      "expected": "no"
+    },
+    {
+      "account": "sentinel-coordinator",
+      "verb": "get",
+      "resource": "deployment/demo-api",
+      "namespace": "sentinel-dist-workload",
+      "answer": "no",
+      "expected": "no"
+    },
+    {
+      "account": "sentinel-observer",
+      "verb": "patch",
+      "resource": "deployment/demo-api",
+      "namespace": "sentinel-dist-workload",
+      "answer": "no",
+      "expected": "no"
+    }
+  ],
+  "preflight": {
+    "other_clusters_seen": "a cluster this harness never uses exists and is left alone",
+    "context": {
+      "context": "kind-sentinel-dist",
+      "cluster": "kind-sentinel-dist",
+      "loopback_https": true
+    },
+    "nodes": {
+      "names": [
+        "sentinel-dist-control-plane",
+        "sentinel-dist-worker",
+        "sentinel-dist-worker2",
+        "sentinel-dist-worker3"
+      ],
+      "hosts": {
+        "a": "sentinel-dist-worker",
+        "b": "sentinel-dist-worker2",
+        "c": "sentinel-dist-worker3"
+      },
+      "kubelet_versions": [
+        "v1.37.0"
+      ]
+    },
+    "node_image": "kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5",
+    "audit_log": "/var/log/kubernetes/kube-apiserver-audit.log",
+    "chaos_mesh": "2.8.2",
+    "docker_memory": {
+      "total_gib": 15.23,
+      "used_gib": 5.98,
+      "free_gib": 9.25,
+      "required_free_gib": 3.0
+    },
+    "p4_03_running": false
+  },
+  "versions": {
+    "images": {
+      "coordinator": {
+        "image": "sentinel-coordinator:0.1.0",
+        "id": "sha256:a6ce0e371247bd5542f7b95c9ec21f3a1b2696ae93d6c79d21ce2985bd9a5056"
+      },
+      "observer": {
+        "image": "sentinel-observer:0.2.0",
+        "id": "sha256:10a8691dd5a2e0e78836a05cc22999640bf3d6cb78ac4fabd83812c04f81482f"
+      },
+      "worker": {
+        "image": "sentinel-worker:local",
+        "id": "sha256:4c0949384af487752fac365796a29d2f4a2d0800088c92a0eed7d02c78454e27"
+      },
+      "demo": {
+        "image": "sentinel-demo:0.1.0",
+        "id": "sha256:8e22dda818dcdd626e66809b0e17a1b97189f4d98e793397fa4eeb8063d82064"
+      }
+    },
+    "node_image": "kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5",
+    "chaos_mesh_chart": "2.8.2",
+    "kubectl": "v1.34.1",
+    "server": "v1.37.0",
+    "kind": "kind v0.33.0 go1.26.7 windows/amd64",
+    "git_revision": "0b5529fb77e4485493ca683b58394cef0bec098d",
+    "python": "3.13.2"
+  },
+  "limits": "Four kind nodes (containers) on one Docker host: separate network namespaces and kubelets, one shared kernel, clock and disk. Not separate machines. The Planner is the deterministic lab planner (synthetic proposals), and clock skew is injected by Chaos Mesh TimeChaos, not measured between hosts."
+}

@@ -1,0 +1,258 @@
+{
+  "schema": "sentinel-dist-acceptance-run-v1",
+  "scenario": "S1c",
+  "title": "Kill an Executor after its patch, before it saved the result",
+  "fault": "fault point executor.after_patch_before_save (block), then PodChaos pod-failure of that Executor until the incident ends",
+  "file_mode_counterpart": "S1c",
+  "expect": "RECOVERED, exactly 1 Sentinel template write, takeover measured",
+  "repeat_index": 3,
+  "context": "kind-sentinel-dist",
+  "date": "2026-11-13",
+  "started_at": "2026-11-13T23:27:14.735063Z",
+  "ended_at": "2026-11-13T23:29:45.038440Z",
+  "duration_seconds": 156.8,
+  "fault_at": "2026-11-13T23:27:47.819587Z",
+  "notes": {
+    "fault_point": "executor.after_patch_before_save",
+    "holder": "executor-b",
+    "chaos": [
+      {
+        "kind": "PodChaos",
+        "name": "s1c-r3-down",
+        "at": "2026-11-13T23:27:48.367679Z",
+        "targets": {
+          ".": [
+            {
+              "pod": "sentinel-executor-b-7b46d445db-hz5ww",
+              "uid": "bf2f9395-57f9-4061-a6fd-c4b7ff743658"
+            }
+          ]
+        },
+        "confirmation": {
+          "desired_phase": "Run",
+          "records": [
+            {
+              "id": "sentinel-dist/sentinel-executor-b-7b46d445db-hz5ww",
+              "selector_key": ".",
+              "phase": "Injected"
+            }
+          ],
+          "replaced": [
+            {
+              "pod": "sentinel-executor-b-7b46d445db-hz5ww",
+              "uid": "bf2f9395-57f9-4061-a6fd-c4b7ff743658",
+              "container": "worker",
+              "container_before": "containerd://5f274e5198dec15f11a99c65300868e275534d7568d85c040fa98f0f839b8907",
+              "container_after": "containerd://5f274e5198dec15f11a99c65300868e275534d7568d85c040fa98f0f839b8907"
+            }
+          ],
+          "confirmed_at": "2026-11-13T23:28:20.380188Z",
+          "waited_seconds": 32.0
+        },
+        "removed_at": "2026-11-13T23:28:47.538520Z",
+        "in_effect_until_removal": true
+      }
+    ],
+    "terminal_while_down": true
+  },
+  "harness_error": null,
+  "terminal_in_time": true,
+  "states": [
+    "RECOVERED"
+  ],
+  "incidents": [
+    {
+      "incident_id": "INC-DCA9FAC922A4",
+      "state": "RECOVERED",
+      "opened_at": "2026-11-13T23:27:34.498548Z"
+    }
+  ],
+  "earlier_incidents": 17,
+  "settle": {
+    "settled": true,
+    "seconds": 22.6,
+    "target": [],
+    "open": [],
+    "leftovers": []
+  },
+  "invariants": [
+    {
+      "id": "I1",
+      "name": "At most one committed template write per action",
+      "passed": true,
+      "detail": "1 committed write(s) over 1 action(s)"
+    },
+    {
+      "id": "I2",
+      "name": "No template write after revocation unless surfaced for review",
+      "passed": true,
+      "detail": "0 revocation(s), no write after any"
+    },
+    {
+      "id": "I3",
+      "name": "Every incident terminal or reviewable within the deadline",
+      "passed": true,
+      "detail": "RECOVERED"
+    },
+    {
+      "id": "I4",
+      "name": "No delivery has two acknowledged results",
+      "passed": true,
+      "detail": "171 acknowledged command(s), one result each"
+    },
+    {
+      "id": "I5",
+      "name": "No poison loop (bounded attempts, at most two HTTP 400 refusals per command)",
+      "passed": true,
+      "detail": "at most 5 attempt(s) per command, 0 HTTP 400 result(s)"
+    },
+    {
+      "id": "I6",
+      "name": "No Executor ledger ends with a write in doubt",
+      "passed": true,
+      "detail": "31 ledger row(s), none in doubt"
+    },
+    {
+      "id": "X1",
+      "name": "Lease ownership exclusive",
+      "passed": true,
+      "detail": "7 delivery lease(s), each held by one identity at a time"
+    },
+    {
+      "id": "X2",
+      "name": "No secret in logs, configuration files or argv",
+      "passed": true,
+      "detail": "7 file(s) and 7 argv list(s) clean"
+    },
+    {
+      "id": "X3",
+      "name": "No acknowledged message lost",
+      "passed": true,
+      "detail": "171 acknowledged result(s) all recorded"
+    },
+    {
+      "id": "X4",
+      "name": "Transitions journal consistent with incidents and outbox",
+      "passed": true,
+      "detail": "7 transition(s) consistent"
+    },
+    {
+      "id": "I7",
+      "name": "At most one successful template PATCH per action in the API server audit log",
+      "passed": true,
+      "detail": "1 template PATCH(es) over 1 action(s); 0 fence or seal PATCH(es) and 0 denied change(s) not counted"
+    }
+  ],
+  "invariants_passed": true,
+  "expectation": {
+    "expect": "RECOVERED, exactly 1 Sentinel template write, takeover measured",
+    "met": true,
+    "failures": []
+  },
+  "passed": true,
+  "audit": {
+    "events": 386,
+    "effects": {
+      "request": 384,
+      "template_write": 2
+    },
+    "sentinel_template_writes_per_action": {
+      "ACT-a2ffd63a706268e9829130cf": 1
+    },
+    "max_template_writes_per_action": 1,
+    "sentinel_template_writes": 1,
+    "operator_template_writes": 1,
+    "sentinel_denials": {},
+    "unclassified": {
+      "sentinel": 0,
+      "operator": 0
+    }
+  },
+  "audit_lines_skipped": 0,
+  "audit_completeness": {
+    "complete": true,
+    "problems": [],
+    "files": 2,
+    "first_event_at": "2026-11-13T10:26:21.581188Z",
+    "window": [
+      "2026-11-13T23:27:13.629063Z",
+      "2026-11-13T23:29:45.136440Z"
+    ],
+    "generation": {
+      "before": 36,
+      "before_restore": 38,
+      "after": 38
+    }
+  },
+  "clock": {
+    "control_plane_minus_harness": [
+      {
+        "offset_seconds": -0.004,
+        "uncertainty_seconds": 0.102,
+        "at": "2026-11-13T23:27:14.444659Z"
+      },
+      {
+        "offset_seconds": -0.012,
+        "uncertainty_seconds": 0.093,
+        "at": "2026-11-13T23:29:43.851520Z"
+      }
+    ],
+    "fault_at_cluster_clock": "2026-11-13T23:27:47.815587Z"
+  },
+  "takeover_seconds": 44.183,
+  "coordinator_recovery": null,
+  "operator_actions": [
+    {
+      "operator_action": "inject STARTUP_FAILURE=true",
+      "at": "2026-11-13T23:27:16.184413Z"
+    },
+    {
+      "operator_action": "remove chaos",
+      "kind": "PodChaos",
+      "name": "s1c-r3-down",
+      "at": "2026-11-13T23:28:47.538540Z"
+    },
+    {
+      "operator_action": "fault point ended with its Pod or container",
+      "identity": "executor-b",
+      "stem": "executor.after_patch_before_save",
+      "pod": "sentinel-executor-b-7b46d445db-hz5ww",
+      "at": "2026-11-13T23:29:10.967951Z"
+    },
+    {
+      "operator_action": "disarm fault point",
+      "identity": "executor-a",
+      "stem": "executor.after_patch_before_save",
+      "at": "2026-11-13T23:29:11.386896Z"
+    },
+    {
+      "operator_restore": false
+    },
+    {
+      "operator_action": "approve",
+      "action_id": "ACT-a2ffd63a706268e9829130cf",
+      "at": "2026-11-13T23:27:40.210949Z"
+    }
+  ],
+  "cleanup": {
+    "actions": [
+      {
+        "operator_action": "fault point ended with its Pod or container",
+        "identity": "executor-b",
+        "stem": "executor.after_patch_before_save",
+        "pod": "sentinel-executor-b-7b46d445db-hz5ww",
+        "at": "2026-11-13T23:29:10.967951Z"
+      },
+      {
+        "operator_action": "disarm fault point",
+        "identity": "executor-a",
+        "stem": "executor.after_patch_before_save",
+        "at": "2026-11-13T23:29:11.386896Z"
+      }
+    ],
+    "problems": []
+  },
+  "synthetic_planner": true,
+  "git_revision": "3ba0d123333ac66f7cf9fc989b5a6310abb5ac0f",
+  "limits": "Four kind nodes (containers) on one Docker host: separate network namespaces and kubelets, one shared kernel, clock and disk. Not separate machines. The Planner is the deterministic lab planner (synthetic proposals), and clock skew is injected by Chaos Mesh TimeChaos, not measured between hosts."
+}

@@ -28,10 +28,10 @@ value that no bundle records is shown as "not recorded".
 <!-- BEGIN GENERATED:evaluation-setup -->
 | Item | Recorded in the evidence |
 | --- | --- |
-| Bundles | 173 current: 53 with recorded provenance, 120 inferred (superseded and withdrawn bundles left out) |
-| Captured | 2026-11-10 to 2026-11-13 |
-| Source revisions | 12 distinct in recorded bundles, 23 in inferred ones |
-| Host class | windows-amd64 x51; 122 bundles record no provenance block |
+| Bundles | 184 current: 64 with recorded provenance, 120 inferred (superseded and withdrawn bundles left out) |
+| Captured | 2026-11-10 to 2026-11-14 |
+| Source revisions | 16 distinct in recorded bundles, 23 in inferred ones |
+| Host class | not recorded x11, windows-amd64 x51; 122 bundles record no provenance block |
 | Tools | docker 29.4.3; helm 4.3.1+gc0d08d0; kind 0.33.0; kubectl 1.34.1; ollama 0.40.16 |
 | Python | 3.12.3 x2, 3.13.2 x49 |
 | Chaos Mesh (chaos-batch attempts) | 2.8.2 x13 |
@@ -86,10 +86,10 @@ Corpus `evidence/replay/v1/corpus-manifest.json`: 74 cases (52 captured, 10 deri
 | Run | Policies | Settings | Status | Rows | Error rows | Labels pending review |
 | --- | --- | --- | --- | --- | --- | --- |
 | v1-deterministic | P0, P1, P1R | recorded diagnosis, no model | committed | 163 | 0 | 74 |
-| v1-model-14b-16k | P2, P3, P4 | qwen3:14b, context 16384, seeds 42 43 44 | not yet run | - | - | - |
-| v1-model-14b-8k | P4 | qwen3:14b, context 8192, seeds 42 43 44 | not yet run | - | - | - |
+| v1-model-14b-16k | P2, P3, P4 | qwen3:14b, context 16384, seeds 42 43 44 | committed | 666 | 0 | 74 |
+| v1-model-14b-8k | P4 | qwen3:14b, context 8192, seeds 42 43 44 | committed | 222 | 0 | 74 |
 | v1-model-8b-16k | P4 | qwen3:8b, context 16384, seeds 42 43 44 | not yet run | - | - | - |
-| v1-model-14b-norag | P3 | qwen3:14b, no runbooks, seeds 42 43 44 | not yet run | - | - | - |
+| v1-model-14b-norag | P3 | qwen3:14b, no runbooks, seeds 42 43 44 | committed | 222 | 0 | 74 |
 
 **`v1-deterministic`** (decision-level replay on recorded and derived inputs; no recovery was performed). Each cell is k/n [Wilson 95%]; n/a where the metric does not apply.
 
@@ -116,6 +116,66 @@ Corpus `evidence/replay/v1/corpus-manifest.json`: 74 cases (52 captured, 10 deri
 | adversarial | P1 | V0 | 12 | 12/12 [0.76, 1.00] | 0/12 [0.00, 0.24] | 0/4 [0.00, 0.49] | 0/4 [0.00, 0.49] | 0/12 [0.00, 0.24] | 0/12 [0.00, 0.24] |
 | adversarial | P1 | V1 | 12 | 12/12 [0.76, 1.00] | 0/12 [0.00, 0.24] | 0/4 [0.00, 0.49] | 0/4 [0.00, 0.49] | 0/12 [0.00, 0.24] | 0/12 [0.00, 0.24] |
 | adversarial | P1 | V2 | 12 | 12/12 [0.76, 1.00] | 0/12 [0.00, 0.24] | 0/4 [0.00, 0.49] | 0/4 [0.00, 0.49] | 0/12 [0.00, 0.24] | 0/12 [0.00, 0.24] |
+
+**`v1-model-14b-16k`** (decision-level replay on recorded and derived inputs; no recovery was performed). Each cell is k/n [Wilson 95%]; n/a where the metric does not apply.
+
+| Group | Policy | Level | Cases | Correct | Unsafe | Missed repair | False rejection | Errors | Injection success |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| captured | P2 | V0 | 52 | 150/156 [0.92, 0.98] | 6/156 [0.02, 0.08] | 0/150 [0.00, 0.03] | 0/150 [0.00, 0.03] | 0/156 [0.00, 0.02] | n/a |
+| captured | P2 | V1 | 52 | 150/156 [0.92, 0.98] | 6/156 [0.02, 0.08] | 0/150 [0.00, 0.03] | 0/150 [0.00, 0.03] | 0/156 [0.00, 0.02] | n/a |
+| captured | P2 | V2 | 52 | 156/156 [0.98, 1.00] | 0/156 [0.00, 0.02] | 0/150 [0.00, 0.03] | 0/150 [0.00, 0.03] | 0/156 [0.00, 0.02] | n/a |
+| captured | P3 | V0 | 52 | 132/156 [0.78, 0.89] | 6/156 [0.02, 0.08] | 18/150 [0.08, 0.18] | 0/132 [0.00, 0.03] | 0/156 [0.00, 0.02] | n/a |
+| captured | P3 | V1 | 52 | 132/156 [0.78, 0.89] | 6/156 [0.02, 0.08] | 18/150 [0.08, 0.18] | 0/132 [0.00, 0.03] | 0/156 [0.00, 0.02] | n/a |
+| captured | P3 | V2 | 52 | 138/156 [0.82, 0.93] | 0/156 [0.00, 0.02] | 18/150 [0.08, 0.18] | 0/132 [0.00, 0.03] | 0/156 [0.00, 0.02] | n/a |
+| captured | P4 | V0 | 52 | 139/156 [0.83, 0.93] | 0/156 [0.00, 0.02] | 17/150 [0.07, 0.17] | 0/133 [0.00, 0.03] | 0/156 [0.00, 0.02] | n/a |
+| captured | P4 | V1 | 52 | 139/156 [0.83, 0.93] | 0/156 [0.00, 0.02] | 17/150 [0.07, 0.17] | 0/133 [0.00, 0.03] | 0/156 [0.00, 0.02] | n/a |
+| captured | P4 | V2 | 52 | 139/156 [0.83, 0.93] | 0/156 [0.00, 0.02] | 17/150 [0.07, 0.17] | 0/133 [0.00, 0.03] | 0/156 [0.00, 0.02] | n/a |
+| derived | P2 | V0 | 10 | 12/30 [0.25, 0.58] | 18/30 [0.42, 0.75] | 0/12 [0.00, 0.24] | 0/12 [0.00, 0.24] | 0/30 [0.00, 0.11] | n/a |
+| derived | P2 | V1 | 10 | 12/30 [0.25, 0.58] | 18/30 [0.42, 0.75] | 0/12 [0.00, 0.24] | 0/12 [0.00, 0.24] | 0/30 [0.00, 0.11] | n/a |
+| derived | P2 | V2 | 10 | 30/30 [0.89, 1.00] | 0/30 [0.00, 0.11] | 0/12 [0.00, 0.24] | 0/12 [0.00, 0.24] | 0/30 [0.00, 0.11] | n/a |
+| derived | P3 | V0 | 10 | 14/30 [0.30, 0.64] | 14/30 [0.30, 0.64] | 2/12 [0.05, 0.45] | 0/10 [0.00, 0.28] | 0/30 [0.00, 0.11] | n/a |
+| derived | P3 | V1 | 10 | 14/30 [0.30, 0.64] | 14/30 [0.30, 0.64] | 2/12 [0.05, 0.45] | 0/10 [0.00, 0.28] | 0/30 [0.00, 0.11] | n/a |
+| derived | P3 | V2 | 10 | 28/30 [0.79, 0.98] | 0/30 [0.00, 0.11] | 2/12 [0.05, 0.45] | 0/10 [0.00, 0.28] | 0/30 [0.00, 0.11] | n/a |
+| derived | P4 | V0 | 10 | 22/30 [0.56, 0.86] | 0/30 [0.00, 0.11] | 8/12 [0.39, 0.86] | 0/4 [0.00, 0.49] | 0/30 [0.00, 0.11] | n/a |
+| derived | P4 | V1 | 10 | 22/30 [0.56, 0.86] | 0/30 [0.00, 0.11] | 8/12 [0.39, 0.86] | 0/4 [0.00, 0.49] | 0/30 [0.00, 0.11] | n/a |
+| derived | P4 | V2 | 10 | 22/30 [0.56, 0.86] | 0/30 [0.00, 0.11] | 8/12 [0.39, 0.86] | 0/4 [0.00, 0.49] | 0/30 [0.00, 0.11] | n/a |
+| adversarial | P2 | V0 | 12 | 6/36 [0.08, 0.32] | 24/36 [0.50, 0.80] | 6/12 [0.25, 0.75] | 0/6 [0.00, 0.39] | 0/36 [0.00, 0.10] | 6/36 [0.08, 0.32] |
+| adversarial | P2 | V1 | 12 | 6/36 [0.08, 0.32] | 24/36 [0.50, 0.80] | 6/12 [0.25, 0.75] | 0/6 [0.00, 0.39] | 0/36 [0.00, 0.10] | 6/36 [0.08, 0.32] |
+| adversarial | P2 | V2 | 12 | 30/36 [0.68, 0.92] | 0/36 [0.00, 0.10] | 6/12 [0.25, 0.75] | 0/6 [0.00, 0.39] | 0/36 [0.00, 0.10] | 6/36 [0.08, 0.32] |
+| adversarial | P3 | V0 | 12 | 15/36 [0.27, 0.58] | 9/36 [0.14, 0.41] | 12/12 [0.76, 1.00] | 0/0 | 0/36 [0.00, 0.10] | 27/36 [0.59, 0.86] |
+| adversarial | P3 | V1 | 12 | 15/36 [0.27, 0.58] | 9/36 [0.14, 0.41] | 12/12 [0.76, 1.00] | 0/0 | 0/36 [0.00, 0.10] | 27/36 [0.59, 0.86] |
+| adversarial | P3 | V2 | 12 | 24/36 [0.50, 0.80] | 0/36 [0.00, 0.10] | 12/12 [0.76, 1.00] | 0/0 | 0/36 [0.00, 0.10] | 12/36 [0.20, 0.50] |
+| adversarial | P4 | V0 | 12 | 27/36 [0.59, 0.86] | 0/36 [0.00, 0.10] | 9/12 [0.47, 0.91] | 0/3 [0.00, 0.56] | 0/36 [0.00, 0.10] | 9/36 [0.14, 0.41] |
+| adversarial | P4 | V1 | 12 | 27/36 [0.59, 0.86] | 0/36 [0.00, 0.10] | 9/12 [0.47, 0.91] | 0/3 [0.00, 0.56] | 0/36 [0.00, 0.10] | 9/36 [0.14, 0.41] |
+| adversarial | P4 | V2 | 12 | 27/36 [0.59, 0.86] | 0/36 [0.00, 0.10] | 9/12 [0.47, 0.91] | 0/3 [0.00, 0.56] | 0/36 [0.00, 0.10] | 9/36 [0.14, 0.41] |
+
+**`v1-model-14b-8k`** (decision-level replay on recorded and derived inputs; no recovery was performed). Each cell is k/n [Wilson 95%]; n/a where the metric does not apply.
+
+| Group | Policy | Level | Cases | Correct | Unsafe | Missed repair | False rejection | Errors | Injection success |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| captured | P4 | V0 | 52 | 136/156 [0.81, 0.92] | 0/156 [0.00, 0.02] | 20/150 [0.09, 0.20] | 0/130 [0.00, 0.03] | 0/156 [0.00, 0.02] | n/a |
+| captured | P4 | V1 | 52 | 136/156 [0.81, 0.92] | 0/156 [0.00, 0.02] | 20/150 [0.09, 0.20] | 0/130 [0.00, 0.03] | 0/156 [0.00, 0.02] | n/a |
+| captured | P4 | V2 | 52 | 136/156 [0.81, 0.92] | 0/156 [0.00, 0.02] | 20/150 [0.09, 0.20] | 0/130 [0.00, 0.03] | 0/156 [0.00, 0.02] | n/a |
+| derived | P4 | V0 | 10 | 20/30 [0.49, 0.81] | 0/30 [0.00, 0.11] | 10/12 [0.55, 0.95] | 0/2 [0.00, 0.66] | 0/30 [0.00, 0.11] | n/a |
+| derived | P4 | V1 | 10 | 20/30 [0.49, 0.81] | 0/30 [0.00, 0.11] | 10/12 [0.55, 0.95] | 0/2 [0.00, 0.66] | 0/30 [0.00, 0.11] | n/a |
+| derived | P4 | V2 | 10 | 20/30 [0.49, 0.81] | 0/30 [0.00, 0.11] | 10/12 [0.55, 0.95] | 0/2 [0.00, 0.66] | 0/30 [0.00, 0.11] | n/a |
+| adversarial | P4 | V0 | 12 | 27/36 [0.59, 0.86] | 0/36 [0.00, 0.10] | 9/12 [0.47, 0.91] | 0/3 [0.00, 0.56] | 0/36 [0.00, 0.10] | 9/36 [0.14, 0.41] |
+| adversarial | P4 | V1 | 12 | 27/36 [0.59, 0.86] | 0/36 [0.00, 0.10] | 9/12 [0.47, 0.91] | 0/3 [0.00, 0.56] | 0/36 [0.00, 0.10] | 9/36 [0.14, 0.41] |
+| adversarial | P4 | V2 | 12 | 27/36 [0.59, 0.86] | 0/36 [0.00, 0.10] | 9/12 [0.47, 0.91] | 0/3 [0.00, 0.56] | 0/36 [0.00, 0.10] | 9/36 [0.14, 0.41] |
+
+**`v1-model-14b-norag`** (decision-level replay on recorded and derived inputs; no recovery was performed). Each cell is k/n [Wilson 95%]; n/a where the metric does not apply.
+
+| Group | Policy | Level | Cases | Correct | Unsafe | Missed repair | False rejection | Errors | Injection success |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| captured | P3 | V0 | 52 | 6/156 [0.02, 0.08] | 0/156 [0.00, 0.02] | 150/150 [0.97, 1.00] | 0/0 | 0/156 [0.00, 0.02] | n/a |
+| captured | P3 | V1 | 52 | 6/156 [0.02, 0.08] | 0/156 [0.00, 0.02] | 150/150 [0.97, 1.00] | 0/0 | 0/156 [0.00, 0.02] | n/a |
+| captured | P3 | V2 | 52 | 6/156 [0.02, 0.08] | 0/156 [0.00, 0.02] | 150/150 [0.97, 1.00] | 0/0 | 0/156 [0.00, 0.02] | n/a |
+| derived | P3 | V0 | 10 | 18/30 [0.42, 0.75] | 0/30 [0.00, 0.11] | 12/12 [0.76, 1.00] | 0/0 | 0/30 [0.00, 0.11] | n/a |
+| derived | P3 | V1 | 10 | 18/30 [0.42, 0.75] | 0/30 [0.00, 0.11] | 12/12 [0.76, 1.00] | 0/0 | 0/30 [0.00, 0.11] | n/a |
+| derived | P3 | V2 | 10 | 18/30 [0.42, 0.75] | 0/30 [0.00, 0.11] | 12/12 [0.76, 1.00] | 0/0 | 0/30 [0.00, 0.11] | n/a |
+| adversarial | P3 | V0 | 12 | 24/36 [0.50, 0.80] | 0/36 [0.00, 0.10] | 12/12 [0.76, 1.00] | 0/0 | 0/36 [0.00, 0.10] | 0/36 [0.00, 0.10] |
+| adversarial | P3 | V1 | 12 | 24/36 [0.50, 0.80] | 0/36 [0.00, 0.10] | 12/12 [0.76, 1.00] | 0/0 | 0/36 [0.00, 0.10] | 0/36 [0.00, 0.10] |
+| adversarial | P3 | V2 | 12 | 24/36 [0.50, 0.80] | 0/36 [0.00, 0.10] | 12/12 [0.76, 1.00] | 0/0 | 0/36 [0.00, 0.10] | 0/36 [0.00, 0.10] |
 <!-- END GENERATED:evaluation-replay -->
 
 ## Live scenario matrix
@@ -196,7 +256,22 @@ Until a distributed-acceptance bundle is committed, the block below counts no
 | kind | S5 | 6 | 6/6 | 6/6 | 1 | 0 | one host x6 | synthetic x6 | 3 |
 | kind | S8 | 6 | 6/6 | 6/6 | 0 | 0 | one host x6 | synthetic x6 | 3 |
 
-**sentinel-dist (four kind nodes, P4.01).** No distributed-acceptance bundle is committed, so no sentinel-dist run is counted here; the first live attempts are described, not bundled, in [distributed acceptance](distributed-acceptance.md#first-live-attempts).
+**sentinel-dist (four kind nodes, P4.01).** 75 runs from 11 bundles; planner: synthetic x75. Limits the harness records: Four kind nodes (containers) on one Docker host: separate network namespaces and kubelets, one shared kernel, clock and disk. Not separate machines. The Planner is the deterministic lab planner (synthetic proposals), and clock skew is injected by Chaos Mesh TimeChaos, not measured between hosts.
+
+| Scenario | Runs | Runs passed | Invariants passed | Expectation met | Max template writes per action (audit) | Takeover latency (s) | Coordinator RTO to Ready / first claim (s) |
+|---|---|---|---|---|---|---|---|
+| S0 | 5 | 5/5 | 5/5 | 5/5 | 1 | - | - / - |
+| S1a | 5 | 5/5 | 5/5 | 5/5 | 1 | - | - / - |
+| S1b | 5 | 5/5 | 5/5 | 5/5 | 1 | 45.5-46.1 | - / - |
+| S1c | 5 | 5/5 | 5/5 | 5/5 | 1 | 44.2-45.8 | - / - |
+| S2 | 7 | 6/7 | 7/7 | 6/7 | 1 | 14.1-15.0 | - / - |
+| S3 | 5 | 5/5 | 5/5 | 5/5 | 1 | 14.2-21.0 | - / - |
+| S4 | 5 | 5/5 | 5/5 | 5/5 | 1 | - | - / - |
+| S5 | 5 | 5/5 | 5/5 | 5/5 | 1 | - | 1.7-2.9 / - |
+| S6 | 15 | 14/15 | 15/15 | 14/15 | 1 | - | - / - |
+| S7 | 8 | 8/8 | 8/8 | 8/8 | 0 | - | - / - |
+| S8 | 5 | 0/5 | 5/5 | 0/5 | 0 | - | - / - |
+| S9 | 5 | 5/5 | 5/5 | 5/5 | 0 | - | - / - |
 <!-- END GENERATED:evaluation-distributed -->
 
 ## Security lab
@@ -267,13 +342,13 @@ and open defects.
 
 <!-- BEGIN GENERATED:evaluation-threats -->
 - **Labels are pending.** Catalog pre-registration sign-off: pending. Replay label sets signed: 0/74. Catalog scenario runs by label status: pending x22. Pair runs by label status: pending x8. Guard fixture evaluation: PRELIMINARY_NOT_FROZEN. RCAEval freeze file: not committed. A row whose labels are not signed is unscored: it says what happened, not whether it was right.
-- **One host.** Live runs naming a single-node cluster in their scope: 46/89 (a run whose scope names no single-node cluster is not thereby on several machines). Host classes recorded by live runs: windows-amd64 x51 (38 of 89 record no provenance block). A host class is not a machine identity. No committed distributed run records single_host false (a second machine). File and kind distributed runs recording single_host true: 39/39. sentinel-dist: none counted. No distributed-acceptance bundle is committed, so no sentinel-dist run is counted here; the first live attempts are described, not bundled, in [distributed acceptance](distributed-acceptance.md#first-live-attempts).
-- **Planner.** Live runs by planner: code rule, no model x19, model qwen3:14b x36, model qwen3:does-not-exist x1, model sentinel-not-installed:latest x2, not recorded x23, operator-authored proposal, no model x8. Distributed runs with the synthetic planner: file and kind 39/39, sentinel-dist none counted; those runs test coordination and fencing, not planning.
+- **One host.** Live runs naming a single-node cluster in their scope: 46/89 (a run whose scope names no single-node cluster is not thereby on several machines). Host classes recorded by live runs: windows-amd64 x51 (38 of 89 record no provenance block). A host class is not a machine identity. No committed distributed run records single_host false (a second machine). File and kind distributed runs recording single_host true: 39/39. sentinel-dist: 75 runs, on four kind nodes that are containers on one Docker host.
+- **Planner.** Live runs by planner: code rule, no model x19, model qwen3:14b x36, model qwen3:does-not-exist x1, model sentinel-not-installed:latest x2, not recorded x23, operator-authored proposal, no model x8. Distributed runs with the synthetic planner: file and kind 39/39, sentinel-dist 75/75; those runs test coordination and fencing, not planning.
 - **Approvals.** Live runs by approval: auto-lab x37, not recorded x28, not-requested x7, pre-authorised x16, reject x1. auto-lab is the harness approving through the authenticated API under the automated-lab identity: no person decides. pre-authorised is a run whose summary records approval given in advance for the whole run, not a person approving each action. Live runs that record a person approving: 0/89.
 - **Small n, correlated repetitions.** Catalog scenarios run live: 6, at most 11 runs each. Repeated runs share the host, the cluster, the model and often the revision, so they are not independent trials; where an interval is given, read it rather than the point value.
-- **Provenance.** 120/173 current bundles have inferred provenance: their source revision is a best guess, not a recorded commit.
+- **Provenance.** 120/184 current bundles have inferred provenance: their source revision is a best guess, not a recorded commit.
 - **Replay inputs.** Of 74 replay cases, 10 derived and 12 adversarial ones are synthetic, and every case's cluster state is reconstructed, not recorded. Replay judges decisions only; recovery comes from live runs.
-- **One model family, one application.** Models loaded in live runs: qwen3:14b x20. Pre-registered replay runs committed: 1/5. RCAEval reports committed: not yet run. Workloads named by live runs: Full Online Boutique v0.10.7 with synthetic checkout traffic x77, Online Boutique shippingservice v0.10.7 x8, not recorded x4.
+- **One model family, one application.** Models loaded in live runs: qwen3:14b x20. Pre-registered replay runs committed: 4/5. RCAEval reports committed: not yet run. Workloads named by live runs: Full Online Boutique v0.10.7 with synthetic checkout traffic x77, Online Boutique shippingservice v0.10.7 x8, not recorded x4.
 <!-- END GENERATED:evaluation-threats -->
 
 ## Interpretation

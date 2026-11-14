@@ -417,7 +417,7 @@ class SentinelDistTests(unittest.TestCase):
         self.add("sentinel-dist-crash", [acceptance_run("S0"), {"started_at": "2026-11-13T15:05:00Z"}])
         outcomes = {b.bundle_id: summarize.outcome(b) for b in summarize.load_bundles(self.root)
                     if b.run_class == "distributed-acceptance"}
-        self.assertEqual(outcomes, {"sentinel-dist-crash": "FAILED"})
+        self.assertEqual(outcomes, {"sentinel-dist-crash": "INCOMPLETE"})
         self.assertEqual(run(self.root)[0], 0)
         page = (self.root / PAGE).read_text(encoding="utf-8")
         distributed = block(page, "evaluation-distributed")

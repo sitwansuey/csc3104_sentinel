@@ -177,7 +177,7 @@ configures logging, so that event is not visible in its output; it prints
 Failure events include `executor.observe.unavailable`,
 `executor.prewrite.refused`, `executor.authorization.withdrawn`,
 `executor.write.indeterminate`, `executor.fence.indeterminate`, `transport.lease.lost`,
-`transport.retry.failed`, `planner.attempt.failed`,
+`transport.retry.failed`, `transport.result.abandoned`, `planner.attempt.failed`,
 `observer.collection.failed`, `observer.delivery.failed`,
 `verifier.collection.failed`, `http.readiness.failed`,
 `dashboard.snapshot.failed`, `inspector.request.failed` and

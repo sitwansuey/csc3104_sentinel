@@ -85,6 +85,28 @@ class AllowlistTests(unittest.TestCase):
 
 
 class ProfileTests(unittest.TestCase):
+    def test_phase5_profiles_keep_acceptance_proofs_and_exclude_private_inputs(self):
+        proofs = {
+            "scale-recovery": ["scenario-result.json", "scale-recovery/transport-stats.json", "forced-scale/proof.json"],
+            "cve-gate": ["inventory.json", "admission-deny.json", "guard-regression.json", "zero-write.json",
+                         "scans/digest/summary.json"],
+            "security-lab": ["inspector-burst.json", "inspection-comparison.json", "inspector-outage.json"],
+            "protected-recovery": ["protected-rbac-checks.json", "bypass-during.json",
+                                   "approved-rollback/transport-stats.json"],
+            "cert-lifecycle": ["rotation.json", "identity-expiring.json", "rollover-finish.json"],
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            profiles = collect.load_profiles()
+            for name, paths in proofs.items():
+                with self.subTest(profile=name):
+                    run = Path(temp) / name
+                    for path in paths:
+                        write(run / path, {"passed": True})
+                    for path in ("pki/ca.key", "executor.kubeconfig", "reader-credentials.json", "baseline.json",
+                                 "certificates.json", "worker.json", "security.db", "scans/digest/raw.json"):
+                        write(run / path, {"private": True})
+                    self.assertEqual(collect.select_files(run, profiles[name]["include"]), sorted(paths))
+
     def test_agent_bundle_keeps_the_model_runtime_record(self):
         self.assertIn("model-runtime.json", collect.load_profiles()["agent"]["include"])
         with tempfile.TemporaryDirectory() as temp:

@@ -78,6 +78,110 @@ reports the estimate, which the Coordinator stores per identity. Lease renewal
 uses the lease length the Coordinator returns (`expires_in`), not a comparison
 of the two clocks. See [Time and ordering](distributed-model.md#time-and-ordering).
 
+### A lost lease
+
+A worker loses its lease when it sends no renewal for longer than the lease
+(its node paused, a partition, a step that outran it). The lease then ends on
+the Coordinator's clock, whatever the worker does, and another worker may
+claim the request; for an Executor command that claim also raises the
+workload's epoch. From then on the Coordinator refuses everything the old
+holder sends for that delivery, and the refusal never changes: a renewal or
+result from an identity that no longer owns the receipt gets HTTP 403
+`not_lease_owner` (the owner is checked before the lease token), and one
+whose token was replaced, whose lease expired or whose delivery was retired
+gets 409 (`lease_not_current`, `lease_replaced`, `lease_expired`,
+`result_changed` and the others in `runtime/worker_http.py::REASONS`).
+
+**The defect (live, P4.01 S2 at 3ba0d12, 13 Nov 2026).** The worker released
+a saved result only on 404 or 409, so a 403 left it pending, and each pass
+re-sent it first and failed before it could claim. executor-b stopped at the
+`executor.before_patch` fault point at 23:35:33 and its node was paused;
+executor-a claimed the same command at 23:35:50 (attempt 2) and its APPLIED
+result was accepted at 23:35:52. When executor-b resumed, its patch was
+refused (CONFLICT, saved in its ledger and its transport journal) and its
+final lease check got 403. From 23:36:16 it re-posted that CONFLICT with the
+same delivery and lease token on every pass: 74 `auth.denied result 403
+not_lease_owner` lines in the Coordinator's log up to 23:45:17, each matched
+by a `worker.status retry ProtocolError` line and a `worker.result` span, and
+no further `worker.process` span: the Executor did not run again, only the
+post was retried. It claimed nothing in that time, so in S2 r2 no Executor took over
+executor-a's lease and the run failed; there was still one write.
+
+**What the worker does now** (`runtime/remote_worker.py::RemoteWorker`):
+
+- A post refused with 404, any 409, or 403 `not_lease_owner`
+  (`lease_refusal`) releases the saved result at once: `transport.db` keeps
+  the result and forgets the delivery and its lease token, the worker logs
+  `transport.result.released` (WARNING, with the reason class), and the
+  worker goes on to claim. A saved result re-sent at the start of a pass and
+  released there does not end the pass: it claims in the same pass and
+  reports the claim's status. A result released on the pass's own claim
+  (refused when first posted, or on the lease check before posting) ends the
+  pass with `{"status": "released", "reason": ...}`, and the next pass claims.
+- When the lease check just after saving a result already fails that way
+  (the renewal thread or the final renewal got the refusal), the result is
+  released without being posted at all.
+- Any other failure, including a 403 for a role or a report, a 5xx, a
+  timeout or a connection error, keeps the back-off retry, now bounded: once
+  a result has failed at least 10 posts over at least 300 s (both; with the
+  15 s full-jitter back-off cap, about 40 posts), the next pass releases
+  it the same way and logs
+  `transport.result.abandoned` with the error class, HTTP status, attempts
+  and age. By then the 30 s default lease has long expired, so the worker
+  does not hand the delivery back with `retry`. The counts are kept in
+  memory, so a restart starts them again.
+
+**Why this is safe.**
+
+1. Releasing changes nothing at the Coordinator. Ownership is the receipt's
+   owner, token and expiry and, for Executor commands, the workload's epoch,
+   all in the Coordinator's database. Re-posting never kept the lease (a
+   result post is not a renewal) and stopping gives nothing up.
+2. No result is posted under a lease the worker knows it lost. Release clears
+   the token, and a result goes out again only with the delivery of a new
+   claim (`WorkerJournal.bind`). When the worker cannot tell (a timed-out
+   renewal), it re-sends, and `Delivery.finish` still refuses a post whose
+   owner, role, token, expiry or epoch is not current, so the worker's
+   bookkeeping is never the only check.
+3. Nothing is thrown away. The saved result stays in `transport.db`, and no
+   component journal is touched. An Executor's ledger keeps what it did: a
+   write it made stays DONE with its evidence, and a write in doubt stays
+   WRITE_STARTED or UNCERTAIN with its next reconcile time. The write itself
+   carries the action's evidence annotation on the Deployment.
+4. The next owner reconciles from that evidence. An Executor that claims the
+   command reads the target before anything else: if the old holder's write
+   landed, it finds the action's evidence and reports APPLIED (adopted peer
+   write) without writing; if the version is still V0, its own write is
+   conditioned on V0 like the old one, so at most one of them commits, and
+   the loser finds the winner's evidence. A FAILED report from a later holder
+   makes the Coordinator seal the workload
+   ([the seal](distributed-model.md#target-ownership-epochs-and-the-seal-p304)).
+   If the request comes back to this worker, it sends its saved result under
+   the new lease and does not run again. A row this worker left in doubt is
+   closed read-only by its own sweep from live state before each claim
+   ([settle](distributed-model.md#crashed-executors-settle-their-own-ledger-p304)).
+
+Tests (offline; not yet run live): in `tests/test_remote_workers.py`, a
+Coordinator that answers every result with 403 `not_lease_owner` makes an
+Executor, a Planner and a Guard (whose re-sent result is refused) release
+the result once and go on claiming with no further post, and the
+`worker_service` loop reports `released` then `idle` with no back-off instead
+of eight `retry` lines
+(`test_the_worker_service_loop_no_longer_retries_a_refused_result_for_minutes`).
+`test_a_lost_lease_executor_that_wrote_leaves_evidence_the_next_owner_adopts_without_a_second_write`
+pauses an Executor after its write commits until its lease runs out; the
+other Executor claims the command and reports APPLIED with no write of its
+own, and the paused one releases its APPLIED result without posting it and
+keeps its ledger row.
+`test_an_executor_whose_write_is_in_doubt_keeps_it_open_in_its_ledger_when_its_result_is_refused`
+times the write out: after the release the row stays UNCERTAIN, still
+listed for the settle sweep and still undelivered.
+`test_lease_conflicts_on_the_final_check_drop_the_delivery_without_posting_the_result`
+and `test_a_result_that_keeps_failing_is_dropped_after_the_bound_so_the_worker_claims_again`
+(for a 5xx, a role 403, a timeout and a refused connection) cover the final
+check and the bound. See
+[L-WORKER-LOST-LEASE-LOOP](limitations.md#l-worker-lost-lease-loop).
+
 Use one process per worker state directory and persist that directory on its own
 volume. SIGTERM stops new polling, and the in-flight bounded component step can
 finish. Give the process enough termination time for its configured model/read
@@ -362,7 +466,7 @@ after a preflight passes. A model that fails after a passed
 preflight is an attempt failure (`MODEL_UNAVAILABLE`), retried and then
 escalated as above. Each pass first re-sends a saved result, if there is
 one; a pass whose re-send is accepted ends there. A pass with nothing left to
-re-send (or whose re-sends got 404 or 409) then checks, cheapest first,
+re-send (or whose re-sends were released, see [A lost lease](#a-lost-lease)) then checks, cheapest first,
 whether it may claim: a recorded Coordinator store change
 (*A restored Coordinator database*, under [Configuration](#configuration))
 refuses with `store_changed` from the journal and the previous reply, with no

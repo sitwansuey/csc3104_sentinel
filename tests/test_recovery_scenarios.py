@@ -870,6 +870,7 @@ class ScenarioOptionTests(unittest.TestCase):
             seen.append(lab)
             raise RuntimeError("stop before the chaos preflight")
         with patch("sys.argv", ["harness", "--run-dir", str(run_dir), "--connected", *arguments]), \
+                patch("experiments.lab_lock.default_path", return_value=run_dir.parent / "unit-heavy-lab.lock"), \
                 patch("sys.stdin", io.StringIO()), patch("sys.stderr", io.StringIO()), \
                 patch("sys.stdout", io.StringIO()), \
                 patch("subprocess.run", side_effect=AssertionError("cluster command attempted")), \
@@ -1101,6 +1102,7 @@ class PairOptionTests(unittest.TestCase):
             run_dir = Path(directory) / "run"
             with patch("sys.argv", ["harness", "--run-dir", str(run_dir), "--pair", "redis-pod+cart-config",
                                     "--connected", "--approval", "auto-lab", "--executor-kill"]), \
+                    patch("experiments.lab_lock.default_path", return_value=Path(directory) / "unit-heavy-lab.lock"), \
                     patch("sys.stdin", io.StringIO()), patch("sys.stderr", io.StringIO()), \
                     patch("sys.stdout", io.StringIO()), \
                     patch("subprocess.run", side_effect=AssertionError("cluster command attempted")), \

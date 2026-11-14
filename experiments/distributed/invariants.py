@@ -302,6 +302,13 @@ def collect(topology, *, terminal_in_time, cluster_writes=None):
         "message_digests": [digest(json.loads(row["payload"]))
                             for row in _rows(coordinator, "SELECT payload FROM messages")],
         "revocations": [json.loads(row["record"]) for row in _rows(coordinator, "SELECT record FROM approval_revocations")],
+        # Approval identities only: S8 distinguishes a later approved action from the revoked action.
+        "approvals": _rows(coordinator, "SELECT id AS approval_id, action_id FROM approvals"),
+        "managed_approvals": _rows(coordinator, "SELECT approval_id FROM managed_approvals"),
+        # Every accepted seal answer (fence_result) with who sent it and the version its action was planned on.
+        "seals": [seal(row) for row in _rows(coordinator, "SELECT m.seq, m.event_key, m.producer, m.payload, a.proposal "
+                                             "FROM messages m LEFT JOIN actions a ON a.action_id = m.action_id "
+                                             "WHERE m.kind = 'fence_result' ORDER BY m.seq")],
         # Each worker's offset from the Coordinator's clock as it measured and reported it.
         "worker_clocks": _rows(coordinator, "SELECT identity, offset, uncertainty, max_abs_offset, reports "
                                             "FROM worker_clocks ORDER BY identity"),
@@ -333,6 +340,17 @@ def collect(topology, *, terminal_in_time, cluster_writes=None):
                          if line.get("event") in {"http.access", "auth.denied"}]
     records["secret_scan"] = scan_secrets(topology, secrets)
     return records
+
+
+def seal(row):
+    """One accepted fence_result: its producer (the authenticated identity), outcome and versions; no payload."""
+    message = json.loads(row["payload"])
+    proposal = json.loads(row["proposal"]) if row.get("proposal") else {}
+    return {"seq": row["seq"], "event_key": row["event_key"], "producer": row["producer"],
+            "incident_id": message.get("incident_id"), "action_id": message.get("action_id"),
+            "epoch": message.get("epoch"), "outcome": message.get("outcome"),
+            "resource_version": message.get("resource_version"), "recorded_at": message.get("recorded_at"),
+            "based_on_resource_version": proposal.get("based_on_resource_version")}
 
 
 def verification(path, identity):

@@ -7,6 +7,7 @@ import json
 import io
 from pathlib import Path
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import Mock, patch
@@ -28,6 +29,8 @@ from services.verifier.core import inspect_dependencies
 from scripts import trace_view
 from shared import log, tracing
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 class RemoteWorkerTests(unittest.TestCase):
     def setUp(self):
@@ -39,6 +42,7 @@ class RemoteWorkerTests(unittest.TestCase):
         self.incident = detect(fixture("observations.json")["failed-rollout"], self.f.policy)
         self.services = {role: (role, role[0] * 40) for role in ("observer", "planner", "guard", "executor", "verifier")}
         self.services["replacement"] = ("planner", "r" * 40)
+        self.services["executor-2"] = ("executor", "x" * 40)
         self.approval_services = {role: (role, "a" + role[0] * 40) for role in ("operator", "guard", "executor")}
         self.permissions = {role: [{"target": self.incident["target"], "operations": (
             ["create", "read", "revoke", "history"] if role == "operator" else ["read"])}]
@@ -511,8 +515,8 @@ class RemoteWorkerTests(unittest.TestCase):
         client = RefusedRenewals(self.url, "planner", self.services["planner"][1], timeout=2,
                                  answered=self.health.contacted)
         worker, seen = self.readiness_during_a_long_pass(client, 2)
-        with self.assertRaises(ProtocolError):  # The lost lease fails the pass.
-            worker.once()
+        # The lost lease ends the pass: the saved result is released, never posted under it.
+        self.assertEqual(worker.once(), {"status": "released", "reason": "lease_not_current"})
         self.assertGreater(client.renewals, 1)
         self.assertEqual(seen[0], (200, {"ready": True, "contact_age_seconds": 20.0}))
         self.assertEqual(seen[1], (503, {"ready": False, "contact_age_seconds": 40.0}))
@@ -591,9 +595,9 @@ class RemoteWorkerTests(unittest.TestCase):
                 "approval_id": self.created["approval_id"], "reason": "withdraw during handoff"})
         worker = self.worker("executor", ExecutorAdapter(self.f.adapters))
         with patch.object(self.f.ledger, "start_write", side_effect=revoke_after_journal):
-            with self.assertRaises(ProtocolError) as error:
-                worker.once()
-        self.assertEqual(error.exception.status, 409)
+            # The withdrawn command retired the delivery (409): its FAILED result is kept, never posted.
+            self.assertEqual(worker.once(), {"status": "released", "reason": "lease_not_current"})
+        self.assertEqual(worker.journal.pending(), [])
         self.assertEqual(self.f.cluster.write_attempts, [])
         self.assertNotEqual(self.state(), "VERIFYING")
 
@@ -680,6 +684,251 @@ class RemoteWorkerTests(unittest.TestCase):
         local_sink.assert_not_called()
         self.assertTrue(state.is_file())
         self.assertEqual(self.state(), "OPEN")
+
+    # A worker whose lease another worker took (P4.01 S2 at 3ba0d12): its result is refused with
+    # 403 not_lease_owner, and before the fix it re-posted that result on every pass and never claimed.
+
+    def refusing_client(self, role, operations, refusal=(403, "Delivery belongs to another worker")):
+        """A Coordinator client whose result posts are refused (while refusing[0]); every operation is recorded."""
+        client = self.recording_client(role, operations)
+        inner, refusing = client.post, [True]
+
+        def post(operation, body):
+            if operation == "result" and refusing[0]:
+                operations.append(operation)
+                raise ProtocolError(*refusal)
+            return inner(operation, body)
+        client.post = post
+        return client, refusing
+
+    def saved_rows(self, worker):
+        return [(row["delivery"] is None, row["result"]["kind"], row["accepted"])
+                for row in (worker.journal.get(key) for (key,) in worker.journal.db.execute(
+                    "SELECT request_key FROM worker_deliveries WHERE result IS NOT NULL"))]
+
+    def test_an_executor_refused_as_not_lease_owner_drops_the_delivery_and_claims_again(self):
+        self.authorize()
+        logs = self.captured_logs()
+        operations = []
+        client, refusing = self.refusing_client("executor", operations)
+        worker = self.worker("executor", ExecutorAdapter(self.f.adapters), client=client)
+        self.assertEqual(worker.once(), {"status": "released", "reason": "not_lease_owner"})
+        self.assertEqual(len(self.f.cluster.writes), 1)
+        for _ in range(3):  # The live worker re-posted here, every pass, for minutes.
+            self.assertEqual(worker.once(), {"status": "idle"})
+        self.assertEqual((operations.count("result"), operations.count("claim")), (1, 4))
+        # Nothing is thrown away: the transport keeps the saved result, the ledger keeps the write.
+        self.assertEqual(self.saved_rows(worker), [(True, "execution_result", 0)])
+        row = self.f.ledger.get(self.proposal["action_id"])
+        self.assertEqual((row["phase"], row["result"]["status"], row["delivered"]), ("DONE", "APPLIED", 0))
+        self.assertEqual(self.state(), "READY")
+        # The request comes back to this worker once its lease has expired: it re-sends the
+        # saved result under the new lease and writes nothing again.
+        time.sleep(3.1)  # The 2 s lease plus the redelivery back-off, on the transport's own clock.
+        refusing[0] = False
+        self.assertEqual(worker.once(), {"status": "accepted", "replay": False})
+        self.assertEqual((self.state(), len(self.f.cluster.writes)), ("VERIFYING", 1))
+        released = [json.loads(line) for line in logs.getvalue().splitlines()
+                    if '"transport.result.released"' in line]
+        self.assertEqual([(line["reason"], line["level"]) for line in released], [("not_lease_owner", "warning")])
+        self.assertFalse(any(secret in logs.getvalue() for secret in self.secrets()))
+
+    def test_an_executor_whose_write_is_in_doubt_keeps_it_open_in_its_ledger_when_its_result_is_refused(self):
+        """Release forgets the lease, never the ledger row of a write that may have landed."""
+        self.authorize()
+        operations = []
+        client, _refusing = self.refusing_client("executor", operations)
+        worker = self.worker("executor", ExecutorAdapter(self.f.adapters), client=client)
+        with patch.object(self.f.cluster, "conditional_restore",
+                          side_effect=TimeoutError("request completion is unknown")):
+            self.assertEqual(worker.once(), {"status": "released", "reason": "not_lease_owner"})
+        self.assertEqual(worker.once(), {"status": "idle"})
+        self.assertEqual((operations.count("result"), operations.count("claim")), (1, 2))
+        self.assertEqual(self.saved_rows(worker), [(True, "execution_result", 0)])
+        row = self.f.ledger.get(self.proposal["action_id"])
+        self.assertEqual((row["phase"], row["attempts"], row["result"]["status"], row["delivered"]),
+                         ("UNCERTAIN", 1, "NEEDS_RECONCILIATION", 0))
+        # The row is still open: the sweep keeps reconciling it and its result is still undelivered.
+        self.assertEqual([proposal["action_id"] for proposal in self.f.ledger.pending_proposals()],
+                         [self.proposal["action_id"]])
+        self.assertEqual([result["status"] for result in self.f.ledger.undelivered_results()],
+                         ["NEEDS_RECONCILIATION"])
+        self.assertEqual(self.f.cluster.writes, [])
+
+    def test_a_planner_refused_as_not_lease_owner_drops_the_delivery_and_claims_again(self):
+        RemoteIngress(self.client("observer"))(self.incident)
+        operations = []
+        client, _refusing = self.refusing_client("planner", operations)
+        worker = self.worker("planner", self.planner, client=client)
+        self.assertEqual(worker.once(), {"status": "released", "reason": "not_lease_owner"})
+        self.assertEqual(worker.once(), {"status": "idle"})
+        self.assertEqual((operations.count("result"), operations.count("claim")), (1, 2))
+        self.assertEqual(self.saved_rows(worker), [(True, "proposal", 0)])
+        self.assertEqual((self.provider.call_count, self.state()), (1, "OPEN"))
+
+    def test_a_guard_whose_saved_result_is_refused_as_not_lease_owner_on_resend_claims_again(self):
+        self.plan()
+        operations = []
+        client, refusing = self.refusing_client("guard", operations)
+        refusing[0] = False
+        guard = self.worker("guard", self.guard, client=client)
+        with patch.object(guard, "_send", side_effect=TimeoutError("lost before the result was sent")):
+            with self.assertRaises(TimeoutError):
+                guard.once()
+        refusing[0] = True  # The saved result is now pending, and its re-send is refused.
+        self.assertEqual(guard.once(), {"status": "idle"})
+        self.assertEqual(guard.once(), {"status": "idle"})
+        self.assertEqual((operations.count("result"), operations.count("claim")), (1, 3))
+        self.assertEqual(self.saved_rows(guard), [(True, "guard_result", 0)])
+
+    def test_lease_conflicts_on_the_final_check_drop_the_delivery_without_posting_the_result(self):
+        for status, message, reason in ((409, "Delivery retired or lease expired/replaced", "lease_not_current"),
+                                         (403, "Delivery belongs to another worker", "not_lease_owner")):
+            with self.subTest(reason=reason):
+                with ExitStack() as stack:
+                    directory = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+                    journal = WorkerJournal(directory / "transport.db")
+                    stack.callback(journal.close)
+                    client = LeaseLostClient(ProtocolError(status, message))
+                    adapter = Mock(spec=["process"])
+                    adapter.process.return_value = (fixture_proposal(), None)
+                    worker = RemoteWorker(client, journal, adapter, renewal_interval=60)
+                    self.assertEqual(worker.once(), {"status": "released", "reason": reason})
+                    self.assertNotIn("result", client.operations)
+                    self.assertEqual(worker.once(), {"status": "idle"})
+                    self.assertEqual(client.operations.count("result"), 0)
+                    self.assertEqual(adapter.process.call_count, 1)
+
+    def test_a_lost_lease_executor_that_wrote_leaves_evidence_the_next_owner_adopts_without_a_second_write(self):
+        self.authorize()
+        peer_directory = self.f.path / "executor-2"
+        peer_directory.mkdir()
+        peer_ledger = SQLiteExecutionLedger(peer_directory / "executor.db")
+        self.stack.callback(peer_ledger.close)
+        peer = self.worker("executor-2", ExecutorAdapter(replace(
+            self.f.adapters, ledger=peer_ledger, coordination=LocalTargetCoordinator(peer_directory / "locks"))))
+        original, peer_status = self.f.cluster.conditional_restore, []
+
+        def write_then_pause(**kwargs):
+            applied = original(**kwargs)  # The holder's write commits; then its node pauses past the lease.
+            if not peer_status:
+                running.clear()
+                time.sleep(3.1)  # No renewal leaves the paused node: the 2 s lease runs out.
+                peer_status.append(peer.once())  # The other Executor claims the command (attempt 2).
+                running.set()
+            return applied
+        operations, running = [], threading.Event()
+        running.set()
+        client = self.recording_client("executor", operations)
+        inner = client.post
+
+        def paused_node(operation, body):
+            running.wait()  # While the node is paused no request leaves it, renewals included.
+            return inner(operation, body)
+        client.post = paused_node
+        holder = self.worker("executor", ExecutorAdapter(self.f.adapters), client=client)
+        with patch.object(self.f.cluster, "conditional_restore", side_effect=write_then_pause):
+            self.assertEqual(holder.once(), {"status": "released", "reason": "not_lease_owner"})
+        self.assertEqual(peer_status, [{"status": "accepted", "replay": False}])
+        # One write in all; the next owner reconciled it from the cluster's evidence to APPLIED.
+        self.assertEqual((len(self.f.cluster.writes), len(self.f.cluster.write_attempts)), (1, 1))
+        self.assertEqual(self.state(), "VERIFYING")
+        adopted = peer_ledger.get(self.proposal["action_id"])
+        self.assertEqual((adopted["result"]["status"], adopted["attempts"]), ("APPLIED", 0))
+        self.assertIn("adopted peer write", adopted["result"]["details"])
+        # The holder never posted a result under the lease it lost, and kept its evidence.
+        self.assertNotIn("result", operations)
+        row = self.f.ledger.get(self.proposal["action_id"])
+        self.assertEqual((row["phase"], row["attempts"], row["result"]["status"]), ("DONE", 1, "APPLIED"))
+        self.assertIsNotNone(row["evidence"])
+        self.assertEqual(self.saved_rows(holder), [(True, "execution_result", 0)])
+        self.assertEqual(holder.once(), {"status": "idle"})
+        self.assertNotIn("result", operations)
+
+    def test_a_result_that_keeps_failing_is_dropped_after_the_bound_so_the_worker_claims_again(self):
+        # Not only refusals: a post that times out or cannot connect is bounded the same way.
+        for error in (ProtocolError(503, "Coordinator unavailable; retry the saved request"),
+                      ProtocolError(403, "Only the Guard may submit an authorization report"),
+                      TimeoutError("the result post timed out"),
+                      ConnectionRefusedError("the Coordinator refused the connection")):
+            with self.subTest(error=repr(error)), ExitStack() as stack:
+                directory = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+                journal = WorkerJournal(directory / "transport.db")
+                stack.callback(journal.close)
+                client = LeaseLostClient(None, result_error=error)
+                adapter = Mock(spec=["process"])
+                adapter.process.return_value = (fixture_proposal(), None)
+                clock = [100.0]
+                worker = RemoteWorker(client, journal, adapter, renewal_interval=60,
+                                      monotonic=lambda clock=clock: clock[0],
+                                      result_retry_attempts=3, result_retry_seconds=60)
+                logs = self.captured_logs()
+                for _ in range(2):  # Within the bound the saved result is retried, as before.
+                    with self.assertRaises(type(error)):
+                        worker.once()
+                    clock[0] += 20
+                with self.assertRaises(type(error)):  # Three attempts, but only 40 s.
+                    worker.once()
+                self.assertEqual(client.operations.count("claim"), 1)
+                clock[0] += 20
+                self.assertEqual(worker.once(), {"status": "idle"})  # Dropped; the pass goes on to claim.
+                self.assertEqual((client.operations.count("result"), client.operations.count("claim")), (4, 2))
+                self.assertEqual(worker.once(), {"status": "idle"})
+                self.assertEqual(client.operations.count("result"), 4)
+                key = digest({"topic": client.delivery["topic"], "payload": client.delivery["payload"]})
+                self.assertEqual((journal.get(key)["delivery"], journal.get(key)["result"]["kind"]),
+                                 (None, "proposal"))
+                abandoned = [json.loads(line) for line in logs.getvalue().splitlines()
+                             if '"transport.result.abandoned"' in line]
+                self.assertEqual([(line["attempts"], line["error_type"]) for line in abandoned],
+                                 [(4, type(error).__name__)])
+
+    def test_the_worker_service_loop_no_longer_retries_a_refused_result_for_minutes(self):
+        """The live log: worker.status retry ProtocolError on every pass for one delivery, no claims."""
+        from runtime import worker_service
+        self.authorize()
+        operations = []
+        client, _refusing = self.refusing_client("executor", operations)
+        worker = self.worker("executor", ExecutorAdapter(self.f.adapters), client=client)
+        stopping, passes = Mock(), []
+        stopping.is_set.side_effect = lambda: len(passes) >= 8
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = worker_service.poll(worker, WorkerHealth(), stopping, 2, wait=passes.append, random=lambda: 0.5)
+        statuses = [json.loads(line)["status"] for line in output.getvalue().splitlines()]
+        self.assertEqual((code, statuses), (0, ["released"] + ["idle"] * 7))
+        self.assertEqual(passes, [2] * 8)  # No failure back-off.
+        self.assertEqual((operations.count("result"), operations.count("claim")), (1, 8))
+
+
+def fixture_proposal():
+    return json.loads((ROOT / "data/sentinel/samples/messages/proposal.json").read_text(encoding="utf-8"))
+
+
+class LeaseLostClient:
+    """A stand-in Coordinator with one planner.request: renewals fail with renew_error, results with result_error."""
+    def __init__(self, renew_error, *, result_error=None):
+        self.renew_error, self.result_error = renew_error, result_error
+        self.operations, self.claimed = [], False
+        proposal = fixture_proposal()
+        self.delivery = {"delivery_id": "d" * 32, "lease_token": "t" * 32, "expires_at": time.time() + 30,
+                         "expires_in": 30, "attempt": 1, "topic": "planner.request", "event_id": 1,
+                         "payload": {"incident": {"incident_id": proposal["incident_id"]}}}
+
+    def post(self, operation, body):
+        self.operations.append(operation)
+        if operation == "claim":
+            if self.claimed:
+                return {"delivery": None}
+            self.claimed = True
+            return {"delivery": self.delivery}
+        if operation == "renew" and self.renew_error is not None and self.operations.count("renew") > 1:
+            raise self.renew_error  # The first renewal (entering the lease) succeeds; the final check fails.
+        if operation == "result" and self.result_error is not None:
+            raise self.result_error
+        if operation == "result":
+            return {"accepted": True}
+        return {"expires_at": time.time() + 30, "expires_in": 30, "recorded": True}
 
 
 if __name__ == "__main__":

@@ -259,6 +259,7 @@ class KubernetesRESTDeploymentAPI(KubectlDeploymentAPI):
         self._token, self._token_file = token, token_file
         self.cluster_id, self.timeout = cluster_id, timeout
         self.clock = clock or (lambda: datetime.now(UTC))
+        self.before_submit = None
         self._allowed = frozenset(canonical_json(target) for target in deepcopy(allowed_targets))
         self.stats = {"read_attempts": 0, "write_attempts": 0, "successful_writes": 0,
                       "fence_attempts": 0, "successful_fences": 0, "rejected_writes": 0}

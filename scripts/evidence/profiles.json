@@ -75,7 +75,31 @@
     "security-lab": {
       "description": "Protected Boutique security lab: mTLS gateway, bypass and outage probes",
       "include": ["validation.json", "scan-inventory.json", "session.json", "network-policies.json",
-                  "network-matrix.json"]
+                  "network-matrix.json", "gateway-load.json", "inspector-burst.json", "inspection-comparison.json",
+                  "inspector-outage.json", "inspector-readiness-*.json", "resources.json", "NOTES.txt"]
+    },
+    "scale-recovery": {
+      "description": "P5.07 reviewed replica restoration and forced SCALE refusal; no baselines or worker credentials",
+      "include": ["summary.json", "scenario-result.json", "rbac-checks.json", "images.json", "policy.json",
+                  "primary-incident.json", "primary-storefront-impact.json", "*/proposal.json",
+                  "*/initial-guard.json", "*/execution.json", "*/execution-results.json", "*/outcome.json",
+                  "*/transport-stats.json", "*/planning-status.json", "forced-scale/proof.json", "NOTES.txt"]
+    },
+    "cve-gate": {
+      "description": "P5.02 operator records: inventory, digest parameters, Audit then Deny and Guard zero-write proofs",
+      "include": ["inventory.json", "queue.json", "approved-images.json", "vap-report.json", "admission-*.json",
+                  "guard-*.json", "zero-write.json", "checks.json", "scans/**/summary.json", "NOTES.txt"]
+    },
+    "protected-recovery": {
+      "description": "P5.05 protected baseline or recovery: split-reader RBAC, bypass time points and one-write proof",
+      "include": ["summary.json", "protected-rbac-checks.json", "rbac-checks.json", "images.json", "policy.json",
+                  "bypass-*.json", "*/proposal.json", "*/initial-guard.json", "*/execution.json",
+                  "*/outcome.json", "*/result.json", "*/transport-stats.json", "NOTES.txt"]
+    },
+    "cert-lifecycle": {
+      "description": "P5.06 public rotation, refused-identity, expiry and CA-overlap operator records; never PKI or keys",
+      "include": ["rotation.json", "identity-*.json", "negatives.json", "rollover-*.json", "checkout-*.json",
+                  "checks.json", "NOTES.txt"]
     },
     "observer-acceptance": {
       "description": "Live Observer acceptance on Boutique: detection and duplicate suppression",
