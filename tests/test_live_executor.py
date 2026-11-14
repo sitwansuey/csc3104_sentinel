@@ -284,6 +284,24 @@ class LiveExecutorTests(unittest.TestCase):
         self.assertEqual(self.reader.read_text(encoding="utf-8"), READER_MARKER)
         self.factory.assert_not_called()
 
+    def test_the_authorizer_itself_refuses_the_executor_kubeconfig_as_reader(self):
+        # worker_service builds the Guard role's authorizer without build_adapters.
+        from contextlib import ExitStack
+        from runtime import worker_service
+        alias = self.directory / "reader-alias.kubeconfig"
+        os.link(self.kubeconfig, alias)
+        for reader in (self.kubeconfig, alias, " "):
+            with self.subTest(reader=str(reader)), self.assertRaises(ValueError):
+                self.authorizer(reference_kubeconfig=reader)
+        config = {"context": "restricted-lab", "cluster_id": "sentinel-lab", "kubeconfig": str(self.kubeconfig),
+                  "policy": "p", "baseline": "b", "remote_dependencies": False, "role": "guard",
+                  "reference_kubeconfig": str(alias), "reference_context": "guard-reader-lab",
+                  "approvals": {"url": "https://127.0.0.1:1", "identity": "worker-1", "token_env": "TEST_TOKEN"}}
+        with patch.dict(os.environ, {"TEST_TOKEN": "t" * 40}), patch("runtime.approval_http.ApprovalClient"), \
+                ExitStack() as stack, self.assertRaisesRegex(ValueError, "separate from the Executor"):
+            worker_service.adapter(config, self.directory, stack)
+        self.assertEqual(self.authorizer(reference_kubeconfig=self.reader).reference_kubeconfig, self.reader)
+
     def test_cli_passes_the_reader_identity(self):
         with patch("runtime.live_executor.build_adapters", side_effect=GuardInputError("stop")) as build:
             self.call_cli(self.arguments() + ["--reference-kubeconfig", str(self.reader),

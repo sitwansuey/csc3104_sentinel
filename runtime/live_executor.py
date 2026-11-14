@@ -93,6 +93,12 @@ class LiveGuardAuthorizer:
         # P5.05 (#69): ConfigMap and Secret versions are read only with the separate Guard-reader
         # identity, never the Executor's kubeconfig, so the Executor needs no get on Secrets.
         # Without a reader the referenced versions stay unknown and the Guard escalates.
+        # Checked here too, not only in build_adapters: worker_service builds the Guard role's
+        # authorizer directly.
+        if reference_kubeconfig is not None and (not str(reference_kubeconfig).strip() or _same_file(
+                Path(reference_kubeconfig).resolve(), Path(kubeconfig).resolve())):
+            raise AdapterError("ARGUMENT_ERROR", "reference_kubeconfig",
+                               "The Guard-reader identity must be separate from the Executor's kubeconfig")
         self.reference_kubeconfig = reference_kubeconfig
         self.reference_context = reference_context or context
         self.dependency_reader = lambda proposal: load_json(self.paths["dependencies"], "dependencies")
