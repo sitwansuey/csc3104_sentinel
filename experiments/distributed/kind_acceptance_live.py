@@ -714,23 +714,26 @@ def s6(run):
     counted from its creation (Run.window_left): approval attempts eat into
     it, and a watch they cut short is reported, never passed.
     notes.during_partition holds the writes counted from the fault time,
-    the seconds watched and how long after the partition was confirmed the
-    approval was known recorded.
+    the seconds watched and how long after the partition's creation (as
+    Run.window_left counts) the approval was known recorded: its
+    confirmation, then every approval attempt and reconciliation.
     """
     row = run.lab.wait_state({"AWAITING_APPROVAL"}, 180)
     workers = [_app(identity) for identity in IDENTITIES]
     since = run.mark()
-    # Long enough that three leases still fit after a confirmation that takes all of CHAOS_CONFIRM_SECONDS.
+    # Long enough that three leases still fit after a confirmation that takes all of CHAOS_CONFIRM_SECONDS, when
+    # the approval is quick. Approval sends cut in transit and their reconciliations (Lab._send, up to
+    # APPROVAL_SEND_ATTEMPTS sends within APPROVAL_RESEND_SECONDS, each reconciled within
+    # APPROVAL_RECONCILE_SECONDS) can take more than the 60 s spare: the watch is then cut short and S6 fails.
     cut = run.create(partition(run.name("all"), "sentinel-coordinator", workers,
                                3 * LEASE_SECONDS + 60 + CHAOS_CONFIRM_SECONDS))
-    in_effect = run.lab.monotonic()
     # Only the proposal's read (kubectl exec) is asked again when it fails transiently, before anything is posted;
-    # a POST that fails in transit is reconciled, never sent again blind (once a POST is sent, Lab._send raises no
-    # TransientRead, so Lab.read never runs approve again).
+    # a POST that fails in transit is reconciled, never sent again blind: it is kept in Lab.in_doubt until settled,
+    # so even if Lab.read ran approve again, approve reads the store for it first (Lab._earlier).
     action_id = row["active_action_id"]
     _posted(run, "create", action_id, len(run.lab.approval_attempts),
             lambda: run.lab.read("the proposal to approve", lambda: run.lab.approve(action_id, run.policy_version)))
-    approved_after = round(run.lab.monotonic() - in_effect, 1)
+    approved_after = round(run.lab.monotonic() - run.started[cut["metadata"]["name"]], 1)
     seconds = min(3 * LEASE_SECONDS, run.window_left(cut))
     run.lab.sleep(seconds)
     rows, _ = run.audit_rows(since)

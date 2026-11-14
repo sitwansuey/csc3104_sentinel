@@ -1172,10 +1172,17 @@ What changed (offline, `experiments/distributed/kind_acceptance.py` and
 
 - **A POST that fails in transit is in doubt** (`Lab._send`). For an
   approval or a revocation, an SSL EOF, a connection reset, refused or
-  aborted, a socket timeout, a vanished port-forward or a cut reply
-  (`IN_TRANSIT`: `OSError` and `http.client.HTTPException`) means the
-  harness does not know whether the request reached the Coordinator.
-  Before anything else is sent, the harness reads the Coordinator's store
+  aborted, a socket timeout or a vanished port-forward (`IN_TRANSIT`:
+  `OSError` and `http.client.HTTPException`) means the harness does not
+  know whether the request reached the Coordinator. So does a reply cut
+  after its headers: `ApprovalClient.post` reads a short body without an
+  error (and a ragged TLS EOF is suppressed), then raises its own
+  `ProtocolError` 502 because the body is not JSON. The approval API never
+  answers 502 (it answers 400, 401, 403, 404, 408, 409, 413 and 503, each
+  with a JSON body), so a 502 (`CLIENT_MADE_STATUS`) is in doubt too, with
+  error class `ProtocolError502`. The POST is kept in `Lab.in_doubt` from
+  the moment it fails until the store shows it recorded or a send of it
+  is answered. Before anything else is sent, the harness reads the Coordinator's store
   through kubectl exec (read-only, asked again with back-off for up to
   `APPROVAL_RECONCILE_SECONDS`, 30 s). For an approval it looks for the
   managed approval in `approvals` and `managed_approvals` matching
@@ -1189,11 +1196,15 @@ What changed (offline, `experiments/distributed/kind_acceptance.py` and
   failure is reconciled again before the next send. The harness sends at
   most `APPROVAL_SEND_ATTEMPTS` (3) times, and sends nothing more once
   `APPROVAL_RESEND_SECONDS` (60 s) have passed since the first send. Past
-  that, or when the store cannot be read to tell, the result is
-  `ApprovalInDoubt`, a harness error that fails the run and is never asked
-  again by `Lab.read`. An HTTP error answer (a 4xx or 5xx with a body,
-  `ProtocolError`) is the approval API's own answer, not in doubt: it is
-  raised as it is and never sent again.
+  that, or when the store cannot be read to tell (whatever the failure:
+  a read that kept failing, kubectl that could not be started, a record
+  that does not parse), the result is `ApprovalInDoubt`, a harness error
+  that fails the run and is never asked again by `Lab.read`; the POST stays
+  in `Lab.in_doubt`. An HTTP error answer (a 4xx or 5xx other than the
+  client's own 502, `ProtocolError`) is the approval API's own answer, not
+  in doubt: it is raised as it is and never sent again. A resend whose
+  port-forward or client cannot be set up is recorded as `not_sent` and
+  raised as it is; the earlier POST stays in doubt.
 - **No double approval.** The Coordinator accepts an approval only while
   the action waits for one, or as an exact retry of the one it holds, and
   records it in the same transaction that moves the action on
@@ -1201,7 +1212,11 @@ What changed (offline, `experiments/distributed/kind_acceptance.py` and
   reconciliation read it as not recorded therefore turns any later
   approval into a 409, never a second record. A POST still in doubt is
   kept in `Lab.in_doubt`; the next `approve` or `revoke` for that action
-  reads the store for it first.
+  reads the store for it first. If the store shows it not recorded, that
+  same body is sent again over a new port-forward, so a late landing of it
+  reads as the idempotent answer to an exact retry rather than a 409. An
+  approval is sent again unchanged only while `APPROVAL_REUSE_SECONDS`
+  (120 s) of its 240 s lifetime are left; after that a new one is sent.
 - **The operator thread** (`approve_pending`) goes through the same path.
   Before, a POST that failed in transit counted there as a transient
   failure, and the next tick sent a new approval without reading whether
@@ -1209,7 +1224,8 @@ What changed (offline, `experiments/distributed/kind_acceptance.py` and
   One still in doubt past the bound is fatal for the run, and the next tick
   reads the store before it sends anything.
 - **Every attempt is recorded.** Each POST and each reconciliation (send
-  time, outcome `answered`, `refused` or `in_doubt`, error class, whether a
+  time, outcome `answered`, `refused`, `not_sent` or `in_doubt`, error
+  class (and, for an unreadable store, the reconciliation's), whether a
   new port-forward was used, `recorded`, `not_recorded` or `unreadable`)
   is in `Lab.approval_attempts`. S6's and S8's appear in their
   `notes.approval_attempts`, kept also when the scenario raises, and
@@ -1222,8 +1238,13 @@ What changed (offline, `experiments/distributed/kind_acceptance.py` and
   that time, and a watch they cut short fails the scenario with "the
   partition had only N s left". `notes.during_partition` keeps the template
   writes counted from the fault time, the seconds watched, and
-  `approval_recorded_after_cut_seconds` (from the partition's confirmation
-  to the approval being known recorded). The partition stays in place while
+  `approval_recorded_after_cut_seconds` (from the partition's creation, as
+  `Run.window_left` counts, through its confirmation, to the approval being
+  known recorded). The partition is long enough for three leases after a
+  confirmation that takes all of `CHAOS_CONFIRM_SECONDS` only when the
+  approval is quick: in the worst case three sends with a 10 s timeout and
+  three reconciliations of up to 30 s each take more than the 60 s spare,
+  and the watch is then cut short and S6 fails. The partition stays in place while
   the approval is in doubt. If the POST was recorded before its answer was
   cut, the watch starts later than the approval landed. The window is then
   longer, never shorter, and writes are still counted from the fault time.
@@ -1248,7 +1269,32 @@ reconciles an EOF, resends once, watches three full leases with no write
 and records its attempts and timing, fails with its attempts in the notes
 when the approval never lands, and still reports a write made during the
 partition after a reconciled approval. At 0b5529f every one of these tests
-fails. The `tests/test_kind_outage_reads.py` tests that a POST timing out
+fails.
+
+A review of that change found three gaps, now closed. A reply cut after its
+headers became the client's own `ProtocolError` 502 and was recorded as
+`refused` and raised with no reconciliation, although the Coordinator
+records an approval before it answers. A reconciliation that failed with
+anything but an `AcceptanceError` (kubectl that could not be started, a
+record that did not parse) left the POST out of `Lab.in_doubt`, so the
+operator's next tick would have sent a new approval blind. And
+`approval_recorded_after_cut_seconds` was counted from the partition's
+confirmation, not from its creation. Tests added: a reply cut after its
+headers is reconciled as recorded and not sent again (for an approval, a
+revocation, the operator thread and S6), and a 502 for a POST that never
+landed is reconciled as not recorded and sent once more; the real
+`ApprovalClient`, against a loopback endpoint that records the request
+and cuts its reply after the headers (no body or half a body), raises its
+own 502, and `Lab.approve` through it reconciles that as recorded; a
+reconciliation that fails with `OSError` is `ApprovalInDoubt` with the POST
+kept in doubt, and the next `approve` (and the operator's next tick)
+reconciles it and sends the same body again; a resend whose port-forward
+cannot start is recorded as `not_sent` and the POST stays in doubt; an
+approval in doubt with less than two minutes left is replaced by a new
+one; and S6 counts its approval time from the partition's creation. At
+888180f, the first version of this change, these tests and the two
+changed S6 tests of `tests/test_kind_chaos_confirmation.py` give 6
+failures and 9 errors. Not yet re-run live. The `tests/test_kind_outage_reads.py` tests that a POST timing out
 in S6 or S8 was a `TimeoutError` sent once now expect it in doubt instead:
 reconciled, sent again within the bound, then `ApprovalInDoubt`. Not yet
 re-run live.

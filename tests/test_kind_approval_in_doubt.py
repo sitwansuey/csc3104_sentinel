@@ -16,15 +16,19 @@ the request arrives.
 from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
+import socket
 import sqlite3
 import ssl
 import subprocess
 import tempfile
+import threading
 import unittest
 
 from experiments.distributed import kind_acceptance as acceptance
 from experiments.distributed import kind_acceptance_live as live
+from runtime.approval_http import ApprovalClient
 from runtime.service_identity import ProtocolError
+from runtime.worker_transport import digest
 from services.coordinator.approvals import ApprovalAccess
 from services.coordinator.core import LocalEventBus, handle
 from services.coordinator.store import CoordinatorError, SQLiteStore
@@ -51,11 +55,14 @@ class StoreKubectl:
     """kubectl whose exec runs the harness's query helper read-only against the Coordinator's real store.
 
     failing is how many execs from now on fail transiently (the Pod not
-    answering); forever makes every one fail. Every exec is counted.
+    answering); forever makes every one fail; raising, when set, is raised
+    by the next exec instead (kubectl that cannot be spawned), then cleared.
+    Every exec is counted.
     """
 
     def __init__(self, database):
         self.database, self.failing, self.forever, self.execs = database, 0, False, 0
+        self.raising = None
 
     def __call__(self, command, **options):
         if "get" in command and "pods" in command:
@@ -64,6 +71,9 @@ class StoreKubectl:
                                                "status": {"phase": "Running"}}]}))
         if "exec" in command and acceptance.QUERY_HELPER in command:
             self.execs += 1
+            if self.raising is not None:
+                error, self.raising = self.raising, None
+                raise error
             if self.forever or self.failing:
                 self.failing = max(0, self.failing - 1)
                 return done(code=1, stderr=CONTAINER_GONE)
@@ -87,10 +97,14 @@ class InDoubtLab(acceptance.Lab):
     script holds one outcome per POST, in turn ("ok" once it runs out):
     "ok" (arrives, answered), "lost" (SSL EOF before it reaches the
     Coordinator), "reset" (connection reset before it arrives), "reply_lost"
-    (arrives and is recorded, the answer is cut by an SSL EOF), "timeout"
-    (arrives, no answer within the client's timeout) or a ProtocolError (the
-    approval API's own HTTP error answer). Each POST takes post_seconds of
-    virtual time.
+    (arrives and is recorded, the answer is cut by an SSL EOF), "reply_cut"
+    (arrives and is recorded, the reply is cut after its headers, so the
+    client reads no JSON body and makes up its own ProtocolError 502),
+    "timeout" (arrives, no answer within the client's timeout) or a
+    ProtocolError (the approval API's own HTTP error answer, or one the
+    client makes up). Each POST takes post_seconds of virtual time.
+    forward_error, when set, is raised by the next fresh port-forward
+    (kubectl that cannot be spawned), then cleared.
     """
 
     def __init__(self, directory):
@@ -104,6 +118,7 @@ class InDoubtLab(acceptance.Lab):
         super().__init__(acceptance.Shell("kind-sentinel-dist", runner=self.kubectl), directory, clock=self.at,
                          sleep=self.advance, monotonic=lambda: self.now[0])
         self.script, self.posts, self.forwards, self.post_seconds = [], [], [], 10.0
+        self.forward_error = None
         self.tokens[acceptance.OPERATOR] = "t" * 43
         self.audit = []
 
@@ -115,6 +130,9 @@ class InDoubtLab(acceptance.Lab):
 
     def port_forward(self, port=18767, *, fresh=False):
         self.forwards.append(fresh)
+        if fresh and self.forward_error is not None:
+            error, self.forward_error = self.forward_error, None
+            raise error
         return port
 
     def approval_client(self, port):
@@ -134,6 +152,11 @@ class InDoubtLab(acceptance.Lab):
                 answer = lab.serve(operation, body)
                 if outcome == "reply_lost":
                     raise lost()
+                if outcome == "reply_cut":  # What ApprovalClient.post raises when the body after 200 never came.
+                    try:
+                        json.loads(b"")
+                    except ValueError as error:
+                        raise ProtocolError(502, "Approval authority returned invalid JSON") from error
                 if outcome == "timeout":
                     raise TimeoutError("timed out")
                 return answer
@@ -173,6 +196,23 @@ class Harness(unittest.TestCase):
 
     def attempts(self, operation="create"):
         return [entry for entry in self.lab.approval_attempts if entry["operation"] == operation]
+
+    def unreadable_after_the_next_post(self):
+        """The next POST goes as scripted; the kubectl exec right after it cannot be spawned (OSError)."""
+        lab, original = self.lab, self.lab.approval_client
+
+        def client(port):
+            inner = original(port)
+
+            class Client:
+                def post(self, operation, body):
+                    try:
+                        return inner.post(operation, body)
+                    finally:
+                        lab.kubectl.raising = OSError(24, "Too many open files")
+                        lab.approval_client = original
+            return Client()
+        lab.approval_client = client
 
 
 class ApprovalInDoubtTests(Harness):
@@ -214,6 +254,88 @@ class ApprovalInDoubtTests(Harness):
                 self.assertIn(ACTION, lab.approved)
                 self.assertEqual(lab.approvals[-1]["confirmed_by"], "store")
                 self.assertEqual(answer["approval_id"], lab.approvals_recorded()[0][0])
+
+    def test_a_reply_cut_after_its_headers_is_in_doubt_not_a_refusal(self):
+        # The client reads no JSON body and makes up a 502, a status the approval API never answers.
+        lab = self.lab
+        lab.script = ["reply_cut"]
+        answer = lab.approve(ACTION, POLICY)
+        self.assertEqual(len(lab.posts), 1)  # Recorded: never sent twice.
+        self.assertEqual(len(lab.approvals_recorded()), 1)
+        [entry] = self.attempts()
+        self.assertEqual((entry["outcome"], entry["error_type"], entry["reconciled"]),
+                         ("in_doubt", "ProtocolError502", "recorded"))
+        self.assertNotIn("status", entry)
+        self.assertIn(ACTION, lab.approved)
+        self.assertEqual(lab.approvals[-1]["confirmed_by"], "store")
+        self.assertEqual(answer["approval_id"], lab.approvals_recorded()[0][0])
+        self.assertEqual(lab.in_doubt, {})
+
+    def test_an_unreadable_reply_to_a_post_that_never_landed_is_reconciled_and_sent_once_more(self):
+        lab = self.lab
+        lab.script = [ProtocolError(502, "Approval authority returned invalid JSON")]  # Nothing reached the store.
+        lab.approve(ACTION, POLICY)
+        self.assertEqual(len(lab.posts), 2)
+        self.assertEqual(lab.posts[0][1], lab.posts[1][1])
+        self.assertEqual([(entry["outcome"], entry.get("reconciled")) for entry in self.attempts()],
+                         [("in_doubt", "not_recorded"), ("answered", None)])
+        self.assertEqual(len(lab.approvals_recorded()), 1)
+
+    def test_a_reconciliation_that_fails_any_way_keeps_the_post_in_doubt_for_the_next_try(self):
+        lab = self.lab
+        lab.script = ["lost"]
+        reads = lab.kubectl.execs
+        self.unreadable_after_the_next_post()
+        with self.assertRaises(acceptance.ApprovalInDoubt) as caught:
+            lab.approve(ACTION, POLICY)
+        self.assertIn("could not be read", str(caught.exception))
+        self.assertIsInstance(caught.exception.__cause__, OSError)
+        self.assertGreater(lab.kubectl.execs, reads + 1)  # The proposal, then the failed reconciliation.
+        [entry] = self.attempts()
+        self.assertEqual((entry["outcome"], entry["reconciled"]), ("in_doubt", "unreadable"))
+        self.assertIn(("create", ACTION), lab.in_doubt)
+        self.assertEqual(len(lab.posts), 1)
+        # The next try (the operator's next tick) reconciles the earlier POST first: not recorded, so that very
+        # request is sent again, an exact retry, never a new approval sent blind.
+        lab.approve(ACTION, POLICY)
+        self.assertEqual(len(lab.posts), 2)
+        self.assertEqual(lab.posts[0][1], lab.posts[1][1])
+        self.assertEqual([(entry["outcome"], entry.get("reconciled")) for entry in self.attempts()],
+                         [("in_doubt", "unreadable"), ("earlier_in_doubt", "not_recorded"), ("answered", None)])
+        self.assertEqual(len(lab.approvals_recorded()), 1)
+        self.assertEqual(lab.in_doubt, {})
+
+    def test_a_resend_whose_port_forward_cannot_start_is_recorded_and_stays_in_doubt(self):
+        lab = self.lab
+        lab.script = ["lost"]
+        lab.forward_error = FileNotFoundError(2, "kubectl not found")
+        with self.assertRaises(FileNotFoundError):
+            lab.approve(ACTION, POLICY)
+        self.assertEqual(len(lab.posts), 1)
+        self.assertEqual([(entry["outcome"], entry.get("reconciled"), entry.get("error_type"))
+                          for entry in self.attempts()],
+                         [("in_doubt", "not_recorded", "SSLEOFError"), ("not_sent", None, "FileNotFoundError")])
+        self.assertIn(("create", ACTION), lab.in_doubt)  # The cut POST may still land: read first next time.
+        lab.approve(ACTION, POLICY)
+        self.assertEqual(len(lab.posts), 2)
+        self.assertEqual(lab.posts[0][1], lab.posts[1][1])
+        self.assertEqual(self.attempts()[2]["outcome"], "earlier_in_doubt")
+        self.assertEqual(len(lab.approvals_recorded()), 1)
+        self.assertEqual(lab.in_doubt, {})
+
+    def test_an_earlier_post_too_close_to_its_expiry_is_not_sent_again_and_a_new_one_is(self):
+        lab = self.lab
+        lab.script = ["lost"]
+        self.unreadable_after_the_next_post()  # Kept in doubt.
+        with self.assertRaises(acceptance.ApprovalInDoubt):
+            lab.approve(ACTION, POLICY)
+        lab.advance(200)  # Its four minutes have less than two left.
+        lab.approve(ACTION, POLICY)
+        self.assertEqual(len(lab.posts), 2)
+        self.assertNotEqual(lab.posts[0][1]["expires_at"], lab.posts[1][1]["expires_at"])
+        self.assertEqual(self.attempts()[1]["reconciled"], "not_recorded")
+        self.assertEqual(len(lab.approvals_recorded()), 1)
+        self.assertEqual(lab.in_doubt, {})
 
     def test_reconciliation_reads_through_a_pod_that_does_not_answer_for_a_while(self):
         lab = self.lab
@@ -320,12 +442,102 @@ class RevocationInDoubtTests(Harness):
         self.assertEqual((entry["outcome"], entry["reconciled"]), ("in_doubt", "recorded"))
         self.assertEqual(len(self.lab.revocations_recorded()), 1)
 
+    def test_a_revocation_whose_reply_was_cut_after_its_headers_is_not_sent_again(self):
+        self.lab.script = ["reply_cut"]
+        self.lab.revoke(ACTION)
+        self.assertEqual(len(self.lab.posts), 1)
+        [entry] = self.attempts("revoke")
+        self.assertEqual((entry["outcome"], entry["error_type"], entry["reconciled"]),
+                         ("in_doubt", "ProtocolError502", "recorded"))
+        self.assertEqual(len(self.lab.revocations_recorded()), 1)
+
     def test_a_refused_revocation_is_raised_as_it_is(self):
         self.lab.script = [ProtocolError(409, "Execution already reported; revocation cannot undo a write")]
         with self.assertRaises(ProtocolError):
             self.lab.revoke(ACTION)
         self.assertEqual(len(self.lab.posts), 1)
         self.assertNotIn("reconciled", self.attempts("revoke")[0])
+
+
+class CutReply:
+    """A loopback approval endpoint that records each request it reads, then cuts its reply after the headers.
+
+    The real ApprovalClient talks to it (plain HTTP on loopback): each POST
+    is served by the real ApprovalAccess (InDoubtLab.serve), and the reply
+    is "200 OK" with a Content-Length its body never reaches (body is the
+    part sent, empty by default) before the write side is shut.
+    """
+
+    def __init__(self, lab, body=b""):
+        self.lab, self.body, self.served = lab, body, 0
+        self.listener = socket.create_server(("127.0.0.1", 0))
+        self.port = self.listener.getsockname()[1]
+        self.thread = threading.Thread(target=self.accept, daemon=True)
+        self.thread.start()
+
+    def accept(self):
+        with self.listener:
+            while True:
+                try:
+                    connection, _ = self.listener.accept()
+                except OSError:
+                    return
+                with connection:
+                    data = b""
+                    while b"\r\n\r\n" not in data:
+                        data += connection.recv(65536)
+                    head, _, body = data.partition(b"\r\n\r\n")
+                    lines = head.decode("ascii").split("\r\n")
+                    length = next(int(line.split(":", 1)[1]) for line in lines
+                                  if line.lower().startswith("content-length:"))
+                    while len(body) < length:
+                        body += connection.recv(65536)
+                    operation = lines[0].split()[1].rsplit("/", 1)[1]
+                    self.lab.serve(operation, json.loads(body))
+                    self.served += 1
+                    connection.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                                       b"Content-Length: 80\r\n\r\n" + self.body)
+                    connection.shutdown(socket.SHUT_WR)
+
+    def close(self):
+        self.listener.close()
+        self.thread.join(5)
+
+
+class CutReplyOverASocketTests(Harness):
+    """The real ApprovalClient against a reply cut after its headers: its own 502, reconciled as in doubt."""
+
+    def test_the_client_makes_up_a_502_for_a_reply_cut_after_its_headers(self):
+        for sent in (b"", b'{"approval_id": 1, "appr'):
+            with self.subTest(sent=sent):
+                self.setUp()
+                endpoint = CutReply(self.lab, sent)
+                self.addCleanup(endpoint.close)
+                client = ApprovalClient(f"http://127.0.0.1:{endpoint.port}", acceptance.OPERATOR, "t" * 43,
+                                        timeout=5)
+                (row,) = self.lab.rows("SELECT proposal FROM actions WHERE action_id=?", (ACTION,))
+                body = {"action_id": ACTION, "proposal_sha256": digest(json.loads(row[0])), "policy_version": POLICY,
+                        "expires_at": (BASE + timedelta(seconds=240)).isoformat()}
+                with self.assertRaises(ProtocolError) as caught:
+                    client.post("create", body)
+                self.assertEqual(caught.exception.status, acceptance.CLIENT_MADE_STATUS)
+                self.assertNotIsInstance(caught.exception, acceptance.IN_TRANSIT)
+                self.assertEqual(endpoint.served, 1)
+                self.assertEqual(len(self.lab.approvals_recorded()), 1)  # Recorded before the reply was cut.
+
+    def test_lab_approve_through_the_real_client_reconciles_a_cut_reply_as_recorded(self):
+        lab = self.lab
+        endpoint = CutReply(lab)
+        self.addCleanup(endpoint.close)
+        lab.approval_client = lambda port: ApprovalClient(f"http://127.0.0.1:{endpoint.port}", acceptance.OPERATOR,
+                                                          "t" * 43, timeout=5)
+        answer = lab.approve(ACTION, POLICY)
+        self.assertEqual(endpoint.served, 1)  # Never sent twice.
+        self.assertEqual(len(lab.approvals_recorded()), 1)
+        [entry] = self.attempts()
+        self.assertEqual((entry["outcome"], entry["error_type"], entry["reconciled"]),
+                         ("in_doubt", "ProtocolError502", "recorded"))
+        self.assertEqual(answer["approval_id"], lab.approvals_recorded()[0][0])
 
 
 class Ticks:
@@ -359,6 +571,29 @@ class OperatorInDoubtTests(Harness):
         self.assertEqual(len(lab.approvals_recorded()), 1)
         self.assertEqual(record["fatal"], [])
 
+    def test_an_operator_tick_whose_reconciliation_fails_is_fatal_and_the_next_tick_reads_first(self):
+        lab = self.lab
+        lab.script = ["lost"]
+        self.unreadable_after_the_next_post()
+        record = live.operator_record()
+        live._operator(lab, POLICY, Ticks(lab, 3), record)
+        self.assertEqual(len(lab.posts), 2)
+        self.assertEqual(lab.posts[0][1], lab.posts[1][1])  # The in-doubt request again, never a new one.
+        self.assertEqual(len(lab.approvals_recorded()), 1)
+        [fatal] = record["fatal"]
+        self.assertIn("ApprovalInDoubt", fatal)
+        self.assertEqual([(entry["outcome"], entry.get("reconciled")) for entry in self.attempts()],
+                         [("in_doubt", "unreadable"), ("earlier_in_doubt", "not_recorded"), ("answered", None)])
+
+    def test_an_operator_post_whose_reply_was_cut_after_its_headers_is_not_sent_again(self):
+        lab = self.lab
+        lab.script = ["reply_cut"]
+        record = live.operator_record()
+        live._operator(lab, POLICY, Ticks(lab, 5), record)
+        self.assertEqual(len(lab.posts), 1)
+        self.assertEqual(len(lab.approvals_recorded()), 1)
+        self.assertEqual((record["fatal"], record["attempts_failed"]), ([], 0))
+
     def test_an_operator_post_still_in_doubt_after_the_bound_is_fatal(self):
         lab = self.lab
         lab.script = ["lost"] * 3
@@ -370,6 +605,8 @@ class OperatorInDoubtTests(Harness):
 
 
 class S6InDoubtTests(Harness):
+    CONFIRM = 7.0  # Seconds Chaos Mesh takes to confirm the partition in effect.
+
     def s6(self):
         lab = self.lab
         run = live.Run(lab, acceptance.SCENARIOS["S6"], 1, POLICY)
@@ -379,6 +616,7 @@ class S6InDoubtTests(Harness):
         def create(document, **_):
             run.chaos.append(document)
             run.started[document["metadata"]["name"]] = lab.monotonic()
+            lab.advance(self.CONFIRM)
             return document
 
         def remove(document, *, check=True):
@@ -400,9 +638,10 @@ class S6InDoubtTests(Harness):
         during = run.notes["during_partition"]
         self.assertEqual(during["template_writes"], 0)
         self.assertEqual(during["seconds"], 3 * acceptance.LEASE_SECONDS)  # Watched in full after the approval.
-        self.assertEqual(during["approval_recorded_after_cut_seconds"], 2 * lab.post_seconds)
+        # Counted from the cut's creation, as the partition's own duration is (Run.window_left).
+        self.assertEqual(during["approval_recorded_after_cut_seconds"], self.CONFIRM + 2 * lab.post_seconds)
         # The partition stayed until the watch ended: never removed while the approval was in doubt.
-        self.assertEqual(removed, [2 * lab.post_seconds + 3 * acceptance.LEASE_SECONDS])
+        self.assertEqual(removed, [self.CONFIRM + 2 * lab.post_seconds + 3 * acceptance.LEASE_SECONDS])
         self.assertEqual(acceptance.expectation("S6", incidents=[{"state": "RECOVERED"}], rows=[], notes=run.notes),
                          [])
 
@@ -416,6 +655,20 @@ class S6InDoubtTests(Harness):
         self.assertNotIn("during_partition", run.notes)
         self.assertIn("template writes during the partition not recorded as 0",
                       acceptance.expectation("S6", incidents=[{"state": "RECOVERED"}], rows=[], notes=run.notes))
+
+    def test_s6_reconciles_a_reply_cut_after_its_headers_and_watches_three_leases_with_no_write(self):
+        lab = self.lab
+        lab.script = ["reply_cut"]
+        run, _ = self.s6()
+        live.s6(run)
+        self.assertEqual(len(lab.posts), 1)
+        self.assertEqual([(entry["outcome"], entry["error_type"], entry["reconciled"])
+                          for entry in run.notes["approval_attempts"]],
+                         [("in_doubt", "ProtocolError502", "recorded")])
+        self.assertEqual(run.notes["during_partition"]["template_writes"], 0)
+        self.assertEqual(run.notes["during_partition"]["seconds"], 3 * acceptance.LEASE_SECONDS)
+        self.assertEqual(acceptance.expectation("S6", incidents=[{"state": "RECOVERED"}], rows=[], notes=run.notes),
+                         [])
 
     def test_s6_reports_a_write_during_the_partition_after_a_reconciled_approval(self):
         lab = self.lab
