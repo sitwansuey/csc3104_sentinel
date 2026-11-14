@@ -20,6 +20,7 @@ Nothing here scans, calls a cluster or changes one.
 import argparse
 from datetime import UTC, datetime
 import json
+import re
 from pathlib import Path
 import sys
 
@@ -99,7 +100,7 @@ def _baseline_images(path):
     return name, images
 
 
-def vap_params(*, scans, rules, exceptions, inventory, baselines=None, extra_images=(), now):
+def vap_params(*, scans, rules, exceptions, inventory, baselines=None, extra_images=(), now, configmap_name=CONFIGMAP_NAME):
     """(ConfigMap, report). The ConfigMap lists approved repository@sha256 references only.
 
     A running image is approved when its own gate passes with itself as the
@@ -146,7 +147,7 @@ def vap_params(*, scans, rules, exceptions, inventory, baselines=None, extra_ima
             if rest.startswith("library/"):
                 approved.add(pinned_reference(rest[len("library/"):]))
     configmap = {"apiVersion": "v1", "kind": "ConfigMap",
-                 "metadata": {"name": CONFIGMAP_NAME, "namespace": CONFIGMAP_NAMESPACE,
+                 "metadata": {"name": configmap_name, "namespace": CONFIGMAP_NAMESPACE,
                               "labels": {"app.kubernetes.io/managed-by": "sentinel-gate-images"}},
                  "data": {"digests": "\n".join(sorted(approved))}}
     report["approved"] = sorted(approved)
@@ -185,9 +186,20 @@ def _parser():
     params.add_argument("--extra-image", action="append", default=[], metavar="REPOSITORY@SHA256",
                         help="An image gated elsewhere (probe or Sentinel image); digests only")
     params.add_argument("--report", type=Path, help="Write the per-image report here")
+    # Live (Kubernetes v1.37.0 on kind, 14 Nov 2026): after a params ConfigMap was deleted and recreated under the
+    # same name, admission kept evaluating the old list; a fresh name per install, with the binding's paramRef
+    # pointed at it, is read correctly.
+    params.add_argument("--configmap-name", default=CONFIGMAP_NAME, type=_configmap_name,
+                        help="Name of the params ConfigMap (default %(default)s); use a fresh one per install")
     exceptions = commands.add_parser("check-exceptions")
     exceptions.add_argument("path", type=Path)
     return parser
+
+
+def _configmap_name(value):
+    if not re.fullmatch(r"[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?", value):
+        raise argparse.ArgumentTypeError("a ConfigMap name is a DNS label")
+    return value
 
 
 def _write(path, value):
@@ -213,7 +225,8 @@ def main(argv=None):
         return EXIT[report["verdict"]]
     inventory = json.loads(args.inventory.read_text(encoding="utf-8-sig"))
     configmap, report = vap_params(scans=args.scans, rules=rules, exceptions=args.exceptions, inventory=inventory,
-                                   baselines=args.baselines, extra_images=args.extra_image, now=now)
+                                   baselines=args.baselines, extra_images=args.extra_image, now=now,
+                                   configmap_name=args.configmap_name)
     if args.output:
         _write(args.output, configmap)
     if args.report:

@@ -241,6 +241,16 @@ class VapParamsTests(Workspace):
         self.assertEqual((configmap["metadata"]["name"], configmap["metadata"]["namespace"]),
                          (gate_images.CONFIGMAP_NAME, gate_images.CONFIGMAP_NAMESPACE))
 
+    def test_the_configmap_name_can_be_fresh_per_install(self):
+        self.write_scan("cart.json", scan(CART))
+        inventory = self.inventory(("Deployment", "cartservice", "server", CART))
+        self.assertEqual(self.params(inventory)[0]["metadata"]["name"], gate_images.CONFIGMAP_NAME)
+        self.assertEqual(self.params(inventory, configmap_name="sentinel-approved-images-r1-a1b2")[0]["metadata"]["name"],
+                         "sentinel-approved-images-r1-a1b2")
+        for bad in ("Upper", "-x", "a" * 64, "a_b"):
+            with self.subTest(bad=bad), self.assertRaises(gate_images.argparse.ArgumentTypeError):
+                gate_images._configmap_name(bad)
+
     def test_tags_are_refused(self):
         for extra in ("fullstorydev/grpcurl:v1.9.3", "fullstorydev/grpcurl:v1.9.3@sha256:" + "f" * 64):
             with self.subTest(extra=extra), self.assertRaises(ValueError):

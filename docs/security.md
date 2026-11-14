@@ -686,6 +686,17 @@ it. Use a new folder; `$run` below is that folder.
    python scripts/security/gate_images.py vap-params --scans $run/scans --rules deploy/security/cve-gate.json --exceptions deploy/security/cve-exceptions.json --inventory $run/inventory.json --extra-image <probe repository@sha256> --output $run/approved-images.json --report $run/vap-report.json
    ```
 
+   On a lab where the policy was installed before, give the ConfigMap a
+   fresh name (`--configmap-name sentinel-approved-images-<run>`) and, after
+   applying the policy, point the binding at it
+   (`kubectl patch validatingadmissionpolicybinding sentinel-approved-images --type=merge -p '{"spec":{"paramRef":{"name":"sentinel-approved-images-<run>"}}}'`).
+   On 14 Nov 2026 the connected lab's API server (Kubernetes v1.37.0, kind)
+   kept evaluating an earlier list after the ConfigMap was deleted and
+   recreated under the same name, with or without its namespace; a fresh
+   name was read at once. A helper given by its short Docker Hub name is
+   approved under its `docker.io/...` name too, since admission compares
+   the exact string a Pod spec carries.
+
 4. Steps 4 to 8 change the connected lab and do not take the heavy-lab lock
    themselves. Before step 4, check that no other heavy-lab run holds it
    (`Test-Path (Join-Path ([IO.Path]::GetTempPath()) sentinel-heavy-lab.lock)`
