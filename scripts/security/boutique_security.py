@@ -51,7 +51,7 @@ PROBE_USER = "00000000-0000-4000-8000-000000000001"
 
 
 def command(args, *, timeout=300, required=True):
-    result = subprocess.run([str(arg) for arg in args], capture_output=True, text=True, timeout=timeout, check=False)
+    result = subprocess.run([str(arg) for arg in args], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, check=False)
     if required and result.returncode:
         raise RuntimeError(f"{args[0]} failed: {result.stderr[-1800:]}")
     return result

@@ -41,7 +41,7 @@ import re
 import shutil
 import subprocess
 import sys
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -88,7 +88,7 @@ _PEM = re.compile(r"-----BEGIN CERTIFICATE-----\r?\n[A-Za-z0-9+/=\r\n]+-----END 
 
 
 def run(args, *, timeout=300, required=True):
-    result = subprocess.run([str(arg) for arg in args], capture_output=True, text=True, timeout=timeout, check=False)
+    result = subprocess.run([str(arg) for arg in args], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, check=False)
     if required and result.returncode:
         # These commands carry paths and names only, never key or certificate contents.
         raise RuntimeError(f"{args[0]} failed: {result.stderr[-1500:]}")
@@ -160,7 +160,10 @@ def install(directory, node, command, *, pins=None, fetch=None):
     if problems:
         raise ValueError("cert-manager pins are unresolved (scripts/security/cert_lifecycle.py pins): "
                          + "; ".join(problems))
-    fetch = fetch or (lambda url: urlopen(url, timeout=60).read(10_000_000))
+    # charts.jetstack.io refuses urllib's default User-Agent with 403 (seen 14 Nov 2026); the SHA-256 pin, checked
+    # below, is what makes the download trustworthy, not the client name.
+    fetch = fetch or (lambda url: urlopen(Request(url, headers={"User-Agent": "sentinel-security-lab/1.0"}),
+                                          timeout=60).read(10_000_000))
     chart = fetch(pins["chart"]["url"])
     if hashlib.sha256(chart).hexdigest() != pins["chart"]["sha256"]:
         raise ValueError("cert-manager chart checksum changed")

@@ -48,7 +48,7 @@ TRUST_SDS = "trust-bundle"
 
 
 def run(args, *, timeout=300, required=True):
-    result = subprocess.run([str(arg) for arg in args], capture_output=True, text=True,
+    result = subprocess.run([str(arg) for arg in args], capture_output=True, text=True, encoding="utf-8", errors="replace",
                             timeout=timeout, check=False)
     if required and result.returncode:
         # These commands contain no certificate contents, credentials or bodies.
