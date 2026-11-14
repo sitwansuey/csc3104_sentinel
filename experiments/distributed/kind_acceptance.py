@@ -102,7 +102,11 @@ same deployment opened no incident, because the harness counted the first
 run's RECOVERED incident as theirs. The first matrix, at 1adcfe3, passed 4
 of 5 S0 runs and stopped in S1a r1, because the harness deleted its PodChaos
 before Chaos Mesh acted on it. Both are fixed here and not yet re-run
-(docs/distributed-acceptance.md#first-live-attempts).
+(docs/distributed-acceptance.md#first-live-attempts). The S2-S9 matrix at
+b37017e (14 Nov 2026) passed S2, S3 and S4 5/5 and stopped in S5 r1 when a
+kubectl exec into the Coordinator failed while its Pod was replaced; reads
+now ride out such an outage within their step's limit (Lab.wait, Lab.read,
+transient_failure), also not yet re-run.
 """
 import argparse
 from contextlib import suppress
@@ -206,6 +210,23 @@ class AcceptanceError(RuntimeError):
     """The lab is not the one this harness may use, or not in the state a run needs."""
 
 
+class TransientRead(AcceptanceError):
+    """A kubectl call failed because its Pod is restarting or not ready, or the API server or kubelet did not answer.
+
+    reason is the class transient_failure gave it (or "no running Pod"), never
+    kubectl's own text. Lab.wait, Lab.read and the operator thread ask again
+    with bounded back-off; every other failure stops at once.
+    """
+
+    def __init__(self, message, reason):
+        super().__init__(message)
+        self.reason = reason
+
+
+class ReadUnavailable(AcceptanceError):
+    """A read kept failing transiently until its bound: a harness error that fails the run, never a pass."""
+
+
 def utc_now():
     return datetime.now(UTC)
 
@@ -263,6 +284,56 @@ def check_context(context):
 
 
 # Shell ---------------------------------------------------------------------------------------------------
+#
+# A read through kubectl can fail for a while without anything being wrong with what it reads: the Coordinator's
+# Pod is replaced in S5 and its container restarts there first, and any Pod can be between containers or the API
+# server slow to answer at other times. On 14 Nov 2026 (S5 r1 at b37017e) such a failure while the Coordinator Pod
+# was replaced ended the run with "kubectl --context=kind-sentinel-dist failed (exit 1)" and no summary
+# (docs/distributed-acceptance.md#s2-s9-matrix-b37017e-reads-while-the-coordinator-pod-was-replaced). kubectl's
+# own failures exit 1 with its error on stderr. A command that ran in the container exits with the command's own
+# status, and kubectl then adds "command terminated with exit code N": that is the command's answer (a query
+# error, a probe's denial), never a transient one, unless a signal ended it because its container was stopping.
+
+READ_RETRY_SECONDS = 180  # How long a read is asked again while it fails transiently: a replaced Pod's Ready time.
+READ_BACKOFF_SECONDS = 8.0  # The longest pause between two attempts of a read that keeps failing transiently.
+_RAN = re.compile(r"command terminated with exit code (\d+)")
+_STOPPED = {137: "process killed with its container (SIGKILL)", 143: "process stopped with its container (SIGTERM)"}
+TRANSIENT_CLASSES = (
+    ("pod not found", re.compile(r'\(NotFound\)[^\n]*\bpods? "[^"\n]*" not found|pod does not exist', re.I)),
+    ("container not running", re.compile(
+        r"container not found|container (is )?not running|is waiting to start|does not have a host assigned|"
+        r"cannot exec into a container in a completed pod|cannot exec in a stopped|in CONTAINER_EXITED state",
+        re.I)),
+    ("connection refused", re.compile(
+        r"connection refused|connection reset by peer|connection lost|unexpected EOF|error dialing backend|"
+        r"unable to connect to the server|"
+        r"no route to host|i/o timeout|tls handshake timeout|context deadline exceeded|"
+        r"the server is currently unable to handle the request|\((ServiceUnavailable|Timeout|TooManyRequests)\)",
+        re.I)),
+)
+
+
+def transient_failure(result):
+    """The transient class of a failed kubectl call (TRANSIENT_CLASSES, _STOPPED), or None for any other result.
+
+    Decided by the exit status and the class of kubectl's stderr: exit 1 with
+    no "command terminated" (kubectl's own failure) whose stderr is a Pod not
+    found, a container not running or a connection refused or timed out; or a
+    command in the container ended by SIGKILL or SIGTERM (137, 143). Every
+    other failure, a query or probe that ran and failed included, is None.
+    """
+    if not result.returncode:
+        return None
+    text = result.stderr or ""
+    if isinstance(text, bytes):
+        text = text.decode("utf-8", "replace")
+    ran = _RAN.search(text)
+    if ran:
+        code = int(ran.group(1))
+        return _STOPPED.get(code) if code == result.returncode else None
+    if result.returncode != 1:
+        return None
+    return next((label for label, pattern in TRANSIENT_CLASSES if pattern.search(text)), None)
 
 
 class Shell:
@@ -278,7 +349,15 @@ class Shell:
         result = self.runner(command, input=stdin, capture_output=True, text=not binary, timeout=timeout,
                              check=False)
         if check and result.returncode:
-            raise AcceptanceError(f"{Path(command[0]).name} {command[1]} failed (exit {result.returncode})")
+            # Named by the tool and its verb only: an argument can be a Secret's name, which no evidence may hold.
+            tool = Path(command[0]).name
+            verb = next((str(part) for part in command[1:]
+                         if not str(part).startswith("-") and part != self.context), "")
+            message = f"{tool} {verb} failed (exit {result.returncode})"
+            reason = transient_failure(result) if tool == "kubectl" else None
+            if reason:
+                raise TransientRead(f"{message}: {reason}", reason)
+            raise AcceptanceError(message)
         return result
 
     def kubectl(self, *args, namespace=None, stdin=None, timeout=60, check=True, binary=False):
@@ -703,7 +782,13 @@ def pod_facts(item):
                   for entry in status.get("containerStatuses") or []}
     return {"name": metadata.get("name"), "uid": metadata.get("uid"), "node": (item.get("spec") or {}).get("nodeName"),
             "phase": status.get("phase"), "deleting": bool(metadata.get("deletionTimestamp")), "ready": ready,
-            "containers": containers}
+            "ready_since": ready_since(item), "containers": containers}
+
+
+def ready_since(item):
+    """When a Pod document's Ready condition last became True (the cluster's clock), or None while it is not Ready."""
+    return next((condition.get("lastTransitionTime") for condition in (item.get("status") or {}).get("conditions") or []
+                 if condition.get("type") == "Ready" and condition.get("status") == "True"), None)
 
 
 def chaos_effect(document, current, targets, pods_now):
@@ -1065,6 +1150,7 @@ class Lab:
         self.approved = set()
         self.approvals = []  # {"action_id", "at"} of each approval the operator gave, in order.
         self.prior = frozenset()  # Incidents the store held before this run (begin_run).
+        self.read_outages = []  # Each run of transiently failed reads in a wait or read (Lab.wait), in order.
 
     # Reading the cluster --------------------------------------------------------------------------------
 
@@ -1075,10 +1161,16 @@ class Lab:
                 for item in items if "sentinel.io/host" in item["metadata"].get("labels", {})}
 
     def pod(self, deployment):
-        """The one running Pod of a sentinel-dist Deployment: (name, node)."""
+        """The one running Pod of a sentinel-dist Deployment: (name, node).
+
+        TransientRead while it has none (being replaced: every Deployment here
+        is Recreate); AcceptanceError when it has more than one.
+        """
         items = self.shell.json("get", "pods", "--selector=app=" + deployment, namespace=NAMESPACE)["items"]
         running = [item for item in items if item.get("status", {}).get("phase") == "Running"
                    and not item["metadata"].get("deletionTimestamp")]
+        if not running:
+            raise TransientRead(f"{deployment} has no running Pod", "no running Pod")
         if len(running) != 1:
             raise AcceptanceError(f"{deployment} has {len(running)} running Pods")
         return running[0]["metadata"]["name"], running[0]["spec"].get("nodeName")
@@ -1100,21 +1192,40 @@ class Lab:
                                   namespace=NAMESPACE, binary=binary, timeout=timeout)
 
     def query(self, sql, parameters=(), *, strict=False, identity="coordinator"):
-        """Read-only rows from a database in a Pod; [] while its Pod is down, unless strict.
+        """Read-only rows from a database in a Pod. A failed read never reads as no rows.
 
         identity is "coordinator" (the Coordinator's database, the default) or
-        "observer-1" (the Observer's episode store and outbox).
+        "observer-1" (the Observer's episode store and outbox). While its Pod
+        is restarting, not ready or unreachable the read raises TransientRead,
+        which a caller polling in Lab.wait or the operator thread asks again;
+        with strict it is asked again here (Lab.read) and ends in
+        ReadUnavailable. Any other failure, a query error included, raises
+        AcceptanceError at once. Until 14 Nov 2026 a failed read here was []
+        unless strict, whatever the failure, so a Coordinator being replaced
+        and a broken query both read as "no incident yet".
         """
         path = "/data/coordinator.sqlite3" if identity == "coordinator" else "/data/observer.sqlite3"
+        owner = "Coordinator" if identity == "coordinator" else "Observer"
+
+        def attempt():
+            try:
+                result = self.exec_python(self._deployment(identity), self._container(identity), QUERY_HELPER,
+                                          path, sql, json.dumps(list(parameters)))
+            except (TransientRead, subprocess.TimeoutExpired):
+                raise
+            except (AcceptanceError, subprocess.SubprocessError) as error:
+                raise AcceptanceError(f"The {owner}'s database could not be read: {error}") from None
+            try:
+                return json.loads(result.stdout or "[]")
+            except ValueError:
+                raise AcceptanceError(f"The {owner}'s database could not be read: its answer is not JSON rows") \
+                    from None
+        if not strict:
+            return attempt()
         try:
-            result = self.exec_python(self._deployment(identity), self._container(identity), QUERY_HELPER,
-                                      path, sql, json.dumps(list(parameters)))
-        except (AcceptanceError, subprocess.SubprocessError):
-            if strict:
-                owner = "Coordinator" if identity == "coordinator" else "Observer"
-                raise AcceptanceError(f"The {owner}'s database could not be read") from None
-            return []
-        return json.loads(result.stdout or "[]")
+            return self.read(f"the {owner}'s database", attempt)
+        except ReadUnavailable as error:
+            raise ReadUnavailable(f"The {owner}'s database could not be read: {error}") from None
 
     def undelivered(self, *, strict=False):
         """IDs of incidents the Observer has opened and not yet delivered to the Coordinator (its outbox).
@@ -1197,15 +1308,16 @@ class Lab:
             except (AcceptanceError, subprocess.SubprocessError, ValueError, KeyError) as error:
                 reasons = [f"the target could not be read ({type(error).__name__})"]
             healthy_since = None if reasons else (now if healthy_since is None else healthy_since)
-            try:
-                open_incidents = [f"{row['incident_id']}: {row['state']}" for row in self.incidents(strict=True)
+            try:  # One attempt each: this loop is the retry, bounded by timeout; a failed read is never settled.
+                open_incidents = [f"{row['incident_id']}: {row['state']}" for row in self.incidents()
                                   if row["state"] not in invariants.TERMINAL]
                 open_incidents += [f"a seal is still required (epoch {row['epoch']})"
-                                   for row in self.ownership(strict=True) if row["seal_required"]]
+                                   for row in self.ownership() if row["seal_required"]]
                 open_incidents += [f"{incident_id}: not yet delivered by the Observer"
-                                   for incident_id in self.undelivered(strict=True)]
-            except AcceptanceError as error:
-                open_incidents = [str(error)]
+                                   for incident_id in self.undelivered()]
+            except (AcceptanceError, subprocess.TimeoutExpired) as error:
+                open_incidents = [str(error) if isinstance(error, AcceptanceError)
+                                  else "a store could not be read: kubectl did not answer in time"]
             left = list(leftovers()) if leftovers is not None else []
             if healthy_since is not None and now - healthy_since >= quiet and not open_incidents and not left:
                 return {"settled": True, "seconds": round(now - start, 1), "target": [], "open": [], "leftovers": []}
@@ -1215,13 +1327,67 @@ class Lab:
             self.sleep(interval)
 
     def wait(self, check, timeout, what, interval=1.0):
-        deadline = self.monotonic() + timeout
+        """check()'s first truthy value, asked every interval seconds; TimeoutError when timeout passes without one.
+
+        A check that fails transiently (TransientRead: its Pod restarting, not
+        ready or unreachable; or a kubectl that did not answer within its own
+        timeout) is asked again, the pause doubling from interval up to
+        READ_BACKOFF_SECONDS while it keeps failing and never past the
+        deadline, which is the scenario's own for that step. When the deadline
+        comes while the reads are still failing, the wait ends in
+        ReadUnavailable, not TimeoutError: a read that never came back is a
+        harness error, never the system's answer. Any other failure is raised
+        at once. Each run of failed reads is kept in read_outages.
+        """
+        start = self.monotonic()
+        deadline, pause, outage = start + timeout, interval, None
         while self.monotonic() < deadline:
-            value = check()
+            try:
+                value = check()
+            except (TransientRead, subprocess.TimeoutExpired) as error:
+                outage = self._failed_read(outage, what, error)
+                self.sleep(max(0.0, min(pause, deadline - self.monotonic())))
+                pause = min(pause * 2, max(interval, READ_BACKOFF_SECONDS))
+                continue
+            if outage is not None:
+                self._end_outage(outage, recovered=True)
+                outage, pause = None, interval
             if value:
                 return value
             self.sleep(interval)
+        if outage is not None:
+            entry = self._end_outage(outage, recovered=False)
+            raise ReadUnavailable(f"{what}: the reads kept failing for {entry['seconds']:.0f} s, until the "
+                                  f"{timeout:.0f} s limit ({entry['attempts']} attempts, last: {entry['reason']})")
         raise TimeoutError(what)
+
+    def read(self, what, attempt, *, within=None):
+        """attempt()'s value, asked again with bounded back-off while it fails transiently (Lab.wait).
+
+        within is the bound in seconds (READ_RETRY_SECONDS when None): once it
+        passes with the reads still failing, ReadUnavailable names what could
+        not be read. A falsy value is returned, not waited past.
+        """
+        within = READ_RETRY_SECONDS if within is None else within
+        try:
+            (value,) = self.wait(lambda: (attempt(),), within, what, interval=1.0)
+        except TimeoutError:  # Only when within left no time for one attempt.
+            raise ReadUnavailable(f"{what}: no time was left to read it") from None
+        return value
+
+    def _failed_read(self, outage, what, error):
+        now = self.monotonic()
+        if outage is None:
+            outage = {"what": what, "since": stamp(self.clock()), "started": now, "attempts": 0}
+        reason = error.reason if isinstance(error, TransientRead) else "kubectl did not answer in time"
+        outage.update(attempts=outage["attempts"] + 1, reason=reason)
+        return outage
+
+    def _end_outage(self, outage, *, recovered):
+        entry = {key: value for key, value in outage.items() if key != "started"}
+        entry.update(seconds=round(self.monotonic() - outage["started"], 1), recovered=recovered)
+        self.read_outages.append(entry)
+        return entry
 
     def terminal(self):
         """Whether this run has an incident and every one of them is terminal."""
@@ -1258,12 +1424,25 @@ class Lab:
             self.fault(identity, "arm", stem, action)
 
     def first_reached(self, identities, stem, timeout=120):
-        """The identity whose process reached stem first; the others are disarmed at once."""
+        """The identity whose process reached stem first; the others are disarmed at once.
+
+        A Pod that cannot be read for the moment (TransientRead: S5's
+        Coordinator restarts on reaching its point) is asked again on the next
+        poll; when none of them could be read, the poll is a failed read that
+        Lab.wait asks again with back-off and ends in ReadUnavailable at the
+        deadline. Any other failure is raised at once. Until 14 Nov 2026 every
+        failure here read as "not reached yet".
+        """
         def reached():
+            unreadable = []
             for identity in identities:
-                with suppress(AcceptanceError, subprocess.SubprocessError):
+                try:
                     if self.fault(identity, "reached", stem).stdout.strip():
                         return identity
+                except TransientRead as error:
+                    unreadable.append(error)
+            if unreadable and len(unreadable) == len(identities):
+                raise unreadable[-1]
             return None
         winner = self.wait(reached, timeout, stem + " was not reached", interval=0.5)
         for identity in identities:
@@ -1363,7 +1542,7 @@ class Lab:
                     and pod["ready"] and not pod["deleting"]]
             return pods[0] if len(pods) == 1 else None
         pod = self.wait(ready, timeout, f"no Ready replacement Pod of {app} within {timeout} s", interval=2)
-        return {"pod": pod["name"], "uid": pod["uid"], "ready_at": stamp(self.clock())}
+        return {"pod": pod["name"], "uid": pod["uid"], "ready_at": stamp(self.clock()), "ready_since": pod["ready_since"]}
 
     def labelled_chaos(self):
         """Names of chaos objects of any kind this harness labels that are in sentinel-dist now."""
@@ -1517,9 +1696,13 @@ class Lab:
         return clock_offset(before, reading, self.clock())
 
     def copy_database(self, identity, path, destination):
-        """A consistent copy of one SQLite file in a Pod, written to destination; False when it is absent."""
-        result = self.exec_python(self._deployment(identity), self._container(identity), BACKUP_HELPER, path,
-                                  binary=True, timeout=120)
+        """A consistent copy of one SQLite file in a Pod, written to destination; False when it is absent.
+
+        Asked again while the Pod is restarting or not ready (Lab.read); a copy
+        that still fails at READ_RETRY_SECONDS is ReadUnavailable.
+        """
+        result = self.read(f"a copy of {path} from the {identity} Pod", lambda: self.exec_python(
+            self._deployment(identity), self._container(identity), BACKUP_HELPER, path, binary=True, timeout=120))
         if not result.stdout:
             return False
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1528,7 +1711,7 @@ class Lab:
 
     def log_text(self, identity, since):
         """The current Pod's logs since a UTC stamp: a restarted container's last run first, then the current one."""
-        pod, _ = self.pod(self._deployment(identity))
+        pod, _ = self.read(f"the {identity} Pod", lambda: self.pod(self._deployment(identity)))
         text = ""
         for previous in (True, False):
             result = self.shell.kubectl("logs", pod, "--container=" + self._container(identity),
