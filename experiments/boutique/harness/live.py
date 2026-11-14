@@ -1132,4 +1132,7 @@ def pair_main(parser, args):
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # connected, chaos_recovery and multi_fault import this module by name; run with -m, only that module runs,
+    # so BoutiqueExperiment and everything else are one class each (as scripts/test_boutique_live.py does).
+    from experiments.boutique.harness import live as _canonical
+    raise SystemExit(_canonical.main())

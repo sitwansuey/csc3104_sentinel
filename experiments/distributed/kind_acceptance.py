@@ -106,7 +106,10 @@ before Chaos Mesh acted on it. Both are fixed here and not yet re-run
 b37017e (14 Nov 2026) passed S2, S3 and S4 5/5 and stopped in S5 r1 when a
 kubectl exec into the Coordinator failed while its Pod was replaced; reads
 now ride out such an outage within their step's limit (Lab.wait, Lab.read,
-transient_failure), also not yet re-run.
+transient_failure), also not yet re-run. The next S5 r1 (14 Nov 2026,
+07:29:46Z) was refused at its first poll after the Coordinator exited:
+run with -m this file was two modules, whose classes did not match. Only the
+imported module runs now (the __main__ block); not yet re-run either.
 """
 import argparse
 from contextlib import suppress
@@ -1911,4 +1914,9 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Run with -m, this file is __main__, and kind_acceptance_live imports it again by name: a second module with
+    # its own Shell, TransientRead and AcceptanceError, which the Lab and run_one of the imported one do not catch
+    # (14 Nov 2026, S5 r1: "Refused: kubectl exec failed (exit 1): container not running"). Only the imported
+    # module runs, so no class defined in __main__ is ever used.
+    from experiments.distributed import kind_acceptance as _canonical
+    raise SystemExit(_canonical.main())
