@@ -133,7 +133,10 @@ def vap_params(*, scans, rules, exceptions, inventory, baselines=None, extra_ima
             report["baselines"].append({"name": name, "container": container, "image": images[container],
                                         "verdict": outcome if image is not None else "UNKNOWN"})
     for image in extra_images:
-        approved.add(pinned_reference(image))
+        # Canonical first (docker.io/..., library/...), so the short spellings below are added for it too:
+        # a Pod spec that writes the full name of a reviewed helper must match as well.
+        pinned = pinned_reference(image)  # A tag, or anything but repository@sha256, is refused here.
+        approved.add(pinned_reference(canonical_image(pinned) or pinned))
         report["extra_images"].append(image)
     # Admission compares the exact string, and a Pod spec may use a short Docker Hub name for the same digest.
     for image in list(approved):

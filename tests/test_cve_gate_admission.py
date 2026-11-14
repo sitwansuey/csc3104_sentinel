@@ -233,6 +233,10 @@ class VapParamsTests(Workspace):
             self.assertNotIn(":", line.split("@")[0].rsplit("/", 1)[-1], "a tag before the digest")
         self.assertIn(CART, lines)
         self.assertIn(REDIS, lines)  # the short spelling a Pod spec may use
+        # A helper given by its short name is approved under its full name too (live, 14 Nov 2026: the connected
+        # harness's probe Pod names docker.io/fullstorydev/grpcurl@sha256:... and Deny refused it).
+        self.assertIn("docker.io/fullstorydev/grpcurl@sha256:" + "f" * 64, lines)
+        self.assertIn("fullstorydev/grpcurl@sha256:" + "f" * 64, lines)
         self.assertEqual(report["verdict"], "PASS")
         self.assertEqual((configmap["metadata"]["name"], configmap["metadata"]["namespace"]),
                          (gate_images.CONFIGMAP_NAME, gate_images.CONFIGMAP_NAMESPACE))
