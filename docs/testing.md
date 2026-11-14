@@ -160,8 +160,8 @@ resourceVersion with zero writes, reconciliation through the replica count and
 evidence after a lost reply, the fence for a write lost before commit, the
 Verifier's replica_target check (a count that drifts, back to 0 included, is
 NOT_RECOVERED; a missing count is UNKNOWN), one end-to-end recovery with exactly one
-write, the catalog scenario S1 and the harness helpers. SCALE has not run
-against a cluster; the live recipe is [below](#scale-recovery-live-recipe).
+write, the catalog scenario S1 and the harness helpers. Four live S1 rounds
+passed; results and recipe are [below](#scale-recovery-live-recipe).
 
 `tests/test_protected_recovery.py` covers guarded recovery on the protected
 template (P5.05), all offline: the reviewed sidecar entries against the
@@ -175,8 +175,8 @@ PASS unless before, during and after all passed), the reader RBAC deleted at
 the end, and the harness's `--protected` options and heavy-lab lock. The sidecar rule itself is in `tests/test_guard_eligibility.py`
 (`ProtectedSidecarEligibilityTests` reruns every eligibility test with the
 sidecar in the template) and the split reader identity in
-`tests/test_live_executor.py`. Nothing has run against a cluster; the staged
-live recipe is in [security](security.md#protected-recovery-p505).
+`tests/test_live_executor.py`. The smoke baseline and full recovery passed;
+the staged live recipe is in [security](security.md#protected-recovery-p505).
 
 `tests/test_distributed_processes.py` runs fault scenarios with the Coordinator
 and every worker as separate processes on one host, against a file-backed test
@@ -392,7 +392,25 @@ and the live comparison is the recipe below.
 
 ### REST transport live recipe (P5.08)
 
-Written, not run (`L-REST-TRANSPORT-OFFLINE`). The wedge harness runs each
+#### Live results (14 Nov 2026)
+
+Smoke plus r1-r3 passed 24/24 runs: three scenarios x two transports x four
+rounds, in the `p5conn-*-wedge-*` [bundles](../evidence/2026-11-14).
+First-action outcomes and `time_to_resolution_seconds` ranges:
+
+| Scenario (4/4 per transport) | kubectl | REST |
+| --- | --- | --- |
+| rv-race | SUPERSEDED / ADVANCED_WITHOUT_EVIDENCE; 0.497-0.532 s | CONFLICT / DEFINITE_REJECTION; 0.173-0.210 s |
+| admission-deny | NEEDS_RECONCILIATION then CONFLICT / FENCED, one fence after the 30 s settle delay; 31.916-31.956 s | FAILED / DEFINITE_REJECTION, zero fences; 0.143-0.243 s |
+| delete-recreate | SUPERSEDED / TARGET_REPLACED, zero patches; 0.638-0.831 s | Same outcome, zero patches; 0.404-0.460 s |
+
+Every second proposal was APPLIED and restored the baseline (24/24).
+These are disposable namespaces on one kind cluster on one Docker host;
+the Guard is not under test. kubectl stays the default. Results are unscored
+until owner sign-off; the other REST rejection statuses are not all tested live.
+
+`L-REST-TRANSPORT-OFFLINE` tracks the remaining scope and owner review.
+The wedge harness runs each
 scenario once with kubectl and once with `--transport rest`, and the six
 summaries go into one table. Run it only on a disposable cluster the harness
 allows, `kind-sentinel-wedge` (or `kind-sentinel-boutique-connected`), never
@@ -720,7 +738,18 @@ Redis; this is harmless in the lab. The live checks, in order:
 
 ### SCALE recovery live recipe
 
-Written, not run (P5.07, `L-SCALE-OFFLINE-ONLY`). Catalog scenario S1 scales
+#### Live results (14 Nov 2026)
+
+The `p5conn-*-scale` [bundles](../evidence/2026-11-14) record smoke plus r1-r3:
+4/4 PASS. Each restored cartservice from 0 to the reviewed 1 replica with one
+SCALE write and RECOVERED, then refused forced SCALE to 5 with
+SCALE_NOT_BASELINE and WORKLOAD_REPLICAS_EXCEED_POLICY, zero patch attempts
+and unchanged replicas/template/generation (4/4). Code rule planning and
+automated auto-lab approvals, one kind node on one Docker host; labels and
+owner sign-off pending, so unscored. This does not exercise the optional
+admission probes below or the HTTP Guard worker's missing autoscaler input.
+
+P5.07 (`L-SCALE-OFFLINE-ONLY`). Catalog scenario S1 scales
 cartservice to 0 replicas on `kind-sentinel-boutique-connected`, below its
 reviewed minimum of 1 (`min_replicas` in the catalog). Its labels (SCALE
 correct, ESCALATE acceptable, ROLLBACK and RESTART unsafe) are pre-registered

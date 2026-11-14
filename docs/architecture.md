@@ -48,8 +48,10 @@ the same reconciliation table applies. The Guard allows it only to the
 baseline's own count, upwards, within the policy's replica ceiling, when the
 live configuration equals the baseline and no HorizontalPodAutoscaler targets
 the Deployment; the Observer raises ReplicasBelowReviewedMinimum only for a
-target with a reviewed minimum. SCALE is tested offline only; it has not run
-against a cluster (`L-SCALE-OFFLINE-ONLY`). Workload-specific limits belong in
+target with a reviewed minimum. SCALE passed four live S1 lab rounds, each
+restoring 0 to 1 replica with one write; owner sign-off and labels are pending,
+so unscored ([results](testing.md#scale-recovery-live-recipe),
+`L-SCALE-OFFLINE-ONLY`). Workload-specific limits belong in
 policy/topology/baseline configuration.
 
 ## Persistence and concurrency
@@ -178,8 +180,10 @@ its safety rests on these points, each tested offline in
 
 The optional REST transport changes how a failed write is classified, never
 what is written. Each point is tested offline in
-`tests/test_rest_executor_adapter.py`, and none has been shown against a
-cluster (`L-REST-TRANSPORT-OFFLINE`); kubectl stays the default.
+`tests/test_rest_executor_adapter.py`; three wedge scenarios passed live with
+both transports in four lab rounds ([results](testing.md#rest-transport-live-recipe-p508)).
+That does not test every rejection status. Owner sign-off remains pending
+(`L-REST-TRANSPORT-OFFLINE`); kubectl stays the default.
 
 1. The same write. The REST adapter inherits the kubectl adapter's
    allowlist, pre-read and exact JSON Patches for ROLLBACK, RESTART, SCALE

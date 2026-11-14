@@ -669,7 +669,9 @@ would move judgement into the sampling loop
   reconciliation reports APPLIED only while the Deployment still has that
   count and the template the proposal named; a later change to either is
   SUPERSEDED (`services/executor/reconciliation.py::_write_still_in_place`).
-  This is tested offline only; no SCALE has reached an API server. The
+  Four live S1 lab rounds restored 0 to 1 replica with one write each
+  ([results](testing.md#scale-recovery-live-recipe)); unscored, owner sign-off
+  pending. Lost-reply SCALE reconciliation remains offline-tested. The
   in-flight-write model checker
   (`tests/test_executor_reconcile_model.py::ModelCheckerTests`) still drives
   ROLLBACK only, so SCALE's at-most-once write rests on the unit tests in
@@ -697,7 +699,7 @@ would move judgement into the sampling loop
   resourceVersions never return to an earlier value, so an etcd restore must
   use `--bump-revision`.
 - Definite rejections, with the optional REST transport (P5.08; kubectl
-  stays the default; offline only, `L-REST-TRANSPORT-OFFLINE`). The REST
+  stays the default; 24 live wedge runs, `L-REST-TRANSPORT-OFFLINE`). The REST
   client sends the same patch as the kubectl adapter, which it inherits
   (`services/executor/rest_adapter.py::KubernetesRESTDeploymentAPI`), in one
   HTTPS request on a new connection, and never resends it. It raises
@@ -1233,7 +1235,8 @@ the owners' review, with the argument and tests above.
 | P4.01 | S0-S9 ran on four kind nodes on one Docker host: 71/80 completed runs passed as recorded, all 80 passed invariants; failures and fixes are [above](#four-node-kind-acceptance-p401). Unscored; owners' review for #59, #61 and #63 remains |
 | P4.02 | Measured on the four-node kind lab, one Docker host: restart S5 x5 and partition 120 s x3 plus smoke passed; restore detection and the restore-check listing held in 6/6 attempts (RPO 61-122 lost commits); automatic staged acceptance to a fresh RECOVERED incident completed in 2/6, each failure a harness staging gap (three fixed: e9707ae, 7244e41, 8bad459; one documented). Unscored; owner sign-off pending ([measurements](#measured-on-the-four-node-kind-lab-p402)) |
 | P5.01 | Stage 8.1 in part, offline only: the Database port with SQLite unchanged and a Postgres dialect ([above](#the-coordinators-database-port-p501-stage-81-offline-only)). Left: the owners' go/no-go on a Postgres driver and CloudNativePG, the Postgres adapter and both backends in CI, then 8.2 to 8.4, a replicated Coordinator on a replicated database |
-| P5.08 | Done offline only: the optional REST transport decides a definite rejection at once ([above](#fencing-limits)); kubectl stays the default. Left: the rv-race and admission-deny live runs with `--transport rest` next to kubectl ([recipe](testing.md#rest-transport-live-recipe-p508)), and the owner's sign-off |
+| P5.07 | S1 SCALE recovery passed 4/4 connected-lab rounds (0 to 1 replica, one write, RECOVERED); forced SCALE to 5 refused 4/4 with zero writes ([results](testing.md#scale-recovery-live-recipe)). One Docker host, automated auto-lab approval, unscored; labels and owner sign-off pending |
+| P5.08 | Wedge comparison passed 24/24 (three scenarios x kubectl/REST x four rounds): REST admission denial resolved in 0.143-0.243 s without a fence, kubectl in 31.916-31.956 s with a fence ([results](testing.md#rest-transport-live-recipe-p508)). One Docker host, unscored; kubectl stays default and owner sign-off pending |
 
 P1.10 (the decision table, peer adoption and SUPERSEDED) and P1.07 (structured
 logs) are in the code described above. Neither has been exercised in a live
