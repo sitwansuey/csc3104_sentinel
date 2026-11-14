@@ -1,16 +1,16 @@
 {
   "schema": "sentinel-cert-manager-pins-v1",
-  "comment": "P5.06: cert-manager for the security lab only, pinned by chart version, chart SHA-256 and image digests. TODO-PIN values are unresolved; scripts/security/cert_lifecycle.py pins prints the commands that resolve them, and the lab refuses to start until none is left.",
+  "comment": "P5.06: cert-manager for the security lab only, pinned by chart version, chart SHA-256 and image digests. Resolved on 14 Nov 2026 with the commands scripts/security/cert_lifecycle.py pins prints: the chart SHA-256 matches the digest in https://charts.jetstack.io/index.yaml, and each image digest is the multi-platform index quay.io serves for the v1.18.2 tag. Lab-resolved; owner review of these pins is pending.",
   "version": "v1.18.2",
   "chart": {
     "url": "https://charts.jetstack.io/charts/cert-manager-v1.18.2.tgz",
-    "sha256": "TODO-PIN"
+    "sha256": "daddf7af7b1f0eaaa10edd790aefa0bd8c2b07830febf659460d843217f5b3c5"
   },
   "images": {
-    "controller": {"repository": "quay.io/jetstack/cert-manager-controller", "digest": "TODO-PIN"},
-    "webhook": {"repository": "quay.io/jetstack/cert-manager-webhook", "digest": "TODO-PIN"},
-    "cainjector": {"repository": "quay.io/jetstack/cert-manager-cainjector", "digest": "TODO-PIN"},
-    "startupapicheck": {"repository": "quay.io/jetstack/cert-manager-startupapicheck", "digest": "TODO-PIN"},
-    "acmesolver": {"repository": "quay.io/jetstack/cert-manager-acmesolver", "digest": "TODO-PIN"}
+    "controller": {"repository": "quay.io/jetstack/cert-manager-controller", "digest": "sha256:81316365dc0b713eddddfbf9b8907b2939676e6c0e12beec0f9625f202a36d16"},
+    "webhook": {"repository": "quay.io/jetstack/cert-manager-webhook", "digest": "sha256:9431f0d8b5103b06cc6138564f471ac02c6b2638c2fa399d81e28a01d817ae73"},
+    "cainjector": {"repository": "quay.io/jetstack/cert-manager-cainjector", "digest": "sha256:af59e01ad9756a1034fbf948330e75702e5d79b3577f323f6a9947707ba262fc"},
+    "startupapicheck": {"repository": "quay.io/jetstack/cert-manager-startupapicheck", "digest": "sha256:1075e097415167caa584b203292dfb57e46866df0adb76fe769ef5cb0297ccc4"},
+    "acmesolver": {"repository": "quay.io/jetstack/cert-manager-acmesolver", "digest": "sha256:1c81a771e3e3a210466aa25f5fc05ce5c286e0eb90d96563cc0275aaa50788c2"}
   }
 }

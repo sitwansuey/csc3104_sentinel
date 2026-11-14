@@ -442,7 +442,7 @@ class PreflightTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.folder = Path(temporary.name)
         self.lock = lab_lock.HeavyLabLock(self.folder / "lock", holder="test")
-        # Resolved cert-manager pins; the committed pins.json still carries TODO-PIN (tested below).
+        # Resolved cert-manager pins, independent of the committed pins.json; unresolved ones are tested below.
         resolved = self.folder / "pins.json"
         resolved.write_text(json.dumps(resolved_pins()), encoding="utf-8")
         patch.object(protected.cert_lifecycle, "PINS", resolved).start()
@@ -452,7 +452,11 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(preflight(security_run(self.folder), stage="baseline", lock=self.lock), [])
 
     def test_unresolved_cert_manager_pins_or_a_lab_without_cert_manager_refuse(self):
-        patch.stopall()
+        pins = json.loads((self.folder / "pins.json").read_text(encoding="utf-8"))
+        pins["chart"]["sha256"] = "TODO-PIN"
+        unresolved = self.folder / "unresolved-pins.json"
+        unresolved.write_text(json.dumps(pins), encoding="utf-8")
+        patch.object(protected.cert_lifecycle, "PINS", unresolved).start()
         problems = preflight(security_run(self.folder), stage="baseline", lock=self.lock)
         self.assertTrue(any("pins.json still has an unresolved TODO-PIN" in problem for problem in problems), problems)
         folder = self.folder / "old"

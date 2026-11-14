@@ -1193,9 +1193,10 @@ def resolved_pins():
 class SecurityLabPrepareTests(unittest.TestCase):
     def test_unresolved_cert_manager_pins_refuse_before_any_cluster_command(self):
         from scripts.security import cert_lifecycle
+        pins = cert_lifecycle.load_pins()
+        pins["chart"]["sha256"] = "TODO-PIN"  # An unresolved pin, whatever the committed pins.json holds.
         with tempfile.TemporaryDirectory() as folder:
-            directory, commands, applied, error = self.prepare(dry_run_resources(), folder,
-                                                               pins=cert_lifecycle.load_pins())
+            directory, commands, applied, error = self.prepare(dry_run_resources(), folder, pins=pins)
             self.assertFalse(directory.exists())
         self.assertRegex(str(error), "cert-manager pins are unresolved")
         self.assertEqual((commands, applied, self.issued), ([], [], []))

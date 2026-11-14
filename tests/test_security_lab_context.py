@@ -216,6 +216,15 @@ class SdsConfigurationTests(unittest.TestCase):
             sds_resource("unknown")
 
 
+def unresolved(pins):
+    """pins with every value back to TODO-PIN, as before they were resolved."""
+    pins = deepcopy(pins)
+    pins["chart"]["sha256"] = "TODO-PIN"
+    for image in pins["images"].values():
+        image["digest"] = "TODO-PIN"
+    return pins
+
+
 def resolved(pins):
     pins = deepcopy(pins)
     pins["chart"]["sha256"] = "c" * 64
@@ -310,7 +319,8 @@ class CertLifecycleTests(unittest.TestCase):
         command = FakeOpenSSL()
         with tempfile.TemporaryDirectory() as folder:
             with self.assertRaisesRegex(ValueError, "pins are unresolved"):
-                cert_lifecycle.install(Path(folder), "node-1", command, fetch=lambda url: self.fail("fetched"))
+                cert_lifecycle.install(Path(folder), "node-1", command, pins=unresolved(cert_lifecycle.load_pins()),
+                                       fetch=lambda url: self.fail("fetched"))
             pins = resolved(cert_lifecycle.load_pins())
             with self.assertRaisesRegex(ValueError, "checksum changed"):
                 cert_lifecycle.install(Path(folder), "node-1", command, pins=pins, fetch=lambda url: b"chart")
@@ -432,7 +442,8 @@ class CertLifecycleTests(unittest.TestCase):
     def test_the_recipe_and_pin_check_run_no_cluster_command(self):
         out = io.StringIO()
         with patch("subprocess.run", side_effect=AssertionError("cluster command attempted")), \
-                patch("sys.stdout", out):
+                patch("sys.stdout", out), \
+                patch.object(cert_lifecycle, "load_pins", return_value=unresolved(cert_lifecycle.load_pins())):
             self.assertEqual(cert_lifecycle.main(["pins", "--check"]), 1)
             self.assertEqual(cert_lifecycle.main(["pins"]), 0)
             self.assertEqual(cert_lifecycle.main(["plan", "--directory", "lab"]), 0)
