@@ -900,7 +900,7 @@ class FakeLab:
         self.rows, self.fail_collect, self.fail_wait, self.steps = rows, fail_collect, fail_wait, []
         self.ticks = iter(range(0, 100000, 5))
         self.generations, self.first_at, self.offset = iter(generations), first_at, offset
-        self.window, self.approvals, self.read_outages = None, [], []
+        self.window, self.approvals, self.read_outages, self.approval_attempts = None, [], [], []
 
     def begin_run(self, baseline, policy=None):
         self.steps.append("begin")

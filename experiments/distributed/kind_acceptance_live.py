@@ -694,21 +694,53 @@ def s5(run):
     run.notes["pod_delete"]["readable_at"] = stamp(lab.clock())  # The harness's clock.
 
 
+def _posted(run, operation, action_id, start, call):
+    """call(), with every POST and reconciliation of operation on action_id it made kept in run.notes, also on failure."""
+    try:
+        return call()
+    finally:
+        run.notes["approval_attempts"] = [entry for entry in run.lab.approval_attempts[start:]
+                                          if entry["operation"] == operation and entry["action_id"] == action_id]
+
+
 def s6(run):
+    """Approve during a partition of the Coordinator from every worker; no template write may happen while it lasts.
+
+    The approval goes over the port-forward, which the partition can cut
+    (S6 r1 at 0b5529f, 14 Nov 2026: an SSL EOF before the request reached
+    the Coordinator). A POST cut in transit is reconciled from the store and
+    sent again only when not recorded (Lab._send); every attempt is in
+    notes.approval_attempts. The three-lease watch starts once the approval
+    is known to be recorded and must fit in what is left of the partition,
+    counted from its creation (Run.window_left): approval attempts eat into
+    it, and a watch they cut short is reported, never passed.
+    notes.during_partition holds the writes counted from the fault time,
+    the seconds watched and how long after the partition's creation (as
+    Run.window_left counts) the approval was known recorded: its
+    confirmation, then every approval attempt and reconciliation.
+    """
     row = run.lab.wait_state({"AWAITING_APPROVAL"}, 180)
     workers = [_app(identity) for identity in IDENTITIES]
     since = run.mark()
-    # Long enough that three leases still fit after a confirmation that takes all of CHAOS_CONFIRM_SECONDS.
+    # Long enough that three leases still fit after a confirmation that takes all of CHAOS_CONFIRM_SECONDS, when
+    # the approval is quick. Approval sends cut in transit and their reconciliations (Lab._send, up to
+    # APPROVAL_SEND_ATTEMPTS sends within APPROVAL_RESEND_SECONDS, each reconciled within
+    # APPROVAL_RECONCILE_SECONDS) can take more than the 60 s spare: the watch is then cut short and S6 fails.
     cut = run.create(partition(run.name("all"), "sentinel-coordinator", workers,
                                3 * LEASE_SECONDS + 60 + CHAOS_CONFIRM_SECONDS))
-    # The operator reaches it over the port-forward. Only the proposal's read (kubectl exec) is asked again when it
-    # fails transiently: that is before anything is posted, and a failed POST is never sent twice.
-    run.lab.read("the proposal to approve", lambda: run.lab.approve(row["active_action_id"], run.policy_version))
+    # Only the proposal's read (kubectl exec) is asked again when it fails transiently, before anything is posted;
+    # a POST that fails in transit is reconciled, never sent again blind: it is kept in Lab.in_doubt until settled,
+    # so even if Lab.read ran approve again, approve reads the store for it first (Lab._earlier).
+    action_id = row["active_action_id"]
+    _posted(run, "create", action_id, len(run.lab.approval_attempts),
+            lambda: run.lab.read("the proposal to approve", lambda: run.lab.approve(action_id, run.policy_version)))
+    approved_after = round(run.lab.monotonic() - run.started[cut["metadata"]["name"]], 1)
     seconds = min(3 * LEASE_SECONDS, run.window_left(cut))
     run.lab.sleep(seconds)
     rows, _ = run.audit_rows(since)
     during = sum(1 for item in rows if item["effect"] == "template_write" and item["sentinel"])
-    run.notes["during_partition"] = {"template_writes": during, "seconds": seconds}
+    run.notes["during_partition"] = {"template_writes": during, "seconds": seconds,
+                                     "approval_recorded_after_cut_seconds": approved_after}
     findings = []
     if during:
         findings.append("A template write happened while the Coordinator was partitioned from every worker")
@@ -743,8 +775,11 @@ def s8(run):
     # target_ownership outlives the run, so an earlier S8's seal is already there: wait for a newer one.
     before = max((item["sealed_epoch"] for item in run.lab.ownership(strict=True)), default=0)
     run.mark()
-    # As in S6, only the reads before the POST are asked again; a failed revocation is not sent twice.
-    run.lab.read("the approval to revoke", lambda: run.lab.revoke(row["active_action_id"]))
+    # As in S6, only the reads before the POST are asked again; a revocation cut in transit is reconciled from the
+    # store and sent again only when not recorded (Lab._send), with every attempt in notes.approval_attempts.
+    action_id = row["active_action_id"]
+    _posted(run, "revoke", action_id, len(run.lab.approval_attempts),
+            lambda: run.lab.read("the approval to revoke", lambda: run.lab.revoke(action_id)))
     sealed = run.lab.wait(lambda: newer_seal(run.lab.ownership(), before), 120,
                           "the other Executor did not seal the target", interval=2)
     run.notes["seal"] = {"epoch": sealed["epoch"], "sealed_epoch": sealed["sealed_epoch"],
@@ -874,9 +909,17 @@ def _operator(lab, policy_version, stopping, record=None):
     (ProtocolError) is recorded; the action stays unapproved and is asked
     again. Anything else is fatal too. run_one fails the run with every fatal
     entry as a harness error, so a run never passes on an operator that could
-    not do its job. Until 14 Nov 2026 the thread dropped AcceptanceError,
-    OSError, ValueError and SubprocessError silently and ended on anything
-    else.
+    not do its job. An approval POST that fails in transit is in doubt and
+    handled inside Lab.approve (Lab._send): reconciled from the store, sent
+    again only when not recorded, never approved twice; one still in doubt
+    past its bound is ApprovalInDoubt, fatal here, and the next tick reads
+    the store for it before anything is sent. Every POST and reconciliation
+    is in Lab.approval_attempts, which run_one puts in the summary. Until
+    14 Nov 2026 (S6 r1 at 0b5529f) a POST that failed in transit was a
+    transient failure here, and the next tick sent a new approval without
+    reading whether the first had landed. Until 14 Nov 2026 the thread
+    dropped AcceptanceError, OSError, ValueError and SubprocessError
+    silently and ended on anything else.
     """
     record = operator_record() if record is None else record
     outage = None  # The current run of transient failures: when it started, its last reason, whether it was fatal.
@@ -1023,7 +1066,9 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
     with no summary, when the records cannot be copied. The operator
     thread's failed attempts and outages are in the summary's operator, and
     a fatal one fails the run; the outages the main thread waited out are in
-    read_outages. A restore or settle that raises (Lab.restore refuses or
+    read_outages, and every approval or revocation POST, with the
+    reconciliation of each one cut in transit, in approval_attempts.
+    A restore or settle that raises (Lab.restore refuses or
     runs out of attempts) is the summary's restore_error and part of its
     harness_error: the run fails, its evidence is still written, and run
     stops the matrix, as the target may still be faulted; Lab.restore's
@@ -1044,6 +1089,7 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
     run.api_endpoint = deployed.get("api_server", {}).get("endpoint")
     prior = lab.begin_run(baseline, policy)  # Before the injection: nothing of this run is in the store yet.
     approvals_before, outages_before = len(lab.approvals), len(lab.read_outages)
+    attempts_before = len(lab.approval_attempts)
     operator_actions, error = [], None
     stopping = threading.Event()
     approver, operated = None, operator_record()
@@ -1157,7 +1203,8 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
                                                      "after": generations[1]}},
                "clock": {"control_plane_minus_harness": offsets, "fault_at_cluster_clock": fault_at},
                "takeover_seconds": takeover, "coordinator_recovery": recovery, "operator_actions": operator_actions,
-               "operator": operator, "read_outages": lab.read_outages[outages_before:], "cleanup": cleaned,
+               "operator": operator, "read_outages": lab.read_outages[outages_before:],
+               "approval_attempts": lab.approval_attempts[attempts_before:], "cleanup": cleaned,
                "synthetic_planner": True, "git_revision": git_revision(), "limits": LIMITS}
     folder = out / started_at.date().isoformat() / f"{scenario.name}-r{index}-{started_at:%H%M%S}z"
     forbidden = forbidden_strings(tokens)

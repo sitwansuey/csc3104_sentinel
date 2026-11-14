@@ -387,7 +387,8 @@ enforces the network policy (S9's TCP probes) while still letting the kubelet
 probe the Coordinator's `/readyz` over its Pod address, that Chaos Mesh's pod-failure
 pause image can be pulled into the cluster, that TimeChaos shifts the clock
 Python reads in the worker image, that `kubectl port-forward` to the
-Coordinator still works during the S6 partition, that the audit log
+Coordinator still works during the S6 partition (it did not always: see
+[S6 r1](#s6-r1-0b5529f-an-approval-post-cut-in-transit)), that the audit log
 carries the Pod name of each ServiceAccount request, and that `date
 +%s.%N` and `find` run in the control-plane container.
 
@@ -1035,7 +1036,11 @@ What changed (offline, `experiments/distributed/kind_acceptance.py` and
   and a failed read is ridden out like any other. Only the reads before
   S6's approval and S8's revocation are asked again, never the POST
   itself, so neither is sent twice (the operator thread, as before, may
-  approve again after a failed POST). S8's
+  approve again after a failed POST). (Later: S6 r1 at 0b5529f showed
+  the partition can cut the port-forward, and a POST that fails in transit
+  is now reconciled from the store before it is ever sent again, in S6, S8
+  and the operator thread alike; see
+  [S6 r1](#s6-r1-0b5529f-an-approval-post-cut-in-transit).) S8's
   delay applies to the holder's traffic to the API server, not to the
   harness's; its seal wait reads through `Lab.wait`. S9 runs each probe
   again when kubectl could not start it (the Pod restarting), and
@@ -1061,7 +1066,9 @@ N failed reads (each transient class) and then approves once, a transient
 outage past the bound is fatal once while the thread keeps going, a query
 error or an unexpected error is fatal and a refusal is not; an approval
 or revocation POST that times out in S6 or S8 is a `TimeoutError`, sent
-once, not an unread proposal; a real thread
+once, not an unread proposal (since [S6 r1](#s6-r1-0b5529f-an-approval-post-cut-in-transit):
+in doubt, reconciled and sent again within its bound, then
+`ApprovalInDoubt`, still not an unread proposal); a real thread
 stays alive through failures; `run_one` puts the operator's record in the
 summary, fails the run on a fatal one and records a terminal wait that
 ended in `ReadUnavailable`; and S5 against a scripted Coordinator that
@@ -1130,6 +1137,167 @@ at bc4dc70 it is a traceback and exit 1. A sweep over every module with a
 by name to run its imported module, with `agent/datasets/evaluate.py`
 listed as safe and why; at bc4dc70 it fails for `kind_acceptance` and the
 Boutique harness. Not yet re-run live.
+
+### S6 r1 (0b5529f): an approval POST cut in transit
+
+On 14 Nov 2026 deploy 13, at 0b5529f, ran S6 three times on
+`kind-sentinel-dist` (run directory `sentinel-dist-20261114T161109`). S6 r2
+and r3 passed. S6 r1 failed. Its NetworkChaos `s6-r1-all`, which cuts the
+Coordinator off from every worker, was created at 08:21:42.9Z and
+confirmed `Injected`. S6 then sent its own approval through the
+port-forward to the Coordinator's approval port, and the POST failed with
+`SSLEOFError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation
+of protocol`. The Coordinator's `approval_http` access log has no `create`
+between 08:21:40.6 and 08:21:48.6, so the request never reached it. S6
+raised. The run's cleanup removed the partition at 08:21:44.9, 2 s into a
+partition meant to last three leases. The operator thread, started once S6
+returned, approved the action at 08:21:48.6, and the incident ended
+RECOVERED. The run failed, as it should: its `harness_error` was the
+`SSLEOFError`, and its expectation failed with "template writes during the
+partition not recorded as 0", because S6 never got as far as watching the
+partition.
+
+What this shows. The [b37017e changes](#s2-s9-matrix-b37017e-reads-while-the-coordinator-pod-was-replaced)
+assumed, without checking, that the S6 partition cuts neither the
+harness's kubectl exec nor its port-forward. The port-forward assumption
+is wrong at least some of the time: in r1 the partition cut the approval
+POST, while in r2 and r3 the POST got through. Why it cut that one
+connection, and only in r1, is not known. The exec reads were not seen to
+fail. Nothing
+unsafe happened: no write was made during the partition, and the run did
+not pass.
+
+What changed (offline, `experiments/distributed/kind_acceptance.py` and
+`kind_acceptance_live.py`):
+
+- **A POST that fails in transit is in doubt** (`Lab._send`). For an
+  approval or a revocation, an SSL EOF, a connection reset, refused or
+  aborted, a socket timeout or a vanished port-forward (`IN_TRANSIT`:
+  `OSError` and `http.client.HTTPException`) means the harness does not
+  know whether the request reached the Coordinator. So does a reply cut
+  after its headers: `ApprovalClient.post` reads a short body without an
+  error (and a ragged TLS EOF is suppressed), then raises its own
+  `ProtocolError` 502 because the body is not JSON. The approval API never
+  answers 502 (it answers 400, 401, 403, 404, 408, 409, 413 and 503, each
+  with a JSON body), so a 502 (`CLIENT_MADE_STATUS`) is in doubt too, with
+  error class `ProtocolError502`. The POST is kept in `Lab.in_doubt` from
+  the moment it fails until the store shows it recorded or a send of it
+  is answered. Before anything else is sent, the harness reads the Coordinator's store
+  through kubectl exec (read-only, asked again with back-off for up to
+  `APPROVAL_RECONCILE_SECONDS`, 30 s). For an approval it looks for the
+  managed approval in `approvals` and `managed_approvals` matching
+  everything the request set (operator, proposal digest, policy version and
+  the expiry the harness chose); for a revocation, the record in
+  `approval_revocations` for that approval, with the operator and the
+  reason. If the record is there, the POST is done and recorded as
+  reconciled. If it is not there, the same body is sent again, an exact
+  retry the Coordinator answers idempotently, over a new port-forward (the
+  old one is stopped first, whether or not it is still running). Each
+  failure is reconciled again before the next send. The harness sends at
+  most `APPROVAL_SEND_ATTEMPTS` (3) times, and sends nothing more once
+  `APPROVAL_RESEND_SECONDS` (60 s) have passed since the first send. Past
+  that, or when the store cannot be read to tell (whatever the failure:
+  a read that kept failing, kubectl that could not be started, a record
+  that does not parse), the result is `ApprovalInDoubt`, a harness error
+  that fails the run and is never asked again by `Lab.read`; the POST stays
+  in `Lab.in_doubt`. An HTTP error answer (a 4xx or 5xx other than the
+  client's own 502, `ProtocolError`) is the approval API's own answer, not
+  in doubt: it is raised as it is and never sent again. A resend whose
+  port-forward or client cannot be set up is recorded as `not_sent` and
+  raised as it is; the earlier POST stays in doubt.
+- **No double approval.** The Coordinator accepts an approval only while
+  the action waits for one, or as an exact retry of the one it holds, and
+  records it in the same transaction that moves the action on
+  (`services/coordinator/core.py`, `approve`). A send that lands after its
+  reconciliation read it as not recorded therefore turns any later
+  approval into a 409, never a second record. A POST still in doubt is
+  kept in `Lab.in_doubt`; the next `approve` or `revoke` for that action
+  reads the store for it first. If the store shows it not recorded, that
+  same body is sent again over a new port-forward, so a late landing of it
+  reads as the idempotent answer to an exact retry rather than a 409. An
+  approval is sent again unchanged only while `APPROVAL_REUSE_SECONDS`
+  (120 s) of its 240 s lifetime are left; after that a new one is sent.
+- **The operator thread** (`approve_pending`) goes through the same path.
+  Before, a POST that failed in transit counted there as a transient
+  failure, and the next tick sent a new approval without reading whether
+  the first had landed. Now the POST is reconciled inside `Lab.approve`.
+  One still in doubt past the bound is fatal for the run, and the next tick
+  reads the store before it sends anything.
+- **Every attempt is recorded.** Each POST and each reconciliation (send
+  time, outcome `answered`, `refused`, `not_sent` or `in_doubt`, error
+  class (and, for an unreadable store, the reconciliation's), whether a
+  new port-forward was used, `recorded`, `not_recorded` or `unreadable`)
+  is in `Lab.approval_attempts`. S6's and S8's appear in their
+  `notes.approval_attempts`, kept also when the scenario raises, and
+  every attempt of the run, the operator thread's included, appears in the
+  summary's `approval_attempts`. `operator_actions` says whether each
+  approval was confirmed by the answer or by the store.
+- **S6's timing.** The three-lease watch starts once the approval is known
+  to be recorded and must fit in what is left of the partition, counted
+  from its creation (`Run.window_left`). Approval attempts use up part of
+  that time, and a watch they cut short fails the scenario with "the
+  partition had only N s left". `notes.during_partition` keeps the template
+  writes counted from the fault time, the seconds watched, and
+  `approval_recorded_after_cut_seconds` (from the partition's creation, as
+  `Run.window_left` counts, through its confirmation, to the approval being
+  known recorded). The partition is long enough for three leases after a
+  confirmation that takes all of `CHAOS_CONFIRM_SECONDS` only when the
+  approval is quick: in the worst case three sends with a 10 s timeout and
+  three reconciliations of up to 30 s each take more than the 60 s spare,
+  and the watch is then cut short and S6 fails. The partition stays in place while
+  the approval is in doubt. If the POST was recorded before its answer was
+  cut, the watch starts later than the approval landed. The window is then
+  longer, never shorter, and writes are still counted from the fault time.
+
+Tests: `tests/test_kind_approval_in_doubt.py` runs the real `Lab` against a
+real Coordinator store built from the sample messages and read through a
+fake kubectl exec running the harness's own read-only query helper. A fake
+approval client sits in front of the real `ApprovalAccess` and fails in
+transit before or after the request arrives. Covered: an EOF before arrival
+is reconciled as not recorded and the same body is sent once more over a
+new port-forward (one approval stored); a reset connection is handled the
+same way; an EOF or a timeout after the approval was recorded is not sent
+again; reconciliation reads through a Pod that fails a few reads; a 409 or
+403 answer is raised at once with no reconciliation and no resend; a POST
+that keeps failing is `ApprovalInDoubt` after three sends, each reconciled,
+and after one send when that send used up the time bound; a store that
+cannot be read leaves the POST in doubt with nothing resent, and the next
+`approve` reconciles it as recorded; the same for revocations; the
+operator thread never approves twice after a lost answer, resends only
+what was not recorded, and is fatal when the bound is passed; and S6
+reconciles an EOF, resends once, watches three full leases with no write
+and records its attempts and timing, fails with its attempts in the notes
+when the approval never lands, and still reports a write made during the
+partition after a reconciled approval. At 0b5529f every one of these tests
+fails.
+
+A review of that change found three gaps, now closed. A reply cut after its
+headers became the client's own `ProtocolError` 502 and was recorded as
+`refused` and raised with no reconciliation, although the Coordinator
+records an approval before it answers. A reconciliation that failed with
+anything but an `AcceptanceError` (kubectl that could not be started, a
+record that did not parse) left the POST out of `Lab.in_doubt`, so the
+operator's next tick would have sent a new approval blind. And
+`approval_recorded_after_cut_seconds` was counted from the partition's
+confirmation, not from its creation. Tests added: a reply cut after its
+headers is reconciled as recorded and not sent again (for an approval, a
+revocation, the operator thread and S6), and a 502 for a POST that never
+landed is reconciled as not recorded and sent once more; the real
+`ApprovalClient`, against a loopback endpoint that records the request
+and cuts its reply after the headers (no body or half a body), raises its
+own 502, and `Lab.approve` through it reconciles that as recorded; a
+reconciliation that fails with `OSError` is `ApprovalInDoubt` with the POST
+kept in doubt, and the next `approve` (and the operator's next tick)
+reconciles it and sends the same body again; a resend whose port-forward
+cannot start is recorded as `not_sent` and the POST stays in doubt; an
+approval in doubt with less than two minutes left is replaced by a new
+one; and S6 counts its approval time from the partition's creation. At
+888180f, the first version of this change, these tests and the two
+changed S6 tests of `tests/test_kind_chaos_confirmation.py` give 6
+failures and 9 errors. Not yet re-run live. The `tests/test_kind_outage_reads.py` tests that a POST timing out
+in S6 or S8 was a `TimeoutError` sent once now expect it in doubt instead:
+reconciled, sent again within the bound, then `ApprovalInDoubt`. Not yet
+re-run live.
 
 ### S7 r4 refused at its restore: the target's resourceVersion moved
 
@@ -1334,6 +1502,11 @@ quoted. P4.02 adds the measured RTO and RPO table to the
   transient read from the `Shell` it built is asked again; and every entry
   point imported again by name runs its imported module, as listed under
   [S5 r1 refused](#s5-r1-refused-at-its-first-poll-one-module-run-twice).
+- `tests/test_kind_approval_in_doubt.py`: an approval or revocation POST
+  that fails in transit is reconciled from the Coordinator's store and
+  sent again only when not recorded, within its bound, in S6, S8 and the
+  operator thread, as listed under
+  [S6 r1](#s6-r1-0b5529f-an-approval-post-cut-in-transit).
 - `tests/test_kind_restore_race.py`: the operator's restore reads the
   target again and retries its guarded patch while the resourceVersion
   moves, refuses a changed uid or a template someone else wrote, and a

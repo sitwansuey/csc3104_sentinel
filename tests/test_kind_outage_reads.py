@@ -83,6 +83,8 @@ class FlakyKubectl:
             if acceptance.BACKUP_HELPER in command:
                 return done(b"SQLite format 3\x00")
             sql = command[-2]
+            if "managed_approvals" in sql or "approval_revocations" in sql:  # Reconciling a POST: none recorded.
+                return done("[]")
             return done(json.dumps([{"proposal": "{}"}] if "FROM actions" in sql else self.rows))
         raise AssertionError("unexpected command: " + " ".join(command))
 
@@ -215,7 +217,7 @@ class Ticks:
 class OperatorLab(acceptance.Lab):
     """The real Lab with the approval API replaced by a recorder (no port-forward, no HTTP)."""
 
-    def port_forward(self, port=18767):
+    def port_forward(self, port=18767, *, fresh=False):
         return port
 
     def approval_client(self, port):
@@ -306,31 +308,40 @@ class OperatorThreadTests(unittest.TestCase):
 
 
 class ApprovalPostTimeoutTests(unittest.TestCase):
-    """S6 and S8 read the proposal in Lab.read and post inside it: a POST's own timeout is not a read that never ran."""
+    """S6 and S8 read the proposal in Lab.read and post inside it: a POST's own timeout is not a read that never ran.
 
-    def test_a_post_that_times_out_in_s6_is_a_timeout_sent_once_not_an_unread_proposal(self):
+    Until 14 Nov 2026 such a POST ended the run as TimeoutError, sent once;
+    since S6 r1 at 0b5529f it is in doubt: reconciled from the store (here it
+    never shows the request recorded), sent again within its bound and then
+    a harness error (tests/test_kind_approval_in_doubt.py has the rest).
+    """
+
+    def test_a_post_that_times_out_in_s6_is_in_doubt_not_an_unread_proposal(self):
         # The state wait answers; then the proposal's read fails twice while the Coordinator is cut off.
         lab = operator_lab(FlakyKubectl([None] + [done(code=1, stderr=CONTAINER_GONE)] * 2, rows=AWAITING))
         lab.time_out = True
         run = live.Run(lab, acceptance.SCENARIOS["S6"], 1, "v1")
         run.since = acceptance.stamp(BASE)
         with patch.object(run, "create", lambda document, **_: document):
-            with self.assertRaises(TimeoutError) as caught:
+            with self.assertRaises(acceptance.ApprovalInDoubt) as caught:
                 live.s6(run)
-        self.assertNotIsInstance(caught.exception, acceptance.AcceptanceError)
-        self.assertEqual(str(caught.exception), "timed out")
-        self.assertEqual(lab.posts, [("create", "ACT-1")])  # Sent once: its outcome is unknown, never re-sent.
+        self.assertNotIsInstance(caught.exception, acceptance.ReadUnavailable)
+        self.assertIn("not recorded after 3 sends", str(caught.exception))
+        # Each send reconciled as not recorded before the next: never one sent blind.
+        self.assertEqual(lab.posts, [("create", "ACT-1")] * acceptance.APPROVAL_SEND_ATTEMPTS)
+        self.assertEqual([(entry["error_type"], entry["reconciled"]) for entry in run.notes["approval_attempts"]],
+                         [("TimeoutError", "not_recorded")] * acceptance.APPROVAL_SEND_ATTEMPTS)
         [outage] = lab.read_outages  # The proposal's two failed reads before it, waited out.
         self.assertEqual((outage["what"], outage["attempts"], outage["recovered"]),
                          ("the proposal to approve", 2, True))
 
-    def test_a_revocation_that_times_out_is_a_timeout_sent_once(self):
+    def test_a_revocation_that_times_out_is_in_doubt(self):
         lab = operator_lab(FlakyKubectl(rows=[{"id": 7}]))
         lab.time_out = True
-        with self.assertRaises(TimeoutError) as caught:
+        with self.assertRaises(acceptance.ApprovalInDoubt) as caught:
             lab.read("the approval to revoke", lambda: lab.revoke("ACT-1"))
         self.assertNotIsInstance(caught.exception, acceptance.ReadUnavailable)
-        self.assertEqual(lab.posts, [("revoke", "ACT-1")])
+        self.assertEqual(lab.posts, [("revoke", "ACT-1")] * acceptance.APPROVAL_SEND_ATTEMPTS)
 
     def test_only_a_bound_that_left_no_time_for_one_attempt_is_an_unread_value(self):
         lab = operator_lab(FlakyKubectl(rows=AWAITING))
