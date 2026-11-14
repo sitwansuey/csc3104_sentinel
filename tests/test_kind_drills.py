@@ -81,6 +81,14 @@ class RtoTests(DirectoryTest):
         self.assertEqual(report["aggregate_seconds"]["to_first_served_request"],
                          {"samples": 3, "missing": 0, "min": 1, "median": 3, "max": 7})
 
+    def test_a_run_directory_with_its_own_overview_is_searched_below(self):
+        self.save("one")
+        self.save("two")
+        (self.directory / "summary.json").write_text(json.dumps({"runs": 2, "passed": True}), encoding="utf-8")
+        report = drills.rto_from_runs([self.directory])
+        self.assertEqual(len(report["runs"]), 2)
+        self.assertTrue(report["passed"])
+
     def test_missing_records_or_timing_never_pass(self):
         folder = self.save("broken")
         (folder / "records.json").unlink()

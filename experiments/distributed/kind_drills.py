@@ -97,8 +97,8 @@ def recovery(fault_at, ready_at, access, transitions):
 def rto_from_runs(paths):
     files = set()
     for path in map(Path, paths):
-        files.update([path / "summary.json"] if (path / "summary.json").is_file()
-                     else path.rglob("summary.json"))
+        # A run directory's own summary.json is its overview, not a run: always search below it too.
+        files.update([path] if path.is_file() else path.rglob("summary.json"))
     runs, errors = [], []
     for path in sorted(files):
         try:
