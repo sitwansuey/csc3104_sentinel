@@ -416,8 +416,12 @@ def run_check(lab, scratch, journals, previous, steps, *, restored=None):
 REVIEW_WAIT_SECONDS = 60  # How long review-only items may take to become replays after the last replay returned.
 
 
-def check_replays(lab, scratch, journals, previous, initial, steps, report):
+def check_replays(lab, scratch, journals, previous, initial, steps, report, approve=None):
     """Clear a replay holder, verify its results are back, then reconsider review items.
+
+    approve, when given, runs before every re-read of the store: an action
+    whose approval the restore dropped waits for one again, and the chain of
+    replays cannot go on past it until the operator approves it once more.
 
     Frozen journal copies retain the pre-restore acknowledged messages even
     if a worker's live delivery row is subsequently rebound by a replay.
@@ -443,6 +447,8 @@ def check_replays(lab, scratch, journals, previous, initial, steps, report):
             # A returned replay can take the Coordinator a moment to ask for the next result in the chain:
             # give review items a bounded chance to turn into replays (or be made up) before manual review.
             def moved():
+                if approve:
+                    approve()
                 current = run_check(lab, scratch, journals, previous, steps)
                 report["rechecks"].append(current)
                 items = [item for journal in current["report"]["journals"] for item in journal["missing"]]
@@ -463,6 +469,8 @@ def check_replays(lab, scratch, journals, previous, initial, steps, report):
 
         def returned(staged=frozenset(staged)):
             # Wait for exactly the results being replayed; other items of the same worker may stay under review.
+            if approve:
+                approve()
             current = run_check(lab, scratch, journals, previous, steps)
             report["rechecks"].append(current)
             still = {replay_key(journal, item) for journal in current["report"]["journals"]
@@ -617,8 +625,16 @@ def restore_drill(lab, run, steps, report, scratch):
     if detection_error:
         raise ka.AcceptanceError("Restore detection failed; checker listing recorded, no workers cleared: "
                                  + detection_error)
+    def reapprove():
+        # The restore dropped every approval given after the backup: as the operator resuming the lab, approve
+        # again any action that waits for one, and record it.
+        for row in lab.incidents():
+            if row["state"] == "AWAITING_APPROVAL" and row["active_action_id"]:
+                lab.approve(row["active_action_id"], run.policy_version)
+                report.setdefault("reapproved_after_restore", []).append(
+                    {"action_id": row["active_action_id"], "at": ka.stamp(lab.clock())})
     steps.call("stage replay holders before clearing peers", check_replays, lab, scratch, journals,
-               report["before_restore"], checked, steps, report)
+               report["before_restore"], checked, steps, report, approve=reapprove)
     report["replayed_incident"] = steps.call("recover restored incident", incident_recovered, lab, run.policy_version)
     report["after_replay_check"] = run_check(lab, scratch, journals, report["before_restore"], steps)
     if report["after_replay_check"]["report"]["missing"]:

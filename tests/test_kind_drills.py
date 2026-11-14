@@ -632,6 +632,31 @@ class RestoreTests(DirectoryTest):
         self.assertEqual(lab.cleared[:2], ["verifier-1", "guard-1"])
         self.assertEqual(sorted(lab.cleared), sorted(drills.WORKERS))
 
+    def test_an_action_whose_approval_the_restore_dropped_is_approved_again(self):
+        # Live (14 Nov 2026, deploy 16 restore 2): every result of a later action was acknowledged after the
+        # backup, its approval included; the replays stopped at AWAITING_APPROVAL until it was approved again.
+        def report(redrive):
+            journals = [{"journal": identity + "/transport.db", "acknowledged": 2, "unsent": 0,
+                         "missing": [{"kind": "execution_result", "action_id": "ACT-3", "topic": "executor.request",
+                                      "redrive": redrive, "accepted_generation": "gen", "accepted_commit": 618}]
+                         if identity == "executor-a" else []} for identity in drills.WORKERS]
+            return {"report": {"journals": journals}, "exit_code": 1}
+        lab = RestoreLab(self.directory)
+        approvals = []
+
+        def recheck(*args, **kwargs):
+            if "executor-a" in lab.cleared:  # Its replay is back: nothing is missing any more.
+                return {"report": {"journals": [{"journal": identity + "/transport.db", "missing": []}
+                                                for identity in drills.WORKERS]}, "exit_code": 0}
+            return report("replay" if approvals else "review")
+        steps_report = {}
+        with unittest.mock.patch.object(drills, "run_check", side_effect=recheck):
+            drills.check_replays(lab, self.directory, [], {"generation": "gen", "commit_counter": 100},
+                                 report("review"), drills.Steps(lab, steps_report), steps_report,
+                                 approve=lambda: approvals.append(lab.now))
+        self.assertTrue(approvals)
+        self.assertEqual(lab.cleared[0], "executor-a")
+
     def test_review_items_get_a_bounded_chance_to_become_replays(self):
         def report(redrive):
             journals = [{"journal": identity + "/transport.db", "acknowledged": 2, "unsent": 0,
