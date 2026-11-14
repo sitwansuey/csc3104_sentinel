@@ -57,7 +57,7 @@
         {"at": "services/coordinator/core.py:161", "text": "_answers_current_request(message, store, answers)"},
         {"at": "services/coordinator/core.py:236", "text": "_issued_after(store, answers, \"guard_result\""},
         {"at": "runtime/worker_transport.py:327", "text": "Result answers a superseded request"},
-        {"at": "runtime/remote_worker.py:174", "text": "lease_duration(delivery, clock) / 3"},
+        {"at": "runtime/remote_worker.py:200", "text": "lease_duration(delivery, clock) / 3"},
         {"at": "services/guard/core.py:159", "text": "if approved_at > checked_at + skew:"},
         {"at": "runtime/worker_http.py:322", "text": "self.samples.clear()"},
         {"at": "runtime/live_executor.py:126", "text": "now=self.clock()"},
@@ -253,7 +253,7 @@
         {"at": "services/coordinator/store.py:129", "text": "lower(hex(randomblob(16)))"},
         {"at": "services/coordinator/store.py:444", "text": "UPDATE store_meta SET commit_counter=commit_counter+1"},
         {"at": "runtime/worker_http.py:412", "text": "elif floor is not None and compared < floor:"},
-        {"at": "runtime/remote_worker.py:293", "text": "\"status\": \"store_changed\""},
+        {"at": "runtime/remote_worker.py:343", "text": "\"status\": \"store_changed\""},
         {"at": "scripts/coordinator_restore_check.py"},
         {"at": "tests/test_store_generation.py:374", "text": "def test_a_rolled_back_database_stops_claiming_keeps_saved_results_and_resumes_after_acceptance"},
         {"at": "tests/test_store_generation.py:440", "text": "def test_a_backup_missing_only_the_last_acknowledged_result_is_detected"}
@@ -393,8 +393,8 @@
       "cites": [
         {"at": "runtime/worker_http.py:496", "text": "self.answered()"},
         {"at": "runtime/worker_service.py", "text": "answered=health.contacted"},
-        {"at": "tests/test_remote_workers.py:488", "text": "def test_lease_renewals_keep_a_pass_longer_than_the_readiness_window_ready"},
-        {"at": "tests/test_remote_workers.py:499", "text": "def test_a_pass_whose_renewals_fail_turns_not_ready_after_the_readiness_window"},
+        {"at": "tests/test_remote_workers.py:492", "text": "def test_lease_renewals_keep_a_pass_longer_than_the_readiness_window_ready"},
+        {"at": "tests/test_remote_workers.py:503", "text": "def test_a_pass_whose_renewals_fail_turns_not_ready_after_the_readiness_window"},
         {"at": "deploy/docker/worker.Dockerfile", "text": "HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3"},
         {"at": "tests/test_worker_dockerfile.py", "text": "def test_docker_reports_unhealthy_within_the_documented_bound"},
         {"claim": "C-WORKER-READINESS-BEFORE-FIX"},
@@ -816,6 +816,28 @@
         {"at": "tests/test_kind_chaos_confirmation.py:390", "text": "def test_s1a_kills_the_planner_before_the_chaos_object_is_removed(self):"},
         {"at": "tests/test_kind_chaos_confirmation.py", "text": "def test_a_pod_kill_that_never_happens_stops_the_run_and_releases_the_planner(self):"},
         {"at": "docs/distributed-acceptance.md", "text": "### First matrix (1adcfe3): a chaos object removed before Chaos Mesh acted"}
+      ],
+      "planned": ["P4.01"],
+      "issues": []
+    },
+    {
+      "id": "L-WORKER-LOST-LEASE-LOOP",
+      "title": "A worker whose lease another worker took re-posted its result on every pass and claimed nothing",
+      "kind": "defect",
+      "status": "mitigated",
+      "since": "2026-11-13",
+      "impact": "In the sentinel-dist matrix at 3ba0d12 (P4.01, 13 Nov 2026), S2 r1 stopped executor-b at the executor.before_patch fault point at 23:35:33 UTC and paused its node past its lease. executor-a claimed the same command at 23:35:50 (attempt 2) and its APPLIED result was accepted at 23:35:52. When executor-b resumed, its patch was refused (CONFLICT, saved in its ledger and transport journal) and its final lease check got HTTP 403 not_lease_owner: once another worker claims a request, the Coordinator checks the owner before the lease token, so the old holder gets 403, not 409. The remote worker released a saved result only on 404 or 409, so the 403 left it pending, and every pass re-sent it first, failed and never reached its claim. The Coordinator logged 74 refused posts (auth.denied result 403 not_lease_owner) for that delivery from 23:36:16 to 23:45:17, each with the same stale delivery and lease token; the Executor itself did not run again (worker.result spans only, no worker.process). While stuck, executor-b claimed nothing, so in S2 r2 no Executor took over executor-a's lease and the run failed. Safety held: one template write. Mitigated offline, live pending: a post refused with 404, any 409, or 403 not_lease_owner now releases the saved result at once (the transport journal keeps the result, forgets the delivery and its token) and the pass goes on to claim; a result whose final lease check already failed that way is released without being posted; and any other failed post is retried with back-off at most until it has failed 10 posts over at least 300 s, then released with a transport.result.abandoned log line. No component record is discarded: the Executor's ledger keeps its write or its in-doubt row and the write carries the action's evidence on the Deployment, from which the next owner reports APPLIED without a second write. Tested offline only (a Coordinator answering 403 not_lease_owner for an Executor, a Planner and a Guard, the worker_service loop, a paused Executor whose peer adopts its write, an Executor whose timed-out write stays UNCERTAIN in its ledger after the release, and the bound for refusals, timeouts and connection errors); not yet run in sentinel-dist. The retry counts are kept in memory, so a restarted worker starts them again.",
+      "workaround": "Run workers built with this fix. On an older build a restart does not help, because the refused result stays pending in transport.db and is re-sent first on every pass; the stuck worker claims no new work, so keep another worker of the same role running.",
+      "cites": [
+        {"at": "runtime/remote_worker.py:39", "text": "if error.status == 403 and reason_class(403, str(error)) == \"not_lease_owner\":"},
+        {"at": "runtime/remote_worker.py:570", "text": "return self._release(row, reason)"},
+        {"at": "runtime/worker_transport.py:276", "text": "if row[\"owner\"] != identity or row[\"topic\"] not in TOPICS.get(role, {}):"},
+        {"at": "tests/test_remote_workers.py:709", "text": "def test_an_executor_refused_as_not_lease_owner_drops_the_delivery_and_claims_again(self):"},
+        {"at": "tests/test_remote_workers.py:736", "text": "def test_an_executor_whose_write_is_in_doubt_keeps_it_open_in_its_ledger_when_its_result_is_refused(self):"},
+        {"at": "tests/test_remote_workers.py:802", "text": "def test_a_lost_lease_executor_that_wrote_leaves_evidence_the_next_owner_adopts_without_a_second_write(self):"},
+        {"at": "tests/test_remote_workers.py:848", "text": "def test_a_result_that_keeps_failing_is_dropped_after_the_bound_so_the_worker_claims_again(self):"},
+        {"at": "tests/test_remote_workers.py:886", "text": "def test_the_worker_service_loop_no_longer_retries_a_refused_result_for_minutes(self):"},
+        {"at": "docs/remote-workers.md", "text": "### A lost lease"}
       ],
       "planned": ["P4.01"],
       "issues": []

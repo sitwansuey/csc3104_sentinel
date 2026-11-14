@@ -415,6 +415,7 @@ hour off.
 | A worker result and its acknowledgment commit together; a resend is a replay | Result digest stored on the receipt | `runtime/worker_transport.py::Delivery.finish` |
 | A worker never redoes finished work after a lost response | Result saved before it is sent | `runtime/remote_worker.py::RemoteWorker.once` |
 | Only the current lease holder can renew or report | Owner, role and lease token must match; renewal cannot revive finished or expired work | `runtime/worker_transport.py::Delivery.renew` |
+| A worker that lost its lease stops posting under it and claims again, keeping its evidence | A refusal that can never change (404, 409, or 403 `not_lease_owner`) releases the saved result: the result stays in the transport journal and the Executor's ledger, the delivery and its token are forgotten. Any other failed post is retried with back-off until it has failed at least 10 posts over at least 300 s, then released (`transport.result.abandoned`) | `runtime/remote_worker.py::lease_refusal`, `runtime/remote_worker.py::RemoteWorker._release` |
 | The Kubernetes write happens at most once per action on one ledger | Write intent is journalled before the call; an unclear outcome is reconciled by reading, never by writing again, through a pure decision table | `services/executor/core.py:594-607::execute::start_write`, `services/executor/reconciliation.py::classify` |
 
 Tests: `tests/test_coordinator.py::CoordinatorTests.test_changed_payload_under_stable_id_is_rejected`,
@@ -422,10 +423,23 @@ Tests: `tests/test_coordinator.py::CoordinatorTests.test_changed_payload_under_s
 `tests/test_worker_transport.py::TransportTests.test_renew_cannot_revive_expired_replaced_or_wrong_role_work`,
 `tests/test_executor.py::ExecutorTests.test_crash_after_write_intent_but_before_commit_does_not_repeat_mutation`,
 `tests/test_executor_reconciliation_table.py::DecisionTableTests.test_exhaustive_product_never_claims_more_than_the_evidence`,
+`tests/test_remote_workers.py::RemoteWorkerTests.test_a_lost_lease_executor_that_wrote_leaves_evidence_the_next_owner_adopts_without_a_second_write`,
 and the in-flight-write model checker `tests/test_executor_reconcile_model.py::ModelCheckerTests`.
 
 Together these give effectively-once state transitions at the Coordinator.
 Delivery to workers is at least once, and receivers deduplicate by action id.
+
+A worker's lease ends on the Coordinator's clock. A worker that stops
+renewing (a paused node, in P4.01 S2) loses it whether or not it keeps
+posting, and once another worker claims the request every renewal or result
+from the old holder gets 403 `not_lease_owner`, for good. Until P4.01 the
+worker released a saved result only on 404 or 409, so that 403 kept it
+re-posting one result on every pass and claiming nothing (live at 3ba0d12).
+It now releases on that 403 too, never posts under a lease its last check
+found lost, and bounds every other retry, while the transport journal and
+the Executor's ledger keep what was done, so the next owner reconciles from
+the cluster's evidence. The safety argument is in
+[A lost lease](remote-workers.md#a-lost-lease).
 
 ### The Verifier samples within one claimed pass
 
