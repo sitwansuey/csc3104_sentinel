@@ -474,7 +474,8 @@ class PartitionTests(Harness):
         cluster = FakeCluster(latency=acceptance.CHAOS_CONFIRM_SECONDS)
         lab, run, error = self.scenario(cluster, "S6", rows=[])
         self.assertIsNone(error)
-        self.assertEqual(run.notes["during_partition"], {"template_writes": 0, "seconds": 3 * acceptance.LEASE_SECONDS})
+        self.assertEqual(run.notes["during_partition"], {"template_writes": 0, "seconds": 3 * acceptance.LEASE_SECONDS,
+                                                         "approval_recorded_after_cut_seconds": 0.0})
         self.assertTrue(run.notes["chaos"][0]["in_effect_until_removal"])
         self.assertNothingLeft(cluster)
 
@@ -484,7 +485,9 @@ class PartitionTests(Harness):
             lab, run, error = self.scenario(cluster, "S6", rows=[])  # The approval took a minute over the port-forward.
         self.assertIsInstance(error, acceptance.AcceptanceError)
         self.assertIn("only 15 s left", str(error))
-        self.assertEqual(run.notes["during_partition"], {"template_writes": 0, "seconds": 15})
+        # The minute the approval took is counted against the partition, from its creation, and said.
+        self.assertEqual(run.notes["during_partition"], {"template_writes": 0, "seconds": 15,
+                                                         "approval_recorded_after_cut_seconds": 60.0})
         self.assertTrue(run.notes["chaos"][0]["in_effect_until_removal"])
         self.assertNothingLeft(cluster)
 

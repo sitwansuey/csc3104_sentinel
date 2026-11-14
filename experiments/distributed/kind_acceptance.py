@@ -110,11 +110,18 @@ transient_failure), also not yet re-run. The next S5 r1 (14 Nov 2026,
 07:29:46Z) was refused at its first poll after the Coordinator exited:
 run with -m this file was two modules, whose classes did not match. Only the
 imported module runs now (the __main__ block); not yet re-run either.
+In S6 r1 of deploy 13 at 0b5529f (14 Nov 2026) the partition cut S6's own
+approval POST in transit (SSLEOFError, never received). An approval or
+revocation POST that fails in transit is now in doubt: reconciled from the
+Coordinator's store before anything is sent again, and sent again only,
+unchanged and bounded, when the store shows it was not recorded
+(Lab._send, APPROVAL_SEND_ATTEMPTS); not yet re-run either.
 """
 import argparse
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+import http.client
 import json
 import os
 from pathlib import Path
@@ -230,6 +237,16 @@ class ReadUnavailable(AcceptanceError):
     """A read kept failing transiently until its bound: a harness error that fails the run, never a pass."""
 
 
+class ApprovalInDoubt(AcceptanceError):
+    """An approval or revocation POST failed in transit and was not shown recorded within its bound.
+
+    Either every send failed in transit and the store showed each one not
+    recorded until APPROVAL_SEND_ATTEMPTS or APPROVAL_RESEND_SECONDS ran out,
+    or the store could not be read to tell. A harness error that fails the
+    run, never a pass; Lab.read never asks it again.
+    """
+
+
 def utc_now():
     return datetime.now(UTC)
 
@@ -299,6 +316,20 @@ def check_context(context):
 
 READ_RETRY_SECONDS = 180  # How long a read is asked again while it fails transiently: a replaced Pod's Ready time.
 READ_BACKOFF_SECONDS = 8.0  # The longest pause between two attempts of a read that keeps failing transiently.
+# An approval or revocation POST that failed in transit (SSL EOF, connection reset, refused or aborted, socket
+# timeout, the port-forward gone, a reply cut short) may or may not have reached the Coordinator: it is in doubt.
+# It is never sent again blind. The Coordinator's store is read (kubectl exec, read-only, bounded by
+# APPROVAL_RECONCILE_SECONDS) for that very request; recorded, it is done; not recorded, the same request is sent
+# again over a fresh port-forward, at most APPROVAL_SEND_ATTEMPTS sends in all and none once
+# APPROVAL_RESEND_SECONDS have passed since the first. On 14 Nov 2026 (S6 r1, deploy 13 at 0b5529f) S6's
+# partition cut its approval POST with an SSL EOF before it reached the Coordinator, and the run stopped there
+# (docs/distributed-acceptance.md#s6-r1-0b5529f-an-approval-post-cut-in-transit). An HTTP error answer is the
+# approval API's own answer, not in doubt, and is raised as it is.
+APPROVAL_SEND_ATTEMPTS = 3
+APPROVAL_RESEND_SECONDS = 60
+APPROVAL_RECONCILE_SECONDS = 30
+IN_TRANSIT = (OSError, http.client.HTTPException)  # ssl.SSLError, ConnectionError and TimeoutError are OSError.
+APPROVAL_NOUNS = {"create": "approval", "revoke": "revocation"}
 _RAN = re.compile(r"command terminated with exit code (\d+)")
 _STOPPED = {137: "process killed with its container (SIGKILL)", 143: "process stopped with its container (SIGTERM)"}
 TRANSIENT_CLASSES = (
@@ -1151,7 +1182,11 @@ class Lab:
         self._forward = None
         self._forward_lock = threading.Lock()
         self.approved = set()
-        self.approvals = []  # {"action_id", "at"} of each approval the operator gave, in order.
+        self.approvals = []  # {"action_id", "at", "confirmed_by"} of each approval the operator gave, in order.
+        # Every approval and revocation POST and every reconciliation of one that failed in transit, in order
+        # (Lab._send); kept in the run's summary and in S6's and S8's notes.
+        self.approval_attempts = []
+        self.in_doubt = {}  # (operation, action_id) -> the body of a POST whose outcome the store has not shown yet.
         self.prior = frozenset()  # Incidents the store held before this run (begin_run).
         self.read_outages = []  # Each run of transiently failed reads in a wait or read (Lab.wait), in order.
 
@@ -1374,9 +1409,11 @@ class Lab:
         within is the bound in seconds (READ_RETRY_SECONDS when None): once it
         passes with the reads still failing, ReadUnavailable names what could
         not be read. A falsy value is returned, not waited past. Any other
-        error from attempt() is raised as it is, a TimeoutError among them (an
-        approval POST's socket timeout in S6 and S8): only the wait's own
-        expiry before a single attempt ran is a read that never happened.
+        error from attempt() is raised as it is, a TimeoutError among them:
+        only the wait's own expiry before a single attempt ran is a read that
+        never happened. (An approval or revocation POST that times out in S6
+        or S8 is handled inside Lab._send, which raises ApprovalInDoubt, an
+        AcceptanceError that is not asked again here, past its bound.)
         """
         within = READ_RETRY_SECONDS if within is None else within
         attempted = []
@@ -1602,9 +1639,17 @@ class Lab:
         return ApprovalClient(f"https://127.0.0.1:{port}", OPERATOR, self.operator_token(), timeout=10,
                               tls_context=ssl.create_default_context(cafile=str(ca)))
 
-    def port_forward(self, port=18767):
-        """A port-forward to the Coordinator's approval port on loopback, restarted when it died."""
+    def port_forward(self, port=18767, *, fresh=False):
+        """A port-forward to the Coordinator's approval port on loopback, restarted when it died.
+
+        fresh stops the current one first, alive or not: a resend after a
+        POST failed in transit never goes through the connection that cut it.
+        A POST another thread has in flight through the old one then fails in
+        transit too, and is reconciled like any other (Lab._send).
+        """
         with self._forward_lock:
+            if fresh and self._forward is not None:
+                self._stop_forward()
             if self._forward is None or self._forward.poll() is not None:
                 self._forward = self.shell.popen(
                     ["kubectl", "--context=" + self.shell.context, "--namespace=" + NAMESPACE, "port-forward",
@@ -1614,6 +1659,9 @@ class Lab:
         return port
 
     def close(self):
+        self._stop_forward()
+
+    def _stop_forward(self):
         if self._forward is not None and self._forward.poll() is None:
             self._forward.terminate()
             with suppress(subprocess.TimeoutExpired):
@@ -1621,22 +1669,139 @@ class Lab:
         self._forward = None
 
     def approve(self, action_id, policy_version):
+        """Approve action_id through the approval API (Lab._send); an earlier POST still in doubt is reconciled first.
+
+        The Coordinator accepts an approval only while the action waits for
+        one, or as an exact retry of the one it holds, and records it in the
+        transaction that moves the action on, so an earlier POST that lands
+        late makes a new one a 409 refusal, never a second approval.
+        """
         from runtime.worker_transport import digest
+        if self._earlier("create", action_id):
+            self.approved.add(action_id)
+            self.approvals.append({"action_id": action_id, "at": stamp(self.clock()), "confirmed_by": "store"})
+            return None
         (row,) = self.query("SELECT proposal FROM actions WHERE action_id=?", (action_id,))
         expires = self.clock() + timedelta(seconds=240)
-        self.approval_client(self.port_forward()).post("create", {
+        answer, confirmed = self._send("create", action_id, {
             "action_id": action_id, "proposal_sha256": digest(json.loads(row["proposal"])),
             "policy_version": policy_version, "expires_at": expires.isoformat()})
         self.approved.add(action_id)
-        self.approvals.append({"action_id": action_id, "at": stamp(self.clock())})
+        self.approvals.append({"action_id": action_id, "at": stamp(self.clock()), "confirmed_by": confirmed})
+        return answer
 
     def revoke(self, action_id):
+        """Revoke action_id's latest approval through the approval API (Lab._send), as approve does."""
         from runtime.worker_transport import digest
+        if self._earlier("revoke", action_id):
+            return None
         (row,) = self.query("SELECT proposal FROM actions WHERE action_id=?", (action_id,))
         (latest,) = self.query("SELECT id FROM approvals WHERE action_id=? ORDER BY id DESC LIMIT 1", (action_id,))
-        self.approval_client(self.port_forward()).post("revoke", {
+        answer, _ = self._send("revoke", action_id, {
             "action_id": action_id, "proposal_sha256": digest(json.loads(row["proposal"])),
             "approval_id": latest["id"], "reason": "withdrawn by the acceptance harness"})
+        return answer
+
+    def _send(self, operation, action_id, body):
+        """POST body; on a failure in transit reconcile it from the store and send it again only if not recorded.
+
+        Returns (the answer, "answer" or "store"). Each send goes in
+        approval_attempts with its outcome: "answered"; "refused" (an HTTP
+        error answer from the approval API, ProtocolError, raised as it is and
+        never sent again); or "in_doubt" (IN_TRANSIT: whether it reached the
+        Coordinator is not known), which is reconciled before anything else
+        is sent (Lab._reconcile): "recorded" ends it; "not_recorded" sends the
+        same body again over a fresh port-forward, an exact retry the
+        Coordinator answers idempotently, up to APPROVAL_SEND_ATTEMPTS sends
+        and none once APPROVAL_RESEND_SECONDS have passed since the first;
+        past that bound, ApprovalInDoubt. A store that cannot be read to tell
+        is ApprovalInDoubt at once, with nothing sent again.
+        """
+        from runtime.service_identity import ProtocolError
+        first, last, sent = self.monotonic(), None, 0
+        for attempt in range(1, APPROVAL_SEND_ATTEMPTS + 1):
+            if attempt > 1 and self.monotonic() - first >= APPROVAL_RESEND_SECONDS:
+                break
+            client = self.approval_client(self.port_forward(fresh=attempt > 1))
+            entry = {"operation": operation, "action_id": action_id, "attempt": attempt,
+                     "sent_at": stamp(self.clock()), "fresh_port_forward": attempt > 1}
+            self.approval_attempts.append(entry)
+            sent = attempt
+            try:
+                answer = client.post(operation, body)
+            except ProtocolError as error:
+                entry.update(outcome="refused", status=error.status)
+                raise
+            except IN_TRANSIT as error:
+                last = type(error).__name__
+                entry.update(outcome="in_doubt", error_type=last)
+            else:
+                entry["outcome"] = "answered"
+                return answer, "answer"
+            found = self._reconcile(entry, operation, action_id, body)
+            if found:
+                return found, "store"
+        self.in_doubt[(operation, action_id)] = body  # The last send may still land: the next try reads it first.
+        raise ApprovalInDoubt(
+            f"The {APPROVAL_NOUNS[operation]} of {action_id} was not recorded after {sent} sends that each failed "
+            f"in transit (last: {last}); the bound is {APPROVAL_SEND_ATTEMPTS} sends within "
+            f"{APPROVAL_RESEND_SECONDS} s of the first")
+
+    def _reconcile(self, entry, operation, action_id, body):
+        """The store's row for the POST body of operation, or None when it holds none; entry notes which."""
+        check = self.approval_recorded if operation == "create" else self.revocation_recorded
+        try:
+            found = self.read(f"whether the {APPROVAL_NOUNS[operation]} of {action_id} was recorded",
+                              lambda: check(action_id, body), within=APPROVAL_RECONCILE_SECONDS)
+        except AcceptanceError as error:
+            entry.update(reconciled="unreadable", reconciled_at=stamp(self.clock()))
+            self.in_doubt[(operation, action_id)] = body
+            raise ApprovalInDoubt(
+                f"The {APPROVAL_NOUNS[operation]} of {action_id} failed in transit and the Coordinator's store "
+                f"could not be read to tell whether it was recorded; not sent again: {error}") from None
+        entry.update(reconciled="recorded" if found else "not_recorded", reconciled_at=stamp(self.clock()))
+        return found
+
+    def _earlier(self, operation, action_id):
+        """Reconcile an earlier POST of operation for action_id still in doubt; True when the store shows it recorded."""
+        body = self.in_doubt.get((operation, action_id))
+        if body is None:
+            return False
+        entry = {"operation": operation, "action_id": action_id, "attempt": None, "outcome": "earlier_in_doubt"}
+        self.approval_attempts.append(entry)
+        found = self._reconcile(entry, operation, action_id, body)  # Still unreadable: raised, kept in doubt.
+        del self.in_doubt[(operation, action_id)]
+        return bool(found)
+
+    def approval_recorded(self, action_id, body):
+        """The managed approval the create POST body made, from the Coordinator's store, or None.
+
+        Matched on everything the request fixed: the operator, the proposal's
+        digest, the policy version and the expiry, which the harness sets once
+        per approval it sends. TransientRead while the store does not answer
+        (Lab.read asks again).
+        """
+        rows = self.query("SELECT a.id AS approval_id, a.record AS record FROM approvals a "
+                          "JOIN managed_approvals m ON m.approval_id = a.id WHERE a.action_id = ? ORDER BY a.id",
+                          (action_id,))
+        for row in rows:
+            record = json.loads(row["record"])
+            if (record.get("operator_id") == OPERATOR and record.get("expires_at") == body["expires_at"]
+                    and record.get("proposal_sha256") == body["proposal_sha256"]
+                    and record.get("policy_version") == body["policy_version"]):
+                return {"approval_id": row["approval_id"], "approval": record}
+        return None
+
+    def revocation_recorded(self, action_id, body):
+        """The revocation the revoke POST body made, from the Coordinator's store, or None."""
+        rows = self.query("SELECT approval_id, record FROM approval_revocations WHERE approval_id = ?",
+                          (body["approval_id"],))
+        for row in rows:
+            record = json.loads(row["record"])
+            if (record.get("action_id") == action_id and record.get("operator_id") == OPERATOR
+                    and record.get("reason") == body["reason"]):
+                return {"revocation": record}
+        return None
 
     def approve_pending(self, policy_version):
         for row in self.incidents():
