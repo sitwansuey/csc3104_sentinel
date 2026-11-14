@@ -231,16 +231,15 @@ The networked Coordinator and workers under injected faults: file mode
 (separate processes on one host), kind mode (the connected kind lab) and the
 four-node `sentinel-dist` acceptance
 ([recipe](distributed-acceptance.md), [model](distributed-model.md)).
-`sentinel-dist` has been deployed live on 13 Nov 2026 and one S0 run passed
-(RECOVERED, one template PATCH in the audit log), but no scenario matrix has
-run and none of its runs is committed as a bundle yet. The first deployment's
-S0 attempts were refused as stale and repaired nothing; the later
-deployments' runs, and the fixes made after them, are recorded on the
-acceptance page
-([live attempts](distributed-acceptance.md#first-live-attempts),
-[the passing run](distributed-acceptance.md#second-deployment-one-pass-then-runs-that-waited-for-nothing)).
-Until a distributed-acceptance bundle is committed, the block below counts no
-`sentinel-dist` run, which is not the same as it never having been tried.
+The P4.01 `sentinel-dist` matrix has 80 scenario runs committed in bundles
+(deploys 10-15): 71/80 passed as recorded, and invariants held in 80/80.
+Aborted attempts without summaries are excluded. The recorded verdicts stand;
+the separate scoped offline re-judge does not replace them
+([acceptance results](distributed-acceptance.md#results-p401)).
+P4.02 drill summaries are also bundled, counted separately from scenario runs
+([drills](distributed-acceptance.md#p402-drills),
+[measurements](distributed-model.md#measured-on-the-four-node-kind-lab-p402)).
+These runs remain unscored, and interpretation is not yet written.
 
 <!-- BEGIN GENERATED:evaluation-distributed -->
 **File and kind modes (P3.01, P3.06).** Matched means the run met its scenario's expectation.
@@ -256,7 +255,7 @@ Until a distributed-acceptance bundle is committed, the block below counts no
 | kind | S5 | 6 | 6/6 | 6/6 | 1 | 0 | one host x6 | synthetic x6 | 3 |
 | kind | S8 | 6 | 6/6 | 6/6 | 0 | 0 | one host x6 | synthetic x6 | 3 |
 
-**sentinel-dist (four kind nodes, P4.01).** 90 runs from 15 bundles; planner: not recorded x10, synthetic x80. 10 run summaries name no scenario: they are left out of the table and count as not passed. Limits the harness records: Four kind nodes (containers) on one Docker host: separate network namespaces and kubelets, one shared kernel, clock and disk. Not separate machines. The Planner is the deterministic lab planner (synthetic proposals), and clock skew is injected by Chaos Mesh TimeChaos, not measured between hosts.
+**sentinel-dist (four kind nodes, P4.01).** 80 runs from 12 bundles; planner: synthetic x80. Limits the harness records: Four kind nodes (containers) on one Docker host: separate network namespaces and kubelets, one shared kernel, clock and disk. Not separate machines. The Planner is the deterministic lab planner (synthetic proposals), and clock skew is injected by Chaos Mesh TimeChaos, not measured between hosts.
 
 | Scenario | Runs | Runs passed | Invariants passed | Expectation met | Max template writes per action (audit) | Takeover latency (s) | Coordinator RTO to Ready / first claim (s) |
 |---|---|---|---|---|---|---|---|
@@ -342,8 +341,8 @@ and open defects.
 
 <!-- BEGIN GENERATED:evaluation-threats -->
 - **Labels are pending.** Catalog pre-registration sign-off: pending. Replay label sets signed: 0/74. Catalog scenario runs by label status: pending x22. Pair runs by label status: pending x8. Guard fixture evaluation: PRELIMINARY_NOT_FROZEN. RCAEval freeze file: not committed. A row whose labels are not signed is unscored: it says what happened, not whether it was right.
-- **One host.** Live runs naming a single-node cluster in their scope: 46/89 (a run whose scope names no single-node cluster is not thereby on several machines). Host classes recorded by live runs: windows-amd64 x51 (38 of 89 record no provenance block). A host class is not a machine identity. No committed distributed run records single_host false (a second machine). File and kind distributed runs recording single_host true: 39/39. sentinel-dist: 90 runs, on four kind nodes that are containers on one Docker host.
-- **Planner.** Live runs by planner: code rule, no model x19, model qwen3:14b x36, model qwen3:does-not-exist x1, model sentinel-not-installed:latest x2, not recorded x23, operator-authored proposal, no model x8. Distributed runs with the synthetic planner: file and kind 39/39, sentinel-dist 80/90; those runs test coordination and fencing, not planning.
+- **One host.** Live runs naming a single-node cluster in their scope: 46/89 (a run whose scope names no single-node cluster is not thereby on several machines). Host classes recorded by live runs: windows-amd64 x51 (38 of 89 record no provenance block). A host class is not a machine identity. No committed distributed run records single_host false (a second machine). File and kind distributed runs recording single_host true: 39/39. sentinel-dist: 80 runs, on four kind nodes that are containers on one Docker host.
+- **Planner.** Live runs by planner: code rule, no model x19, model qwen3:14b x36, model qwen3:does-not-exist x1, model sentinel-not-installed:latest x2, not recorded x23, operator-authored proposal, no model x8. Distributed runs with the synthetic planner: file and kind 39/39, sentinel-dist 80/80; those runs test coordination and fencing, not planning.
 - **Approvals.** Live runs by approval: auto-lab x37, not recorded x28, not-requested x7, pre-authorised x16, reject x1. auto-lab is the harness approving through the authenticated API under the automated-lab identity: no person decides. pre-authorised is a run whose summary records approval given in advance for the whole run, not a person approving each action. Live runs that record a person approving: 0/89.
 - **Small n, correlated repetitions.** Catalog scenarios run live: 6, at most 11 runs each. Repeated runs share the host, the cluster, the model and often the revision, so they are not independent trials; where an interval is given, read it rather than the point value.
 - **Provenance.** 122/188 current bundles have inferred provenance: their source revision is a best guess, not a recorded commit.
