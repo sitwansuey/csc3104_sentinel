@@ -1,0 +1,84 @@
+{
+  "policy_id": "sentinel-dist-acceptance",
+  "policy_version": "sentinel-dist-acceptance-1",
+  "profile": "live",
+  "targets": [
+    {
+      "cluster_id": "sentinel-dist",
+      "namespace": "sentinel-dist-workload",
+      "kind": "Deployment",
+      "name": "demo-api",
+      "uid": "eeaab9a7-d44e-4e7d-9b90-6e475e235ae9"
+    }
+  ],
+  "allowed_actions": [
+    "ROLLBACK"
+  ],
+  "require_operator_approval": true,
+  "unknown_dependency_result": "ESCALATE",
+  "max_state_age_seconds": 30,
+  "max_dependency_age_seconds": 300,
+  "decision_ttl_seconds": 300,
+  "max_approval_lifetime_seconds": 300,
+  "require_server_dry_run": false,
+  "baseline_constraints": {
+    "max_age_seconds": 14400,
+    "min_healthy_duration_seconds": 30,
+    "trusted_sources": [
+      "sentinel-dist-kind-acceptance"
+    ],
+    "require_health_evidence": true,
+    "require_compatible_references": true,
+    "require_image_digests": true
+  },
+  "security_constraints": {
+    "deny_privileged": true,
+    "deny_host_access": true,
+    "allowed_image_registries": [
+      "docker.io"
+    ],
+    "allowed_service_accounts": [
+      "default"
+    ],
+    "forbid_service_account_change": true
+  },
+  "resource_constraints": {
+    "require_requests_and_limits": true,
+    "max_container_requests": {
+      "cpu": "100m",
+      "memory": "64Mi"
+    },
+    "max_container_limits": {
+      "cpu": "500m",
+      "memory": "128Mi"
+    }
+  },
+  "workload_constraints": {
+    "max_pod_requests": {
+      "cpu": "250m",
+      "memory": "128Mi"
+    },
+    "max_rollout_requests": {
+      "cpu": "1",
+      "memory": "512Mi"
+    },
+    "max_replicas": 2,
+    "max_surge_replicas": 1
+  },
+  "detection": {
+    "failure_duration_seconds": 15
+  },
+  "health": {
+    "protocol": "http",
+    "required_http_status": 200,
+    "minimum_samples": 2,
+    "stable_window_seconds": 10,
+    "max_sample_gap_seconds": 20,
+    "require_target_identity": true,
+    "require_template_match": true,
+    "require_available_replicas": true,
+    "convergence_grace_seconds": 60,
+    "verification_timeout_seconds": 90
+  },
+  "note": "sentinel-dist acceptance lab (P4.01): demo-api health over cluster HTTP plus replica readiness, collected by the in-cluster Verifier."
+}

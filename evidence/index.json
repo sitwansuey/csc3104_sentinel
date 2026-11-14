@@ -1850,6 +1850,46 @@
       "provenance": "recorded",
       "status": "current",
       "reason": null
+    },
+    {
+      "bundle_id": "sentinel-dist-20261114t164045-drills",
+      "class": "distributed-acceptance",
+      "path": "2026-11-14/sentinel-dist-20261114t164045-drills",
+      "captured_at": "2026-11-14T08:42:39.998092Z",
+      "source_revision": "7ce9863906edf56620ab0354ac7bc9573506cad7",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "sentinel-dist-20261114t194646",
+      "class": "distributed-acceptance",
+      "path": "2026-11-14/sentinel-dist-20261114t194646",
+      "captured_at": "2026-11-14T11:48:43.641377Z",
+      "source_revision": "d8d90e3e4e27d880b6e20eb82169818c3002b99f",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "sentinel-dist-20261114t202554",
+      "class": "distributed-acceptance",
+      "path": "2026-11-14/sentinel-dist-20261114t202554",
+      "captured_at": null,
+      "source_revision": "unknown",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "sentinel-dist-20261114t204406",
+      "class": "distributed-acceptance",
+      "path": "2026-11-14/sentinel-dist-20261114t204406",
+      "captured_at": null,
+      "source_revision": "unknown",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
     }
   ]
 }
