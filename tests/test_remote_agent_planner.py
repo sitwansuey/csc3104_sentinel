@@ -579,8 +579,8 @@ class AgentWorkerProcessTests(unittest.TestCase):
         code, status, _ = self.run_in_process(path, health=health)
         self.assertEqual((code, status["status"]), (0, "accepted"))
         self.assertEqual(self.model.paths()[0], "/api/tags")
-        self.assertEqual(health.ready(), (200, {"ready": True, "contact_age_seconds": health.ready()[1][
-            "contact_age_seconds"]}))
+        ready = health.ready()  # One reading: contact_age_seconds moves with the clock between two.
+        self.assertEqual(ready, (200, {"ready": True, "contact_age_seconds": ready[1]["contact_age_seconds"]}))
         self.assertEqual(self.incident_state()[0], "VALIDATING")
 
     def test_a_saved_result_is_resent_while_the_clock_is_out_of_bound_and_the_model_is_down(self):
