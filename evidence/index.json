@@ -2410,6 +2410,176 @@
       "provenance": "inferred",
       "status": "current",
       "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p506-r1",
+      "class": "cert-lifecycle",
+      "path": "2026-11-14/p5sec-p506-r1",
+      "captured_at": null,
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p504-r1",
+      "class": "security-lab",
+      "path": "2026-11-14/p5sec-p504-r1",
+      "captured_at": "2026-11-14T18:27:03.819509Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p505-r1-baseline",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p505-r1-baseline",
+      "captured_at": "2026-11-14T18:21:40.531089Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p505-r1-full",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p505-r1-full",
+      "captured_at": "2026-11-14T18:23:10.050186Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p506-r2",
+      "class": "cert-lifecycle",
+      "path": "2026-11-14/p5sec-p506-r2",
+      "captured_at": null,
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p504-r2",
+      "class": "security-lab",
+      "path": "2026-11-14/p5sec-p504-r2",
+      "captured_at": "2026-11-14T19:02:01.896206Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p505-r2-baseline",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p505-r2-baseline",
+      "captured_at": "2026-11-14T18:57:02.948265Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p505-r2-full",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p505-r2-full",
+      "captured_at": "2026-11-14T18:58:25.750410Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p506-r3",
+      "class": "cert-lifecycle",
+      "path": "2026-11-14/p5sec-p506-r3",
+      "captured_at": null,
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p504-r3",
+      "class": "security-lab",
+      "path": "2026-11-14/p5sec-p504-r3",
+      "captured_at": "2026-11-14T19:36:16.992104Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p505-r3-baseline",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p505-r3-baseline",
+      "captured_at": "2026-11-14T19:31:09.993968Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p505-r3-full",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p505-r3-full",
+      "captured_at": "2026-11-14T19:32:32.564427Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p506-smoke",
+      "class": "cert-lifecycle",
+      "path": "2026-11-14/p5sec-p506-smoke",
+      "captured_at": null,
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "inferred",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p504-smoke",
+      "class": "security-lab",
+      "path": "2026-11-14/p5sec-p504-smoke",
+      "captured_at": "2026-11-14T17:26:22.474976Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p505-smoke-baseline",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p505-smoke-baseline",
+      "captured_at": "2026-11-14T17:20:46.383903Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p506-smoke-expiry",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p506-smoke-expiry",
+      "captured_at": "2026-11-14T17:56:11.100629Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "p5sec-p505-smoke-full",
+      "class": "protected-recovery",
+      "path": "2026-11-14/p5sec-p505-smoke-full",
+      "captured_at": "2026-11-14T17:22:15.622049Z",
+      "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
     }
   ]
 }

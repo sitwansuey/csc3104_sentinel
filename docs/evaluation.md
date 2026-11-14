@@ -28,12 +28,12 @@ value that no bundle records is shown as "not recorded".
 <!-- BEGIN GENERATED:evaluation-setup -->
 | Item | Recorded in the evidence |
 | --- | --- |
-| Bundles | 240 current: 90 with recorded provenance, 150 inferred (superseded and withdrawn bundles left out) |
+| Bundles | 257 current: 103 with recorded provenance, 154 inferred (superseded and withdrawn bundles left out) |
 | Captured | 2026-11-10 to 2026-11-14 |
-| Source revisions | 18 distinct in recorded bundles, 25 in inferred ones |
-| Host class | not recorded x13, windows-amd64 x75; 152 bundles record no provenance block |
+| Source revisions | 19 distinct in recorded bundles, 26 in inferred ones |
+| Host class | not recorded x13, windows-amd64 x84; 160 bundles record no provenance block |
 | Tools | docker 29.4.3; helm 4.3.1+gc0d08d0; kind 0.33.0; kubectl 1.34.1; ollama 0.40.16 |
-| Python | 3.12.3 x2, 3.13.2 x73 |
+| Python | 3.12.3 x2, 3.13.2 x82 |
 | Chaos Mesh (chaos-batch attempts) | 2.8.2 x13 |
 | Kubernetes server (chaos-batch attempts) | v1.37.0 x13 |
 | Models loaded (runs) | qwen3:14b bdbd181c33f2 Q4_K_M on Ollama 0.40.16 x20 |
@@ -187,7 +187,7 @@ Guard rejection runs. Per-run tables, with every bundle id, are in
 and [two simultaneous faults](dual-fault.md).
 
 <!-- BEGIN GENERATED:evaluation-live -->
-**Live recovery runs by class.** PASS means the run's own checks passed; an expected escalation passes without a repair. Only these classes are counted here and in the live-run lines of the threats to validity; current bundles of other classes, counted in [runs by class](results.md#runs-by-class) only: cve-gate x4, executor-admission x1, executor-wedge x31, kind-lab-session x3, observer-acceptance x3, scale-recovery x4, ui-session x7, worker-container x2.
+**Live recovery runs by class.** PASS means the run's own checks passed; an expected escalation passes without a repair. Only these classes are counted here and in the live-run lines of the threats to validity; current bundles of other classes, counted in [runs by class](results.md#runs-by-class) only: cert-lifecycle x4, cve-gate x4, executor-admission x1, executor-wedge x31, kind-lab-session x3, observer-acceptance x3, protected-recovery x9, scale-recovery x4, ui-session x7, worker-container x2.
 
 | Class | Runs | PASS | Other outcomes | Passed as an expected escalation | Revisions | Planner | Approval |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -285,6 +285,10 @@ NetworkPolicy reachability matrix ([security](security.md)).
 | protected-boutique-pr5-230557 | b6e0b7f | inferred | PASS | yes | 8/8 | yes | not run |
 | protected-boutique-context-231935 | 46c6662 | inferred | PASS | yes | 8/8 | yes | not run |
 | protected-boutique-netpol | 02d91e5 | recorded | PASS | yes | 8/8 | yes | PASS: 19/19 allowed paths open, 202/202 forbidden paths closed, 0 untested |
+| p5sec-p504-smoke | e8d6fed | recorded | PASS | yes | 8/8 | yes | PASS: 22/22 allowed paths open, 248/248 forbidden paths closed, 0 untested |
+| p5sec-p504-r1 | e8d6fed | recorded | PASS | yes | 8/8 | yes | PASS: 22/22 allowed paths open, 248/248 forbidden paths closed, 0 untested |
+| p5sec-p504-r2 | e8d6fed | recorded | PASS | yes | 8/8 | yes | PASS: 22/22 allowed paths open, 248/248 forbidden paths closed, 0 untested |
+| p5sec-p504-r3 | e8d6fed | recorded | PASS | yes | 8/8 | yes | PASS: 22/22 allowed paths open, 248/248 forbidden paths closed, 0 untested |
 <!-- END GENERATED:evaluation-security -->
 
 ## Latency
@@ -345,7 +349,7 @@ and open defects.
 - **Planner.** Live runs by planner: code rule, no model x27, model qwen3:14b x36, model qwen3:does-not-exist x1, model sentinel-not-installed:latest x2, not recorded x35, operator-authored proposal, no model x8. Distributed runs with the synthetic planner: file and kind 39/39, sentinel-dist 80/80; those runs test coordination and fencing, not planning.
 - **Approvals.** Live runs by approval: auto-lab x49, not recorded x28, not-requested x15, pre-authorised x16, reject x1. auto-lab is the harness approving through the authenticated API under the automated-lab identity: no person decides. pre-authorised is a run whose summary records approval given in advance for the whole run, not a person approving each action. Live runs that record a person approving: 0/109.
 - **Small n, correlated repetitions.** Catalog scenarios run live: 6, at most 15 runs each. Repeated runs share the host, the cluster, the model and often the revision, so they are not independent trials; where an interval is given, read it rather than the point value.
-- **Provenance.** 150/240 current bundles have inferred provenance: their source revision is a best guess, not a recorded commit.
+- **Provenance.** 154/257 current bundles have inferred provenance: their source revision is a best guess, not a recorded commit.
 - **Replay inputs.** Of 74 replay cases, 10 derived and 12 adversarial ones are synthetic, and every case's cluster state is reconstructed, not recorded. Replay judges decisions only; recovery comes from live runs.
 - **One model family, one application.** Models loaded in live runs: qwen3:14b x20. Pre-registered replay runs committed: 4/5. RCAEval reports committed: not yet run. Workloads named by live runs: Full Online Boutique v0.10.7 with synthetic checkout traffic x97, Online Boutique shippingservice v0.10.7 x8, not recorded x4.
 <!-- END GENERATED:evaluation-threats -->

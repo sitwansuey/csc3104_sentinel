@@ -40,6 +40,7 @@ Read each number with its limits:
 | Class | Runs | PASS | FAILED | INTERRUPTED | INCOMPLETE | Provenance |
 | --- | --- | --- | --- | --- | --- | --- |
 | agent | 41 | 28 | 13 | 0 | 0 | 21 recorded, 20 inferred |
+| cert-lifecycle | 4 | 4 | 0 | 0 | 0 | 0 recorded, 4 inferred |
 | chaos-batch | 17 | 3 | 13 | 0 | 1 | 0 recorded, 17 inferred |
 | chaos-recovery | 25 | 20 | 5 | 0 | 0 | 25 recorded, 0 inferred |
 | connected-harness | 20 | 18 | 2 | 0 | 0 | 16 recorded, 4 inferred |
@@ -53,10 +54,11 @@ Read each number with its limits:
 | kind-lab-session | 3 | 3 | 0 | 0 | 0 | 0 recorded, 3 inferred |
 | observer-acceptance | 3 | 3 | 0 | 0 | 0 | 0 recorded, 3 inferred |
 | packaged | 9 | 5 | 0 | 1 | 3 | 0 recorded, 9 inferred |
+| protected-recovery | 9 | 8 | 1 | 0 | 0 | 9 recorded, 0 inferred |
 | provider-recovery | 1 | 0 | 1 | 0 | 0 | 0 recorded, 1 inferred |
 | scale-recovery | 4 | 4 | 0 | 0 | 0 | 4 recorded, 0 inferred |
 | scenario-pair | 8 | 8 | 0 | 0 | 0 | 8 recorded, 0 inferred |
-| security-lab | 4 | 4 | 0 | 0 | 0 | 1 recorded, 3 inferred |
+| security-lab | 8 | 8 | 0 | 0 | 0 | 5 recorded, 3 inferred |
 | shipping-lab | 2 | 2 | 0 | 0 | 0 | 0 recorded, 2 inferred |
 | ui-session | 7 | 0 | 0 | 0 | 7 | 0 recorded, 7 inferred |
 | worker-container | 2 | 1 | 0 | 0 | 1 | 0 recorded, 2 inferred |
@@ -476,6 +478,10 @@ Blocked probes are the bypass, identity and outage probes that must fail.
 | protected-boutique-context-231935 | PASS | yes | 8/8 | yes |
 | protected-boutique-pr5-230557 | PASS | yes | 8/8 | yes |
 | protected-boutique-netpol | PASS | yes | 8/8 | yes |
+| p5sec-p504-r1 | PASS | yes | 8/8 | yes |
+| p5sec-p504-r2 | PASS | yes | 8/8 | yes |
+| p5sec-p504-r3 | PASS | yes | 8/8 | yes |
+| p5sec-p504-smoke | PASS | yes | 8/8 | yes |
 <!-- END GENERATED:security-lab -->
 
 ## Observer acceptance

@@ -1,0 +1,6 @@
+{
+  "passed": true,
+  "cart_refused": true,
+  "shipping_refused": true,
+  "cart_ready_after": true
+}

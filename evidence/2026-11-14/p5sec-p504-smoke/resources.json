@@ -1,0 +1,423 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "annotations": {
+          "cni.projectcalico.org/containerID": "3a7e65d6e3c12833c6c3b809871899786b051e7ac12054fb8bd39ff6ff0e901c",
+          "cni.projectcalico.org/podIP": "<private-ip>/32",
+          "cni.projectcalico.org/podIPs": "<private-ip>/32"
+        },
+        "creationTimestamp": "2026-11-14T17:19:26Z",
+        "generateName": "security-gateway-67d68bfccd-",
+        "generation": 1,
+        "labels": {
+          "app": "security-gateway",
+          "pod-template-hash": "67d68bfccd"
+        },
+        "name": "security-gateway-67d68bfccd-wdh5s",
+        "namespace": "sentinel-boutique-security",
+        "ownerReferences": [
+          {
+            "apiVersion": "apps/v1",
+            "blockOwnerDeletion": true,
+            "controller": true,
+            "kind": "ReplicaSet",
+            "name": "security-gateway-67d68bfccd",
+            "uid": "1f4a9fa6-43b9-4828-b7fe-fef1f9ea32a4"
+          }
+        ],
+        "resourceVersion": "3510",
+        "uid": "74b984c1-3156-4c6a-b105-e5979a28f561"
+      },
+      "spec": {
+        "automountServiceAccountToken": false,
+        "containers": [
+          {
+            "args": [
+              "-c",
+              "/config/envoy.json",
+              "--concurrency",
+              "2",
+              "--log-level",
+              "warn"
+            ],
+            "command": [
+              "envoy"
+            ],
+            "image": "envoyproxy/envoy@sha256:8de97e654644827d62afdbf7e1d3dc9fee01a8690d410dd1c63a30dc6b6cecbb",
+            "imagePullPolicy": "Never",
+            "name": "envoy",
+            "ports": [
+              {
+                "containerPort": 8443,
+                "protocol": "TCP"
+              },
+              {
+                "containerPort": 8445,
+                "protocol": "TCP"
+              }
+            ],
+            "readinessProbe": {
+              "failureThreshold": 3,
+              "periodSeconds": 3,
+              "successThreshold": 1,
+              "tcpSocket": {
+                "port": 8443
+              },
+              "timeoutSeconds": 1
+            },
+            "resources": {
+              "limits": {
+                "cpu": "300m",
+                "memory": "192Mi"
+              },
+              "requests": {
+                "cpu": "20m",
+                "memory": "48Mi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "readOnlyRootFilesystem": true,
+              "runAsGroup": 10001,
+              "runAsNonRoot": true,
+              "runAsUser": 10001
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "File",
+            "volumeMounts": [
+              {
+                "mountPath": "/config",
+                "name": "security-gateway",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/trust",
+                "name": "security-trust-bundle",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/pki/gateway",
+                "name": "gateway",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/pki/proxy-client",
+                "name": "proxy-client",
+                "readOnly": true
+              }
+            ]
+          },
+          {
+            "args": [
+              "--journal",
+              "/data/telemetry.sqlite3",
+              "--stdout-events",
+              "--max-inflight",
+              "16",
+              "--max-rps",
+              "200"
+            ],
+            "image": "sentinel.local/security-inspector@sha256:2fd5cc14a35bf208b2cdbf11a3735b07dd601a7749c0ad44db826b3d6840993e",
+            "imagePullPolicy": "Never",
+            "name": "inspector",
+            "readinessProbe": {
+              "exec": {
+                "command": [
+                  "python",
+                  "-c",
+                  "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9001/readyz', timeout=2)"
+                ]
+              },
+              "failureThreshold": 2,
+              "periodSeconds": 5,
+              "successThreshold": 1,
+              "timeoutSeconds": 3
+            },
+            "resources": {
+              "limits": {
+                "cpu": "200m",
+                "memory": "96Mi"
+              },
+              "requests": {
+                "cpu": "20m",
+                "memory": "32Mi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "readOnlyRootFilesystem": true,
+              "runAsGroup": 10001,
+              "runAsNonRoot": true,
+              "runAsUser": 10001
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "File",
+            "volumeMounts": [
+              {
+                "mountPath": "/data",
+                "name": "audit"
+              }
+            ]
+          }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "enableServiceLinks": true,
+        "nodeName": "sentinel-boutique-security-control-plane",
+        "preemptionPolicy": "PreemptLowerPriority",
+        "priority": 0,
+        "restartPolicy": "Always",
+        "schedulerName": "default-scheduler",
+        "securityContext": {
+          "fsGroup": 10001,
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          }
+        },
+        "serviceAccount": "default",
+        "serviceAccountName": "default",
+        "terminationGracePeriodSeconds": 5,
+        "tolerations": [
+          {
+            "effect": "NoExecute",
+            "key": "node.kubernetes.io/not-ready",
+            "operator": "Exists",
+            "tolerationSeconds": 300
+          },
+          {
+            "effect": "NoExecute",
+            "key": "node.kubernetes.io/unreachable",
+            "operator": "Exists",
+            "tolerationSeconds": 300
+          }
+        ],
+        "volumes": [
+          {
+            "configMap": {
+              "defaultMode": 420,
+              "name": "security-gateway"
+            },
+            "name": "security-gateway"
+          },
+          {
+            "configMap": {
+              "defaultMode": 420,
+              "name": "security-trust-bundle"
+            },
+            "name": "security-trust-bundle"
+          },
+          {
+            "name": "gateway",
+            "secret": "<redacted:c9fa0c8c>"
+          },
+          {
+            "name": "proxy-client",
+            "secret": "<redacted:8397f523>"
+          },
+          {
+            "name": "audit",
+            "persistentVolumeClaim": {
+              "claimName": "security-audit"
+            }
+          }
+        ]
+      },
+      "status": {
+        "allocatedResources": {
+          "cpu": "40m",
+          "memory": "80Mi"
+        },
+        "conditions": [
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-11-14T17:19:27Z",
+            "observedGeneration": 1,
+            "status": "True",
+            "type": "PodReadyToStartContainers"
+          },
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-11-14T17:19:27Z",
+            "observedGeneration": 1,
+            "status": "True",
+            "type": "Initialized"
+          },
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-11-14T17:20:07Z",
+            "observedGeneration": 1,
+            "status": "True",
+            "type": "Ready"
+          },
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-11-14T17:20:07Z",
+            "observedGeneration": 1,
+            "status": "True",
+            "type": "ContainersReady"
+          },
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-11-14T17:19:26Z",
+            "observedGeneration": 1,
+            "status": "True",
+            "type": "PodScheduled"
+          }
+        ],
+        "containerStatuses": [
+          {
+            "allocatedResources": {
+              "cpu": "20m",
+              "memory": "48Mi"
+            },
+            "containerID": "containerd://ed3e3d66d7e311aeda8e5c38ea0e9affb83cc1e6d902ea06634ee865c917aac9",
+            "image": "sha256:0ca959846659403e7273526abfef31ec2e910c3a1735fcf73323eaa5cc80ed5e",
+            "imageID": "docker.io/envoyproxy/envoy@sha256:8de97e654644827d62afdbf7e1d3dc9fee01a8690d410dd1c63a30dc6b6cecbb",
+            "lastState": {},
+            "name": "envoy",
+            "ready": true,
+            "resources": {
+              "limits": {
+                "cpu": "300m",
+                "memory": "192Mi"
+              },
+              "requests": {
+                "cpu": "20m",
+                "memory": "48Mi"
+              }
+            },
+            "restartCount": 0,
+            "started": true,
+            "state": {
+              "running": {
+                "startedAt": "2026-11-14T17:19:27Z"
+              }
+            },
+            "user": {
+              "linux": {
+                "gid": 10001,
+                "supplementalGroups": [
+                  10001
+                ],
+                "uid": 10001
+              }
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/config",
+                "name": "security-gateway",
+                "readOnly": true,
+                "recursiveReadOnly": "Disabled"
+              },
+              {
+                "mountPath": "/trust",
+                "name": "security-trust-bundle",
+                "readOnly": true,
+                "recursiveReadOnly": "Disabled"
+              },
+              {
+                "mountPath": "/pki/gateway",
+                "name": "gateway",
+                "readOnly": true,
+                "recursiveReadOnly": "Disabled"
+              },
+              {
+                "mountPath": "/pki/proxy-client",
+                "name": "proxy-client",
+                "readOnly": true,
+                "recursiveReadOnly": "Disabled"
+              }
+            ]
+          },
+          {
+            "allocatedResources": {
+              "cpu": "20m",
+              "memory": "32Mi"
+            },
+            "containerID": "containerd://80d8bde11cc1e779a2cc0f3f9003f79ccef86a58e1994d10a999797eb6ea00fa",
+            "image": "docker.io/library/sentinel-security-inspector:0.1.0",
+            "imageID": "docker.io/library/import-2026-11-14@sha256:a702c2c41ec932acb5d81c4fbcb5c781ccee8e6d345bd7530b3c781055a79e7d",
+            "lastState": {},
+            "name": "inspector",
+            "ready": true,
+            "resources": {
+              "limits": {
+                "cpu": "200m",
+                "memory": "96Mi"
+              },
+              "requests": {
+                "cpu": "20m",
+                "memory": "32Mi"
+              }
+            },
+            "restartCount": 0,
+            "started": true,
+            "state": {
+              "running": {
+                "startedAt": "2026-11-14T17:19:28Z"
+              }
+            },
+            "user": {
+              "linux": {
+                "gid": 10001,
+                "supplementalGroups": [
+                  10001
+                ],
+                "uid": 10001
+              }
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/data",
+                "name": "audit"
+              }
+            ]
+          }
+        ],
+        "hostIP": "<private-ip>",
+        "hostIPs": [
+          {
+            "ip": "<private-ip>"
+          }
+        ],
+        "observedGeneration": 1,
+        "phase": "Running",
+        "podIP": "<private-ip>",
+        "podIPs": [
+          {
+            "ip": "<private-ip>"
+          }
+        ],
+        "qosClass": "Burstable",
+        "resources": {
+          "limits": {
+            "cpu": "500m",
+            "memory": "288Mi"
+          },
+          "requests": {
+            "cpu": "28m",
+            "memory": "80Mi"
+          }
+        },
+        "startTime": "2026-11-14T17:19:27Z"
+      }
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    "resourceVersion": ""
+  }
+}

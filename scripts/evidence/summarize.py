@@ -229,6 +229,8 @@ def outcome(bundle):
         return container_record(bundle)["outcome"]
     if bundle.run_class == "cve-gate":
         return cve_gate_outcome(bundle)
+    if bundle.run_class == "cert-lifecycle":
+        return cert_lifecycle_outcome(bundle)
     if bundle.run_class == "kind-lab-session":
         return lab_session_record(bundle)["outcome"]
     if bundle.run_class == "distributed-acceptance":
@@ -240,6 +242,26 @@ def outcome(bundle):
     summary = bundle.json("summary.json") or bundle.json("data/evidence/summary.json") or {}
     status = summary.get("status")
     return status if status in OUTCOMES else "INCOMPLETE"
+
+
+CERT_LIFECYCLE_RECORDS = ("rotation.json", "negatives.json", "rollover-finish.json", "checkout-rotation.json",
+                          "checkout-rollover.json")
+
+
+def cert_lifecycle_outcome(bundle):
+    """P5.06 round: PASS only when rotation, the three client refusals, the CA rollover and both checkout
+    journeys passed, and, where the round ran the expiry drill, its proof (Guard ESCALATE, zero Executor
+    writes) passed too. A missing record is INCOMPLETE.
+    """
+    records = [bundle.json(name) for name in CERT_LIFECYCLE_RECORDS]
+    if not all(isinstance(record, dict) for record in records):
+        return "INCOMPLETE"
+    expiry = bundle.json("identity-expiring.json")
+    if expiry is not None and not isinstance(expiry, dict):
+        return "INCOMPLETE"
+    passed = all(record.get("passed") is True for record in records) and (
+        expiry is None or (expiry.get("passed") is True and expiry.get("executor_write_attempts") == 0))
+    return "PASS" if passed else "FAILED"
 
 
 def cve_gate_outcome(bundle):

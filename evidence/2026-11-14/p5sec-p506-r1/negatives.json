@@ -1,0 +1,7 @@
+{
+  "passed": true,
+  "untrusted_refused": true,
+  "wrong_san_refused": true,
+  "expired_refused": true,
+  "scope": "client refusal only; no live CertificateRejected incident path"
+}

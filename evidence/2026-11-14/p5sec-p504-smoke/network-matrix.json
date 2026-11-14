@@ -1,0 +1,2600 @@
+{
+  "run_id": "028ecb9714",
+  "namespace": "sentinel-boutique-security",
+  "image": "docker.io/library/busybox@sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616",
+  "connect_timeout_seconds": 3,
+  "policy_drift": [],
+  "testers": [
+    {
+      "source": "app-adservice",
+      "pod": "netmatrix-app-adservice-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "app-cartservice",
+      "pod": "netmatrix-app-cartservice-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "app-checkoutservice",
+      "pod": "netmatrix-app-checkoutservice-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "app-currencyservice",
+      "pod": "netmatrix-app-currencyservice-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "app-emailservice",
+      "pod": "netmatrix-app-emailservice-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "app-frontend",
+      "pod": "netmatrix-app-frontend-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "app-paymentservice",
+      "pod": "netmatrix-app-paymentservice-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "app-productcatalogservice",
+      "pod": "netmatrix-app-productcatalogservice-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "app-recommendationservice",
+      "pod": "netmatrix-app-recommendationservice-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "app-redis-cart",
+      "pod": "netmatrix-app-redis-cart-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "app-security-gateway",
+      "pod": "netmatrix-app-security-gateway-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "app-security-test",
+      "pod": "netmatrix-app-security-test-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "app-sentinel-verifier-probe",
+      "pod": "netmatrix-app-sentinel-verifier-probe-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "app-shippingservice",
+      "pod": "netmatrix-app-shippingservice-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "intruder",
+      "pod": "netmatrix-intruder-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "probe-cartservice",
+      "pod": "netmatrix-probe-cartservice-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "probe-shippingservice",
+      "pod": "netmatrix-probe-shippingservice-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    },
+    {
+      "source": "traffic",
+      "pod": "netmatrix-traffic-028ecb",
+      "created": true,
+      "phase": "Succeeded",
+      "control": "open",
+      "trusted": true
+    }
+  ],
+  "rows": [
+    {
+      "source": "intruder",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "intruder",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "intruder",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "intruder",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "intruder",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "intruder",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "intruder",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "intruder",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "intruder",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "intruder",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "intruder",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "intruder",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "intruder",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "intruder",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "intruder",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "traffic",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "traffic",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "traffic",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "traffic",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "traffic",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "traffic",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "traffic",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "traffic",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "traffic",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "traffic",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "traffic",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "traffic",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "traffic",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "traffic",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "traffic",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-adservice",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-adservice",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-adservice",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-adservice",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-adservice",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-adservice",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-adservice",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-adservice",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-adservice",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-adservice",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-adservice",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-adservice",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-adservice",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-adservice",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-adservice",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-cartservice",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-cartservice",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-cartservice",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-cartservice",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-cartservice",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-cartservice",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-cartservice",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-cartservice",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-cartservice",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-cartservice",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-cartservice",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-cartservice",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-cartservice",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-cartservice",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-cartservice",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-checkoutservice",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-checkoutservice",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-checkoutservice",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-checkoutservice",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 1
+    },
+    {
+      "source": "app-checkoutservice",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-checkoutservice",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-checkoutservice",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-checkoutservice",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-checkoutservice",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-checkoutservice",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-checkoutservice",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-checkoutservice",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-checkoutservice",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-checkoutservice",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-checkoutservice",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-currencyservice",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-currencyservice",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-currencyservice",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-currencyservice",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-currencyservice",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-currencyservice",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-currencyservice",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-currencyservice",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-currencyservice",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-currencyservice",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-currencyservice",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-currencyservice",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-currencyservice",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-currencyservice",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-currencyservice",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-emailservice",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-emailservice",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-emailservice",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-emailservice",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-emailservice",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-emailservice",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-emailservice",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-emailservice",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-emailservice",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-emailservice",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-emailservice",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-emailservice",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-emailservice",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-emailservice",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-emailservice",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-frontend",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-frontend",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-frontend",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-frontend",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-frontend",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-frontend",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-frontend",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-frontend",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-frontend",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-frontend",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-frontend",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-frontend",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-frontend",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-frontend",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-frontend",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-paymentservice",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-paymentservice",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-paymentservice",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-paymentservice",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-paymentservice",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-paymentservice",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-paymentservice",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-paymentservice",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-paymentservice",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-paymentservice",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-paymentservice",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-paymentservice",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-paymentservice",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-paymentservice",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-paymentservice",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-productcatalogservice",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-productcatalogservice",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-productcatalogservice",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-productcatalogservice",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-productcatalogservice",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-productcatalogservice",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-productcatalogservice",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-productcatalogservice",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-productcatalogservice",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-productcatalogservice",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-productcatalogservice",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-productcatalogservice",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-productcatalogservice",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-productcatalogservice",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-productcatalogservice",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-recommendationservice",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-recommendationservice",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-recommendationservice",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-recommendationservice",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-recommendationservice",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-recommendationservice",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-recommendationservice",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-recommendationservice",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-recommendationservice",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-recommendationservice",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-recommendationservice",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-recommendationservice",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-recommendationservice",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-recommendationservice",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-recommendationservice",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-redis-cart",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-redis-cart",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-redis-cart",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-redis-cart",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-redis-cart",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-redis-cart",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-redis-cart",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-redis-cart",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-redis-cart",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-redis-cart",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-redis-cart",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-redis-cart",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-redis-cart",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-redis-cart",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-redis-cart",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-gateway",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-gateway",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-gateway",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-gateway",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-gateway",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-gateway",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-gateway",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-gateway",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-gateway",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-gateway",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-gateway",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-gateway",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-security-gateway",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-gateway",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-security-gateway",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-test",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-test",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-test",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-test",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-test",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-test",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-test",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-test",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-test",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-test",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-test",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-security-test",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-test",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-security-test",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-security-test",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-sentinel-verifier-probe",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-sentinel-verifier-probe",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-sentinel-verifier-probe",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-sentinel-verifier-probe",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-sentinel-verifier-probe",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-sentinel-verifier-probe",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-sentinel-verifier-probe",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-sentinel-verifier-probe",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-sentinel-verifier-probe",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-sentinel-verifier-probe",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-sentinel-verifier-probe",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-sentinel-verifier-probe",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-sentinel-verifier-probe",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "allow",
+      "observed": "open",
+      "seconds": 0
+    },
+    {
+      "source": "app-sentinel-verifier-probe",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-sentinel-verifier-probe",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-shippingservice",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-shippingservice",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-shippingservice",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-shippingservice",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-shippingservice",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-shippingservice",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-shippingservice",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-shippingservice",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-shippingservice",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-shippingservice",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-shippingservice",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-shippingservice",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-shippingservice",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-shippingservice",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "app-shippingservice",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-cartservice",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-cartservice",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-cartservice",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-cartservice",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-cartservice",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-cartservice",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-cartservice",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-cartservice",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-cartservice",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-cartservice",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-cartservice",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-cartservice",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-cartservice",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-cartservice",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-cartservice",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-shippingservice",
+      "destination": "adservice",
+      "port": 9555,
+      "target_port": 9555,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 4
+    },
+    {
+      "source": "probe-shippingservice",
+      "destination": "cartservice",
+      "port": 7070,
+      "target_port": 7070,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-shippingservice",
+      "destination": "checkoutservice",
+      "port": 5050,
+      "target_port": 5050,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-shippingservice",
+      "destination": "currencyservice",
+      "port": 7000,
+      "target_port": 7000,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-shippingservice",
+      "destination": "emailservice",
+      "port": 5000,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-shippingservice",
+      "destination": "frontend",
+      "port": 80,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-shippingservice",
+      "destination": "paymentservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-shippingservice",
+      "destination": "productcatalogservice",
+      "port": 3550,
+      "target_port": 3550,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-shippingservice",
+      "destination": "recommendationservice",
+      "port": 8080,
+      "target_port": 8080,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-shippingservice",
+      "destination": "redis-cart",
+      "port": 6379,
+      "target_port": 6379,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-shippingservice",
+      "destination": "security-cart-gateway",
+      "port": 8445,
+      "target_port": 8445,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-shippingservice",
+      "destination": "security-cart-upstream",
+      "port": 8446,
+      "target_port": 8446,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-shippingservice",
+      "destination": "security-gateway",
+      "port": 8443,
+      "target_port": 8443,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-shippingservice",
+      "destination": "security-upstream",
+      "port": 8444,
+      "target_port": 8444,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    },
+    {
+      "source": "probe-shippingservice",
+      "destination": "shippingservice",
+      "port": 50051,
+      "target_port": 50051,
+      "expected": "deny",
+      "observed": "closed",
+      "seconds": 3
+    }
+  ],
+  "verdict": {
+    "status": "PASS",
+    "reasons": [],
+    "journey_passed": true,
+    "allowed": {
+      "cells": 22,
+      "open": 22
+    },
+    "forbidden": {
+      "cells": 248,
+      "closed": 248,
+      "timed_out": 248
+    },
+    "untested": 0
+  }
+}

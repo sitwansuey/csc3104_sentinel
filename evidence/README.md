@@ -105,6 +105,7 @@ is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.
 | Class | Bundles | Recorded | Inferred | Superseded | Withdrawn |
 | --- | --- | --- | --- | --- | --- |
 | agent | 41 | 21 | 20 | 0 | 0 |
+| cert-lifecycle | 4 | 0 | 4 | 0 | 0 |
 | chaos-batch | 17 | 0 | 17 | 0 | 0 |
 | chaos-recovery | 25 | 25 | 0 | 1 | 0 |
 | connected-harness | 20 | 16 | 4 | 0 | 0 |
@@ -118,10 +119,11 @@ is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.
 | kind-lab-session | 3 | 0 | 3 | 0 | 0 |
 | observer-acceptance | 3 | 0 | 3 | 0 | 0 |
 | packaged | 9 | 0 | 9 | 0 | 0 |
+| protected-recovery | 9 | 9 | 0 | 0 | 0 |
 | provider-recovery | 1 | 0 | 1 | 0 | 0 |
 | scale-recovery | 4 | 4 | 0 | 0 | 0 |
 | scenario-pair | 8 | 8 | 0 | 0 | 0 |
-| security-lab | 4 | 1 | 3 | 0 | 0 |
+| security-lab | 8 | 5 | 3 | 0 | 0 |
 | shipping-lab | 2 | 0 | 2 | 0 | 0 |
 | ui-session | 7 | 0 | 7 | 0 | 0 |
 | worker-container | 2 | 0 | 2 | 0 | 0 |

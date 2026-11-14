@@ -1,0 +1,16 @@
+{
+  "status": 503,
+  "body": {
+    "ready": false,
+    "reasons": [
+      "inflight_exhausted"
+    ],
+    "inflight": 16,
+    "max_inflight": 16,
+    "max_rps": 200.0,
+    "shed": {
+      "inflight": 2963,
+      "rate": 0
+    }
+  }
+}

@@ -244,7 +244,9 @@ The scratch runner changed to node-side SIGSTOP/SIGCONT; no fix commit was
 recorded. That earlier load recorded 9,843 requests, 2,633 shed and 171 burst
 overload denials, with zero invalid requests allowed.
 
-Further r1-r3 counts: TBD-SEC-REPEATS. Owner sign-off remains pending.
+Repeats r1-r3 (each on a freshly built cluster) passed the same checks: 4/4
+rounds in all, bundles `p5sec-p504-smoke` and `p5sec-p504-r1`..`r3`. Owner
+sign-off remains pending.
 
 ### The routes
 
@@ -854,8 +856,13 @@ The shared lab startup/route failures and fixes are recorded under
 escalation with zero write attempts: it expected an approval response
 (`Guard must require approval before live execution`). Emergency operator
 restore ran; no harness fix commit is recorded. See [P5.06](#certificate-lifecycle-p506).
-Further r1-r3 counts: TBD-SEC-REPEATS. One Docker host, unscored; owner
-sign-off and the documented coverage gaps remain.
+Baseline and full stages passed in all four rounds (smoke and r1-r3,
+`p5sec-p505-*`). The expiry drill's protected run (`p5sec-p506-smoke-expiry`)
+is recorded FAILED by the generic recovery harness because the Guard
+escalated instead of asking for approval, the intended fail-closed result;
+its proof (Guard ESCALATE, zero Executor writes) is `identity-expiring.json`
+in `p5sec-p506-smoke`. One Docker host, unscored; owner sign-off and the
+documented coverage gaps remain.
 
 ### What changed
 
@@ -1154,8 +1161,10 @@ Startup failures: Jetstack's default-User-Agent 403 was fixed by ac8ac91;
 missing Envoy SDS node id/cluster by 02d40be. The valid-cart Kestrel `:scheme`
 error was fixed by e8d6fed; the SIGINT outage race was replaced in the scratch
 runner by SIGSTOP/SIGCONT, without a recorded commit (details under [P5.04](#cart-route-and-inspector-capacity-p504)).
-Pins were lab-resolved at 7ac2752; owner review remains pending. Further r1-r3
-rotation/negative/rollover counts: TBD-SEC-REPEATS. One Docker host, unscored;
+Pins were lab-resolved at 7ac2752; owner review remains pending. Rotation, the three
+client refusals and the CA rollover passed in all four rounds (smoke and
+r1-r3, `p5sec-p506-*`); the expiry escalation ran in the smoke round only. One
+Docker host, unscored;
 wrong upstream SAN/issuer Guard escalation remains offline-only.
 
 ### What changed
