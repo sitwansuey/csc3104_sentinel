@@ -205,6 +205,11 @@ def envoy_config(*, upstream=False, route="shipping"):
                "route_config": {"name": name, "virtual_hosts": [{"name": route, "domains": ["*"],
                    "routes": routes + [{"name": "denied", "match": {"prefix": "/"}, "direct_response": {"status": 403}}]}]},
                "http_filters": filters,
+               # The upstream sidecar forwards plaintext HTTP/2 to the service on loopback, so the request's
+               # :scheme is http there. A caller that reached the gateway over TLS sends https, which Envoy
+               # passes on; cartservice's Kestrel answers a :scheme that does not match its transport with
+               # RST_STREAM PROTOCOL_ERROR (seen live on 14 Nov 2026). Shipping's Go server did not check.
+               **({"scheme_header_transformation": {"scheme_to_overwrite": "http"}} if upstream else {}),
                "access_log": [{"name": "envoy.access_loggers.stdout", "typed_config": {
                    "@type": "type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog",
                    "log_format": {"json_format": {"route": "%ROUTE_NAME%", "status": "%RESPONSE_CODE%",

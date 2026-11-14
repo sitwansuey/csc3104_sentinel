@@ -45,6 +45,18 @@ class EnvoyBootstrapTests(unittest.TestCase):
                 node = json.loads(files["envoy.json"])["node"]
                 self.assertTrue(node["id"] and node["cluster"])
 
+    def test_upstream_sidecars_send_the_plaintext_scheme_to_their_service(self):
+        # Live (14 Nov 2026): cartservice's Kestrel reset a :scheme https request on its plaintext loopback port.
+        for route in manifest.ROUTES:
+            for upstream in (True, False):
+                with self.subTest(route=route, upstream=upstream):
+                    config = manifest.proxy_config(upstream=upstream, route=route)
+                    managers = [item["typed_config"] for listener in config["static_resources"]["listeners"]
+                                for chain in listener["filter_chains"] for item in chain["filters"]]
+                    expected = {"scheme_to_overwrite": "http"} if upstream else None
+                    self.assertEqual({str(manager.get("scheme_header_transformation")) for manager in managers},
+                                     {str(expected)})
+
     @unittest.skipUnless(envoy_available(), "Docker or the pinned Envoy image is not available here")
     def test_every_bootstrap_loads_in_the_pinned_envoy(self):
         for name, files in bootstraps():
