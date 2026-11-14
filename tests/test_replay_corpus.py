@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+import unittest.mock
 
 from experiments.analysis import replay, replay_corpus as corpus
 from scripts import build_replay_corpus as builder
@@ -320,6 +321,27 @@ class LabelSeparationTests(unittest.TestCase):
                 self.assertTrue(meta["source"]["bundle_id"])
             else:
                 self.assertIn(meta["twin"], ids)
+
+    def test_a_corpus_rebuilds_from_the_sources_it_recorded_not_from_newer_evidence(self):
+        # Live (15 Nov 2026): the Phase 5 bundles would have swapped the runs feeding v1's derived and
+        # adversarial cases; a corpus is frozen to the sources its manifest records.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "corpus-manifest.json").write_text(json.dumps({"sources": [
+                {"bundle_id": "b-old", "used": True, "reason": None},
+                {"bundle_id": "a-skipped", "used": False, "reason": "no proposal"}]}), encoding="utf-8")
+            index = root / "index.json"
+            index.write_text(json.dumps({"bundles": [
+                {"bundle_id": "a-skipped", "path": "2026-11-10/a-skipped", "class": "agent", "status": "current"},
+                {"bundle_id": "b-old", "path": "2026-11-11/b-old", "class": "agent", "status": "current"},
+                {"bundle_id": "c-new", "path": "2026-11-14/c-new", "class": "connected-harness",
+                 "status": "current"}]}), encoding="utf-8")
+            with unittest.mock.patch.object(builder, "INDEX", index):
+                self.assertEqual([path.name for path in builder.recorded_sources(root)], ["a-skipped", "b-old"])
+                index.write_text(json.dumps({"bundles": []}), encoding="utf-8")
+                with self.assertRaises(builder.BuildError):
+                    builder.recorded_sources(root)
+            self.assertIsNone(builder.recorded_sources(root / "absent"))
 
     def test_the_committed_corpus_matches_a_rebuild_from_the_evidence(self):
         with contextlib.redirect_stdout(io.StringIO()) as output:

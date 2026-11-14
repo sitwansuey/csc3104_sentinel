@@ -24,6 +24,9 @@ bundles in `evidence/index.json` (classes agent, connected-harness,
 provider-recovery and shipping-lab). Its
 [corpus-manifest.json](../../../evidence/replay/v1/corpus-manifest.json) lists
 every source bundle, used or not and why, and every file with its SHA-256.
+A rebuild of v1 reads exactly those source bundles, so evidence collected later
+(the Phase 5 bundles of 14 Nov 2026 among them) does not change it; a corpus
+built from newer evidence is a new version.
 
 | Provenance | Cases | How they are made |
 |---|---|---|
@@ -236,8 +239,9 @@ model family on one host, repeated runs of one scenario not independent):
 Run from the repository root with the project virtual environment.
 
 ```powershell
-python scripts/build_replay_corpus.py --check          # the committed corpus matches the evidence
-python scripts/build_replay_corpus.py                  # rebuild after new bundles (keeps matching sign-offs)
+python scripts/build_replay_corpus.py --check          # v1 matches a rebuild from the bundles it recorded
+python scripts/build_replay_corpus.py                  # rebuild v1 from its recorded sources (keeps matching sign-offs)
+python scripts/build_replay_corpus.py --refresh-sources --out evidence/replay/v2   # a new version from current evidence
 python scripts/evaluate_recovery.py golden --out <folder>/golden.json
 python scripts/evaluate_recovery.py run --policy P0 P1 P1R --diagnosis recorded --out <new folder>
 python scripts/evaluate_recovery.py report --out <folder>   # recompute results.json and table.md

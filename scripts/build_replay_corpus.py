@@ -116,6 +116,24 @@ def read_glob(folder, pattern):
     return sorted(Path(folder).glob(pattern))
 
 
+def recorded_sources(out):
+    """The bundles an existing corpus was built from (its manifest's sources, used or not), or None.
+
+    A corpus is frozen to its sources: later evidence (for example the Phase 5 bundles of 14 Nov 2026) would
+    otherwise change which runs feed derived and adversarial cases and silently alter a corpus that committed
+    results were measured on. New evidence enters through --runs or --refresh-sources into a new version.
+    """
+    manifest = Path(out) / corpus.MANIFEST
+    if not manifest.is_file():
+        return None
+    recorded = [item["bundle_id"] for item in json.loads(manifest.read_text(encoding="utf-8"))["sources"]]
+    paths = {entry["bundle_id"]: entry["path"] for entry in json.loads(INDEX.read_text(encoding="utf-8"))["bundles"]}
+    missing = [bundle for bundle in recorded if bundle not in paths]
+    if missing:
+        raise BuildError("Recorded corpus sources are missing from evidence/index.json: " + ", ".join(missing[:5]))
+    return [ROOT / "evidence" / paths[bundle] for bundle in sorted(recorded, key=lambda bundle: paths[bundle])]
+
+
 def sources_from_index():
     index = json.loads(INDEX.read_text(encoding="utf-8"))
     return [ROOT / "evidence" / entry["path"] for entry in sorted(index["bundles"], key=lambda e: e["path"])
@@ -594,8 +612,15 @@ def main(argv=None):
                         "evidence/index.json of classes " + ", ".join(SOURCE_CLASSES) + ")")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--check", action="store_true", help="rebuild into a temporary folder and compare")
+    parser.add_argument("--refresh-sources", action="store_true",
+                        help="use the current bundles of evidence/index.json instead of the sources the corpus at "
+                             "--out recorded (for a new corpus version)")
     args = parser.parse_args(argv)
-    sources = args.runs or sources_from_index()
+    try:
+        sources = args.runs or (None if args.refresh_sources else recorded_sources(args.out)) or sources_from_index()
+    except BuildError as error:
+        print(error, file=sys.stderr)
+        return 2
     reviews = previous_reviews(args.out)
     if args.check:
         with tempfile.TemporaryDirectory() as temporary:
