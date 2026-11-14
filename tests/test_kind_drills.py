@@ -826,5 +826,37 @@ class MaintenanceTests(DirectoryTest):
         self.assertEqual(json.loads(result.stdout), {"generation": "gen", "commit_counter": 10})
 
 
+class SplitReportTests(unittest.TestCase):
+    def report(self):
+        rows = [{"at": f"2026-11-14T00:00:0{index}Z", "effect": "request"} for index in range(3)]
+        return {"drill": "restore", "passed": True, "rpo_lost_commits": 61,
+                "audit": {"rows": rows, "skipped": 0, "first_at": "x", "files": 1},
+                "rechecks": [{"exit_code": 1}] * 4, "restore_checks": [{"exit_code": 1}], "partition_access": []}
+
+    def test_summary_keeps_measurements_and_counts_and_the_raw_reads_move_out(self):
+        files = drills.split_report(self.report())
+        summary = files["summary.json"]
+        self.assertEqual(summary["rpo_lost_commits"], 61)
+        self.assertEqual(summary["audit"]["rows"], 3)
+        self.assertNotIn("rechecks", summary)
+        self.assertEqual(summary["records"], {"partition_access": 0, "rechecks": 4, "restore_checks": 1})
+        self.assertEqual(len(files["audit-extract.jsonl"].splitlines()), 3)
+        self.assertEqual(len(files["records.json"]["rechecks"]), 4)
+
+    def test_compact_splits_an_earlier_summary_once_and_loses_nothing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            original = {"schema": "sentinel-p402-drill-v1", **self.report()}
+            (folder / "summary.json").write_text(json.dumps(original), encoding="utf-8")
+            self.assertTrue(drills.compact(folder))
+            self.assertFalse(drills.compact(folder))
+            summary = json.loads((folder / "summary.json").read_text(encoding="utf-8"))
+            records = json.loads((folder / "records.json").read_text(encoding="utf-8"))
+            lines = (folder / "audit-extract.jsonl").read_text(encoding="utf-8").splitlines()
+            rebuilt = {**{key: value for key, value in summary.items() if key != "records"}, **records,
+                       "audit": {**summary["audit"], "rows": [json.loads(line) for line in lines]}}
+            self.assertEqual(rebuilt, original)
+
+
 if __name__ == "__main__":
     unittest.main()

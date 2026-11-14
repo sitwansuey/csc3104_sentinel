@@ -752,6 +752,43 @@ def live_drill(lab, command, deployed, baseline, policy, *, duration=120):
     return report
 
 
+RAW_KEYS = ("partition_access", "partition_transitions", "rechecks", "restore_checks")  # Raw reads, kept apart.
+
+
+def split_report(report):
+    """The drill's files: summary.json with the measurements, the raw reads beside it, as a scenario run keeps them.
+
+    The audit rows go to audit-extract.jsonl and the Coordinator access lines,
+    transitions and restore-check re-reads to records.json, so summary.json
+    stays small enough to be collected as evidence; the split loses nothing.
+    """
+    summary = {key: value for key, value in report.items() if key not in RAW_KEYS}
+    files = {}
+    audit_log = report.get("audit")
+    if isinstance(audit_log, dict) and isinstance(audit_log.get("rows"), list):
+        rows = audit_log["rows"]
+        summary["audit"] = {**{key: value for key, value in audit_log.items() if key != "rows"}, "rows": len(rows)}
+        files["audit-extract.jsonl"] = "".join(json.dumps(row, sort_keys=True, default=str) + "\n" for row in rows)
+    raw = {key: report[key] for key in RAW_KEYS if key in report}
+    if raw:
+        summary["records"] = {key: len(value) if isinstance(value, list) else 1 for key, value in raw.items()}
+        files["records.json"] = raw
+    return {"summary.json": {"schema": "sentinel-p402-drill-v1", **summary}, **files}
+
+
+def compact(folder):
+    """Split an earlier drill's single summary.json the same way (idempotent; nothing is dropped)."""
+    path = Path(folder) / "summary.json"
+    report = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance((report.get("audit") or {}).get("rows"), list) and not any(key in report for key in RAW_KEYS):
+        return False
+    report.pop("schema", None)
+    for name, value in split_report(report).items():
+        text = value if isinstance(value, str) else json.dumps(value, indent=2, default=str)
+        (Path(folder) / name).write_text(text, encoding="utf-8")
+    return True
+
+
 def write_report(run_dir, report, forbidden=()):
     folder = Path(run_dir) / "drills" / (report["drill"] + "-" + uuid4().hex[:12])
     if report["drill"] == "rto-from-runs":
@@ -761,7 +798,7 @@ def write_report(run_dir, report, forbidden=()):
     else:
         detail = f"lost commits: {report.get('rpo_lost_commits')}; detection seconds: {report.get('detection_seconds')}"
     row = f"| {report['drill']} | {'PASS' if report['passed'] else 'FAIL'} | {detail} |\n"
-    live.write_evidence(folder, {"summary.json": {"schema": "sentinel-p402-drill-v1", **report},
+    live.write_evidence(folder, {**split_report(report),
                                  "results.md": "| Drill | Result | Measurements |\n| --- | --- | --- |\n" + row},
                         forbidden)
     return folder
@@ -772,6 +809,8 @@ def main(argv=None):
     commands = parser.add_subparsers(dest="command", required=True)
     offline = commands.add_parser("rto-from-runs", help="Recompute S5 RTO from saved evidence, entirely offline")
     offline.add_argument("runs", nargs="+", type=Path)
+    split = commands.add_parser("compact", help="Split earlier drill summaries into summary, audit extract and records")
+    split.add_argument("folders", nargs="+", type=Path)
     for name in ("partition", "restore"):
         command = commands.add_parser(name)
         command.add_argument("--context", required=True)
@@ -782,6 +821,10 @@ def main(argv=None):
     for command in (offline, *[commands.choices[name] for name in ("partition", "restore")]):
         command.add_argument("--run-dir", required=True, type=Path)
     args = parser.parse_args(argv)
+    if args.command == "compact":
+        for folder in args.folders:
+            print(("split: " if compact(folder) else "already split: ") + str(folder))
+        return 0
     try:
         if args.command == "rto-from-runs":
             report = rto_from_runs(args.runs)
