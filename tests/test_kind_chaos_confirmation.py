@@ -705,7 +705,7 @@ class CleanupTests(Harness):
         lab = RunLab(cluster, self.directory / "lab")
         deployed = {"policy_version": "v1", "versions": {}, "api_server": {"endpoint": "172.18.0.4"}}
         with patch.object(live, "git_revision", lambda: "abc123"), \
-                patch.object(live, "_operator", lambda lab, version, stopping: None):
+                patch.object(live, "_operator", lambda lab, version, stopping, record: None):
             return live.run_one(lab, acceptance.SCENARIOS[name], 1, deployed, BASELINE,
                                 {"executor-a": {"delivery-token": "q" * 43}}, self.directory / "out")
 

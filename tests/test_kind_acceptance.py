@@ -521,13 +521,15 @@ class LabTests(unittest.TestCase):
                 self.assertEqual(command[command.index("--") + 1:command.index("--") + 3],
                                  ["python", "-c"])  # No shell: the images have none.
 
-    def test_a_query_while_the_coordinator_is_down_is_empty_and_parameters_are_not_spliced(self):
+    def test_a_query_while_the_coordinator_is_down_is_a_transient_read_and_parameters_are_not_spliced(self):
         def handler(command):
             if "get" in command and "pods" in command:
                 return done(json.dumps({"items": []}))
             return done()
         lab, _ = self.lab(handler)
-        self.assertEqual(lab.query("SELECT 1"), [])
+        # Never [] (no incident yet): a wait asks again, and a read that stays down fails the run.
+        with self.assertRaisesRegex(acceptance.TransientRead, "no running Pod"):
+            lab.query("SELECT 1")
 
         def up(command):
             if "get" in command and "pods" in command:
@@ -898,7 +900,7 @@ class FakeLab:
         self.rows, self.fail_collect, self.fail_wait, self.steps = rows, fail_collect, fail_wait, []
         self.ticks = iter(range(0, 100000, 5))
         self.generations, self.first_at, self.offset = iter(generations), first_at, offset
-        self.window, self.approvals = None, []
+        self.window, self.approvals, self.read_outages = None, [], []
 
     def begin_run(self, baseline, policy=None):
         self.steps.append("begin")
@@ -1015,7 +1017,8 @@ class RunOneTests(unittest.TestCase):
                 lab = FakeLab(self.rows)
                 with tempfile.TemporaryDirectory() as directory, \
                         patch.object(live, "git_revision", lambda: "abc123"), \
-                        patch.object(live, "_operator", lambda lab, version, stopping: lab.steps.append("approver")), \
+                        patch.object(live, "_operator",
+                                     lambda lab, version, stopping, record: lab.steps.append("approver")), \
                         patch.dict(live.RUNNERS, {name: lambda run: (time.sleep(0.2), run.lab.steps.append("runner"))}):
                     live.run_one(lab, acceptance.SCENARIOS[name], 1, self.deployed, {}, self.tokens, Path(directory))
                 self.assertEqual([step for step in lab.steps if step in ("runner", "approver")], expected)

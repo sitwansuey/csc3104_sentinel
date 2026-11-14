@@ -922,6 +922,139 @@ that left a fault behind. At 1adcfe3 every one
 of these tests fails, the S1a one because the PodChaos is deleted before the
 fake controller injects it and the Planner is left blocked.
 
+### S2-S9 matrix (b37017e): reads while the Coordinator Pod was replaced
+
+On 14 Nov 2026 the matrix S2-S9 was started at b37017e on
+`kind-sentinel-dist`. S2, S3 and S4 each passed 5 of 5. S5 r1, which
+restarts the Coordinator and then deletes its Pod, did not finish. The
+harness's output showed a traceback from the operator thread: through
+`approve_pending`, `incidents`, `all_incidents`, `query` and `exec_python`,
+a `kubectl exec` into the Coordinator's Pod while that Pod was being
+replaced, ending in `AcceptanceError: kubectl --context=kind-sentinel-dist
+failed (exit 1)`, which ended the thread. The main thread then hit the same
+error and the run stopped with `Refused: kubectl --context=kind-sentinel-dist
+failed (exit 1)`. No S5 summary was written. The cleanup ran: the target
+was back at its baseline and the heavy-lab lock was released.
+
+What is known and what is not. kubectl's stderr was not kept, and the
+message named only the context flag (the first argument), not the verb or
+the reason, so which read failed in the main thread, and whether it failed
+because the Pod was gone, its container was not running or the kubelet
+refused the connection, is not known beyond exit status 1 and the time.
+The code at b37017e also does not fully explain the operator thread's
+traceback: that thread suppressed `AcceptanceError`, and `Lab.query`
+returned no rows for any failed read unless `strict`. That last point was
+a gap of its own: a Coordinator being replaced and a broken query both read
+as "no incident yet", so a wait could not tell an outage from an answer.
+Whatever the exact path, the harness did not expect the Coordinator to be
+unreadable in S5, where it is unreadable twice by design (while its
+container restarts and while its Pod is replaced), nor in S6, and treated a
+read that failed for a few seconds like one that can never succeed.
+
+What changed (offline, `experiments/distributed/kind_acceptance.py` and
+`kind_acceptance_live.py`):
+
+- **A failed kubectl call is classified, not swallowed**
+  (`transient_failure`). It is transient only when kubectl itself failed
+  (exit 1, with no `command terminated with exit code`) and its stderr says
+  the Pod was not found, the container was not running (not found, waiting
+  to start, exited, no host assigned), or the connection was refused, reset,
+  lost or timed out (the API server or the kubelet); or when a command in
+  the container was ended by SIGKILL or SIGTERM with its container (137,
+  143). A kubectl that does not answer within its own timeout is transient
+  too. Everything else, a query that ran and failed, a denial or an
+  unclassified kubectl error included, raises at once and is never asked
+  again. A transient failure raises `TransientRead`, whose reason is the
+  class, never kubectl's text. A Deployment with no running Pod (being
+  replaced) is transient as well (`Lab.pod`). Failure messages now name
+  the tool and its verb (`kubectl exec failed (exit 1): container not
+  running`), still never an argument, which may be a Secret's name.
+- **A failed read is never "no rows".** `Lab.query` raises `TransientRead`
+  or `AcceptanceError`; it no longer returns `[]` on failure.
+- **Reads are asked again with bounded back-off** (`Lab.wait`,
+  `Lab.read`). A wait asks a transiently failing check again, the pause
+  doubling from its interval up to `READ_BACKOFF_SECONDS` (8 s), never past
+  the step's own deadline. When the deadline comes while the reads are
+  still failing, the wait ends in `ReadUnavailable`, a harness error naming
+  the read, its attempts and its last class, not in "not reached in time",
+  which would be the system's answer. A single read outside a wait (a
+  strict query before a run, a database copy, a Pod's name for its logs,
+  an S9 probe's exec, the proposal read before S6's approval and S8's
+  revocation) is asked again for up to `READ_RETRY_SECONDS` (180 s, a
+  replaced Pod's Ready time). Whether a fault point was reached is read in
+  `first_reached`'s wait, bounded by that step's timeout; arming,
+  disarming and releasing one are not asked again. Only the wait's own
+  expiry, before a single attempt ran, makes `Lab.read` a
+  `ReadUnavailable`: any other error from the attempt is raised as it is,
+  so an approval or revocation POST that timed out after it was sent ends
+  the run as `TimeoutError`, not as a read that never happened. Each run of
+  failed reads is kept in the summary's `read_outages` (what, since,
+  attempts, last class, seconds, whether it recovered), also when the Pod
+  answered and the attempt then failed some other way. `Lab.settle` reads
+  once per pass, as before, and a failed read keeps the lab unsettled.
+- **The operator thread outlives every failure** (`_operator`). Each failed
+  attempt is caught, logged by class (`dist_acceptance.operator.failed`,
+  class only) and tried again on the next tick. The summary's `operator`
+  holds the count, the first 20 failures (time, kind, class), each outage
+  with its length and how it ended, and whether the thread was still in a
+  call when the run ended. A transient outage longer than
+  `READ_RETRY_SECONDS`, a query error or any unexpected error is fatal: it
+  is added once to `harness_error`, so the run fails, and the thread keeps
+  going. A refusal from the approval API is recorded and the action asked
+  again.
+- **S5 reads through the outages and measures Ready from the cluster.**
+  It no longer runs `kubectl rollout status` or reads the Pod by name
+  straight after the delete: it waits, through failed reads, for the one
+  Running, Ready Coordinator Pod, then for one whose UID is not the deleted
+  Pod's. `notes.pod_delete.ready_at`, the RTO's "to Ready", is that
+  replacement's Ready `lastTransitionTime` (the cluster's clock), and the
+  scenario returns only once the replacement's database answers
+  (`readable_at`, the harness's clock). "To first claim" and "to next
+  transition" come from the copied records, which are copied through the
+  same bounded reads. `notes.after_commit_exit` also records the
+  container's restart count.
+- **S6, S8 and S9 were checked for the same pattern.** S6 partitions the
+  Coordinator from the workers only; the harness reads it through kubectl
+  exec and approves over the port-forward. That the partition cuts neither
+  is an assumption still to confirm live; if it holds, S6 reads normally,
+  and a failed read is ridden out like any other. Only the reads before
+  S6's approval and S8's revocation are asked again, never the POST
+  itself, so neither is sent twice (the operator thread, as before, may
+  approve again after a failed POST). S8's
+  delay applies to the holder's traffic to the API server, not to the
+  harness's; its seal wait reads through `Lab.wait`. S9 runs each probe
+  again when kubectl could not start it (the Pod restarting), and
+  classifies a probe that ran as it answered.
+
+To confirm live, not assumed: that kubectl 1.37's stderr for a Pod being
+replaced matches these classes. An unclassified failure stops the run with
+a harness error at once (it does not pass), naming only the verb and exit
+status, so a new class needs adding by hand. If the harness's own process
+is the one that cannot reach the API server for longer than a step's
+limit, every read fails and the run stops with `ReadUnavailable`. A
+summary is still not written when the records cannot be copied at all
+(`collect` raises `ReadUnavailable` after 180 s); the matrix then stops,
+with the cleanup and settle already done.
+
+Tests: `tests/test_kind_outage_reads.py`, with the real `Shell` and `Lab`
+over a fake kubectl. The classification of each kubectl failure; a wait,
+a strict read, a database copy and a fault point that fail N times and then
+answer go on, with the pauses backing off and the outage recorded, and ones
+that never answer end in `ReadUnavailable` within the step's deadline; a
+query error or a denial is raised after one attempt; the operator survives
+N failed reads (each transient class) and then approves once, a transient
+outage past the bound is fatal once while the thread keeps going, a query
+error or an unexpected error is fatal and a refusal is not; an approval
+or revocation POST that times out in S6 or S8 is a `TimeoutError`, sent
+once, not an unread proposal; a real thread
+stays alive through failures; `run_one` puts the operator's record in the
+summary, fails the run on a fatal one and records a terminal wait that
+ended in `ReadUnavailable`; and S5 against a scripted Coordinator that
+exits, restarts, is deleted and replaced (with one refused Pod list in
+between) measures Ready from the replacement, and stops with
+`ReadUnavailable` when the replacement never answers. At b37017e every one
+of these tests fails.
+
 ## Results
 
 Generated by `python -m experiments.distributed.kind_acceptance table`;
@@ -1017,6 +1150,11 @@ quoted. P4.02 adds the measured RTO and RPO table to the
   before a scenario goes on, a fault that never takes effect a harness
   error, and nothing left behind, as listed under
   [first matrix](#first-matrix-1adcfe3-a-chaos-object-removed-before-chaos-mesh-acted).
+- `tests/test_kind_outage_reads.py`: reads that fail while a Pod restarts
+  or is replaced are asked again within their step's limit and are a
+  harness error past it, in the main thread, the operator thread and S5, as
+  listed under
+  [S2-S9 matrix](#s2-s9-matrix-b37017e-reads-while-the-coordinator-pod-was-replaced).
 - `tests/test_kind_acceptance.py` also checks that S6 starts its operator
   only after its runner returns, while S0 approves from the start, and that
   `deploy` applies Sentinel without the workload and stops when the target's

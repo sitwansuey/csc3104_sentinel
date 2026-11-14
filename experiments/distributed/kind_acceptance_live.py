@@ -11,6 +11,10 @@ times (13 Nov 2026); the runs after a passing S0 in one deployment are why
 each run is now scoped to its own incidents (run_one), and the first matrix's
 S1a, whose PodChaos was deleted before Chaos Mesh acted, is why every fault is
 now confirmed in effect before a scenario goes on and undone in cleanup (Run).
+The S2-S9 matrix of 14 Nov 2026 stopped in S5 r1 on a read while the
+Coordinator's Pod was replaced, which is why reads now ride out a Pod that is
+restarting or not ready within their step's limit, and the operator thread
+(_operator) outlives every failure and reports it in the summary.
 """
 import base64
 from contextlib import suppress
@@ -27,12 +31,18 @@ from experiments.distributed import audit, invariants
 from experiments.distributed.kind_acceptance import (
     ADMISSION, AFTER_FAULT, CHAOS_CONFIRM_SECONDS, CHAOS_KINDS, CHAOS_LABEL, CHAOS_VERSION, CLUSTER, CONTEXT,
     CONTROL_PLANE, DEADLINE_SECONDS, DEPLOYMENTS, EXECUTORS, IDENTITIES, LEASE_SECONDS, LOCAL_IMAGES, MANIFESTS,
-    NAMESPACE, NODE_IMAGE, OPERATOR, PAUSE_CONFIRM_SECONDS, PROBE_HELPER, SCENARIOS, TARGET, WORKLOAD,
-    AcceptanceError, Lab, RunView,
+    NAMESPACE, NODE_IMAGE, OPERATOR, PAUSE_CONFIRM_SECONDS, PROBE_HELPER, READ_RETRY_SECONDS, REPLACEMENT_SECONDS,
+    SCENARIOS, TARGET, WORKLOAD,
+    AcceptanceError, Lab, ReadUnavailable, RunView, TransientRead,
     approval_permissions, certificate_names, cluster_identity, config_map, control_plane_window, coordinator_recovery,
-    credentials, delay_to_api_server, expectation, partition, pod_failure, pod_kill, load_summaries, preflight,
-    render_admission, render_api_server_policy, results_table, secret_documents, scope_records, secret_name,
-    selector_apps, shift, stamp, takeover_seconds, target_inputs, time_skew)
+    credentials, delay_to_api_server, expectation, partition, pod_facts, pod_failure, pod_kill, load_summaries,
+    preflight, ready_since, render_admission, render_api_server_policy, results_table, secret_documents,
+    scope_records, secret_name, selector_apps, shift, stamp, takeover_seconds, target_inputs, time_skew,
+    transient_failure)
+from runtime.service_identity import ProtocolError
+from shared import log
+
+LOG = log.get_logger("dist_acceptance")
 
 BASELINE_SAMPLES, BASELINE_SPACING = 4, 10
 EXECUTOR_USER = "system:serviceaccount:sentinel-dist:sentinel-executor"
@@ -628,39 +638,59 @@ def s4(run):
     run.remove(lost)
 
 
-def _coordinator_pod(lab):
-    pod, _ = lab.pod("sentinel-coordinator")
-    return lab.shell.json("get", "pod", pod, namespace=NAMESPACE)
+def _ready_coordinator(lab, gone=()):
+    """The Coordinator's one Running, Ready Pod (its document) whose UID is not in gone; None while there is none.
 
-
-def _ready_at(pod):
-    return next((item.get("lastTransitionTime") for item in pod.get("status", {}).get("conditions", [])
-                 if item.get("type") == "Ready" and item.get("status") == "True"), None)
+    kubectl get fails transiently (TransientRead) while the API server does
+    not answer; Lab.wait asks again.
+    """
+    items = lab.shell.json("get", "pods", "--selector=app=sentinel-coordinator", namespace=NAMESPACE)["items"]
+    ready = [item for item in items if (facts := pod_facts(item))["phase"] == "Running" and facts["ready"]
+             and not facts["deleting"] and facts["uid"] not in gone]
+    return ready[0] if len(ready) == 1 else None
 
 
 def s5(run):
+    """The Coordinator exits between commit and reply, then its Pod is deleted; its return to Ready is measured.
+
+    The Coordinator is expected to be unreadable twice here: while its
+    container restarts and while its Pod is replaced. Every read in between
+    (the fault point, the incident, the Pod's readiness, its database) is
+    asked again with bounded back-off (Lab.wait, Lab.read), so an outage
+    shorter than the step's limit is waited out and a longer one is a
+    harness error naming the read. Ready is the Ready condition's
+    lastTransitionTime of the replacement Pod (the cluster's clock); the
+    scenario returns only once the replacement's database answers again.
+    On 14 Nov 2026 (b37017e) this step read the Pod list and ran rollout
+    status straight after the delete, and the run ended on the replacement
+    not being there yet.
+    """
+    lab = run.lab
     stem = "coordinator.after_commit_before_reply@execution_result"
     run.armed.append(("coordinator", stem))  # Disarmed by cleanup if the Coordinator never reaches it.
-    run.lab.arm(["coordinator"], stem, "exit")
-    run.lab.first_reached(["coordinator"], stem, timeout=240)  # Read again once the container restarted.
+    lab.arm(["coordinator"], stem, "exit")
+    lab.first_reached(["coordinator"], stem, timeout=240)  # Read again once the container restarted.
     run.armed.remove(("coordinator", stem))
-    pod = _coordinator_pod(run.lab)
-    status = (pod["status"].get("containerStatuses") or [{}])[0]
-    terminated = status.get("lastState", {}).get("terminated", {})
-    run.lab.shell.kubectl("rollout", "status", "deployment/sentinel-coordinator", "--timeout=180s",
-                          namespace=NAMESPACE, timeout=200)
+    pod = lab.wait(lambda: _ready_coordinator(lab), REPLACEMENT_SECONDS,
+                   "the Coordinator was not Ready again after it exited", interval=1)
+    status = next((item for item in (pod.get("status") or {}).get("containerStatuses") or []
+                   if item.get("name") == "coordinator"), {})
+    terminated = (status.get("lastState") or {}).get("terminated") or {}
     # Both stamps are on the cluster's clock; the RTO below is measured from the harness's mark of the delete.
     run.notes["after_commit_exit"] = {"exit_code": terminated.get("exitCode"), "exited_at": terminated.get("finishedAt"),
-                                      "ready_at": _ready_at(_coordinator_pod(run.lab))}
-    run.lab.wait_state({"VERIFYING", *invariants.TERMINAL}, 150)
-    name, _ = run.lab.pod("sentinel-coordinator")
+                                      "restarts": status.get("restartCount"), "ready_at": ready_since(pod)}
+    lab.wait_state({"VERIFYING", *invariants.TERMINAL}, 150)
+    old = lab.wait(lambda: _ready_coordinator(lab), REPLACEMENT_SECONDS, "the Coordinator was not Ready to be "
+                   "deleted", interval=1)["metadata"]
     run.save_logs("coordinator", run.since)
     run.mark()
-    run.lab.shell.kubectl("delete", "pod", name, "--wait=false", namespace=NAMESPACE)
-    run.lab.wait(lambda: run.lab.pod("sentinel-coordinator")[0] != name, 120, "no new Coordinator Pod", interval=1)
-    run.lab.shell.kubectl("rollout", "status", "deployment/sentinel-coordinator", "--timeout=180s",
-                          namespace=NAMESPACE, timeout=200)
-    run.notes["pod_delete"] = {"deleted_at": run.fault_at, "ready_at": _ready_at(_coordinator_pod(run.lab))}
+    lab.shell.kubectl("delete", "pod", old["name"], "--wait=false", namespace=NAMESPACE)
+    replacement = lab.wait(lambda: _ready_coordinator(lab, gone={old["uid"]}), REPLACEMENT_SECONDS,
+                           "no Ready replacement Coordinator Pod", interval=1)
+    run.notes["pod_delete"] = {"deleted_at": run.fault_at, "pod": old["name"],
+                               "replacement": replacement["metadata"]["name"], "ready_at": ready_since(replacement)}
+    lab.read("the Coordinator's database in its replacement Pod", lambda: lab.all_incidents())
+    run.notes["pod_delete"]["readable_at"] = stamp(lab.clock())  # The harness's clock.
 
 
 def s6(run):
@@ -670,7 +700,9 @@ def s6(run):
     # Long enough that three leases still fit after a confirmation that takes all of CHAOS_CONFIRM_SECONDS.
     cut = run.create(partition(run.name("all"), "sentinel-coordinator", workers,
                                3 * LEASE_SECONDS + 60 + CHAOS_CONFIRM_SECONDS))
-    run.lab.approve(row["active_action_id"], run.policy_version)  # The operator reaches it over the port-forward.
+    # The operator reaches it over the port-forward. Only the proposal's read (kubectl exec) is asked again when it
+    # fails transiently: that is before anything is posted, and a failed POST is never sent twice.
+    run.lab.read("the proposal to approve", lambda: run.lab.approve(row["active_action_id"], run.policy_version))
     seconds = min(3 * LEASE_SECONDS, run.window_left(cut))
     run.lab.sleep(seconds)
     rows, _ = run.audit_rows(since)
@@ -710,7 +742,8 @@ def s8(run):
     # target_ownership outlives the run, so an earlier S8's seal is already there: wait for a newer one.
     before = max((item["sealed_epoch"] for item in run.lab.ownership(strict=True)), default=0)
     run.mark()
-    run.lab.revoke(row["active_action_id"])
+    # As in S6, only the reads before the POST are asked again; a failed revocation is not sent twice.
+    run.lab.read("the approval to revoke", lambda: run.lab.revoke(row["active_action_id"]))
     sealed = run.lab.wait(lambda: newer_seal(run.lab.ownership(), before), 120,
                           "the other Executor did not seal the target", interval=2)
     run.notes["seal"] = {"epoch": sealed["epoch"], "sealed_epoch": sealed["sealed_epoch"],
@@ -769,20 +802,39 @@ def s9_probes(lab, service_ip, endpoint_ip):
     ]
 
 
+def probe(lab, label, identity, argv):
+    """Run one S9 probe in identity's Pod and classify what it saw: "allowed", "denied", "open", "timeout", "error".
+
+    When kubectl exec itself failed transiently (transient_failure: the Pod
+    being replaced, its container not running, the API server or kubelet
+    not answering), the probe never ran, so it is run again (Lab.read) rather
+    than counted as the probe's own "error"; one that still has not run at
+    READ_RETRY_SECONDS is ReadUnavailable. A probe that ran is classified as
+    it answered.
+    """
+    def attempt():
+        pod, _ = lab.pod(_app(identity))
+        result = lab.shell.kubectl("exec", pod, "--container=" + IDENTITIES[identity][1], "--", *argv,
+                                   namespace=NAMESPACE, check=False, timeout=60)
+        reason = transient_failure(result)
+        if reason:
+            raise TransientRead(f"kubectl exec for the probe failed (exit {result.returncode}): {reason}", reason)
+        return result
+    result = lab.read(f"the probe {label!r}", attempt)
+    if argv[0] == "python":
+        return {"open": "open", "TimeoutError": "timeout", "timeout": "timeout"}.get(
+            (result.stdout or "").strip(), (result.stdout or "").strip() or "error")
+    return _outcome(result)
+
+
 def s9(run):
     lab = run.lab
     service_ip, endpoint_ip = api_server_addresses(lab.shell)
     run.mark()
     results = []
-    for label, identity, argv, expected in s9_probes(lab, service_ip, endpoint_ip):
-        pod, _ = lab.pod(_app(identity))
-        result = lab.shell.kubectl("exec", pod, "--container=" + IDENTITIES[identity][1], "--", *argv,
-                                   namespace=NAMESPACE, check=False, timeout=60)
-        if argv[0] == "python":
-            observed = {"open": "open", "TimeoutError": "timeout", "timeout": "timeout"}.get(
-                (result.stdout or "").strip(), (result.stdout or "").strip() or "error")
-        else:
-            observed = _outcome(result)
+    probes = lab.read("the target's Pod for the probes", lambda: s9_probes(lab, service_ip, endpoint_ip))
+    for label, identity, argv, expected in probes:
+        observed = probe(lab, label, identity, argv)
         results.append({"probe": label, "identity": identity, "expected": expected, "observed": observed,
                         "passed": observed == expected})
     run.notes["probes"] = results
@@ -798,11 +850,77 @@ RUNNERS = {"S0": s0, "S1a": s1a, "S1b": s1b, "S1c": s1c, "S2": s2, "S3": s3, "S4
 # Running -------------------------------------------------------------------------------------------------
 
 
-def _operator(lab, policy_version, stopping):
-    """Approve each action once while it waits for approval, like an attentive operator."""
-    while not stopping.wait(1.0):
-        with suppress(AcceptanceError, OSError, ValueError, subprocess.SubprocessError):
+OPERATOR_TICK_SECONDS = 1.0  # How often the operator looks for an action waiting for approval.
+OPERATOR_FAILURES_KEPT = 20  # Failed attempts kept in a summary's operator.failures; the rest are only counted.
+
+
+def operator_record():
+    """What the operator thread (_operator) records for run_one's summary."""
+    return {"attempts_failed": 0, "failures": [], "outages": [], "fatal": []}
+
+
+def _operator(lab, policy_version, stopping, record=None):
+    """Approve each action once while it waits for approval, like an attentive operator, until stopping is set.
+
+    The thread outlives every failure: each failed attempt is caught, logged
+    by class, kept in record (operator_record; the first
+    OPERATOR_FAILURES_KEPT in full) and tried again on the next tick. A
+    transient failure (TransientRead: the Coordinator's Pod restarting, not
+    ready or unreachable; kubectl or the approval API's port-forward not
+    answering) is expected in S5 and S6 and is only recorded, with each
+    outage's length in record["outages"]; one that lasts past
+    READ_RETRY_SECONDS is fatal. An answer refusing the approval
+    (ProtocolError) is recorded; the action stays unapproved and is asked
+    again. Anything else is fatal too. run_one fails the run with every fatal
+    entry as a harness error, so a run never passes on an operator that could
+    not do its job. Until 14 Nov 2026 the thread dropped AcceptanceError,
+    OSError, ValueError and SubprocessError silently and ended on anything
+    else.
+    """
+    record = operator_record() if record is None else record
+    outage = None  # The current run of transient failures: when it started, its last reason, whether it was fatal.
+
+    def close(ended):
+        record["outages"].append({"since": outage["since"], "seconds": round(lab.monotonic() - outage["started"], 1),
+                                  "attempts": outage["attempts"], "reason": outage["reason"], "ended": ended})
+    while not stopping.wait(OPERATOR_TICK_SECONDS):
+        try:
             lab.approve_pending(policy_version)
+        except Exception as error:  # noqa: BLE001 - kept in the run's summary and logged by class; tried again
+            if isinstance(error, (TransientRead, OSError, subprocess.TimeoutExpired)):
+                kind = "transient"
+                reason = error.reason if isinstance(error, TransientRead) else type(error).__name__
+                now = lab.monotonic()
+                if outage is None:
+                    outage = {"started": now, "since": stamp(lab.clock()), "attempts": 0, "fatal": False}
+                outage.update(attempts=outage["attempts"] + 1, reason=reason)
+                if now - outage["started"] > READ_RETRY_SECONDS and not outage["fatal"]:
+                    outage["fatal"] = True
+                    record["fatal"].append(f"the operator could not read or reach the Coordinator for "
+                                           f"{now - outage['started']:.0f} s from {outage['since']}, more than "
+                                           f"{READ_RETRY_SECONDS} s (last: {reason})")
+            elif isinstance(error, ProtocolError):  # The approval API answered: whatever failed before is back.
+                kind, reason = "refused", f"the approval API answered {error.status}"
+            else:
+                kind, reason = "fatal", type(error).__name__
+                fatal = f"the operator failed: {type(error).__name__}: {str(error)[:200]}"
+                if fatal not in record["fatal"]:  # Once per distinct failure, however many ticks repeat it.
+                    record["fatal"].append(fatal)
+            if kind != "transient" and outage is not None:
+                close("answered")
+                outage = None
+            record["attempts_failed"] += 1
+            if len(record["failures"]) < OPERATOR_FAILURES_KEPT:
+                record["failures"].append({"at": stamp(lab.clock()), "kind": kind, "reason": reason,
+                                           "error_type": type(error).__name__})
+            log.failure(LOG, "dist_acceptance.operator.failed", error, outcome=kind, reason=reason,
+                        attempts=record["attempts_failed"])
+            continue
+        if outage is not None:
+            close("answered")
+            outage = None
+    if outage is not None:
+        close("the operator stopped first")
 
 
 def collect(lab, view, since, saved_logs=None):
@@ -874,6 +992,14 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
     audit extract from a quiet run. The run passes only when the invariants
     hold, the scenario's expectation (kind_acceptance.expectation) is met,
     the extract is complete, the lab settled and the harness raised nothing.
+    Reads that fail while a Pod restarts or is not ready are asked again
+    within their step's limit (Lab.wait, Lab.read); one that is still failing
+    there is a harness error (ReadUnavailable): recorded with the summary
+    when it ends the scenario or the wait for a terminal state, and raised,
+    with no summary, when the records cannot be copied. The operator
+    thread's failed attempts and outages are in the summary's operator, and
+    a fatal one fails the run; the outages the main thread waited out are in
+    read_outages.
     """
     from experiments.distributed.run_scenarios import timeline
     run = Run(lab, scenario, index, deployed["policy_version"])
@@ -886,16 +1012,16 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
     policy_version = deployed["policy_version"]
     run.api_endpoint = deployed.get("api_server", {}).get("endpoint")
     prior = lab.begin_run(baseline, policy)  # Before the injection: nothing of this run is in the store yet.
-    approvals_before = len(lab.approvals)
+    approvals_before, outages_before = len(lab.approvals), len(lab.read_outages)
     operator_actions, error = [], None
     stopping = threading.Event()
-    approver = None
+    approver, operated = None, operator_record()
     if scenario.name != "S9":
         operator_actions.append(lab.inject())
     approving = scenario.options.get("auto_approve", True) if scenario.name != "S9" else False
 
     def start_approver():
-        thread = threading.Thread(target=_operator, args=(lab, policy_version, stopping), daemon=True)
+        thread = threading.Thread(target=_operator, args=(lab, policy_version, stopping, operated), daemon=True)
         thread.start()
         return thread
     if approving is True:
@@ -917,7 +1043,11 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
     settled = None
     try:
         remaining = max(10.0, DEADLINE_SECONDS - (lab.monotonic() - started))
-        terminal = True if scenario.name == "S9" else lab.wait_terminal(remaining)
+        try:
+            terminal = True if scenario.name == "S9" else lab.wait_terminal(remaining)
+        except ReadUnavailable as caught:  # The store stayed unreadable: a harness error, recorded, never a pass.
+            terminal = False
+            error = "; ".join(part for part in (error, f"{type(caught).__name__}: {caught}") if part)
         generation_at_end = _generation(lab.target())
     finally:
         try:  # The target goes back to its baseline even when waiting failed.
@@ -928,6 +1058,10 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
             stopping.set()
             if approver is not None:
                 approver.join(5)
+    operator = {key: list(value) if isinstance(value, list) else value for key, value in operated.items()}
+    operator["still_running"] = approver is not None and approver.is_alive()  # Stuck in a call past the join.
+    if operator["fatal"]:
+        error = "; ".join(part for part in (error, "operator: " + "; ".join(operator["fatal"])) if part)
     operator_actions += [{"operator_action": "approve", **item} for item in lab.approvals[approvals_before:]]
     work = out / "copied" / f"{scenario.name}-r{index}"
     view = RunView(work, tokens)
@@ -977,7 +1111,7 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
                                                      "after": generations[1]}},
                "clock": {"control_plane_minus_harness": offsets, "fault_at_cluster_clock": fault_at},
                "takeover_seconds": takeover, "coordinator_recovery": recovery, "operator_actions": operator_actions,
-               "cleanup": cleaned,
+               "operator": operator, "read_outages": lab.read_outages[outages_before:], "cleanup": cleaned,
                "synthetic_planner": True, "git_revision": git_revision(), "limits": LIMITS}
     folder = out / started_at.date().isoformat() / f"{scenario.name}-r{index}-{started_at:%H%M%S}z"
     forbidden = forbidden_strings(tokens)
