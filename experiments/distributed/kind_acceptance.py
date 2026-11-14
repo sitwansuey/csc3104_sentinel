@@ -117,6 +117,11 @@ client's own 502, included) is now in doubt: reconciled from the
 Coordinator's store before anything is sent again, and sent again only,
 unchanged and bounded, when the store shows it was not recorded
 (Lab._send, APPROVAL_SEND_ATTEMPTS); not yet re-run either.
+S8 x5 at 7ce9863 (deploy 14, 14 Nov 2026) failed its expectation 5/5 with
+no write: the holder, held before the adapter's pre-read, saw the moved
+version there and never sent its PATCH, so the API server's refusal of a
+stale PATCH was never exercised. S8 now holds the holder after that read
+(executor.before_submit) and needs its PATCH refused; not yet re-run.
 """
 import argparse
 from contextlib import suppress
@@ -1011,11 +1016,13 @@ SCENARIOS = {item.name: item for item in (
     Scenario("S7", "Both Executors' clocks 300 s behind (TimeChaos)",
              "TimeChaos -300 s on executor-a and executor-b", "S7", "FAILED, none RECOVERED, 0 Sentinel template "
              "writes"),
-    Scenario("S8", "Revoke the approval while the holder is paused before its patch; the other Executor seals",
-             "fault point executor.before_patch (block), revoke through the approval API, then the holder's "
-             "traffic to the API server is delayed 8 s (NetworkChaos) when it is released", "S8",
-             "not RECOVERED, 0 template writes, a seal from the other Executor's Pod, then the holder's PATCH "
-             "refused (409 or 422), generation unchanged after the seal"),
+    Scenario("S8", "Revoke the approval while the holder is paused after its pre-read, before its PATCH; the other "
+             "Executor seals", "fault point executor.before_submit (block, after the adapter's pre-read and local "
+             "UID/resourceVersion check), revoke through the approval API, wait for the seal, then release the "
+             "holder so its PATCH goes out with the version it read", "S8",
+             "not RECOVERED, 0 template writes, a seal by the other Executor (its fence in the audit log, or the "
+             "Coordinator's records of a seal past V0 with nothing to send), then the holder's PATCH refused by "
+             "the API server (409 or 422), generation unchanged after the seal"),
     Scenario("S9", "RBAC, admission and network policy denials", "the Executor reads a Secret, patches "
              "another Deployment, asks for pods/exec and changes spec.replicas; the Planner opens a TCP "
              "connection to the API server; the Executor to the target's port", "design S9 (A6)",
@@ -1048,25 +1055,92 @@ def _on_target(row):
     return row.get("namespace") == WORKLOAD and row.get("name") == TARGET and row.get("resource") == "deployments"
 
 
+def holder_patches(rows, holder):
+    """Every PATCH of the target from holder's Pod in the audit rows, whatever its answer, oldest first (S8)."""
+    return sorted((row for row in rows if row.get("verb") == "patch" and _on_target(row) and row.get("at")
+                   and _from_pod(row, holder)), key=lambda row: _seconds(row["at"]))
+
+
+def s8_seal(rows, records, stalled):
+    """The other Executor's seal of S8's action, as the run's evidence proves it; None when nothing proves one.
+
+    rows are the audit rows, records the run's scoped records (scope_records;
+    None when there are none) and stalled the holder. Either proof is enough,
+    and its name is the run's seal_path:
+
+    - "fenced": a Sentinel fence on the target from the other Executor's Pod
+      in the audit log. The seal read the target still at V0 and sent a
+      metadata-only fence (services/executor/core.py::seal). at is its time
+      on the API server's clock, generation the generation it stored.
+    - "advanced_without_evidence": the target had already left V0 without
+      this action's evidence (a crash-looping target's own status writes move
+      its resourceVersion), so the seal sent nothing. The Coordinator's
+      records prove it: an accepted fence_result SEALED for one of the run's
+      actions, produced by the other Executor, at a resourceVersion that is
+      not the proposal's V0; the executor.seal delivery for that action owned
+      by the same Executor and finished; and the action's move to FAILED
+      caused by that very message (its event key). at is the Coordinator's
+      time of that move (one kernel clock with the API server: the nodes are
+      containers on one Docker host); generation is None.
+
+    A fence from the holder's own Pod, or a seal the holder produced, is
+    never a proof: expectation fails such a run on its own.
+    """
+    if stalled not in EXECUTORS:
+        return None
+    other = [identity for identity in EXECUTORS if identity != stalled]
+    fences = [row for row in rows if row["effect"] == "fence" and row["sentinel"] and _on_target(row) and row["at"]
+              and any(_from_pod(row, identity) for identity in other)]
+    if fences:
+        first = min(fences, key=lambda row: _seconds(row["at"]))
+        sealer = next(identity for identity in other if _from_pod(first, identity))
+        return {"path": "fenced", "sealer": sealer, "at": first["at"],
+                "generation": max((row["generation"] for row in fences if type(row["generation"]) is int),
+                                  default=None)}
+    records = records or {}
+    for seal in records.get("seals", []):
+        base, version = seal.get("based_on_resource_version"), seal.get("resource_version")
+        if (seal.get("outcome") != "SEALED" or seal.get("producer") not in other
+                or not isinstance(base, str) or not base or not isinstance(version, str) or not version
+                or version == base):
+            continue
+        events = {row["id"] for row in records.get("outbox", [])
+                  if row.get("topic") == "executor.seal" and row.get("action_id") == seal["action_id"]}
+        delivered = any(row.get("event_id") in events and row.get("owner") == seal["producer"]
+                        and row.get("finished") is not None and row.get("result_digest")
+                        for row in records.get("receipts", []))
+        failed = next((row for row in records.get("transitions", [])
+                       if row.get("action_id") == seal["action_id"] and row.get("to_state") == "FAILED"
+                       and row.get("cause") == seal.get("event_key") and row.get("recorded_at")), None)
+        if delivered and failed is not None:
+            return {"path": "advanced_without_evidence", "sealer": seal["producer"], "at": failed["recorded_at"],
+                    "generation": None}
+    return None
+
+
 def expectation(name, *, incidents, rows, notes=None, stalled=None, takeover=None, recovery=None,
-                generation_at_end=None):
+                generation_at_end=None, records=None):
     """Failures of scenario name's expected outcome (Scenario.expect), from what the run recorded; [] when met.
 
     incidents are the run's scoped incident rows, rows its audit extract,
     notes the scenario's notes, stalled the Executor a fault point held,
     takeover and recovery the measurements, and generation_at_end the
     target's metadata.generation after the run and before the operator's
-    restore. The invariants cap writes and need a terminal state; this checks
+    restore, and records the run's scoped records (S8 reads a seal that sent
+    no fence from them). The invariants cap writes and need a terminal state; this checks
     what each scenario is for: S0, S1a-S1c, S2, S4 and S5 end RECOVERED with
     exactly one Sentinel template write (S2's not from the paused holder's
     Pod; S1b and S1c with a takeover measured; S5 with the Coordinator's
     return to Ready measured); S3 and S6 end with every incident terminal and
     at most one write (S6 with none during the partition); S7 ends FAILED,
     none RECOVERED, with no write; S8 ends not RECOVERED with no template
-    write, a seal (fence) from the other Executor's Pod, after it a PATCH
-    from the holder's Pod refused with 409 or 422, and no change to the target
-    after the seal (its generation is the seal's); S9's probes all behave as
-    expected with no write.
+    write, a seal by the other Executor (s8_seal: its fence in the audit
+    log, or the Coordinator's records of a seal past V0 with nothing to
+    send), none by the holder, after it a PATCH from the holder's Pod that
+    reached the API server and was refused with 409 or 422 (a holder that
+    sent none did not exercise the race S8 is for, and fails), no write from
+    the holder's Pod, and no change to the target after the seal; S9's
+    probes all behave as expected with no write.
     """
     notes, failures = notes or {}, []
     states = sorted({row["state"] for row in incidents})
@@ -1099,17 +1173,32 @@ def expectation(name, *, incidents, rows, notes=None, stalled=None, takeover=Non
     if name == "S8":
         need(bool(states) and "RECOVERED" not in states, f"expected not RECOVERED (states: {', '.join(states) or 'none'})")
         need(not writes, f"{len(writes)} Sentinel template write(s), expected 0")
-        other = [identity for identity in EXECUTORS if identity != stalled]
-        seals = [row for row in rows if row["effect"] == "fence" and row["sentinel"] and _on_target(row)
-                 and stalled in EXECUTORS and any(_from_pod(row, identity) for identity in other) and row["at"]]
-        need(bool(seals), "no seal or fence from the other Executor's Pod in the audit log")
-        if seals:
-            sealed_at = min(_seconds(row["at"]) for row in seals)
-            refused = [row for row in rows if row["effect"] == "denied" and row["code"] in {409, 422}
-                       and row["verb"] == "patch" and _on_target(row) and _from_pod(row, stalled) and row["at"]
-                       and _seconds(row["at"]) > sealed_at]
-            need(bool(refused), "no PATCH from the holder's Pod refused (409 or 422) after the seal")
-            sealed = max((row["generation"] for row in seals if type(row["generation"]) is int), default=None)
+        if stalled not in EXECUTORS:
+            failures.append("no paused holder was recorded")
+            return failures
+        own = [row for row in rows if row["sentinel"] and _on_target(row) and _from_pod(row, stalled)]
+        need(not any(row["effect"] in {"template_write", "metadata_write", "unclassified"} for row in own),
+             "the holder's Pod changed the target")
+        need(not any(row["effect"] == "fence" for row in own), "a fence from the holder's own Pod: the holder sealed")
+        need(not any(seal.get("producer") == stalled for seal in (records or {}).get("seals", [])),
+             "the holder's own fence_result was accepted: the holder sealed")
+        proof = s8_seal(rows, records, stalled)
+        need(proof is not None, "no seal by the other Executor: no fence from its Pod in the audit log, and no "
+             "Coordinator record of its seal (executor.seal delivery, fence_result SEALED past V0, action FAILED "
+             "on it)")
+        if proof is not None:
+            sealed_at = _seconds(proof["at"])
+            after = [row for row in holder_patches(rows, stalled) if _seconds(row["at"]) > sealed_at]
+            need(bool(after), "the holder's Pod sent no PATCH to the target after the seal: its stale PATCH never "
+                 "reached the API server, so the race S8 is for was not exercised")
+            if after:
+                need(any(row["effect"] == "denied" and row["code"] in {409, 422} for row in after),
+                     "no PATCH from the holder's Pod refused (409 or 422) after the seal")
+            sealed = proof["generation"]
+            if proof["path"] != "fenced":  # Nothing was sent: the generation last stored before the seal.
+                sealed = max((row["generation"] for row in rows if row["effect"] in audit.STORED and _on_target(row)
+                              and type(row["generation"]) is int and row["at"]
+                              and _seconds(row["at"]) <= sealed_at), default=None)
             need(sealed is not None and generation_at_end == sealed,
                  f"the target's generation is {generation_at_end} at the end and {sealed} after the seal: "
                  "something changed it after the seal")
@@ -2124,8 +2213,8 @@ def scope_records(records, since, prior=()):
     hold earlier runs too. prior holds the incidents the store already had
     when the run began (Lab.begin_run), so an incident of an earlier run is
     never counted however close the clocks put it to since. Incidents, their
-    actions, transitions and outbox rows, and revocations of those actions,
-    are kept for this run only. Receipts, worker results, message digests,
+    actions, transitions and outbox rows, and revocations and seal answers
+    (seals) of those actions, are kept for this run only. Receipts, worker results, message digests,
     Executor ledgers and the Observer's outbox are left whole, so I4, I5, I6
     and X3 check the store's whole history, which is stricter; X3 therefore
     compares the Observer's acknowledged incidents with every incident the
@@ -2143,6 +2232,7 @@ def scope_records(records, since, prior=()):
     scoped["transitions"] = [row for row in records.get("transitions", []) if row["incident_id"] in opened]
     scoped["outbox"] = [row for row in records.get("outbox", []) if row.get("action_id") in actions]
     scoped["revocations"] = [row for row in records.get("revocations", []) if row["action_id"] in actions]
+    scoped["seals"] = [row for row in records.get("seals", []) if row.get("action_id") in actions]
     return scoped
 
 

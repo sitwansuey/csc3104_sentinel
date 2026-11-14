@@ -413,6 +413,29 @@ class ScopeTests(unittest.TestCase):
         self.assertFalse(acceptance.invariants.i3(scoped)["passed"])  # The new incident is still OPEN.
         self.assertFalse(acceptance.invariants.i3(acceptance.scope_records(records, "2026-11-13T11:00:00Z"))[
             "passed"])  # No incident in this run is a failure, not a pass on the old one.
+        records["seals"] = [{"action_id": "A0", "producer": "executor-b"}, {"action_id": "A1", "producer": "executor-a"}]
+        self.assertEqual(acceptance.scope_records(records, "2026-11-13T10:00:00Z")["seals"],
+                         [{"action_id": "A1", "producer": "executor-a"}])  # An earlier run's seal is never this one's.
+
+    def test_the_records_carry_each_accepted_seal_answer_with_its_producer_and_v0(self):
+        from services.coordinator.store import SQLiteStore
+        with tempfile.TemporaryDirectory() as directory:
+            view = acceptance.RunView(directory, {})
+            with SQLiteStore(view.paths["coordinator"] / "coordinator.db") as store:
+                store.add_incident("I1", {"name": "demo-api"}, "OPEN")
+                store.add_action("A1", "I1", {"based_on_resource_version": "1200", "action_id": "A1"}, "READY")
+                answer = {"kind": "fence_result", "incident_id": "I1", "action_id": "A1", "epoch": 2,
+                          "outcome": "SEALED", "resource_version": "1207", "target": {"name": "demo-api"},
+                          "recorded_at": "2026-11-13T10:00:41Z", "schema_version": "1.0"}
+                store.add_message('["fence_result","A1","2026-11-13T10:00:41Z"]', json.dumps(answer),
+                                  high_water=4, answers=44, producer="executor-b", incident_id="I1")
+                store.add_message('["incident","I1",""]', json.dumps({"kind": "incident", "incident_id": "I1"}),
+                                  high_water=0, producer="observer-1")
+            records = acceptance.invariants.collect(view, terminal_in_time=True, cluster_writes=[])
+        self.assertEqual(records["seals"], [{
+            "seq": 1, "event_key": '["fence_result","A1","2026-11-13T10:00:41Z"]', "producer": "executor-b",
+            "incident_id": "I1", "action_id": "A1", "epoch": 2, "outcome": "SEALED", "resource_version": "1207",
+            "recorded_at": "2026-11-13T10:00:41Z", "based_on_resource_version": "1200"}])
 
 
 class EvidenceTests(unittest.TestCase):
@@ -780,34 +803,128 @@ class ExpectationTests(unittest.TestCase):
                 audit_row("fence", pod=B_POD, generation=3, at="2026-11-13T10:00:40Z", action_id="ACT-1"),
                 audit_row("denied", code=422, at="2026-11-13T10:00:49Z")]
 
-    def test_s8_needs_the_other_executors_seal_then_the_holders_refused_patch(self):
+    S8_KEY = '["fence_result","ACT-1","2026-11-13T10:00:41.100000Z"]'
+
+    def s8_records(self, **seal):
+        """The Coordinator's records of a seal by executor-b that sent nothing (advanced without evidence)."""
+        return {"actions": [{"action_id": "ACT-1", "incident_id": "I0", "state": "FAILED"}],
+                "outbox": [{"id": 41, "topic": "executor.request", "action_id": "ACT-1", "delivered": 1},
+                           {"id": 44, "topic": "executor.seal", "action_id": "ACT-1", "delivered": 1}],
+                "receipts": [{"event_id": 41, "delivery_id": "d41", "owner": "executor-a", "attempts": 1,
+                              "finished": 1.0, "result_digest": None},
+                             {"event_id": 44, "delivery_id": "d44", "owner": "executor-b", "attempts": 1,
+                              "finished": 2.0, "result_digest": "e" * 64}],
+                "transitions": [{"seq": 9, "incident_id": "I0", "action_id": "ACT-1", "from_state": "VALIDATING",
+                                 "to_state": "FAILED", "cause": self.S8_KEY,
+                                 "recorded_at": "2026-11-13T10:00:41.300000Z"}],
+                "seals": [dict({"seq": 30, "event_key": self.S8_KEY, "producer": "executor-b", "incident_id": "I0",
+                                "action_id": "ACT-1", "epoch": 2, "outcome": "SEALED", "resource_version": "1207",
+                                "recorded_at": "2026-11-13T10:00:41.100000Z",
+                                "based_on_resource_version": "1200"}, **seal)]}
+
+    def s8(self, rows, records=None, stalled="executor-a", generation_at_end=3, states=("FAILED",)):
+        return self.check("S8", list(states), rows, stalled=stalled, generation_at_end=generation_at_end,
+                          records=records)
+
+    NO_SEAL = ("no seal by the other Executor: no fence from its Pod in the audit log, and no Coordinator record of "
+               "its seal (executor.seal delivery, fence_result SEALED past V0, action FAILED on it)")
+    NO_PATCH = ("the holder's Pod sent no PATCH to the target after the seal: its stale PATCH never reached the API "
+                "server, so the race S8 is for was not exercised")
+    NOT_REFUSED = "no PATCH from the holder's Pod refused (409 or 422) after the seal"
+
+    def test_s8_passes_on_a_fence_by_the_other_executor_then_the_holders_refused_patch(self):
         rows = self.s8_rows()
-        self.assertEqual(self.check("S8", ["FAILED"], rows, stalled="executor-a", generation_at_end=3), [])
-        cases = {
-            "no seal or fence from the other Executor's Pod in the audit log": [rows[0], rows[2]],
-            "no PATCH from the holder's Pod refused (409 or 422) after the seal": rows[:2],
+        self.write_invariants_pass(["FAILED"], rows)
+        self.assertEqual(self.s8(rows), [])
+        self.assertEqual(acceptance.s8_seal(rows, None, "executor-a"),
+                         {"path": "fenced", "sealer": "executor-b", "at": "2026-11-13T10:00:40Z", "generation": 3})
+        self.assertEqual(self.s8(rows, self.s8_records()), [])  # The audit's fence decides the path.
+        self.assertEqual(acceptance.s8_seal(rows, self.s8_records(), "executor-a")["path"], "fenced")
+
+    def test_s8_passes_on_records_of_a_seal_past_v0_with_nothing_sent_then_the_holders_refused_patch(self):
+        for code in (409, 422):
+            with self.subTest(code=code):
+                rows = [self.s8_rows()[0], audit_row("denied", code=code, at="2026-11-13T10:00:49Z")]
+                self.write_invariants_pass(["FAILED"], rows)
+                self.assertEqual(self.s8(rows, self.s8_records(), generation_at_end=2), [])
+                self.assertEqual(acceptance.s8_seal(rows, self.s8_records(), "executor-a"),
+                                 {"path": "advanced_without_evidence", "sealer": "executor-b",
+                                  "at": "2026-11-13T10:00:41.300000Z", "generation": None})
+
+    def test_s8_fails_without_proof_of_a_seal_by_the_other_executor(self):
+        rows = [self.s8_rows()[0], self.s8_rows()[2]]
+        self.write_invariants_pass(["FAILED"], rows)
+        self.assertEqual(self.s8(rows, generation_at_end=2), [self.NO_SEAL])
+        records = self.s8_records()
+        unproven = {
+            "an APPLIED seal": dict(self.s8_records(outcome="APPLIED")),
+            "an UNSEALED seal": dict(self.s8_records(outcome="UNSEALED")),
+            "a seal still at V0": dict(self.s8_records(resource_version="1200")),
+            "a seal with no version": dict(self.s8_records(resource_version=None)),
+            "a seal answer from a worker that is not an Executor": dict(self.s8_records(producer="guard-1")),
+            "no executor.seal delivery": dict(records, outbox=records["outbox"][:1]),
+            "a delivery another worker owns": dict(records, receipts=[records["receipts"][0],
+                                                                      dict(records["receipts"][1], owner="guard-1")]),
+            "a delivery never finished": dict(records, receipts=[records["receipts"][0],
+                                                                 dict(records["receipts"][1], finished=None)]),
+            "a delivery with no result": dict(records, receipts=[records["receipts"][0],
+                                                                 dict(records["receipts"][1], result_digest=None)]),
+            "a FAILED caused by something else": dict(records, transitions=[
+                dict(records["transitions"][0], cause='["execution_result","ACT-1","2026-11-13T10:00:41Z"]')]),
+            "no move to FAILED": dict(records, transitions=[dict(records["transitions"][0], to_state="NEEDS_REVIEW")]),
         }
-        for message, changed in cases.items():
-            with self.subTest(message=message):
+        for name, changed in unproven.items():
+            with self.subTest(case=name):
+                self.assertIsNone(acceptance.s8_seal(rows, changed, "executor-a"))
+                self.assertIn(self.NO_SEAL, self.s8(rows, changed, generation_at_end=2))
+
+    def test_s8_fails_when_the_holder_sealed_its_own_action(self):
+        rows = self.s8_rows()
+        by_holder = [rows[0], dict(rows[1], pod="sentinel-executor-a-7c8d9e6f5-a1a1a"), rows[2]]
+        self.assertEqual(self.s8(by_holder), ["a fence from the holder's own Pod: the holder sealed", self.NO_SEAL])
+        records = self.s8_records(producer="executor-a")
+        records["receipts"][1]["owner"] = "executor-a"
+        self.assertEqual(self.s8([rows[0], rows[2]], records, generation_at_end=2),
+                         ["the holder's own fence_result was accepted: the holder sealed", self.NO_SEAL])
+        self.assertIsNone(acceptance.s8_seal([rows[0], rows[2]], records, "executor-a"))
+
+    def test_s8_fails_when_the_holders_stale_patch_never_reached_the_api_server(self):
+        rows = self.s8_rows()
+        for name, records, changed, generation in (
+                ("fenced", None, rows[:2], 3),
+                ("advanced_without_evidence", self.s8_records(), rows[:1], 2),
+                ("refused only before the seal", None, [rows[0], rows[1], dict(rows[2], at="2026-11-13T10:00:39Z")], 3),
+                ("a GET only", None, [*rows[:2], dict(rows[2], verb="get", effect="request", code=200)], 3)):
+            with self.subTest(case=name):
                 self.write_invariants_pass(["FAILED"], changed)
-                self.assertEqual(self.check("S8", ["FAILED"], changed, stalled="executor-a", generation_at_end=3),
-                                 [message])
-        sealed_by_holder = [rows[0], dict(rows[1], pod="sentinel-executor-a-7c8d9e6f5-a1a1a"), rows[2]]
-        self.assertIn("no seal or fence from the other Executor's Pod in the audit log",
-                      self.check("S8", ["FAILED"], sealed_by_holder, stalled="executor-a", generation_at_end=3))
-        refused_first = [rows[0], rows[1], dict(rows[2], at="2026-11-13T10:00:39Z")]
-        self.assertEqual(self.check("S8", ["FAILED"], refused_first, stalled="executor-a", generation_at_end=3),
-                         ["no PATCH from the holder's Pod refused (409 or 422) after the seal"])
+                self.assertEqual(self.s8(changed, records, generation_at_end=generation), [self.NO_PATCH])
+
+    def test_s8_fails_when_the_holder_wrote_or_its_patch_was_not_refused_by_the_api_server(self):
+        rows = self.s8_rows()
+        wrote = [rows[0], rows[1], audit_row("template_write", at="2026-11-13T10:00:49Z", generation=4)]
+        self.assertEqual(self.s8(wrote, generation_at_end=4), [
+            "1 Sentinel template write(s), expected 0", "the holder's Pod changed the target", self.NOT_REFUSED,
+            "the target's generation is 4 at the end and 3 after the seal: something changed it after the seal"])
+        records_wrote = [rows[0], dict(wrote[2])]
+        self.assertIn("the holder's Pod changed the target", self.s8(records_wrote, self.s8_records(),
+                                                                       generation_at_end=4))
         forbidden = [rows[0], rows[1], dict(rows[2], code=403)]
-        self.assertEqual(self.check("S8", ["FAILED"], forbidden, stalled="executor-a", generation_at_end=3),
-                         ["no PATCH from the holder's Pod refused (409 or 422) after the seal"])
-        self.assertEqual(self.check("S8", ["FAILED"], rows, stalled="executor-a", generation_at_end=4),
+        self.assertEqual(self.s8(forbidden), [self.NOT_REFUSED])
+        failed = [rows[0], rows[1], dict(rows[2], effect="failed", code=500)]
+        self.assertEqual(self.s8(failed), [self.NOT_REFUSED])
+
+    def test_s8_needs_the_target_unchanged_after_the_seal_and_not_recovered(self):
+        rows = self.s8_rows()
+        self.assertEqual(self.s8(rows, generation_at_end=4),
                          ["the target's generation is 4 at the end and 3 after the seal: something changed it after "
                           "the seal"])
-        self.assertEqual(self.check("S8", ["RECOVERED"], rows, stalled="executor-a", generation_at_end=3),
-                         ["expected not RECOVERED (states: RECOVERED)"])
-        self.assertEqual(self.check("S8", ["FAILED"], rows, stalled=None, generation_at_end=3),
-                         ["no seal or fence from the other Executor's Pod in the audit log"])
+        advanced = [rows[0], rows[2]]
+        self.assertEqual(self.s8(advanced, self.s8_records(), generation_at_end=3),
+                         ["the target's generation is 3 at the end and 2 after the seal: something changed it after "
+                          "the seal"])
+        self.assertEqual(self.s8(rows, states=("RECOVERED",)), ["expected not RECOVERED (states: RECOVERED)"])
+        self.assertEqual(self.s8(rows, stalled=None), ["no paused holder was recorded"])
+        self.assertIsNone(acceptance.s8_seal(rows, self.s8_records(), None))
 
     def test_s9_needs_every_probe_and_no_write(self):
         self.assertEqual(self.check("S9", [], [], notes={"probes": []}), ["not every denial probe behaved as expected"])

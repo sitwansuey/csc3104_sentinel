@@ -59,6 +59,7 @@ NAMES = frozenset({
     "planner.mid_inference",
     "executor.after_start_write",
     "executor.before_patch",
+    "executor.before_submit",
     "executor.after_patch_before_save",
     "verifier.mid_collection",
     "coordinator.after_commit_before_reply",
@@ -198,9 +199,19 @@ class CheckpointLedger:
 
 
 class CheckpointCluster:
-    """Deployment API proxy that stops just before and just after the patch."""
+    """Deployment API proxy that stops just before and just after the patch.
+
+    executor.before_patch stops before the adapter's conditional_restore, so
+    before its pre-read. executor.before_submit stops inside it, after the
+    pre-read and local UID/resourceVersion check have passed and before the
+    PATCH is sent (the adapter's before_submit hook, which this proxy sets):
+    a process held there and released after the target moved still sends
+    its PATCH with the version it read, so the API server's own test decides.
+    """
     def __init__(self, cluster):
         self._cluster = cluster
+        if hasattr(cluster, "before_submit"):  # The live adapter (services/executor/kubernetes_adapter.py).
+            cluster.before_submit = lambda: checkpoint("executor.before_submit")
 
     def __getattr__(self, name):
         return getattr(self._cluster, name)
