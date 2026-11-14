@@ -212,10 +212,14 @@ def certificate_record(certificate, namespace):
         generation = metadata["generation"]
         observed = condition.get("observedGeneration")
         revision = status.get("revision")
+        names = spec.get("dnsNames")
+        if names is not None and not isinstance(names, list):
+            # A string would otherwise become a list of its characters.
+            raise ValueError("dnsNames is not a list")
         record = {
             "kind": "Certificate", "namespace": namespace, "name": metadata["name"], "uid": metadata["uid"],
             "generation": generation, "secret_name": spec["secretName"],
-            "dns_names": list(spec.get("dnsNames") or []),
+            "dns_names": list(names or []),
             "issuer": {"group": issuer.get("group") or "cert-manager.io", "kind": issuer.get("kind") or "Issuer",
                        "name": issuer["name"]},
             "ready": condition.get("status") if condition.get("status") in ("True", "False") else "Unknown",

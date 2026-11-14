@@ -287,6 +287,9 @@ class CertLifecycleTests(unittest.TestCase):
             self.assertTrue(any(image["repository"] + ":" + pins["version"] in line and "images." + name in line
                                 for line in commands), name)
         self.assertTrue(any("Get-FileHash" in line for line in commands))
+        # The digest is printed bare (sha256:...), as pins.json wants it, not JSON-quoted.
+        for line in commands:
+            self.assertNotIn("{{json", line)
         self.assertEqual(cert_lifecycle.unresolved_pins(resolved(pins)), [])
         broken = resolved(pins)
         broken["images"]["webhook"]["digest"] = "sha256:short"
@@ -356,6 +359,29 @@ class CertLifecycleTests(unittest.TestCase):
         kubectl = [call for call in command.calls if call[0] == "kubectl"]
         self.assertTrue(all(call[1] == "--context=kind-sentinel-boutique-security" for call in kubectl))
         self.assertIn("--for=condition=Ready", kubectl[-1])
+
+    def test_every_key_file_is_owner_only_before_openssl_writes_a_key_into_it(self):
+        events = []
+
+        def command(args, **kwargs):
+            args = [str(arg) for arg in args]
+            if "-keyout" in args:
+                key = Path(args[args.index("-keyout") + 1])
+                # The file exists, is empty and was restricted before the key is written.
+                events.append(("openssl", key.name, key.exists() and key.stat().st_size == 0))
+            return FakeOpenSSL()(args)
+
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(cert_lifecycle, "_private_file", side_effect=lambda path: events.append(
+                    ("private", Path(path).name, True))):
+            directory = self.lab(folder)
+            ca = cert_lifecycle.make_ca(directory / "pki", "ca-1", command=command)
+            cert_lifecycle.sign(directory / "pki" / "client", ca, "client.internal", command=command)
+            with self.assertRaises(FileExistsError):
+                cert_lifecycle.private_key_file(ca / "ca.key")
+        for name in ("ca.key", "tls.key"):
+            mine = [event for event in events if event[1] == name]
+            self.assertEqual(mine[:2], [("private", name, True), ("openssl", name, True)], name)
 
     def test_negatives_are_an_untrusted_ca_a_wrong_san_and_an_already_expired_ten_minute_certificate(self):
         command = FakeOpenSSL()

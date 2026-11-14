@@ -125,7 +125,10 @@ class CertificateStatusAdapterTests(unittest.TestCase):
         for change in (lambda item: item.update(kind="Secret"), lambda item: item.update(apiVersion="v1"),
                        lambda item: item["metadata"].update(namespace="other"),
                        lambda item: item["metadata"].update(generation="2"), lambda item: item["spec"].pop("secretName"),
-                       lambda item: item["status"].update(notAfter=17), lambda item: item.update(status="ready")):
+                       lambda item: item["status"].update(notAfter=17), lambda item: item.update(status="ready"),
+                       # A string is not a list of DNS names, not even one that spells the reviewed name.
+                       lambda item: item["spec"].update(dnsNames="upstream.internal"),
+                       lambda item: item["spec"].update(dnsNames={"upstream.internal": True})):
             item = certificate_object()
             change(item)
             with self.subTest(item=item), self.assertRaises(AdapterError) as caught:

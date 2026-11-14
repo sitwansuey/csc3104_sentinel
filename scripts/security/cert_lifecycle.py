@@ -56,6 +56,11 @@ CERT_MANAGER_NAMESPACE = "cert-manager"
 ISSUER = "sentinel-lab-ca"
 UNTRUSTED_ISSUER = "sentinel-untrusted-ca"
 ISSUER_REF = {"group": "cert-manager.io", "kind": "ClusterIssuer", "name": ISSUER}
+# The Secrets in the cert-manager namespace that hold a lab CA key: the first
+# CA and the one a rollover switches to. Neither the Executor nor the Guard
+# reader may get them (experiments/boutique/harness/protected.py::rbac_matrix).
+ROLLOVER_CA_SECRET = ISSUER + "-2"
+CA_SECRETS = (ISSUER, ROLLOVER_CA_SECRET)
 # Every lab identity and its TLS role; the Secret is security-<identity>, the SAN <identity>.internal.
 IDENTITIES = (("gateway", "server"), ("upstream", "server"), ("cart-upstream", "server"),
               ("proxy-client", "client"), ("client", "client"), ("frontend-client", "client"),
@@ -126,7 +131,7 @@ def pin_commands(pins):
                 f"(Get-FileHash -Algorithm SHA256 cert-manager-{version}.tgz).Hash.ToLower()   # chart.sha256"]
     for name, image in sorted(pins["images"].items()):
         commands.append(f"docker buildx imagetools inspect {image['repository']}:{version} "
-                        "--format \"{{json .Manifest.Digest}}\"   # images." + name + ".digest")
+                        "--format \"{{.Manifest.Digest}}\"   # images." + name + ".digest")
     return commands
 
 
@@ -219,10 +224,23 @@ def write_private(path, text):
         stream.write(text)
 
 
+def private_key_file(path):
+    """An empty owner-only file for openssl to write a key into.
+
+    It is restricted before any key is in it: openssl overwrites an existing
+    file in place, which keeps its permissions, so the key is never readable
+    under inherited permissions (on Windows mkdir's mode has no effect).
+    """
+    with Path(path).open("x", encoding="utf-8"):
+        _private_file(path)
+    return path
+
+
 def make_ca(pki, name, *, command=run, days=30):
     """A lab CA in pki/<name>: ca.crt (public) and ca.key (owner-only)."""
     folder = Path(pki) / name
     folder.mkdir(mode=0o700)
+    private_key_file(folder / "ca.key")
     command([shutil.which("openssl") or "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
              "-days", str(days), "-subj", "/CN=Sentinel lab CA " + name,
              "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign",
@@ -256,6 +274,7 @@ def sign(folder, ca, san, *, command=run, expired_minutes=None, now=None):
     """
     openssl = shutil.which("openssl") or "openssl"
     folder.mkdir(mode=0o700)
+    private_key_file(folder / "tls.key")
     command([openssl, "req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=" + san,
              "-keyout", folder / "tls.key", "-out", folder / "tls.csr"])
     _private_file(folder / "tls.key")
@@ -335,10 +354,10 @@ def rollover(directory, step, command):
         bundle = [old, new]
     elif step == "switch":
         apply_private(command, pki, "ca-secret-ca-2",
-                      _secret(ISSUER + "-2", CERT_MANAGER_NAMESPACE, new, {"tls.crt": "ca.crt", "tls.key": "ca.key"},
+                      _secret(ROLLOVER_CA_SECRET, CERT_MANAGER_NAMESPACE, new, {"tls.crt": "ca.crt", "tls.key": "ca.key"},
                               kind="kubernetes.io/tls"))
         path = directory / "issuer-ca-2.json"
-        path.write_text(json.dumps(cluster_issuer(ISSUER, ISSUER + "-2"), indent=2) + "\n", encoding="utf-8")
+        path.write_text(json.dumps(cluster_issuer(ISSUER, ROLLOVER_CA_SECRET), indent=2) + "\n", encoding="utf-8")
         kubectl(command, "apply", "-f", path)
         # Deleting a Secret makes cert-manager reissue it from the issuer's new CA;
         # the Pods keep their mounted files until the new Secret arrives.

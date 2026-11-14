@@ -916,8 +916,10 @@ ConfigMap volumes are compared by kind and name, not by `items`,
 Run on the security lab cluster only, from a new run folder, and never while
 another heavy run is going: P4.01, P4.03, P4.05, P5.07 and this run each take
 most of Docker's 15 GB, and the harness refuses while the heavy-lab lock is
-held. The lab's two-day certificates are made at `start`, so start the lab
-for each session. `python scripts/security/protected_recovery.py plan` prints
+held. Since P5.06 the lab's identities are issued by cert-manager at `start`
+(two-hour certificates renewed an hour before expiry), and `start` refuses
+until the cert-manager pins are resolved (Certificate lifecycle, below).
+`python scripts/security/protected_recovery.py plan` prints
 these commands.
 
 ```powershell
@@ -964,7 +966,13 @@ certificates.cert-manager.io/security-upstream` all `no`); the reader gets
 the two ConfigMaps and `certificates.cert-manager.io/security-upstream` and
 nothing else (`secret/security-upstream`, `secret/security-gateway`,
 `secrets`, `list secrets`, `list certificates.cert-manager.io` and the
-Deployment all `no`). `bypass-before.json` shows the plaintext Service, the
+Deployment all `no`). Neither identity may mint a lab identity (P5.06):
+for both, `create certificates.cert-manager.io` and `create
+certificaterequests.cert-manager.io` in the lab namespace and with
+`--all-namespaces`, `get secret/sentinel-lab-ca` and `get
+secret/sentinel-lab-ca-2` in the `cert-manager` namespace, and `patch
+clusterissuers.cert-manager.io/sentinel-lab-ca` are all `no`; those rows
+carry their `namespace` in the file. `bypass-before.json` shows the plaintext Service, the
 Pod IP and the gateway outage all refused, and its `positive_control`
 shows the Verifier's authenticated quote succeeding before the outage and
 after the gateway is restored.
@@ -1170,7 +1178,39 @@ sign-off. The new tests are in `tests/test_security_lab_context.py`,
 
 Residual risks, also in the threat model: the lab CA key sits in the run
 folder (owner-only) for the lab's life, so anyone who can read that folder
-can mint a trusted identity. While the cert-manager controller is down,
+can mint a trusted identity. The same key is also inside the cluster.
+`issue` applies it as Secret `sentinel-lab-ca` (`tls.crt` and `tls.key`) in
+the `cert-manager` namespace, and `rollover switch` applies the second CA as
+`sentinel-lab-ca-2` there (`scripts/security/cert_lifecycle.py::issue`,
+`scripts/security/cert_lifecycle.py::rollover`). The issuer is a
+cluster-scoped ClusterIssuer, and cert-manager's default approver approves
+every request. So any principal that may create a Certificate or a
+CertificateRequest in any namespace, get either CA Secret, or edit the
+ClusterIssuer can mint, for example, `client.internal` or the Verifier's
+SAN, and the gateway's exact SAN allowlist accepts it. Before P5.06 the CA
+key never entered the cluster. Why a ClusterIssuer is still the lab's
+choice (owner sign-off below):
+
+- In the lab, those rights belong to the cluster admin and to cert-manager's
+  own controllers. Sentinel's identities hold none of them: the protected
+  run's can-i matrix asserts `no` for the Executor and the Guard reader on
+  `create` Certificates and CertificateRequests, in the lab namespace and
+  in all namespaces, on `get` of both CA Secrets in `cert-manager`, and on
+  `patch` of the ClusterIssuer
+  (`experiments/boutique/harness/protected.py::rbac_matrix`,
+  `tests/test_protected_recovery.py::GuardReaderTests.test_neither_identity_may_mint_a_lab_identity_or_read_a_ca_key`).
+  No other principal in the cluster has been checked live.
+- A namespaced CA Issuer would need the CA Secret in the lab namespace
+  itself. There, anyone who may create a Pod in the namespace could mount
+  it, which is a wider group than those who may read Secrets in
+  `cert-manager`. Every workload identity Secret is already in that
+  namespace.
+- cert-manager's approver-policy, limited to the lab namespace and the
+  reviewed DNS names, is the stronger control. It adds another component to
+  pin and review, and nothing in Sentinel creates a CertificateRequest. It
+  is the owner's call for anything beyond the lab.
+
+While the cert-manager controller is down,
 a Certificate's Ready condition is stale, but the Guard checks notAfter
 itself. A `CertificateRejected` line labels evidence; it does not make an
 incident on its own. The gateway's log, where an upstream refusal appears,
@@ -1181,7 +1221,16 @@ each identity's Secret, so anyone who may write ConfigMaps in the
 namespace can add a CA that every Envoy trusts after its next reload; in
 the lab only the cluster admin can. The Guard compares the bundle as a
 reference, so a changed bundle refuses a repair, but nothing stops Envoy
-from loading it.
+from loading it. The same holds for each Envoy's own configuration
+ConfigMap, which carries its SDS files and is hot-reloaded. For repeated
+fields, `combined_validation_context` merges the SDS validation context
+into the static one, so a principal that may write that ConfigMap can add
+a trusted CA or a SAN matcher without a restart. The Observer's
+`CertificateRejected` rule matches any collected log line with a TLS
+refusal. A workload that logs `certificate verify failed` therefore makes
+the Planner escalate, even when a rollback could have repaired a bad
+rollout that broke a TLS client. That fails safe (no write) but suppresses
+the repair.
 
 ### Live recipe (P5.06; not run)
 
@@ -1210,7 +1259,8 @@ kubectl --context kind-sentinel-boutique-security -n sentinel-boutique-security 
 # Wait about 90 s for the kubelet to update the volumes, then repeat the three reads and check out in the storefront.
 python scripts/security/boutique_security.py probe --directory $lab --route shipping
 
-# 3. Refused identities: an untrusted CA, a wrong SAN and a ten-minute certificate that has already expired.
+# 3. Refused client identities: an untrusted CA, a SAN the gateway's allowlist does not name (signed by the lab CA)
+#    and a ten-minute certificate that has already expired. The gateway refuses them; no incident and no escalation follow.
 python scripts/security/cert_lifecycle.py negatives --directory $lab
 python scripts/security/boutique_security.py probe --directory $lab --identity negative-untrusted-ca
 python scripts/security/boutique_security.py probe --directory $lab --identity negative-wrong-san
@@ -1228,6 +1278,8 @@ kubectl --context kind-sentinel-boutique-security -n cert-manager scale deployme
 python scripts/security/cert_lifecycle.py rollover start --directory $lab
 python scripts/security/boutique_security.py probe --directory $lab --identity negative-old-ca
 python scripts/security/cert_lifecycle.py rollover switch --directory $lab
+# Wait about 90 s for the kubelet to update every Secret volume before probing: a probe Pod trusts only the
+# ca.crt in its own Secret, so it can briefly refuse a gateway still serving an old-CA certificate.
 python scripts/security/boutique_security.py probe --directory $lab --route shipping
 python scripts/security/cert_lifecycle.py rollover finish --directory $lab
 python scripts/security/boutique_security.py probe --directory $lab --identity negative-old-ca
@@ -1238,7 +1290,25 @@ Step 2: every container's restart count is unchanged; the two Certificates'
 revisions went up by one; the gateway serves a new serial; the gateway's
 access log shows a new `peer_serial` for frontend's calls; checkout and the
 probe succeed throughout (a short gap while the kubelet syncs is a finding
-to record, not to retry away). Step 3: each probe exits 1. Step 4: once the
+to record, not to retry away). Step 3: each probe exits 1, and that is
+all the step shows. The plan asks that these three certificates be
+"refused and escalate with 0 writes". For a client identity, the recipe
+narrows that to refusal by the gateway (owner sign-off below), for two
+reasons. First, a refused client makes no incident: no Deployment is
+unhealthy, so there is nothing for the Observer to open, the Planner to
+escalate or the Executor to write. Second, the refusal is not visible as
+`CertificateRejected` anywhere live. The gateway's HTTP access log records
+requests, and a client whose handshake fails never makes one. Envoy's own
+handshake-failure messages are expected at debug level, below the lab's
+`--log-level warn` (not observed here). The gateway's log is not collected
+for a recovery target either. The Observer's `CertificateRejected` tests
+use synthetic log lines, so the Observer-to-Planner identity rule has no
+live path until a listener-level access log with
+`%DOWNSTREAM_TRANSPORT_FAILURE_REASON%` is added and the gateway's log is
+collected (deferred). `negative-wrong-san` is signed by the lab CA with a
+SAN that the gateway's allowlist does not name, so it also stands for an
+identity outside the allowlist. Removing a name from a running gateway's
+allowlist is not part of the recipe. Step 4: once the
 margin is crossed, `identity` exits 1 with `SECURITY_IDENTITY_EXPIRING` for
 `security-upstream`; the protected run's Guard decision is ESCALATE with
 that code, `transport-stats.json` shows zero writes, and the run is recorded
@@ -1253,7 +1323,18 @@ A wrong SAN or an untrusted issuer on the upstream Certificate itself (patch
 its `dnsNames` or `issuerRef`) is refused by the gateway and gives
 `SECURITY_IDENTITY_SPEC` in `identity`; a protected run cannot reach the
 Guard in that state, because its baseline capture already fails through the
-gateway, so the Guard's decision for those two cases is shown offline only.
+gateway, so the Guard's decision for those two cases is shown offline only
+(`tests/test_protected_recovery.py::ProtectedRollbackTests.test_an_identity_that_cannot_serve_escalates_and_writes_nothing`:
+ESCALATE with `SECURITY_IDENTITY_SPEC` and no write). So, live, the
+plan's "escalate with 0 writes" is shown for the upstream's own identity
+and for expiry only (step 4, reached by stopping the controller, on the
+rotation profile). Injecting a wrong SAN or issuer after the baseline is
+captured would need a harness step that does not exist, and is deferred.
+The design's 10-minute certificate renewed 5 minutes early cannot come from
+cert-manager, which refuses a lifetime under one hour. The rotation profile
+(one hour, renewed 50 minutes early, so a renewal every ten minutes)
+replaces it for rotation, and a locally signed certificate that expired a
+minute ago, valid for ten minutes, replaces it for the expired client.
 
 ### Owner sign-offs
 
@@ -1270,4 +1351,23 @@ gateway, so the Guard's decision for those two cases is shown offline only.
   start it, refuse to start;
 - the Planner's identity rule and `runbooks/identity-failure.md`;
 - the lab CA key and the test keys living in the run folder for the lab's
-  life.
+  life;
+- the lab CA key inside the cluster, as Secrets `sentinel-lab-ca` and
+  `sentinel-lab-ca-2` in the `cert-manager` namespace, behind a
+  cluster-wide ClusterIssuer that cert-manager's default approver signs for
+  any namespace. Anyone who may create Certificates or CertificateRequests
+  anywhere, read those Secrets or edit the issuer can mint an identity the
+  gateway accepts. The argument above is for keeping a ClusterIssuer in the
+  lab rather than a namespaced Issuer or approver-policy, and the can-i
+  rows say that neither Sentinel identity can mint one;
+- the narrowed live verification. For the untrusted-CA, wrong-SAN and
+  expired client identities, the plan's "refused and escalate with 0
+  writes" becomes refusal by the gateway only: a refused client makes no
+  incident, and its handshake failure reaches no collected log. The
+  Planner's `CertificateRejected` rule has no live path until the gateway's
+  log, with a listener-level access log, is collected. For the upstream's
+  own identity, ESCALATE with 0 writes is shown live for expiry only
+  (step 4). For a wrong SAN or an untrusted issuer it is shown offline only;
+- the rotation profile (one-hour certificates renewed 50 minutes early) and
+  the locally signed, already-expired ten-minute certificate replacing the
+  design's 10-minute cert-manager profile, which cert-manager refuses.

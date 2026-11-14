@@ -63,6 +63,8 @@ READER_CONTEXT = "sentinel-guard-reader-boutique-security"
 # (sentinel.local) runs only in the gateway Pod, never in a recovery target.
 PROTECTED_REGISTRIES = ("us-central1-docker.pkg.dev", "docker.io")
 STAGES = ("baseline", "full")
+# An RBAC matrix row asked with kubectl auth can-i --all-namespaces (P5.06).
+ALL_NAMESPACES = "*"
 # The proto files the security lab publishes for its probes (boutique_security.prepare).
 PROBE_SCHEMAS = {"hipstershop.ShippingService/GetQuote": "shipping.proto"}
 _NAME = re.compile(r"[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?")
@@ -129,7 +131,13 @@ def rbac_matrix(namespace, executor_names, references, *, identities=(), other_s
     reader gets exactly its named ConfigMaps and Secrets and nothing else.
     P5.06: identities are the Guard's certificate_identities. A Secret that one
     of them owns is read by neither identity; the reader gets that
-    Certificate instead, and nothing else of cert-manager's.
+    Certificate instead, and nothing else of cert-manager's. With them, the
+    lab CA's key is a Secret in the cert-manager namespace behind a
+    cluster-wide ClusterIssuer, so neither identity may mint one: no create
+    of Certificates or CertificateRequests in the lab namespace or in any
+    namespace, no get of either CA Secret and no patch of the issuer. A row
+    outside the lab namespace carries "namespace" (ALL_NAMESPACES for
+    --all-namespaces).
     """
     owned = {entry["secret"]: entry["certificate"] for entry in identities}
     secrets = sorted(item["name"] for item in references if item["kind"] == "Secret")
@@ -159,8 +167,19 @@ def rbac_matrix(namespace, executor_names, references, *, identities=(), other_s
                 ("reader", "get", "certificaterequests.cert-manager.io", False)) if certificates else ()),
              *(("reader", verb, "deployment/" + name, False) for name in sorted(executor_names) for verb in ("get", "patch")),
              ("reader", "create", "pods", False)]
-    return [{"identity": identity, "verb": verb, "resource": resource, "allowed": allowed}
-            for identity, verb, resource, allowed in rows]
+    rows = [(*row, None) for row in rows]
+    if certificates:
+        manager = cert_lifecycle.CERT_MANAGER_NAMESPACE
+        rows += [row for identity in ("executor", "reader") for row in (
+            (identity, "create", "certificates.cert-manager.io", False, None),
+            (identity, "create", "certificaterequests.cert-manager.io", False, None),
+            (identity, "create", "certificates.cert-manager.io", False, ALL_NAMESPACES),
+            (identity, "create", "certificaterequests.cert-manager.io", False, ALL_NAMESPACES),
+            *((identity, "get", "secret/" + name, False, manager) for name in cert_lifecycle.CA_SECRETS),
+            (identity, "patch", "clusterissuers.cert-manager.io/" + cert_lifecycle.ISSUER, False, None))]
+    return [{"identity": identity, "verb": verb, "resource": resource, "allowed": allowed,
+             **({"namespace": where} if where else {})}
+            for identity, verb, resource, allowed, where in rows]
 
 
 def _larger(first, second, resource):
@@ -477,21 +496,30 @@ class ProtectedBoutiqueExperiment(ConnectedBoutiqueExperiment):
         for row in rows:
             restricted = self.credentials if row["identity"] == "executor" else self.reader_credentials
             context = self.restricted_context if row["identity"] == "executor" else self.reader_context
-            result = self.kubectl_as(restricted, context, "auth", "can-i", row["verb"], row["resource"])
+            result = self.kubectl_as(restricted, context, "auth", "can-i", row["verb"], row["resource"],
+                                     namespace=row.get("namespace"))
             answer = result.stdout.strip()
+            where = " in " + row["namespace"] if row.get("namespace") else ""
             require(answer == ("yes" if row["allowed"] else "no"),
-                    f"RBAC can-i for {row['identity']} {row['verb']} {row['resource']} was {answer or 'unknown'}")
+                    f"RBAC can-i for {row['identity']} {row['verb']} {row['resource']}{where} was {answer or 'unknown'}")
             results.append(row)
         save(self.directory / "protected-rbac-checks.json", results)
         self.check("Executor and Guard-reader RBAC can-i matrix: no Secret read by either; reader gets only its names",
                    rows=len(results))
         self.bypass_checks("before")
 
-    def kubectl_as(self, kubeconfig, context, *arguments):
-        """kubectl with a restricted kubeconfig and context; the answer is checked by the caller."""
+    def kubectl_as(self, kubeconfig, context, *arguments, namespace=None):
+        """kubectl with a restricted kubeconfig and context; the answer is checked by the caller.
+
+        namespace defaults to the lab's; ALL_NAMESPACES appends can-i's own
+        --all-namespaces after the arguments, which overrides the namespace.
+        """
         import subprocess
-        return subprocess.run(["kubectl", "--context=" + context, "--namespace=" + self.namespace,
-                               "--request-timeout=10s", "--kubeconfig=" + str(kubeconfig), *arguments],
+        everywhere = namespace == ALL_NAMESPACES
+        scope = self.namespace if everywhere or not namespace else namespace
+        return subprocess.run(["kubectl", "--context=" + context, "--namespace=" + scope,
+                               "--request-timeout=10s", "--kubeconfig=" + str(kubeconfig), *arguments,
+                               *(["--all-namespaces"] if everywhere else [])],
                               capture_output=True, text=True, timeout=30, check=False)
 
     def bypass_checks(self, stage):

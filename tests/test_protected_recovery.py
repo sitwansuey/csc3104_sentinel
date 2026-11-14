@@ -177,6 +177,33 @@ class GuardReaderTests(unittest.TestCase):
         self.assertIn({"identity": "executor", "verb": "get", "resource": "certificates.cert-manager.io/security-upstream",
                        "allowed": False}, executor)
 
+    def test_neither_identity_may_mint_a_lab_identity_or_read_a_ca_key(self):
+        # P5.06: the lab CA key is a Secret in cert-manager's namespace behind a cluster-wide
+        # ClusterIssuer, so anyone who may create a Certificate or CertificateRequest anywhere, read
+        # that Secret or repoint the issuer can mint an identity the gateway accepts.
+        rows = rbac_matrix(NAMESPACE, ["shippingservice"], reviewed_references(), identities=reviewed_identities())
+        minting = {(row["verb"], row["resource"], row.get("namespace")) for row in rows}
+        for identity in ("executor", "reader"):
+            mine = {(row["verb"], row["resource"], row.get("namespace")): row["allowed"]
+                    for row in rows if row["identity"] == identity}
+            expected = {("create", "certificates.cert-manager.io", None),
+                        ("create", "certificaterequests.cert-manager.io", None),
+                        ("create", "certificates.cert-manager.io", protected.ALL_NAMESPACES),
+                        ("create", "certificaterequests.cert-manager.io", protected.ALL_NAMESPACES),
+                        ("get", "secret/sentinel-lab-ca", "cert-manager"),
+                        ("get", "secret/sentinel-lab-ca-2", "cert-manager"),
+                        ("patch", "clusterissuers.cert-manager.io/sentinel-lab-ca", None)}
+            for key in expected:
+                with self.subTest(identity=identity, row=key):
+                    self.assertIs(mine.get(key), False)
+        self.assertTrue(expected <= minting)
+        # Every other row keeps its old shape (no namespace key) and stays in the lab namespace.
+        self.assertTrue(all(set(row) == {"identity", "verb", "resource", "allowed"} for row in rows
+                            if (row["verb"], row["resource"], row.get("namespace")) not in expected))
+        # Without certificate identities there is no cert-manager in scope and no such row.
+        plain = rbac_matrix(NAMESPACE, ["shippingservice"], reviewed_references())
+        self.assertFalse([row for row in plain if "cert-manager" in row["resource"] or "namespace" in row])
+
     def test_the_can_i_matrix_denies_every_executor_read_of_configuration(self):
         rows = rbac_matrix(NAMESPACE, ["shippingservice"], reviewed_references())
         executor = [row for row in rows if row["identity"] == "executor"]
@@ -696,8 +723,9 @@ class ProtectedExperimentTests(unittest.TestCase):
     def cluster_answers(self):
         """The Executor's and the reader's can-i answers as the reviewed RBAC would give them."""
         experiment = self.experiment
-        expected = {(row["identity"], row["verb"], row["resource"]): row["allowed"] for row in rbac_matrix(
-            NAMESPACE, experiment.executor_names(), reviewed_references(), identities=reviewed_identities())}
+        expected = {(row["identity"], row["verb"], row["resource"], row.get("namespace")): row["allowed"]
+                    for row in rbac_matrix(NAMESPACE, experiment.executor_names(), reviewed_references(),
+                                           identities=reviewed_identities())}
 
         def kubectl(*arguments, **kwargs):
             if arguments[:2] == ("auth", "can-i"):
@@ -707,11 +735,52 @@ class ProtectedExperimentTests(unittest.TestCase):
                 return SimpleNamespace(stdout="", stderr="Error from server (Forbidden): forbidden", returncode=1)
             return SimpleNamespace(stdout="{}", stderr="", returncode=0)
 
-        def kubectl_as(kubeconfig, context, *arguments):
+        def kubectl_as(kubeconfig, context, *arguments, namespace=None):
             identity = "executor" if kubeconfig == experiment.credentials else "reader"
-            return SimpleNamespace(stdout="yes" if expected[(identity, arguments[2], arguments[3])] else "no")
+            return SimpleNamespace(stdout="yes" if expected[(identity, arguments[2], arguments[3], namespace)] else "no")
         return (patch.object(experiment, "kubectl", side_effect=kubectl),
                 patch.object(experiment, "kubectl_as", side_effect=kubectl_as), patch("sys.stdout", io.StringIO()))
+
+    def test_minting_rows_are_asked_in_cert_managers_namespace_and_across_all_namespaces(self):
+        # P5.06: the CA Secret lives in cert-manager's namespace and minting is cluster-wide, so
+        # those rows must not be asked in the lab namespace, where the answer would be a vacuous no.
+        experiment = self.experiment
+        commands = []
+
+        def run(argv, **kwargs):
+            commands.append(argv)
+            return SimpleNamespace(stdout="no\n", stderr="", returncode=1)
+
+        with patch("subprocess.run", side_effect=run):
+            experiment.kubectl_as(experiment.reader_credentials, "reader-context", "auth", "can-i", "get",
+                                  "secret/sentinel-lab-ca", namespace="cert-manager")
+            experiment.kubectl_as(experiment.reader_credentials, "reader-context", "auth", "can-i", "create",
+                                  "certificaterequests.cert-manager.io", namespace=protected.ALL_NAMESPACES)
+            experiment.kubectl_as(experiment.credentials, "executor-context", "auth", "can-i", "get", "secrets")
+        secret, everywhere, plain = commands
+        self.assertIn("--namespace=cert-manager", secret)
+        self.assertNotIn("--namespace=" + NAMESPACE, secret)
+        self.assertEqual(everywhere[-1], "--all-namespaces")
+        self.assertEqual(everywhere[everywhere.index("can-i"):-1],
+                         ["can-i", "create", "certificaterequests.cert-manager.io"])
+        self.assertIn("--namespace=" + NAMESPACE, plain)
+        self.assertNotIn("--all-namespaces", plain)
+
+    def test_an_identity_that_may_mint_fails_the_matrix(self):
+        cluster, reader, quiet = self.cluster_answers()
+        self.experiment.baseline = {"pod_template": protected_template()}
+        answers = reader.kwargs["side_effect"]
+
+        def kubectl_as(kubeconfig, context, *arguments, namespace=None):
+            if arguments[2:4] == ("create", "certificaterequests.cert-manager.io") and \
+                    namespace == protected.ALL_NAMESPACES:
+                return SimpleNamespace(stdout="yes")
+            return answers(kubeconfig, context, *arguments, namespace=namespace)
+
+        with patch.object(ProtectedBoutiqueExperiment, "bypass_checks", lambda self, stage: None), cluster, quiet, \
+                patch.object(self.experiment, "kubectl_as", side_effect=kubectl_as), \
+                self.assertRaisesRegex(Exception, r"create certificaterequests\.cert-manager\.io in \* was yes"):
+            self.experiment.permissions()
 
     def test_permissions_end_with_the_before_repair_bypass_checks(self):
         calls = []
