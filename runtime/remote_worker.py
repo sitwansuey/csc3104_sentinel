@@ -6,13 +6,39 @@ import sqlite3
 import threading
 import time
 
-from runtime.worker_http import StoreWatch
+from runtime.worker_http import StoreWatch, reason_class
 from runtime.worker_transport import ProtocolError, delivery_ids, digest
 from shared import log, tracing
 from shared.canonical import canonical_json as encoded
 from shared.contracts import validate_message
 
 LOG = log.get_logger("remote_worker")
+# A saved result whose post keeps failing for any reason other than a lost lease is
+# released once both bounds are reached: this many failed posts, over at least this
+# many seconds (well past the 30 s default lease and a Coordinator restart).
+RESULT_RETRY_ATTEMPTS = 10
+RESULT_RETRY_SECONDS = 300
+
+
+def lease_refusal(error):
+    """The reason class when the Coordinator can never accept a result under this delivery, else None.
+
+    404: the delivery is unknown or its receipt was deleted. 409: the lease
+    expired or was replaced, the delivery was retired, or the result answers
+    a superseded request or a stale epoch. 403 not_lease_owner: another worker
+    claimed the request after this worker's lease ran out (the owner check
+    comes before the token check, so the old holder sees 403, not 409). Any
+    other refusal, a 403 for a role or report included, is not a lost lease.
+    """
+    if not isinstance(error, ProtocolError):
+        return None
+    if error.status == 404:
+        return "not_found"
+    if error.status == 409:
+        return reason_class(409, str(error))
+    if error.status == 403 and reason_class(403, str(error)) == "not_lease_owner":
+        return "not_lease_owner"
+    return None
 
 
 class WorkerJournal:
@@ -238,12 +264,36 @@ class RemoteWorker:
     saved fence_result whose epoch differs from a new claim's fence_epoch
     (its own lease expired before the result was accepted) can never be
     accepted, so it is discarded and the seal runs again under the new epoch.
+
+    A result that the Coordinator can never accept under the delivery it was
+    saved for (lease_refusal: another worker owns the lease, or the lease or
+    delivery is gone) is released at once: the journal keeps the result and
+    forgets the delivery and its lease token, so nothing is posted under that
+    lease again, and the pass goes on to claim. The same happens, without a
+    post, when the final lease check after saving a result finds the lease
+    lost. The result is sent again only if its request comes back to this
+    worker under a new claim. Any other failed post keeps the bounded back-off
+    retry until the result has failed result_retry_attempts posts over at least
+    result_retry_seconds; the next pass then releases it the same way, so one
+    stuck delivery cannot stop this worker claiming. Those counts are kept in
+    memory, so a restart starts them again. Releasing never discards a
+    component's own record: the Executor's ledger keeps its write or its
+    in-doubt row (docs/remote-workers.md, "A lost lease").
     """
 
     def __init__(self, client, journal, adapter, *, renewal_interval=5, max_clock_skew=None,
-                 before_claim=None):
+                 before_claim=None, result_retry_attempts=RESULT_RETRY_ATTEMPTS,
+                 result_retry_seconds=RESULT_RETRY_SECONDS, monotonic=time.monotonic):
         if max_clock_skew is not None and (not math.isfinite(max_clock_skew) or max_clock_skew <= 0):
             raise ValueError("The clock skew bound must be positive and finite")
+        if type(result_retry_attempts) is not int or result_retry_attempts < 1:
+            raise ValueError("Result retry attempts must be a positive integer")
+        if not math.isfinite(result_retry_seconds) or result_retry_seconds < 0:
+            raise ValueError("Result retry seconds must be finite and not negative")
+        self.result_retry_attempts, self.result_retry_seconds = result_retry_attempts, result_retry_seconds
+        self.monotonic = monotonic
+        # Failed posts per saved result: request key -> (first failure, count). In memory only.
+        self.result_failures = {}
         self.client, self.journal, self.adapter = client, journal, adapter
         self.renewal_interval = renewal_interval
         self.max_clock_skew = max_clock_skew
@@ -373,6 +423,53 @@ class RemoteWorker:
         with log.bind(**self.current), tracing.start_span("worker.result", parent=parent):
             return self._post_result(row, delivery)
 
+    def _deliver(self, row):
+        """Post a saved result; release it when the Coordinator can never accept it under this delivery.
+
+        Return the pass status ({"status": "released", ...} after a release).
+        Any other failure is counted against the result and raised.
+        """
+        key = row["request_key"]
+        try:
+            status = self._send(row)
+        except ProtocolError as error:
+            reason = lease_refusal(error)
+            if reason is None:
+                self._count_failure(key)
+                raise
+            return self._release(row, reason)
+        except Exception:
+            self._count_failure(key)
+            raise
+        self.result_failures.pop(key, None)
+        return status
+
+    def _count_failure(self, key):
+        first, count = self.result_failures.get(key, (self.monotonic(), 0))
+        self.result_failures[key] = (first, count + 1)
+
+    def _retries_exhausted(self, key):
+        first, count = self.result_failures.get(key, (self.monotonic(), 0))
+        return count >= self.result_retry_attempts and self.monotonic() - first >= self.result_retry_seconds
+
+    def _release(self, row, reason, event="transport.result.released", error=None):
+        """Forget a saved result's delivery and lease token, keeping the result; return the pass status.
+
+        Nothing is posted under that lease again. The result is sent again only
+        if its request comes back to this worker under a new claim (bind()).
+        """
+        key = row["request_key"]
+        self.journal.release(key)
+        first, count = self.result_failures.pop(key, (None, 0))
+        fields = {**delivery_ids(row["delivery"]), "reason": reason}
+        if error is None:
+            log.emit(LOG, event, level=log.WARNING, **fields)
+        else:
+            log.failure(LOG, event, error, http_status=getattr(error, "status", None), attempts=count,
+                        duration_ms=round((self.monotonic() - first) * 1000, 1) if first is not None else None,
+                        **fields)
+        return {"status": "released", "reason": reason}
+
     def _post_result(self, row, delivery):
         body ={key: delivery[key] for key in ("delivery_id", "lease_token")}
         body["result"] = row["result"]
@@ -394,14 +491,17 @@ class RemoteWorker:
     def once(self):
         self.current = {}
         for row in self.journal.pending():
+            # Retain the immutable result for a replacement delivery, but never keep
+            # retrying a lease that can no longer commit it (_deliver releases those).
             try:
-                return self._send(row)
-            except ProtocolError as error:
-                if error.status not in {404, 409}:
+                status = self._deliver(row)
+            except Exception as error:  # noqa: BLE001 - past the retry bound the result is released and logged
+                if not self._retries_exhausted(row["request_key"]):
                     raise
-                # Retain the immutable result for a replacement delivery, but
-                # never keep retrying a lease that can no longer commit it.
-                self.journal.release(row["request_key"])
+                self._release(row, "retries_exhausted", event="transport.result.abandoned", error=error)
+                continue
+            if status["status"] != "released":
+                return status
         changed = self.store_status()  # After the saved results: those are always sent.
         if changed is not None:
             return changed
@@ -431,7 +531,7 @@ class RemoteWorker:
             self.journal.discard_seal(key)
             row = self.journal.get(key)
         if row["result"] is not None:
-            return self._send(row)
+            return self._deliver(row)
         if deferred:
             self._check_before_work(key, delivery)
         with log.bind(**self.current), tracing.start_span(
@@ -460,19 +560,32 @@ class RemoteWorker:
                     # timed-out response cannot recall a provider or repeat work.
                     self.journal.save(key, result, report)
                     lease.ensure_current()
+        except ProtocolError as error:
+            row, reason = self.journal.get(key), lease_refusal(error)
+            if row["result"] is None or reason is None:
+                self._hand_back(key, delivery)
+                raise
+            # Saved, but the final check shows the lease is gone (P4.01 S2: another
+            # Executor claimed the request while this one was paused): never post under it.
+            return self._release(row, reason)
         except Exception:
-            if self.journal.get(key)["result"] is None:
-                try:
-                    self.client.post("retry", {name: delivery[name] for name in ("delivery_id", "lease_token")})
-                except Exception as error:  # noqa: BLE001 - lease expiry still makes unfinished work retryable
-                    log.failure(LOG, "transport.retry.failed", error)
-                self.journal.release(key)
+            self._hand_back(key, delivery)
             raise
         if output is None:
             self.client.post("retry", {name: delivery[name] for name in ("delivery_id", "lease_token")})
             self.journal.release(key)
             return {"status": "pending"}
-        return self._send(self.journal.get(key))
+        return self._deliver(self.journal.get(key))
+
+    def _hand_back(self, key, delivery):
+        """After a failed pass with no saved result, give the delivery back; a saved result stays pending."""
+        if self.journal.get(key)["result"] is not None:
+            return
+        try:
+            self.client.post("retry", {name: delivery[name] for name in ("delivery_id", "lease_token")})
+        except Exception as error:  # noqa: BLE001 - lease expiry still makes unfinished work retryable
+            log.failure(LOG, "transport.retry.failed", error)
+        self.journal.release(key)
 
 
 class RemoteIngress:
