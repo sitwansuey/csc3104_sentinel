@@ -32,6 +32,20 @@ _REFERENCE_FIELDS = {"kind", "namespace", "name", "uid", "resource_version"}
 _SIDECAR_FIELDS = {"target", "name", "image", "mounts"}
 _SIDECAR_OPTIONAL = {"command", "args"}
 _SIDECAR_MOUNT_FIELDS = {"volume", "mount_path", "source"}
+# The container fields a reviewed sidecar may carry. Anything else (lifecycle
+# hooks, workingDir, stdin, volumeDevices, a container restartPolicy, ...) is
+# unreviewed and refused: a postStart or preStop exec runs any command inside
+# the container that holds the TLS key. Probes may only use the kubelet's own
+# network handlers, never exec, and never name another host.
+_SIDECAR_CONTAINER_KEYS = {
+    "name", "image", "imagePullPolicy", "command", "args", "ports", "resources", "securityContext",
+    "volumeMounts", "env", "envFrom", "terminationMessagePath", "terminationMessagePolicy",
+    "readinessProbe", "livenessProbe", "startupProbe",
+}
+_SIDECAR_PROBES = ("livenessProbe", "readinessProbe", "startupProbe")
+_SIDECAR_PROBE_HANDLERS = {"httpGet", "tcpSocket", "grpc"}
+_SIDECAR_PROBE_TIMING = {"initialDelaySeconds", "timeoutSeconds", "periodSeconds", "successThreshold",
+                         "failureThreshold", "terminationGracePeriodSeconds"}
 _DNS_LABEL = re.compile(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?")
 
 
@@ -461,6 +475,66 @@ def _mount_order(item):
     return str(item.get("volume")), str(item.get("mount_path"))
 
 
+def _sidecar_handlers(container, path):
+    """(unreviewed fields, command handlers) of one reviewed sidecar container, as sorted field paths.
+
+    Command handlers are a lifecycle hook of any kind and an exec probe: both
+    run a process inside the sidecar, beside its mounted key. Unreviewed
+    fields are any container key outside _SIDECAR_CONTAINER_KEYS, and any
+    probe key other than one network handler and its timing (a probe that
+    names another host is refused too).
+    """
+    unreviewed, handlers = [], []
+    for key in sorted(set(container) - _SIDECAR_CONTAINER_KEYS):
+        (handlers if key == "lifecycle" else unreviewed).append(f"{path}.{key}")
+    for key in _SIDECAR_PROBES:
+        if key not in container:
+            continue
+        probe = mapping(container[key], f"{path}.{key}")
+        if "exec" in probe:
+            handlers.append(f"{path}.{key}.exec")
+        network = sorted(_SIDECAR_PROBE_HANDLERS & set(probe))
+        extra = sorted(set(probe) - _SIDECAR_PROBE_HANDLERS - _SIDECAR_PROBE_TIMING - {"exec"})
+        unreviewed.extend(f"{path}.{key}.{item}" for item in extra)
+        if "exec" not in probe and len(network) != 1:
+            unreviewed.append(f"{path}.{key}")
+        for item in network:
+            handler = mapping(probe[item], f"{path}.{key}.{item}")
+            if "host" in handler:
+                unreviewed.append(f"{path}.{key}.{item}.host")
+    return unreviewed, handlers
+
+
+def _container_secrets(spec, container, path):
+    """Names of the Secrets one container can read: mounted secret and projected volumes, env and envFrom."""
+    volumes = {volume.get("name"): volume for volume in spec.get("volumes", []) if isinstance(volume, dict)}
+    names = set()
+    mounts = container.get("volumeMounts", [])
+    if not isinstance(mounts, list):
+        raise GuardInputError(f"{path}.volumeMounts: expected a list")
+    for offset, mount in enumerate(mounts):
+        volume = volumes.get(mapping(mount, f"{path}.volumeMounts[{offset}]").get("name"), {})
+        secret = volume.get("secret")
+        if isinstance(secret, dict):
+            names.add(secret.get("secretName"))
+        projected = volume.get("projected")
+        sources = projected.get("sources", []) if isinstance(projected, dict) else []
+        for source in sources if isinstance(sources, list) else []:
+            if isinstance(source, dict) and isinstance(source.get("secret"), dict):
+                names.add(source["secret"].get("name"))
+    env, env_from = container.get("env", []), container.get("envFrom", [])
+    if not isinstance(env, list) or not isinstance(env_from, list):
+        raise GuardInputError(f"{path}: env and envFrom must be lists")
+    for item in env:
+        source = item.get("valueFrom") if isinstance(item, dict) else None
+        if isinstance(source, dict) and isinstance(source.get("secretKeyRef"), dict):
+            names.add(source["secretKeyRef"].get("name"))
+    for item in env_from:
+        if isinstance(item, dict) and isinstance(item.get("secretRef"), dict):
+            names.add(item["secretRef"].get("name"))
+    return names
+
+
 def _sidecars(spec, containers, proposal, rules):
     """P5.05: only the reviewed sidecars of this target may run beside its one application container.
 
@@ -473,10 +547,18 @@ def _sidecars(spec, containers, proposal, rules):
     container beyond the one application container, and any init container, is
     SECURITY_SIDECAR_NOT_ALLOWED. The privilege and host-access rules still
     apply to every container separately.
+
+    A reviewed sidecar runs no other process: a lifecycle hook or an exec
+    probe is SECURITY_SIDECAR_COMMAND, and any container field outside the
+    reviewed set (_SIDECAR_CONTAINER_KEYS) is SECURITY_SIDECAR_FIELDS. No
+    other container may read a reviewed sidecar's Secret, by a volume mount,
+    a projected source or an environment reference (SECURITY_SIDECAR_MOUNTS).
     """
     output = []
     target = proposal.get("target", {}).get("name") if isinstance(proposal.get("target"), dict) else None
     reviewed = {entry["name"]: entry for entry in rules["allowed_sidecars"] if entry["target"] == target}
+    reviewed_secrets = {mount["source"]["name"] for entry in reviewed.values() for mount in entry["mounts"]
+                        if mount["source"]["kind"] == "Secret"}
     sources = _mount_sources(spec)
     application, present = [], set()
 
@@ -492,6 +574,10 @@ def _sidecars(spec, containers, proposal, rules):
                       "An init container is not a reviewed sidecar of this target.")
             else:
                 application.append((name, path))
+            exposed = sorted(_container_secrets(spec, container, path) & reviewed_secrets)
+            if exposed:
+                check("SECURITY_SIDECAR_MOUNTS", path, exposed, [], False,
+                      "Only the reviewed sidecar may read its Secrets.")
             continue
         present.add(name)
         image = container.get("image")
@@ -501,6 +587,11 @@ def _sidecars(spec, containers, proposal, rules):
             value = container.get(key)
             check("SECURITY_SIDECAR_COMMAND", f"{path}.{key}", value if isinstance(value, list) else "malformed",
                   entry[key], value == entry[key], "A reviewed sidecar must run its reviewed command and arguments.")
+        unreviewed, handlers = _sidecar_handlers(container, path)
+        check("SECURITY_SIDECAR_COMMAND", path, handlers, [], not handlers,
+              "A reviewed sidecar runs no lifecycle hook and no exec probe.")
+        check("SECURITY_SIDECAR_FIELDS", path, unreviewed, [], not unreviewed,
+              "A reviewed sidecar carries only reviewed container fields and network probes.")
         mounts = container.get("volumeMounts", [])
         if not isinstance(mounts, list):
             raise GuardInputError(f"{path}.volumeMounts: expected a list")

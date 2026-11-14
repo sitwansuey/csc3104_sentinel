@@ -329,8 +329,75 @@ class ProtectedSidecarEligibilityTests(EligibilityTests):
     def test_safe_baseline_passes_all_enabled_checks(self):
         super().test_safe_baseline_passes_all_enabled_checks()
         for code in ("SECURITY_SIDECAR_IMAGE", "SECURITY_SIDECAR_MOUNTS", "SECURITY_SIDECAR_ENV",
-                     "SECURITY_SIDECAR_NOT_ALLOWED"):
+                     "SECURITY_SIDECAR_NOT_ALLOWED", "SECURITY_SIDECAR_COMMAND", "SECURITY_SIDECAR_FIELDS"):
             self.assert_finding(code, "PASS")
+
+    def test_a_lifecycle_hook_or_exec_probe_cannot_run_a_command_in_the_sidecar(self):
+        # A hook or exec probe runs any shell beside the mounted key, whatever the pinned command and args.
+        shell = {"exec": {"command": ["/bin/sh", "-c", "cat /pki/upstream/tls.key"]}}
+        for key, value, field in (
+            ("lifecycle", {"postStart": deepcopy(shell)}, "lifecycle"),
+            ("lifecycle", {"preStop": deepcopy(shell)}, "lifecycle"),
+            ("lifecycle", {"preStop": {"httpGet": {"port": 8444}}}, "lifecycle"),
+            ("livenessProbe", dict(deepcopy(shell), periodSeconds=10), "livenessProbe.exec"),
+            ("readinessProbe", deepcopy(shell), "readinessProbe.exec"),
+            ("startupProbe", deepcopy(shell), "startupProbe.exec"),
+        ):
+            with self.subTest(key=key, value=value):
+                self.setUp()
+                self.sidecar[key] = value
+                [finding] = self.assert_finding("SECURITY_SIDECAR_COMMAND", path="baseline.pod_template.spec.containers[1]")
+                self.assertEqual(finding["actual"], ["baseline.pod_template.spec.containers[1]." + field])
+
+    def test_unreviewed_sidecar_fields_are_rejected(self):
+        for change in (
+            lambda: self.sidecar.update(workingDir="/pki"),
+            lambda: self.sidecar.update(stdin=True, tty=True),
+            lambda: self.sidecar.update(volumeDevices=[{"name": "upstream", "devicePath": "/dev/xvda"}]),
+            lambda: self.sidecar.update(restartPolicy="Always"),
+            lambda: self.sidecar.update(readinessProbe={"tcpSocket": {"port": 8444, "host": "169.254.169.254"}}),
+            lambda: self.sidecar.update(readinessProbe={"periodSeconds": 3}),
+            lambda: self.sidecar.update(readinessProbe={"tcpSocket": {"port": 8444}, "httpGet": {"port": 8444}}),
+            lambda: self.sidecar.update(livenessProbe={"grpc": {"port": 8444}, "extra": True}),
+        ):
+            with self.subTest(change=change):
+                self.setUp()
+                change()
+                self.assert_finding("SECURITY_SIDECAR_FIELDS", path="baseline.pod_template.spec.containers[1]")
+        self.setUp()
+        self.sidecar["readinessProbe"] = "tcp"
+        self.assert_finding("SECURITY_TEMPLATE_INVALID")
+
+    def test_a_network_probe_and_kubernetes_defaults_are_reviewed_fields(self):
+        # The live template is read back from the API server with its defaults filled in.
+        self.sidecar.update(terminationMessagePath="/dev/termination-log", terminationMessagePolicy="File",
+                            resources={"limits": {"cpu": "200m", "memory": "64Mi"}},
+                            readinessProbe={"tcpSocket": {"port": 8444}, "periodSeconds": 3, "timeoutSeconds": 1,
+                                            "successThreshold": 1, "failureThreshold": 3},
+                            livenessProbe={"grpc": {"port": 8444}}, startupProbe={"httpGet": {"path": "/", "port": 8444}})
+        self.assertEqual(self.failures(), [])
+        self.assert_finding("SECURITY_SIDECAR_FIELDS", "PASS")
+
+    def test_no_other_container_may_read_the_sidecars_secret(self):
+        for change in (
+            lambda: self.container.setdefault("volumeMounts", []).append(
+                {"name": "upstream", "mountPath": "/stolen", "readOnly": True}),
+            lambda: self.container["env"].append(
+                {"name": "KEY", "valueFrom": {"secretKeyRef": {"name": "security-upstream", "key": "tls.key"}}}),
+            lambda: self.container.update(envFrom=[{"secretRef": {"name": "security-upstream"}}]),
+            lambda: (self.spec["volumes"].append({"name": "bundle", "projected": {"sources": [
+                {"secret": {"name": "security-upstream"}}]}}),
+                self.container.setdefault("volumeMounts", []).append({"name": "bundle", "mountPath": "/b"})),
+        ):
+            with self.subTest(change=change):
+                self.setUp()
+                change()
+                [finding] = self.assert_finding("SECURITY_SIDECAR_MOUNTS", path="baseline.pod_template.spec.containers[0]")
+                self.assertEqual(finding["actual"], ["security-upstream"])
+        # The application container's own other references stay its own business.
+        self.setUp()
+        self.add_reference()
+        self.assertEqual([item for item in self.failures() if item["code"] == "SECURITY_SIDECAR_MOUNTS"], [])
 
     def test_adapter_reference_enumeration_returns_only_metadata(self):
         # The reviewed sidecar's own ConfigMap and Secret are references like any other.
@@ -442,8 +509,9 @@ class ProtectedSidecarEligibilityTests(EligibilityTests):
     def test_a_reviewed_command_and_arguments_are_pinned_when_named(self):
         entry = self.policy["security_constraints"]["allowed_sidecars"][0]
         entry.update(command=["envoy"], args=["-c", "/config/envoy.json"])
-        self.assertEqual([item["status"] for item in self.run_checks() if item["code"] == "SECURITY_SIDECAR_COMMAND"],
-                         ["PASS", "PASS"])
+        self.assertEqual([(item["path"].rsplit(".", 1)[-1], item["status"]) for item in self.run_checks()
+                          if item["code"] == "SECURITY_SIDECAR_COMMAND"],
+                         [("args", "PASS"), ("command", "PASS"), ("containers[1]", "PASS")])
         self.sidecar["args"] = ["--config-yaml", "static_resources: {}"]
         self.assert_finding("SECURITY_SIDECAR_COMMAND", path="baseline.pod_template.spec.containers[1].args")
         for value in ("envoy", [1], None):
@@ -503,6 +571,17 @@ class ProtectedSidecarDecisionTests(unittest.TestCase):
         decision = self.decide()
         self.assertEqual(decision["verdict"], "REJECT")
         self.assertIn("SECURITY_SIDECAR_IMAGE", decision["reason_codes"])
+
+    def test_a_lifecycle_hook_or_exec_probe_is_rejected(self):
+        shell = {"exec": {"command": ["/bin/sh", "-c", "echo pwn"]}}
+        for key, value in (("lifecycle", {"postStart": shell}), ("lifecycle", {"preStop": shell}),
+                           ("livenessProbe", shell), ("readinessProbe", shell)):
+            with self.subTest(key=key):
+                self.setUp()
+                self.baseline["pod_template"]["spec"]["containers"][1][key] = deepcopy(value)
+                decision = self.decide()
+                self.assertEqual(decision["verdict"], "REJECT")
+                self.assertIn("SECURITY_SIDECAR_COMMAND", decision["reason_codes"])
 
 
 TRIVY = "aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c"

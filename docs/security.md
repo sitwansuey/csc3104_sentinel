@@ -760,9 +760,15 @@ None of it has run against a cluster yet (`L-PROTECTED-RECOVERY-OFFLINE` in
   the rule configured, a restored template may hold one application container
   and the target's reviewed sidecars only. Another container or any init
   container is `SECURITY_SIDECAR_NOT_ALLOWED`; a different Envoy digest is
-  `SECURITY_SIDECAR_IMAGE`; another command or arguments,
-  `SECURITY_SIDECAR_COMMAND`; another Secret, a writable mount, a `subPath`
-  or a host path behind a mount is `SECURITY_SIDECAR_MOUNTS`; environment
+  `SECURITY_SIDECAR_IMAGE`; another command or arguments, a lifecycle hook
+  (`postStart` or `preStop`) or an `exec` probe is `SECURITY_SIDECAR_COMMAND`,
+  because each runs a process beside the mounted key; any container field
+  outside the reviewed set (name, image, pull policy, command, args, ports,
+  resources, securityContext, volumeMounts, env, envFrom, the termination
+  message fields and network probes without a `host`) is
+  `SECURITY_SIDECAR_FIELDS`; another Secret, a writable mount, a `subPath`
+  or a host path behind a mount, or another container that mounts or
+  references the sidecar's Secret, is `SECURITY_SIDECAR_MOUNTS`; environment
   references are `SECURITY_SIDECAR_ENV`; a template without the reviewed
   sidecar is `SECURITY_SIDECAR_MISSING`. Each is a FAIL, so the decision is
   REJECT. The reviewed entries come from the overlay itself
@@ -824,6 +830,15 @@ tests that hold it:
 - The sidecar rule only adds FAILs. It never turns another finding into a
   PASS, and a malformed rule refuses the policy
   (`tests/test_guard_eligibility.py::ProtectedSidecarEligibilityTests.test_malformed_sidecar_rules_are_refused`).
+- Pinning the command and arguments is not enough on its own: a lifecycle
+  hook or an `exec` probe would run any shell inside the sidecar, beside the
+  TLS key, so both are refused, as is every container field outside the
+  reviewed set; no other container may mount or reference the sidecar's
+  Secret
+  (`tests/test_guard_eligibility.py::ProtectedSidecarEligibilityTests.test_a_lifecycle_hook_or_exec_probe_cannot_run_a_command_in_the_sidecar`,
+  `tests/test_guard_eligibility.py::ProtectedSidecarEligibilityTests.test_unreviewed_sidecar_fields_are_rejected`,
+  `tests/test_guard_eligibility.py::ProtectedSidecarEligibilityTests.test_no_other_container_may_read_the_sidecars_secret`,
+  `tests/test_guard_eligibility.py::ProtectedSidecarDecisionTests.test_a_lifecycle_hook_or_exec_probe_is_rejected`).
 - The reference reads moved from the Executor's identity to the reader's; no
   read became optional. When the reader is missing the evidence is absent,
   which the existing rule already makes UNKNOWN, and a `reference_versions`
@@ -857,9 +872,12 @@ whole object before selecting the UID and resourceVersion; the bytes never
 reach Python, and the one-hour token is deleted when the run ends). P5.06
 replaces these Secret reads with cert-manager Certificate status reads. The
 Verifier's client key is a Secret that any Pod in the namespace could mount.
-The sidecar rule pins the image, command, arguments and mounts, not ports,
-probes or resources; the resource and privilege rules still apply, with the
-raised memory-limit ceiling above.
+The sidecar rule pins the image, command, arguments and mounts and refuses
+lifecycle hooks, `exec` probes and unreviewed fields, but it does not pin
+ports, network-probe timing or resources; the resource and privilege rules
+still apply, with the raised memory-limit ceiling above. Secret and
+ConfigMap volumes are compared by kind and name, not by `items`,
+`optional` or `defaultMode`.
 
 ### Live recipe (staged; not run)
 
