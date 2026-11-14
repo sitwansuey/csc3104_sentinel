@@ -1558,10 +1558,10 @@ without summaries have no invariant verdict and are excluded from the totals.
 Source run directories (basenames only): A `sentinel-dist-20261114T064908`,
 B `sentinel-dist-20261114T123624`, C `sentinel-dist-20261114T161109`,
 D `sentinel-dist-20261114T164045`, E `sentinel-dist-20261114T194646`.
-The [collected bundles](../evidence/2026-11-14/) contain 75 matching run
-summaries from A-D; some audit extracts were omitted at the per-file size
-cap, as their MANIFEST.json files record. E's results come from its source
-summaries and the operator notes. Counts below retain the recorded verdicts.
+The [collected bundles](../evidence/2026-11-14/) hold all 80 run summaries
+from A-E; some audit extracts and records were omitted at the per-file size
+cap, as their MANIFEST.json files record. Counts below retain the recorded
+verdicts.
 
 ### S0
 
