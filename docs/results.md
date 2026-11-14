@@ -43,7 +43,7 @@ Read each number with its limits:
 | chaos-batch | 17 | 3 | 13 | 0 | 1 | 0 recorded, 17 inferred |
 | chaos-recovery | 13 | 8 | 5 | 0 | 0 | 13 recorded, 0 inferred |
 | connected-harness | 12 | 10 | 2 | 0 | 0 | 8 recorded, 4 inferred |
-| distributed-acceptance | 11 | 0 | 0 | 0 | 11 | 11 recorded, 0 inferred |
+| distributed-acceptance | 11 | 7 | 4 | 0 | 0 | 11 recorded, 0 inferred |
 | distributed-scenario | 39 | 37 | 2 | 0 | 0 | 0 recorded, 39 inferred |
 | executor-admission | 1 | 1 | 0 | 0 | 0 | 0 recorded, 1 inferred |
 | executor-wedge | 7 | 5 | 2 | 0 | 0 | 0 recorded, 7 inferred |
