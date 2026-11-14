@@ -24,6 +24,7 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
+import sys
 import threading
 import time
 
@@ -975,6 +976,24 @@ def opened_incidents(records):
 # What a failed restore or settle raises in run_one. Until 14 Nov 2026 (S7 r4) such a failure escaped run_one, so no
 # summary was written and the target stayed faulted; it is now the run's harness error and stops the matrix (run).
 RESTORE_FAILURES = (AcceptanceError, subprocess.SubprocessError, OSError, ValueError, LookupError)
+MANUAL_RESTORE = f"restore {TARGET} by hand or tear the lab down (teardown) before the next run"
+
+
+def _raise_unrestored(restore_error, waiting):
+    """Name a failed restore or settle while waiting's exception (wait phase) is escaping run_one with no summary.
+
+    An Exception becomes an AcceptanceError naming both, chained from it, so
+    main prints the restore failure and the manual restore; anything else
+    (KeyboardInterrupt) keeps escaping as it is, with the restore failure as
+    a note.
+    """
+    message = (f"{restore_error}; the wait for a terminal state had already failed "
+               f"({type(waiting).__name__}: {waiting}), so no summary was written; {TARGET} may still be faulted: "
+               f"{MANUAL_RESTORE}")
+    if isinstance(waiting, Exception):
+        raise AcceptanceError(message) from waiting
+    if waiting is not None:
+        waiting.add_note(message)
 
 
 def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
@@ -1007,7 +1026,11 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
     read_outages. A restore or settle that raises (Lab.restore refuses or
     runs out of attempts) is the summary's restore_error and part of its
     harness_error: the run fails, its evidence is still written, and run
-    stops the matrix, as the target may still be faulted.
+    stops the matrix, as the target may still be faulted; Lab.restore's
+    attempts, when it made any, are in operator_actions. When the wait phase
+    itself raised (not ReadUnavailable), so that no summary is written, the
+    restore failure is raised with it (an AcceptanceError naming both,
+    chained) and says the target must be restored by hand.
     """
     from experiments.distributed.run_scenarios import timeline
     run = Run(lab, scenario, index, deployed["policy_version"])
@@ -1048,7 +1071,7 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
         # The scenario approved by hand during its fault; from here the operator also approves what
         # waits for approval afterwards, such as a re-plan after a stale refusal (--stale-replans).
         approver = start_approver()
-    settled, restore_error = None, None
+    settled, restore_error, waited = None, None, False
     try:
         remaining = max(10.0, DEADLINE_SECONDS - (lab.monotonic() - started))
         try:
@@ -1057,6 +1080,7 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
             terminal = False
             error = "; ".join(part for part in (error, f"{type(caught).__name__}: {caught}") if part)
         generation_at_end = _generation(lab.target())
+        waited = True
     finally:
         try:  # The target goes back to its baseline even when waiting failed.
             if scenario.name != "S9":
@@ -1067,10 +1091,16 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
                     settled = lab.settle(baseline, leftovers=run.leftovers)
                 except RESTORE_FAILURES as caught:  # In the summary, never a pass; run() then stops the matrix.
                     restore_error = f"{step}: {type(caught).__name__}: {caught}"
+                    if getattr(caught, "attempts", None):  # Lab.restore's tries, for diagnosing a live exhaustion.
+                        operator_actions.append({"operator_action": "restore failed", "attempts": caught.attempts})
         finally:
             stopping.set()
             if approver is not None:
                 approver.join(5)
+        if restore_error and not waited:
+            # The wait phase is raising (anything but ReadUnavailable), so no summary will be written: the restore
+            # failure is raised with it, chained, rather than lost under it.
+            _raise_unrestored(restore_error, sys.exc_info()[1])
     if restore_error:
         error = "; ".join(part for part in (error, restore_error) if part)
     operator = {key: list(value) if isinstance(value, list) else value for key, value in operated.items()}
@@ -1190,8 +1220,7 @@ def run(shell, run_dir, names, *, repeat, min_free_gib, lock, lab=None):
                 if summary.get("restore_error"):  # The target may still be faulted: no run may start on it.
                     raise AcceptanceError(f"{name} r{index} could not put {TARGET} back or settle the lab "
                                           f"({summary['restore_error']}); its summary records the failure and the "
-                                          f"remaining runs were not started; restore {TARGET} by hand or tear the "
-                                          "lab down (teardown) before the next run")
+                                          f"remaining runs were not started; {MANUAL_RESTORE}")
                 left = left_behind(summary)
                 if left:  # The next run would start on top of it: stop the matrix here.
                     raise AcceptanceError(f"{name} r{index} left faults behind ({'; '.join(left)}); "

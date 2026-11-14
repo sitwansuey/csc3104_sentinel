@@ -362,15 +362,16 @@ def transient_failure(result):
 # (docs/distributed-acceptance.md#s7-r4-refused-at-its-restore-the-targets-resourceversion-moved). Its class is now in
 # the message. A JSON patch whose test op failed is refused with 422: kubectl prints the API server's generic "the
 # server rejected our request due to an error in our request", or, where the server passes it on, the json-patch
-# library's "testing value <path> failed: test failed". First match wins: an admission denial also reads "invalid".
+# library's "testing value <path> failed: test failed". First match wins: an admission denial also reads "invalid"
+# and the expression's message in it may read "not found", so it is matched before both.
 WRITE_VERBS = frozenset({"patch", "apply"})
 WRITE_CLASSES = (
     ("test failed", re.compile(
         r"testing value [^\n]* failed|\btest failed\b|the server rejected our request due to an error in our request",
         re.I)),
     ("conflict", re.compile(r"\(Conflict\)|the object has been modified|Operation cannot be fulfilled", re.I)),
-    ("not found", re.compile(r"\(NotFound\)|\bnot found\b", re.I)),
     ("admission denied", re.compile(r"ValidatingAdmissionPolicy|denied (the )?request|admission webhook", re.I)),
+    ("not found", re.compile(r"\(NotFound\)|\bnot found\b", re.I)),
     ("forbidden", re.compile(r"\(Forbidden\)|\bis forbidden\b", re.I)),
     ("invalid", re.compile(r"\((Invalid|BadRequest|UnprocessableEntity)\)|\bis invalid\b", re.I)),
 )
@@ -386,6 +387,13 @@ def write_failure(result):
     if isinstance(text, bytes):
         text = text.decode("utf-8", "replace")
     return next((label for label, pattern in WRITE_CLASSES if pattern.search(text)), "stderr not classified")
+
+
+def _unrestored(message, attempts):
+    """The AcceptanceError Lab.restore raises, carrying its attempts so far (run_one puts them in the summary)."""
+    error = AcceptanceError(message)
+    error.attempts = list(attempts)
+    return error
 
 
 class Shell:
@@ -1722,9 +1730,18 @@ class Lab:
         either the baseline (put back by someone else: nothing to do, or this
         restore's own patch whose answer was lost: in doubt) or the template
         the restore first read; anything else is refused, never overwritten.
+        The first read's template is not compared with the injected fault: a
+        template another writer put there before that read is overwritten, as
+        before 14 Nov 2026, under the same two tests. The count bound is
+        exact; the time bound is checked between attempts, so one slow kubectl
+        call can take the restore past RESTORE_RETRY_SECONDS.
         Any other refusal raises at once. Returns operator_restore (True when
         this patched, False when it did not, None in doubt) and, when it
-        patched, each attempt's resourceVersion and outcome.
+        patched, each attempt's resourceVersion and outcome. Only a patch this
+        restore saw applied is followed by rollout status; when it returns
+        False or None, Lab.settle's health and quiet-time check covers the
+        rollout. A refusal or exhaustion raises AcceptanceError with the tries
+        so far in its attempts.
         """
         from services.executor.store import fingerprint
         uid, attempts, faulted, start = baseline["target"]["uid"], [], None, self.monotonic()
@@ -1737,8 +1754,8 @@ class Lab:
                 attempts.append({"resource_version": None, "outcome": "read transient: " + error.reason})
             if current is not None:
                 if current["metadata"].get("uid") != uid:
-                    raise AcceptanceError(f"{TARGET} is not the Deployment the baseline names (its uid changed); "
-                                          "it was not restored: check it and restore or tear down the lab by hand")
+                    raise _unrestored(f"{TARGET} is not the Deployment the baseline names (its uid changed); it "
+                                      "was not restored: check it and restore or tear down the lab by hand", attempts)
                 template = fingerprint(current["spec"]["template"])
                 if template == baseline["template_sha256"]:
                     if not attempts:
@@ -1750,9 +1767,9 @@ class Lab:
                 if faulted is None:
                     faulted = template
                 elif template != faulted:
-                    raise AcceptanceError(f"{TARGET}'s template is neither the baseline nor the one this restore "
-                                          "read first (another writer changed it); it was not overwritten: check "
-                                          "it and restore or tear down the lab by hand")
+                    raise _unrestored(f"{TARGET}'s template is neither the baseline nor the one this restore read "
+                                      "first (another writer changed it); it was not overwritten: check it and "
+                                      "restore or tear down the lab by hand", attempts)
                 version = current["metadata"]["resourceVersion"]
                 outcome = self._restore_patch(uid, version, baseline["pod_template"])
                 attempts.append({"resource_version": version, "outcome": outcome})
@@ -1761,9 +1778,10 @@ class Lab:
                 lost = lost or outcome.startswith("transient")
             elapsed = self.monotonic() - start
             if len(attempts) >= RESTORE_ATTEMPTS or elapsed >= RESTORE_RETRY_SECONDS:
-                raise AcceptanceError(
+                raise _unrestored(
                     f"{TARGET} was not restored after {len(attempts)} attempts in {elapsed:.0f} s (last: "
-                    f"{attempts[-1]['outcome']}); it may still be faulted: restore it by hand or tear down the lab")
+                    f"{attempts[-1]['outcome']}); it may still be faulted: restore it by hand or tear down the lab",
+                    attempts)
             self.sleep(min(RESTORE_PAUSE_SECONDS, RESTORE_RETRY_SECONDS - elapsed))
         self.shell.kubectl("rollout", "status", "deployment/" + TARGET, "--timeout=180s", namespace=WORKLOAD,
                            timeout=200)

@@ -1161,10 +1161,13 @@ What changed (offline, `experiments/distributed/kind_acceptance.py` and
 `kind_acceptance_live.py`):
 
 - **A refused patch or apply names its class** (`write_failure`,
-  `WriteRefused`). The class comes from the exit status and stderr: `test
-  failed` (the API server's 422 for a JSON patch test, in either the
-  generic or the json-patch wording), `conflict`, `not found`, `admission
-  denied`, `forbidden`, `invalid`, or `stderr not classified`. The message
+  `WriteRefused`). A non-zero exit status makes the harness classify
+  kubectl's stderr; the class comes from stderr alone: `test failed` (the
+  API server's 422 for a JSON patch test, in either the generic or the
+  json-patch wording; the generic wording can also cover other JSON patch
+  errors), `conflict`, `admission denied` (matched before `not found`, as a
+  policy's message may contain those words), `not found`, `forbidden`,
+  `invalid`, or `stderr not classified`. The message
   is `kubectl patch failed (exit 1): test failed`. It never includes
   kubectl's text, which names the object and can quote the patch. A
   transient failure is still `TransientRead`, and a failed read's message
@@ -1181,15 +1184,28 @@ What changed (offline, `experiments/distributed/kind_acceptance.py` and
   before it; no patch drops a test or uses a merge patch. The restore makes
   at most `RESTORE_ATTEMPTS` (5) attempts within `RESTORE_RETRY_SECONDS`
   (30 s), pausing 2 s between them, and then stops with an error saying
-  the target may still be faulted. Any other refusal raises at once. The
-  result lists each attempt's resourceVersion and outcome.
+  the target may still be faulted. The time bound is checked between
+  attempts, so a slow kubectl call can take it past 30 s; the count bound
+  is exact. Any other refusal raises at once. The result lists each
+  attempt's resourceVersion and outcome, and a refusal or exhaustion
+  carries the attempts so far. The "faulted" template is the one the
+  restore reads first; it is not compared with the injected
+  `STARTUP_FAILURE=true` template, so a template another writer put there
+  before that read is still overwritten, under both tests, as before.
 - **A failed restore or settle is in the run's summary** (`run_one`). The
   error is recorded as `restore_error`, prefixed `restore:` or `settle:`,
   and added to `harness_error`, so the run fails and never passes. The
   settle is skipped when the restore failed. The cleanup, the record copy
   and the evidence go on as before. `run` then stops the matrix, after
   writing the summary and the overview, with a message that the lab needs
-  `demo-api` restored by hand or a teardown before the next run.
+  `demo-api` restored by hand or a teardown before the next run. The
+  restore's attempts are in the summary's `operator_actions` (`restore
+  failed`). When the wait for a terminal state, or the generation read
+  after it, raises something other than `ReadUnavailable`, no summary can
+  be written; the restore failure is then raised with that error, as one
+  `AcceptanceError` naming both (chained from the wait's error) and the
+  manual restore, rather than lost under it. An interrupt keeps escaping
+  as it is, with the restore failure as a note.
 
 Tests: `tests/test_kind_restore_race.py` uses the real `Shell` and
 `Lab.restore` over a fake kubectl. The fake holds one Deployment and
@@ -1205,8 +1221,12 @@ bound, and a lost answer is reported in doubt; and patch and apply messages
 carry a class but never an argument or the patch. Through `run_one` and
 `run`: a restore that keeps losing the race, or raises, and a settle that
 raises each write a failed summary with the error, the cleanup still runs,
-and the matrix stops after that run with the manual-restore message. At
-0b5529f all 14 of these tests fail. Not yet re-run live; the S7 r4 target
+and the matrix stops after that run with the manual-restore message; a
+wait or generation read that raises while the restore also fails raises
+the restore failure with the manual-restore message, chained from the
+wait's error, and a wait that raises over a good restore raises as before.
+At 0b5529f 16 of these 17 tests fail; the one that passes is that last
+regression check. Not yet re-run live; the S7 r4 target
 must be restored by hand or the lab torn down before the next run.
 
 ## Results

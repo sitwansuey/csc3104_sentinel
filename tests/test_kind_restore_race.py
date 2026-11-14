@@ -45,6 +45,9 @@ FORBIDDEN = ('Error from server (Forbidden): deployments.apps "demo-api" is forb
              'patch resource "deployments" in API group "apps"')
 DENIED = ('The deployments "demo-api" is invalid: : ValidatingAdmissionPolicy \'sentinel-executor-patch-only\' with '
           "binding 'b' denied request: failed expression")
+# An admission denial whose policy message reads "not found": still an admission denial, not a missing object.
+DENIED_NOT_FOUND = ('The deployments "demo-api" is invalid: : ValidatingAdmissionPolicy \'sentinel-executor-patch-only\' '
+                    "with binding 'b' denied request: the image was not found in the allow-list")
 NOT_FOUND = 'Error from server (NotFound): deployments.apps "demo-api" not found'
 REFUSED = "Unable to connect to the server: dial tcp 127.0.0.1:40123: connect: connection refused"
 
@@ -167,6 +170,8 @@ class RestoreTests(unittest.TestCase):
         self.assertIn("test failed", message)
         self.assertIn("restore it by hand", message)
         self.assertEqual(len(deployment.patches), acceptance.RESTORE_ATTEMPTS)
+        self.assertEqual([item["outcome"] for item in caught.exception.attempts],
+                         ["test failed"] * acceptance.RESTORE_ATTEMPTS)  # For the summary (run_one).
         self.assert_guarded(deployment.patches, [str(100 + index) for index in range(acceptance.RESTORE_ATTEMPTS)])
         self.assertLessEqual(sum(lab.sleeps), acceptance.RESTORE_RETRY_SECONDS)
         self.assertEqual(deployment.template, FAULTED)
@@ -179,15 +184,17 @@ class RestoreTests(unittest.TestCase):
                 world.uid = "uid-recreated"
         deployment = Deployment(on_read=recreate)
         lab = virtual_lab(deployment, self.directory)
-        with self.assertRaisesRegex(acceptance.AcceptanceError, "uid"):
+        with self.assertRaisesRegex(acceptance.AcceptanceError, "uid") as caught:
             lab.restore(BASELINE)
         self.assertEqual(len(deployment.patches), 1)  # The refused one; no patch with the new uid.
+        self.assertEqual([item["outcome"] for item in caught.exception.attempts], ["test failed"])
         self.assertEqual(deployment.template, FAULTED)
         # Already another Deployment when the restore first reads it: nothing is patched at all.
         deployment = Deployment(uid="uid-recreated")
-        with self.assertRaisesRegex(acceptance.AcceptanceError, "uid"):
+        with self.assertRaisesRegex(acceptance.AcceptanceError, "uid") as caught:
             virtual_lab(deployment, self.directory).restore(BASELINE)
         self.assertEqual(deployment.patches, [])
+        self.assertEqual(caught.exception.attempts, [])
 
     def test_a_template_someone_else_wrote_is_refused_and_never_overwritten(self):
         def write(world, reads):
@@ -248,8 +255,11 @@ class RestoreTests(unittest.TestCase):
         self.assertEqual(len(deployment.patches), 1)
         # A read that stays down is a harness error at the bound, never a restore.
         deployment = Deployment()
+        reads = itertools.count(1)
 
         def unreachable(command, **options):
+            if "get" in command and next(reads) > 10 * acceptance.RESTORE_ATTEMPTS:  # Fails rather than hangs.
+                raise AssertionError("the restore kept reading past its bound")
             return done(code=1, stderr=REFUSED) if "get" in command else deployment(command, **options)
         lab = virtual_lab(unreachable, self.directory)
         with self.assertRaisesRegex(acceptance.AcceptanceError, "not restored"):
@@ -259,7 +269,7 @@ class RestoreTests(unittest.TestCase):
     def test_patch_and_apply_failures_name_a_stderr_class_and_never_an_argument_or_the_patch(self):
         cases = ((TEST_FAILED, "test failed"), (TEST_FAILED_NEWER, "test failed"), (CONFLICT, "conflict"),
                  (NOT_FOUND, "not found"), (FORBIDDEN, "forbidden"), (DENIED, "admission denied"),
-                 ("error: something new", "stderr not classified"))
+                 (DENIED_NOT_FOUND, "admission denied"), ("error: something new", "stderr not classified"))
         for stderr, reason in cases:
             for verb in ("patch", "apply"):
                 with self.subTest(verb=verb, reason=reason):
@@ -285,10 +295,23 @@ class RestoreTests(unittest.TestCase):
 class FailingRestoreLab(FakeLab):
     """FakeLab whose restore is the real Lab.restore over a fake Deployment, or raises error; and run()'s reads."""
 
-    def __init__(self, rows, *, deployment=None, error=None, settle_error=None):
+    def __init__(self, rows, *, deployment=None, error=None, settle_error=None, wait_error=None, read_error=None):
         super().__init__(rows, generations=itertools.repeat(4))
         self.deployment, self.error, self.settle_error = deployment, error, settle_error
+        self.wait_error, self.read_error = wait_error, read_error
         self.closed = False
+
+    def wait_terminal(self, timeout):
+        self.steps.append("wait")
+        if self.wait_error is not None:
+            raise self.wait_error
+        return True
+
+    def target(self):
+        if self.read_error is not None and "wait" in self.steps and "restore" not in self.steps:
+            self.steps.append("target")
+            raise self.read_error  # The generation read between the wait and the restore.
+        return super().target()
 
     def restore(self, baseline):
         self.steps.append("restore")
@@ -348,6 +371,10 @@ class RunOneRestoreTests(unittest.TestCase):
         self.assertIsNone(summary["settle"])  # Not settled on a faulted target: the restore failed first.
         self.assertNotIn("settle", lab.steps)
         self.assertIn("copy", lab.steps)  # The evidence is still collected and written.
+        failed = summary["operator_actions"][-1]  # Lab.restore's tries, for diagnosing a live exhaustion.
+        self.assertEqual(failed["operator_action"], "restore failed")
+        self.assertEqual([item["outcome"] for item in failed["attempts"]],
+                         ["test failed"] * acceptance.RESTORE_ATTEMPTS)
 
     def test_a_restore_that_raises_writes_a_failed_summary_and_keeps_the_cleanup(self):
         cleaned = []
@@ -380,6 +407,49 @@ class RunOneRestoreTests(unittest.TestCase):
         self.assertIsNone(summary["harness_error"])
         restored = summary["operator_actions"][-1]
         self.assertEqual([item["outcome"] for item in restored["attempts"]], ["test failed", "applied"])
+
+    def test_a_wait_phase_that_raises_does_not_hide_a_failed_restore(self):
+        # Before this, the wait's error escaped alone: main printed it and nothing said the target was still faulted.
+        cases = (("wait", {"wait_error": acceptance.AcceptanceError("kubectl get failed (exit 1)")},
+                  "AcceptanceError: kubectl get failed (exit 1)"),
+                 ("wait timeout", {"wait_error": TimeoutError("no terminal state")}, "TimeoutError: no terminal state"),
+                 ("generation read", {"read_error": acceptance.TransientRead("kubectl get failed (exit 1)",
+                                                                             "connection refused")},
+                  "TransientRead: kubectl get failed (exit 1)"))
+        for label, options, waiting in cases:
+            with self.subTest(label):
+                lab = FailingRestoreLab(self.rows, deployment=Deployment(moves=1000), **options)
+                cause = options.get("wait_error") or options.get("read_error")
+                with self.assertRaises(acceptance.AcceptanceError) as caught:
+                    live.run_one(lab, acceptance.SCENARIOS["S0"], 1, self.deployed, BASELINE, self.tokens,
+                                 self.directory)
+                message = str(caught.exception)
+                self.assertTrue(message.startswith("restore: AcceptanceError: demo-api was not restored after 5 "),
+                                message)
+                self.assertIn(waiting, message)
+                self.assertIn("may still be faulted", message)
+                self.assertIn("by hand", message)
+                self.assertIn("teardown", message)
+                self.assertIs(caught.exception.__cause__, cause)
+                self.assertIn("restore", lab.steps)
+                self.assertFalse((self.directory / "2026-11-13").exists())  # No summary: never a pass.
+
+    def test_a_wait_phase_that_raises_with_a_good_restore_raises_as_before(self):
+        wait_error = acceptance.AcceptanceError("kubectl get failed (exit 1)")
+        lab = FailingRestoreLab(self.rows, deployment=Deployment(), wait_error=wait_error)
+        with self.assertRaises(acceptance.AcceptanceError) as caught:
+            live.run_one(lab, acceptance.SCENARIOS["S0"], 1, self.deployed, BASELINE, self.tokens, self.directory)
+        self.assertIs(caught.exception, wait_error)
+        self.assertEqual(lab.deployment.template, TEMPLATE)
+        self.assertIn("settle", lab.steps)
+
+    def test_an_interrupt_during_the_wait_keeps_escaping_and_carries_the_failed_restore(self):
+        lab = FailingRestoreLab(self.rows, deployment=Deployment(moves=1000), wait_error=KeyboardInterrupt())
+        with self.assertRaises(KeyboardInterrupt) as caught:
+            live.run_one(lab, acceptance.SCENARIOS["S0"], 1, self.deployed, BASELINE, self.tokens, self.directory)
+        [note] = caught.exception.__notes__
+        self.assertIn("not restored", note)
+        self.assertIn("by hand", note)
 
     def test_the_matrix_stops_after_a_failed_restore_and_says_the_lab_needs_a_manual_restore(self):
         run_dir = self.directory
