@@ -2,7 +2,8 @@
 # The Guard's reference reader: get on exactly the ConfigMaps and Secrets that the
 # protected template references, so the Executor never needs to read a Secret (#69).
 # Residual risk: this identity can read the named Secrets' key bytes. It is used
-# only by the Guard's metadata reads, with a one-hour token removed after the run;
+# only by the Guard's metadata reads, with a one-hour token; the run deletes these
+# objects at its end, which revokes the token (protected.py delete_reader_rbac).
 # P5.06 replaces these Secret reads with cert-manager Certificate status reads.
 apiVersion: v1
 kind: ServiceAccount

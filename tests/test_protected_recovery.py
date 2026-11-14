@@ -13,18 +13,21 @@ from datetime import UTC, datetime, timedelta
 import io
 import json
 from pathlib import Path
+import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from experiments import lab_lock
 from experiments.boutique.harness import protected
+from experiments.boutique.harness.connected import ConnectedBoutiqueExperiment
 from experiments.boutique.harness.protected import (GUARD_READER_RBAC, ProtectedBoutiqueExperiment, guard_reader_rbac,
                                                     preflight, protected_ceilings, protected_policy_constraints, rbac_matrix,
                                                     reviewed_references, template_references)
 from experiments.validation.demo_guard import load_fixtures
 from runtime.live_executor import build_adapters
-from scripts.security import network_policy
+from scripts.security import boutique_security as lab, network_policy
 from scripts.security.boutique_security_manifest import (GATEWAY_SERVICES, INGRESS_CONTAINERS, NAMESPACE,
                                                          VERIFIER_IDENTITY, VERIFIER_PROBE_APP, overlay,
                                                          reviewed_sidecars, verifier_probe_pod)
@@ -395,6 +398,42 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(plan["full"][0][plan["full"][0].index("--protected-stage") + 1], "full")
 
 
+class FakeBypassLab:
+    """The security lab as bypass_checks sees it: kubectl for Pods and the gateway's scale, and the lab's probe.
+
+    Calls through the gateway (no target) succeed while it is up unless a
+    control is broken; while it is down only a leak gets through. A direct
+    target succeeds only when it is the leak.
+    """
+
+    def __init__(self, *, leak=None, broken_control=None, pod_ip="10.0.0.5"):
+        self.leak, self.broken_control, self.pod_ip = leak, broken_control, pod_ip
+        self.gateway_up, self.calls, self.scales, self.restored = True, [], [], False
+
+    def kubectl(self, *arguments, **kwargs):
+        if arguments[:2] == ("scale", "deployment/security-gateway"):
+            self.scales.append(arguments[2])
+            self.gateway_up = arguments[2] == "--replicas=1"
+            self.restored = self.restored or self.gateway_up
+        items = []
+        if arguments[:3] == ("get", "pods", "-l"):
+            if "security-gateway" in arguments[3]:
+                items = [{"status": {}}] if self.gateway_up else []
+            else:
+                items = [{"status": {"podIP": self.pod_ip} if self.pod_ip else {}}]
+        return SimpleNamespace(stdout=json.dumps({"items": items}), stderr="", returncode=0)
+
+    def probe(self, directory, **kwargs):
+        self.calls.append((self.gateway_up, kwargs))
+        target = kwargs.get("target")
+        if target is not None:
+            return {"succeeded": target == self.leak, "output": ""}
+        if not self.gateway_up:
+            return {"succeeded": self.leak == "outage", "output": ""}
+        moment = "after_restore" if self.restored else "before_outage"
+        return {"succeeded": self.broken_control not in ("both", moment), "output": ""}
+
+
 class ProtectedExperimentTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -466,48 +505,207 @@ class ProtectedExperimentTests(unittest.TestCase):
     def test_a_baseline_stage_injects_no_fault(self):
         calls = []
         experiment = self.experiment
+
+        def prepare(self):
+            calls.append("prepare")
+            self.reader_credentials.write_text("{}", encoding="utf-8")
+
+        def permissions(self):
+            calls.append("permissions")
+            self.summary.setdefault("bypass_checks", {})["before"] = True
         experiment.stage = "baseline"
-        with patch.object(ProtectedBoutiqueExperiment, "prepare", lambda self: calls.append("prepare")), \
-                patch.object(ProtectedBoutiqueExperiment, "permissions", lambda self: calls.append("permissions")), \
+        with patch.object(ProtectedBoutiqueExperiment, "prepare", prepare), \
+                patch.object(ProtectedBoutiqueExperiment, "permissions", permissions), \
                 patch.object(ProtectedBoutiqueExperiment, "fault", side_effect=AssertionError("fault injected")):
             experiment.run()
         self.assertEqual(calls, ["prepare", "permissions"])
         summary = json.loads((experiment.directory / "summary.json").read_text(encoding="utf-8"))
         self.assertEqual((summary["status"], summary["protected_stage"]), ("PASS", "baseline"))
+        # The reader file existed during the run; the run's own cleanup removed it.
+        self.assertFalse(experiment.reader_credentials.exists())
         self.assertIs(summary["private_reader_credentials_removed"], True)
 
-    def test_a_bypass_that_succeeds_at_any_time_point_fails_the_run(self):
-        from scripts.security import boutique_security as lab
-        pods = json.dumps({"items": [{"status": {"podIP": "10.0.0.5"}}]})
-        empty = json.dumps({"items": []})
+    def test_a_baseline_without_a_passing_before_check_is_not_a_pass(self):
+        experiment = self.experiment
+        experiment.stage = "baseline"
+        for recorded in ({}, {"before": False}):
+            with self.subTest(recorded=recorded):
+                experiment.summary["bypass_checks"] = dict(recorded)
+                with patch.object(ProtectedBoutiqueExperiment, "prepare", lambda self: None), \
+                        patch.object(ProtectedBoutiqueExperiment, "permissions", lambda self: None), \
+                        self.assertRaisesRegex(RuntimeError, "did not pass at every time point"):
+                    experiment.run()
+                self.assertEqual(experiment.summary["status"], "FAILED")
 
-        def kubectl(*args, **kwargs):
-            if args[:3] == ("get", "pods", "-l"):
-                return type("R", (), {"stdout": empty if "security-gateway" in args[3] else pods})()
-            return type("R", (), {"stdout": ""})()
-        for leak in ("shippingservice:50051", "10.0.0.5:50051", None):
-            with self.subTest(leak=leak):
-                def probe(directory, leak=leak, **kwargs):
-                    succeeded = kwargs.get("target") == leak if leak else kwargs.get("identity") == VERIFIER_IDENTITY
-                    return {"succeeded": succeeded, "output": ""}
-                with patch.object(self.experiment, "kubectl", side_effect=kubectl), \
-                        patch.object(lab, "probe", side_effect=probe):
-                    with self.assertRaisesRegex(RuntimeError, "bypass of the protected route succeeded during"):
-                        self.experiment.bypass_checks("during")
-        with patch.object(self.experiment, "kubectl", side_effect=kubectl), \
-                patch.object(lab, "probe", return_value={"succeeded": False, "output": ""}), \
-                patch("sys.stdout", io.StringIO()):
-            self.experiment.bypass_checks("before")
-        self.assertEqual(self.experiment.summary["bypass_checks"]["before"],
-                         {"direct_service_bypass": True, "direct_pod_ip_bypass": True, "gateway_outage": True,
-                          "outage_direct_bypass": True})
+    def run_bypass(self, stage, **options):
+        environment = FakeBypassLab(**options)
+        with patch.object(self.experiment, "kubectl", side_effect=environment.kubectl), \
+                patch.object(lab, "probe", side_effect=environment.probe), patch("sys.stdout", io.StringIO()):
+            self.experiment.bypass_checks(stage)
+        return environment
+
+    def bypass_record(self, stage):
+        return json.loads((self.experiment.directory / ("bypass-" + stage + ".json")).read_text(encoding="utf-8"))
+
+    def test_a_bypass_that_succeeds_at_any_time_point_fails_the_run(self):
+        for stage in ("before", "during", "after"):
+            for leak in ("shippingservice:50051", "10.0.0.5:50051", "outage"):
+                with self.subTest(stage=stage, leak=leak):
+                    with self.assertRaisesRegex(RuntimeError, "bypass of the protected route succeeded " + stage):
+                        self.run_bypass(stage, leak=leak)
+                    self.assertIs(self.experiment.summary["bypass_checks"][stage], False)
+                    self.assertIs(self.bypass_record(stage)["passed"], False)
+
+    def test_refused_bypasses_count_only_beside_a_working_authenticated_call(self):
+        # Every probe failing, the authenticated one included, is a broken probe environment, not a pass.
+        for stage in ("before", "during", "after"):
+            for broken in ("both", "before_outage", "after_restore"):
+                with self.subTest(stage=stage, broken=broken):
+                    with self.assertRaisesRegex(RuntimeError, "positive control failed " + stage):
+                        self.run_bypass(stage, broken_control=broken)
+                    self.assertIs(self.experiment.summary["bypass_checks"][stage], False)
+                    record = self.bypass_record(stage)
+                    self.assertIs(record["passed"], False)
+                    self.assertIn(False, [record["positive_control"][key]["succeeded"]
+                                          for key in ("before_outage", "after_restore")])
+
+    def test_a_missing_pod_ip_is_not_attempted_and_never_counts_as_blocked(self):
+        with self.assertRaisesRegex(RuntimeError, "not attempted before repair: direct_pod_ip_bypass"):
+            self.run_bypass("before", pod_ip=None)
+        self.assertIs(self.experiment.summary["bypass_checks"]["before"], False)
+        self.assertEqual(self.bypass_record("before")["bypasses"]["direct_pod_ip_bypass"], {"attempted": False})
+
+    def test_every_bypass_refused_with_working_controls_passes(self):
+        for stage in ("before", "during", "after"):
+            with self.subTest(stage=stage):
+                environment = self.run_bypass(stage)
+                self.assertIs(self.experiment.summary["bypass_checks"][stage], True)
+                record = self.bypass_record(stage)
+                self.assertIs(record["passed"], True)
+                self.assertEqual(record["bypasses"], {key: {"attempted": True, "succeeded": False} for key in (
+                    "direct_service_bypass", "direct_pod_ip_bypass", "gateway_outage", "outage_direct_bypass")})
+                # The control runs first with the gateway up, and again last after the gateway is restored.
+                controls = [call for call in environment.calls if call[1].get("target") is None and call[0]]
+                self.assertEqual([environment.calls[0], environment.calls[-1]], controls)
+                expected = {"route": "cart"} if stage == "during" else {"identity": VERIFIER_IDENTITY}
+                self.assertEqual([call[1] for call in controls], [expected, expected])
+                self.assertEqual(environment.scales, ["--replicas=0", "--replicas=1"])
+
+    def cluster_answers(self):
+        """The Executor's and the reader's can-i answers as the reviewed RBAC would give them."""
+        experiment = self.experiment
+        expected = {(row["identity"], row["verb"], row["resource"]): row["allowed"] for row in rbac_matrix(
+            NAMESPACE, experiment.executor_names(), reviewed_references())}
+
+        def kubectl(*arguments, **kwargs):
+            if arguments[:2] == ("auth", "can-i"):
+                allowed = arguments[2] in ("get", "patch") and arguments[3] == "deployment/shippingservice"
+                return SimpleNamespace(stdout="yes" if allowed else "no", stderr="", returncode=0 if allowed else 1)
+            if arguments[0] == "patch":
+                return SimpleNamespace(stdout="", stderr="Error from server (Forbidden): forbidden", returncode=1)
+            return SimpleNamespace(stdout="{}", stderr="", returncode=0)
+
+        def kubectl_as(kubeconfig, context, *arguments):
+            identity = "executor" if kubeconfig == experiment.credentials else "reader"
+            return SimpleNamespace(stdout="yes" if expected[(identity, arguments[2], arguments[3])] else "no")
+        return (patch.object(experiment, "kubectl", side_effect=kubectl),
+                patch.object(experiment, "kubectl_as", side_effect=kubectl_as), patch("sys.stdout", io.StringIO()))
+
+    def test_permissions_end_with_the_before_repair_bypass_checks(self):
+        calls = []
+        cluster, reader, quiet = self.cluster_answers()
+        self.experiment.baseline = {"pod_template": protected_template()}
+        with patch.object(ProtectedBoutiqueExperiment, "bypass_checks", lambda self, stage: calls.append(stage)), \
+                cluster, reader, quiet:
+            self.experiment.permissions()
+        self.assertEqual(calls, ["before"])
+        rows = json.loads((self.experiment.directory / "protected-rbac-checks.json").read_text(encoding="utf-8"))
+        self.assertIn("reader", {row["identity"] for row in rows})
+
+    def test_the_full_run_checks_bypasses_before_during_and_after_the_repair(self):
+        calls = []
+        experiment = self.experiment
+
+        def bypass_checks(self, stage):
+            calls.append(stage)
+            self.summary.setdefault("bypass_checks", {})[stage] = True
+
+        def prepare(self):
+            calls.append("prepare")
+            self.baseline = {"pod_template": protected_template()}
+
+        def fault(self, label):
+            calls.append("fault")
+            return {"incident_id": "INC-1"}
+        cluster, reader, quiet = self.cluster_answers()
+        with patch.object(ProtectedBoutiqueExperiment, "prepare", prepare), \
+                patch.object(ProtectedBoutiqueExperiment, "bypass_checks", bypass_checks), \
+                patch.object(ConnectedBoutiqueExperiment, "fault", fault), \
+                patch.object(ProtectedBoutiqueExperiment, "negative_cases", lambda self, incident: calls.append("negative")), \
+                patch.object(ProtectedBoutiqueExperiment, "positive", lambda self, incident: calls.append("write")), \
+                patch.object(ProtectedBoutiqueExperiment, "deployment", return_value={}), \
+                patch.object(ProtectedBoutiqueExperiment, "emergency_restore", side_effect=AssertionError("restore")), \
+                patch("scripts.security.boutique_security.collect_inspections"), cluster, reader, quiet:
+            experiment.run()
+        self.assertEqual(calls, ["prepare", "before", "fault", "during", "negative", "write", "after"])
+        self.assertEqual(experiment.summary["status"], "PASS")
+
+    def test_the_full_run_is_no_pass_unless_every_time_point_passed(self):
+        experiment = self.experiment
+        for recorded in ({"before": True, "after": True}, {"before": True, "during": False, "after": True},
+                         {"before": True, "during": True, "after": True, "extra": True}):
+            with self.subTest(recorded=recorded):
+                experiment.summary["bypass_checks"] = dict(recorded)
+                with self.assertRaisesRegex(RuntimeError, "did not pass at every time point"):
+                    experiment.after_recovery_scenarios()
+        experiment.summary["bypass_checks"] = {"before": True, "during": True, "after": True}
+        experiment.after_recovery_scenarios()
+
+    def test_the_live_template_must_reference_only_the_reviewed_objects(self):
+        template = protected_template()
+        template["spec"]["volumes"].append({"name": "extra", "secret": {"secretName": "security-gateway"}})
+        with patch.object(protected, "preflight", return_value=[]), \
+                patch.object(protected, "command", return_value="sentinel-boutique-security-control-plane"), \
+                patch.object(ProtectedBoutiqueExperiment, "write_executor_rbac"), \
+                patch("services.observer.kubernetes.KubernetesEvidenceCollector"), \
+                patch.object(ProtectedBoutiqueExperiment, "deployment", return_value={"spec": {"template": template}}), \
+                patch.object(ProtectedBoutiqueExperiment, "issue_reader_credentials",
+                             side_effect=AssertionError("reader issued")), \
+                self.assertRaisesRegex(RuntimeError, "references differ from the reviewed Guard-reader scope"):
+            self.experiment.prepare_image()
+
+    def test_the_run_deletes_the_reader_rbac_it_applied(self):
+        experiment = self.experiment
+        experiment.stage = "baseline"
+        for applied, returncode, deleted in ((True, 0, True), (True, 1, False), (False, 0, None)):
+            with self.subTest(applied=applied, returncode=returncode):
+                experiment.reader_rbac_applied = applied
+                experiment.summary.pop("guard_reader_rbac_deleted", None)
+                result = SimpleNamespace(returncode=returncode, stdout="", stderr="")
+                with patch.object(ProtectedBoutiqueExperiment, "prepare", lambda self: None), \
+                        patch.object(ProtectedBoutiqueExperiment, "permissions", side_effect=RuntimeError("stop")), \
+                        patch.object(experiment, "kubectl", return_value=result) as kubectl, \
+                        self.assertRaisesRegex(RuntimeError, "stop"):
+                    experiment.run()
+                self.assertEqual(experiment.summary.get("guard_reader_rbac_deleted"), deleted)
+                if applied:
+                    self.assertEqual(kubectl.call_args.args[:3], ("delete", "-f", str(GUARD_READER_RBAC)))
+                else:
+                    kubectl.assert_not_called()
+        with patch.object(experiment, "kubectl", side_effect=subprocess.TimeoutExpired("kubectl", 40)):
+            self.assertIs(experiment.delete_reader_rbac(), False)
 
     def test_the_recovery_is_one_write_with_bypass_probes_after(self):
         calls = []
         experiment = self.experiment
+        experiment.summary["bypass_checks"] = {"before": True, "during": True}
+
+        def bypass_checks(self, stage):
+            calls.append(stage)
+            self.summary["bypass_checks"][stage] = True
         with patch.object(ProtectedBoutiqueExperiment, "negative_cases", lambda self, incident: calls.append("negative")), \
                 patch.object(ProtectedBoutiqueExperiment, "positive", lambda self, incident: calls.append("positive")), \
-                patch.object(ProtectedBoutiqueExperiment, "bypass_checks", lambda self, stage: calls.append(stage)), \
+                patch.object(ProtectedBoutiqueExperiment, "bypass_checks", bypass_checks), \
                 patch.object(ProtectedBoutiqueExperiment, "conditional_race", side_effect=AssertionError("race")), \
                 patch.object(ProtectedBoutiqueExperiment, "crash_restart", side_effect=AssertionError("second write")), \
                 patch("scripts.security.boutique_security.collect_inspections"):

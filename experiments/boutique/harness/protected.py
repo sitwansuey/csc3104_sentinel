@@ -14,8 +14,9 @@ Guard, Executor and Verifier as the connected lab, with three changes:
   names (deploy/sentinel/guard-reader-rbac.yaml). The Executor keeps get and
   patch on its named Deployments only and never reads a Secret (#69). The
   reader can still read the key bytes of the Secrets it names: that residual
-  risk is short-lived (a one-hour token, removed at the end) and is removed by
-  P5.06, which reads cert-manager Certificate status instead.
+  risk is short-lived (a one-hour token; the run deletes the reader's
+  ServiceAccount, Role and RoleBinding at the end, which revokes it) and is
+  removed by P5.06, which reads cert-manager Certificate status instead.
 - The Verifier's health probe is authenticated: its Pod presents the
   sentinel-verifier-client certificate to the gateway, whose SAN allowlist
   admits it, and NetworkPolicy lets it reach the gateway's route ports only.
@@ -32,6 +33,7 @@ import json
 import math
 from pathlib import Path
 import re
+import subprocess
 import time
 
 from experiments import lab_lock
@@ -90,7 +92,8 @@ def guard_reader_rbac(namespace, references):
         "# The Guard's reference reader: get on exactly the ConfigMaps and Secrets that the\n"
         "# protected template references, so the Executor never needs to read a Secret (#69).\n"
         "# Residual risk: this identity can read the named Secrets' key bytes. It is used\n"
-        "# only by the Guard's metadata reads, with a one-hour token removed after the run;\n"
+        "# only by the Guard's metadata reads, with a one-hour token; the run deletes these\n"
+        "# objects at its end, which revokes the token (protected.py delete_reader_rbac).\n"
         "# P5.06 replaces these Secret reads with cert-manager Certificate status reads.\n"
         "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n"
         f"  name: {GUARD_READER}\n  namespace: {namespace}\nautomountServiceAccountToken: false\n---\n"
@@ -277,6 +280,7 @@ class ProtectedBoutiqueExperiment(ConnectedBoutiqueExperiment):
         self.stage = stage
         self.security_run = Path(security_run).resolve()
         self.reader_credentials = self.directory / ".guard-reader-kubeconfig.json"
+        self.reader_rbac_applied = False
         self.summary.update(scope="Protected security lab: mTLS gateway, inspector and TLS ingress sidecar; "
                                   "shipping-only recovery with a split Guard-reader identity",
                             protected_stage=stage)
@@ -318,8 +322,24 @@ class ProtectedBoutiqueExperiment(ConnectedBoutiqueExperiment):
 
     def issue_reader_credentials(self):
         """Apply the reviewed Guard-reader RBAC and write its private one-hour kubeconfig (never logged)."""
+        self.reader_rbac_applied = True
         self.kubectl("apply", "-f", str(GUARD_READER_RBAC))
         self._write_private_kubeconfig(self.reader_credentials, GUARD_READER, self.reader_context, "guard-reader")
+
+    def delete_reader_rbac(self):
+        """Delete the Guard reader's ServiceAccount, Role and RoleBinding; True when kubectl confirmed it.
+
+        Deleting the ServiceAccount revokes its bound one-hour token at once,
+        so the reader's residual Secret read ends with the run rather than up
+        to an hour later. A failed delete is recorded, not raised, so it never
+        hides the run's own outcome; docs/security.md gives the manual command.
+        """
+        try:
+            result = self.kubectl("delete", "-f", str(GUARD_READER_RBAC), "--ignore-not-found", "--wait=false",
+                                  allow_failure=True)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return result.returncode == 0
 
     def _write_private_kubeconfig(self, path, account, context, user):
         """A one-hour token for account in a private kubeconfig, as the base harness writes the Executor's."""
@@ -410,18 +430,35 @@ class ProtectedBoutiqueExperiment(ConnectedBoutiqueExperiment):
                               capture_output=True, text=True, timeout=30, check=False)
 
     def bypass_checks(self, stage):
-        """Direct Service, Pod IP and gateway-outage bypasses, all refused; the authenticated call works after.
+        """Direct Service, Pod IP and gateway-outage bypasses refused, each beside a positive control.
 
         Uses the security lab's own probe Pods (boutique_security.probe), so
-        the checks are the ones its validation runs. The gateway is restored
-        and the authenticated call must work again before the run continues.
+        the checks are the ones its validation runs, and like its validation
+        each denial counts only next to an authenticated call through the
+        gateway that succeeds with the same probe image, Secret mount and
+        schema: a broken probe environment would otherwise look like every
+        bypass refused. The control runs before the outage and again after the
+        gateway is scaled back up and rolled out, so the run never continues
+        with the gateway down. Before and after the repair the control is the
+        Verifier's authenticated shipping quote; during the fault, which
+        breaks shipping, it is the lab client's authenticated cart call
+        (GetCart) through the gateway, which does not depend on shipping. A
+        shipping Pod without an IP is recorded as not attempted and fails the
+        check, so the Pod-IP bypass is never claimed without a probe.
         """
         from scripts.security import boutique_security as lab
+
+        def control():
+            if stage == "during":
+                return lab.probe(self.directory, route="cart")
+            return lab.probe(self.directory, identity=VERIFIER_IDENTITY)
+
+        controls = {"before_outage": control()}
         results = {"direct_service_bypass": lab.probe(self.directory, target="shippingservice:50051", secure=False)}
         pods = json.loads(self.kubectl("get", "pods", "-l", lab.workload("shippingservice"), "-o", "json").stdout)["items"]
         address = next((pod.get("status", {}).get("podIP") for pod in pods if pod.get("status", {}).get("podIP")), None)
         results["direct_pod_ip_bypass"] = (lab.probe(self.directory, target=address + ":50051", secure=False)
-                                           if address else {"succeeded": False, "output": "no Pod IP to try"})
+                                           if address else None)
         self.kubectl("scale", "deployment/" + GATEWAY[0], "--replicas=0")
         try:
             deadline = time.monotonic() + 60
@@ -433,14 +470,35 @@ class ProtectedBoutiqueExperiment(ConnectedBoutiqueExperiment):
         finally:
             self.kubectl("scale", "deployment/" + GATEWAY[0], "--replicas=1")
             self.kubectl("rollout", "status", "deployment/" + GATEWAY[0], "--timeout=120s", timeout=140)
-        blocked = {key: not value["succeeded"] for key, value in results.items()}
-        self.summary.setdefault("bypass_checks", {})[stage] = blocked
-        save(self.directory / ("bypass-" + stage + ".json"), {key: {"succeeded": value["succeeded"]}
-                                                               for key, value in results.items()})
+        controls["after_restore"] = control()
+        not_attempted = sorted(key for key, value in results.items() if value is None)
+        blocked = {key: value["succeeded"] is not True for key, value in results.items() if value is not None}
+        controlled = {key: value["succeeded"] is True for key, value in controls.items()}
+        passed = all(blocked.values()) and all(controlled.values()) and not not_attempted
+        self.summary.setdefault("bypass_checks", {})[stage] = passed
+        save(self.directory / ("bypass-" + stage + ".json"), {
+            "bypasses": {key: ({"attempted": False} if value is None else
+                               {"attempted": True, "succeeded": value["succeeded"] is True})
+                         for key, value in results.items()},
+            "positive_control": {"call": ("lab client cart GetCart through the gateway" if stage == "during" else
+                                          "Verifier shipping GetQuote through the gateway"),
+                                 **{key: {"succeeded": value} for key, value in controlled.items()}},
+            "passed": passed})
         require(all(blocked.values()), "A bypass of the protected route succeeded " + stage + " repair: "
                 + ", ".join(key for key, value in blocked.items() if not value))
-        self.check("bypass probes blocked " + stage + " repair: direct Service, Pod IP and gateway outage",
-                   stage=stage)
+        require(all(controlled.values()), "The authenticated positive control failed " + stage + " repair ("
+                + ", ".join(key for key, value in controlled.items() if not value)
+                + "), so the refused bypasses prove nothing")
+        require(not not_attempted, "A bypass probe was not attempted " + stage + " repair: " + ", ".join(not_attempted))
+        self.check("bypass probes blocked " + stage + " repair: direct Service, Pod IP and gateway outage; "
+                   "authenticated control call succeeded before and after the outage", stage=stage)
+
+    def require_bypass_time_points(self, stages):
+        """Before any PASS: the bypass checks ran at exactly these time points and every one passed."""
+        recorded = self.summary.get("bypass_checks", {})
+        require(set(recorded) == set(stages) and all(recorded[stage] is True for stage in stages),
+                "Bypass probes did not pass at every time point: expected " + ", ".join(stages) + "; recorded "
+                + (", ".join(f"{key}={value}" for key, value in sorted(recorded.items())) or "none"))
 
     # ----- the staged run -----
 
@@ -459,7 +517,12 @@ class ProtectedBoutiqueExperiment(ConnectedBoutiqueExperiment):
         lab.collect_inspections(self.directory)
 
     def after_recovery_scenarios(self):
-        """No third proposal: the protected run's acceptance is one write (P5.05)."""
+        """No third proposal: the protected run's acceptance is one write (P5.05).
+
+        The base run marks PASS only after this returns, so the bypass checks
+        must have passed before, during and after the repair.
+        """
+        self.require_bypass_time_points(("before", "during", "after"))
 
     def run(self):
         self.summary["protected_stage"] = self.stage
@@ -471,6 +534,8 @@ class ProtectedBoutiqueExperiment(ConnectedBoutiqueExperiment):
         finally:
             self.reader_credentials.unlink(missing_ok=True)
             self.summary["private_reader_credentials_removed"] = not self.reader_credentials.exists()
+            if self.reader_rbac_applied:
+                self.summary["guard_reader_rbac_deleted"] = self.delete_reader_rbac()
             save(self.directory / "summary.json", self.summary)
 
     def run_baseline(self):
@@ -478,6 +543,7 @@ class ProtectedBoutiqueExperiment(ConnectedBoutiqueExperiment):
         try:
             self.prepare()
             self.permissions()
+            self.require_bypass_time_points(("before",))
             self.summary["status"] = "PASS"
         except BaseException as exc:
             self.summary.update(status="FAILED", error_type=type(exc).__name__, error=str(exc)[:300])

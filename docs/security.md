@@ -789,7 +789,11 @@ None of it has run against a cluster yet (`L-PROTECTED-RECOVERY-OFFLINE` in
   ConfigMap or Secret references gets no versions, the Guard reports
   `BASELINE_REFERENCE_EVIDENCE_MISSING` (UNKNOWN, so ESCALATE) and the
   Executor writes nothing; a template without references needs no reader.
-  The reader file must not be the Executor's kubeconfig. The reader's Role,
+  The reader file must not be the Executor's kubeconfig, nor a link to it;
+  `LiveGuardAuthorizer` itself refuses that, because the worker's Guard role
+  builds it without `build_adapters`
+  (`tests/test_live_executor.py::LiveExecutorTests.test_the_authorizer_itself_refuses_the_executor_kubeconfig_as_reader`).
+  The reader's Role,
   `deploy/sentinel/guard-reader-rbac.yaml`, is generated from the protected
   shippingservice template and grants `get` on `configmap/security-upstream`
   and `secret/security-upstream` only
@@ -813,6 +817,21 @@ None of it has run against a cluster yet (`L-PROTECTED-RECOVERY-OFFLINE` in
   lab's run folder (`--security-run`). The catalog has a `protected` scope for
   the security lab with shippingservice only. The run takes the heavy-lab
   lock, so it refuses while P4.01, P4.03, P4.05 or a P5.07 run holds it.
+  The bypass probes run before the fault (at the end of the RBAC matrix),
+  during it (after the fault, before the approved write) and after the
+  repair. Each time point counts only beside an authenticated control call
+  through the gateway that succeeds both before the gateway outage and after
+  the gateway is restored, as the lab's own validation pairs its denials
+  with `valid_mtls_quote`: the Verifier's shipping quote before and after
+  the repair, and during the fault, which breaks shipping, the lab client's
+  cart call (GetCart). A shipping Pod without an IP fails the check as not
+  attempted. The run is not a PASS unless all three time points passed
+  (`experiments/boutique/harness/protected.py::ProtectedBoutiqueExperiment.bypass_checks`,
+  `tests/test_protected_recovery.py::ProtectedExperimentTests.test_refused_bypasses_count_only_beside_a_working_authenticated_call`,
+  `tests/test_protected_recovery.py::ProtectedExperimentTests.test_the_full_run_checks_bypasses_before_during_and_after_the_repair`).
+  During the fault R1 stops shipping's own server, so a refused direct call
+  at that time point does not by itself show that the policy refused it; the
+  before and after time points are the ones that show the policy.
 
 ### Why no existing check is weaker (owner sign-off)
 
@@ -869,8 +888,12 @@ tests that hold it:
 Residual risks, also in the threat model: the reader can read the named
 Secret's key bytes (RBAC has no metadata-only `get`, and kubectl fetches the
 whole object before selecting the UID and resourceVersion; the bytes never
-reach Python, and the one-hour token is deleted when the run ends). P5.06
-replaces these Secret reads with cert-manager Certificate status reads. The
+reach Python). The token lasts one hour. The run removes the reader's
+kubeconfig file and deletes its ServiceAccount, Role and RoleBinding at the
+end, which revokes the token at once; `summary.json` records
+`guard_reader_rbac_deleted`, and when that is not `true` delete them by
+hand (below). P5.06 replaces these Secret reads with cert-manager
+Certificate status reads. The
 Verifier's client key is a Secret that any Pod in the namespace could mount.
 The sidecar rule pins the image, command, arguments and mounts and refuses
 lifecycle hooks, `exec` probes and unreviewed fields, but it does not pin
@@ -928,7 +951,9 @@ configmap/security-upstream` all `no`); the reader gets
 `secret/security-upstream` and `configmap/security-upstream` and nothing
 else (`secret/security-gateway`, `secrets`, `list secrets` and the
 Deployment all `no`). `bypass-before.json` shows the plaintext Service, the
-Pod IP and the gateway outage all refused.
+Pod IP and the gateway outage all refused, and its `positive_control`
+shows the Verifier's authenticated quote succeeding before the outage and
+after the gateway is restored.
 
 Expected, stage (c): `PASS: protected template recovered with one approved
 write; ...`. The policy carries `allowed_sidecars` for shipping-ingress; the
@@ -937,22 +962,34 @@ Executor's own check both ALLOW with the reader's reference versions;
 `transport-stats.json` shows one write; `outcome.json` is RECOVERED from
 samples taken by `sentinel-verifier-probe` Pods through the gateway;
 `bypass-before.json`, `bypass-during.json` (fault in place) and
-`bypass-after.json` all show every bypass refused; the run folder's
-`telemetry.sqlite3` holds inspector events in the action window; and
-`summary.json` records both private kubeconfigs removed. A Guard REJECT with
+`bypass-after.json` all show every bypass attempted and refused and both
+positive controls succeeded (the lab client's cart call in
+`bypass-during.json`); the run folder's `telemetry.sqlite3` holds inspector
+events in the action window; and `summary.json` records both private
+kubeconfigs removed, `bypass_checks` true for before, during and after, and
+`guard_reader_rbac_deleted` true. If it is not true, delete the reader by
+hand: `kubectl --context kind-sentinel-boutique-security delete -f
+deploy/sentinel/guard-reader-rbac.yaml --ignore-not-found`. A Guard REJECT with
 `SECURITY_SIDECAR_*`, or an ESCALATE with
 `BASELINE_REFERENCE_EVIDENCE_MISSING`, is the protected rules failing
-closed: record it as such, not as a recovery. The `--dashboard` view and the
-crash-reconciliation case are not part of this run yet.
+closed: record it as such, not as a recovery. The `--dashboard` view, the
+crash-reconciliation case and the base harness's conditional-race case are
+not part of this run yet: the protected run's acceptance is one write.
 
 ### Owner sign-offs
 
 - the Guard rule `allowed_sidecars`, its codes and the argument above;
 - the reference reads moving to the Guard-reader identity, and the reader's
   residual Secret read until P5.06;
-- the Verifier client identity at the gateway and its probe policy;
+- the Verifier client identity at the gateway and its probe policy. Its
+  SAN is admitted on both gateway listeners (shipping 8443 and cart 8445)
+  and its egress allows both route ports, so its key could also call the
+  cart route, although the probe only calls the shipping quote. Narrowing it
+  to the shipping listener and port 8443 is left to the owner;
 - the protected run's 192Mi container memory-limit ceiling: it lets the
   shipping container be restored with up to 192Mi as well, because the Guard
   has no per-container ceilings;
 - the `protected` catalog scope (R1's labels are unchanged; only its scopes
-  gain `protected`).
+  gain `protected`). The runtime LabControl scopes now include the security
+  cluster and shippingservice through it; `--protected` refuses
+  `--dashboard` and `--ui-controls`, so no UI path reaches it today.

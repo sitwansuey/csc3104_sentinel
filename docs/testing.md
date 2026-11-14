@@ -169,8 +169,10 @@ security overlay, the generated Guard-reader RBAC and its can-i matrix, the
 authenticated Verifier probe Pod and its NetworkPolicy reach, one Executor
 write that restores the whole protected template (sidecar included) while an
 extra container, another Envoy digest or a host path writes nothing, the staged
-recipe's preflight refusals, and the harness's `--protected` options and
-heavy-lab lock. The sidecar rule itself is in `tests/test_guard_eligibility.py`
+recipe's preflight refusals, the bypass probes (each time point needs a
+working authenticated control call, a missing Pod IP fails, and the run is no
+PASS unless before, during and after all passed), the reader RBAC deleted at
+the end, and the harness's `--protected` options and heavy-lab lock. The sidecar rule itself is in `tests/test_guard_eligibility.py`
 (`ProtectedSidecarEligibilityTests` reruns every eligibility test with the
 sidecar in the template) and the split reader identity in
 `tests/test_live_executor.py`. Nothing has run against a cluster; the staged
