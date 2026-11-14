@@ -423,7 +423,10 @@ def check_replays(lab, scratch, journals, previous, initial, steps, report):
     checked, cleared = initial, set()
     report["workers_cleared"] = []
     report["rechecks"] = []
-    for _ in range(len(WORKERS) + 1):
+    # A replayed result can make the restored Coordinator ask again for the next result in the chain, so
+    # a "review" item may turn into a "replay" one, also for a worker already cleared; bound the rounds by
+    # the items that can still be resent rather than by the number of workers.
+    for _ in range(4 * len(WORKERS)):
         missing = [item for journal in checked["report"]["journals"] for item in journal["missing"]]
         if not missing:
             for identity in WORKERS:
@@ -431,24 +434,31 @@ def check_replays(lab, scratch, journals, previous, initial, steps, report):
                     steps.call("accept checked store: " + identity, lab.accept_worker, identity)
                     report["workers_cleared"].append(identity)
             return
-        replaying = [Path(journal["journal"]).parent.name for journal in checked["report"]["journals"]
-                     if any(item["redrive"] == "replay" for item in journal["missing"])]
-        replaying = [identity for identity in replaying if identity not in cleared]
-        if not replaying or any(identity not in WORKERS for identity in replaying):
+        staged = {replay_key(journal, item) for journal in checked["report"]["journals"]
+                  for item in journal["missing"] if item["redrive"] == "replay"}
+        if not staged or any(identity not in WORKERS for identity, *_ in staged):
             raise ka.AcceptanceError("Restore check has unresolved review items; workers require manual review")
-        for identity in replaying:
+        # A worker already cleared resends its saved result by itself when it claims; only new holders are cleared.
+        for identity in sorted({identity for identity, *_ in staged} - cleared):
             steps.call("accept replay holder: " + identity, lab.accept_worker, identity)
             report["workers_cleared"].append(identity)
             cleared.add(identity)
 
-        def returned(replaying=tuple(replaying)):
+        def returned(staged=frozenset(staged)):
+            # Wait for exactly the results being replayed; other items of the same worker may stay under review.
             current = run_check(lab, scratch, journals, previous, steps)
             report["rechecks"].append(current)
-            return current if not any(journal["missing"] for journal in current["report"]["journals"]
-                                      if Path(journal["journal"]).parent.name in replaying) else None
+            still = {replay_key(journal, item) for journal in current["report"]["journals"]
+                     for item in journal["missing"]}
+            return current if not staged & still else None
         checked = steps.call("wait for acknowledged replays", lab.wait, returned, 120,
                              "Acknowledged replay results did not return; do not clear peers", interval=2)
     raise ka.AcceptanceError("Restore replay staging exhausted its bound; review the remaining results by hand")
+
+
+def replay_key(journal, item):
+    """One acknowledged result in a restore check: the worker, the result kind, its action and topic."""
+    return (Path(journal["journal"]).parent.name, item.get("kind"), item.get("action_id"), item.get("topic"))
 
 
 def detection(lab, since, restored_at, backup, steps, report, *, timeout=120, offset_seconds=0):

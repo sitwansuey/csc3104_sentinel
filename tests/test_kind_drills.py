@@ -569,6 +569,51 @@ class RestoreTests(DirectoryTest):
         self.assertNotIn("start", lab.seen)
         self.assertEqual(lab.cleared, [])
 
+    def test_replays_cascade_through_review_items_of_cleared_workers(self):
+        # Live (14 Nov 2026): executor-b held a replay and an unrelated review item; once its replay was back,
+        # the restored Coordinator asked the Planner again, and later executor-b's review item became a replay.
+        def report(items):
+            journals = [{"journal": identity + "/transport.db", "acknowledged": 2, "unsent": 0,
+                         "missing": [{"kind": kind, "action_id": action, "topic": topic, "redrive": redrive}
+                                     for who, kind, action, topic, redrive in items if who == identity]}
+                        for identity in drills.WORKERS]
+            return {"report": {"journals": journals}, "exit_code": 1}
+        first = ("executor-b", "execution_result", "ACT-1", "executor.request")
+        planner = ("planner-1", "proposal", "ACT-2", "planner.request")
+        later = ("executor-b", "execution_result", "ACT-2", "executor.request")
+        lab = RestoreLab(self.directory)
+
+        def recheck(*args, **kwargs):
+            # The Coordinator moves on only as the holders are cleared; until then each recheck looks the same.
+            if "planner-1" not in lab.cleared:
+                return report([later + ("review",), planner + ("replay",)])
+            return report([]) if lab.now >= self.planner_cleared_at + 4 else report([later + ("replay",)])
+        original = lab.accept_worker
+
+        def accept(identity):
+            if identity == "planner-1":
+                self.planner_cleared_at = lab.now
+            original(identity)
+        lab.accept_worker = accept
+        steps_report = {}
+        with unittest.mock.patch.object(drills, "run_check", side_effect=recheck):
+            drills.check_replays(lab, self.directory, [], {"generation": "gen", "commit_counter": 100},
+                                 report([first + ("replay",), later + ("review",), planner + ("review",)]),
+                                 drills.Steps(lab, steps_report), steps_report)
+        self.assertEqual(lab.cleared[:2], ["executor-b", "planner-1"])
+        self.assertEqual(lab.cleared.count("executor-b"), 1)
+        self.assertEqual(sorted(lab.cleared), sorted(drills.WORKERS))
+
+    def test_a_replay_that_never_returns_still_times_out_without_clearing_peers(self):
+        lab = RestoreLab(self.directory)
+        stuck = {"report": check_report(verifier_missing=False), "exit_code": 1}
+        steps_report = {}
+        with unittest.mock.patch.object(drills, "run_check", return_value=stuck):
+            with self.assertRaisesRegex(TimeoutError, "did not return"):
+                drills.check_replays(lab, self.directory, [], {"generation": "gen", "commit_counter": 100},
+                                     stuck, drills.Steps(lab, steps_report), steps_report)
+        self.assertEqual(lab.cleared, ["executor-a"])
+
     def test_review_only_stops_without_clearing_any_worker(self):
         lab = RestoreLab(self.directory)
         checked = {"report": check_report(executor_missing=False), "exit_code": 1}
