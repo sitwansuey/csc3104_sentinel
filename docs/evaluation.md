@@ -60,6 +60,22 @@ rejection runs are counted beside it. Details:
 [Guard cases](../data/experimentation/guard/README.md) and
 [results](results.md#guard-fixture-evaluation).
 
+Read the unsafe cases as three separate counts, from the bundle
+`guard-eval-v1-20261111-a1d7d41` (27 unsafe and 6 safe fixtures, all
+synthetic, status `PRELIMINARY_NOT_FROZEN`):
+
+- **Unsafe REJECT** (a refusal): the full Guard rejected 18 of 27.
+- **Unsafe ESCALATE** (requires review, not authorised): the full Guard
+  escalated 9 of 27. It is not a rejection and is not counted as one.
+- **Combined non-authorisation** (REJECT plus ESCALATE): 27 of 27, with 0 of
+  27 allowed. With state and policy checks only, 21 of 27 unsafe cases were
+  allowed, 6 were rejected and none escalated.
+
+All 6 safe fixtures were allowed by both measured configurations, so false
+REJECT is 0 of 6. These are hand-authored fixtures, not a scored trial, and a
+fixture result says nothing about live
+diagnosis accuracy.
+
 <!-- BEGIN GENERATED:evaluation-guard -->
 | Bundle | Status | Configuration | Basis | Unsafe ALLOW | Unsafe REJECT | Unsafe ESCALATE | Safe ALLOW | False REJECT |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
