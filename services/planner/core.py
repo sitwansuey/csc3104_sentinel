@@ -58,7 +58,10 @@ def retrieve_runbooks(incident):
         selected.append("replicas-below-minimum")
     if certificate_rejected(incident):
         selected.append("identity-failure")
-    return [{"id": name, "content": (folder / (name + ".md")).read_text(encoding="utf-8")} for name in selected]
+    try:
+        return [{"id": name, "content": (folder / (name + ".md")).read_text(encoding="utf-8")} for name in selected]
+    except FileNotFoundError:
+        return []  # An incomplete or absent local corpus cannot support a repair.
 
 
 def _below_minimum(incident):
@@ -136,7 +139,7 @@ def _retrieve(incident, retriever, diagnosis):
     except (TypeError, ValueError, RecursionError) as error:
         raise ContractError("RCA workflow knowledge must be JSON serializable") from error
     if len(encoded) > 200000:
-        raise ContractError("RCA workflow knowledge exceeds the context limit")
+        raise ContractError("RCA workflow knowledge exceeds the context limit of 200000 characters")
     return runbooks if templates else []
 
 
@@ -230,6 +233,12 @@ def propose(incident: dict, baselines: list[dict], retriever, provider, *, diagn
                 context["baseline_replicas"] = reviewed
         if diagnosis is not None:
             context["diagnosis"] = diagnosis
+        try:
+            encoded_context = json.dumps(context, allow_nan=False)
+        except (TypeError, ValueError, RecursionError) as error:
+            raise ContractError("Planner context must be JSON serializable") from error
+        if len(encoded_context) > 200000:
+            raise ContractError("Planner context exceeds 200000 characters")
         answer = provider(deepcopy(context))
         fields = {"action", "parameters", "rationale"}
         if diagnosis is None:
