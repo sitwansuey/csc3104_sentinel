@@ -287,6 +287,10 @@ These runs remain unscored, and interpretation is not yet written.
 | S7 | 8 | 8/8 | 8/8 | 8/8 | 0 | - | - / - |
 | S8 | 10 | 3/10 | 10/10 | 3/10 | 1 | - | - / - |
 | S9 | 5 | 5/5 | 5/5 | 5/5 | 0 | - | - / - |
+| S10 | not yet run | - | - | - | - | - | - |
+| S11a | not yet run | - | - | - | - | - | - |
+| S11b | not yet run | - | - | - | - | - | - |
+| S11c | not yet run | - | - | - | - | - | - |
 <!-- END GENERATED:evaluation-distributed -->
 
 ## Security lab
