@@ -847,6 +847,43 @@ class ExpectationTests(unittest.TestCase):
                                        notes={"duplicate": {"first": first, "second": changed}}))
         self.assertTrue(self.check("S10", ["RECOVERED"], rows + [rows[0]], notes=notes, records=records))
 
+    def test_s10_accepts_only_durable_peer_adoption_of_the_same_delivery_without_a_patch(self):
+        first = {"event_id": 8, "delivery_id": "D1", "action_id": "ACT-1", "owner": "executor-a", "attempts": 1}
+        result = {"kind": "execution_result", "action_id": "ACT-1", "status": "APPLIED",
+                  "details": "[basis=EVIDENCE_MATCH] Exact template and evidence confirm the write (adopted peer write)."}
+        second = dict(first, owner="executor-b", attempts=2, result=result)
+        notes = {"duplicate": {"first": first, "second": second}}
+        receipt = dict(second, finished=1, result_digest=acceptance.sha256_hex(result))
+        accepted = {"identity": "executor-b", "event_id": 8, "accepted": True,
+                    "message_digest": acceptance.sha256_hex(result)}
+        records = {"access": [{"operation": "claim", "http_status": 200, "outcome": "claimed",
+                               "delivery_id": "D1", "identity": identity} for identity in acceptance.EXECUTORS],
+                   "receipts": [receipt], "worker_results": [accepted]}
+        rows = [audit_row("template_write")]
+        self.assertEqual(self.check("S10", ["RECOVERED"], rows, notes=notes, records=records), [])
+        for changed in (dict(result, action_id="OTHER"), dict(result, status="CONFLICT"),
+                        dict(result, details="[basis=EVIDENCE_MATCH] Own write confirmed.")):
+            changed_digest = acceptance.sha256_hex(changed)
+            changed_records = dict(records, receipts=[dict(receipt, result_digest=changed_digest)],
+                                   worker_results=[dict(accepted, message_digest=changed_digest)])
+            self.assertTrue(self.check("S10", ["RECOVERED"], rows, records=changed_records,
+                                       notes={"duplicate": {"first": first, "second": dict(second, result=changed)}}))
+        self.assertTrue(self.check("S10", ["RECOVERED"], rows, records=records,
+                                   notes={"duplicate": {"first": first, "second": dict(second, event_id=9)}}))
+        for field in ("access", "receipts", "worker_results"):
+            self.assertTrue(self.check("S10", ["RECOVERED"], rows, notes=notes, records=dict(records, **{field: []})))
+        for changed in (dict(receipt, event_id=9), dict(receipt, delivery_id="D2"), dict(receipt, owner="executor-a"),
+                        dict(receipt, finished=None), dict(receipt, result_digest="OTHER")):
+            self.assertTrue(self.check("S10", ["RECOVERED"], rows, notes=notes,
+                                       records=dict(records, receipts=[changed])))
+        for changed in (dict(accepted, identity="executor-a"), dict(accepted, event_id=9),
+                        dict(accepted, accepted=False), dict(accepted, message_digest="OTHER")):
+            self.assertTrue(self.check("S10", ["RECOVERED"], rows, notes=notes,
+                                       records=dict(records, worker_results=[changed])))
+        for changed in ([], rows + rows, [audit_row("template_write", action_id="OTHER")],
+                        rows + [audit_row("denied", pod=B_POD, code=500)]):
+            self.assertTrue(self.check("S10", ["RECOVERED"], changed, notes=notes, records=records))
+
     def test_deployed_refusals_need_the_specific_guard_answer_and_zero_writes(self):
         records = {"actions": [{"action_id": "ACT-1"}]}
         for name, verdict, reason in (("S11a", "REJECT", "ACTION_NOT_ALLOWED"),
@@ -1204,39 +1241,55 @@ class DeployedScenarioTests(unittest.TestCase):
         self.lab.query = lambda sql, parameters=(): ([] if sql.startswith("SELECT id FROM approvals") else
                                                      [{"action_id": "ACT-1", "guard_result": json.dumps(decision)}])
 
-    def test_s10_holds_the_same_delivery_in_both_pods_before_releasing_either(self):
-        self.lab.rows = [audit_row("denied", code=422), audit_row("template_write", pod=B_POD)]
-        both_held = []
+    def test_s10_waits_for_the_same_deliverys_accepted_peer_result_while_the_writer_is_held(self):
+        first = {"event_id": 8, "delivery_id": "D1", "action_id": "ACT-1", "owner": "executor-a", "attempts": 1}
+        result = {"kind": "execution_result", "action_id": "ACT-1", "status": "APPLIED",
+                  "details": "[basis=EVIDENCE_MATCH] adopted peer write"}
 
         def claimed(sql, parameters, strict=False):
-            identity = parameters[0]
-            if identity == "executor-b":
-                both_held.extend(set(self.cluster.current("sentinel-" + item)["blocked"])
-                                 for item in acceptance.EXECUTORS)
+            if "JOIN messages" in sql:
+                self.assertEqual(parameters, ("D1", "executor-b"))
+                self.assertEqual(self.cluster.current("sentinel-executor-a")["blocked"],
+                                 {"executor.after_patch_before_save"})
+                self.assertEqual(self.cluster.current("sentinel-executor-b")["blocked"], set())
                 self.assertTrue(self.cluster.effective())
                 self.assertEqual(self.cluster.releases, [])
-            return [{"delivery_id": "D1", "action_id": "ACT-1", "owner": identity,
-                     "attempts": 1 if identity == "executor-a" else 2}]
+                return [dict(first, owner="executor-b", attempts=2, result=json.dumps(result))]
+            return [first]
         self.lab.query = claimed
         run = self.run_case("S10")
         live.s10(run)
-        self.assertEqual(both_held, [{"executor.before_submit"}, {"executor.before_submit"}])
         self.assertEqual(run.notes["duplicate"]["second"]["attempts"], 2)
+        self.assertEqual(run.notes["duplicate"]["second"]["result"], result)
         self.assertEqual([(identity, stem) for identity, stem, _ in self.cluster.releases],
-                         [("executor-b", "executor.before_submit"), ("executor-a", "executor.before_submit")])
+                         [("executor-a", "executor.after_patch_before_save")])
         self.assertTrue(all(not faults for _, _, faults in self.cluster.releases))
         self.assertEqual(run.cleanup()["problems"], [])
         self.assertEqual(run.leftovers(), [])
 
-    def test_s10_different_action_fails_and_cleanup_releases_both_and_removes_the_partition(self):
+    def test_s10_different_action_fails_and_cleanup_releases_the_writer_and_removes_the_partition(self):
         self.lab.query = lambda sql, parameters, strict=False: [
-            {"delivery_id": "D1", "action_id": parameters[0], "owner": parameters[0], "attempts": 1}]
+            {"delivery_id": "D1", "action_id": parameters[0], "owner": parameters[-1], "attempts": 1, "result": "{}"}]
         run = self.run_case("S10")
         with self.assertRaisesRegex(acceptance.AcceptanceError, "different delivery or action"):
             live.s10(run)
         self.assertEqual(run.cleanup()["problems"], [])
         self.assertEqual(run.leftovers(), [])
-        self.assertEqual({identity for identity, _, _ in self.cluster.releases}, set(acceptance.EXECUTORS))
+        self.assertEqual({identity for identity, _, _ in self.cluster.releases}, {"executor-a"})
+
+    def test_s10_does_not_substitute_a_new_action_when_the_original_delivery_has_no_accepted_peer_result(self):
+        def claimed(sql, parameters, strict=False):
+            if "JOIN messages" in sql:
+                self.assertEqual(parameters, ("D1", "executor-b"))
+                return []
+            return [{"event_id": 8, "delivery_id": "D1", "action_id": "ACT-1", "owner": "executor-a", "attempts": 1}]
+        self.lab.query = claimed
+        run = self.run_case("S10")
+        with self.assertRaisesRegex(TimeoutError, "accepted result for the held delivery"):
+            live.s10(run)
+        self.assertNotIn("duplicate", run.notes)
+        self.assertEqual(run.cleanup()["problems"], [])
+        self.assertEqual(run.leftovers(), [])
 
     def policy_mounts(self):
         policy = {"policy_version": "v1", "allowed_actions": ["ROLLBACK"]}

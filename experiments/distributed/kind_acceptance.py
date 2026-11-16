@@ -142,6 +142,7 @@ import time
 
 from experiments import lab_lock
 from experiments.distributed import audit, invariants
+from shared.canonical import sha256_hex
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTEXT = "kind-sentinel-dist"
@@ -1029,10 +1030,10 @@ SCENARIOS = {item.name: item for item in (
              "connection to the API server; the Executor to the target's port", "design S9 (A6)",
              "every probe as expected, 0 Sentinel template writes", checks=("I7",)),
     Scenario("S10", "Concurrent duplicate action delivery to both Executors",
-             "hold the first Executor at executor.before_submit, partition it from the Coordinator until the "
-             "same delivery reaches the other Executor at the same point, then release both", "deployed duplicate",
-             "same delivery and action held by both Executors, RECOVERED, exactly 1 Sentinel template write, "
-             "the other Pod's PATCH refused (403, 409 or 422)"),
+             "hold the first Executor at executor.after_patch_before_save, partition it from the Coordinator until "
+             "the other Executor answers the same delivery by adopting its write, then release", "deployed duplicate",
+             "same delivery and action redelivered while the first Executor is held, RECOVERED, exactly 1 Sentinel "
+             "template write for that action, the other Executor's PATCH refused or its write deduplicated"),
     Scenario("S11a", "Guard-refused proposal on the deployed topology",
              "hold the Planner while the deployed Guard policy disallows ROLLBACK; restore the policy afterwards",
              "deployed refusal", "Guard REJECT with ACTION_NOT_ALLOWED, 0 Executor writes for the refused action",
@@ -1221,8 +1222,9 @@ def expectation(name, *, incidents, rows, notes=None, stalled=None, takeover=Non
     opened after the revoked incident went terminal, and no generation change
     between seal and refused PATCH (or first later incident opening); S9's
     probes all behave as expected with no write. S10 requires overlapping
-    duplicate delivery, one write and the peer's refused PATCH; S11a-S11c
-    require the deployed Guard answer and zero writes during refusal.
+    duplicate delivery, one write and the peer's refused PATCH or durably
+    confirmed adoption without a PATCH; S11a-S11c require the deployed Guard
+    answer and zero writes during refusal.
     """
     notes, failures = notes or {}, []
     states = sorted({row["state"] for row in incidents})
@@ -1258,6 +1260,7 @@ def expectation(name, *, incidents, rows, notes=None, stalled=None, takeover=Non
         action = first.get("action_id")
         need(bool(action) and first.get("delivery_id") == second.get("delivery_id")
              and bool(first.get("delivery_id")) and action == second.get("action_id")
+             and first.get("event_id") == second.get("event_id")
              and {first.get("owner"), second.get("owner")} == set(EXECUTORS)
              and second.get("attempts", 0) > first.get("attempts", 0),
              "no overlapping delivery of the same action to both Executors was recorded")
@@ -1269,9 +1272,26 @@ def expectation(name, *, incidents, rows, notes=None, stalled=None, takeover=Non
         own = [row for row in writes if row.get("action_id") == action]
         need(len(own) == 1, "the single template write is not attributable to the duplicated action")
         loser = [identity for identity in EXECUTORS if not any(_from_pod(row, identity) for row in own)]
-        need(len(loser) == 1 and any(row.get("action_id") == action and row["effect"] == "denied"
-             and row["code"] in {403, 409, 422} for row in holder_patches(rows, loser[0])),
-             "no refused PATCH (403, 409 or 422) from the other Executor for the duplicated action")
+        refused = len(loser) == 1 and any(row.get("action_id") == action and row["effect"] == "denied"
+                  and row["code"] in {403, 409, 422} for row in holder_patches(rows, loser[0]))
+        result = second.get("result") or {}
+        result_digest = sha256_hex(result)
+        deduplicated = (loser == [second.get("owner")] and result.get("kind") == "execution_result"
+                        and result.get("action_id") == action and result.get("status") == "APPLIED"
+                        and result.get("details", "").startswith("[basis=EVIDENCE_MATCH]")
+                        and "adopted peer write" in result.get("details", "")
+                        and not holder_patches(rows, second.get("owner"))
+                        and any(row.get("delivery_id") == first.get("delivery_id")
+                                and row.get("event_id") == second.get("event_id")
+                                and row.get("event_id") is not None and row.get("owner") == second.get("owner")
+                                and row.get("finished") is not None and row.get("result_digest") == result_digest
+                                for row in (records or {}).get("receipts", []))
+                        and any(row.get("identity") == second.get("owner") and row.get("accepted")
+                                and row.get("event_id") == second.get("event_id")
+                                and row.get("message_digest") == result_digest
+                                for row in (records or {}).get("worker_results", [])))
+        need(refused or deduplicated,
+             "no refused PATCH (403, 409 or 422) or confirmed peer adoption for the duplicated action")
     if name in {"S11a", "S11b", "S11c"}:
         refusal = notes.get("refusal") or {}
         verdict, reason = {"S11a": ("REJECT", "ACTION_NOT_ALLOWED"),

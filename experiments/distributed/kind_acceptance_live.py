@@ -931,7 +931,7 @@ def s9(run):
 
 
 def _claimed(run, identity):
-    rows = run.lab.query("SELECT r.delivery_id, r.owner, r.attempts, o.action_id FROM transport_receipts r "
+    rows = run.lab.query("SELECT r.event_id, r.delivery_id, r.owner, r.attempts, o.action_id FROM transport_receipts r "
                          "JOIN outbox o ON o.id=r.event_id WHERE r.owner=? AND r.finished IS NULL "
                          "AND o.topic='executor.request' ORDER BY o.id DESC LIMIT 1", (identity,), strict=True)
     if len(rows) != 1:
@@ -940,31 +940,38 @@ def _claimed(run, identity):
 
 
 def s10(run):
-    """Overlap the same normal transport delivery in two independent Executors, after lease expiry."""
-    stem = "executor.before_submit"
+    """Redeliver a committed but unreported write while its first Executor is still held.
+
+    Before submission, Deployment status updates can advance resourceVersion during the lease wait:
+    the peer then correctly reports CONFLICT and the Coordinator re-plans. After submission the atomic
+    action evidence lets the peer adopt this very write, even when status advances, without another PATCH.
+    """
+    stem = "executor.after_patch_before_save"
     holder = _holder(run, stem)
     first = _claimed(run, holder)
     other = next(identity for identity in EXECUTORS if identity != holder)
-    # Arm before the partition: the peer must stop after receiving the duplicate, before either PATCH.
-    run.lab.arm((other,), stem, "block")
     run.mark()
     cut = run.create(partition(run.name("duplicate"), _app(holder), ["sentinel-coordinator"], 180),
                      expect=_holder_uid(run, holder))
-    run.lab.first_reached((other,), stem, timeout=min(120, run.window_left(cut)))
-    run.armed.remove((other, stem))
-    run.hold(other, stem)
-    second = _claimed(run, other)
+
+    def adopted():
+        # Read an accepted answer, not just a transient claim: adoption sends no PATCH and hits no write hook.
+        rows = run.lab.query("SELECT r.event_id, r.delivery_id, r.owner, r.attempts, o.action_id, m.payload AS result "
+                             "FROM transport_receipts r JOIN outbox o ON o.id=r.event_id "
+                             "JOIN messages m ON m.answers=o.id AND m.producer=r.owner "
+                             "WHERE r.delivery_id=? AND r.owner=? AND r.finished IS NOT NULL "
+                             "AND m.kind='execution_result'", (first["delivery_id"], other))
+        return rows[0] if rows else None
+
+    second = run.lab.wait(adopted, min(120, run.window_left(cut)),
+                          "the peer's accepted result for the held delivery", interval=2)
+    second["result"] = json.loads(second["result"])
     run.notes["duplicate"] = {"first": first, "second": second}
     if (first["delivery_id"], first["action_id"]) != (second["delivery_id"], second["action_id"]):
         raise AcceptanceError("The peer received a different delivery or action, not the held duplicate")
     run.remove(cut)
-    # Both deliveries are in flight at the same adapter point. Let the current owner go first.
-    _release(run, other, stem)
+    # The peer answered the same command before the first attempt could save or report its result.
     _release(run, holder, stem)
-    run.lab.wait(lambda: all(any(row.get("action_id") == first["action_id"]
-                                 for row in holder_patches(run.audit_rows(run.fault_at)[0], identity))
-                             for identity in EXECUTORS),
-                 60, "both duplicate deliveries' PATCHes in the audit log", interval=2)
 
 
 def _policy_visible(lab, policy):
