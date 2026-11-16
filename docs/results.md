@@ -39,7 +39,7 @@ Read each number with its limits:
 <!-- BEGIN GENERATED:runs -->
 | Class | Runs | PASS | FAILED | INTERRUPTED | INCOMPLETE | Provenance |
 | --- | --- | --- | --- | --- | --- | --- |
-| agent | 41 | 28 | 13 | 0 | 0 | 21 recorded, 20 inferred |
+| agent | 44 | 30 | 14 | 0 | 0 | 24 recorded, 20 inferred |
 | cert-lifecycle | 4 | 4 | 0 | 0 | 0 | 0 recorded, 4 inferred |
 | chaos-batch | 17 | 3 | 13 | 0 | 1 | 0 recorded, 17 inferred |
 | chaos-recovery | 25 | 20 | 5 | 0 | 0 | 25 recorded, 0 inferred |
@@ -144,6 +144,7 @@ and labelled `expected escalation`.
 | dab3b3f | recorded | 3 | 2/3 | 1 | 4 | 39.35 | expected escalation x1 |
 | b79fb5d | recorded | 1 | 1/1 | 0 | 3 | 27 | none |
 | 29e41f8 | recorded | 1 | 0/1 | 1 | n/a | n/a | expected escalation x1 |
+| f30b596 | recorded | 3 | 2/3 | 1 | 4 | 135.95 | agent escalated (ABSTAINED) x1 |
 <!-- END GENERATED:agent-runs -->
 
 ### Catalog scenario runs (unscored)
@@ -193,6 +194,9 @@ these rows are not scored trials.
 | p5conn-r3-cve-n2 | N2 | 7b35066 | PASS | RESTART | decided by the rule | 1 | RECOVERED | yes | pending |
 | p5conn-r3-cve-n3 | N3 | 7b35066 | PASS | ESCALATE | decided by the rule | 0 | NEEDS_REVIEW | yes | pending |
 | p5conn-r3-cve-t1 | T1 | 7b35066 | PASS | NO_INCIDENT | from observer | 0 | no incident | yes | pending |
+| boutique-live-20261116t174705z-aa3f81 | C1 | f30b596 | FAILED | ESCALATE | from a planning failure (ABSTAINED) | 0 | NEEDS_REVIEW | no | pending |
+| boutique-live-20261116t175115z-3b106e | R1 | f30b596 | PASS | ROLLBACK | decided by the model | 1 | FAILED | yes | pending |
+| boutique-live-20261116t175656z-bdb808 | R1 | f30b596 | PASS | ROLLBACK | decided by the model | 1 | NEEDS_REVIEW | yes | pending |
 <!-- END GENERATED:scenario-runs -->
 
 ## Guard rejection
@@ -304,9 +308,9 @@ Successful runs only. `recorded` values come from the harness timeline;
 <!-- BEGIN GENERATED:timings -->
 | Class | Interval | n | Median s | Min s | Max s | Source |
 | --- | --- | --- | --- | --- | --- | --- |
-| agent | fault -> incident observed | 17 | 7.8 | 7.5 | 10.3 | recorded |
-| agent | incident observed -> repair applied | 25 | 40.6 | 23.7 | 356.5 | approx |
-| agent | repair applied -> outcome window end | 25 | 43.3 | 23.5 | 62.5 | approx |
+| agent | fault -> incident observed | 19 | 7.8 | 7.5 | 10.3 | recorded |
+| agent | incident observed -> repair applied | 27 | 45 | 23.7 | 356.5 | approx |
+| agent | repair applied -> outcome window end | 27 | 43.6 | 23.5 | 316.8 | approx |
 | connected-harness | fault -> incident observed | 14 | 7.65 | 5.5 | 9.9 | recorded |
 | connected-harness | incident observed -> repair applied | 18 | 3.85 | 3.2 | 6 | approx |
 | connected-harness | repair applied -> outcome window end | 18 | 26.6 | 23.9 | 101.8 | approx |

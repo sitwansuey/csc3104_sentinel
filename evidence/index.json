@@ -2590,6 +2590,36 @@
       "provenance": "recorded",
       "status": "current",
       "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261116t174705z-aa3f81",
+      "class": "agent",
+      "path": "2026-11-16/boutique-live-20261116t174705z-aa3f81",
+      "captured_at": "2026-11-16T17:47:08.178496Z",
+      "source_revision": "f30b596f96fc289900b9957ab69d9766f8a7f325",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261116t175115z-3b106e",
+      "class": "agent",
+      "path": "2026-11-16/boutique-live-20261116t175115z-3b106e",
+      "captured_at": "2026-11-16T17:51:16.474402Z",
+      "source_revision": "f30b596f96fc289900b9957ab69d9766f8a7f325",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261116t175656z-bdb808",
+      "class": "agent",
+      "path": "2026-11-16/boutique-live-20261116t175656z-bdb808",
+      "captured_at": "2026-11-16T17:56:57.357315Z",
+      "source_revision": "f30b596f96fc289900b9957ab69d9766f8a7f325",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
     }
   ]
 }

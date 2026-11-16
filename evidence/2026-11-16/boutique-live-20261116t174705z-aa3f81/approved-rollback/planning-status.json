@@ -1,0 +1,142 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": {
+        "budget_seconds": 600,
+        "calls": [
+          {
+            "attempt": 1,
+            "call_id": 1,
+            "eval_duration_seconds": 11.079848,
+            "load_duration_seconds": 0.0073554,
+            "model": "qwen3:14b",
+            "output_tokens": 191,
+            "planning_attempt": 1,
+            "prompt_characters": 8626,
+            "prompt_eval_duration_seconds": 3.863658,
+            "prompt_tokens": 3310,
+            "prompt_version": "rca-v1",
+            "retrieved_passages": [],
+            "role": "Analyzer",
+            "seconds": 15.029381500000454,
+            "status": "completed"
+          },
+          {
+            "attempt": 1,
+            "call_id": 2,
+            "eval_duration_seconds": 37.375626,
+            "load_duration_seconds": 0.0044284,
+            "model": "qwen3:14b",
+            "output_tokens": 403,
+            "planning_attempt": 1,
+            "prompt_characters": 14656,
+            "prompt_eval_duration_seconds": 6.169728,
+            "prompt_tokens": 4783,
+            "prompt_version": "rca-v1",
+            "retrieved_passages": [
+              {
+                "content_sha256": "c3ddbc6a197681e509603771ed301e8271155fde0b24bb118a8da6efe7adba28",
+                "id": "multimodal_rca"
+              },
+              {
+                "content_sha256": "639659abc6805c31099ad2232a2f6daaa5488f49b60aaed8cb01bde374ac2ca3",
+                "id": "cpu_exhaustion"
+              }
+            ],
+            "role": "Planner",
+            "seconds": 43.74677860000156,
+            "status": "completed"
+          },
+          {
+            "attempt": 1,
+            "call_id": 3,
+            "eval_duration_seconds": 11.952144,
+            "load_duration_seconds": 0.0064973,
+            "model": "qwen3:14b",
+            "output_tokens": 183,
+            "planning_attempt": 1,
+            "prompt_characters": 9545,
+            "prompt_eval_duration_seconds": 0.379236,
+            "prompt_tokens": 3484,
+            "prompt_version": "rca-v1",
+            "retrieved_passages": [],
+            "role": "Analyzer",
+            "seconds": 12.72452510000221,
+            "status": "completed"
+          },
+          {
+            "attempt": 1,
+            "call_id": 4,
+            "eval_duration_seconds": 27.416671,
+            "load_duration_seconds": 0.0031807,
+            "model": "qwen3:14b",
+            "output_tokens": 379,
+            "planning_attempt": 1,
+            "prompt_characters": 11205,
+            "prompt_eval_duration_seconds": 4.563956,
+            "prompt_tokens": 3816,
+            "prompt_version": "rca-v1",
+            "retrieved_passages": [],
+            "role": "Reporter",
+            "seconds": 32.13885139999911,
+            "status": "completed"
+          }
+        ],
+        "model_calls": 4,
+        "model_calls_completed": 4,
+        "model_seconds": 103.64,
+        "planning_attempt": 1,
+        "prompt_version": "agent-recovery-v1",
+        "retrieved_passages": [
+          {
+            "content_sha256": "c3ddbc6a197681e509603771ed301e8271155fde0b24bb118a8da6efe7adba28",
+            "id": "multimodal_rca"
+          },
+          {
+            "content_sha256": "639659abc6805c31099ad2232a2f6daaa5488f49b60aaed8cb01bde374ac2ca3",
+            "id": "cpu_exhaustion"
+          }
+        ],
+        "seconds": 104.231
+      }
+    }
+  ],
+  "attempts": 1,
+  "delivered": 1,
+  "error_code": "ABSTAINED",
+  "incident_id": "INC-9D1090F2768F",
+  "next_attempt": 0.0,
+  "proposal": {
+    "action": "ESCALATE",
+    "action_id": "ACT-fe674927fcbc9b3ffac39fd1",
+    "based_on_resource_version": "380245",
+    "evidence_refs": [
+      "E-4DC715C1D2FE",
+      "E-A0AFAD67680A",
+      "E-26065C56E327",
+      "E-CD6E7FA1FBB8",
+      "E-76B294169413",
+      "E-7E916BBEE50C",
+      "E-EED6E92C3CDA",
+      "E-9D2E456581ED",
+      "E-7B3FEE62C64F",
+      "E-8909AFFC1F05",
+      "E-509E2110F75C",
+      "E-113F6A2BD6CD",
+      "E-7A2A488FDB13"
+    ],
+    "incident_id": "INC-9D1090F2768F",
+    "kind": "proposal",
+    "parameters": {},
+    "rationale": "RCA abstained: the evidence does not support a diagnosis. Operator review is required. No repair is authorized.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "cartservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+    }
+  }
+}
