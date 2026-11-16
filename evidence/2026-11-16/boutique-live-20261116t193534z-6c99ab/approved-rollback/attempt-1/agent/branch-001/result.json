@@ -1,0 +1,97 @@
+{
+  "state": "failure",
+  "outputs": [
+    {
+      "evidence_id": "branch-002",
+      "tool": "metrics",
+      "result": {
+        "file": "metrics.csv",
+        "rows_scanned": 21,
+        "rows_in_window": 21,
+        "rows_retained": 21,
+        "truncated": false,
+        "invalid_timestamps": 0,
+        "findings": [],
+        "total_findings": 0
+      }
+    },
+    {
+      "evidence_id": "branch-003",
+      "tool": "logs",
+      "result": {
+        "file": "logs.csv",
+        "rows_scanned": 11,
+        "rows_in_window": 10,
+        "rows_retained": 10,
+        "truncated": false,
+        "invalid_timestamps": 0,
+        "error_count": 6,
+        "components": {
+          "shippingservice": 6
+        },
+        "examples": [
+          {
+            "component": "shippingservice",
+            "time": "2026-11-16 19:37:05+00:00",
+            "untrusted": true,
+            "template": "Readiness probe failed: timeout: failed to connect service \"<ip>:<num>\" within 1s: context deadline exceeded",
+            "excerpt": "Readiness probe failed: timeout: failed to connect service \"<private-ip>:50051\" within 1s: context deadline exceeded",
+            "evidence_id": "branch-003.1"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-16 19:37:05.567095384+00:00",
+            "untrusted": true,
+            "template": "{\"message\":\"<str>\",\"severity\":\"fatal\",\"timestamp\":\"<time>\"}",
+            "excerpt": "{\"message\":\"failed to listen: listen tcp: lookup tcp/invalid-port: unknown port\",\"severity\":\"fatal\",\"timestamp\":\"2026-11-16T19:37:05.566983141Z\"}",
+            "evidence_id": "branch-003.2"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-16 19:37:06+00:00",
+            "untrusted": true,
+            "template": "Back-off restarting failed container server in pod shippingservice-<hex>-85w7m_sentinel-boutique-connected(<uuid>)",
+            "excerpt": "Back-off restarting failed container server in pod shippingservice-85576d7678-85w7m_sentinel-boutique-connected(1dbf9e99-0e6e-4282-b528-68f27ecce954)",
+            "evidence_id": "branch-003.3"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-16 19:37:06+00:00",
+            "untrusted": true,
+            "template": "Readiness probe failed: timeout: failed to connect service \"<ip>:<num>\" within 1s: context deadline exceeded",
+            "excerpt": "Readiness probe failed: timeout: failed to connect service \"<private-ip>:50051\" within 1s: context deadline exceeded",
+            "evidence_id": "branch-003.4"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-16 19:37:07+00:00",
+            "untrusted": true,
+            "template": "Back-off restarting failed container server in pod shippingservice-<hex>-85w7m_sentinel-boutique-connected(<uuid>)",
+            "excerpt": "Back-off restarting failed container server in pod shippingservice-85576d7678-85w7m_sentinel-boutique-connected(1dbf9e99-0e6e-4282-b528-68f27ecce954)",
+            "evidence_id": "branch-003.5"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-16 19:37:09+00:00",
+            "untrusted": true,
+            "template": "Back-off restarting failed container server in pod shippingservice-<hex>-85w7m_sentinel-boutique-connected(<uuid>)",
+            "excerpt": "Back-off restarting failed container server in pod shippingservice-85576d7678-85w7m_sentinel-boutique-connected(1dbf9e99-0e6e-4282-b528-68f27ecce954)",
+            "evidence_id": "branch-003.6"
+          }
+        ],
+        "suspected_injection_lines": 0,
+        "untimed_errors": 0,
+        "events": [
+          {
+            "component": "shippingservice",
+            "time": "2026-11-16 19:37:00",
+            "error_count": 6,
+            "baseline_errors_per_minute": 0.016666666666666666,
+            "left_censored": false
+          }
+        ],
+        "burst_baseline_available": true
+      }
+    }
+  ]
+}
