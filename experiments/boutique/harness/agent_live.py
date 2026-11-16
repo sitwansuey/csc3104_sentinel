@@ -229,7 +229,8 @@ class AgentPlanningMixin(ScenarioScoringMixin):
         config = self.load_agent_config()
         # The evidence summarizer reads this to keep an expected escalation out
         # of the RECOVERED column, since both end with status PASS.
-        self.summary["expected_outcome"] = self.expect
+        variant = getattr(self, "outcome_variant", None)
+        self.summary["expected_outcome"] = variant or self.expect
         folder = self.directory / PLANNING_FOLDER
         folder.mkdir(exist_ok=True)
         planner = None
@@ -286,16 +287,21 @@ class AgentPlanningMixin(ScenarioScoringMixin):
         require(state != "AWAITING_APPROVAL" or self.expect == "escalated",
                 "Operator did not approve " + (proposal or {}).get("action_id", "the proposal")
                 + "; no Executor write attempted")
-        expected = "NEEDS_REVIEW" if self.expect == "escalated" else "RECOVERED"
-        require(state == expected and (state != "NEEDS_REVIEW" or proposal["action"] == "ESCALATE"),
+        expected = ({"unhealthy": "FAILED", "unavailable-evidence": "NEEDS_REVIEW"}[variant] if variant else
+                    "NEEDS_REVIEW" if self.expect == "escalated" else "RECOVERED")
+        require(state == expected and (self.expect != "escalated" or proposal["action"] == "ESCALATE"),
                 f"Agent recovery stopped at {state}; expected {expected}")
+        if variant:
+            require(proposal["action"] == "ROLLBACK"
+                    and self.summary.get("outcome_expectation", {}).get("matched_expected") is True,
+                    "Expected the lab variant's independently verified post-repair outcome")
         if graded is not None and self.scenario_gates_pass:
             require(graded["matched_expected"],
                     f"Scenario {graded['scenario']} scored {graded['score']}: decision {graded['actual']} "
                     f"from {graded['decision_source']}; pre-registered correct {graded['expected']['correct']}"
                     + (f", rule code {graded['expected']['rule_code']} matched {graded['rule_code_matched']}"
                        if "rule_code" in graded["expected"] else ""))
-        if state == "NEEDS_REVIEW":
+        if state == "NEEDS_REVIEW" and not variant:
             # The expected escalation is not a repair: the administrator removes the fault.
             require(self.emergency_restore(), "Administrator restore after the expected escalation failed")
             source = (graded or {}).get("decision_source")

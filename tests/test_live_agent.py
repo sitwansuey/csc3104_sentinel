@@ -502,6 +502,34 @@ class OfflineAgentLab:
 class AgentApprovalSessionTests(OfflineAgentLab, unittest.TestCase):
     """Agent mode plans through the durable journal AND approves through the authenticated session."""
 
+    def test_interactive_agent_approval_records_the_person_who_types_the_action_id(self):
+        from runtime.approval_session import approver_for
+        for matches in (False, True):
+            with self.subTest(matches=matches):
+                lab = self.experiment(run="interactive-" + str(matches))
+                lab.configure_approval("interactive", "operator-alice")
+                typed = Mock(side_effect=lambda prompt, lab=lab, matches=matches: lab.store.incident(self.incident["incident_id"])[
+                    "active_action_id"] if matches else "wrong-action-id")
+                with patch("experiments.recovery.live.approver_for", side_effect=lambda mode, authority, typed=typed, **kw:
+                           approver_for(mode, authority, ask=typed, say=lambda line: None)):
+                    if matches:
+                        self.recover(lab, self.model())
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, "Operator did not approve"):
+                            self.recover(lab, self.model())
+                typed.assert_called_once()
+                summary = lab.summary["operator_approval"]
+                self.assertEqual((summary["mode"], summary["human"], summary["identity"]),
+                                 ("interactive", True, "operator-alice"))
+                if matches:
+                    saved = json.loads((lab.directory / "approved-rollback/approval.json").read_text())
+                    self.assertEqual(saved["operator_id"], "operator-alice")
+                    self.assertEqual(self.state(lab), "RECOVERED")
+                else:
+                    self.assertEqual(self.state(lab), "AWAITING_APPROVAL")
+                    self.assertEqual(summary["approvals"], [])
+                lab.close_approval_authority()
+
     def test_agent_success_approves_through_the_session_and_records_the_strategy(self):
         from runtime.approval_http import ApprovalClient
         from runtime.approval_session import AUTOMATED_LAB, LAB_EXECUTOR
@@ -779,6 +807,45 @@ class ScenarioScoringTests(OfflineAgentLab, unittest.TestCase):
 
 
 class ExpectOptionTests(unittest.TestCase):
+    def test_outcome_variant_rejects_incompatible_arguments_before_any_commands(self):
+        from experiments.boutique.harness import live
+        for options in ([], ["--agent"], ["--connected"],
+                        ["--agent", "--connected", "--expect", "escalated"],
+                        ["--agent", "--connected", "--scenario", "R2"],
+                        ["--agent", "--connected", "--dashboard"],
+                        ["--agent", "--connected", "--pair", "redis-pod+cart-config"]):
+            with self.subTest(options=options), patch("sys.argv", ["harness", "--outcome-variant", "unhealthy", *options]), \
+                    patch("sys.stderr", io.StringIO()), \
+                    patch("subprocess.run", side_effect=AssertionError("cluster command attempted")):
+                with self.assertRaises(SystemExit) as stopped:
+                    live.main()
+                self.assertEqual(stopped.exception.code, 2)
+
+    def test_connected_agent_launcher_supports_r1_c1_and_both_variants(self):
+        from experiments.boutique.harness import live
+        for target, scenario in (("shippingservice", "R1"), ("cartservice", "C1")):
+            for variant in (None, "unhealthy", "unavailable-evidence"):
+                with self.subTest(target=target, variant=variant), tempfile.TemporaryDirectory() as root:
+                    run = Path(root) / "run"
+                    options = ["harness", "--agent", "--connected", "--target", target, "--scenario", scenario,
+                               "--approval", "interactive", "--operator", "operator-alice", "--run-dir", str(run)]
+                    if variant:
+                        options += ["--outcome-variant", variant]
+                    with patch("sys.argv", options), patch("sys.stdout", io.StringIO()), \
+                            patch.object(live, "require_attended") as attended, \
+                            patch.object(live, "tool_versions", return_value={}), \
+                            patch("shared.provenance.collect", return_value={"source_revision": "test"}), \
+                            patch("subprocess.run", side_effect=AssertionError("cluster command attempted")), \
+                            patch.object(AgentPlanningMixin, "prepare", side_effect=RuntimeError("offline stop")):
+                        self.assertEqual(live.main(), 1)
+                    attended.assert_called_once_with("interactive")
+                    summary = json.loads((run / "summary.json").read_text())
+                    self.assertEqual(summary["recovery_target"], target)
+                    self.assertEqual(summary["scenario"]["id"], scenario)
+                    self.assertEqual(summary["operator_approval"]["identity"], "operator-alice")
+                    if variant:
+                        self.assertEqual(summary["expected_outcome"], variant)
+
     def test_expect_escalated_requires_agent_mode(self):
         from experiments.boutique.harness import live
         errors = io.StringIO()

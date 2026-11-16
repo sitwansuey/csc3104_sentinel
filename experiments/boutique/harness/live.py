@@ -169,6 +169,7 @@ class BoutiqueExperiment(Experiment):
     scenario_id = None
     # The image this run removed from the kind node (scenario N1), until it is pulled back.
     evicted_image = None
+    outcome_variant = None  # Connected agent acceptance only; never changes a Verifier verdict.
 
     @property
     def profile(self):
@@ -424,16 +425,29 @@ class BoutiqueExperiment(Experiment):
         if disclosed:
             self.event(6, "status", "Role 6 disclosed convergence: " + disclosed, target=proposal["target"],
                        incident_id=proposal["incident_id"], action_id=proposal["action_id"])
-        require(outcome["status"] == "RECOVERED", f"Role 6 could not verify {self.profile.label} recovery: "
+        expected_outcome, expected_state = {
+            None: ("RECOVERED", "RECOVERED"),
+            "unhealthy": ("NOT_RECOVERED", "FAILED"),
+            "unavailable-evidence": ("UNKNOWN", "NEEDS_REVIEW"),
+        }[self.outcome_variant]
+        state = self.store.incident(proposal["incident_id"])["state"]
+        if self.outcome_variant:
+            self.summary["outcome_expectation"] = {
+                "variant": self.outcome_variant, "expected_outcome": expected_outcome,
+                "expected_state": expected_state, "actual_outcome": outcome["status"], "actual_state": state,
+                "matched_expected": outcome["status"] == expected_outcome and state == expected_state,
+                "incident_id": proposal["incident_id"], "action_id": proposal["action_id"],
+            }
+        require(outcome["status"] == expected_outcome, f"Role 6 could not verify {self.profile.label} recovery: "
                 + outcome["status"]
                 + (" (failed: " + failed + ")" if failed else ""))
-        require(self.store.incident(proposal["incident_id"])["state"] == "RECOVERED",
-                "Coordinator did not close the verified incident")
-        self.check("Role 6 verified gRPC, readiness and template; Coordinator RECOVERED",
-                   action_id=proposal["action_id"], outcome="RECOVERED",
+        require(state == expected_state, "Coordinator did not reach the expected verification state: " + expected_state)
+        self.check("Role 6 verified gRPC, readiness and template; Coordinator RECOVERED" if not self.outcome_variant
+                   else "Role 6 published " + outcome["status"] + "; Coordinator " + state,
+                   action_id=proposal["action_id"], outcome=outcome["status"],
                    **({"convergence": disclosed} if disclosed else {}))
         if self.lab_control:
-            self.lab_control.complete_scenario("RECOVERED", incident_id=proposal["incident_id"],
+            self.lab_control.complete_scenario(state, incident_id=proposal["incident_id"],
                                                action_id=proposal["action_id"])
 
     def event(self, component, event_type, summary, **details):
@@ -811,6 +825,10 @@ def _main(held):
     parser.add_argument("--run-dir", type=Path)
     parser.add_argument("--agent", action="store_true", help="Use live RCA and model planning for one guarded recovery")
     parser.add_argument("--agent-config", type=Path, help="JSON overrides for the live agent's Ollama settings")
+    parser.add_argument("--outcome-variant", choices=("unhealthy", "unavailable-evidence"),
+                        help="Lab-only connected agent R1/C1 acceptance: hold a measured dependency unhealthy, "
+                             "or withhold health collection until the deadline; require NOT_RECOVERED/FAILED "
+                             "or UNKNOWN/NEEDS_REVIEW respectively")
     parser.add_argument("--expect", choices=["recovered", "escalated"],
                         help="Agent mode: the outcome that passes (default: the scenario's pre-registered one; "
                              "recovered for R1 and R2). 'escalated' passes only when planning ends "
@@ -871,6 +889,11 @@ def _main(held):
                         help="With --protected: baseline stops after the protected baseline, the RBAC matrix and the "
                              "before-repair bypass probes; full (default) injects R1 and recovers it with one write")
     args = parser.parse_args()
+    if args.outcome_variant and (not args.agent or not args.connected or args.expect or args.pair
+                                or args.protected or args.guard_rejection or args.provider_script
+                                or args.dashboard or args.prepared_environment):
+        parser.error("--outcome-variant requires --agent --connected and cannot combine with --expect, --pair, "
+                     "--protected, --guard-rejection, --provider-script, --dashboard or --prepared-environment")
     if (args.security_run or args.protected_stage != "full") and not args.protected:
         parser.error("--security-run and --protected-stage require --protected")
     if args.protected:
@@ -899,6 +922,8 @@ def _main(held):
     profile = targets.profile(args.target)
     args.scenario = args.scenario or profile.primary_scenario
     scenario = scenarios.scenario(args.scenario)
+    if args.outcome_variant and args.scenario not in ("R1", "C1"):
+        parser.error("--outcome-variant supports only shippingservice R1 or cartservice C1")
     if scenario["target"] != args.target:
         parser.error(f"--scenario {args.scenario} targets {scenario['target']}, not --target {args.target}")
     mode_scope = ("protected" if args.protected else "connected" if args.connected else
@@ -1020,6 +1045,9 @@ def _main(held):
     if args.protected:
         experiment.held_lock = held[-1]
     experiment.select_target(args.target)
+    experiment.outcome_variant = args.outcome_variant
+    if args.outcome_variant:
+        experiment.summary["expected_outcome"] = args.outcome_variant
     if args.image_scans:  # P5.02: the run's policy gets the CVE gate; Guard and Executor read these scans
         experiment.image_scans = args.image_scans.resolve()
         experiment.cve_exceptions = args.cve_exceptions.resolve() if args.cve_exceptions else None
@@ -1152,6 +1180,9 @@ def _main(held):
           if chaos_scenario else
           scale_pass_line(args.scenario, experiment.summary)
           if scale_scenario else
+          "PASS: expected lab outcome " + experiment.summary["outcome_expectation"]["actual_outcome"]
+          + "; Coordinator " + experiment.summary["outcome_expectation"]["actual_state"]
+          if args.outcome_variant else
           "PASS: agent planning ended in a saved ESCALATE; incident NEEDS_REVIEW with no repair"
           if args.agent and expect == "escalated" else
           "PASS: live agent diagnosed the fault, proposed rollback, and Coordinator verified RECOVERED"

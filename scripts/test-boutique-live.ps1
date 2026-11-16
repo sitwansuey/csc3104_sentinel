@@ -7,12 +7,15 @@ param([switch]$Setup, [switch]$Cleanup, [switch]$Dashboard,
       [ValidateSet('interactive','auto-lab','reject','ui')][string]$Approval = 'interactive',
       [string]$Operator, [string]$RunDirectory,
       [ValidateSet('recovered','escalated')][string]$Expect = 'recovered',
+      [ValidateSet('unhealthy','unavailable-evidence')][string]$OutcomeVariant,
       [string]$Scenario,
       [ValidateSet('shippingservice','cartservice')][string]$Target = 'shippingservice')
 
 $ErrorActionPreference = 'Stop'
 if ($ExitAfterTest -and -not $Dashboard) { throw '-ExitAfterTest requires -Dashboard.' }
 if ($AgentConfig -and -not $Agent) { throw '-AgentConfig requires -Agent.' }
+if ($OutcomeVariant -and (-not $Agent -or -not $Connected -or $PSBoundParameters.ContainsKey('Expect') -or $GuardRejection -or $ProviderScript -or $Dashboard)) { throw '-OutcomeVariant requires -Agent -Connected and cannot combine with -Expect, -GuardRejection, -ProviderScript or -Dashboard.' }
+if ($OutcomeVariant -and $Scenario -and $Scenario -notin @('R1','C1')) { throw '-OutcomeVariant supports only R1 or C1.' }
 if ($Expect -ne 'recovered' -and -not $Agent) { throw '-Expect escalated requires -Agent.' }
 # Fail fast before any cluster setup; the harness applies the same catalog rules (experiments/boutique/catalog.json).
 $operatorScenarios = @{shippingservice = @('R1'); cartservice = @('C1', 'C2')}
@@ -72,6 +75,7 @@ try {
     $testOptions = @()
     if ($Agent) { $testOptions += '--agent' }
     if ($AgentConfig) { $testOptions += @('--agent-config', $AgentConfig) }
+    if ($OutcomeVariant) { $testOptions += @('--outcome-variant', $OutcomeVariant) }
     if ($Expect -ne 'recovered') { $testOptions += @('--expect', $Expect) }
     if ($Scenario) { $testOptions += @('--scenario', $Scenario) }
     if ($Target -ne 'shippingservice') { $testOptions += @('--target', $Target) }
