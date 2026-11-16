@@ -1,0 +1,308 @@
+{
+  "schema": "sentinel-dist-acceptance-run-v1",
+  "scenario": "S10",
+  "title": "Concurrent duplicate action delivery to both Executors",
+  "fault": "hold the first Executor at executor.after_patch_before_save, partition it from the Coordinator until the other Executor answers the same delivery by adopting its write, then release",
+  "file_mode_counterpart": "deployed duplicate",
+  "expect": "same delivery and action redelivered while the first Executor is held, RECOVERED, exactly 1 Sentinel template write for that action, the other Executor's PATCH refused or its write deduplicated",
+  "repeat_index": 1,
+  "context": "kind-sentinel-dist",
+  "date": "2026-11-16",
+  "started_at": "2026-11-16T17:35:28.946660Z",
+  "ended_at": "2026-11-16T17:36:59.891248Z",
+  "duration_seconds": 109.7,
+  "fault_at": "2026-11-16T17:36:02.493377Z",
+  "notes": {
+    "fault_point": "executor.after_patch_before_save",
+    "holder": "executor-b",
+    "chaos": [
+      {
+        "kind": "NetworkChaos",
+        "name": "s10-r1-duplicate",
+        "at": "2026-11-16T17:36:03.071642Z",
+        "targets": {
+          ".": [
+            {
+              "pod": "sentinel-executor-b-7b46d445db-ln7v7",
+              "uid": "e22b118d-58b0-4ac8-877d-da0835e8cfea"
+            }
+          ],
+          ".Target": [
+            {
+              "pod": "sentinel-coordinator-77f69bd4ff-hs7xt",
+              "uid": "7dfb4a09-3bc4-43b3-bd21-e2f8df828bdd"
+            }
+          ]
+        },
+        "confirmation": {
+          "desired_phase": "Run",
+          "records": [
+            {
+              "id": "sentinel-dist/sentinel-executor-b-7b46d445db-ln7v7",
+              "selector_key": ".",
+              "phase": "Injected"
+            },
+            {
+              "id": "sentinel-dist/sentinel-coordinator-77f69bd4ff-hs7xt",
+              "selector_key": ".Target",
+              "phase": "Injected"
+            }
+          ],
+          "confirmed_at": "2026-11-16T17:36:04.248811Z",
+          "waited_seconds": 1.2
+        },
+        "removed_at": "2026-11-16T17:36:19.089413Z",
+        "in_effect_until_removal": true
+      }
+    ],
+    "duplicate": {
+      "first": {
+        "event_id": 138,
+        "delivery_id": "33b8801722f34689a2e557f646ca71dc",
+        "owner": "executor-b",
+        "attempts": 1,
+        "action_id": "ACT-cb00dcf1c127e9e19d534e02"
+      },
+      "second": {
+        "event_id": 138,
+        "delivery_id": "33b8801722f34689a2e557f646ca71dc",
+        "owner": "executor-a",
+        "attempts": 2,
+        "action_id": "ACT-cb00dcf1c127e9e19d534e02",
+        "result": {
+          "action_id": "ACT-cb00dcf1c127e9e19d534e02",
+          "details": "[basis=EVIDENCE_MATCH] Exact template and this action's evidence from another attempt confirm the write (adopted peer write); health verification is pending.",
+          "incident_id": "INC-4889F47432BF",
+          "kind": "execution_result",
+          "recorded_at": "2026-11-16T17:36:17.455872Z",
+          "resource_version": "250564",
+          "schema_version": "1.0",
+          "status": "APPLIED",
+          "target": {
+            "cluster_id": "sentinel-dist",
+            "kind": "Deployment",
+            "name": "demo-api",
+            "namespace": "sentinel-dist-workload",
+            "uid": "b6ca7fef-d0a5-4742-9159-ed99050210a0"
+          }
+        }
+      }
+    }
+  },
+  "harness_error": null,
+  "restore_error": null,
+  "terminal_in_time": true,
+  "states": [
+    "RECOVERED"
+  ],
+  "incidents": [
+    {
+      "incident_id": "INC-4889F47432BF",
+      "state": "RECOVERED",
+      "opened_at": "2026-11-16T17:35:47.803248Z"
+    }
+  ],
+  "earlier_incidents": 12,
+  "settle": {
+    "settled": true,
+    "seconds": 20.4,
+    "target": [],
+    "open": [],
+    "leftovers": []
+  },
+  "invariants": [
+    {
+      "id": "I1",
+      "name": "At most one committed template write per action",
+      "passed": true,
+      "detail": "1 committed write(s) over 1 action(s)"
+    },
+    {
+      "id": "I2",
+      "name": "No template write after revocation unless surfaced for review",
+      "passed": true,
+      "detail": "0 revocation(s), no write after any"
+    },
+    {
+      "id": "I3",
+      "name": "Every incident terminal or reviewable within the deadline",
+      "passed": true,
+      "detail": "RECOVERED"
+    },
+    {
+      "id": "I4",
+      "name": "No delivery has two acknowledged results",
+      "passed": true,
+      "detail": "92 acknowledged command(s), one result each"
+    },
+    {
+      "id": "I5",
+      "name": "No poison loop (bounded attempts, at most two HTTP 400 refusals per command)",
+      "passed": true,
+      "detail": "at most 2 attempt(s) per command, 0 HTTP 400 result(s)"
+    },
+    {
+      "id": "I6",
+      "name": "No Executor ledger ends with a write in doubt",
+      "passed": true,
+      "detail": "14 ledger row(s), none in doubt"
+    },
+    {
+      "id": "X1",
+      "name": "Lease ownership exclusive",
+      "passed": true,
+      "detail": "7 delivery lease(s), each held by one identity at a time"
+    },
+    {
+      "id": "X2",
+      "name": "No secret in logs, configuration files or argv",
+      "passed": true,
+      "detail": "7 file(s) and 7 argv list(s) clean"
+    },
+    {
+      "id": "X3",
+      "name": "No acknowledged message lost",
+      "passed": true,
+      "detail": "92 acknowledged result(s) all recorded"
+    },
+    {
+      "id": "X4",
+      "name": "Transitions journal consistent with incidents and outbox",
+      "passed": true,
+      "detail": "7 transition(s) consistent"
+    },
+    {
+      "id": "I7",
+      "name": "At most one successful template PATCH per action in the API server audit log",
+      "passed": true,
+      "detail": "1 template PATCH(es) over 1 action(s); 0 fence or seal PATCH(es) and 0 denied change(s) not counted"
+    }
+  ],
+  "invariants_passed": true,
+  "expectation": {
+    "expect": "same delivery and action redelivered while the first Executor is held, RECOVERED, exactly 1 Sentinel template write for that action, the other Executor's PATCH refused or its write deduplicated",
+    "met": true,
+    "failures": []
+  },
+  "passed": true,
+  "audit": {
+    "events": 250,
+    "effects": {
+      "request": 248,
+      "template_write": 2
+    },
+    "sentinel_template_writes_per_action": {
+      "ACT-cb00dcf1c127e9e19d534e02": 1
+    },
+    "max_template_writes_per_action": 1,
+    "sentinel_template_writes": 1,
+    "operator_template_writes": 1,
+    "sentinel_denials": {},
+    "unclassified": {
+      "sentinel": 0,
+      "operator": 0
+    }
+  },
+  "audit_lines_skipped": 0,
+  "audit_completeness": {
+    "complete": true,
+    "problems": [],
+    "files": 4,
+    "first_event_at": "2026-11-13T10:26:21.581188Z",
+    "window": [
+      "2026-11-16T17:35:27.838660Z",
+      "2026-11-16T17:36:59.973248Z"
+    ],
+    "generation": {
+      "before": 25,
+      "before_restore": 27,
+      "after": 27
+    }
+  },
+  "clock": {
+    "control_plane_minus_harness": [
+      {
+        "offset_seconds": -0.016,
+        "uncertainty_seconds": 0.091,
+        "at": "2026-11-16T17:35:28.683458Z"
+      },
+      {
+        "offset_seconds": -0.013,
+        "uncertainty_seconds": 0.095,
+        "at": "2026-11-16T17:36:58.700706Z"
+      }
+    ],
+    "fault_at_cluster_clock": "2026-11-16T17:36:02.477377Z"
+  },
+  "seal_path": null,
+  "seal": null,
+  "later_incidents": [],
+  "takeover_seconds": null,
+  "coordinator_recovery": null,
+  "operator_actions": [
+    {
+      "operator_action": "inject STARTUP_FAILURE=true",
+      "at": "2026-11-16T17:35:30.527322Z"
+    },
+    {
+      "operator_action": "remove chaos",
+      "kind": "NetworkChaos",
+      "name": "s10-r1-duplicate",
+      "at": "2026-11-16T17:36:19.089434Z"
+    },
+    {
+      "operator_action": "release fault point",
+      "identity": "executor-b",
+      "stem": "executor.after_patch_before_save",
+      "pod": "sentinel-executor-b-7b46d445db-ln7v7",
+      "at": "2026-11-16T17:36:19.846982Z"
+    },
+    {
+      "operator_action": "disarm fault point",
+      "identity": "executor-a",
+      "stem": "executor.after_patch_before_save",
+      "at": "2026-11-16T17:36:20.440772Z"
+    },
+    {
+      "operator_restore": false
+    },
+    {
+      "operator_action": "approve",
+      "action_id": "ACT-cb00dcf1c127e9e19d534e02",
+      "at": "2026-11-16T17:35:54.266616Z",
+      "confirmed_by": "answer"
+    }
+  ],
+  "operator": {
+    "attempts_failed": 0,
+    "failures": [],
+    "outages": [],
+    "fatal": [],
+    "still_running": false
+  },
+  "read_outages": [],
+  "approval_attempts": [
+    {
+      "operation": "create",
+      "action_id": "ACT-cb00dcf1c127e9e19d534e02",
+      "attempt": 1,
+      "sent_at": "2026-11-16T17:35:52.146636Z",
+      "fresh_port_forward": false,
+      "outcome": "answered"
+    }
+  ],
+  "cleanup": {
+    "actions": [
+      {
+        "operator_action": "disarm fault point",
+        "identity": "executor-a",
+        "stem": "executor.after_patch_before_save",
+        "at": "2026-11-16T17:36:20.440772Z"
+      }
+    ],
+    "problems": []
+  },
+  "synthetic_planner": true,
+  "git_revision": "0a33bcfab5bcb8a67b0e25d4cfe2250bf37ac027",
+  "limits": "Four kind nodes (containers) on one Docker host: separate network namespaces and kubelets, one shared kernel, clock and disk. Not separate machines. The Planner is the deterministic lab planner (synthetic proposals), and clock skew is injected by Chaos Mesh TimeChaos, not measured between hosts."
+}

@@ -45,7 +45,7 @@ Read each number with its limits:
 | chaos-recovery | 25 | 20 | 5 | 0 | 0 | 25 recorded, 0 inferred |
 | connected-harness | 20 | 18 | 2 | 0 | 0 | 16 recorded, 4 inferred |
 | cve-gate | 4 | 4 | 0 | 0 | 0 | 0 recorded, 4 inferred |
-| distributed-acceptance | 15 | 7 | 8 | 0 | 0 | 13 recorded, 2 inferred |
+| distributed-acceptance | 16 | 7 | 9 | 0 | 0 | 14 recorded, 2 inferred |
 | distributed-scenario | 39 | 37 | 2 | 0 | 0 | 0 recorded, 39 inferred |
 | executor-admission | 1 | 1 | 0 | 0 | 0 | 0 recorded, 1 inferred |
 | executor-wedge | 31 | 29 | 2 | 0 | 0 | 0 recorded, 31 inferred |

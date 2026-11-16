@@ -2580,6 +2580,16 @@
       "provenance": "recorded",
       "status": "current",
       "reason": null
+    },
+    {
+      "bundle_id": "sentinel-dist-20261116t170342-p6",
+      "class": "distributed-acceptance",
+      "path": "2026-11-16/sentinel-dist-20261116t170342-p6",
+      "captured_at": "2026-11-16T17:05:32.332829Z",
+      "source_revision": "0a33bcfab5bcb8a67b0e25d4cfe2250bf37ac027",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
     }
   ]
 }

@@ -1,0 +1,221 @@
+{
+  "schema": "sentinel-dist-acceptance-run-v1",
+  "scenario": "S11c",
+  "title": "Stale state on the deployed topology",
+  "fault": "hold the Planner while a temporary operator annotation advances the target's resourceVersion",
+  "file_mode_counterpart": "deployed refusal",
+  "expect": "Guard REJECT with STALE_RESOURCE_VERSION, 0 Executor writes for the stale action",
+  "repeat_index": 1,
+  "context": "kind-sentinel-dist",
+  "date": "2026-11-16",
+  "started_at": "2026-11-16T17:14:09.459579Z",
+  "ended_at": "2026-11-16T17:15:12.828765Z",
+  "duration_seconds": 79.7,
+  "fault_at": null,
+  "notes": {
+    "fault_point": "planner.mid_inference",
+    "holder": "planner-1",
+    "refusal": {
+      "incident_id": "INC-3E486046F997",
+      "action_id": "ACT-30bed843cf776d887a756cb9",
+      "verdict": "REJECT",
+      "reason_codes": [
+        "STALE_RESOURCE_VERSION"
+      ],
+      "until": "2026-11-16T17:14:34.405524Z",
+      "executor_writes": 0
+    }
+  },
+  "harness_error": null,
+  "restore_error": null,
+  "terminal_in_time": true,
+  "states": [
+    "REJECTED"
+  ],
+  "incidents": [
+    {
+      "incident_id": "INC-3E486046F997",
+      "state": "REJECTED",
+      "opened_at": "2026-11-16T17:14:29.183682Z"
+    }
+  ],
+  "earlier_incidents": 3,
+  "settle": {
+    "settled": true,
+    "seconds": 22.7,
+    "target": [],
+    "open": [],
+    "leftovers": []
+  },
+  "invariants": [
+    {
+      "id": "I1",
+      "name": "At most one committed template write per action",
+      "passed": true,
+      "detail": "0 committed write(s) over 0 action(s)"
+    },
+    {
+      "id": "I2",
+      "name": "No template write after revocation unless surfaced for review",
+      "passed": true,
+      "detail": "0 revocation(s), no write after any"
+    },
+    {
+      "id": "I3",
+      "name": "Every incident terminal or reviewable within the deadline",
+      "passed": true,
+      "detail": "REJECTED"
+    },
+    {
+      "id": "I4",
+      "name": "No delivery has two acknowledged results",
+      "passed": true,
+      "detail": "31 acknowledged command(s), one result each"
+    },
+    {
+      "id": "I5",
+      "name": "No poison loop (bounded attempts, at most two HTTP 400 refusals per command)",
+      "passed": true,
+      "detail": "at most 2 attempt(s) per command, 0 HTTP 400 result(s)"
+    },
+    {
+      "id": "I6",
+      "name": "No Executor ledger ends with a write in doubt",
+      "passed": true,
+      "detail": "4 ledger row(s), none in doubt"
+    },
+    {
+      "id": "X1",
+      "name": "Lease ownership exclusive",
+      "passed": true,
+      "detail": "3 delivery lease(s), each held by one identity at a time"
+    },
+    {
+      "id": "X2",
+      "name": "No secret in logs, configuration files or argv",
+      "passed": true,
+      "detail": "7 file(s) and 7 argv list(s) clean"
+    },
+    {
+      "id": "X3",
+      "name": "No acknowledged message lost",
+      "passed": true,
+      "detail": "31 acknowledged result(s) all recorded"
+    },
+    {
+      "id": "X4",
+      "name": "Transitions journal consistent with incidents and outbox",
+      "passed": true,
+      "detail": "3 transition(s) consistent"
+    },
+    {
+      "id": "I7",
+      "name": "At most one successful template PATCH per action in the API server audit log",
+      "passed": true,
+      "detail": "0 template PATCH(es) over 0 action(s); 0 fence or seal PATCH(es) and 0 denied change(s) not counted"
+    }
+  ],
+  "invariants_passed": true,
+  "expectation": {
+    "expect": "Guard REJECT with STALE_RESOURCE_VERSION, 0 Executor writes for the stale action",
+    "met": true,
+    "failures": []
+  },
+  "passed": true,
+  "audit": {
+    "events": 169,
+    "effects": {
+      "metadata_write": 2,
+      "request": 165,
+      "template_write": 2
+    },
+    "sentinel_template_writes_per_action": {},
+    "max_template_writes_per_action": 0,
+    "sentinel_template_writes": 0,
+    "operator_template_writes": 2,
+    "sentinel_denials": {},
+    "unclassified": {
+      "sentinel": 0,
+      "operator": 0
+    }
+  },
+  "audit_lines_skipped": 0,
+  "audit_completeness": {
+    "complete": true,
+    "problems": [],
+    "files": 4,
+    "first_event_at": "2026-11-13T10:26:21.581188Z",
+    "window": [
+      "2026-11-16T17:14:08.344579Z",
+      "2026-11-16T17:15:12.915765Z"
+    ],
+    "generation": {
+      "before": 8,
+      "before_restore": 11,
+      "after": 12
+    }
+  },
+  "clock": {
+    "control_plane_minus_harness": [
+      {
+        "offset_seconds": -0.014,
+        "uncertainty_seconds": 0.101,
+        "at": "2026-11-16T17:14:09.154119Z"
+      },
+      {
+        "offset_seconds": -0.017,
+        "uncertainty_seconds": 0.09,
+        "at": "2026-11-16T17:15:11.648647Z"
+      }
+    ],
+    "fault_at_cluster_clock": null
+  },
+  "seal_path": null,
+  "seal": null,
+  "later_incidents": [],
+  "takeover_seconds": null,
+  "coordinator_recovery": null,
+  "operator_actions": [
+    {
+      "operator_action": "inject STARTUP_FAILURE=true",
+      "at": "2026-11-16T17:14:10.784245Z"
+    },
+    {
+      "operator_action": "remove stale-state annotation",
+      "at": "2026-11-16T17:14:30.824413Z"
+    },
+    {
+      "operator_action": "release fault point",
+      "identity": "planner-1",
+      "stem": "planner.mid_inference",
+      "pod": "sentinel-planner-1-7c5b54fbd5-2b75v",
+      "at": "2026-11-16T17:14:31.241344Z"
+    },
+    {
+      "operator_restore": true,
+      "at": "2026-11-16T17:14:40.021813Z",
+      "attempts": [
+        {
+          "resource_version": "247696",
+          "outcome": "applied"
+        }
+      ]
+    }
+  ],
+  "operator": {
+    "attempts_failed": 0,
+    "failures": [],
+    "outages": [],
+    "fatal": [],
+    "still_running": false
+  },
+  "read_outages": [],
+  "approval_attempts": [],
+  "cleanup": {
+    "actions": [],
+    "problems": []
+  },
+  "synthetic_planner": true,
+  "git_revision": "0a33bcfab5bcb8a67b0e25d4cfe2250bf37ac027",
+  "limits": "Four kind nodes (containers) on one Docker host: separate network namespaces and kubelets, one shared kernel, clock and disk. Not separate machines. The Planner is the deterministic lab planner (synthetic proposals), and clock skew is injected by Chaos Mesh TimeChaos, not measured between hosts."
+}

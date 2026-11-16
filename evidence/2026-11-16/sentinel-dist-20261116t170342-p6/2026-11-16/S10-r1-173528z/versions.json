@@ -1,0 +1,27 @@
+{
+  "images": {
+    "coordinator": {
+      "image": "sentinel-coordinator:0.1.0",
+      "id": "sha256:72f62db8f1ef33ff546c87dd13e9650b618169d12eccb8aec5c80f97f0ecd251"
+    },
+    "observer": {
+      "image": "sentinel-observer:0.2.0",
+      "id": "sha256:b2c8f8f66d8d2ae3b7e586afc91f0b83513229280c82656e4002d9046f68149c"
+    },
+    "worker": {
+      "image": "sentinel-worker:local",
+      "id": "sha256:30295004c4a74756e9dfa18bd7bf4d12fde25af07683a0ad1153ae2b8dfda997"
+    },
+    "demo": {
+      "image": "sentinel-demo:0.1.0",
+      "id": "sha256:eef4729c0306277c0f18bc5075f01214d51efd0b5809b64e122bba97452647f9"
+    }
+  },
+  "node_image": "kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5",
+  "chaos_mesh_chart": "2.8.2",
+  "kubectl": "v1.34.1",
+  "server": "v1.37.0",
+  "kind": "kind v0.33.0 go1.26.7 windows/amd64",
+  "git_revision": "0a33bcfab5bcb8a67b0e25d4cfe2250bf37ac027",
+  "python": "3.13.2"
+}
