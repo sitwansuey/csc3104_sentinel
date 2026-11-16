@@ -79,7 +79,7 @@
       "impact": "Fixed in code: agent planning now runs through prepare() and the PlannerStore journal. A model failure is retried up to three times; an abstention, a diagnosis of another component, a NO_ACTION answer or a target changed during inference ends at once. Every failure ends in a saved, delivered ESCALATE, so the incident moves to NEEDS_REVIEW, and a saved proposal replays without another model call. Still open: the planning budget applies per attempt, so one incident can use three budgets. The remote Planner worker now has an agent mode with the same hooks and journal (P3.07), tested offline only, as one OS process on one host with a fake model server. That ESCALATE guarantee covers only failures after a passed model preflight. In remote agent mode a model that is unreachable when the worker is about to claim never starts an attempt: there is no retry and no exhausted ESCALATE, and the incident stays OPEN (not NEEDS_REVIEW), its request unclaimed, until a ready agent Planner claims it. An outage that starts inside a cached preflight window (30 s by default) may use up attempts and escalate, or leave the incident OPEN once the cached check expires; which one happens depends on timing. Saved results are still re-sent while the model is down, except a proposal saved only in the Planner journal before the worker stopped, which waits for the next passed preflight. No bounded escalation for a long model outage exists (for example a Coordinator-side planning timeout); adding one is an owner decision. Verified live on one host for the harness agent mode's failure paths: from 4139385 every failed agent run ended in a saved, delivered ESCALATE with the incident in NEEDS_REVIEW and zero Executor writes, and each bundle's planning-status.json records the attempts, the error code and delivered 1. These are an off-target diagnosis at 4139385 (DIAGNOSIS_OFF_TARGET, C-AGENT-AUTOLAB-4139385), a forced 1 s planning budget that escalated BUDGET_EXCEEDED after three attempts (C-AGENT-FORCED-ESCALATION) and two abstentions at 870aa7d (C-SCENARIO-LIVE-UNSCORED). The retry after a failed model call also ran live in two passing runs: in boutique-live-20261111t221204z-602449 (C-AGENT-AUTOLAB-4139385) the Analyzer's call and in N1 at dab3b3f (boutique-live-20261112t080756z-29fd09, C-SCENARIO-LIVE-UNSCORED) the Reporter's call failed in attempt 1 after about 45 s and 2048 output tokens, and attempt 2 completed, reaching RECOVERED and the expected rule escalation respectively; each planning-status.json records 2 attempts. A lost delivery replayed after a restart has not been exercised live. Agent bundles before 4139385 predate the journal, so those failed runs left the incident OPEN.",
       "workaround": "For runs recorded before this change, read the run's summary.json and dashboard event, then handle the incident by hand. The harness removes the fault as an administrator restore, which is not Sentinel recovery.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:258", "text": "state = run_durable_case(self, incident"},
+        {"at": "experiments/boutique/harness/agent_live.py:259", "text": "state = run_durable_case(self, incident"},
         {"at": "services/planner/worker.py:249", "text": "raise PlanningError(\"ABSTAINED\", terminal=True)"},
         {"at": "services/planner/worker.py:263", "text": "proposal = _rebound(proposal, finalize)"},
         {"at": "tests/test_agent_journal.py:202", "text": "def test_unavailable_model_retries_with_backoff_across_restart_then_escalates"},
@@ -119,9 +119,9 @@
         {"at": "tests/test_approval_session.py:370", "text": "def test_authority_down_after_allow_gives_zero_writes"},
         {"at": "tests/test_approval_session.py:407", "text": "def test_tokens_never_reach_run_folder_logs_or_argv"},
         {"at": "tests/test_approval_session.py:568", "text": "def test_crash_restart_passes_the_executor_token_only_through_the_worker_environment"},
-        {"at": "experiments/boutique/harness/agent_live.py:375", "text": "return self.request_approval(proposal, decision)"},
+        {"at": "experiments/boutique/harness/agent_live.py:381", "text": "return self.request_approval(proposal, decision)"},
         {"at": "scripts/boutique_provider.py:30", "text": "approve=lab.request_approval"},
-        {"at": "tests/test_live_agent.py:496", "text": "def test_agent_success_approves_through_the_session_and_records_the_strategy"},
+        {"at": "tests/test_live_agent.py:524", "text": "def test_agent_success_approves_through_the_session_and_records_the_strategy"},
         {"at": "tests/test_dashboard_approval_relay.py:261", "text": "def test_typed_approval_is_relayed_as_the_dashboard_operator_and_executes_once"},
         {"at": "tests/test_provider_approval.py:67", "text": "def test_provider_mode_approves_through_the_session_and_records_the_strategy"},
         {"claim": "C-CONNECTED-HARNESS"},
@@ -1053,7 +1053,7 @@
       "impact": "A failed agent run looked like a stalled one, and Ollama's own error text was discarded. The incident also stayed OPEN until agent planning moved into the journal; see L-AGENT-JOURNAL.",
       "workaround": "Not needed.",
       "cites": [
-        {"at": "experiments/boutique/harness/agent_live.py:361", "text": "Agent planning stopped; no repair proposed"},
+        {"at": "experiments/boutique/harness/agent_live.py:367", "text": "Agent planning stopped; no repair proposed"},
         {"at": "tests/test_live_agent.py:243", "text": "def test_unavailable_model_retries_then_escalates_to_needs_review"}
       ],
       "planned": [],
