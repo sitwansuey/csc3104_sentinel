@@ -153,6 +153,29 @@ class ProfileTests(unittest.TestCase):
                 "approved-rollback/planning-status.json", "approved-rollback/attempt-1/agent/report.json",
                 "approved-rollback/attempt-1/agent/branch-003/result.json"})
 
+    def test_agent_bundle_preserves_hash_only_prompt_and_retrieval_provenance(self):
+        call = {"role": "Recovery Planner", "planning_attempt": 1, "prompt_version": "agent-recovery-v1",
+                "retrieved_passages": [{"id": "failed-rollout", "content_sha256": "ab" * 32}]}
+        records = {
+            "approved-rollback/model-calls.json": [call],
+            "approved-rollback/planning-status.json": {"attempt_usage": [
+                {"attempt": 1, "usage": {"prompt_version": "agent-recovery-v1", "calls": [call],
+                                         "retrieved_passages": call["retrieved_passages"]}}]},
+            "approved-rollback/attempt-1/agent/report.json": {"provenance": {
+                "prompt_version": "rca-v1", "calls": [dict(call, role="Planner", prompt_version="rca-v1")]}}}
+        with tempfile.TemporaryDirectory() as temp:
+            run, evidence = Path(temp) / "run", Path(temp) / "evidence"
+            write(run / "summary.json", {"status": "PASS", "started_at": STARTED})
+            for name, value in records.items():
+                write(run / name, value)
+            write(run / "approved-rollback/attempt-1/agent/config.json", {"private": True})
+            write(run / "approved-rollback/attempt-1/telemetry/logs.csv", "raw telemetry")
+            manifest = collect.collect(run, "agent", "agent-provenance", evidence_root=evidence, context=context())
+            self.assertEqual({item["path"] for item in manifest["files"]}, {"summary.json", *records})
+            for name, value in records.items():
+                saved = evidence / "2026-11-11/agent-provenance" / name
+                self.assertEqual(json.loads(saved.read_text(encoding="utf-8")), value)
+
     def test_scenario_pair_bundle_keeps_the_pair_and_lane_records_and_nothing_private(self):
         with tempfile.TemporaryDirectory() as temp:
             run = fx.pair_run(temp, "boutique-pair-20261113T095052Z-613964")

@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import time
-from .llm import PlanningBudgetExceeded
+from .llm import PlanningBudgetExceeded, ask_with_provenance
 from .tools import CATALOG
 from .workflows import retrieve
 from .evidence import compact_evidence, corroborated_onsets, timestamp_rejection
@@ -28,6 +28,7 @@ FIELDS = ["root cause occurrence datetime", "root cause component", "root cause 
 FINAL = obj({"failures": {"type": "array", "maxItems": 10,
                          "items": obj({k: STRING for k in FIELDS}, [])},
              "explanation": STRING, "limitations": STRING})
+PROMPT_VERSION = "rca-v1"
 
 
 def save(path, data):
@@ -307,6 +308,12 @@ class Agent:
         base = {"instruction": instruction, "system_context": context,
                 "inventory": inventory[:150], "inventory_omitted": max(0, len(inventory)-150),
                 "workflows": retrieve(instruction)}
+        first_call = len(self.llm.calls)
+
+        def ask(role, prompt, schema, passages=()):
+            return ask_with_provenance(self.llm, role, prompt, schema,
+                                       prompt_version=PROMPT_VERSION, passages=passages)
+
         for round_id in range(self.config.get("max_rounds", 3)):
             self.check_deadline("investigation")
             notify(self.progress, {"stage": "investigation", "status": "started", "round": round_id + 1})
@@ -316,14 +323,14 @@ class Agent:
                                 "completed_calls": self.call_history,
                                 UNTRUSTED_KEY: bounded(compact_evidence(self.evidence), 10000),
                                 "remaining_tools": self.config.get("max_steps", 16)-self.steps})
-            plan = initial_plan if round_id == 0 and initial_plan is not None else self.llm.ask("Planner", prompt + "\n" + CATALOG +
-                "\nProduce a bounded behavior tree. NEVER repeat a completed call; cached results provide no new evidence. Follow up on unexamined modalities, changed windows or columns. Distinguish sustained episodes from isolated spikes and boundary-censored runs. Do not select the earliest anomaly as root cause. Use sequence for dependencies, selector for fallback, parallel for independent analyses. A metrics/logs leaf with no findings fails its diagnostic condition; truncated results also fail. Use parallel when all modalities should be inspected even if one is empty. Plan only relevant dates. No more than 6 tool leaves per round.", PLAN)
+            plan = initial_plan if round_id == 0 and initial_plan is not None else ask("Planner", prompt + "\n" + CATALOG +
+                "\nProduce a bounded behavior tree. NEVER repeat a completed call; cached results provide no new evidence. Follow up on unexamined modalities, changed windows or columns. Distinguish sustained episodes from isolated spikes and boundary-censored runs. Do not select the earliest anomaly as root cause. Use sequence for dependencies, selector for fallback, parallel for independent analyses. A metrics/logs leaf with no findings fails its diagnostic condition; truncated results also fail. Use parallel when all modalities should be inspected even if one is empty. Plan only relevant dates. No more than 6 tool leaves per round.", PLAN, base["workflows"])
             save(self.workspace / f"plan-{round_id}.json", plan)
             _, outputs = self.execute(plan.get("plan", {}))
             self.round_ceiling = min(self.config.get("max_steps", 16), self.steps + 3)
             self.ensure_coverage(inventory)
             candidates = corroborated_onsets(self.evidence)
-            analysis = self.llm.ask("Analyzer", json.dumps({"task": instruction,
+            analysis = ask("Analyzer", json.dumps({"task": instruction,
                 "system_context": context,
                 UNTRUSTED_KEY: bounded(compact_evidence(self.evidence)), "corroborated_onsets": candidates,
                 "previous": bounded(self.summaries, 6000)}) + "\nAssess evidence sufficiency and contradictions. Earliest anomaly does not imply root cause. Require persistent onset and independently corroborating signals, with temporal order consistent with propagation. Corroborated onsets are hypotheses, not proven causes. Name evidence IDs. State exact NEW tool/column/window corrections when needed. Do not equate successful tools with a solved diagnosis.", ANALYSIS)
@@ -418,12 +425,12 @@ class Agent:
             final, prediction, cited = {"failures": []}, {}, {}
             refusal = "No tool result was collected, so no diagnosis can cite evidence."
         else:
-            final = self.llm.ask("Reporter", report_context + report_instructions, final_schema)
+            final = ask("Reporter", report_context + report_instructions, final_schema)
             try:
                 prediction, cited = check(final)
             except ValueError as exc:
                 save(self.workspace / "invalid-report.json", final)
-                final = self.llm.ask("Reporter", report_context + report_instructions +
+                final = ask("Reporter", report_context + report_instructions +
                     "\nCorrect the invalid response: " + str(exc) + "\nPrevious response: " + json.dumps(final), final_schema)
                 try:
                     prediction, cited = check(final)
@@ -456,6 +463,9 @@ class Agent:
             prediction = {}
         elif rejection:
             final["limitations"] = (final.get("limitations", "") + " Best-effort estimate: " + rejection).strip()
+        final["provenance"] = {"prompt_version": PROMPT_VERSION, "calls": [
+            {key: call[key] for key in ("role", "prompt_version", "retrieved_passages")}
+            for call in self.llm.calls[first_call:]]}
         save(self.workspace / "report.json", final)
         save(self.workspace / "prediction.json", prediction)
         save(self.workspace / "usage.json", self.llm.calls)

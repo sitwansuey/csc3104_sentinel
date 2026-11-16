@@ -384,6 +384,22 @@ The journal keeps codes, the diagnosis summary (prediction, abstained flag,
 tool names and evidence IDs, cited evidence IDs, change evidence, the
 eligibility result, and any injection finding's rule ids and counts) and
 per-attempt usage (model calls, seconds and the decision record).
+Each attempt records the context version `agent-recovery-v1`, including an
+attempt that stops before inference. Its `calls` list records each model call's
+`prompt_version` (`rca-v1` for investigation and reporting, `agent-recovery-v1`
+for recovery selection) and `retrieved_passages`: passage `id` and
+`content_sha256` only. Runbook hashes cover the UTF-8 content supplied to the
+model; structured RCA workflows use their legacy names as identifiers and hash
+each JSON object as serialised in the prompt. The attempt also records all
+supplied passages in call order, or an empty list when none was supplied.
+An empty passage list means that
+call received no retrieved passages. Transport retries carry the same metadata.
+The RCA `report.json` records its calls' provenance, and `model-calls.json` and
+`planning-status.json` retain it in sanitised evidence bundles. Restarting with
+the same journal restores the saved call records; replay neither retrieves new
+passages nor calls the model, and preserves the action ID and provenance. The
+lost-delivery restart test is offline with a scripted model; real-adapter replay
+acceptance remains pending under #54.
 It never keeps exception text, the workspace path, raw log lines or the
 Reporter's explanation. `planning-status.json` copies the row and per-attempt
 usage. The last attempt's cause text, such as Ollama's own reason and host,
