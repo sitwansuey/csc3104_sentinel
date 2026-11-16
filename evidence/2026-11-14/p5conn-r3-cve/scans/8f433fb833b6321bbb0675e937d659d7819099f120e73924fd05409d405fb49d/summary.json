@@ -1,0 +1,26 @@
+{
+  "image": "docker.io/library/redis@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3",
+  "scan_source": "remote_manifest",
+  "status": "FINDINGS",
+  "scanner": "Trivy",
+  "counts": {
+    "UNKNOWN": 0,
+    "LOW": 0,
+    "MEDIUM": 1,
+    "HIGH": 0,
+    "CRITICAL": 0
+  },
+  "findings": [
+    {
+      "id": "CVE-2026-4738",
+      "package": "zlib",
+      "installed": "1.3.2-r1",
+      "fixed": "1.4-r0",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    }
+  ],
+  "automatic_patching": false,
+  "scanned_at": "2026-11-14T15:44:28.608037Z",
+  "scanner_image": "aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c"
+}

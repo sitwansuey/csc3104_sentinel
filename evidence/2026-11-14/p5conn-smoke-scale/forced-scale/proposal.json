@@ -1,0 +1,25 @@
+{
+  "action": "SCALE",
+  "action_id": "ACT-FORCED-12a64cf4cbca4c078e9822a196640b54",
+  "based_on_resource_version": "335068",
+  "evidence_refs": [
+    "INC-FORCED-SCALE-8B11B4369804",
+    "HEALTH-6e0cd53097264113990d2be808200d3a"
+  ],
+  "incident_id": "INC-FORCED-SCALE-8B11B4369804",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-f3ea42b20647",
+    "desired_replicas": 5,
+    "template_sha256": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d"
+  },
+  "rationale": "Harness-forced wrong scale for the negative check; the Guard must refuse it.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "cartservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+  }
+}

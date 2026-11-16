@@ -6,10 +6,7 @@ import json
 import sqlite3
 
 from services.verifier.core import VerifierInputError, verify
-
-
-def _json(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+from shared.canonical import canonical_json as _json
 
 
 def _utc(value):
@@ -34,6 +31,24 @@ def observation_seconds(health):
     if type(timeout) is not int or not grace + health["stable_window_seconds"] <= timeout <= 86400:
         raise VerifierInputError("Verification timeout must cover the convergence grace and healthy window and be at most one day")
     return timeout
+
+
+# The shortest wait between two readings that sampling_interval() gives, whatever the policy.
+MIN_SAMPLE_INTERVAL_SECONDS = 0.5
+
+
+def sampling_interval(health):
+    """Seconds between the starts of two readings: at most half of max_sample_gap_seconds.
+
+    Half the gap leaves the other half for a slow reading or a quick restart
+    before a gap breaks the window. It is shorter when the stable window
+    divided over the minimum samples is, and never under
+    MIN_SAMPLE_INTERVAL_SECONDS, so a tight policy does not poll a cluster in
+    a busy loop (max_sample_gap_seconds is a whole number of seconds, so half
+    of it is never below that floor).
+    """
+    spacing = health["stable_window_seconds"] / max(1, health["minimum_samples"] - 1)
+    return max(MIN_SAMPLE_INTERVAL_SECONDS, min(health["max_sample_gap_seconds"] / 2, spacing, 60))
 
 
 class VerificationStore:

@@ -1,0 +1,7 @@
+[
+  {
+    "op": "add",
+    "path": "/metadata/labels/sentinel-probe",
+    "value": "1"
+  }
+]

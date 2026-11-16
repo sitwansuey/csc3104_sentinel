@@ -1,0 +1,86 @@
+name: Release
+
+# A human pushes a version tag after scripts/release/preflight.py says GO.
+# This workflow builds the Sentinel-owned images from that tag, scans them with
+# the pinned Trivy (fixable High/Critical fail unless waived in .trivyignore),
+# writes SBOMs, archives, release-manifest.json and SHA256SUMS, and creates a
+# DRAFT release. A human reviews the draft and publishes it; nothing here
+# publishes a release or pushes an image. See docs/release.md.
+#
+# A manual run (workflow_dispatch) builds and scans the VERSION on the chosen
+# branch as a rehearsal and creates no release.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Actions are pinned to full commit SHAs; the comment names the release.
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Resolve the release tag
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="v$(tr -d '\r\n' < VERSION)"
+          fi
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+      - name: Tag matches VERSION, waivers are valid, the image list is complete
+        run: python scripts/release/preflight.py --tag "$TAG" --only version waivers images
+      - name: Build, scan, SBOM, archives, manifest and checksums
+        run: >-
+          python scripts/release/build.py --tag "$TAG" --revision "$GITHUB_SHA"
+          --out release/assets --scratch "$RUNNER_TEMP/release-scratch"
+      - name: Draft release notes
+        run: python scripts/release/notes.py --tag "$TAG" --revision "$GITHUB_SHA" --output release/RELEASE_NOTES.md
+      # Uploaded even when the gate fails, so the reports can be read.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: release-${{ github.run_id }}
+          path: release/
+          retention-days: 14
+          if-no-files-found: warn
+
+  draft:
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-${{ github.run_id }}
+          path: release
+      - name: Verify checksums
+        working-directory: release/assets
+        run: sha256sum --check --strict SHA256SUMS
+      - name: Create a draft release (a human publishes it)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          options=(--draft --verify-tag --title "Sentinel $tag" --notes-file release/RELEASE_NOTES.md)
+          case "$tag" in *-rc.*) options+=(--prerelease) ;; esac
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" "${options[@]}" release/assets/*

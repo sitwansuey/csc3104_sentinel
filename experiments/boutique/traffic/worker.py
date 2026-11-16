@@ -42,7 +42,7 @@ def main():
             started, clock = utc(), time.monotonic()
             try:
                 result = probe.journey()
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - a failed journey is a row with its error class
                 result = {"passed": None, "error": type(error).__name__}
             row = {"run_id": os.environ["RUN_ID"], "worker": worker, "sequence": sequence,
                    "started_at": started, "completed_at": utc(),

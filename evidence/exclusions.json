@@ -1,0 +1,145 @@
+{
+  "schema": "sentinel-evidence-exclusions-v1",
+  "excluded": [
+    {
+      "run": "executor-wedge-admission-deny-p2b-20261112T050456Z",
+      "class": "executor-wedge",
+      "source_revision": "54090922d41d2b0aa480c72f6f0b94d20196cdad",
+      "attempted_at": "2026-11-12T05:04:56Z",
+      "reason": "Infrastructure failure, not a Sentinel result: the Docker Desktop engine was down and the wedge harness stopped with a RuntimeError (its only log line); no run folder was kept. Rerun at the same revision as executor-wedge-admission-deny-p2b-20261112t050853z."
+    },
+    {
+      "run": "boutique-live-20261112T050457Z-1072d5",
+      "class": "agent",
+      "source_revision": "54090922d41d2b0aa480c72f6f0b94d20196cdad",
+      "attempted_at": "2026-11-12T05:04:58Z",
+      "reason": "Infrastructure failure, not a Sentinel result: the Docker Desktop engine was down, so 'kind get nodes' failed before any experiment step (no checks ran and no fault was injected; only the preflight model warm-up ran, recorded in the run folder's model-runtime.json, and there was no RCA or planning model call). Its warm-up was a cold load of qwen3:14b (16.2 s), so the set rerun at this revision started with the model already loaded. The run folder keeps its FAILED summary. Docker was restarted and the set was rerun at the same revision (boutique-live-20261112t050930z-ba0f81, -051156z-009b69 and -051406z-ef3fbb)."
+    },
+    {
+      "run": "boutique-live-20261112T050516Z-f67f76",
+      "class": "agent",
+      "source_revision": "54090922d41d2b0aa480c72f6f0b94d20196cdad",
+      "attempted_at": "2026-11-12T05:05:17Z",
+      "reason": "Infrastructure failure, not a Sentinel result: the Docker Desktop engine was down, so 'kind get nodes' failed before any experiment step (no checks ran and no fault was injected; only the preflight model warm-up ran, recorded in the run folder's model-runtime.json, and there was no RCA or planning model call). The run folder keeps its FAILED summary. Docker was restarted and the set was rerun at the same revision (boutique-live-20261112t050930z-ba0f81, -051156z-009b69 and -051406z-ef3fbb)."
+    },
+    {
+      "run": "boutique-live-20261112T050518Z-faa61d",
+      "class": "agent",
+      "source_revision": "54090922d41d2b0aa480c72f6f0b94d20196cdad",
+      "attempted_at": "2026-11-12T05:05:19Z",
+      "reason": "Infrastructure failure, not a Sentinel result: the Docker Desktop engine was down, so 'kind get nodes' failed before any experiment step (no checks ran and no fault was injected; only the preflight model warm-up ran, recorded in the run folder's model-runtime.json, and there was no RCA or planning model call). The run folder keeps its FAILED summary. Docker was restarted and the set was rerun at the same revision (boutique-live-20261112t050930z-ba0f81, -051156z-009b69 and -051406z-ef3fbb)."
+    },
+    {
+      "run": "worker-image-build-0a8d4d7-20261112",
+      "class": "worker-container",
+      "source_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+      "attempted_at": "2026-11-12T16:10:34Z",
+      "reason": "A build, not a run: docker build of deploy/docker/worker.Dockerfile at this integration/phase3 revision failed in the image's own import check (ImportError: cannot import name 'scenarios' from 'experiments.boutique.harness', because the image did not copy the catalog modules agent_live imports), so no container started. This was a Sentinel defect, fixed in c973edd and merged in e5823f1; the 12 Nov container run (worker-container-planner-0a8d4d7-20261112) used an image built from c973edd, and the be6e636 image built cleanly. The time is the build log's last write; no run folder exists."
+    },
+    {
+      "run": "worker-container-task2-attempt0-be6e636-20261112T181009Z",
+      "class": "worker-container",
+      "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+      "attempted_at": "2026-11-12T18:10:09Z",
+      "reason": "Operator tooling failure, not a Sentinel result: the scratch orchestrator stopped while making the throwaway TLS certificates, because the inherited OPENSSL_CONF named a file that did not exist (openssl req exited 1). Its own record shows it created no RBAC, container or volume and injected no fault; the only Sentinel step that ran was a kind_bundle restore that found the target already healthy at baseline (0.3 s, generation unchanged at 184), and a scan of its files found no credential. Rerun at the same revision with a private openssl.cnf as worker-container-planner-be6e636-20261112t181036z."
+    },
+    {
+      "run": "spike-pod-9d64aa1-20261113T082720Z",
+      "class": "chaos-batch",
+      "source_revision": "9d64aa1ab4f9391b647c68cc559e2b4c7f4766e6",
+      "attempted_at": "2026-11-13T08:27:20Z",
+      "reason": "Operator spike, not a Sentinel run: a Chaos Mesh object created with kubectl on the connected lab's shippingservice before the P4.03 trials, with no Sentinel component running and no run folder; only the operator's console log was kept, and it is not committed. Valid: the PodChaos pod-failure record was named '<namespace>/<pod>' with desiredPhase Run and the Pod went 0/1 (the pause image cannot start under pull policy Never); after the operator deleted that Pod the replacement was not re-selected (the chaos object still listed only the old Pod) and was Ready within about 15 s. The result is recorded in docs/chaos.md (pre-registration commit c9a44ca)."
+    },
+    {
+      "run": "spike-cpu-9d64aa1-20261113T083048Z",
+      "class": "chaos-batch",
+      "source_revision": "9d64aa1ab4f9391b647c68cc559e2b4c7f4766e6",
+      "attempted_at": "2026-11-13T08:30:48Z",
+      "reason": "Operator spike, not a Sentinel run: a Chaos Mesh object created with kubectl on the connected lab's shippingservice before the P4.03 trials, with no Sentinel component running and no run folder; only the operator's console log was kept, and it is not committed. Invalid attempt: the StressChaos was applied (08:30:48Z) and recovered (08:35:48Z), but every Pod-metrics read failed, because the operator shell (Git Bash) rewrote the Metrics API path and the API server answered NotFound, so no CPU sample under stress exists. Repeated as spike-cpu3."
+    },
+    {
+      "run": "spike-cpu2-9d64aa1-20261113T083610Z",
+      "class": "chaos-batch",
+      "source_revision": "9d64aa1ab4f9391b647c68cc559e2b4c7f4766e6",
+      "attempted_at": "2026-11-13T08:36:10Z",
+      "reason": "Operator spike, not a Sentinel run: a Chaos Mesh object created with kubectl on the connected lab's shippingservice before the P4.03 trials, with no Sentinel component running and no run folder; only the operator's console log was kept, and it is not committed. Invalid attempt: the metric reads worked (about 0.0005 cores at rest), but the StressChaos was never created, because kubectl create was given a file path that did not exist; every sample is a rest sample. Repeated as spike-cpu3."
+    },
+    {
+      "run": "spike-cpu3-9d64aa1-20261113T084314Z",
+      "class": "chaos-batch",
+      "source_revision": "9d64aa1ab4f9391b647c68cc559e2b4c7f4766e6",
+      "attempted_at": "2026-11-13T08:43:14Z",
+      "reason": "Operator spike, not a Sentinel run: a Chaos Mesh object created with kubectl on the connected lab's shippingservice before the P4.03 trials, with no Sentinel component running and no run folder; only the operator's console log was kept, and it is not committed. Valid: about 0.0005 cores at rest; under the StressChaos (one worker, load 90) the shipping container held about 0.200 cores, its 200m limit, for the 300 s window and stayed Ready with no restart, so the pre-registered 0.18-core threshold was kept (docs/chaos.md, c9a44ca)."
+    },
+    {
+      "run": "spike-redis-29e41f8-20261113T092828Z",
+      "class": "chaos-batch",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "attempted_at": "2026-11-13T09:28:28Z",
+      "reason": "Operator spike for P4.05, not a Sentinel run: a PodChaos pod-failure on redis-cart created with kubectl on the connected lab, with no Sentinel component running and no run folder; the console log is kept by the operator and not committed. redis-cart stayed 0/1 for about 6 minutes while cartservice stayed 1/1 Ready with no restart (one Pod throughout), so a Redis outage alone did not make cartservice NotReady; recorded in docs/dual-fault.md."
+    },
+    {
+      "run": "boutique-pair-20261113T093435Z-2f30b6",
+      "class": "scenario-pair",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "attempted_at": "2026-11-13T09:34:36Z",
+      "reason": "Harness failure, not a Sentinel result: pair shipping-config+cart-pod applied both faults within 0.3 s and the Observer opened an incident for each target, then the harness stopped with ValueError 'Unknown Boutique observation stage', because runtime/boutique_observability.py did not accept the pair-fault stage of the storefront journal (the offline pair tests had mocked the journal). No proposal was planned, so there was no Guard decision and no Executor write. The chaos object's cleanup was confirmed and the administrator's emergency restore returned the configuration-faulted service, shippingservice, to its baseline. Fixed in 1941683 (merged in 02d91e5); the pair runs were repeated at dca7369 (C-DUAL-FAULT-PAIRS-DCA7369). No evidence class for pair runs exists in the collector at this revision, so the run folder (FAILED summary) stays local."
+    },
+    {
+      "run": "boutique-pair-20261113T093703Z-2ab18a",
+      "class": "scenario-pair",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "attempted_at": "2026-11-13T09:37:04Z",
+      "reason": "Harness failure, not a Sentinel result: pair shipping-config+cart-pod applied both faults within 0.3 s and the Observer opened an incident for each target, then the harness stopped with ValueError 'Unknown Boutique observation stage', because runtime/boutique_observability.py did not accept the pair-fault stage of the storefront journal (the offline pair tests had mocked the journal). No proposal was planned, so there was no Guard decision and no Executor write. The chaos object's cleanup was confirmed and the administrator's emergency restore returned the configuration-faulted service, shippingservice, to its baseline. Fixed in 1941683 (merged in 02d91e5); the pair runs were repeated at dca7369 (C-DUAL-FAULT-PAIRS-DCA7369). No evidence class for pair runs exists in the collector at this revision, so the run folder (FAILED summary) stays local."
+    },
+    {
+      "run": "boutique-pair-20261113T093912Z-94e2cf",
+      "class": "scenario-pair",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "attempted_at": "2026-11-13T09:39:13Z",
+      "reason": "Harness failure, not a Sentinel result: pair shipping-config+cart-pod applied both faults within 0.3 s and the Observer opened an incident for each target, then the harness stopped with ValueError 'Unknown Boutique observation stage', because runtime/boutique_observability.py did not accept the pair-fault stage of the storefront journal (the offline pair tests had mocked the journal). No proposal was planned, so there was no Guard decision and no Executor write. The chaos object's cleanup was confirmed and the administrator's emergency restore returned the configuration-faulted service, shippingservice, to its baseline. Fixed in 1941683 (merged in 02d91e5); the pair runs were repeated at dca7369 (C-DUAL-FAULT-PAIRS-DCA7369). No evidence class for pair runs exists in the collector at this revision, so the run folder (FAILED summary) stays local."
+    },
+    {
+      "run": "boutique-pair-20261113T094129Z-02c275",
+      "class": "scenario-pair",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "attempted_at": "2026-11-13T09:41:30Z",
+      "reason": "Harness failure, not a Sentinel result: pair redis-pod+cart-config applied both faults within 0.3 s and the Observer opened an incident for each target, then the harness stopped with ValueError 'Unknown Boutique observation stage', because runtime/boutique_observability.py did not accept the pair-fault stage of the storefront journal (the offline pair tests had mocked the journal). No proposal was planned, so there was no Guard decision and no Executor write. The chaos object's cleanup was confirmed and the administrator's emergency restore returned the configuration-faulted service, cartservice, to its baseline. Fixed in 1941683 (merged in 02d91e5); the pair runs were repeated at dca7369 (C-DUAL-FAULT-PAIRS-DCA7369). No evidence class for pair runs exists in the collector at this revision, so the run folder (FAILED summary) stays local."
+    },
+    {
+      "run": "boutique-pair-20261113T094347Z-79ea32",
+      "class": "scenario-pair",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "attempted_at": "2026-11-13T09:43:48Z",
+      "reason": "Harness failure, not a Sentinel result: pair redis-pod+cart-config applied both faults within 0.3 s and the Observer opened an incident for each target, then the harness stopped with ValueError 'Unknown Boutique observation stage', because runtime/boutique_observability.py did not accept the pair-fault stage of the storefront journal (the offline pair tests had mocked the journal). No proposal was planned, so there was no Guard decision and no Executor write. The chaos object's cleanup was confirmed and the administrator's emergency restore returned the configuration-faulted service, cartservice, to its baseline. Fixed in 1941683 (merged in 02d91e5); the pair runs were repeated at dca7369 (C-DUAL-FAULT-PAIRS-DCA7369). No evidence class for pair runs exists in the collector at this revision, so the run folder (FAILED summary) stays local."
+    },
+    {
+      "run": "boutique-pair-20261113T094614Z-3432a9",
+      "class": "scenario-pair",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "attempted_at": "2026-11-13T09:46:15Z",
+      "reason": "Harness failure, not a Sentinel result: pair redis-pod+cart-config applied both faults within 0.3 s and the Observer opened an incident for each target, then the harness stopped with ValueError 'Unknown Boutique observation stage', because runtime/boutique_observability.py did not accept the pair-fault stage of the storefront journal (the offline pair tests had mocked the journal). No proposal was planned, so there was no Guard decision and no Executor write. The chaos object's cleanup was confirmed and the administrator's emergency restore returned the configuration-faulted service, cartservice, to its baseline. Fixed in 1941683 (merged in 02d91e5); the pair runs were repeated at dca7369 (C-DUAL-FAULT-PAIRS-DCA7369). No evidence class for pair runs exists in the collector at this revision, so the run folder (FAILED summary) stays local."
+    },
+    {
+      "run": "boutique-pair-20261113T094829Z-1e8d84",
+      "class": "scenario-pair",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "attempted_at": "2026-11-13T09:48:30Z",
+      "reason": "Harness failure, not a Sentinel result: pair shipping-config+cart-pod (Executor-kill variant, shippingservice) applied both faults within 0.3 s and the Observer opened an incident for each target, then the harness stopped with ValueError 'Unknown Boutique observation stage', because runtime/boutique_observability.py did not accept the pair-fault stage of the storefront journal (the offline pair tests had mocked the journal). No proposal was planned, so there was no Guard decision and no Executor write. The chaos object's cleanup was confirmed and the administrator's emergency restore returned the configuration-faulted service, shippingservice, to its baseline. Fixed in 1941683 (merged in 02d91e5); the pair runs were repeated at dca7369 (C-DUAL-FAULT-PAIRS-DCA7369). No evidence class for pair runs exists in the collector at this revision, so the run folder (FAILED summary) stays local."
+    },
+    {
+      "run": "boutique-pair-20261113T095052Z-613964",
+      "class": "scenario-pair",
+      "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+      "attempted_at": "2026-11-13T09:50:53Z",
+      "reason": "Harness failure, not a Sentinel result: pair redis-pod+cart-config (Executor-kill variant, cartservice) applied both faults within 0.3 s and the Observer opened an incident for each target, then the harness stopped with ValueError 'Unknown Boutique observation stage', because runtime/boutique_observability.py did not accept the pair-fault stage of the storefront journal (the offline pair tests had mocked the journal). No proposal was planned, so there was no Guard decision and no Executor write. The chaos object's cleanup was confirmed and the administrator's emergency restore returned the configuration-faulted service, cartservice, to its baseline. Fixed in 1941683 (merged in 02d91e5); the pair runs were repeated at dca7369 (C-DUAL-FAULT-PAIRS-DCA7369). No evidence class for pair runs exists in the collector at this revision, so the run folder (FAILED summary) stays local."
+    },
+    {
+      "run": "protected-boutique-netpol-attempt1-02d91e5-20261113T101635Z",
+      "class": "security-lab",
+      "source_revision": "02d91e5650ccc59587b823b4133d095451b13082",
+      "attempted_at": "2026-11-13T10:16:35Z",
+      "reason": "Operator environment failure, not a Sentinel result: scripts/security/boutique_security.py start stopped while making the throwaway lab certificates, because the inherited OPENSSL_CONF named a temporary file that did not exist (openssl req failed). The sentinel-boutique-security cluster had been created, but no policy, probe or scan ran; the partial run folder (calico.yaml only) was removed. Rerun at the same revision with OPENSSL_CONF unset as protected-boutique-netpol."
+    }
+  ]
+}

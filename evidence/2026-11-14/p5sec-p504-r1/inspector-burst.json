@@ -1,0 +1,20 @@
+{
+  "count": 200,
+  "finished": 200,
+  "statuses": {
+    "valid": {
+      "200": 58,
+      "503": 122
+    },
+    "invalid": {
+      "403": 6,
+      "503": 14
+    }
+  },
+  "denied_overload": 136,
+  "allowed_invalid": 0,
+  "unexpected": 0,
+  "p50_ms": 1387.8,
+  "p95_ms": 2849.0,
+  "passed": true
+}

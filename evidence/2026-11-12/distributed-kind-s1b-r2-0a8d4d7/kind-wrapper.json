@@ -1,0 +1,77 @@
+{
+  "scenario": "S1b",
+  "label": "r2",
+  "pre": {
+    "at": "2026-11-12T16:05:16.661175Z",
+    "generation": 140,
+    "resource_version": "139319",
+    "observed_generation": 140,
+    "available": 1,
+    "ready": 1,
+    "template_is_baseline": true,
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+    "sentinel_annotations": {
+      "sentinel.io/execution": "{\"action_id\":\"ACT-ef3a90b9b6f7ac1173669132\",\"attempt_id\":\"b9e4893b05a949c9b127006a4187ac00\",\"proposal_sha256\":\"64f9acf4c0aaa93384258d41b6f91db0c8fba4684603986eb2b5e9c7c3832646\",\"target_uid\":\"7afb61df-2d75-4529-ae2c-5825a573335d\",\"template_sha256\":\"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"}",
+      "sentinel.io/fence": "{\"action_id\":\"ACT-04a8923f64b74e3bdacb3913\",\"epoch\":2,\"nonce\":\"aef70cc330ce416ea1207ce8d711753c\"}",
+      "sentinel.io/fence-epoch": "2"
+    }
+  },
+  "inject": {
+    "at": "2026-11-12T16:05:16.857611Z",
+    "rc": 0,
+    "stdout": "deployment.apps/shippingservice env updated"
+  },
+  "fault_visible": {
+    "at": "2026-11-12T16:05:16.973163Z",
+    "cart_http_status": 500,
+    "generation": 141,
+    "resource_version": "139340",
+    "observed_generation": 141,
+    "available": 0,
+    "ready": 0,
+    "template_is_baseline": false,
+    "template_sha256": "bbf3cdf1bdf5cb2da049b116f062f52273d7cc6d1b40a2109adb21a60b1ad7ae",
+    "sentinel_annotations": {
+      "sentinel.io/execution": "{\"action_id\":\"ACT-ef3a90b9b6f7ac1173669132\",\"attempt_id\":\"b9e4893b05a949c9b127006a4187ac00\",\"proposal_sha256\":\"64f9acf4c0aaa93384258d41b6f91db0c8fba4684603986eb2b5e9c7c3832646\",\"target_uid\":\"7afb61df-2d75-4529-ae2c-5825a573335d\",\"template_sha256\":\"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"}",
+      "sentinel.io/fence": "{\"action_id\":\"ACT-04a8923f64b74e3bdacb3913\",\"epoch\":2,\"nonce\":\"aef70cc330ce416ea1207ce8d711753c\"}",
+      "sentinel.io/fence-epoch": "2"
+    }
+  },
+  "harness": {
+    "rc": 0,
+    "seconds": 48.8,
+    "stdout": "{\"scenario\": \"S1b\", \"repeat\": 1, \"states\": [\"RECOVERED\"], \"writes\": 1, \"failed\": [], \"matches_expectation\": true, \"seconds\": 48.5, \"error\": null}",
+    "stderr_tail": ""
+  },
+  "post": {
+    "at": "2026-11-12T16:06:05.860431Z",
+    "generation": 142,
+    "resource_version": "139440",
+    "observed_generation": 142,
+    "available": 1,
+    "ready": 1,
+    "template_is_baseline": true,
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+    "sentinel_annotations": {
+      "sentinel.io/execution": "{\"action_id\":\"ACT-83a4f52d04d3d4ad116f9a4c\",\"attempt_id\":\"69de99097ef949c58998c108769a502a\",\"proposal_sha256\":\"aeb0b4125af4aea1ddba4d7abd76a09160684a4aab0070ee0ca3f73d361cd68b\",\"target_uid\":\"7afb61df-2d75-4529-ae2c-5825a573335d\",\"template_sha256\":\"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"}",
+      "sentinel.io/fence": "{\"action_id\":\"ACT-04a8923f64b74e3bdacb3913\",\"epoch\":2,\"nonce\":\"aef70cc330ce416ea1207ce8d711753c\"}",
+      "sentinel.io/fence-epoch": "2"
+    }
+  },
+  "healthy_after": true,
+  "final": {
+    "at": "2026-11-12T16:06:06.053475Z",
+    "generation": 142,
+    "resource_version": "139440",
+    "observed_generation": 142,
+    "available": 1,
+    "ready": 1,
+    "template_is_baseline": true,
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+    "sentinel_annotations": {
+      "sentinel.io/execution": "{\"action_id\":\"ACT-83a4f52d04d3d4ad116f9a4c\",\"attempt_id\":\"69de99097ef949c58998c108769a502a\",\"proposal_sha256\":\"aeb0b4125af4aea1ddba4d7abd76a09160684a4aab0070ee0ca3f73d361cd68b\",\"target_uid\":\"7afb61df-2d75-4529-ae2c-5825a573335d\",\"template_sha256\":\"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"}",
+      "sentinel.io/fence": "{\"action_id\":\"ACT-04a8923f64b74e3bdacb3913\",\"epoch\":2,\"nonce\":\"aef70cc330ce416ea1207ce8d711753c\"}",
+      "sentinel.io/fence-epoch": "2"
+    }
+  }
+}

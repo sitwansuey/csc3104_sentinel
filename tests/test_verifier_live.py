@@ -178,6 +178,17 @@ class LiveGraphTests(unittest.TestCase):
             with self.subTest(interval=interval), self.assertRaises(ValueError):
                 collect_window(self.collector(), execution, fixture("policy.json"), interval_seconds=interval)
 
+    def test_the_default_interval_of_a_slow_policy_is_capped_at_60_seconds(self):
+        # Half of a 200 s gap is 100 s: before sampling_interval() this default raised ValueError.
+        execution = fixture("messages/execution-result.json")
+        execution["target"] = self.proposal()["target"]
+        policy = fixture("policy.json")
+        policy["health"].update(max_sample_gap_seconds=200, stable_window_seconds=300, minimum_samples=2)
+        waits = []
+        result = collect_window(self.collector(), execution, policy, count=2, sleep=waits.append)
+        self.assertEqual(waits, [60])
+        self.assertEqual(len(result["samples"]), 2)
+
     def test_early_reading_cannot_be_relabeled_fresh_after_slow_collection(self):
         times = iter((NOW, NOW, NOW + timedelta(seconds=11), NOW + timedelta(seconds=11)))
         collector = LiveEvidenceCollector(self.config, self.kubernetes, http=self.http, clock=lambda: next(times))

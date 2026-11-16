@@ -1,0 +1,143 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "chaos-n2-agent-r1-29e41f8",
+  "class": "agent",
+  "captured_at": "2026-11-13T09:18:28.579793Z",
+  "source_run_dir_name": "boutique-live-20261113T091828Z-07294f",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "recorded",
+    "captured_by": "harness",
+    "dirty": false,
+    "dirty_path_count": 0,
+    "dirty_paths_sha256": null,
+    "host_class": "windows-amd64",
+    "python": "3.13.2",
+    "schema": "sentinel-provenance-v1",
+    "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f",
+    "tools": {
+      "docker": "29.4.3",
+      "helm": "4.3.1+gc0d08d0",
+      "kind": "0.33.0",
+      "kubectl": "1.34.1",
+      "ollama": "0.40.16"
+    }
+  },
+  "files": [
+    {
+      "path": "approved-rollback/attempt-1/agent/branch-001/result.json",
+      "sha256": "0d6b31e7d06624fa0395c0a5b8c7a5334260be3a75f43927cef6ef0fd6807461",
+      "bytes": 2983,
+      "redactions": 1
+    },
+    {
+      "path": "approved-rollback/attempt-1/agent/branch-002/result.json",
+      "sha256": "1ae7f80b7e6432efbf33a420353f5a38a611fad8961cf1f60d17349a2059bb31",
+      "bytes": 374,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/attempt-1/agent/branch-003/result.json",
+      "sha256": "2c005e6f4bdee82f25f15ae6ab10af59bcdc83b7274faabb6c93bde6343bdbe2",
+      "bytes": 2653,
+      "redactions": 1
+    },
+    {
+      "path": "approved-rollback/attempt-1/agent/report.json",
+      "sha256": "53de1dac08e65e34fade9281c2a2f34a98df1c3b9909e6245ec0940c70efff8c",
+      "bytes": 1511,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/model-calls.json",
+      "sha256": "ae124032508894a8fda0ea83e05a02d3489e994218501e5eac9e60f6324d11e7",
+      "bytes": 792,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/model-proposal.json",
+      "sha256": "ec632955ff0f0f8f7ebc963bcba77aba7ae1399a96e975c532e00754d2479d04",
+      "bytes": 1721,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/planning-status.json",
+      "sha256": "f88f87d24f4fc5a50ae431e1a4e5f6e1a42b62231b558f5dba3a3cec86f23d23",
+      "bytes": 2538,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/proposal.json",
+      "sha256": "ec632955ff0f0f8f7ebc963bcba77aba7ae1399a96e975c532e00754d2479d04",
+      "bytes": 1721,
+      "redactions": 0
+    },
+    {
+      "path": "forced-restart-drift/proposal.json",
+      "sha256": "572fc1ed2487640844f06d4939ce4943ed553cd333d5bb3b1e004cab8e3ff50e",
+      "bytes": 859,
+      "redactions": 1
+    },
+    {
+      "path": "forced-rollback/proposal.json",
+      "sha256": "f74870dba3a672cf5144a7468fe11b86bc9641fc1a4d52d88c6662f0ef08c077",
+      "bytes": 790,
+      "redactions": 0
+    },
+    {
+      "path": "images.json",
+      "sha256": "c84b74cdbde235194701e1d35ac5bf5f82a0ea23bbd1545ee13be25f0d74b4a7",
+      "bytes": 2741,
+      "redactions": 0
+    },
+    {
+      "path": "model-runtime.json",
+      "sha256": "5dc3319a419e5a60f2928036f2f67981484efc25b272bdc1ee94566c15392d37",
+      "bytes": 830,
+      "redactions": 0
+    },
+    {
+      "path": "policy.json",
+      "sha256": "c4dcc31bd1e6fb293e5a04b0ad7944d948127b52ef2a83c1c39f03ac12af1951",
+      "bytes": 2713,
+      "redactions": 0
+    },
+    {
+      "path": "primary-incident.json",
+      "sha256": "83a78e0227173f23adc4205398efa59d5245f22daa3a5b1dc68376ce0dd3b22e",
+      "bytes": 14899,
+      "redactions": 1
+    },
+    {
+      "path": "primary-storefront-impact.json",
+      "sha256": "df27d5a7b8e87df10cc19d4048cc51579e68747305cdf027c7cbb558d24d454c",
+      "bytes": 313,
+      "redactions": 0
+    },
+    {
+      "path": "rbac-checks.json",
+      "sha256": "76dfdd78d7cbfafb0f5191ecf06f1531f7288f274daaae96432a494810070fc3",
+      "bytes": 830,
+      "redactions": 0
+    },
+    {
+      "path": "scenario-result.json",
+      "sha256": "6657bf9e70bfa7bc3e316e8b82180638f08b8a4c7d513e0290cbef709f66cb8f",
+      "bytes": 1132,
+      "redactions": 0
+    },
+    {
+      "path": "summary.json",
+      "sha256": "fe6c69347bbdd39b10aa0885472807336e263ecd1b71cb98aada2d6c3a792096",
+      "bytes": 7678,
+      "redactions": 0
+    },
+    {
+      "path": "coordinator-journal.json",
+      "sha256": "996de6c18192f4868eae6fbd5a00657b30b9a31c60d8a6c08463ec8f43a39815",
+      "bytes": 3780,
+      "redactions": 1
+    }
+  ],
+  "omitted": []
+}

@@ -1,0 +1,424 @@
+[
+  {
+    "captured_at": "2026-11-11T14:38:36.182682Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-0"
+  },
+  {
+    "captured_at": "2026-11-11T14:38:38.669531Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-1"
+  },
+  {
+    "captured_at": "2026-11-11T14:38:41.137725Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-2"
+  },
+  {
+    "captured_at": "2026-11-11T14:38:43.614004Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-3"
+  },
+  {
+    "captured_at": "2026-11-11T14:38:46.088565Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-4"
+  },
+  {
+    "captured_at": "2026-11-11T14:38:48.544708Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-5"
+  },
+  {
+    "captured_at": "2026-11-11T14:38:50.992638Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-6"
+  },
+  {
+    "captured_at": "2026-11-11T14:38:53.454089Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-7"
+  },
+  {
+    "captured_at": "2026-11-11T14:38:55.910153Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-8"
+  },
+  {
+    "captured_at": "2026-11-11T14:38:58.393440Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-9"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:00.879268Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-10"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:03.350287Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-11"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:05.806642Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-12"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:08.307440Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-13"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:10.800361Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-14"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:13.260556Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-15"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:15.715953Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-16"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:18.165758Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-17"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:20.633395Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-18"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:23.103461Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-19"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:25.545575Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-20"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:27.991435Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-21"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:30.448312Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-22"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:32.910120Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-23"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:35.354989Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-24"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:37.822855Z",
+    "first_seen_at": null,
+    "incident": null,
+    "label": "healthy-25"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:40.788670Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "fault-26"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:43.271466Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "fault-27"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:45.744010Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "fault-28"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:48.212464Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": {
+      "incident_id": "INC-2855C2A6677C",
+      "kind": "incident",
+      "observed_at": "2026-11-11T14:39:48.212464Z",
+      "observed_generation": 2,
+      "observed_resource_version": "720",
+      "schema_version": "1.0",
+      "signals": [
+        {
+          "at": "2026-11-11T14:39:40.788670Z",
+          "detail": "Deployment sentinel-boutique/shippingservice desired 1, ready 0, available 0; resourceVersion 720, generation 2",
+          "evidence_id": "E-155877583216",
+          "reason": "UnavailableReplicas",
+          "source": "deployment_status"
+        },
+        {
+          "at": "2026-11-11T14:39:40.788670Z",
+          "detail": "Pod shippingservice-85576d7678-r5cq6 container server is not ready; phase Running; restartCount 1; current exitCode 1; last exitCode 1",
+          "evidence_id": "E-EEFED3841664",
+          "reason": "Error",
+          "source": "pod_status"
+        },
+        {
+          "at": "2026-11-11T14:39:38Z",
+          "detail": "Deployment does not have minimum availability.",
+          "evidence_id": "E-D64CE9AE1DD2",
+          "reason": "MinimumReplicasUnavailable",
+          "source": "event"
+        },
+        {
+          "at": "2026-11-11T14:39:40Z",
+          "detail": "Readiness probe failed: timeout: failed to connect service \"10.244.0.6:50051\" within 1s: context deadline exceeded",
+          "evidence_id": "E-179272635955",
+          "reason": "Unhealthy",
+          "source": "event"
+        },
+        {
+          "at": "2026-11-11T14:39:40Z",
+          "detail": "Back-off restarting failed container server in pod shippingservice-85576d7678-r5cq6_sentinel-boutique(384984c0-8ce5-491e-bc80-c620fea93a17)",
+          "evidence_id": "E-6CAD711A6566",
+          "reason": "BackOff",
+          "source": "event"
+        },
+        {
+          "at": "2026-11-11T14:39:40.788670Z",
+          "detail": "unable to retrieve container logs for containerd://3ed50b1259d5a240ea22dd5e2dce7e27d74bec02decfca24293f33b3bb6d4cf0",
+          "evidence_id": "E-3B2C923643B6",
+          "reason": "ContainerLog",
+          "source": "container_log"
+        },
+        {
+          "at": "2026-11-11T14:39:48.212464Z",
+          "detail": "Deployment sentinel-boutique/shippingservice desired 1, ready 0, available 0; resourceVersion 720, generation 2",
+          "evidence_id": "E-0311A871C87B",
+          "reason": "UnavailableReplicas",
+          "source": "deployment_status"
+        },
+        {
+          "at": "2026-11-11T14:39:48.212464Z",
+          "detail": "Pod shippingservice-85576d7678-r5cq6 container server is not ready; phase Running; restartCount 1; back-off 10s restarting failed container=server pod=shippingservice-85576d7678-r5cq6_sentinel-boutique(384984c0-8ce5-491e-bc80-c620fea93a17); last exitCode 1",
+          "evidence_id": "E-E1AB6BD995DA",
+          "reason": "CrashLoopBackOff",
+          "source": "pod_status"
+        },
+        {
+          "at": "2026-11-11T14:39:43Z",
+          "detail": "Back-off restarting failed container server in pod shippingservice-85576d7678-r5cq6_sentinel-boutique(384984c0-8ce5-491e-bc80-c620fea93a17)",
+          "evidence_id": "E-1F98C165DE5D",
+          "reason": "BackOff",
+          "source": "event"
+        },
+        {
+          "at": "2026-11-11T14:39:48.212464Z",
+          "detail": "2026-11-11T14:39:39.547221177Z {\"message\":\"Tracing disabled.\",\"severity\":\"info\",\"timestamp\":\"2026-11-11T14:39:39.547016371Z\"}\n2026-11-11T14:39:39.547243608Z {\"message\":\"Profiling disabled.\",\"severity\":\"info\",\"timestamp\":\"2026-11-11T14:39:39.547091775Z\"}\n2026-11-11T14:39:39.547566217Z {\"message\":\"failed to listen: listen tcp: lookup tcp/invalid-port: unknown port\",\"severity\":\"fatal\",\"timestamp\":\"2026-11-11T14:39:39.547427004Z\"}\n",
+          "evidence_id": "E-005244072459",
+          "reason": "ContainerLog",
+          "source": "container_log"
+        }
+      ],
+      "target": {
+        "cluster_id": "sentinel-boutique-lab",
+        "kind": "Deployment",
+        "name": "shippingservice",
+        "namespace": "sentinel-boutique",
+        "uid": "982536c8-f478-4bf3-847a-2a444b5bf684"
+      }
+    },
+    "label": "fault-29"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:48.684895Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-30"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:51.136677Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-31"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:53.596770Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-32"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:56.063025Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-33"
+  },
+  {
+    "captured_at": "2026-11-11T14:39:58.523200Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-34"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:01.029257Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-35"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:03.501216Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-36"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:05.967052Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-37"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:08.419616Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-38"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:10.895705Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-39"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:13.339738Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-40"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:15.787026Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-41"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:18.232819Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-42"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:20.692047Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-43"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:23.168834Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-44"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:25.616594Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-45"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:28.058938Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-46"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:30.516366Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-47"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:32.990649Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-48"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:35.440735Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-49"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:37.889800Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-50"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:40.333500Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-51"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:42.797428Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-52"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:45.249892Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-53"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:47.686317Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-54"
+  },
+  {
+    "captured_at": "2026-11-11T14:40:50.114617Z",
+    "first_seen_at": "2026-11-11T14:39:40.788670Z",
+    "incident": null,
+    "label": "duplicate-55"
+  }
+]

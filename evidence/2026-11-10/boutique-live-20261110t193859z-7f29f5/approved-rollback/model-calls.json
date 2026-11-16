@@ -1,0 +1,30 @@
+[
+  {
+    "model": "qwen3:14b",
+    "output_tokens": 621,
+    "prompt_tokens": 3552,
+    "role": "Planner",
+    "seconds": 16.45105390000026
+  },
+  {
+    "model": "qwen3:14b",
+    "output_tokens": 176,
+    "prompt_tokens": 2359,
+    "role": "Analyzer",
+    "seconds": 6.200380499998573
+  },
+  {
+    "model": "qwen3:14b",
+    "output_tokens": 315,
+    "prompt_tokens": 3826,
+    "role": "Reporter",
+    "seconds": 10.312599199998658
+  },
+  {
+    "model": "qwen3:14b",
+    "output_tokens": 337,
+    "prompt_tokens": 3491,
+    "role": "Recovery Planner",
+    "seconds": 10.36472540000068
+  }
+]

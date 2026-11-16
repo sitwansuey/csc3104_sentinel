@@ -1,0 +1,10 @@
+{
+  "agent_model_calls": 3,
+  "attempts": null,
+  "decided_by": null,
+  "decision_policy": null,
+  "model": "qwen3:14b",
+  "model_action": null,
+  "planning_error_code": null,
+  "source_revision": null
+}

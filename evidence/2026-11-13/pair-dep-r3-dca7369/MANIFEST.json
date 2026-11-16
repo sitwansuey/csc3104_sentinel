@@ -1,0 +1,154 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "pair-dep-r3-dca7369",
+  "class": "scenario-pair",
+  "captured_at": "2026-11-13T12:27:04.114677Z",
+  "source_run_dir_name": "boutique-pair-20261113T122703Z-d18775",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "recorded",
+    "captured_by": "harness",
+    "dirty": false,
+    "dirty_path_count": 0,
+    "dirty_paths_sha256": null,
+    "host_class": "windows-amd64",
+    "python": "3.13.2",
+    "schema": "sentinel-provenance-v1",
+    "source_revision": "dca73699c9bb7c6d99faa0cec517c75e98fa916b",
+    "tools": {
+      "docker": "29.4.3",
+      "helm": "4.3.1+gc0d08d0",
+      "kind": "0.33.0",
+      "kubectl": "1.34.1"
+    }
+  },
+  "files": [
+    {
+      "path": "cartservice-pair-2-incident.json",
+      "sha256": "207a7660a8888b3e47ce5a5c3052f0b7811d646994c2e2809c3bd2b11f6baf77",
+      "bytes": 4411,
+      "redactions": 0
+    },
+    {
+      "path": "chaos-experiment.json",
+      "sha256": "5c8f993994c9985d4f2b150f8f5f59f86408bb10dab2245462d11f0c72628767",
+      "bytes": 742,
+      "redactions": 0
+    },
+    {
+      "path": "dependency-readiness-cartservice.json",
+      "sha256": "2b3178d607b17580a89c23050240e6e42d8cc13f83ba52288fd4840c92e5e6c4",
+      "bytes": 6765,
+      "redactions": 1
+    },
+    {
+      "path": "dependency-readiness-redis-cart.json",
+      "sha256": "7414abcb06644f405698361fb3405f8ba44dbd9bb374bd52b091f1ec6491f211",
+      "bytes": 5891,
+      "redactions": 0
+    },
+    {
+      "path": "images.json",
+      "sha256": "c84b74cdbde235194701e1d35ac5bf5f82a0ea23bbd1545ee13be25f0d74b4a7",
+      "bytes": 2741,
+      "redactions": 0
+    },
+    {
+      "path": "pair-cartservice/guard-ACT-3f1437a90410074f38f5ca2c-0.json",
+      "sha256": "26a4c5a9ab31a6fe5a909387291322949851909d3e900728307539740afb2ba8",
+      "bytes": 789,
+      "redactions": 0
+    },
+    {
+      "path": "pair-cartservice/planning-status.json",
+      "sha256": "2813815688d49d537a4f63ac5f49e8f7af4c5e97823f5138667edee4aa81e110",
+      "bytes": 1273,
+      "redactions": 0
+    },
+    {
+      "path": "pair-cartservice/proposal-ACT-3f1437a90410074f38f5ca2c.json",
+      "sha256": "4eb48a985be762b60d7c4853acd922e3c4e06c7c2155c2a89a19585f2ba34676",
+      "bytes": 992,
+      "redactions": 0
+    },
+    {
+      "path": "pair-cartservice/scenario-result.json",
+      "sha256": "1fa8b57351d94f60015e0c2462910b90ec7ed685cebf65743a59739de9ee03a0",
+      "bytes": 1381,
+      "redactions": 0
+    },
+    {
+      "path": "pair-redis-cart/dependencies-ACT-47c3b8276d5b41e0a9b1034c.json",
+      "sha256": "35b32f95dcdb3dd86b853c6d905101b29f747ad82d2e0fe9fb1efc6770bd48bf",
+      "bytes": 595,
+      "redactions": 0
+    },
+    {
+      "path": "pair-redis-cart/guard-ACT-47c3b8276d5b41e0a9b1034c-0.json",
+      "sha256": "603a081db02572c269481d941e5bb41998fb3572ced4ba3b629a5997351b3dfb",
+      "bytes": 788,
+      "redactions": 0
+    },
+    {
+      "path": "pair-redis-cart/planning-status.json",
+      "sha256": "c763595104b2ea43ad55ae811e7c47cc2740e387a336edce6b555c849b582c7f",
+      "bytes": 1955,
+      "redactions": 1
+    },
+    {
+      "path": "pair-redis-cart/proposal-ACT-47c3b8276d5b41e0a9b1034c.json",
+      "sha256": "93399db26178fb5ae3b6e44edb9cac0c30415eefd62216206c5952d3ae8f2868",
+      "bytes": 1634,
+      "redactions": 1
+    },
+    {
+      "path": "pair-redis-cart/scenario-result.json",
+      "sha256": "bfd9ec9428169c4998bad009a2ec477c920e84a8505b93cf1a368641f5d22a9e",
+      "bytes": 1459,
+      "redactions": 0
+    },
+    {
+      "path": "pair-result.json",
+      "sha256": "d475114efc13f3db1e08f28a400e1eae52c03fe6f84e0b780ef69d539c3b332e",
+      "bytes": 6551,
+      "redactions": 0
+    },
+    {
+      "path": "pair-storefront-impact.json",
+      "sha256": "7119742a8fe1109e3e325d5ad7125044b0319aed1a7a799a65ff16a7fa3d7f6d",
+      "bytes": 313,
+      "redactions": 0
+    },
+    {
+      "path": "policies/cartservice.json",
+      "sha256": "4d31697953d127ec4dec9ee377763b0a88d4ec55fb63a15a524579cae77246eb",
+      "bytes": 2470,
+      "redactions": 0
+    },
+    {
+      "path": "policies/redis-cart.json",
+      "sha256": "8e8315d02f1bfeb537ad1c9080d10081aab11e8f9cb3c106be0a516abe6df00f",
+      "bytes": 2429,
+      "redactions": 0
+    },
+    {
+      "path": "rbac-checks.json",
+      "sha256": "8d9398623451d93c887437b664b57bdbb10753dbec5cd664dd19696b8e2d1529",
+      "bytes": 1005,
+      "redactions": 0
+    },
+    {
+      "path": "redis-cart-pair-2-incident.json",
+      "sha256": "0683434a49ebdc67d05eae513709066a3dcc877d5ba840d620f4920df634a5bf",
+      "bytes": 11923,
+      "redactions": 1
+    },
+    {
+      "path": "summary.json",
+      "sha256": "48ff36e579662657d2888c008a471ddb4fa3e1b14fc2755578007c146237d781",
+      "bytes": 7231,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

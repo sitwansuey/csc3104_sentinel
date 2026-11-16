@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "batch_id": "boutique-chaos-20261110T201641Z-bb0f10",
+  "started_at": "2026-11-10T20:16:41.902391Z",
+  "configuration": {
+    "schema_version": 1,
+    "mode": "demo",
+    "faults": [
+      "cpu"
+    ],
+    "baseline_seconds": 10,
+    "fault_seconds": 120,
+    "recovery_seconds": 10,
+    "sample_interval": 5,
+    "traffic_interval": 1,
+    "traffic_workers": 1,
+    "operator_gates": true,
+    "target": null
+  },
+  "context": "kind-sentinel-boutique-chaos",
+  "namespace": "sentinel-boutique-chaos",
+  "order": [
+    "cpu"
+  ],
+  "runs": [
+    {
+      "run_id": "0001-cpu-2b8f1b08",
+      "status": "failed",
+      "injection_confirmed": true,
+      "cleanup_confirmed": true,
+      "baseline_healthy": true,
+      "recovery_healthy": false,
+      "recovery_attribution": "no_sentinel_action; chaos_expiry_or_harness_cleanup",
+      "errors": [
+        "KeyboardInterrupt: "
+      ],
+      "telemetry_complete": true,
+      "interrupted": true,
+      "collection_errors": 0,
+      "log_gaps": 0,
+      "collection_samples": 6,
+      "collection_overruns": 0,
+      "completed_at": "2026-11-10T20:17:08.428056Z",
+      "fault_window_journeys": 0,
+      "observed_failed_fault_journeys": 0
+    }
+  ],
+  "status": "failed",
+  "error": "RuntimeError: Stopping after an incomplete demonstration: KeyboardInterrupt: ",
+  "completed_at": "2026-11-10T20:17:08.717319Z"
+}

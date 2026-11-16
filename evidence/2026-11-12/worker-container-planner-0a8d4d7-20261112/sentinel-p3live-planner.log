@@ -1,0 +1,54 @@
+2026-11-12T16:13:52.790093487Z {"status": "idle"}
+2026-11-12T16:13:54.810704444Z {"status": "idle"}
+2026-11-12T16:13:56.831600237Z {"status": "idle"}
+2026-11-12T16:13:58.847892131Z {"status": "idle"}
+2026-11-12T16:14:00.861072112Z {"status": "idle"}
+2026-11-12T16:14:02.880639737Z {"status": "idle"}
+2026-11-12T16:14:04.896428874Z {"status": "idle"}
+2026-11-12T16:14:06.914790165Z {"status": "idle"}
+2026-11-12T16:14:08.930147836Z {"status": "idle"}
+2026-11-12T16:14:10.945604744Z {"status": "idle"}
+2026-11-12T16:14:12.961142188Z {"status": "idle"}
+2026-11-12T16:14:14.976430126Z {"status": "idle"}
+2026-11-12T16:14:16.992475682Z {"status": "idle"}
+2026-11-12T16:14:19.008358654Z {"status": "idle"}
+2026-11-12T16:14:21.023636920Z {"status": "idle"}
+2026-11-12T16:14:23.057679965Z {"status": "idle"}
+2026-11-12T16:14:25.073885200Z {"status": "idle"}
+2026-11-12T16:14:27.092376686Z {"status": "idle"}
+2026-11-12T16:14:29.108088536Z {"status": "idle"}
+2026-11-12T16:16:39.830025766Z {"ts":"2026-11-12T16:16:39.829Z","mono":40245.715,"level":"info","component":"worker_service","logger":"sentinel.trace","event":"span.end","identity":"planner-1","role":"planner","delivery_id":"4d32ee1900254937916afcffdb1b333e","event_id":1,"topic":"planner.request","attempt":1,"incident_id":"INC-90ED7FECF863","trace_id":"58619458beb79d51823e4210c9116698","span_id":"3be680cfccc1d17c","span_name":"worker.result","parent_span_id":"c946512642e713a5","status":"ok","duration_ms":219.537}
+2026-11-12T16:16:39.830235840Z {"ts":"2026-11-12T16:16:39.829Z","mono":40245.715,"level":"info","component":"worker_service","logger":"sentinel.trace","event":"span.end","identity":"planner-1","role":"planner","delivery_id":"4d32ee1900254937916afcffdb1b333e","event_id":1,"topic":"planner.request","attempt":1,"incident_id":"INC-90ED7FECF863","trace_id":"58619458beb79d51823e4210c9116698","span_id":"c946512642e713a5","span_name":"worker.process","parent_span_id":"8daa337980a3cedd","status":"ok","duration_ms":128697.311}
+2026-11-12T16:16:39.830282834Z {"status": "accepted", "replay": false}
+2026-11-12T16:16:39.830470587Z {"ts":"2026-11-12T16:16:39.830Z","mono":40245.716,"level":"info","component":"worker_service","logger":"sentinel.worker_service","event":"worker.status","identity":"planner-1","role":"planner","status":"accepted","replay":false,"delivery_id":"4d32ee1900254937916afcffdb1b333e","event_id":1,"topic":"planner.request","incident_id":"INC-90ED7FECF863"}
+2026-11-12T16:16:41.950602696Z {"status": "idle"}
+2026-11-12T16:16:44.034607729Z {"status": "idle"}
+2026-11-12T16:16:46.136025072Z {"status": "idle"}
+2026-11-12T16:16:48.184105807Z {"status": "idle"}
+2026-11-12T16:16:50.276078915Z {"status": "idle"}
+2026-11-12T16:16:52.356703146Z {"status": "idle"}
+2026-11-12T16:16:54.506988545Z {"status": "idle"}
+2026-11-12T16:16:56.543863589Z {"status": "idle"}
+2026-11-12T16:16:58.583070136Z {"status": "idle"}
+2026-11-12T16:17:00.622115828Z {"status": "idle"}
+2026-11-12T16:17:02.679819010Z {"status": "idle"}
+2026-11-12T16:17:04.725310202Z {"status": "idle"}
+2026-11-12T16:17:06.833307697Z {"status": "idle"}
+2026-11-12T16:17:08.916537818Z {"status": "idle"}
+2026-11-12T16:17:11.133856004Z {"status": "idle"}
+2026-11-12T16:17:13.218322302Z {"status": "idle"}
+2026-11-12T16:17:15.283798489Z {"status": "idle"}
+2026-11-12T16:17:17.343912372Z {"status": "idle"}
+2026-11-12T16:17:19.445563152Z {"status": "idle"}
+2026-11-12T16:17:21.555032291Z {"status": "idle"}
+2026-11-12T16:17:23.637275832Z {"status": "idle"}
+2026-11-12T16:17:25.697036252Z {"status": "idle"}
+2026-11-12T16:17:27.787290973Z {"status": "idle"}
+2026-11-12T16:17:29.853976189Z {"status": "idle"}
+2026-11-12T16:17:31.967666004Z {"status": "idle"}
+2026-11-12T16:17:34.008124365Z {"status": "idle"}
+2026-11-12T16:17:36.218039768Z {"status": "idle"}
+2026-11-12T16:17:38.289831349Z {"status": "idle"}
+2026-11-12T16:17:40.326960579Z {"status": "idle"}
+2026-11-12T16:17:42.366181049Z {"status": "idle"}
+2026-11-12T16:17:44.436930917Z {"status": "idle"}

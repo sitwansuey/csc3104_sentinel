@@ -1,0 +1,234 @@
+{
+  "incident_id": "INC-9502BADC7BEE",
+  "kind": "incident",
+  "observed_at": "2026-11-13T12:26:25.877044Z",
+  "observed_generation": 2,
+  "observed_resource_version": "196627",
+  "schema_version": "1.0",
+  "signals": [
+    {
+      "at": "2026-11-13T12:26:19.976240Z",
+      "detail": "Deployment sentinel-boutique-connected/redis-cart desired 1, ready 0, available 0; resourceVersion 196627, generation 2",
+      "evidence_id": "E-4AE89CDD2527",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-13T12:26:19.976240Z",
+      "detail": "Pod redis-cart-58cd57c677-f2rg7 container redis is not ready; phase Running; restartCount 8; back-off 40s restarting failed container=redis pod=redis-cart-58cd57c677-f2rg7_sentinel-boutique-connected(6dce7205-9b86-46af-8a84-a3cbd31c3473); last exitCode 0",
+      "evidence_id": "E-A368A9F16FD2",
+      "reason": "CrashLoopBackOff",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-13T12:26:19Z",
+      "detail": "Deployment does not have minimum availability.",
+      "evidence_id": "E-7C8B80185C45",
+      "reason": "MinimumReplicasUnavailable",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:23:54Z",
+      "detail": "Readiness probe failed: dial tcp <private-ip>:6379: connect: connection refused",
+      "evidence_id": "E-6894A5DCA0FF",
+      "reason": "Unhealthy",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:26:18Z",
+      "detail": "Container image \"gcr.io/google-containers/pause:latest\" is not present with pull policy of Never",
+      "evidence_id": "E-5E7020861562",
+      "reason": "ErrImageNeverPull",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:26:18Z",
+      "detail": "Error: ErrImageNeverPull",
+      "evidence_id": "E-477D4D6A2F15",
+      "reason": "Failed",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:23:54.835806Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:54.835806364Z 1:M 13 Nov 2026 12:23:54.835 * <ReJSON> Enabled diskless replication",
+      "evidence_id": "E-1530DEF1A4FE",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:54.835958Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:54.835958758Z 1:M 13 Nov 2026 12:23:54.835 * <ReJSON> Initialized shared string cache, thread safe: true.",
+      "evidence_id": "E-C1A92AE2FFA2",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:54.836110Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:54.836110033Z 1:M 13 Nov 2026 12:23:54.835 * Module 'ReJSON' loaded from /usr/local/lib/redis/modules//rejson.so",
+      "evidence_id": "E-BCC1C8F21D15",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:54.836116Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:54.836116344Z 1:M 13 Nov 2026 12:23:54.836 * <search> Acquired RedisJSON_V8 API",
+      "evidence_id": "E-F8E534AEDF65",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:54.840830Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:54.840830006Z 1:M 13 Nov 2026 12:23:54.840 * Server initialized",
+      "evidence_id": "E-3175E82D3630",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:54.841017Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:54.841017553Z 1:M 13 Nov 2026 12:23:54.840 * <search> LOAD start source=RDB_FILE sst=false disk=rebuild-from-keyspace",
+      "evidence_id": "E-CCF153BD64ED",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:54.841061Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:54.841061176Z 1:M 13 Nov 2026 12:23:54.840 * Loading RDB produced by version 8.10.3",
+      "evidence_id": "E-A954F0FBA349",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:54.841065Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:54.841065136Z 1:M 13 Nov 2026 12:23:54.841 * RDB age 19 seconds",
+      "evidence_id": "E-0C3E3EBDAD87",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:54.841066Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:54.841066707Z 1:M 13 Nov 2026 12:23:54.841 * RDB memory usage when created 1.67 Mb",
+      "evidence_id": "E-DFD79256E8C8",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:54.841446Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:54.841446606Z 1:M 13 Nov 2026 12:23:54.841 * Done loading RDB, keys loaded: 434, keys expired: 0.",
+      "evidence_id": "E-0877D02F0CAE",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:54.841455Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:54.841455517Z 1:M 13 Nov 2026 12:23:54.841 * <search> LOAD end disk=rebuild-from-keyspace ok=true",
+      "evidence_id": "E-D7CCE1472D1C",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:54.841609Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:54.841609946Z 1:M 13 Nov 2026 12:23:54.841 * DB loaded from disk: 0.001 seconds",
+      "evidence_id": "E-F37DD5BB4EB1",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:54.841617Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:54.841617937Z 1:M 13 Nov 2026 12:23:54.841 * Ready to accept connections tcp",
+      "evidence_id": "E-D9691CC6CE41",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:23:54.841620Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:23:54.841620537Z 1:M 13 Nov 2026 12:23:54.841 # WARNING: Redis does not require authentication and is not protected by network restrictions. Redis will accept connections from any IP address on any network interface.",
+      "evidence_id": "E-D7A7084CBD71",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:26:18.706466Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:26:18.706466043Z 1:signal-handler (1794572778) Received SIGTERM scheduling shutdown...",
+      "evidence_id": "E-044C11915581",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:26:18.713717Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:26:18.713717417Z 1:M 13 Nov 2026 12:26:18.713 * User requested shutdown...",
+      "evidence_id": "E-CC04B54E504F",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:26:18.713731Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:26:18.713731058Z 1:M 13 Nov 2026 12:26:18.713 * Saving the final RDB snapshot before exiting.",
+      "evidence_id": "E-8099924F3DDA",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:26:18.714776Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:26:18.714776522Z 1:M 13 Nov 2026 12:26:18.714 * BGSAVE done, 443 keys saved, 0 keys skipped, 36168 bytes written.",
+      "evidence_id": "E-0868BD8EFBFB",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:26:18.743827Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:26:18.743827755Z 1:M 13 Nov 2026 12:26:18.743 * DB saved on disk",
+      "evidence_id": "E-7C11C967C2B5",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:26:18.743844Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:26:18.743844436Z 1:M 13 Nov 2026 12:26:18.743 # Redis is now ready to exit, bye bye...",
+      "evidence_id": "E-ADBAB2CF3333",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:26:04.000000Z",
+      "detail": "{\"at\": \"2026-11-13T12:26:04.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-955baecd4a37fd4d3ff6b25c176849832ef3d0f9d995fd51dcf8f241efb81035\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.memory.working_set\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"6dce7205-9b86-46af-8a84-a3cbd31c3473\", \"service\": \"redis-cart\", \"signal\": \"metrics\", \"unit\": \"By\", \"value\": 17354752}",
+      "evidence_id": "OTEL-955baecd4a37fd4d3ff6b25c176849832ef3d0f9d995fd51dcf8f241efb81035",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T12:26:04.000000Z",
+      "detail": "{\"at\": \"2026-11-13T12:26:04.000000Z\", \"attributes\": {}, \"evidence_id\": \"OTEL-bc9c69437a752b5f74ead2e389b37d564e13bbd1f00a24432415a3af0561bc7a\", \"metric_kind\": \"gauge\", \"name\": \"k8s.pod.cpu.usage\", \"namespace\": \"sentinel-boutique-connected\", \"pod_uid\": \"6dce7205-9b86-46af-8a84-a3cbd31c3473\", \"service\": \"redis-cart\", \"signal\": \"metrics\", \"unit\": \"cores\", \"value\": 0.001279811}",
+      "evidence_id": "OTEL-bc9c69437a752b5f74ead2e389b37d564e13bbd1f00a24432415a3af0561bc7a",
+      "reason": "CorrelatedTelemetry",
+      "source": "otel_metrics"
+    },
+    {
+      "at": "2026-11-13T12:26:25.877044Z",
+      "detail": "Deployment sentinel-boutique-connected/redis-cart desired 1, ready 0, available 0; resourceVersion 196627, generation 2",
+      "evidence_id": "E-0DF88654D4C3",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-13T12:26:25.877044Z",
+      "detail": "Pod redis-cart-58cd57c677-f2rg7 container redis is not ready; phase Running; restartCount 8; back-off 40s restarting failed container=redis pod=redis-cart-58cd57c677-f2rg7_sentinel-boutique-connected(6dce7205-9b86-46af-8a84-a3cbd31c3473); last exitCode 0",
+      "evidence_id": "E-A2EBC9970482",
+      "reason": "CrashLoopBackOff",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-13T12:26:21Z",
+      "detail": "Back-off restarting failed container redis in pod redis-cart-58cd57c677-f2rg7_sentinel-boutique-connected(6dce7205-9b86-46af-8a84-a3cbd31c3473)",
+      "evidence_id": "E-A9B9C9B121E0",
+      "reason": "BackOff",
+      "source": "event"
+    }
+  ],
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "redis-cart",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "1f95bce9-4a04-441b-8395-6370d7200682"
+  }
+}

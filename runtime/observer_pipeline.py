@@ -9,11 +9,11 @@ from pathlib import Path
 import sqlite3
 
 from services.observer.core import Observer, validate_observation
+from shared.canonical import canonical_json as encoded
 from shared.contracts import validate_message
+from shared import log
 
-
-def encoded(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+LOG = log.get_logger("observer")
 
 
 class ObserverStore:
@@ -113,7 +113,8 @@ class ObserverStore:
         for incident in self.pending():
             try:
                 sink(deepcopy(incident))
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - the incident stays queued and is sent on the next flush
+                log.failure(LOG, "observer.delivery.failed", error, incident_id=incident.get("incident_id"))
                 self._delivery_status(type(error).__name__)
                 return {"delivered": delivered, "error": type(error).__name__}
             # A crash before this acknowledgment replays the identical message.
@@ -170,11 +171,5 @@ class LocalCoordinatorSink:
 
     def __call__(self, incident):
         from services.coordinator.core import SQLiteStore, record_message
-        with SQLiteStore(self.path) as store:
-            store.db.execute("BEGIN IMMEDIATE")
-            try:
-                record_message(incident, store)
-                store.db.execute("COMMIT")
-            except BaseException:
-                store.db.execute("ROLLBACK")
-                raise
+        with SQLiteStore(self.path) as store, store.transaction():
+            record_message(incident, store)

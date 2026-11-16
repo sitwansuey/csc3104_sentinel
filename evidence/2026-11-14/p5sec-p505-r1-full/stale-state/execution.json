@@ -1,0 +1,22 @@
+{
+  "action_id": "ACT-LIVE-ac2abed9c9e041b39c2626584415929c",
+  "conflict": {
+    "basis": "NOT_SENT",
+    "generation": 3,
+    "resource_version": "4838"
+  },
+  "details": "Target identity or resource version changed; obtain a new proposal and validation.",
+  "incident_id": "INC-F6FAC99FF614",
+  "kind": "execution_result",
+  "recorded_at": "2026-11-14T18:25:33.133647Z",
+  "resource_version": "4838",
+  "schema_version": "1.0",
+  "status": "CONFLICT",
+  "target": {
+    "cluster_id": "sentinel-boutique-security",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-security",
+    "uid": "7027d33a-88de-400c-aa21-03cb60de1f45"
+  }
+}

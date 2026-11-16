@@ -1,0 +1,40 @@
+# Optional agent-mode Planner identity for the sentinel-dist lab. Not part of
+# the default overlay (kustomization.yaml), which runs the deterministic
+# Planner with no Kubernetes token. docs/remote-workers.md: "an agent-mode
+# Planner needs read-only get on its target Deployment", because the agent
+# reads the target before diagnosis and again before it saves a ROLLBACK.
+# To use it, apply this file, set serviceAccountName: sentinel-planner-reader
+# and automountServiceAccountToken: true on sentinel-planner-1, give its
+# worker.json "mode": "agent" with "in_cluster": true (and no provider), add
+# the label sentinel.io/api-access: "true" so networkpolicy.yaml lets it reach
+# the API server, and allow egress to the model endpoint. Untested live.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sentinel-planner-reader
+  namespace: sentinel-dist
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sentinel-dist-planner-reader
+  namespace: sentinel-dist-workload
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["demo-api"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sentinel-dist-planner-reader
+  namespace: sentinel-dist-workload
+subjects:
+  - kind: ServiceAccount
+    name: sentinel-planner-reader
+    namespace: sentinel-dist
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sentinel-dist-planner-reader

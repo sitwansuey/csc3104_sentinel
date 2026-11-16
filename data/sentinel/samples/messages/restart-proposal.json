@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "incident_id": "INC-DEMO-002",
+  "target": {
+    "cluster_id": "sentinel-lab",
+    "namespace": "sentinel-demo",
+    "kind": "Deployment",
+    "name": "demo-api",
+    "uid": "synthetic-demo-uid-001"
+  },
+  "kind": "proposal",
+  "action_id": "ACT-DEMO-002",
+  "action": "RESTART",
+  "parameters": {
+    "baseline_id": "BASE-DEMO-001",
+    "restart_token": "RST-22377f265f3afd12",
+    "template_sha256": "851723dbbb2fb1bdc40d470680019c7888a70b45d6475e1f368c592d294b3ebb"
+  },
+  "based_on_resource_version": "101",
+  "rationale": "Pods are not ready while the live configuration equals the reviewed healthy baseline; restart them from that template.",
+  "evidence_refs": [
+    "E-POD-2"
+  ]
+}

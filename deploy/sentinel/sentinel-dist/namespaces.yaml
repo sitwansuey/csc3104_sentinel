@@ -1,0 +1,22 @@
+# Namespaces of the sentinel-dist lab (P4.01). Sentinel's own pods run in
+# sentinel-dist; the target workload runs in sentinel-dist-workload, so the
+# Executor's write rights and the admission policy cover that namespace only.
+# Chaos Mesh runs with enableFilterNamespace, so only a namespace annotated
+# for injection can be faulted: the Sentinel namespace is, the workload is not.
+# This is a lab fault deployment: every worker runs with the fault-point gate
+# bound to cluster sentinel-dist (runtime/fault_points.py).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sentinel-dist
+  labels:
+    sentinel.io/lab: sentinel-dist
+  annotations:
+    chaos-mesh.org/inject: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sentinel-dist-workload
+  labels:
+    sentinel.io/lab: sentinel-dist

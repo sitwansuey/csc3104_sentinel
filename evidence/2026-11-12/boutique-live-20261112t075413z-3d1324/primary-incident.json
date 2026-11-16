@@ -1,0 +1,66 @@
+{
+  "incident_id": "INC-2AF84E386B99",
+  "kind": "incident",
+  "observed_at": "2026-11-12T07:55:33.759529Z",
+  "observed_generation": 112,
+  "observed_resource_version": "95090",
+  "schema_version": "1.0",
+  "signals": [
+    {
+      "at": "2026-11-12T07:55:26.531648Z",
+      "detail": "Deployment sentinel-boutique-connected/shippingservice desired 1, ready 0, available 0; resourceVersion 95090, generation 112",
+      "evidence_id": "E-7A1AD9F8A1F8",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-12T07:55:26.531648Z",
+      "detail": "Pod shippingservice-747bf5d46f-v6lb7 container server is not ready; phase Pending; restartCount 0; Container image \"us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:a79b632a6d063c20bd30595829ad968fad5e3ba188c9d6b9335381e059d5019f\" is not present with pull policy of Never",
+      "evidence_id": "E-5E59CA91C02B",
+      "reason": "ErrImageNeverPull",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-12T07:55:24Z",
+      "detail": "Deployment does not have minimum availability.",
+      "evidence_id": "E-F8105B2264A8",
+      "reason": "MinimumReplicasUnavailable",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-12T07:55:25Z",
+      "detail": "Container image \"us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:a79b632a6d063c20bd30595829ad968fad5e3ba188c9d6b9335381e059d5019f\" is not present with pull policy of Never",
+      "evidence_id": "E-32CAE6C98D2C",
+      "reason": "ErrImageNeverPull",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-12T07:55:25Z",
+      "detail": "Error: ErrImageNeverPull",
+      "evidence_id": "E-A4A597BA9B61",
+      "reason": "Failed",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-12T07:55:33.759529Z",
+      "detail": "Deployment sentinel-boutique-connected/shippingservice desired 1, ready 0, available 0; resourceVersion 95090, generation 112",
+      "evidence_id": "E-6C63F2EE9E44",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-12T07:55:33.759529Z",
+      "detail": "Pod shippingservice-747bf5d46f-v6lb7 container server is not ready; phase Pending; restartCount 0; Container image \"us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:a79b632a6d063c20bd30595829ad968fad5e3ba188c9d6b9335381e059d5019f\" is not present with pull policy of Never",
+      "evidence_id": "E-90195C02518D",
+      "reason": "ErrImageNeverPull",
+      "source": "pod_status"
+    }
+  ],
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

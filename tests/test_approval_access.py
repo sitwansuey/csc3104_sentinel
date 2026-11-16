@@ -2,6 +2,7 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from http.server import ThreadingHTTPServer
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -20,6 +21,7 @@ from services.coordinator.store import _digest
 from services.executor.core import ExecutionAdapters, execute
 from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedger
 from services.guard.core import evaluate_with_report
+from shared import log
 from tests.support.executor_fake import FakeDeploymentAPI
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -172,6 +174,38 @@ class ApprovalAccessTests(unittest.TestCase):
         self.assertEqual(history[0]["revocation"], revoked["revocation"])
         self.assertIsNone(history[1]["revocation"])
         self.assertEqual(self.guard()[0]["verdict"], "ALLOW")
+
+    def test_approval_and_revocation_are_journaled_with_their_cause(self):
+        created = self.create()
+        self.assertEqual(self.guard()[0]["verdict"], "ALLOW")
+        self.revoke(created)
+        self.revoke(created)  # An exact retry changes nothing and journals nothing.
+        moves = [(t["from_state"], t["to_state"], t["cause"])
+                 for t in self.store.transitions(self.proposal["incident_id"])]
+        self.assertEqual([move[:2] for move in moves[-3:]], [
+            ("AWAITING_APPROVAL", "VALIDATING"), ("VALIDATING", "READY"), ("READY", "VALIDATING")])
+        self.assertEqual(moves[-3][2], "approval")
+        self.assertTrue(moves[-2][2].startswith('["guard_result"'))
+        self.assertEqual(moves[-1][2], "revocation")
+
+    def test_approval_denials_and_conflicts_log_one_line_each_without_credentials(self):
+        stream = io.StringIO()
+        wrong = "w" * 40
+        cases = ((401, "auth.denied", "invalid_credentials", lambda: self.client(token=wrong).post("read", self.binding)),
+                 (403, "auth.denied", "not_permitted", lambda: self.client("other").post("read", self.binding)),
+                 (409, "http.access", "precondition_changed", lambda: self.client().post(
+                     "read", dict(self.binding, proposal_sha256="0" * 64))))
+        with log.configured("test", level="DEBUG", stream=stream):
+            for status, event, reason, call in cases:
+                with self.subTest(status=status):
+                    offset = len(stream.getvalue())
+                    self.assert_status(status, call)
+                    (record,) = [json.loads(line) for line in stream.getvalue()[offset:].splitlines()]
+                    self.assertEqual((record["event"], record["http_status"], record["reason"], record["operation"]),
+                                     (event, status, reason, "read"))
+        text = stream.getvalue()
+        for secret in (wrong, "Bearer", *(token for _, token in self.services.values())):
+            self.assertNotIn(secret, text)
 
     def test_delayed_guard_allow_cannot_restore_revoked_authority(self):
         created = self.create()

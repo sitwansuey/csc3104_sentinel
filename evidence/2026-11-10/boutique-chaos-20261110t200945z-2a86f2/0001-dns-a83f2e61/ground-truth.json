@@ -1,0 +1,20 @@
+{
+  "run_id": "0001-dns-a83f2e61",
+  "fault": "dns",
+  "target": {
+    "namespaces": [
+      "sentinel-boutique-chaos"
+    ],
+    "labelSelectors": {
+      "app": "recommendationservice"
+    }
+  },
+  "windows": {
+    "baseline": [
+      "2026-11-10T20:09:48.268958Z",
+      "2026-11-10T20:10:18.269810Z"
+    ]
+  },
+  "injection_confirmed": false,
+  "note": "Host-observed windows; authoritative controller transitions are in chaos-status.jsonl. Injection is not proof of user-visible impact."
+}

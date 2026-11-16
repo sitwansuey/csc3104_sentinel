@@ -1,0 +1,45 @@
+{
+  "incident_id": "INC-B81DD9BCD8F1",
+  "kind": "incident",
+  "observed_at": "2026-11-12T11:20:13.160555Z",
+  "observed_generation": 7,
+  "observed_resource_version": "113357",
+  "schema_version": "1.0",
+  "signals": [
+    {
+      "at": "2026-11-12T11:20:07.067150Z",
+      "detail": "Deployment generation 7 has not been fully observed; status observedGeneration is 6",
+      "evidence_id": "E-221914B9C182",
+      "reason": "RolloutNotObserved",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-12T11:20:13.160555Z",
+      "detail": "Deployment sentinel-boutique-connected/cartservice desired 1, ready 0, available 0; resourceVersion 113357, generation 7",
+      "evidence_id": "E-9D122F9FB473",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-12T11:20:13.160555Z",
+      "detail": "Pod cartservice-5746c4c964-htdjl container server is not ready; phase Running; restartCount 0",
+      "evidence_id": "E-79CE0654A424",
+      "reason": "ContainerNotReady",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-12T11:20:07Z",
+      "detail": "Deployment does not have minimum availability.",
+      "evidence_id": "E-6CC1D2138C5D",
+      "reason": "MinimumReplicasUnavailable",
+      "source": "event"
+    }
+  ],
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "cartservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+  }
+}

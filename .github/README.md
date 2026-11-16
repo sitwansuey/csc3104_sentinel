@@ -72,3 +72,28 @@ python -m unittest discover -s tests -p "test_project_status.py" -v
 
 References: [GitHub issue branches](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/creating-a-branch-for-an-issue)
 and [Projects automation](https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/automating-projects-using-actions).
+
+# Merge audit: report-only
+
+Branch protection, required reviews and rulesets are not available on this
+private free-plan repository, so nothing blocks a merge without review. The
+**Merge audit** workflow runs on every push to main. For each merged PR it
+lists the approvals from someone other than the PR author and the check runs
+on the PR head, and writes the result to the job summary with a warning per
+flagged merge. An approval counts only if it was given on the commit that was
+merged; an approval on an earlier commit is flagged, because the later
+changes were not reviewed. A direct push without a PR is flagged too. Any API error makes
+the row UNVERIFIED; it is never counted as reviewed. The job stays green: it
+makes merges visible, it does not enforce anything.
+
+The workflow token is read-only. To audit recent merges locally through `gh`:
+
+```text
+python .github/scripts/merge_audit.py --via-gh --recent 10   # 1 to 100
+python -m unittest tests.test_merge_audit -v
+```
+
+There is no CODEOWNERS file. Code owners cannot be required on this plan, most
+components have been changed by three or more people, and large consolidation
+PRs cut across all of them. Revisit this if the team moves to a plan with
+branch protection.

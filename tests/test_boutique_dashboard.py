@@ -109,7 +109,8 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
                 "incident_id", "action_id", "verdict", "checked_at", "inputs_sha256")})
             self.snapshot["messages"].append({"message": dict(identity, kind="dependency_result", status="CLEAR")})
             if not rejected:
-                self.snapshot["approvals"].append({"record": {"action_id": identity["action_id"]}})
+                self.snapshot["approvals"].append({"record": {"action_id": identity["action_id"],
+                                                              "decision": "APPROVED", "protected": True}})
                 self.snapshot["outbox"].append({"topic": "executor.request", "action_id": identity["action_id"]})
                 self.snapshot["messages"].append({"message": dict(identity, kind="outcome", status="RECOVERED",
                                                                   checks=[{"passed": True}])})
@@ -126,7 +127,15 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
             "before": before, "after": deepcopy(before), "unchanged": {key: True for key in UNCHANGED_FIELDS},
         }
 
-    def verify(self, *, rejection_only=False):
+    @staticmethod
+    def write_approvals(root, operator_id="lab-operator"):
+        """The managed approvals each recovery folder saved, as the live harness writes them."""
+        for folder, action_id in (("approved-rollback", "ACT-0"), ("crash-after-write", "ACT-1")):
+            (root / folder).mkdir(exist_ok=True)
+            (root / folder / "approval.json").write_text(json.dumps(
+                {"action_id": action_id, "operator_id": operator_id, "decision": "APPROVED"}), encoding="utf-8")
+
+    def verify(self, *, rejection_only=False, operator_id="lab-operator"):
         class Response(BytesIO):
             status = 200
 
@@ -134,6 +143,7 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
             root = Path(directory)
             (root / "unnecessary-rollback").mkdir()
             (root / "unnecessary-rollback" / "proof.json").write_text(json.dumps(self.proof), encoding="utf-8")
+            self.write_approvals(root)
             dashboard = BoutiqueDashboard(root, context="test-context", cluster_id="test-cluster",
                                           namespace="test-namespace", port=0)
             dashboard.url = "http://127.0.0.1:9999"
@@ -141,7 +151,8 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
                 Response(b'<html><script src="/assets/test.js"></script></html>'),
                 Response(json.dumps(self.snapshot).encode("utf-8")),
             ]) as fetch:
-                result = dashboard.verify_rejection() if rejection_only else dashboard.verify()
+                result = (dashboard.verify_rejection() if rejection_only
+                          else dashboard.verify(operator_id=operator_id))
             self.assertEqual(fetch.call_count, 2)
             self.assertEqual(json.loads((root / "dashboard-validation.json").read_text()), result)
             self.assertEqual(json.loads((root / "dashboard-snapshot.json").read_text()), self.snapshot)
@@ -167,14 +178,97 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
             (root / "approved-rollback").mkdir()
             calls = root / "approved-rollback/model-calls.json"
             calls.write_text(json.dumps([{"role": "Recovery Planner"}]))
+            self.write_approvals(root)
             dashboard = BoutiqueDashboard(root, context="test-context", cluster_id="test-cluster",
                                           namespace="test-namespace", port=0)
             dashboard.url = "http://127.0.0.1:9999"
             with patch.object(dashboard, "_snapshot", return_value=snapshot):
-                self.assertEqual(dashboard.verify_agent()["status"], "PASS")
+                self.assertEqual(dashboard.verify_agent(operator_id="lab-operator")["status"], "PASS")
                 calls.write_text("[]")
                 with self.assertRaisesRegex(RuntimeError, "model planning"):
-                    dashboard.verify_agent()
+                    dashboard.verify_agent(operator_id="lab-operator")
+
+    def test_recovery_approvals_must_be_managed_and_from_the_configured_identity(self):
+        self.assertEqual(self.verify()["status"], "PASS")
+        with self.assertRaisesRegex(RuntimeError, "not from the configured identity"):
+            self.verify(operator_id="automated-lab")
+        original = deepcopy(self.snapshot)
+        # A legacy approve() record is shown in full, without the protected marker.
+        self.snapshot["approvals"][1]["record"] = {"action_id": "ACT-1", "operator_id": "lab-operator",
+                                                   "decision": "APPROVED"}
+        with self.assertRaisesRegex(RuntimeError, "not created through the authenticated approval API"):
+            self.verify()
+        self.snapshot = original
+        self.snapshot["approvals"][0]["record"]["protected"] = False
+        with self.assertRaisesRegex(RuntimeError, "not created through the authenticated approval API"):
+            self.verify()
+
+    def escalated(self):
+        """One agent incident that planning escalated: no Guard, approval, execution or outcome."""
+        snapshot = deepcopy(self.snapshot)
+        incident = dict(snapshot["incidents"][0], state="NEEDS_REVIEW")
+        proposal = dict(snapshot["actions"][0]["proposal"], action="ESCALATE")
+        snapshot.update(incidents=[incident], approvals=[], outbox=[], messages=[], actions=[dict(
+            snapshot["actions"][0], state="NEEDS_REVIEW", proposal=proposal, guard_result=None,
+            execution_result=None)])
+        status = {"incident_id": "INC-0", "attempts": 3, "error_code": "MODEL_UNAVAILABLE",
+                  "delivered": 1, "proposal": proposal}
+        return snapshot, status
+
+    def verify_escalated(self, snapshot, status, *, session_started=False):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "approved-rollback").mkdir()
+            (root / "approved-rollback/planning-status.json").write_text(json.dumps(status))
+            if session_started:  # The approval authority writes this file when it starts.
+                (root / "approval-identities.json").write_text("{}")
+            dashboard = BoutiqueDashboard(root, context="test-context", cluster_id="test-cluster",
+                                          namespace="test-namespace", port=0)
+            dashboard.url = "http://127.0.0.1:9999"
+            with patch.object(dashboard, "_snapshot", return_value=snapshot):
+                return dashboard.verify_agent("escalated")
+
+    def test_agent_dashboard_accepts_a_delivered_escalation_with_no_downstream_work(self):
+        result = self.verify_escalated(*self.escalated())
+        self.assertEqual((result["status"], result["scenario"]), ("PASS", "live-agent-escalated"))
+        self.assertEqual((result["error_code"], result["attempts"], result["applied_actions"]),
+                         ("MODEL_UNAVAILABLE", 3, 0))
+
+    def test_agent_dashboard_rejects_an_escalation_that_reached_guard_or_was_not_journaled(self):
+        snapshot, status = self.escalated()
+        proposal = snapshot["actions"][0]["proposal"]
+        for change in ("guard", "approval", "open", "journal", "guard result", "execution result",
+                       "execution message", "outcome message"):
+            with self.subTest(change=change):
+                changed, saved = deepcopy(snapshot), deepcopy(status)
+                expected = "must not reach Guard, approval, the Executor or the Verifier"
+                if change == "guard":
+                    changed["outbox"] = [{"topic": "guard.request", "action_id": "ACT-0"}]
+                elif change == "approval":
+                    changed["approvals"] = [{"record": {"action_id": "ACT-0"}}]
+                elif change == "guard result":
+                    # The outbox stays clean: only the action row shows the Guard decision.
+                    changed["actions"][0]["guard_result"] = {"verdict": "ALLOW"}
+                elif change == "execution result":
+                    changed["actions"][0]["execution_result"] = dict(proposal, kind="execution_result",
+                                                                     status="APPLIED")
+                elif change == "execution message":
+                    changed["messages"] = [{"message": dict(proposal, kind="execution_result", status="APPLIED")}]
+                elif change == "outcome message":
+                    changed["messages"] = [{"message": dict(proposal, kind="outcome", status="RECOVERED",
+                                                            checks=[{"passed": True}])}]
+                elif change == "open":
+                    changed["incidents"][0]["state"] = "OPEN"
+                    expected = "incident in NEEDS_REVIEW"
+                else:
+                    saved["delivered"] = 0
+                    expected = "journal must hold the delivered ESCALATE"
+                with self.assertRaisesRegex(RuntimeError, expected):
+                    self.verify_escalated(changed, saved)
+
+    def test_agent_dashboard_rejects_an_escalation_that_started_the_approval_session(self):
+        with self.assertRaisesRegex(RuntimeError, "must not start the approval session"):
+            self.verify_escalated(*self.escalated(), session_started=True)
 
     def test_standalone_refusal_still_validates_one_rejected_proposal(self):
         for field in ("incidents", "actions", "reports"):
@@ -271,29 +365,56 @@ class BoutiqueDashboardEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "zero counters"):
             self.verify()
 
-    def verify_connected(self, journeys):
-        """Connected acceptance over fake shopping measurements: (action, observed_at, passed) rows."""
+    def verify_connected(self, journeys, *, target=None, fault=None):
+        """Connected acceptance over fake shopping measurements: (action, observed_at, passed) rows.
+
+        target: the run's recovery target (the catalog default when None); fault: the
+        storefront journey measured while the fault is in place (shipping's impact by default).
+        """
         scope = {"cluster_id": "test-cluster", "namespace": "test-namespace", "incident_id": None, "action_id": None}
         broken = {"home_status": 200, "add_to_cart_status": 302, "cart_status": 500, "checkout_status": 500,
                   "passed": False, "order_confirmed": False}
+        faulty = dict(fault or broken, passed=False, order_confirmed=False)
         history = [dict(scope, stage="inventory", observed_at="2026-10-26T09:59:00Z", journey=None,
                         services=[{"name": "service-" + str(index)} for index in range(11)])]
-        history += [dict(scope, stage=stage, observed_at="2026-10-26T09:59:30Z", services=None, journey=dict(broken))
+        history += [dict(scope, stage=stage, observed_at="2026-10-26T09:59:30Z", services=None, journey=dict(faulty))
                     for stage in ("primary-fault", "crash-fault")]
         history += [dict(scope, stage="verification", observed_at=observed_at, services=None, action_id=action,
                          journey=dict(broken, cart_status=200, checkout_status=200, passed=True, order_confirmed=True)
                          if passed else dict(broken))
                     for action, observed_at, passed in journeys]
         snapshot = dict(self.snapshot, boutique_history=history)
+        if target is not None:
+            snapshot["cluster_history"] = [dict(sample, pods=[{"name": target + "-healthy-pod"}])
+                                           for sample in snapshot["cluster_history"]]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "unnecessary-rollback").mkdir()
             (root / "unnecessary-rollback" / "proof.json").write_text(json.dumps(self.proof), encoding="utf-8")
+            self.write_approvals(root)
             dashboard = BoutiqueDashboard(root, context="test-context", cluster_id="test-cluster",
-                                          namespace="test-namespace", port=0, application_collector=lambda: [])
+                                          namespace="test-namespace", port=0, application_collector=lambda: [],
+                                          target=target)
             dashboard.url = "http://127.0.0.1:9999"
             with patch.object(dashboard, "_snapshot", return_value=snapshot):
-                return dashboard.verify()
+                return dashboard.verify(operator_id="lab-operator")
+
+    def test_fault_impact_on_the_dashboard_must_match_the_target_s_catalog_prediction(self):
+        # Seen live on the cart target (C1): every storefront step fails, home included,
+        # while the shipping fault leaves home and add to cart working.
+        confirmed = [(action, "2026-10-26T10:00:" + second + "Z", True)
+                     for action in ("ACT-0", "ACT-1") for second in ("10", "15", "20")]
+        cart_down = {"home_status": 500, "add_to_cart_status": 500, "cart_status": 500, "checkout_status": 500}
+        shipping_down = {"home_status": 200, "add_to_cart_status": 302, "cart_status": 500, "checkout_status": 500}
+        self.assertEqual(self.verify_connected(confirmed, target="cartservice", fault=cart_down)["status"], "PASS")
+        self.assertEqual(self.verify_connected(confirmed, fault=shipping_down)["status"], "PASS")
+        for label, target, fault in (("shipping impact on the cart target", "cartservice", shipping_down),
+                                     ("cart impact on the shipping target", None, cart_down),
+                                     ("cart target with only checkout failing", "cartservice",
+                                      dict(cart_down, home_status=200, add_to_cart_status=302, cart_status=200)),
+                                     ("shipping target with a working cart", None, dict(shipping_down, cart_status=200))):
+            with self.subTest(label), self.assertRaisesRegex(RuntimeError, "downstream shopping failures"):
+                self.verify_connected(confirmed, target=target, fault=fault)
 
     def test_failed_verification_journey_needs_disclosed_pre_window_convergence(self):
         confirmed = [(action, "2026-10-26T10:00:" + second + "Z", True)

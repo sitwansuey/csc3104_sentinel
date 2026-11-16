@@ -1,0 +1,31 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-a56ea65369ce5398f787c813",
+  "based_on_resource_version": "97007",
+  "evidence_refs": [
+    "E-2E2772B7F54D",
+    "E-18A27BC1CC92",
+    "E-5D15C2B90B50",
+    "E-7562199D5719",
+    "E-383BFD7849DF",
+    "E-AEC13BDF73A1",
+    "E-49EC836259AA",
+    "E-C16A8C2446A7",
+    "E-FDB57DFA8889"
+  ],
+  "incident_id": "INC-3C91C50F0BFA",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-235a32d50e8b",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence indicates a container startup failure in the 'shippingservice' deployment, as evidenced by the 'CrashLoopBackOff' status and readiness probe failures. The change evidence shows that the deployment's configuration was modified, specifically the 'PORT' environment variable was changed from '50051' to 'invalid-port'. This change likely caused the container to fail to start, leading to the observed unavailability. The rollback action is appropriate because the evidence supports that a harmful configuration rollout (setting an invalid port) caused the incident. Restoring the previously healthy baseline configuration will revert the faulty change and potentially resolve the issue.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

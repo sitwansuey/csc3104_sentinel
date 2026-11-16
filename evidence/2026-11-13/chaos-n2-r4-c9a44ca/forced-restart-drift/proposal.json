@@ -1,0 +1,25 @@
+{
+  "action": "RESTART",
+  "action_id": "ACT-FORCED-068c3faa0fe74ae696689653ec579cc8",
+  "based_on_resource_version": "170432",
+  "evidence_refs": [
+    "INC-FORCED-DRIFT-87DF0D2EF603",
+    "HEALTH-6d17fed9c21f48ffa5addadb4e3e620c"
+  ],
+  "incident_id": "INC-FORCED-DRIFT-87DF0D2EF603",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-c8dc46e2c2dd",
+    "restart_token": "<redacted:258ef633>",
+    "template_sha256": "5bd64e1fc1498619f123179ed6fcef246b0309184c8bee3bc0c068000eec8aa2"
+  },
+  "rationale": "Harness-forced wrong action for the negative matrix; the Guard must refuse it.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

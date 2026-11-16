@@ -1,0 +1,45 @@
+{
+  "agent_failure": {
+    "error": "RuntimeError: Ollama Analyzer failed for qwen3:14b at 127.0.0.1:9: <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>",
+    "model_attempts": 2,
+    "model_calls_completed": 0,
+    "seconds": 5.3
+  },
+  "agent_model_calls": 2,
+  "checks": [
+    {
+      "at": "2026-11-11T16:05:05.407349Z",
+      "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4",
+      "name": "healthy baseline captured with real service samples and immutable image",
+      "passed": true
+    },
+    {
+      "at": "2026-11-11T16:05:05.949954Z",
+      "name": "real ServiceAccount permits only selected Deployment get/patch; forbidden write denied",
+      "passed": true
+    },
+    {
+      "at": "2026-11-11T16:05:14.164361Z",
+      "cart_status": 500,
+      "checkout_status": 500,
+      "name": "Connected cart and checkout fail while shipping configuration is broken",
+      "passed": true,
+      "scenario": "primary"
+    }
+  ],
+  "dependencies": "Configured upstream address graph; live component readiness; no trace discovery",
+  "error": "Ollama Analyzer failed for qwen3:14b at 127.0.0.1:9: <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>",
+  "error_type": "RuntimeError",
+  "finished_at": "2026-11-11T16:05:19.786725Z",
+  "integration_error": "RuntimeError",
+  "mode": "LIVE Kubernetes; restricted executor credentials",
+  "model": "qwen3:14b",
+  "operator_emergency_restore": true,
+  "planning": "Live RCA agent and Ollama Recovery Planner",
+  "private_executor_credentials_removed": true,
+  "scope": "Online Boutique shippingservice; real Observer/Coordinator/Agent/Guard/Executor/Verifier",
+  "started_at": "2026-11-11T16:03:50.186028Z",
+  "status": "FAILED",
+  "verification": "Actual shipping gRPC, full storefront cart/checkout and dependency readiness",
+  "workload": "Full Online Boutique v0.10.7 with synthetic checkout traffic"
+}

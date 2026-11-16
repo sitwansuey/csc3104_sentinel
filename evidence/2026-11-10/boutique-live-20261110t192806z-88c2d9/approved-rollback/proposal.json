@@ -1,0 +1,29 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-09d87273c2df0f56f9fe8303",
+  "based_on_resource_version": "15462",
+  "evidence_refs": [
+    "E-B3FDA777F445",
+    "E-22BEDCF5BF34",
+    "E-8D395FEEF225",
+    "E-7C0C3AB9D6DA",
+    "E-C1B425D9D276",
+    "E-C5947974F6C3",
+    "E-0EA2990F6C9A"
+  ],
+  "incident_id": "INC-3CB9BFFCDFDE",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-51f7a1f4a7ca",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence indicates that the 'shippingservice' container is failing to start due to an invalid port configuration, as confirmed by the container logs (E-0EA2990F6C9A), which show a fatal error: 'failed to listen: listen tcp: lookup tcp/invalid-port: unknown port'. This failure is corroborated by the CrashLoopBackOff status (E-7C0C3AB9D6DA) and the readiness probe failure (E-C1B425D9D276), which indicate that the container is repeatedly crashing and not becoming ready. The logs and status signals are temporally consistent and point to a harmful configuration change that caused the service to become unavailable. The baseline configuration (BASE-LIVE-51f7a1f4a7ca) is healthy and was observed at 2026-11-10T19:29:12.819595Z, and it includes the correct port configuration (50051). Therefore, rolling back to this baseline is appropriate to restore the service to a known healthy state.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

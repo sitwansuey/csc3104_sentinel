@@ -1,0 +1,95 @@
+{
+  "allowed_actions": [
+    "ROLLBACK",
+    "RESTART"
+  ],
+  "baseline_constraints": {
+    "max_age_seconds": 1800,
+    "min_healthy_duration_seconds": 10,
+    "require_compatible_references": true,
+    "require_health_evidence": true,
+    "require_image_digests": true,
+    "trusted_sources": [
+      "sentinel-boutique-connected-checkout"
+    ]
+  },
+  "decision_ttl_seconds": 20,
+  "health": {
+    "convergence_grace_seconds": 150,
+    "max_sample_gap_seconds": 90,
+    "minimum_samples": 3,
+    "protocol": "redis",
+    "require_available_replicas": true,
+    "require_target_identity": true,
+    "require_template_match": true,
+    "required_dependencies": [],
+    "required_redis_reply": "PONG",
+    "stable_window_seconds": 10,
+    "verification_timeout_seconds": 300
+  },
+  "max_approval_lifetime_seconds": 300,
+  "max_dependency_age_seconds": 300,
+  "max_state_age_seconds": 30,
+  "policy_id": "executor-live-pair-redis-cart",
+  "policy_version": "executor-live-pair-1",
+  "profile": "live",
+  "require_operator_approval": true,
+  "require_server_dry_run": false,
+  "resource_constraints": {
+    "max_container_limits": {
+      "cpu": "200m",
+      "memory": "256Mi"
+    },
+    "max_container_requests": {
+      "cpu": "100m",
+      "memory": "256Mi"
+    },
+    "require_requests_and_limits": true
+  },
+  "restart_constraints": {
+    "max_restarts": 1,
+    "targets": [
+      {
+        "cluster_id": "sentinel-boutique-connected",
+        "kind": "Deployment",
+        "name": "redis-cart",
+        "namespace": "sentinel-boutique-connected",
+        "uid": "1f95bce9-4a04-441b-8395-6370d7200682"
+      }
+    ],
+    "window_seconds": 3600
+  },
+  "security_constraints": {
+    "allowed_image_registries": [
+      "docker.io"
+    ],
+    "allowed_service_accounts": [
+      "default"
+    ],
+    "deny_host_access": true,
+    "deny_privileged": true,
+    "forbid_service_account_change": true
+  },
+  "targets": [
+    {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "redis-cart",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "1f95bce9-4a04-441b-8395-6370d7200682"
+    }
+  ],
+  "unknown_dependency_result": "ESCALATE",
+  "workload_constraints": {
+    "max_pod_requests": {
+      "cpu": "250m",
+      "memory": "256Mi"
+    },
+    "max_replicas": 2,
+    "max_rollout_requests": {
+      "cpu": "1",
+      "memory": "512Mi"
+    },
+    "max_surge_replicas": 1
+  }
+}

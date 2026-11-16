@@ -45,8 +45,8 @@ def _health_policy(policy):
         raise VerifierInputError("policy.health must be an object")
     rules = deepcopy(policy["health"])
     protocol = rules.setdefault("protocol", "http")
-    if protocol not in {"http", "grpc"}:
-        raise VerifierInputError("policy.health.protocol must be http or grpc")
+    if protocol not in {"http", "grpc", "redis"}:
+        raise VerifierInputError("policy.health.protocol must be http, grpc or redis")
     for key in ("minimum_samples", "stable_window_seconds", "max_sample_gap_seconds"):
         if type(rules.get(key)) is not int or rules[key] < 1:
             raise VerifierInputError(f"policy.health.{key} must be a positive integer")
@@ -58,6 +58,10 @@ def _health_policy(policy):
         status = rules.get("required_http_status")
         if type(status) is not int or not 100 <= status <= 599:
             raise VerifierInputError("policy.health.required_http_status must be an HTTP status")
+    elif protocol == "redis":
+        # The Redis check is a PING (P4.05: redis-cart); only the exact reply PONG is healthy.
+        if rules.get("required_redis_reply") != "PONG":
+            raise VerifierInputError("policy.health.required_redis_reply must be PONG")
     else:
         status = rules.get("required_grpc_status")
         if type(status) is not int or status != 0:
@@ -68,6 +72,10 @@ def _health_policy(policy):
     if rules.get("require_template_match") and not re.fullmatch(
             r"[a-f0-9]{64}", str(rules.get("expected_template_sha256", ""))):
         raise VerifierInputError("A verified expected template SHA-256 is required")
+    # P5.07: a SCALE's verification also needs the replica count it restored, bound from the proposal.
+    if "expected_desired_replicas" in rules and (type(rules["expected_desired_replicas"]) is not int
+                                                 or not 1 <= rules["expected_desired_replicas"] <= 10):
+        raise VerifierInputError("policy.health.expected_desired_replicas must be an integer from 1 to 10")
     required = rules.get("required_dependencies", [])
     if not isinstance(required, list) or any(
         not isinstance(name, str) or not name.strip() for name in required
@@ -169,8 +177,15 @@ def inspect_dependencies(proposal: dict, graph: dict, live_state: dict,
     return result
 
 
-def _assess(execution, samples, policy):
-    """Legacy strict assessment of one window; verify() adds the opt-in convergence rule."""
+def _assess(execution, samples, policy, *, unanswered=frozenset()):
+    """Legacy strict assessment of one window; verify() adds the opt-in convergence rule.
+
+    unanswered holds the indexes of readings that verify() found waiting for a
+    rollout (_awaiting_rollout): their missing response counts as an answer
+    that is not healthy instead of as missing evidence. Only verify() passes
+    it, to judge a leading run inside the convergence grace; it is empty for
+    every verdict on the readings as they are.
+    """
     validate_message(execution)
     if execution["kind"] != "execution_result":
         raise VerifierInputError("Expected an execution_result")
@@ -187,9 +202,10 @@ def _assess(execution, samples, policy):
     stamps, rows = [], []
     identity_ok = timestamps_ok = health_complete = dependencies_complete = True
     configuration_complete = True
-    unhealthy_service = unhealthy_dependency = unhealthy_template = False
+    unhealthy_service = unhealthy_dependency = unhealthy_template = unhealthy_replicas = False
+    replica_target = rules.get("expected_desired_replicas")
     required_dependencies = set(rules.get("required_dependencies", []))
-    for sample in samples:
+    for index, sample in enumerate(samples):
         if not isinstance(sample, dict):
             identity_ok = timestamps_ok = health_complete = dependencies_complete = False
             continue
@@ -212,18 +228,32 @@ def _assess(execution, samples, policy):
             status, application_ok = sample.get("grpc_status"), sample.get("application_check_passed")
             response_complete = type(status) is int and 0 <= status <= 16 and type(application_ok) is bool
             response_healthy = status == rules["required_grpc_status"] and application_ok is True
+        elif rules["protocol"] == "redis":
+            reply = sample.get("redis_reply")
+            response_complete = isinstance(reply, str) and 0 < len(reply) <= 64
+            response_healthy = reply == rules["required_redis_reply"]
         else:
             status = sample.get("http_status")
             response_complete = type(status) is int and 100 <= status <= 599
             response_healthy = status == rules["required_http_status"]
+        if index in unanswered:
+            response_complete, response_healthy = True, False
+        # A SCALE binds the restored count, so a present desired_replicas of 0 is a
+        # measured regression (the original fault re-applied), not missing data.
+        # Without that expectation (ROLLBACK, RESTART) a reading still needs desired > 0.
+        desired_known = type(desired) is int and (desired > 0 or (replica_target is not None and desired == 0))
         complete = (protocol_matches and response_complete and type(ready) is int and ready >= 0
-                    and type(desired) is int and desired > 0)
+                    and desired_known)
         available = sample.get("available_replicas")
         if rules.get("require_available_replicas"):
             complete = complete and type(available) is int and available >= 0
         health_complete = health_complete and complete
+        if complete and replica_target is not None:
+            # The Deployment must keep the restored count; ready >= desired below then means ready >= the target.
+            unhealthy_replicas |= desired != replica_target
         if complete:
-            unhealthy_service |= not response_healthy or ready < desired
+            # desired == 0 is complete only under a SCALE expectation; it is never healthy service.
+            unhealthy_service |= not response_healthy or ready < desired or desired == 0
             if rules.get("require_available_replicas"):
                 unhealthy_service |= available < desired
         if rules.get("require_template_match"):
@@ -272,11 +302,18 @@ def _assess(execution, samples, policy):
         # Only bounded measured scalars, never response bodies or collector errors.
         fields = ("http_status", "grpc_status", "application_check_passed", "ready_replicas",
                   "desired_replicas", "available_replicas")
+        if rules["protocol"] == "redis" and latest.get("redis_reply") == rules["required_redis_reply"]:
+            # A reply is shown only when it is the expected one; any other text stays out of the outcome.
+            checks[-1]["detail"] += "; latest reply PONG"
         observed = {k: latest.get(k) for k in fields if k in latest and
                     (latest[k] is None or type(latest[k]) in (int, bool))}
         checks[-1]["detail"] += "; latest reading: " + ", ".join(f"{k}={v}" for k, v in observed.items())
     checks.append(_check("dependency_health", bool(rows) and dependencies_complete and not unhealthy_dependency,
                          "Every required/observed dependency must be present and healthy in every reading"))
+    if replica_target is not None:
+        checks.append(_check("replica_target", bool(rows) and health_complete and not unhealthy_replicas,
+                             f"Every reading must keep desired_replicas={replica_target}, the restored reviewed "
+                             "count, with that many replicas ready"))
     if rules.get("require_template_match"):
         checks.append(_check("sample_configuration", bool(rows) and configuration_complete and not unhealthy_template,
                              "Each reading must retain the approved template and a stable observation identity"))
@@ -290,7 +327,7 @@ def _assess(execution, samples, policy):
     trustworthy = (usable_execution and identity_ok and timestamps_ok
                    and health_complete and dependencies_complete and configuration_complete)
     status = "UNKNOWN"
-    if trustworthy and (unhealthy_service or unhealthy_dependency or unhealthy_template):
+    if trustworthy and (unhealthy_service or unhealthy_dependency or unhealthy_template or unhealthy_replicas):
         status = "NOT_RECOVERED"
     elif all(check["passed"] for check in checks):
         status = "RECOVERED"
@@ -302,6 +339,88 @@ def _assess(execution, samples, policy):
     return result
 
 
+WINDOW_CHECKS = frozenset({"sample_count", "stable_window", "sample_gaps"})
+
+
+def reading_status(execution: dict, sample: dict, policy: dict) -> str:
+    """One reading judged alone by the unchanged rules: "healthy", "unhealthy" or "incomplete".
+
+    For audit records only (when the target first read healthy, say); a
+    verdict always comes from verify() over the whole window. The checks
+    that need more than one reading (count, stable window, gaps) are left
+    out; every other check must pass for "healthy".
+    """
+    alone = _assess(execution, [sample], policy)
+    if alone["status"] == "NOT_RECOVERED":
+        return "unhealthy"
+    passed = all(check["passed"] for check in alone["checks"] if check["name"] not in WINDOW_CHECKS)
+    return "healthy" if passed else "incomplete"
+
+
+# The Deployment facts a reading must carry before its missing response may be
+# read as a rollout still under way (_awaiting_rollout). The live collector
+# records them (services/verifier/live.py::LiveEvidenceCollector._snapshot); a
+# reading without them, from any other collector, is judged as before.
+ROLLOUT_FIELDS = ("generation", "observed_generation", "updated_replicas", "total_replicas")
+AWAITING_ROLLOUT_CAUSE = "service not answering during rollout"
+
+
+def _awaiting_rollout(sample, rules, limit):
+    """True for a reading inside the grace whose only gap is a response no Pod was there to give.
+
+    The service gave no response (no HTTP status, no gRPC status and check,
+    no Redis reply), and the reading's own Deployment read says why: no
+    replica is ready or available, and the rollout counts (ROLLOUT_FIELDS,
+    non-negative integers the collector records only from a whole,
+    consistent Deployment read) show the rollout not finished, in the sense
+    `kubectl rollout status` uses:
+
+        observed_generation < generation  or  updated_replicas < desired_replicas
+        or  available_replicas < updated_replicas
+
+    The first means the controller has not yet acted on the write, so every
+    count still describes the old spec. The second means fewer Pods of the
+    new template exist than the spec asks for; it also covers no Pod at all
+    (total_replicas 0), since updatedReplicas counts a subset of
+    status.replicas and desired is at least 1. A Recreate rollout leaves the
+    target with no Pod for some seconds after the write (updated 0, total 0),
+    so the first reading can fall there. The third means a Pod of the new
+    template exists but is not yet available: found live (sentinel-dist S0 r3
+    at 614c4aa, first reading +5 s: updated 1, total 1, ready 0, no HTTP
+    response), the new container had not yet started serving. Setting such a
+    reading aside cannot by itself give RECOVERED: verify() still needs the
+    readings after it to pass every rule over the stable window, readings
+    after the grace always count, and a relapse always counts, so a Pod that
+    never starts serving still ends UNKNOWN or NOT_RECOVERED. Counts that
+    contradict each other (more updated Pods than Pods) never qualify. Every
+    other fact is still checked by _assess (identity, timestamps, template,
+    configuration_stable, dependencies). A reading whose Deployment read
+    failed has no counts and never qualifies, nor does a silent target with
+    a ready or available replica.
+    """
+    if not isinstance(sample, dict) or sample.get("protocol", "http") != rules["protocol"]:
+        return False
+    try:
+        if _timestamp(sample.get("at")) > limit:
+            return False
+    except VerifierInputError:
+        return False
+    if rules["protocol"] == "grpc":
+        silent = sample.get("grpc_status") is None and sample.get("application_check_passed") is None
+    elif rules["protocol"] == "redis":
+        silent = sample.get("redis_reply") is None
+    else:
+        silent = sample.get("http_status") is None
+    counts = [sample.get(key) for key in ("desired_replicas", "ready_replicas", *ROLLOUT_FIELDS)]
+    available = sample.get("available_replicas", 0 if not rules.get("require_available_replicas") else None)
+    if not silent or any(type(value) is not int or value < 0 for value in (*counts, available)):
+        return False
+    desired, ready, generation, observed, updated, total = counts
+    if desired < 1 or generation < 1 or ready != 0 or available != 0 or updated > total:
+        return False
+    return observed < generation or updated < desired or available < updated
+
+
 def verify(execution: dict, samples: list[dict], policy: dict, *, final: bool = True) -> dict:
     """Assess one ordered post-action window; missing evidence is UNKNOWN.
 
@@ -309,6 +428,9 @@ def verify(execution: dict, samples: list[dict], policy: dict, *, final: bool = 
     With policy.health.convergence_grace_seconds, a leading run of complete,
     approved-template, known-unhealthy readings inside that grace may be set
     aside, but only when the readings after it alone pass every unchanged rule.
+    A reading inside the grace with no response, no ready Pod and an
+    unfinished rollout (_awaiting_rollout) counts in that run as unhealthy,
+    not as missing evidence; everything else about it must still be complete.
     Relapse, template drift, missing evidence and later readings always count.
     final=False is only for a ledger that will keep collecting: it defers that
     leading run instead of deciding on it and can never by itself give RECOVERED.
@@ -320,17 +442,23 @@ def verify(execution: dict, samples: list[dict], policy: dict, *, final: bool = 
     if grace is None:
         return strict
     limit = _timestamp(execution["recorded_at"]) + timedelta(seconds=grace)
+    rules = _health_policy(policy)
+    waiting = frozenset(index for index, sample in enumerate(samples) if _awaiting_rollout(sample, rules, limit))
+    # With no reading waiting for a rollout this is the strict verdict itself.
+    judged = _assess(execution, samples, policy, unanswered=waiting) if waiting else strict
     lead, causes = 0, set()
     # NOT_RECOVERED means the whole window is trustworthy: object readings,
     # valid ordered stamps and complete evidence. Only then is a start judged.
-    if strict["status"] == "NOT_RECOVERED":
-        for sample in samples:
-            alone = _assess(execution, [sample], policy)
+    if judged["status"] == "NOT_RECOVERED":
+        for index, sample in enumerate(samples):
+            alone = _assess(execution, [sample], policy, unanswered=frozenset({0} if index in waiting else ()))
             failed = {check["name"] for check in alone["checks"] if not check["passed"]}
             if (_timestamp(sample["at"]) > limit or alone["status"] != "NOT_RECOVERED"
-                    or "sample_configuration" in failed):
+                    or "sample_configuration" in failed or "replica_target" in failed):
                 break
-            if "service_health" in failed:
+            if index in waiting:
+                causes.add(AWAITING_ROLLOUT_CAUSE)
+            elif "service_health" in failed:
                 causes.add("service")
             causes.update("dependency " + name for name, healthy in sample["dependencies"].items()
                           if healthy is False)

@@ -24,8 +24,8 @@ class GuardStatePolicyTests(unittest.TestCase):
         cases = [build_inputs() for _ in range(10)]
         cases[1]["policy"]["targets"] = []
         cases[2]["policy"]["allowed_actions"] = []
-        cases[3]["proposal"].update(action="SCALE", parameters={"desired_replicas": 2})
-        cases[3]["policy"]["allowed_actions"].append("SCALE")
+        cases[3]["proposal"].update(action="NO_ACTION", parameters={})
+        cases[3]["policy"]["allowed_actions"].append("NO_ACTION")
         cases[4]["live_state"]["cluster_id"] = "another-cluster"
         cases[5]["live_state"]["deployment"]["metadata"]["uid"] = "another-uid"
         cases[6]["live_state"]["deployment"]["metadata"]["resourceVersion"] = "103"

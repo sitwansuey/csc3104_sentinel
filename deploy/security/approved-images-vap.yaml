@@ -1,0 +1,87 @@
+# Approved image digests for the connected Boutique lab (P5.02, the
+# admission layer of the CVE gate). Apply with an administrator; Kubernetes
+# 1.30 or later is needed for admissionregistration.k8s.io/v1.
+#
+# Every container, initContainer and ephemeralContainer image of a Deployment
+# CREATE or UPDATE, and of a Pod CREATE, must appear exactly in the
+# newline-separated digests of the ConfigMap sentinel-approved-images in the
+# namespace sentinel-admission. scripts/security/gate_images.py vap-params
+# writes that ConfigMap from passing gate results: repository@sha256 references
+# only, never a tag, so a workload pinned by tag is denied. Pod UPDATEs are not
+# matched, so Chaos Mesh pod-failure (which swaps a running Pod's image) is not
+# blocked, and neither is an ephemeral container added later through the
+# pods/ephemeralcontainers subresource (kubectl debug). A missing ConfigMap
+# denies (parameterNotFoundAction: Deny).
+#
+# The approved list comes from services/image_security.gate, the same gate the
+# Guard uses. With Deny on, the Guard's server dry-run (services/guard/preview.py)
+# of a template naming an unapproved digest fails; kubectl does not tell an
+# admission denial apart from other failures, so the preview reports UNKNOWN
+# (detail SERVER_DRY_RUN_FAILED) and the Guard escalates on
+# SERVER_DRY_RUN_UNKNOWN rather than rejecting.
+#
+# The binding ships with Audit and Warn, which reject nothing. The connected
+# lab has no API server audit log, so Warn is what shows a would-be denial: as
+# a warning to the client that made the request. The live recipe in
+# docs/security.md ("CVE gate") applies it, checks the warnings, and only then
+# switches validationActions to Deny and Audit.
+#
+# Status: checked structurally offline (tests/test_cve_gate_admission.py). No
+# API server has evaluated it yet, and nothing installs it.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: sentinel-approved-images
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+  variables:
+    - name: approved
+      expression: |-
+        has(params.data) && 'digests' in params.data ? params.data['digests'].split('\n') : []
+    - name: podSpec
+      expression: |-
+        request.resource.resource == 'pods' ? object.spec : object.spec.template.spec
+    - name: images
+      expression: |-
+        variables.podSpec.containers.map(c, c.image) +
+        (has(variables.podSpec.initContainers) ? variables.podSpec.initContainers.map(c, c.image) : []) +
+        (has(variables.podSpec.ephemeralContainers) ? variables.podSpec.ephemeralContainers.map(c, c.image) : [])
+  validations:
+    - expression: |-
+        variables.images.all(image, image != '' && image in variables.approved)
+      message: Every container image must be an approved repository@sha256 digest (sentinel-approved-images)
+      reason: Forbidden
+---
+# Audit and Warn first: a failed check is recorded and returned as a warning,
+# and nothing is rejected. Switch to ["Deny", "Audit"] only after the recipe's
+# warning checks (docs/security.md).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: sentinel-approved-images
+spec:
+  policyName: sentinel-approved-images
+  validationActions: ["Audit", "Warn"]
+  paramRef:
+    name: sentinel-approved-images
+    namespace: sentinel-admission
+    parameterNotFoundAction: Deny
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: ["sentinel-boutique-connected"]

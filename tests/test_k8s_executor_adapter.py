@@ -14,9 +14,12 @@ import unittest
 from unittest.mock import patch
 
 from experiments.validation.demo_guard import load_fixtures
-from services.executor.core import ACTION_ANNOTATION, ConditionalWriteConflict, ReadUnavailable, encode_evidence
-from services.executor.store import fingerprint
+from services.executor.core import (
+    ACTION_ANNOTATION, ConditionalWriteConflict, ReadUnavailable, TargetAbsent, encode_evidence,
+)
+from services.executor.store import canonical_json, fingerprint
 from services.executor.kubernetes_adapter import KubectlDeploymentAPI, LiveAdapterError, WriteOutcomeUnknown
+from services.executor.reconciliation import FENCE_ANNOTATION, fence_marker
 
 
 NOW = datetime(2026, 10, 25, 0, 0, tzinfo=timezone.utc)
@@ -52,12 +55,19 @@ class Runner:
                 raise self.patch_error
             return self.patch_error
         candidate = deepcopy(self.deployment)
-        candidate["spec"]["template"] = deepcopy(self.patches[-1][2]["value"])
-        annotation_operation = self.patches[-1][3]
-        if annotation_operation["path"] == "/metadata/annotations":
-            candidate["metadata"]["annotations"] = annotation_operation["value"]
-        else:
-            candidate["metadata"].setdefault("annotations", {})[ACTION_ANNOTATION] = annotation_operation["value"]
+        for operation in self.patches[-1]:
+            if operation["path"] == "/spec/template":
+                candidate["spec"]["template"] = deepcopy(operation["value"])
+            if operation["path"] == "/spec/replicas":  # A SCALE (P5.07).
+                candidate["spec"]["replicas"] = operation["value"]
+        for annotation_operation in self.patches[-1]:
+            if not annotation_operation["path"].startswith("/metadata/annotations"):
+                continue
+            if annotation_operation["path"] == "/metadata/annotations":
+                candidate["metadata"]["annotations"] = annotation_operation["value"]
+            else:
+                key = annotation_operation["path"].rsplit("/", 1)[1].replace("~1", "/").replace("~0", "~")
+                candidate["metadata"].setdefault("annotations", {})[key] = annotation_operation["value"]
         candidate["metadata"]["resourceVersion"] = "server-write-1"
         if self.response_change:
             self.response_change(candidate)
@@ -106,7 +116,7 @@ class KubernetesExecutorAdapterTests(unittest.TestCase):
         command, options = self.runner.commands[0]
         self.assertEqual(command, ["kubectl", "--context=kind-team", "--kubeconfig=restricted credentials.json",
                                    "--namespace=sentinel-demo", "--request-timeout=10s",
-                                   "get", "deployment", "demo-api", "--output=json"])
+                                   "get", "deployment", "demo-api", "--ignore-not-found", "--output=json"])
         self.assertEqual(options, {"capture_output": True, "check": False, "timeout": 15})
         self.assertEqual(dict(os.environ), environment)
         self.assertEqual(self.adapter.stats["read_attempts"], 1)
@@ -148,7 +158,8 @@ class KubernetesExecutorAdapterTests(unittest.TestCase):
         self.assertIn("--output=json", command)
         self.assertFalse(any("dry-run" in argument or argument in {"undo", "delete", "replace", "scale"}
                              for argument in command))
-        self.assertEqual(self.adapter.stats, {"read_attempts": 1, "write_attempts": 1, "successful_writes": 1})
+        self.assertEqual(self.adapter.stats, {"read_attempts": 1, "write_attempts": 1, "successful_writes": 1,
+                                              "fence_attempts": 0, "successful_fences": 0})
         self.assertTrue(all(not path.exists() for path in self.runner.patch_paths))
 
     def test_annotation_update_preserves_unrelated_annotations_and_escapes_the_key(self):
@@ -175,6 +186,27 @@ class KubernetesExecutorAdapterTests(unittest.TestCase):
                     self.restore(adapter)
                 self.assertEqual(adapter.stats["write_attempts"], 0)
                 self.assertEqual(self.runner.patches, [])
+
+    def test_the_lab_before_submit_hook_runs_after_the_pre_read_and_local_check_and_before_the_patch(self):
+        self.assertIsNone(self.adapter.before_submit)  # Unset unless a lab fault run's proxy sets it.
+        seen = []
+        self.adapter.before_submit = lambda: seen.append([command[command.index("--request-timeout=10s") + 1]
+                                                          for command, _ in self.runner.commands])
+        self.restore()
+        self.assertEqual(seen, [["get"]])  # Read, checked, nothing sent yet.
+        self.assertEqual(len(self.runner.patches), 1)
+        self.assertEqual(self.runner.patches[0][:2], [
+            {"op": "test", "path": "/metadata/uid", "value": self.target["uid"]},
+            {"op": "test", "path": "/metadata/resourceVersion", "value": self.version}])
+        self.runner = Runner(self.deployment)
+        self.runner.deployment["metadata"]["resourceVersion"] = "changed"
+        adapter, seen[:] = self.make_adapter(), []
+        adapter.before_submit = lambda: seen.append("reached")
+        with self.assertRaises(ConditionalWriteConflict):  # A local mismatch stays a zero-write conflict.
+            self.restore(adapter)
+        self.runner.deployment["metadata"]["resourceVersion"] = self.version
+        adapter.fence(target=self.target, version=self.version, marker=fence_marker("ACT-LIVE-001", "c" * 32))
+        self.assertEqual(seen, [])  # Neither a refused restore nor a fence reaches it.
 
     def test_evidence_must_bind_uid_template_hash_and_attempt_nonce_before_any_api_call(self):
         for changes in ({"target_uid": "wrong"}, {"template_sha256": "a" * 64},
@@ -218,6 +250,28 @@ class KubernetesExecutorAdapterTests(unittest.TestCase):
                 self.assertNotIn("PRIVATE", str(failure.exception))
         self.assertEqual(self.adapter.stats["write_attempts"], 0)
 
+    def test_only_empty_success_output_means_the_target_is_absent(self):
+        for empty in (b"", b"\n", b"  \r\n"):
+            with self.subTest(empty=empty):
+                self.runner.read_error = subprocess.CompletedProcess([], 0, empty, b"")
+                with self.assertRaises(TargetAbsent):
+                    self.adapter.read(self.target)
+        # A failing command is never read as absence, even with empty output.
+        self.runner.read_error = subprocess.CompletedProcess([], 1, b"", b"")
+        with self.assertRaises(ReadUnavailable):
+            self.adapter.read(self.target)
+        self.runner.read_error = subprocess.CompletedProcess([], 0, b"garbage", b"")
+        with self.assertRaises(LiveAdapterError):
+            self.adapter.read(self.target)
+        self.assertFalse(issubclass(TargetAbsent, ReadUnavailable))
+
+    def test_absent_target_before_submission_is_a_zero_write_conflict(self):
+        self.runner.read_error = subprocess.CompletedProcess([], 0, b"", b"")
+        with self.assertRaises(ConditionalWriteConflict):
+            self.restore()
+        self.assertEqual(self.adapter.stats["write_attempts"], 0)
+        self.assertEqual(self.runner.patches, [])
+
     def test_malformed_or_duplicate_json_and_wrong_identity_cannot_be_live_state(self):
         for raw in (b"not JSON", b'{"metadata":{},"metadata":{}}', b'{"value":NaN}', b"\xff"):
             with self.subTest(raw=raw):
@@ -252,6 +306,131 @@ class KubernetesExecutorAdapterTests(unittest.TestCase):
                 self.assertEqual(adapter.stats["write_attempts"], 1)
                 self.assertEqual(adapter.stats["successful_writes"], 0)
                 self.assertTrue(all(not path.exists() for path in self.runner.patch_paths))
+
+    # Fence -----------------------------------------------------------------
+
+    def fence(self, adapter=None, **changes):
+        values = dict(target=self.target, version=self.version, marker=fence_marker("ACT-LIVE-001", "c" * 32))
+        values.update(changes)
+        return (adapter or self.adapter).fence(**values)
+
+    def test_fence_patch_is_two_tests_and_one_annotation_and_never_touches_spec(self):
+        self.runner.deployment["metadata"]["annotations"] = {"example.org/owner": "team", ACTION_ANNOTATION: "older"}
+        fenced = self.fence()
+        marker = canonical_json(fence_marker("ACT-LIVE-001", "c" * 32))
+        self.assertEqual(self.runner.patches, [[
+            {"op": "test", "path": "/metadata/uid", "value": self.target["uid"]},
+            {"op": "test", "path": "/metadata/resourceVersion", "value": self.version},
+            {"op": "add", "path": "/metadata/annotations/sentinel.io~1fence", "value": marker},
+        ]])
+        self.assertFalse(any(operation["path"].startswith("/spec") for operation in self.runner.patches[0]))
+        annotations = fenced["deployment"]["metadata"]["annotations"]
+        self.assertEqual(annotations, {"example.org/owner": "team", ACTION_ANNOTATION: "older",
+                                       FENCE_ANNOTATION: marker})
+        self.assertEqual(fenced["deployment"]["spec"]["template"], self.deployment["spec"]["template"])
+        # No spec change, so no rollout (a real Deployment still bumps generation for the annotation).
+        self.assertEqual(fenced["deployment"]["spec"], self.deployment["spec"])
+        command = self.runner.commands[-1][0]
+        self.assertEqual(command[5:8], ["patch", "deployment", "demo-api"])
+        self.assertIn("--type=json", command)
+        self.assertFalse(any("dry-run" in argument for argument in command))
+        self.assertEqual(self.adapter.stats, {"read_attempts": 1, "write_attempts": 0, "successful_writes": 0,
+                                              "fence_attempts": 1, "successful_fences": 1})
+        self.assertTrue(all(not path.exists() for path in self.runner.patch_paths))
+
+    def test_fence_on_a_deployment_without_annotations_adds_the_map(self):
+        self.runner.deployment["metadata"].pop("annotations", None)
+        self.fence(marker=fence_marker("ACT-LIVE-001", "c" * 32, epoch=3))
+        self.assertEqual(self.runner.patches[0][-1], {
+            "op": "add", "path": "/metadata/annotations",
+            "value": {FENCE_ANNOTATION: '{"action_id":"ACT-LIVE-001","epoch":3,"nonce":"' + "c" * 32 + '"}',
+                      "sentinel.io/fence-epoch": "3"}})
+
+    def test_a_seal_patch_is_the_uid_and_version_tests_plus_its_marker_and_epoch_only(self):
+        # P3.04: a Coordinator seal is fence() with an epoch; it adds sentinel.io/fence-epoch and touches no spec.
+        self.runner.deployment["metadata"]["annotations"] = {"example.org/owner": "team"}
+        marker = fence_marker("ACT-LIVE-001", "d" * 32, epoch=7)
+        fenced = self.fence(marker=marker)
+        self.assertEqual(self.runner.patches, [[
+            {"op": "test", "path": "/metadata/uid", "value": self.target["uid"]},
+            {"op": "test", "path": "/metadata/resourceVersion", "value": self.version},
+            {"op": "add", "path": "/metadata/annotations/sentinel.io~1fence", "value": canonical_json(marker)},
+            {"op": "add", "path": "/metadata/annotations/sentinel.io~1fence-epoch", "value": "7"},
+        ]])
+        self.assertEqual(fenced["deployment"]["metadata"]["annotations"]["sentinel.io/fence-epoch"], "7")
+        self.assertEqual(fenced["deployment"]["spec"], self.deployment["spec"])
+
+    def test_a_seal_outside_the_allowlist_is_refused_before_any_command(self):
+        outside = dict(self.target, name="other-api")
+        with self.assertRaises(LiveAdapterError):
+            self.adapter.fence(target=outside, version=self.version, marker=fence_marker("ACT-LIVE-001", "d" * 32, 2))
+        self.assertEqual(self.runner.commands, [])
+
+    def test_fence_uses_only_the_get_and_patch_verbs_the_executor_role_grants(self):
+        self.fence()
+        verbs = {command[5] for command, _ in self.runner.commands}
+        self.assertEqual(verbs, {"get", "patch"})
+        role = (Path(__file__).resolve().parents[1] / "deploy/sentinel/executor-rbac.yaml").read_text(encoding="utf-8")
+        rules = role.split("kind: Role\n", 1)[1].split("---", 1)[0]
+        self.assertEqual(rules.count("- apiGroups:"), 1)
+        self.assertIn('resources: ["deployments"]', rules)
+        self.assertIn('resourceNames: ["demo-api"]', rules)
+        self.assertIn('verbs: ["get", "patch"]', rules)
+
+    def test_invalid_fence_marker_or_version_is_refused_before_any_command(self):
+        nonce = "c" * 32
+        for changes in ({"marker": {"action_id": "A", "nonce": "short"}}, {"marker": {"action_id": "", "nonce": nonce}},
+                        {"marker": {"action_id": "A", "nonce": nonce, "epoch": True}},
+                        {"marker": {"action_id": "A", "nonce": nonce, "epoch": -1}},
+                        {"marker": {"action_id": "A", "nonce": nonce, "command": "x"}},
+                        {"marker": {"nonce": nonce}}, {"marker": "not a marker"}, {"version": ""},
+                        {"target": dict(self.target, name="another-deployment")}):
+            with self.subTest(changes=changes), self.assertRaises(LiveAdapterError):
+                self.fence(**changes)
+        self.assertEqual(self.runner.commands, [])
+
+    def test_fence_precondition_mismatch_or_absent_target_is_a_zero_write_conflict(self):
+        for field in ("uid", "resourceVersion", None):
+            with self.subTest(field=field):
+                self.runner = Runner(self.deployment)
+                if field is None:
+                    self.runner.read_error = subprocess.CompletedProcess([], 0, b"", b"")
+                else:
+                    self.runner.deployment["metadata"][field] = "changed"
+                adapter = self.make_adapter()
+                with self.assertRaises(ConditionalWriteConflict):
+                    self.fence(adapter)
+                self.assertEqual((adapter.stats["fence_attempts"], self.runner.patches), (0, []))
+
+    def test_fence_error_or_timeout_is_unknown_never_retried_or_echoed(self):
+        for error in (subprocess.CompletedProcess([], 1, b"", b"PRIVATE-SERVER-DIAGNOSTICS"),
+                      subprocess.TimeoutExpired(["kubectl"], 15, output=b"PRIVATE"), OSError("PRIVATE PATH")):
+            with self.subTest(error=type(error).__name__):
+                self.runner = Runner(self.deployment)
+                self.runner.patch_error = error
+                adapter = self.make_adapter()
+                with self.assertRaises(WriteOutcomeUnknown) as failure:
+                    self.fence(adapter)
+                self.assertNotIn("PRIVATE", str(failure.exception))
+                self.assertEqual((adapter.stats["fence_attempts"], adapter.stats["successful_fences"]), (1, 0))
+                self.assertEqual(len(self.runner.patches), 1)
+                self.assertTrue(all(not path.exists() for path in self.runner.patch_paths))
+
+    def test_fence_success_response_must_show_the_marker_and_a_new_version(self):
+        def no_marker(candidate):
+            candidate["metadata"]["annotations"].pop(FENCE_ANNOTATION)
+
+        def unchanged_version(candidate):
+            candidate["metadata"]["resourceVersion"] = self.version
+
+        for change in (no_marker, unchanged_version):
+            with self.subTest(change=change.__name__):
+                self.runner = Runner(self.deployment)
+                self.runner.response_change = change
+                adapter = self.make_adapter()
+                with self.assertRaises(WriteOutcomeUnknown):
+                    self.fence(adapter)
+                self.assertEqual(adapter.stats["successful_fences"], 0)
 
     def test_private_file_failure_prevents_patch_submission_and_cleans_empty_file(self):
         created = []

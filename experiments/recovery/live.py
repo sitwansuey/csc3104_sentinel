@@ -22,23 +22,38 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from runtime.approval_session import (
+    MODES, LocalApprovalAuthority, approver_for, executor_client_from_environment, operator_identity, require_attended,
+)
 from runtime.executor_pipeline import process_executor_requests
 from runtime.guard_pipeline import process_guard_requests
+from runtime.image_scans import read_image_scans
 from runtime.live_executor import build_adapters
-from services.coordinator.core import LocalEventBus, SQLiteStore, approve, handle
+from services.coordinator.core import LocalEventBus, SQLiteStore, handle
 from services.executor.core import ACTION_ANNOTATION, execute, reconcile
 from services.executor.store import ActionConflict, SQLiteExecutionLedger, fingerprint
 from services.guard.core import proposal_fingerprint
 from services.guard.preview import _private_file
+from services.guard.scale import autoscalers_for
 from services.executor.kubernetes_adapter import KubectlDeploymentAPI, WriteOutcomeUnknown
 from services.observer.kubernetes_adapter import deployment_to_observation
 from services.observer.core import Observer
+from shared import log, provenance
+
+LOG = log.get_logger("recovery")
 
 
 CONTEXT = "kind-sentinel-lab"
 NAMESPACE = "sentinel-demo"
 NAME = "demo-api"
 RESTRICTED_CONTEXT = "sentinel-executor-lab"
+CVE_GATE_RULES = ROOT / "deploy/security/cve-gate.json"  # the reviewed P5.02 gate block
+# Guard resource ceilings for the generic lab workload. Boutique targets take theirs from the catalog.
+LAB_CEILINGS = {"container_requests": {"cpu": "100m", "memory": "64Mi"},
+                "container_limits": {"cpu": "500m", "memory": "128Mi"},
+                "pod_requests": {"cpu": "250m", "memory": "128Mi"},
+                "rollout_requests": {"cpu": "1", "memory": "512Mi"},
+                "max_replicas": 2, "max_surge_replicas": 1}
 
 
 def now():
@@ -62,6 +77,17 @@ def save(path, value):
 def require(condition, message):
     if not condition:
         raise RuntimeError(message)
+
+
+def policy_ceilings(ceilings):
+    """The Guard policy's resource and workload constraints for one target's ceilings."""
+    return {"resource_constraints": {"require_requests_and_limits": True,
+                                     "max_container_requests": deepcopy(ceilings["container_requests"]),
+                                     "max_container_limits": deepcopy(ceilings["container_limits"])},
+            "workload_constraints": {"max_pod_requests": deepcopy(ceilings["pod_requests"]),
+                                     "max_rollout_requests": deepcopy(ceilings["rollout_requests"]),
+                                     "max_replicas": ceilings["max_replicas"],
+                                     "max_surge_replicas": ceilings["max_surge_replicas"]}}
 
 
 def loaded_image_digest(inspection, listing):
@@ -96,8 +122,15 @@ class Experiment:
     allowed_registries = ["docker.io"]
     service_account = "default"
     rbac_path = ROOT / "deploy/sentinel/executor-rbac.yaml"
+    ceilings = LAB_CEILINGS
     publish_dependency_results = False
     health_outcome_description = " after executor rollback; Role 6 outcome remains pending"
+    approval_mode = "interactive"
+    operator = None  # Interactive operator identity; lab-operator when unset.
+    # P5.02: a directory of scan summaries turns on the CVE gate (deploy/security/cve-gate.json) in this run's
+    # policy; the Guard and the Executor then read their image_scans from it. None leaves the gate off.
+    image_scans = None
+    cve_exceptions = None
 
     def __init__(self, directory):
         self.directory = Path(directory).resolve()
@@ -105,11 +138,55 @@ class Experiment:
         self.credentials = self.directory / ".executor-kubeconfig.json"
         self.summary = {"mode": "LIVE Kubernetes; restricted executor credentials",
                         "started_at": utc(), "checks": [], "status": "RUNNING",
-                        "scope": "single-node kind, local coordination; no Planner/Verifier implementation"}
+                        "scope": "single-node kind, local coordination; no Planner/Verifier implementation",
+                        "provenance": provenance.collect(ROOT), "timeline": []}
         self.baseline = None
         self.target = None
         self.store = SQLiteStore(self.directory / "coordinator.sqlite")
         self.bus = LocalEventBus()
+        self.authority = self.approver = None
+        self.configure_approval(self.approval_mode, self.operator)
+
+    def configure_approval(self, mode, operator=None):
+        """Choose the approver before the run; nothing starts until a target exists."""
+        identity = operator_identity(mode, operator)
+        require(self.authority is None, "Approval mode cannot change after the authority started")
+        self.approval_mode, self.operator = mode, operator
+        self.summary["operator_approval"] = {"mode": mode, "identity": None if mode == "reject" else identity,
+                                             "via": "approval_http"}
+
+    def approval_not_requested(self, reason):
+        """Record that this scenario asks for no approval; the authority can then never start."""
+        require(self.authority is None, "Approval mode cannot change after the authority started")
+        self.approval_mode = self.operator = None
+        self.summary["operator_approval"] = {"mode": "not-requested", "identity": None, "via": None,
+                                             "human": False, "decided_by": reason}
+
+    def approval_authority(self):
+        """Start this run's approval authority once the measured target identity is known."""
+        if self.authority is None:
+            require(self.approval_mode in MODES, "This scenario requests no approval")
+            require(self.target is not None, "The approval authority needs the measured target identity")
+            authority = LocalApprovalAuthority(self.directory, self.directory / "coordinator.sqlite", self.target,
+                                               operator=operator_identity(self.approval_mode, self.operator))
+            authority.start()
+            self.authority = authority
+            self.approver = approver_for(self.approval_mode, authority, relay=getattr(self, "approval_relay", None))
+            self.summary["operator_approval"] = self.approver.describe()
+        return self.authority
+
+    def request_approval(self, proposal, decision):
+        """Ask this run's approver. An approval is only ever created through approval_http."""
+        self.approval_authority()
+        try:
+            return self.approver(proposal, decision)
+        finally:
+            self.summary["operator_approval"] = self.approver.describe()
+
+    def close_approval_authority(self):
+        if self.authority is not None:
+            self.authority.close()
+            self.summary["operator_approval"]["authority_stopped"] = not self.authority.running()
 
     def kubectl(self, *arguments, restricted=False, timeout=40, allow_failure=False):
         command = ["kubectl", "--context=" + (self.restricted_context if restricted else self.context),
@@ -124,6 +201,38 @@ class Experiment:
 
     def deployment(self):
         return json.loads(self.kubectl("get", "deployment", self.name, "-o", "json").stdout)
+
+    def guard_state(self, proposal):
+        """The Guard's trusted live state: the Deployment, and for a RESTART the restart history.
+
+        The history comes from this run's Executor ledger (executor.sqlite), the
+        same source the Executor's own Guard check reads under its target lock.
+        Without it the Guard cannot check the restart budget and escalates the
+        RESTART as RESTART_BUDGET_UNKNOWN.
+        """
+        state = {"cluster_id": self.cluster_id, "captured_at": utc(), "deployment": self.deployment()}
+        if proposal.get("action") == "RESTART":
+            with SQLiteExecutionLedger(self.directory / "executor.sqlite") as ledger:
+                state["restart_history"] = ledger.restart_history(proposal["target"])
+        if proposal.get("action") == "SCALE":
+            # P5.07: the HorizontalPodAutoscalers that scale this Deployment, read like the Executor's own check.
+            listing = json.loads(self.kubectl("get", "horizontalpodautoscalers.autoscaling", "-o", "json").stdout)
+            state["autoscalers"] = autoscalers_for(listing, self.name)
+        if self.image_scans is not None:
+            state["image_scans"] = self.read_image_scans(state["deployment"])
+        return state
+
+    def read_image_scans(self, deployment):
+        """image_scans for the baseline's and the current template's images, as the Executor's reader builds it."""
+        images = set()
+        for template in (self.baseline["pod_template"], deployment["spec"]["template"]):
+            for group in ("containers", "initContainers"):
+                images.update(container["image"] for container in template["spec"].get(group, []))
+        return read_image_scans(self.image_scans, sorted(images), self.cve_exceptions)
+
+    def phase(self, name, scenario=None):
+        """Record a lifecycle step so evidence timings are measured, not typed."""
+        self.summary.setdefault("timeline", []).append({"phase": name, "at": utc(), "scenario": scenario})
 
     def check(self, name, **details):
         self.summary["checks"].append({"name": name, "passed": True, "at": utc(), **details})
@@ -161,19 +270,33 @@ class Experiment:
         deployment = self.deployment()
         self.target = {"cluster_id": self.cluster_id, "namespace": self.namespace,
                        "kind": "Deployment", "name": self.name, "uid": deployment["metadata"]["uid"]}
-        save(self.directory / "allowed-targets.json", [self.target])
+        save(self.directory / "allowed-targets.json", self.execution_scope())
         template = deployment["spec"]["template"]
         samples = self.health_window(template)
-        self.baseline = {"baseline_id": "BASE-LIVE-" + uuid4().hex[:12], "target": self.target,
-                         "healthy_observed_at": samples[-1]["at"], "pod_template": template,
-                         "template_sha256": fingerprint(template), "reference_versions": [],
-                         "health_evidence": {"source": self.health_source,
-                             "evidence_id": "HEALTH-" + uuid4().hex, "status": "HEALTHY",
-                             "target": self.target, "template_sha256": fingerprint(template),
-                             "window_start": samples[0]["at"], "window_end": samples[-1]["at"]}}
+        self.baseline = self.measured_baseline(template, samples)
         save(self.directory / "baseline.json", self.baseline)
+        # The Executor can also read baselines keyed by target name; it refuses one for another target.
+        save(self.directory / "baselines" / (self.name + ".json"), self.baseline)
         save(self.directory / "baseline-health.json", samples)
-        policy = {"policy_id": "executor-live-lab", "policy_version": "executor-live-lab-1",
+        policy = self.executor_policy()
+        save(self.directory / "policy.json", policy)
+        self.policy = policy
+        self.issue_restricted_credentials()
+        self.check("healthy baseline captured with real service samples and immutable image", image=image)
+
+    def measured_baseline(self, template, samples):
+        """The healthy baseline of self.target: its template and the health window that measured it."""
+        return {"baseline_id": "BASE-LIVE-" + uuid4().hex[:12], "target": self.target,
+                "healthy_observed_at": samples[-1]["at"], "pod_template": template,
+                "template_sha256": fingerprint(template), "reference_versions": [],
+                "health_evidence": {"source": self.health_source,
+                    "evidence_id": "HEALTH-" + uuid4().hex, "status": "HEALTHY",
+                    "target": self.target, "template_sha256": fingerprint(template),
+                    "window_start": samples[0]["at"], "window_end": samples[-1]["at"]}}
+
+    def executor_policy(self):
+        """The live Guard and Executor policy for self.target alone, with its ceilings and registries."""
+        return {"policy_id": "executor-live-lab", "policy_version": "executor-live-lab-1",
                   "profile": "live", "targets": [self.target], "allowed_actions": ["ROLLBACK"],
                   "require_operator_approval": True, "unknown_dependency_result": "ESCALATE",
                   "max_state_age_seconds": 30, "max_dependency_age_seconds": 300,
@@ -184,15 +307,17 @@ class Experiment:
                       "require_compatible_references": True, "require_image_digests": True},
                   "security_constraints": {"deny_privileged": True, "deny_host_access": True,
                       "allowed_image_registries": self.allowed_registries, "allowed_service_accounts": [self.service_account],
-                      "forbid_service_account_change": True},
-                  "resource_constraints": {"require_requests_and_limits": True,
-                      "max_container_requests": {"cpu": "100m", "memory": "64Mi"},
-                      "max_container_limits": {"cpu": "500m", "memory": "128Mi"}},
-                  "workload_constraints": {"max_pod_requests": {"cpu": "250m", "memory": "128Mi"},
-                      "max_rollout_requests": {"cpu": "1", "memory": "512Mi"},
-                      "max_replicas": 2, "max_surge_replicas": 1}}
-        save(self.directory / "policy.json", policy)
-        self.policy = policy
+                      "forbid_service_account_change": True, **self.cve_gate()},
+                  **policy_ceilings(self.ceilings)}
+
+    def cve_gate(self):
+        """{"image_vulnerability_gate": reviewed rules} when this run has a scan directory, else {}."""
+        if self.image_scans is None:
+            return {}
+        return {"image_vulnerability_gate": json.loads(CVE_GATE_RULES.read_text(encoding="utf-8"))}
+
+    def issue_restricted_credentials(self):
+        """Apply the executor Role and write the private one-hour executor kubeconfig (never logged)."""
         self.kubectl("apply", "-f", str(self.rbac_path))
         configuration = json.loads(self.kubectl("config", "view", "--minify", "--flatten", "--raw", "-o", "json").stdout)
         cluster = configuration["clusters"][0]["cluster"]
@@ -209,7 +334,26 @@ class Experiment:
         with self.credentials.open("x", encoding="utf-8") as stream:
             _private_file(self.credentials)
             json.dump(private_config, stream)
-        self.check("healthy baseline captured with real service samples and immutable image", image=image)
+
+    def execution_scope(self):
+        """The Executor's independent target allowlist (allowed-targets.json); only this target by default."""
+        return [self.target]
+
+    def executor_names(self):
+        """Deployment names the restricted executor Role may get and patch."""
+        return [self.name]
+
+    def denied_permissions(self):
+        return [("delete", "deployment/" + self.name), ("get", "secrets"),
+                ("create", "pods/exec"), ("patch", "deployment/outside-executor-scope")]
+
+    def baseline_inputs(self):
+        """How the Executor reads the measured baseline: one file here; Boutique uses a per-target directory."""
+        return {"baseline": self.directory / "baseline.json"}
+
+    def baseline_arguments(self):
+        return [argument for key, path in self.baseline_inputs().items() if path is not None
+                for argument in ("--" + key, str(path))]
 
     def health_window(self, expected_template):
         samples = []
@@ -229,9 +373,8 @@ class Experiment:
         return samples
 
     def permissions(self):
-        allowed = [("get", "deployment/" + self.name), ("patch", "deployment/" + self.name)]
-        denied = [("delete", "deployment/" + self.name), ("get", "secrets"),
-                  ("create", "pods/exec"), ("patch", "deployment/outside-executor-scope")]
+        allowed = [(verb, "deployment/" + name) for name in self.executor_names() for verb in ("get", "patch")]
+        denied = self.denied_permissions()
         results = []
         for verb, resource in allowed + denied:
             result = self.kubectl("auth", "can-i", verb, resource, restricted=True, allow_failure=True)
@@ -251,6 +394,7 @@ class Experiment:
 
     def fault(self, label):
         self.inject_fault()
+        self.phase("fault_injected", label)
         deadline = time.monotonic() + 130
         while time.monotonic() < deadline:
             pods = json.loads(self.kubectl("get", "pods", "-l", "app=" + self.name, "-o", "json").stdout)
@@ -268,6 +412,7 @@ class Experiment:
             incident = observer.observe(observation)
             if incident:
                 save(self.directory / (label + "-incident.json"), incident)
+                self.phase("incident_observed", label)
                 handle(incident, self.store, self.bus)
                 return incident
             time.sleep(5)
@@ -301,33 +446,44 @@ class Experiment:
                   "policy_version": self.policy["policy_version"], "operator_id": "authorized-live-lab-operator",
                   "decision": "APPROVED", "approved_at": utc(), "expires_at": utc(now() + timedelta(seconds=180))}
         save(folder / "proposal.json", proposal)
+        self.phase("proposal_saved", label)
         save(folder / "dependencies.json", dependencies)
-        save(folder / "approval.json", record if approval else None)
+        # This fixed record serves only the file-backed negative cases; it never reaches the Coordinator.
+        save(folder / "approval.json", record if approval and not coordinator else None)
         if coordinator:
             handle(proposal, self.store, self.bus)
             if self.publish_dependency_results:
                 handle(dependencies, self.store, self.bus)
-            state_reader = lambda p: {"cluster_id": self.cluster_id, "captured_at": utc(), "deployment": self.deployment()}
-            readers = dict(state_reader=state_reader, policy_reader=lambda p: self.policy,
+            readers = dict(state_reader=self.guard_state, policy_reader=lambda p: self.policy,
                            baseline_reader=lambda p: self.baseline, dependency_reader=lambda p: dependencies)
             first = process_guard_requests(self.store, self.bus, **readers)[0]
             require(first["verdict"] == "ESCALATE" and first["reason_codes"] == ["OPERATOR_APPROVAL_REQUIRED"],
                     "Guard must require approval before live execution")
-            record = approve(proposal["action_id"], "authorized-live-lab-operator", self.store,
-                             expires_at=utc(now() + timedelta(seconds=180)))
+            record = self.request_approval(proposal, first)
             save(folder / "approval.json", record)
+            require(record is not None, "Operator did not approve " + proposal["action_id"] + "; no Executor write attempted")
             decision = process_guard_requests(self.store, self.bus, **readers)[0]
             save(folder / "initial-guard.json", decision)
+            self.phase("guard_decision", label)
             require(decision["verdict"] == "ALLOW", "Initial Guard did not allow the approved lab proposal")
         return folder, proposal
 
     def adapters(self, folder, *, coordinator=False, reconcile_only=False):
         return build_adapters(context=self.restricted_context, cluster_id=self.cluster_id, kubeconfig=self.credentials,
             allowed_targets=self.directory / "allowed-targets.json", ledger=self.directory / "executor.sqlite",
-            locks=self.directory / "locks", policy=self.directory / "policy.json", baseline=self.directory / "baseline.json",
+            locks=self.directory / "locks", policy=self.directory / "policy.json", **self.baseline_inputs(),
             dependencies=folder / "dependencies.json", approval=folder / "approval.json", server_dry_run=True,
-            approval_reader=(lambda p: self.store.approval(p["action_id"])) if coordinator else None,
-            reconcile_only=reconcile_only)
+            approval_reader=self.approval_authority().executor_client() if coordinator else None,
+            reconcile_only=reconcile_only, image_scans=self.image_scans, cve_exceptions=self.cve_exceptions,
+            **self.reader_inputs())
+
+    def reader_inputs(self):
+        """The Guard-reader identity for ConfigMap and Secret versions (P5.05); none here, so references escalate."""
+        return {}
+
+    def reader_arguments(self):
+        """reader_inputs() as live_executor command-line arguments."""
+        return []
 
     def negative_cases(self, incident):
         original = self.deployment()["spec"]["template"]
@@ -385,8 +541,8 @@ class Experiment:
                 "--allowed-targets", str(self.directory / "allowed-targets.json"), "--kubeconfig", str(self.credentials),
                 "--context", self.restricted_context, "--cluster-id", self.cluster_id, "--ledger", str(self.directory / "executor.sqlite"),
                 "--locks", str(self.directory / "locks"), "--policy", str(self.directory / "policy.json"),
-                "--baseline", str(self.directory / "baseline.json"), "--dependencies", str(folder / "dependencies.json"),
-                "--approval", str(folder / "approval.json")]
+                *self.baseline_arguments(), "--dependencies", str(folder / "dependencies.json"),
+                "--approval", str(folder / "approval.json"), *self.reader_arguments()]
             with adapters.coordination.hold(self.target):
                 rival = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=30)
             require(rival.returncode == 1 and json.loads(rival.stderr)["error"]["code"] == "TARGET_BUSY",
@@ -407,6 +563,7 @@ class Experiment:
             require(adapters.cluster.stats["write_attempts"] == 1, "Duplicate or changed ID repeated a mutation")
             require(self.store.incident(incident["incident_id"])["state"] == "VERIFYING", "APPLIED must only route to VERIFYING")
             save(folder / "execution.json", result)
+            self.phase("execution_recorded", folder.name)
             save(folder / "transport-stats.json", adapters.cluster.stats)
             self.check("approved real rollback, duplicate replay and changed-ID rejection", status="APPLIED", writes=1,
                        coordinator_state="VERIFYING")
@@ -419,10 +576,19 @@ class Experiment:
         incident = self.fault("crash")
         folder, proposal = self.case("crash-after-write", incident, coordinator=True)
         configuration = {"directory": str(self.directory), "folder": str(folder), "credentials": str(self.credentials),
-                         "cluster_id": self.cluster_id, "context": self.restricted_context}
+                         "cluster_id": self.cluster_id, "context": self.restricted_context,
+                         **{key: str(path) for key, path in self.baseline_inputs().items()
+                            if key == "baselines" and path is not None},
+                         # The CVE gate's inputs (P5.02): without them the worker's own Guard re-check of a run whose
+                         # policy has the gate on has no scans, fails closed and never reaches its write.
+                         **{key: str(path) for key, path in (("image_scans", self.image_scans),
+                                                             ("cve_exceptions", self.cve_exceptions))
+                            if path is not None}}
         save(folder / "worker.json", configuration)
+        # The Executor token reaches the worker only through its environment, never argv or worker.json.
         worker = subprocess.run([sys.executable, str(self.entrypoint), "--crash-worker", str(folder / "worker.json")],
-                                cwd=ROOT, capture_output=True, text=True, timeout=60)
+                                cwd=ROOT, capture_output=True, text=True, timeout=60,
+                                env={**os.environ, **self.approval_authority().executor_environment()})
         require(worker.returncode == 73, "Crash worker did not stop at the intended post-write boundary")
         with SQLiteExecutionLedger(self.directory / "executor.sqlite") as ledger:
             require(ledger.get(proposal["action_id"])["phase"] == "WRITE_STARTED", "Crash completed the ledger unexpectedly")
@@ -463,37 +629,54 @@ class Experiment:
             self.summary["status"] = "PASS"
         except BaseException as exc:
             self.summary.update(status="FAILED", error_type=type(exc).__name__, error=str(exc)[:300])
-            # This is explicit administrator teardown, never counted as executor success.
-            if self.baseline is not None:
-                try:
-                    deployment = self.deployment()
-                    patch = [{"op": "test", "path": "/metadata/uid", "value": self.target["uid"]},
-                             {"op": "test", "path": "/metadata/resourceVersion", "value": deployment["metadata"]["resourceVersion"]},
-                             {"op": "replace", "path": "/spec/template", "value": self.baseline["pod_template"]}]
-                    path = self.directory / "emergency-cleanup-patch.json"
-                    save(path, patch)
-                    self.kubectl("patch", "deployment", self.name, "--type=json", "--patch-file", str(path))
-                    self.summary["operator_emergency_restore"] = True
-                except Exception:
-                    self.summary["operator_emergency_restore"] = False
+            self.emergency_restore()
             raise
         finally:
             self.credentials.unlink(missing_ok=True)
+            self.close_approval_authority()
             self.store.close()
             self.summary.update(finished_at=utc(), private_executor_credentials_removed=not self.credentials.exists())
             save(self.directory / "summary.json", self.summary)
 
+    def emergency_restore(self):
+        """Remove the injected fault as the lab administrator; never counted as Sentinel recovery.
+
+        Records operator_emergency_restore and returns whether the patch was applied.
+        """
+        if self.baseline is None:
+            return False
+        try:
+            deployment = self.deployment()
+            patch = [{"op": "test", "path": "/metadata/uid", "value": self.target["uid"]},
+                     {"op": "test", "path": "/metadata/resourceVersion", "value": deployment["metadata"]["resourceVersion"]},
+                     {"op": "replace", "path": "/spec/template", "value": self.baseline["pod_template"]}]
+            path = self.directory / "emergency-cleanup-patch.json"
+            save(path, patch)
+            self.kubectl("patch", "deployment", self.name, "--type=json", "--patch-file", str(path))
+            self.summary["operator_emergency_restore"] = True
+        except Exception as restore_error:  # noqa: BLE001 - recorded; a failed run re-raises its original error
+            log.failure(LOG, "recovery.emergency_restore.failed", restore_error, level=log.ERROR)
+            self.summary["operator_emergency_restore"] = False
+        return self.summary["operator_emergency_restore"]
+
 
 def crash_worker(configuration):
-    """Test-only child process: terminate AFTER a real patch, before ledger finish."""
+    """Test-only child process: terminate AFTER a real patch, before ledger finish.
+
+    A scenario-pair run names its target's own policy file in "policy"; other
+    runs use the run's one policy.json.
+    """
     config = json.loads(Path(configuration).read_text(encoding="utf-8"))
     directory, folder = Path(config["directory"]), Path(config["folder"])
-    store = SQLiteStore(directory / "coordinator.sqlite")
     adapters = build_adapters(context=config.get("context", RESTRICTED_CONTEXT),
         cluster_id=config.get("cluster_id", "sentinel-lab"), kubeconfig=config["credentials"],
         allowed_targets=directory / "allowed-targets.json", ledger=directory / "executor.sqlite", locks=directory / "locks",
-        policy=directory / "policy.json", baseline=directory / "baseline.json", dependencies=folder / "dependencies.json",
-        approval_reader=lambda p: store.approval(p["action_id"]), server_dry_run=True)
+        policy=Path(config.get("policy", directory / "policy.json")), dependencies=folder / "dependencies.json",
+        **({"baselines": config["baselines"]} if "baselines" in config else
+           {"baseline": directory / "baseline.json"}),
+        approval_reader=executor_client_from_environment(), server_dry_run=True,
+        image_scans=Path(config["image_scans"]) if "image_scans" in config else None,
+        cve_exceptions=Path(config["cve_exceptions"]) if "cve_exceptions" in config else None)
     actual = adapters.cluster
 
     class CrashAfterWrite:
@@ -515,15 +698,27 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path)
     parser.add_argument("--crash-worker", help=argparse.SUPPRESS)
+    parser.add_argument("--approval", choices=[mode for mode in MODES if mode != "ui"], default="interactive",
+                        help="interactive: a person types each action ID (needs a terminal); auto-lab: explicit "
+                             "opt-in for unattended lab runs, recorded as automated approval; reject: refuse every approval")
+    parser.add_argument("--operator", help="Interactive operator identity (default lab-operator)")
     args = parser.parse_args()
     if args.crash_worker:
         return crash_worker(args.crash_worker)
+    try:
+        operator_identity(args.approval, args.operator)
+        require_attended(args.approval)
+    except ValueError as error:
+        parser.error(str(error))
     directory = args.run_dir or ROOT / "data/sentinel/runs" / ("executor-live-" + now().strftime("%Y%m%dT%H%M%SZ-") + uuid4().hex[:6])
     experiment = Experiment(directory)
+    experiment.configure_approval(args.approval, args.operator)
+    experiment.summary["provenance"]["tools"] = provenance.tool_versions(("kubectl", "kind", "docker"))
     print("Live executor evidence: " + str(experiment.directory), flush=True)
     try:
         experiment.run()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - top-level boundary: report the failure and exit 1
+        log.failure(LOG, "recovery.experiment.failed", exc, level=log.ERROR)
         print("Live executor test FAILED: " + str(exc), file=sys.stderr)
         return 1
     print("PASS: live restricted executor and crash reconciliation; Coordinator remains VERIFYING", flush=True)

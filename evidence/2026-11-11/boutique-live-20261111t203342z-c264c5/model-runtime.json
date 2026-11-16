@@ -1,0 +1,32 @@
+{
+  "captured_at": "2026-11-11T20:33:45.061857+00:00",
+  "host": "127.0.0.1:11434",
+  "keep_alive": "30m",
+  "models": {
+    "qwen3:14b": {
+      "digest": "bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8",
+      "family": "qwen3",
+      "parameter_size": "14.8B",
+      "placement": {
+        "context_length": 16384,
+        "expires_at": "2026-11-12T05:03:44.9118966+08:00",
+        "gpu_fraction": 1.0,
+        "processor": "GPU",
+        "size_bytes": 11848384511,
+        "size_vram_bytes": 11848384511
+      },
+      "quantization_level": "Q4_K_M",
+      "trained_context_length": 40960
+    }
+  },
+  "num_ctx": 16384,
+  "server_version": "0.40.16",
+  "warm_up": [
+    {
+      "load_duration_seconds": 0.0032198,
+      "model": "qwen3:14b",
+      "seconds": 0.268,
+      "status": "completed"
+    }
+  ]
+}

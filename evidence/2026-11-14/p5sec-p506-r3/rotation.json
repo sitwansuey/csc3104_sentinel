@@ -1,0 +1,29 @@
+{
+  "passed": true,
+  "checks": {
+    "same_pods_and_restart_counts": true,
+    "new_serial": true,
+    "new_revisions": true,
+    "checkout_continuous": true
+  },
+  "before_revisions": {
+    "security-cart-upstream": 2,
+    "security-checkoutservice-client": 2,
+    "security-client": 2,
+    "security-frontend-client": 2,
+    "security-gateway": 2,
+    "security-proxy-client": 2,
+    "security-sentinel-verifier-client": 2,
+    "security-upstream": 2
+  },
+  "after_revisions": {
+    "security-cart-upstream": 2,
+    "security-checkoutservice-client": 2,
+    "security-client": 2,
+    "security-frontend-client": 3,
+    "security-gateway": 3,
+    "security-proxy-client": 2,
+    "security-sentinel-verifier-client": 2,
+    "security-upstream": 2
+  }
+}

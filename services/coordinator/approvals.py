@@ -66,8 +66,8 @@ class ApprovalAccess:
             record = approve(body["action_id"], identity, self.store, expires_at=body["expires_at"],
                              expected_proposal_sha256=body["proposal_sha256"],
                              expected_policy_version=body["policy_version"], managed=True)
-            row = self.store.db.execute("SELECT id FROM approvals WHERE action_id=? AND record=? ORDER BY id LIMIT 1",
-                                        (body["action_id"], _json(record))).fetchone()
+            row = self.store.database.execute("SELECT id FROM approvals WHERE action_id=? AND record=? ORDER BY id LIMIT 1",
+                                              (body["action_id"], _json(record))).fetchone()
             return {"approval_id": row["id"], "approval": record}
         with self.store.transaction():
             action = self._action(identity, role, operation, body)
@@ -78,8 +78,8 @@ class ApprovalAccess:
             row = self.store.approval_row(body["action_id"])
             if row is None or row["id"] != body["approval_id"]:
                 raise ProtocolError(409, "Revocation must name the latest approval")
-            previous = self.store.db.execute("SELECT record FROM approval_revocations WHERE approval_id=?",
-                                             (row["id"],)).fetchone()
+            previous = self.store.database.execute("SELECT record FROM approval_revocations WHERE approval_id=?",
+                                                   (row["id"],)).fetchone()
             if previous:
                 record = json.loads(previous[0])
                 if record["operator_id"] != identity or record["reason"] != body["reason"]:
@@ -89,7 +89,7 @@ class ApprovalAccess:
                 raise ProtocolError(409, "Execution already reported; revocation cannot undo a write")
             record = {"approval_id": row["id"], "action_id": body["action_id"], "operator_id": identity,
                       "revoked_at": self.store.now(), "reason": body["reason"]}
-            self.store.db.execute("INSERT INTO approval_revocations VALUES(?,?)", (row["id"], _json(record)))
-            self.store.set_state(action["incident_id"], body["action_id"], "VALIDATING")
+            self.store.database.execute("INSERT INTO approval_revocations VALUES(?,?)", (row["id"], _json(record)))
+            self.store.set_state(action["incident_id"], body["action_id"], "VALIDATING", cause="revocation")
             self.store.enqueue("guard.request", {"proposal": action["proposal"], "approval": None}, body["action_id"])
             return {"revocation": record}

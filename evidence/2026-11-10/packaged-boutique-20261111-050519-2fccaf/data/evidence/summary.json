@@ -1,0 +1,15 @@
+{
+  "checks": [],
+  "dependencies": "Role 6 evaluates reviewed isolated-service graph against live identity; no automatic discovery",
+  "error": "",
+  "error_type": "KeyboardInterrupt",
+  "finished_at": "2026-11-10T21:06:21.220502Z",
+  "mode": "LIVE Kubernetes; restricted executor credentials",
+  "planning": "operator-authored proposal; no model call",
+  "private_executor_credentials_removed": true,
+  "scope": "single-node kind; Roles 1/2/4/5/6 integrated; Planner proposal supplied by harness",
+  "started_at": "2026-11-10T21:05:58.963713Z",
+  "status": "INTERRUPTED",
+  "verification": "Role 6 consumes real gRPC, readiness and template evidence and publishes outcomes",
+  "workload": "Online Boutique shippingservice v0.10.7"
+}

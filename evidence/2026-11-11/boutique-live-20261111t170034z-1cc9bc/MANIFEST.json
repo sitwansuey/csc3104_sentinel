@@ -1,0 +1,88 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "boutique-live-20261111t170034z-1cc9bc",
+  "class": "agent",
+  "captured_at": "2026-11-11T17:00:34.518266Z",
+  "source_run_dir_name": "boutique-live-20261111T170034Z-1cc9bc",
+  "sanitiser_version": "1",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "b5e8bad6a5c86f806f6f2895e05658c1b378b5f1",
+    "basis": "Inferred: newest commit reachable from main whose committer date precedes the run start. The run recorded no revision and its working tree may have differed."
+  },
+  "files": [
+    {
+      "path": "approved-rollback/execution.json",
+      "sha256": "4d610088044e2fe152b8cf671f91e70b28f45204a50f9ae3be42f2c18a672019",
+      "bytes": 581,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/initial-guard.json",
+      "sha256": "a8b6d51bd9d774b16b3e5555eda5f007e629759f3d2de341dc91ac565b1e55a2",
+      "bytes": 789,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/model-calls.json",
+      "sha256": "0c6a32aa43b6f99c503918fec2c1b7a44233471b45acf49ac74cc68348c1d469",
+      "bytes": 1105,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/model-proposal.json",
+      "sha256": "85807e8074182a60a76c756df76717d3d476e4d292465076b30c6c249cca0001",
+      "bytes": 1589,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/outcome.json",
+      "sha256": "1c58c2ae93f0a3c5152947ce54599511675c26d589db08a242541739f5904f81",
+      "bytes": 2415,
+      "redactions": 0
+    },
+    {
+      "path": "approved-rollback/proposal.json",
+      "sha256": "85807e8074182a60a76c756df76717d3d476e4d292465076b30c6c249cca0001",
+      "bytes": 1589,
+      "redactions": 0
+    },
+    {
+      "path": "images.json",
+      "sha256": "d5760d2d3e7ebb4fbb818b3c1d0af177a286bd9a85878de990b0d8cd5820a199",
+      "bytes": 2741,
+      "redactions": 0
+    },
+    {
+      "path": "policy.json",
+      "sha256": "0bb9c1d519cd4a1635d9d48eef8b04a3d9684c7381bbcf3257388f59b5191a95",
+      "bytes": 2352,
+      "redactions": 0
+    },
+    {
+      "path": "primary-incident.json",
+      "sha256": "fdae55c52c0b8179a8055621dc5e48ae0fc54fdaa3312c5fed36f3208d7def0f",
+      "bytes": 3568,
+      "redactions": 0
+    },
+    {
+      "path": "primary-storefront-impact.json",
+      "sha256": "ec268a0c62f0219fcc93fabeb2ae999889d803709d89d00d53f12b4a7de3f5bc",
+      "bytes": 313,
+      "redactions": 0
+    },
+    {
+      "path": "rbac-checks.json",
+      "sha256": "6fd5a39fb636f6959a24aceb57cd07ed4611c62e201cb11380dc99e85179acbe",
+      "bytes": 552,
+      "redactions": 0
+    },
+    {
+      "path": "summary.json",
+      "sha256": "6941c8a24ab50ced8d512283996f5fa4f456957f1c9a4dd78664c06dbaff6eac",
+      "bytes": 2821,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

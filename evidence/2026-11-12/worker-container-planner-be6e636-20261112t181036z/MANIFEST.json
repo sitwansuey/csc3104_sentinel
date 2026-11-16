@@ -1,0 +1,94 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "worker-container-planner-be6e636-20261112t181036z",
+  "class": "worker-container",
+  "captured_at": "2026-11-12T18:10:36Z",
+  "source_run_dir_name": "task2",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+    "basis": "Operator record: the image sentinel-worker:p3live2 (463b96f19e5b) was built with deploy/docker/worker.Dockerfile from a clean worktree of integration/phase3 at this revision and carries it as its revision label (events.jsonl container_started); the host Coordinator ran from the same worktree. The orchestrator script itself was a scratch tool."
+  },
+  "files": [
+    {
+      "path": "config/model.json",
+      "sha256": "ca0678bd12a1a17643bef9e5d8a1ac5e353b72ff4d75d69581aee52f9a589b7d",
+      "bytes": 36,
+      "redactions": 0
+    },
+    {
+      "path": "config/worker.json",
+      "sha256": "b54ebebfe882fa84c5432101aec2256bbdd3c3cf1bc1a87ed37215f0be89bdd4",
+      "bytes": 591,
+      "redactions": 1
+    },
+    {
+      "path": "coordinator.stderr.log",
+      "sha256": "5eafd0a58018420f57e1921ae42bbb53f6c5612bccff95bcf77bae4a26a7adf8",
+      "bytes": 5426,
+      "redactions": 0
+    },
+    {
+      "path": "events.jsonl",
+      "sha256": "a09030218e42609472b1a7a57c58c32729da7cc760d16106a246754ac33925fd",
+      "bytes": 2979,
+      "redactions": 1
+    },
+    {
+      "path": "health.jsonl",
+      "sha256": "49a655a0252aab129f45bde4a339830a34b8775639c8b76ee3990a7ed6414cf4",
+      "bytes": 24831,
+      "redactions": 0
+    },
+    {
+      "path": "incident.json",
+      "sha256": "c1c2d73c2d336bbcbbedea089a21d8735e44a7d4f1ec2004ed53f024494c2955",
+      "bytes": 3859,
+      "redactions": 1
+    },
+    {
+      "path": "planner-container.log",
+      "sha256": "344a4740921cf3fc87d0bff26f9d9b3ca5ec0ea82c4ff043fb73f5977f1411f2",
+      "bytes": 28601,
+      "redactions": 0
+    },
+    {
+      "path": "planner-container.state.json",
+      "sha256": "803b1326442bac8b017d03774f609f5e7094da540441059b8c31e263ddbbf6f0",
+      "bytes": 4250,
+      "redactions": 0
+    },
+    {
+      "path": "planner-data/agent/incident-245e06228d2775a81a8a5c2e/attempt-1/agent/execution-summary.json",
+      "sha256": "7583d4d9a2ca63a87761ac01b41c2e30dd513bf51b13843c4f73b87e34c2142d",
+      "bytes": 296,
+      "redactions": 0
+    },
+    {
+      "path": "planner-data/agent/incident-245e06228d2775a81a8a5c2e/attempt-1/agent/plan-0.json",
+      "sha256": "1efa0f82baa8b72a20ccbdf4bba7a56a6955040d5b865c24bbc6597e019d19fc",
+      "bytes": 674,
+      "redactions": 0
+    },
+    {
+      "path": "planner-data/agent/incident-245e06228d2775a81a8a5c2e/attempt-1/agent/report.json",
+      "sha256": "d3654b687bb0f249e036176c4fce43b1df372e75e952a6e4d8b5bf37261b5201",
+      "bytes": 1460,
+      "redactions": 0
+    },
+    {
+      "path": "planner-data/agent/incident-245e06228d2775a81a8a5c2e/attempt-1/agent/usage.json",
+      "sha256": "5dbc2a38a7b4fcd3fc9b485e505d19d75bb0c585b786dcf6c24384d816989e69",
+      "bytes": 735,
+      "redactions": 0
+    },
+    {
+      "path": "restore.json",
+      "sha256": "15fc03d52e599b0147d11f30196daa91a32ebc88ca12b9d9a77840930a5a32bb",
+      "bytes": 716,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

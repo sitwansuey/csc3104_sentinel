@@ -1,0 +1,311 @@
+{
+  "checks": [
+    {
+      "at": "2026-11-12T11:30:31.262795Z",
+      "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e",
+      "name": "healthy baseline captured with real service samples and immutable image",
+      "passed": true
+    },
+    {
+      "at": "2026-11-12T11:30:32.257476Z",
+      "name": "real ServiceAccount permits only selected Deployment get/patch; forbidden write denied",
+      "passed": true
+    },
+    {
+      "at": "2026-11-12T11:30:39.572087Z",
+      "cart_status": 500,
+      "checkout_status": 500,
+      "name": "Connected home, add to cart, cart and checkout fail while cart configuration is broken",
+      "passed": true,
+      "scenario": "primary"
+    },
+    {
+      "at": "2026-11-12T11:30:40.532750Z",
+      "name": "missing-approval makes zero executor writes",
+      "passed": true,
+      "status": "FAILED"
+    },
+    {
+      "at": "2026-11-12T11:30:41.182757Z",
+      "name": "hard-policy-rejection makes zero executor writes",
+      "passed": true,
+      "status": "FAILED"
+    },
+    {
+      "at": "2026-11-12T11:30:41.817665Z",
+      "name": "stale-state makes zero executor writes",
+      "passed": true,
+      "status": "CONFLICT"
+    },
+    {
+      "at": "2026-11-12T11:30:42.514849Z",
+      "name": "real API rejects JSON Patch after resourceVersion changes",
+      "passed": true,
+      "patch_attempts": 1
+    },
+    {
+      "at": "2026-11-12T11:30:43.925431Z",
+      "name": "competing real worker is excluded before mutation",
+      "passed": true
+    },
+    {
+      "at": "2026-11-12T11:30:45.179247Z",
+      "coordinator_state": "VERIFYING",
+      "name": "approved real rollback, duplicate replay and changed-ID rejection",
+      "passed": true,
+      "status": "APPLIED",
+      "writes": 1
+    },
+    {
+      "action_id": "ACT-LIVE-3fc2a3f6350a4d29b3b49c24287bd104",
+      "at": "2026-11-12T11:32:26.977004Z",
+      "name": "Role 6 verified gRPC, readiness and template; Coordinator RECOVERED",
+      "outcome": "RECOVERED",
+      "passed": true
+    },
+    {
+      "at": "2026-11-12T11:32:26.985747Z",
+      "name": "gRPC quote and replica health after executor rollback; Role 6 published RECOVERED",
+      "passed": true
+    },
+    {
+      "at": "2026-11-12T11:32:35.138296Z",
+      "cart_status": 500,
+      "checkout_status": 500,
+      "name": "Connected home, add to cart, cart and checkout fail while cart configuration is broken",
+      "passed": true,
+      "scenario": "crash"
+    },
+    {
+      "at": "2026-11-12T11:32:36.699757Z",
+      "coordinator_state": "VERIFYING",
+      "name": "actual worker process exits after live patch; restart reconciles without resubmission",
+      "original_writes": 1,
+      "passed": true,
+      "restart_writes": 0,
+      "worker_exit": 73
+    },
+    {
+      "action_id": "ACT-LIVE-a77e17fb075c4949955954d882ed9084",
+      "at": "2026-11-12T11:34:09.216260Z",
+      "name": "Role 6 verified gRPC, readiness and template; Coordinator RECOVERED",
+      "outcome": "RECOVERED",
+      "passed": true
+    },
+    {
+      "at": "2026-11-12T11:34:10.581397Z",
+      "executor_patch_attempts": 0,
+      "name": "Guard rejects unnecessary rollback despite approval; zero Executor patch attempts",
+      "passed": true,
+      "reason_code": "ROLLBACK_ALREADY_AT_BASELINE",
+      "verdict": "REJECT"
+    }
+  ],
+  "dashboard": {
+    "applied_actions": 2,
+    "boutique": {
+      "convergence_measurements": 0,
+      "deployments": 11,
+      "fault_measurements": 2,
+      "post_action_measurements": 6
+    },
+    "cluster_samples": 60,
+    "dependency_results": 3,
+    "executor_patch_attempts_for_rejected_action": 0,
+    "frontend_http": 200,
+    "guard_reports": 5,
+    "incidents": 3,
+    "mode": "recorded/live producers",
+    "rejected_actions": 1,
+    "role6_outcomes": 2,
+    "snapshot_http": 200,
+    "status": "PASS",
+    "url": "http://127.0.0.1:8765"
+  },
+  "dependencies": "Configured upstream address graph; live component readiness; no trace discovery",
+  "fault_injected_at": "2026-11-12T11:30:32.536489Z",
+  "finished_at": "2026-11-12T11:34:10.663959Z",
+  "guard_rejection": {
+    "action_id": "ACT-LIVE-b53b5cd7fa804a3995f09964ea87dd65",
+    "after": {
+      "available": 1,
+      "desired": 1,
+      "generation": 14,
+      "observed_generation": 14,
+      "pod_uids": [
+        "7303baac-a0a2-4987-9992-3bae7315c983"
+      ],
+      "ready": 1,
+      "resource_version": "115553",
+      "template_sha256": "42381c9c6e4d82279f0c8426923ac5e5ef3ffc2a8dfa34d979955b47944b07d2",
+      "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+    },
+    "approved_guard_verdict": "REJECT",
+    "before": {
+      "available": 1,
+      "desired": 1,
+      "generation": 14,
+      "observed_generation": 14,
+      "pod_uids": [
+        "7303baac-a0a2-4987-9992-3bae7315c983"
+      ],
+      "ready": 1,
+      "resource_version": "115553",
+      "template_sha256": "42381c9c6e4d82279f0c8426923ac5e5ef3ffc2a8dfa34d979955b47944b07d2",
+      "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+    },
+    "executor_journal_attempts": 0,
+    "executor_patch_attempts": 0,
+    "executor_routes": 0,
+    "executor_status": "FAILED",
+    "guard_verdict": "REJECT",
+    "incident_id": "INC-FALSE-ALARM-5F7656C14FB1",
+    "measurement_scope": "After baseline/probe/RBAC setup; counts Executor recovery writes only.",
+    "reason_code": "ROLLBACK_ALREADY_AT_BASELINE",
+    "scenario": "injected false recovery recommendation; no Pod failure",
+    "unchanged": {
+      "generation": true,
+      "pod_uids": true,
+      "resource_version": true,
+      "template_sha256": true,
+      "uid": true
+    }
+  },
+  "mode": "LIVE Kubernetes; restricted executor credentials",
+  "operator_approval": {
+    "approvals": [
+      {
+        "action_id": "ACT-LIVE-3fc2a3f6350a4d29b3b49c24287bd104",
+        "approval_id": 1,
+        "approved_at": "2026-11-12T11:30:43.348879Z",
+        "expires_at": "2026-11-12T11:33:43.333037Z",
+        "operator_id": "automated-lab"
+      },
+      {
+        "action_id": "ACT-LIVE-a77e17fb075c4949955954d882ed9084",
+        "approval_id": 2,
+        "approved_at": "2026-11-12T11:32:35.544162Z",
+        "expires_at": "2026-11-12T11:35:35.530962Z",
+        "operator_id": "automated-lab"
+      }
+    ],
+    "authority_stopped": true,
+    "decided_by": "automated-lab approval: explicit opt-in for an unattended lab run; no person decided",
+    "human": false,
+    "identity": "automated-lab",
+    "mode": "auto-lab",
+    "refusals": [],
+    "via": "approval_http"
+  },
+  "private_executor_credentials_removed": true,
+  "provenance": {
+    "captured_by": "harness",
+    "dirty": false,
+    "dirty_path_count": 0,
+    "dirty_paths_sha256": null,
+    "host_class": "windows-amd64",
+    "python": "3.13.2",
+    "schema": "sentinel-provenance-v1",
+    "source_revision": "a932a5f9967883cd6912d672aaa73f3e31238106",
+    "tools": {
+      "docker": "29.4.3",
+      "helm": "4.3.1+gc0d08d0",
+      "kind": "0.33.0",
+      "kubectl": "1.34.1"
+    }
+  },
+  "recovery_target": "cartservice",
+  "scenario": {
+    "class": "rollback_correct",
+    "id": "C1",
+    "labels": "pending",
+    "name": "cart-redis-addr-invalid"
+  },
+  "scope": "Dedicated single-node cluster; cart-only recovery; harness planning",
+  "started_at": "2026-11-12T11:28:46.575872Z",
+  "status": "PASS",
+  "timeline": [
+    {
+      "at": "2026-11-12T11:30:32.635914Z",
+      "phase": "fault_injected",
+      "scenario": "primary"
+    },
+    {
+      "at": "2026-11-12T11:30:39.178701Z",
+      "phase": "incident_observed",
+      "scenario": "primary"
+    },
+    {
+      "at": "2026-11-12T11:30:39.876137Z",
+      "phase": "proposal_saved",
+      "scenario": "missing-approval"
+    },
+    {
+      "at": "2026-11-12T11:30:40.756785Z",
+      "phase": "proposal_saved",
+      "scenario": "hard-policy-rejection"
+    },
+    {
+      "at": "2026-11-12T11:30:41.426352Z",
+      "phase": "proposal_saved",
+      "scenario": "stale-state"
+    },
+    {
+      "at": "2026-11-12T11:30:42.013330Z",
+      "phase": "proposal_saved",
+      "scenario": "server-cas-race"
+    },
+    {
+      "at": "2026-11-12T11:30:42.694467Z",
+      "phase": "proposal_saved",
+      "scenario": "approved-rollback"
+    },
+    {
+      "at": "2026-11-12T11:30:43.742817Z",
+      "phase": "guard_decision",
+      "scenario": "approved-rollback"
+    },
+    {
+      "at": "2026-11-12T11:30:45.161111Z",
+      "phase": "execution_recorded",
+      "scenario": "approved-rollback"
+    },
+    {
+      "at": "2026-11-12T11:32:26.965706Z",
+      "phase": "outcome_recorded",
+      "scenario": "approved-rollback"
+    },
+    {
+      "at": "2026-11-12T11:32:27.087274Z",
+      "phase": "fault_injected",
+      "scenario": "crash"
+    },
+    {
+      "at": "2026-11-12T11:32:35.051629Z",
+      "phase": "incident_observed",
+      "scenario": "crash"
+    },
+    {
+      "at": "2026-11-12T11:32:35.327969Z",
+      "phase": "proposal_saved",
+      "scenario": "crash-after-write"
+    },
+    {
+      "at": "2026-11-12T11:32:35.692977Z",
+      "phase": "guard_decision",
+      "scenario": "crash-after-write"
+    },
+    {
+      "at": "2026-11-12T11:34:09.207749Z",
+      "phase": "outcome_recorded",
+      "scenario": "crash-after-write"
+    },
+    {
+      "at": "2026-11-12T11:34:09.551554Z",
+      "phase": "proposal_saved",
+      "scenario": "unnecessary-rollback"
+    }
+  ],
+  "verification": "Actual cart gRPC, full storefront cart/checkout and dependency readiness",
+  "workload": "Full Online Boutique v0.10.7 with synthetic checkout traffic"
+}

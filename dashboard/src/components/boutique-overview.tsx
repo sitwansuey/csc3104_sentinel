@@ -7,8 +7,8 @@ import { time } from "@/lib/data"
 import type { BoutiqueObservation, Cluster } from "@/lib/types"
 
 const stageNames: Record<string, string> = {
-  baseline: "Healthy baseline", "primary-fault": "Shipping fault", "crash-fault": "Shipping fault / crash scenario",
-  verification: "Post-action verification",
+  baseline: "Healthy baseline", "primary-fault": "Target fault", "crash-fault": "Target fault / crash scenario",
+  verification: "Post-action verification", "pair-fault": "Both pair faults", "pair-shop": "Shop after both pair incidents",
 }
 
 export function BoutiqueOverview({ records, cluster, now, stale, playback=false, inspect }: {
@@ -20,6 +20,8 @@ export function BoutiqueOverview({ records, cluster, now, stale, playback=false,
   const matching = records.filter(r => r.cluster_id === cluster?.cluster_id && r.namespace === cluster?.namespace)
   const inventory = matching.find(r => r.stage === "inventory")
   const journeys = matching.filter(r => r.journey !== null)
+  // The run's recovery target comes from the inventory (the scenario catalog), never from fixed copy.
+  const targets = inventory?.services?.filter(service => service.recovery_target).map(service => service.name) ?? []
   const recent = (at: string) => {
     const elapsed = now - Date.parse(at)
     return !stale && !playback && Number.isFinite(elapsed) && elapsed >= 0 && elapsed <= 15000
@@ -28,7 +30,7 @@ export function BoutiqueOverview({ records, cluster, now, stale, playback=false,
     <div className="advisory">
       <ShoppingCart className="mt-0.5 size-4 shrink-0 text-primary"/>
       <div><p className="text-sm font-semibold text-foreground">Connected Online Boutique</p>
-      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Eleven application and Redis Deployments. Fault injection and restricted recovery currently target shipping only. Planning uses the selected harness or RCA-agent mode; see Planner / RCA for recorded activity.</p>
+      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Eleven application and Redis Deployments. {targets.length ? `Fault injection and restricted recovery in this run target ${targets.join(", ")}.` : "The recovery target appears with the first Deployment inventory."} Planning uses the selected harness or RCA-agent mode; see Planner / RCA for recorded activity.</p>
       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Deployment readiness is infrastructure evidence. Shopping requests are measured at experiment stages; they are not continuous availability monitoring. Formal recovery is decided separately by Verifier.</p></div>
     </div>
     <Panel title="Boutique service readiness" description={inventory ? `${inventory.cluster_id} / ${inventory.namespace} · Observed ${time(inventory.observed_at)}` : "Waiting for connected-mode Deployment inventory"}>

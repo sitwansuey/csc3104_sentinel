@@ -1,0 +1,30 @@
+name: Merge audit
+
+# Report-only: branch protection and required reviews are unavailable on this
+# private free-plan repository. This lists merges to main that had no approving
+# review from someone other than the PR author, or no green checks, in the job
+# summary. It never fails the job and never writes to the repository.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Report merges without a non-author approval
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python .github/scripts/merge_audit.py

@@ -9,6 +9,7 @@ this small compatibility checker and produce UNKNOWN instead of a safe result.
 
 import re
 
+from services import image_security
 from services.guard.common import GuardInputError, finding, mapping, string, utc_timestamp
 
 
@@ -18,11 +19,124 @@ _BASELINE_FIELDS = {
 }
 _SECURITY_FIELDS = {
     "deny_privileged", "deny_host_access", "allowed_image_registries",
-    "allowed_service_accounts", "forbid_service_account_change",
+    "allowed_service_accounts", "forbid_service_account_change", "image_vulnerability_gate",
+    "allowed_sidecars", "certificate_identities",
 }
 _DIGEST_IMAGE = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._:/-]*@sha256:[0-9a-f]{64}")
 _REGISTRY = re.compile(r"(?:localhost|[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)(?::[0-9]+)?")
 _REFERENCE_FIELDS = {"kind", "namespace", "name", "uid", "resource_version"}
+# P5.05: one reviewed sidecar of one target. Its image is a digest and every
+# mount names the exact ConfigMap or Secret behind it, so neither a new image
+# nor a different key, configuration or host path can pass as the reviewed one.
+# command and args are optional; when given, they must match exactly too.
+_SIDECAR_FIELDS = {"target", "name", "image", "mounts"}
+_SIDECAR_OPTIONAL = {"command", "args"}
+_SIDECAR_MOUNT_FIELDS = {"volume", "mount_path", "source"}
+# The container fields a reviewed sidecar may carry. Anything else (lifecycle
+# hooks, workingDir, stdin, volumeDevices, a container restartPolicy, ...) is
+# unreviewed and refused: a postStart or preStop exec runs any command inside
+# the container that holds the TLS key. Probes may only use the kubelet's own
+# network handlers, never exec, and never name another host.
+_SIDECAR_CONTAINER_KEYS = {
+    "name", "image", "imagePullPolicy", "command", "args", "ports", "resources", "securityContext",
+    "volumeMounts", "env", "envFrom", "terminationMessagePath", "terminationMessagePolicy",
+    "readinessProbe", "livenessProbe", "startupProbe",
+}
+_SIDECAR_PROBES = ("livenessProbe", "readinessProbe", "startupProbe")
+_SIDECAR_PROBE_HANDLERS = {"httpGet", "tcpSocket", "grpc"}
+_SIDECAR_PROBE_TIMING = {"initialDelaySeconds", "timeoutSeconds", "periodSeconds", "successThreshold",
+                         "failureThreshold", "terminationGracePeriodSeconds"}
+_DNS_LABEL = re.compile(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?")
+_DNS_NAME = re.compile(r"[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?")
+# P5.06: one reviewed cert-manager identity. The Secret it names is mounted by
+# the template; the Guard reads the Certificate that owns it (status and spec,
+# never key material) instead of the Secret. Its issuer and DNS names must be
+# exactly the reviewed ones, it must be Ready for its current generation, and
+# it must stay valid for at least min_remaining_seconds; otherwise UNKNOWN
+# (ESCALATE): a rollback cannot repair an identity that is wrong or expiring.
+_CERTIFICATE_FIELDS = {"secret", "certificate", "issuer", "dns_names", "min_remaining_seconds"}
+_ISSUER_FIELDS = {"group", "kind", "name"}
+# What the trusted Certificate status reader (services/guard/adapters.py) records; nothing else.
+_CERTIFICATE_RECORD_FIELDS = {
+    "kind", "namespace", "name", "uid", "generation", "secret_name", "dns_names", "issuer",
+    "ready", "ready_observed_generation", "not_before", "not_after", "revision",
+}
+_MAX_REMAINING_SECONDS = 366 * 24 * 60 * 60
+
+
+def _validate_certificate_identities(value, path):
+    """certificate_identities: [{secret, certificate, issuer {group, kind, name}, dns_names, min_remaining_seconds}]."""
+    if not isinstance(value, list) or not value:
+        raise GuardInputError(f"{path}: expected a nonempty list of reviewed certificate identities")
+    secrets, certificates = set(), set()
+    for index, entry in enumerate(value):
+        where = f"{path}[{index}]"
+        mapping(entry, where)
+        if set(entry) != _CERTIFICATE_FIELDS:
+            raise GuardInputError(f"{where}: expected exactly secret, certificate, issuer, dns_names and min_remaining_seconds")
+        for key in ("secret", "certificate"):
+            if not isinstance(entry[key], str) or not _DNS_NAME.fullmatch(entry[key]):
+                raise GuardInputError(f"{where}.{key}: expected a Kubernetes object name")
+        issuer = mapping(entry["issuer"], f"{where}.issuer")
+        if set(issuer) != _ISSUER_FIELDS or any(not isinstance(issuer[key], str) or not issuer[key] for key in _ISSUER_FIELDS):
+            raise GuardInputError(f"{where}.issuer: expected group, kind and name")
+        names = entry["dns_names"]
+        if (not isinstance(names, list) or not names or len(set(names)) != len(names)
+                or any(not isinstance(name, str) or not _DNS_NAME.fullmatch(name) for name in names)):
+            raise GuardInputError(f"{where}.dns_names: expected a nonempty list of distinct DNS names")
+        # At least the longest decision lifetime (decision_ttl_seconds is at most 300), so an
+        # ALLOW can never outlive the certificate it relied on.
+        remaining = entry["min_remaining_seconds"]
+        if type(remaining) is not int or not 300 <= remaining <= _MAX_REMAINING_SECONDS:
+            raise GuardInputError(f"{where}.min_remaining_seconds: expected an integer of at least 300 seconds")
+        if entry["secret"] in secrets or entry["certificate"] in certificates:
+            raise GuardInputError(f"{where}: duplicate Secret or Certificate")
+        secrets.add(entry["secret"])
+        certificates.add(entry["certificate"])
+
+
+def _validate_sidecars(value, path):
+    """allowed_sidecars: a list of {target, name, image (digest), mounts [{volume, mount_path, source}]}."""
+    if not isinstance(value, list):
+        raise GuardInputError(f"{path}: expected a list of reviewed sidecars")
+    seen = set()
+    for index, entry in enumerate(value):
+        where = f"{path}[{index}]"
+        mapping(entry, where)
+        if not _SIDECAR_FIELDS <= set(entry) <= _SIDECAR_FIELDS | _SIDECAR_OPTIONAL:
+            raise GuardInputError(f"{where}: expected target, name, image and mounts, and optionally command and args")
+        for key in _SIDECAR_OPTIONAL & set(entry):
+            if not isinstance(entry[key], list) or any(not isinstance(item, str) for item in entry[key]):
+                raise GuardInputError(f"{where}.{key}: expected a list of strings")
+        for key in ("target", "name"):
+            if not isinstance(entry[key], str) or not _DNS_LABEL.fullmatch(entry[key]):
+                raise GuardInputError(f"{where}.{key}: expected a Kubernetes name")
+        if not isinstance(entry["image"], str) or not _DIGEST_IMAGE.fullmatch(entry["image"]):
+            raise GuardInputError(f"{where}.image: a reviewed sidecar image must be pinned by SHA-256 digest")
+        if (entry["target"], entry["name"]) in seen:
+            raise GuardInputError(f"{where}: duplicate sidecar for one target")
+        seen.add((entry["target"], entry["name"]))
+        if not isinstance(entry["mounts"], list):
+            raise GuardInputError(f"{where}.mounts: expected a list")
+        volumes, paths = set(), set()
+        for offset, mount in enumerate(entry["mounts"]):
+            mount_path = f"{where}.mounts[{offset}]"
+            mapping(mount, mount_path)
+            if set(mount) != _SIDECAR_MOUNT_FIELDS:
+                raise GuardInputError(f"{mount_path}: expected exactly volume, mount_path and source")
+            if not isinstance(mount["volume"], str) or not _DNS_LABEL.fullmatch(mount["volume"]):
+                raise GuardInputError(f"{mount_path}.volume: expected a volume name")
+            if (not isinstance(mount["mount_path"], str) or not mount["mount_path"].startswith("/")
+                    or ".." in mount["mount_path"].split("/")):
+                raise GuardInputError(f"{mount_path}.mount_path: expected an absolute path")
+            source = mapping(mount["source"], f"{mount_path}.source")
+            if (set(source) != {"kind", "name"} or source["kind"] not in ("ConfigMap", "Secret")
+                    or not isinstance(source["name"], str) or not source["name"]):
+                raise GuardInputError(f"{mount_path}.source: expected a ConfigMap or Secret name")
+            if mount["volume"] in volumes or mount["mount_path"] in paths:
+                raise GuardInputError(f"{mount_path}: duplicate volume or mount path")
+            volumes.add(mount["volume"])
+            paths.add(mount["mount_path"])
 
 
 def validate_policy(policy):
@@ -36,7 +150,16 @@ def validate_policy(policy):
             raise GuardInputError(f"policy.{block}: unexpected fields")
         for key, item in value.items():
             path = f"policy.{block}.{key}"
-            if key in {"max_age_seconds", "min_healthy_duration_seconds"}:
+            if key == "image_vulnerability_gate":
+                try:
+                    image_security.validate_gate_rules(item)
+                except ValueError as exc:
+                    raise GuardInputError(f"policy.{block}.{exc}") from exc
+            elif key == "allowed_sidecars":
+                _validate_sidecars(item, path)
+            elif key == "certificate_identities":
+                _validate_certificate_identities(item, path)
+            elif key in {"max_age_seconds", "min_healthy_duration_seconds"}:
                 if type(item) is not int or item < 0:
                     raise GuardInputError(f"{path}: expected a nonnegative integer")
             elif key in {"trusted_sources", "allowed_image_registries", "allowed_service_accounts"}:
@@ -236,17 +359,91 @@ def _references(spec, containers, namespace):
     return found, unsupported
 
 
-def _compatible_references(baseline, live_state, proposal, spec, containers):
+def _certificate_inventory(value, path):
+    """{Certificate name: record} from the trusted status reader's records; None when absent."""
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise GuardInputError(f"{path}: expected a list of Certificate status records")
+    result = {}
+    for index, record in enumerate(value):
+        where = f"{path}[{index}]"
+        mapping(record, where)
+        if set(record) != _CERTIFICATE_RECORD_FIELDS or record.get("kind") != "Certificate":
+            raise GuardInputError(f"{where}: expected Certificate status fields only")
+        for key in ("namespace", "name", "uid", "secret_name"):
+            string(record[key], f"{where}.{key}")
+        if type(record["generation"]) is not int or record["generation"] < 1:
+            raise GuardInputError(f"{where}.generation: expected a positive integer")
+        for key in ("ready_observed_generation", "revision"):
+            if record[key] is not None and (type(record[key]) is not int or record[key] < 0):
+                raise GuardInputError(f"{where}.{key}: expected a nonnegative integer or null")
+        if record["ready"] not in ("True", "False", "Unknown"):
+            raise GuardInputError(f"{where}.ready: expected True, False or Unknown")
+        if not isinstance(record["dns_names"], list) or any(not isinstance(name, str) for name in record["dns_names"]):
+            raise GuardInputError(f"{where}.dns_names: expected a list of strings")
+        issuer = mapping(record["issuer"], f"{where}.issuer")
+        if set(issuer) != _ISSUER_FIELDS or any(not isinstance(issuer[key], str) for key in _ISSUER_FIELDS):
+            raise GuardInputError(f"{where}.issuer: expected group, kind and name")
+        for key in ("not_before", "not_after"):
+            if record[key] is not None:
+                utc_timestamp(record[key], f"{where}.{key}")
+        if record["name"] in result:
+            raise GuardInputError(f"{where}: duplicate Certificate")
+        result[record["name"]] = record
+    return result
+
+
+def _managed_secrets(security_rules):
+    """{Secret name: Certificate name} for the reviewed cert-manager identities (P5.06)."""
+    return {entry["secret"]: entry["certificate"]
+            for entry in (security_rules or {}).get("certificate_identities", [])}
+
+
+def _compatible_references(baseline, live_state, proposal, spec, containers, managed=None):
+    """Each referenced ConfigMap and Secret must be the version verified with the baseline.
+
+    P5.06: a Secret that a reviewed cert-manager Certificate owns (managed) is
+    compared through that Certificate's UID and generation, which change only
+    when the Certificate is replaced or its spec changes; a renewal (a new key
+    and serial, the same reviewed identity) does not. The Guard reader never
+    reads that Secret. _certificate_identities() separately requires the
+    current certificate to be Ready, unexpired and the reviewed identity.
+    """
+    managed = managed or {}
+    namespace = proposal["target"]["namespace"]
     try:
-        refs, output = _references(spec, containers, proposal["target"]["namespace"])
+        refs, output = _references(spec, containers, namespace)
         saved = _reference_inventory(baseline.get("reference_versions"), "baseline.reference_versions")
         current = _reference_inventory(live_state.get("reference_versions"), "live_state.reference_versions")
+        if any(kind == "Secret" and name in managed for kind, _, name in refs):
+            saved_certificates = _certificate_inventory(baseline.get("certificates"), "baseline.certificates")
+            current_certificates = _certificate_inventory(live_state.get("certificates"), "live_state.certificates")
     except GuardInputError as exc:
         return [_invalid("baseline.reference_versions", str(exc))]
     if not refs:
         output.append(_result("BASELINE_REFERENCES", "baseline.pod_template.spec", [], [], "Template has no ConfigMap/Secret references.", "PASS"))
     for identity in sorted(refs):
         label = "/".join(identity)
+        if identity[0] == "Secret" and identity[2] in managed:
+            name = managed[identity[2]]
+            versions = []
+            for inventory in (saved_certificates, current_certificates):
+                record = (inventory or {}).get(name)
+                versions.append(None if record is None or record["namespace"] != namespace
+                                else (record["uid"], record["generation"]))
+            if None in versions:
+                output.append(_result("BASELINE_REFERENCE_EVIDENCE_MISSING", "baseline.certificates", label,
+                                      "saved and current Certificate UID/generation",
+                                      "The Certificate that owns this Secret lacks trusted version evidence.", "UNKNOWN"))
+            else:
+                output.append(_result("BASELINE_REFERENCE_CHANGED", "live_state.certificates",
+                                      {"reference": label, "certificate": name, "uid": versions[1][0],
+                                       "generation": versions[1][1]},
+                                      {"uid": versions[0][0], "generation": versions[0][1]},
+                                      "The Certificate that owns this Secret must be the one verified with the baseline.",
+                                      "PASS" if versions[0] == versions[1] else "FAIL"))
+            continue
         if saved is None or current is None or identity not in saved or identity not in current:
             output.append(_result("BASELINE_REFERENCE_EVIDENCE_MISSING", "baseline.reference_versions", label,
                                   "saved and current UID/resourceVersion", "Referenced configuration lacks trusted version evidence.", "UNKNOWN"))
@@ -373,10 +570,310 @@ def _security(spec, containers, live_state, rules):
     return output
 
 
+def _mount_sources(spec):
+    """{volume name: {"kind", "name"}} for ConfigMap and Secret volumes; any other volume maps to its type."""
+    volumes = spec.get("volumes", [])
+    if not isinstance(volumes, list):
+        raise GuardInputError("baseline.pod_template.spec.volumes: expected a list")
+    sources = {}
+    for index, volume in enumerate(volumes):
+        mapping(volume, f"baseline.pod_template.spec.volumes[{index}]")
+        types = sorted(set(volume) - {"name"})
+        name = volume.get("name")
+        if not isinstance(name, str) or len(types) != 1:
+            raise GuardInputError(f"baseline.pod_template.spec.volumes[{index}]: expected a name and one source")
+        kind = types[0]
+        source = volume[kind]
+        if kind == "secret" and isinstance(source, dict) and isinstance(source.get("secretName"), str):
+            sources[name] = {"kind": "Secret", "name": source["secretName"]}
+        elif kind == "configMap" and isinstance(source, dict) and isinstance(source.get("name"), str):
+            sources[name] = {"kind": "ConfigMap", "name": source["name"]}
+        else:
+            sources[name] = {"kind": kind}
+    return sources
+
+
+def _mount_order(item):
+    return str(item.get("volume")), str(item.get("mount_path"))
+
+
+def _sidecar_handlers(container, path):
+    """(unreviewed fields, command handlers) of one reviewed sidecar container, as sorted field paths.
+
+    Command handlers are a lifecycle hook of any kind and an exec probe: both
+    run a process inside the sidecar, beside its mounted key. Unreviewed
+    fields are any container key outside _SIDECAR_CONTAINER_KEYS, and any
+    probe key other than one network handler and its timing (a probe that
+    names another host is refused too).
+    """
+    unreviewed, handlers = [], []
+    for key in sorted(set(container) - _SIDECAR_CONTAINER_KEYS):
+        (handlers if key == "lifecycle" else unreviewed).append(f"{path}.{key}")
+    for key in _SIDECAR_PROBES:
+        if key not in container:
+            continue
+        probe = mapping(container[key], f"{path}.{key}")
+        if "exec" in probe:
+            handlers.append(f"{path}.{key}.exec")
+        network = sorted(_SIDECAR_PROBE_HANDLERS & set(probe))
+        extra = sorted(set(probe) - _SIDECAR_PROBE_HANDLERS - _SIDECAR_PROBE_TIMING - {"exec"})
+        unreviewed.extend(f"{path}.{key}.{item}" for item in extra)
+        if "exec" not in probe and len(network) != 1:
+            unreviewed.append(f"{path}.{key}")
+        for item in network:
+            handler = mapping(probe[item], f"{path}.{key}.{item}")
+            if "host" in handler:
+                unreviewed.append(f"{path}.{key}.{item}.host")
+    return unreviewed, handlers
+
+
+def _container_secrets(spec, container, path):
+    """Names of the Secrets one container can read: mounted secret and projected volumes, env and envFrom."""
+    volumes = {volume.get("name"): volume for volume in spec.get("volumes", []) if isinstance(volume, dict)}
+    names = set()
+    mounts = container.get("volumeMounts", [])
+    if not isinstance(mounts, list):
+        raise GuardInputError(f"{path}.volumeMounts: expected a list")
+    for offset, mount in enumerate(mounts):
+        volume = volumes.get(mapping(mount, f"{path}.volumeMounts[{offset}]").get("name"), {})
+        secret = volume.get("secret")
+        if isinstance(secret, dict):
+            names.add(secret.get("secretName"))
+        projected = volume.get("projected")
+        sources = projected.get("sources", []) if isinstance(projected, dict) else []
+        for source in sources if isinstance(sources, list) else []:
+            if isinstance(source, dict) and isinstance(source.get("secret"), dict):
+                names.add(source["secret"].get("name"))
+    env, env_from = container.get("env", []), container.get("envFrom", [])
+    if not isinstance(env, list) or not isinstance(env_from, list):
+        raise GuardInputError(f"{path}: env and envFrom must be lists")
+    for item in env:
+        source = item.get("valueFrom") if isinstance(item, dict) else None
+        if isinstance(source, dict) and isinstance(source.get("secretKeyRef"), dict):
+            names.add(source["secretKeyRef"].get("name"))
+    for item in env_from:
+        if isinstance(item, dict) and isinstance(item.get("secretRef"), dict):
+            names.add(item["secretRef"].get("name"))
+    return names
+
+
+def _sidecars(spec, containers, proposal, rules):
+    """P5.05: only the reviewed sidecars of this target may run beside its one application container.
+
+    A container whose name is a reviewed sidecar of the target must match it
+    exactly: the same image digest (and command and arguments when the
+    review names them), exactly the reviewed read-only mounts of
+    the same ConfigMaps and Secrets, and no environment references (its
+    configuration comes from those mounts only). Every reviewed sidecar must be
+    present, so a rollback never strips the protected route. Any other regular
+    container beyond the one application container, and any init container, is
+    SECURITY_SIDECAR_NOT_ALLOWED. The privilege and host-access rules still
+    apply to every container separately.
+
+    A reviewed sidecar runs no other process: a lifecycle hook or an exec
+    probe is SECURITY_SIDECAR_COMMAND, and any container field outside the
+    reviewed set (_SIDECAR_CONTAINER_KEYS) is SECURITY_SIDECAR_FIELDS. No
+    other container may read a reviewed sidecar's Secret, by a volume mount,
+    a projected source or an environment reference (SECURITY_SIDECAR_MOUNTS).
+    """
+    output = []
+    target = proposal.get("target", {}).get("name") if isinstance(proposal.get("target"), dict) else None
+    reviewed = {entry["name"]: entry for entry in rules["allowed_sidecars"] if entry["target"] == target}
+    reviewed_secrets = {mount["source"]["name"] for entry in reviewed.values() for mount in entry["mounts"]
+                        if mount["source"]["kind"] == "Secret"}
+    sources = _mount_sources(spec)
+    application, present = [], set()
+
+    def check(code, path, actual, expected, okay, message):
+        output.append(_result(code, path, actual, expected, message, "PASS" if okay else "FAIL"))
+
+    for container, path in containers:
+        name = container["name"]
+        entry = reviewed.get(name) if ".initContainers[" not in path else None
+        if entry is None:
+            if ".initContainers[" in path:
+                check("SECURITY_SIDECAR_NOT_ALLOWED", path, name, sorted(reviewed), False,
+                      "An init container is not a reviewed sidecar of this target.")
+            else:
+                application.append((name, path))
+            exposed = sorted(_container_secrets(spec, container, path) & reviewed_secrets)
+            if exposed:
+                check("SECURITY_SIDECAR_MOUNTS", path, exposed, [], False,
+                      "Only the reviewed sidecar may read its Secrets.")
+            continue
+        present.add(name)
+        image = container.get("image")
+        check("SECURITY_SIDECAR_IMAGE", f"{path}.image", image if isinstance(image, str) else "malformed",
+              entry["image"], image == entry["image"], "A reviewed sidecar must run its reviewed image digest.")
+        for key in sorted(_SIDECAR_OPTIONAL & set(entry)):
+            value = container.get(key)
+            check("SECURITY_SIDECAR_COMMAND", f"{path}.{key}", value if isinstance(value, list) else "malformed",
+                  entry[key], value == entry[key], "A reviewed sidecar must run its reviewed command and arguments.")
+        unreviewed, handlers = _sidecar_handlers(container, path)
+        check("SECURITY_SIDECAR_COMMAND", path, handlers, [], not handlers,
+              "A reviewed sidecar runs no lifecycle hook and no exec probe.")
+        check("SECURITY_SIDECAR_FIELDS", path, unreviewed, [], not unreviewed,
+              "A reviewed sidecar carries only reviewed container fields and network probes.")
+        mounts = container.get("volumeMounts", [])
+        if not isinstance(mounts, list):
+            raise GuardInputError(f"{path}.volumeMounts: expected a list")
+        actual = []
+        for offset, mount in enumerate(mounts):
+            mapping(mount, f"{path}.volumeMounts[{offset}]")
+            if set(mount) != {"name", "mountPath", "readOnly"} or mount.get("readOnly") is not True:
+                actual.append({"volume": mount.get("name") if isinstance(mount.get("name"), str) else "malformed",
+                               "mount_path": "not a plain read-only mount"})
+                continue
+            actual.append({"volume": mount["name"], "mount_path": mount["mountPath"],
+                           "source": sources.get(mount["name"], {"kind": "missing"})})
+        expected = [{"volume": item["volume"], "mount_path": item["mount_path"], "source": item["source"]}
+                    for item in entry["mounts"]]
+        actual, expected = sorted(actual, key=_mount_order), sorted(expected, key=_mount_order)
+        check("SECURITY_SIDECAR_MOUNTS", f"{path}.volumeMounts", actual, expected, actual == expected,
+              "A reviewed sidecar may mount only its reviewed ConfigMaps and Secrets, read-only.")
+        env, env_from = container.get("env", []), container.get("envFrom", [])
+        if not isinstance(env, list) or not isinstance(env_from, list):
+            raise GuardInputError(f"{path}: env and envFrom must be lists")
+        referenced = bool(env_from) or any(isinstance(item, dict) and "valueFrom" in item for item in env)
+        check("SECURITY_SIDECAR_ENV", f"{path}.env", "references" if referenced else "none", "none", not referenced,
+              "A reviewed sidecar takes its configuration from its reviewed mounts only.")
+    check("SECURITY_SIDECAR_NOT_ALLOWED", "baseline.pod_template.spec.containers", [name for name, _ in application],
+          {"application_containers": 1, "reviewed_sidecars": sorted(reviewed)}, len(application) == 1,
+          "Only one application container and the target's reviewed sidecars may run in the restored template.")
+    for name in sorted(set(reviewed) - present):
+        check("SECURITY_SIDECAR_MISSING", "baseline.pod_template.spec.containers", None, name, False,
+              "The protected template must keep every reviewed sidecar of this target.")
+    return output
+
+
+def _certificate_identities(spec, containers, proposal, live_state, rules, checked_at):
+    """P5.06: every reviewed cert-manager identity the template mounts must be usable now.
+
+    Evidence is live_state.certificates from the trusted Certificate status
+    reader (Ready condition, notBefore, notAfter, revision, and the spec's
+    Secret, issuer and DNS names), never the Secret or its key. Each check
+    that cannot pass is UNKNOWN, so the Guard ESCALATEs and nothing is written:
+    a rollback restores the template, not the identity, so it cannot repair a
+    certificate that is missing, not Ready, about to expire, expired, not yet
+    valid, or no longer the reviewed identity (another issuer, Secret or DNS
+    name). Malformed evidence is BASELINE_ELIGIBILITY_INVALID (FAIL).
+    """
+    namespace = proposal["target"]["namespace"]
+    references, _ = _references(spec, containers, namespace)
+    mounted = {name for kind, _, name in references if kind == "Secret"}
+    entries = [entry for entry in rules["certificate_identities"] if entry["secret"] in mounted]
+    if not entries:
+        return [_result("SECURITY_IDENTITIES", "baseline.pod_template.spec", [], [],
+                        "The template mounts no reviewed certificate identity.", "SKIP")]
+    return certificate_findings(entries, live_state.get("certificates"), namespace, checked_at)
+
+
+def certificate_findings(entries, records, namespace, checked_at):
+    """The identity findings for reviewed certificate_identities entries against status records.
+
+    The pure core of _certificate_identities(), also used by
+    scripts/security/cert_lifecycle.py identity to show, read-only, what the
+    Guard would decide about the lab's live Certificates.
+    """
+    try:
+        current = _certificate_inventory(records, "live_state.certificates")
+    except GuardInputError as exc:
+        return [_invalid("live_state.certificates", str(exc))]
+    output = []
+    for entry in entries:
+        name = entry["certificate"]
+        path = f"live_state.certificates[{name}]"
+        record = (current or {}).get(name)
+        if record is None or record["namespace"] != namespace:
+            output.append(_result("SECURITY_IDENTITY_EVIDENCE_MISSING", "live_state.certificates", name,
+                                  "trusted Certificate status", "The certificate identity cannot be verified.", "UNKNOWN"))
+            continue
+
+        def check(code, where, actual, expected, okay, message, path=path):
+            output.append(_result(code, f"{path}.{where}", actual, expected, message, "PASS" if okay else "UNKNOWN"))
+
+        actual = {"secret": record["secret_name"], "issuer": record["issuer"], "dns_names": sorted(record["dns_names"])}
+        expected = {"secret": entry["secret"], "issuer": entry["issuer"], "dns_names": sorted(entry["dns_names"])}
+        check("SECURITY_IDENTITY_SPEC", "spec", actual, expected, actual == expected,
+              "The certificate must be the reviewed identity: its Secret, issuer and DNS names.")
+        ready = record["ready"] == "True" and record["ready_observed_generation"] == record["generation"]
+        check("SECURITY_IDENTITY_NOT_READY", "ready",
+              {"ready": record["ready"], "observed_generation": record["ready_observed_generation"],
+               "generation": record["generation"]}, "True for the current generation", ready,
+              "The certificate must be Ready for its current spec.")
+        if record["not_after"] is None or record["not_before"] is None:
+            check("SECURITY_IDENTITY_EXPIRING", "not_after", "unavailable",
+                  {"min_remaining_seconds": entry["min_remaining_seconds"]}, False,
+                  "The certificate's validity period is unavailable.")
+            continue
+        not_before = utc_timestamp(record["not_before"], f"{path}.not_before")
+        remaining = (utc_timestamp(record["not_after"], f"{path}.not_after") - checked_at).total_seconds()
+        check("SECURITY_IDENTITY_NOT_YET_VALID", "not_before", record["not_before"], "not after the check time",
+              not_before <= checked_at, "The certificate is not valid yet.")
+        check("SECURITY_IDENTITY_EXPIRING", "not_after",
+              {"remaining_seconds": remaining, "revision": record["revision"]},
+              {"min_remaining_seconds": entry["min_remaining_seconds"]}, remaining >= entry["min_remaining_seconds"],
+              "The certificate has expired or expires within the reviewed margin; its renewal is failing.")
+    return output
+
+
+def _template_images(containers, path):
+    """{container name: image} for one Pod template; GuardInputError on a duplicate name or a missing image."""
+    images = {}
+    for container, _ in containers:
+        name, image = container.get("name"), container.get("image")
+        if name in images or not isinstance(image, str):
+            raise GuardInputError(f"{path}: container names must be unique and each needs an image")
+        images[name] = image
+    return images
+
+
+def _current_images(live_state):
+    """The current template's images, or None when the live template cannot be read."""
+    try:
+        deployment = mapping(live_state.get("deployment"), "live_state.deployment")
+        spec = mapping(mapping(mapping(deployment.get("spec"), "live_state.deployment.spec").get("template"),
+                               "live_state.deployment.spec.template").get("spec"), "live_state.deployment.spec.template.spec")
+        return _template_images(_containers(spec), "live_state.deployment.spec.template.spec")
+    except GuardInputError:
+        return None
+
+
+def _image_gate(containers, live_state, rules, checked_at):
+    """The P5.02 CVE gate over every image the action would (re)create Pods from.
+
+    Scans come only from the trusted reader as live_state.image_scans, so they
+    are part of inputs_sha256 and a changed scan voids an earlier ALLOW. The
+    candidate is the baseline template (a RESTART writes the same template plus
+    a token). Absent scans are UNKNOWN (ESCALATE), never a pass.
+    """
+    paths = {container["name"]: path + ".image" for container, path in containers}
+    try:
+        candidate = _template_images(containers, "baseline.pod_template.spec")
+    except GuardInputError as exc:
+        return [_invalid("baseline.pod_template.spec", str(exc))]
+    if "image_scans" not in live_state:
+        return [_result("IMAGE_SCANS_MISSING", "live_state.image_scans", None, "trusted scan summaries for every image",
+                        "No trusted image scan evidence was supplied; the CVE gate cannot pass.",
+                        "FAIL" if rules.get("unknown_result") == "REJECT" else "UNKNOWN")]
+    try:
+        results = image_security.gate(live_state["image_scans"], candidate, _current_images(live_state), rules, checked_at)
+    except ValueError as exc:
+        return [_invalid("live_state.image_scans", str(exc))]
+    return [_result(item["code"], paths.get(item["container"], "live_state.image_scans.exceptions"),
+                    {"image": item["image"], "ids": item["ids"], "id_count": item["id_count"]},
+                    {"mode": rules["mode"], "block_severities": rules["block_severities"]},
+                    item["message"], item["status"]) for item in results]
+
+
 def assess(proposal, live_state, baseline, policy, checked_at):
     """Return detailed PASS/FAIL/UNKNOWN/SKIP findings without performing I/O."""
-    if proposal.get("action") != "ROLLBACK":
-        return [_result("ROLLBACK_ELIGIBILITY", "proposal.action", proposal.get("action"), "ROLLBACK", "Rollback-specific checks do not apply.", "SKIP")]
+    # A RESTART writes the baseline template plus a token, so new Pods are
+    # created from it: the same health, security and reference rules apply.
+    # A SCALE starts new Pods from the live template, whose configuration must
+    # equal the baseline's (services/guard/scale.py), so they apply to it too.
+    if proposal.get("action") not in ("ROLLBACK", "RESTART", "SCALE"):
+        return [_result("ROLLBACK_ELIGIBILITY", "proposal.action", proposal.get("action"), "ROLLBACK, RESTART or SCALE", "Template eligibility checks do not apply.", "SKIP")]
     baseline_rules = policy.get("baseline_constraints")
     security_rules = policy.get("security_constraints")
     if baseline_rules is None and security_rules is None:
@@ -401,10 +898,22 @@ def assess(proposal, live_state, baseline, policy, checked_at):
                 okay = isinstance(image, str) and _DIGEST_IMAGE.fullmatch(image) is not None
                 output.append(_result("BASELINE_IMAGE_DIGEST", f"{path}.image", image if isinstance(image, str) else "malformed", "repository@sha256:<64 lowercase hex characters>", "Rollback images must use immutable SHA-256 digests.", "PASS" if okay else "FAIL"))
         if baseline_rules.get("require_compatible_references", False):
-            output.extend(_compatible_references(baseline, live_state, proposal, spec, containers))
+            output.extend(_compatible_references(baseline, live_state, proposal, spec, containers,
+                                                 _managed_secrets(security_rules)))
     if security_rules is not None:
         try:
             output.extend(_security(spec, containers, live_state, security_rules))
+            if "allowed_sidecars" in security_rules:
+                output.extend(_sidecars(spec, containers, proposal, security_rules))
+            if "certificate_identities" in security_rules:
+                output.extend(_certificate_identities(spec, containers, proposal,
+                                                      live_state if isinstance(live_state, dict) else {},
+                                                      security_rules, checked_at))
         except GuardInputError as exc:
             output.append(_result("SECURITY_TEMPLATE_INVALID", "baseline.pod_template.spec", "malformed", "valid security-policy inputs", str(exc)))
+        # The CVE gate covers the actions that write the baseline template (P5.02). A SCALE starts
+        # Pods from the live template, which the gate leaves to P5.03 (docs/security.md).
+        if "image_vulnerability_gate" in security_rules and proposal.get("action") in ("ROLLBACK", "RESTART"):
+            output.extend(_image_gate(containers, live_state if isinstance(live_state, dict) else {},
+                                      security_rules["image_vulnerability_gate"], checked_at))
     return output or [_result("ROLLBACK_ELIGIBILITY", "policy", "no enabled rules", "optional constraints", "No additional checks were enabled.", "SKIP")]

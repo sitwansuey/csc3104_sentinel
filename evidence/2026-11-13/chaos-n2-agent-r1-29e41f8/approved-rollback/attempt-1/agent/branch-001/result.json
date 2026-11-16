@@ -1,0 +1,81 @@
+{
+  "state": "failure",
+  "outputs": [
+    {
+      "evidence_id": "branch-002",
+      "tool": "metrics",
+      "result": {
+        "file": "metrics.csv",
+        "rows_scanned": 24,
+        "rows_in_window": 24,
+        "rows_retained": 24,
+        "truncated": false,
+        "invalid_timestamps": 0,
+        "findings": [],
+        "total_findings": 0
+      }
+    },
+    {
+      "evidence_id": "branch-003",
+      "tool": "logs",
+      "result": {
+        "file": "logs.csv",
+        "rows_scanned": 28,
+        "rows_in_window": 28,
+        "rows_retained": 28,
+        "truncated": false,
+        "invalid_timestamps": 0,
+        "error_count": 5,
+        "components": {
+          "shippingservice": 5
+        },
+        "examples": [
+          {
+            "component": "shippingservice",
+            "time": "2026-11-13 09:20:03+00:00",
+            "untrusted": true,
+            "template": "Error: ErrImageNeverPull",
+            "excerpt": "Error: ErrImageNeverPull",
+            "evidence_id": "branch-003.1"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-13 09:20:04+00:00",
+            "untrusted": true,
+            "template": "Error: ErrImageNeverPull",
+            "excerpt": "Error: ErrImageNeverPull",
+            "evidence_id": "branch-003.2"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-13 09:20:04+00:00",
+            "untrusted": true,
+            "template": "Readiness probe failed: timeout: failed to connect service \"<ip>:<num>\" within 1s: context deadline exceeded",
+            "excerpt": "Readiness probe failed: timeout: failed to connect service \"<private-ip>:50051\" within 1s: context deadline exceeded",
+            "evidence_id": "branch-003.3"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-13 09:20:05+00:00",
+            "untrusted": true,
+            "template": "Back-off restarting failed container server in pod shippingservice-<hex>-xwhv9_sentinel-boutique-connected(<uuid>)",
+            "excerpt": "Back-off restarting failed container server in pod shippingservice-6d94cdf884-xwhv9_sentinel-boutique-connected(27195654-41bc-4e37-9c94-193b7d67a201)",
+            "evidence_id": "branch-003.4"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-13 09:20:06+00:00",
+            "untrusted": true,
+            "template": "Back-off restarting failed container server in pod shippingservice-<hex>-xwhv9_sentinel-boutique-connected(<uuid>)",
+            "excerpt": "Back-off restarting failed container server in pod shippingservice-6d94cdf884-xwhv9_sentinel-boutique-connected(27195654-41bc-4e37-9c94-193b7d67a201)",
+            "evidence_id": "branch-003.5"
+          }
+        ],
+        "suspected_injection_lines": 0,
+        "untimed_errors": 0,
+        "events": [],
+        "burst_baseline_available": false
+      }
+    }
+  ]
+}

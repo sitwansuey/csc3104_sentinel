@@ -150,6 +150,73 @@ class GrpcVerifierTests(unittest.TestCase):
         self.assertEqual(verify(self.execution, rows, self.policy, final=False), result)
 
 
+def redis_policy(template):
+    """A redis-cart health policy (P4.05): a PING must answer exactly PONG."""
+    policy = grpc_policy(template)
+    health = policy["health"]
+    del health["required_grpc_status"]
+    health.update(protocol="redis", required_redis_reply="PONG")
+    return policy
+
+
+def redis_samples(execution, template):
+    rows = grpc_samples(execution, template)
+    for row in rows:
+        for key in ("grpc_status", "application_check_passed"):
+            del row[key]
+        row.update(protocol="redis", redis_reply="PONG")
+    return rows
+
+
+class RedisVerifierTests(unittest.TestCase):
+    """The Redis protocol check (P4.05) is as strict as the gRPC one: an exact reply, never a guess."""
+
+    def setUp(self):
+        self.execution = load("messages/execution-result.json")
+        self.template = load("messages/proposal.json")["parameters"]["template_sha256"]
+        self.policy = redis_policy(self.template)
+        self.samples = redis_samples(self.execution, self.template)
+
+    def test_pong_with_readiness_and_template_is_recovered(self):
+        outcome = verify(self.execution, self.samples, self.policy)
+        self.assertEqual(outcome["status"], "RECOVERED")
+        health = next(check for check in outcome["checks"] if check["name"] == "service_health")
+        self.assertIn("latest reply PONG", health["detail"])
+
+    def test_a_wrong_reply_is_not_recovered_and_its_text_stays_out_of_the_outcome(self):
+        samples = deepcopy(self.samples)
+        samples[1]["redis_reply"] = "LOADING Redis is loading the dataset in memory"
+        outcome = verify(self.execution, samples, self.policy)
+        self.assertEqual(outcome["status"], "NOT_RECOVERED")
+        samples = deepcopy(self.samples)
+        samples[2]["redis_reply"] = "ERR secret-detail"
+        outcome = verify(self.execution, samples, self.policy)
+        self.assertEqual(outcome["status"], "NOT_RECOVERED")
+        self.assertNotIn("secret-detail", json.dumps(outcome))
+
+    def test_missing_or_mislabelled_redis_evidence_is_unknown(self):
+        for change in ({"redis_reply": None}, {"redis_reply": ""}, {"redis_reply": "P" * 65},
+                       {"protocol": "grpc"}, {"redis_reply": 1}):
+            with self.subTest(change=change):
+                samples = deepcopy(self.samples)
+                samples[1].update(change)
+                self.assertEqual(verify(self.execution, samples, self.policy)["status"], "UNKNOWN")
+        # A gRPC-shaped reading cannot pass a Redis policy.
+        grpc = grpc_samples(self.execution, self.template)
+        self.assertEqual(verify(self.execution, grpc, self.policy)["status"], "UNKNOWN")
+
+    def test_the_redis_policy_needs_the_exact_expected_reply(self):
+        for change in ({"required_redis_reply": "OK"}, {"required_redis_reply": None}, {"protocol": "resp"}):
+            policy = deepcopy(self.policy)
+            policy["health"].update(change)
+            with self.subTest(change=change), self.assertRaises(VerifierInputError):
+                verify(self.execution, self.samples, policy)
+        policy = deepcopy(self.policy)
+        del policy["health"]["required_redis_reply"]
+        with self.assertRaises(VerifierInputError):
+            verify(self.execution, self.samples, policy)
+
+
 class VerifierWorkerTests(unittest.TestCase):
     def setUp(self):
         self.store = SQLiteStore(clock=lambda: NOW)
@@ -231,6 +298,8 @@ class BoutiqueRoleSixIntegrationTests(unittest.TestCase):
     def test_both_boutique_actions_publish_real_dependency_and_outcome_messages(self):
         with tempfile.TemporaryDirectory() as root:
             experiment = BoutiqueExperiment(Path(root) / "run")
+            # Unattended test: approvals go through the run's approval API as automated lab approval.
+            experiment.configure_approval("auto-lab")
             try:
                 target = dict(load("messages/proposal.json")["target"], cluster_id=experiment.cluster_id,
                               namespace=experiment.namespace, name=experiment.name)
@@ -262,13 +331,22 @@ class BoutiqueRoleSixIntegrationTests(unittest.TestCase):
                     messages = [json.loads(row[0]) for row in experiment.store.db.execute("SELECT payload FROM messages")]
                     self.assertEqual(sum(m["kind"] == "dependency_result" for m in messages), 2)
                     self.assertEqual(sum(m["kind"] == "outcome" for m in messages), 2)
+                    phases = [(step["phase"], step["scenario"]) for step in experiment.summary["timeline"]]
+                    for label in ("approved-rollback", "crash-after-write"):
+                        self.assertIn(("guard_decision", label), phases)
+                        self.assertIn(("outcome_recorded", label), phases)
+                        self.assertLess(phases.index(("guard_decision", label)),
+                                        phases.index(("outcome_recorded", label)))
             finally:
+                experiment.close_approval_authority()
                 experiment.store.close()
 
     def recover(self, pattern):
         """One opt-in recovery; pattern is the storefront-checkout health of each offered reading."""
         with tempfile.TemporaryDirectory() as root:
             experiment = BoutiqueExperiment(Path(root) / "run")
+            # Unattended test: approvals go through the run's approval API as automated lab approval.
+            experiment.configure_approval("auto-lab")
             try:
                 target = dict(load("messages/proposal.json")["target"], cluster_id=experiment.cluster_id,
                               namespace=experiment.namespace, name=experiment.name)
@@ -309,6 +387,7 @@ class BoutiqueRoleSixIntegrationTests(unittest.TestCase):
                             "checks": experiment.summary["checks"], "events": event.call_args_list,
                             "published": [message for message in messages if message["kind"] == "outcome"]}
             finally:
+                experiment.close_approval_authority()
                 experiment.store.close()
 
     def test_complete_recovery_waits_through_convergence(self):

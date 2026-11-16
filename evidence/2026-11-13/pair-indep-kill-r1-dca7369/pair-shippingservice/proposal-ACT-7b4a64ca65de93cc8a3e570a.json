@@ -1,0 +1,35 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-7b4a64ca65de93cc8a3e570a",
+  "based_on_resource_version": "197695",
+  "evidence_refs": [
+    "E-16E6C8FB8124",
+    "E-E830294CC019",
+    "E-1ED62E438EBD",
+    "E-B0CA16942F58",
+    "E-297D1E8330BF",
+    "E-836F669CF283",
+    "E-AEFEB96893EA",
+    "E-9C865D594438",
+    "E-5C9896CBB727",
+    "E-C31A1A9BD8C2",
+    "E-005DD67F13C0",
+    "E-7B437C8D5C21",
+    "E-41B5538A67E3"
+  ],
+  "incident_id": "INC-92EF191036B2",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-31ab794297a8",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "Restore the saved observed healthy template described by the failed-rollout runbook.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

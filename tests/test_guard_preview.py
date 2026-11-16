@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 from services.guard.core import proposal_fingerprint, template_sha256
 from services.guard.adapters import AdapterError, KUBECTL_TIMEOUT_SECONDS
 from services.guard.preview import server_dry_run
+from shared.actions import restart_parameters, restart_template, restart_token
 
 
 def fixture(path):
@@ -161,6 +162,19 @@ class GuardPreviewTests(unittest.TestCase):
                 self.assertFalse(Path(run.call_args.args[0][-3]).exists())
                 self.assertEqual(run.call_count, 1)
 
+    def test_an_admission_policy_denial_is_unknown_not_rejected(self):
+        # A ValidatingAdmissionPolicy in Deny mode (deploy/security/approved-images-vap.yaml)
+        # makes the dry-run exit non-zero. kubectl's text cannot be trusted to
+        # tell a denial from other failures, so the preview stays UNKNOWN.
+        stderr = (b"The deployments \"checkout\" is invalid: : ValidatingAdmissionPolicy "
+                  b"'sentinel-approved-images' with binding 'sentinel-approved-images' denied request: "
+                  b"Every container image must be an approved repository@sha256 digest")
+        failure = subprocess.CompletedProcess([], 1, b"", stderr)
+        with patch("services.guard.preview.subprocess.run", return_value=failure):
+            result = self.preview()
+        self.assertEqual((result["status"], result["details_code"]), ("UNKNOWN", "SERVER_DRY_RUN_FAILED"))
+        self.assertIsNone(result["admitted_template_sha256"])
+
     def test_timeout_and_unavailable_kubectl_cleanup_without_fallback(self):
         for failure, detail in (
             (subprocess.TimeoutExpired(["private-command"], 15, stderr=b"secret"), "SERVER_DRY_RUN_TIMEOUT"),
@@ -231,6 +245,92 @@ class GuardPreviewTests(unittest.TestCase):
         self.assertEqual(result["details_code"], "ADMISSION_TEMPLATE_MUTATED")
         self.assertEqual(result["admitted_template_sha256"], template_sha256(self.response["spec"]["template"]))
         self.assertNotEqual(result["admitted_template_sha256"], result["template_sha256"])
+
+    def test_rollback_hash_not_matching_the_baseline_never_makes_request(self):
+        self.proposal["parameters"]["template_sha256"] = "b" * 64
+        with patch("services.guard.preview.subprocess.run") as run:
+            result = self.preview()
+        run.assert_not_called()
+        self.assertEqual(result["status"], "UNKNOWN")
+        self.assertEqual(result["details_code"], "BASELINE_PRECONDITION_FAILED")
+        self.assertEqual(result["template_sha256"], "b" * 64)
+
+    def test_an_action_without_a_write_is_not_previewed_and_never_makes_request(self):
+        # SCALE has its own preview since P5.07 (tests/test_scale_action.py); NO_ACTION writes nothing.
+        self.proposal.update(action="NO_ACTION", parameters={})
+        with patch("services.guard.preview.subprocess.run") as run:
+            result = self.preview()
+        run.assert_not_called()
+        self.assertEqual(result["status"], "UNKNOWN")
+        self.assertEqual(result["details_code"], "UNSUPPORTED_PREVIEW_ACTION")
+        self.assertIsNone(result["template_sha256"])
+
+
+class RestartPreviewTests(GuardPreviewTests):
+    """A RESTART previews the reviewed baseline plus its planner-bound token, and nothing else."""
+
+    def setUp(self):
+        super().setUp()
+        self.proposal.update(action="RESTART",
+                             parameters=restart_parameters(self.proposal["incident_id"], self.baseline))
+        self.token = self.proposal["parameters"]["restart_token"]
+        self.candidate = restart_template(self.baseline["pod_template"], self.token)
+        self.response["spec"]["template"] = copy.deepcopy(self.candidate)
+
+    def test_exact_conditional_patch_is_private_closed_and_always_server_dry_run(self):
+        observed = {}
+
+        def run(command, **kwargs):
+            with Path(command[command.index("--patch-file") + 1]).open("rb") as stream:
+                observed["patch"] = json.load(stream)
+            observed["command"] = command
+            return self.completed()
+
+        with patch("services.guard.preview.subprocess.run", side_effect=run) as mocked:
+            result = self.preview()
+        mocked.assert_called_once()
+        self.assertEqual(observed["command"][-2:], ["--dry-run=server", "--output=json"])
+        self.assertEqual(observed["patch"], [
+            {"op": "test", "path": "/metadata/uid", "value": self.proposal["target"]["uid"]},
+            {"op": "test", "path": "/metadata/resourceVersion", "value": "102"},
+            {"op": "replace", "path": "/spec/template", "value": self.candidate},
+        ])
+        self.assertEqual(self.candidate["metadata"]["annotations"]["sentinel.io/restart-token"], self.token)
+        self.assertEqual(result["status"], "PASSED")
+        self.assertEqual(result["details_code"], "SERVER_DRY_RUN_PASSED")
+        self.assertEqual(result["proposal_sha256"], proposal_fingerprint(self.proposal))
+        self.assertEqual(result["template_sha256"], self.proposal["parameters"]["template_sha256"])
+        self.assertEqual(result["template_sha256"], template_sha256(self.candidate))
+        self.assertNotEqual(result["template_sha256"], self.baseline["template_sha256"])
+        self.assertEqual(result["admitted_template_sha256"], result["template_sha256"])
+
+    def test_restart_parameters_not_bound_to_this_incident_and_baseline_never_make_request(self):
+        other = restart_token("INC-OTHER", self.baseline["baseline_id"])
+        cases = {
+            "unbound token": {"restart_token": "RST-" + "0" * 16},
+            "token of another incident": {
+                "restart_token": other,
+                "template_sha256": template_sha256(restart_template(self.baseline["pod_template"], other))},
+            "hash of the bare baseline": {"template_sha256": self.baseline["template_sha256"]},
+            "hash of nothing reviewed": {"template_sha256": "c" * 64},
+        }
+        for name, change in cases.items():
+            with self.subTest(case=name):
+                self.setUp()
+                self.proposal["parameters"].update(change)
+                with patch("services.guard.preview.subprocess.run") as run:
+                    result = self.preview()
+                run.assert_not_called()
+                self.assertEqual(result["status"], "UNKNOWN")
+                self.assertEqual(result["details_code"], "BASELINE_PRECONDITION_FAILED")
+
+    def test_admission_that_drops_the_restart_token_is_a_mutation(self):
+        self.response["spec"]["template"] = copy.deepcopy(self.baseline["pod_template"])
+        with patch("services.guard.preview.subprocess.run", return_value=self.completed()):
+            result = self.preview()
+        self.assertEqual(result["status"], "REJECTED")
+        self.assertEqual(result["details_code"], "ADMISSION_TEMPLATE_MUTATED")
+        self.assertEqual(result["admitted_template_sha256"], self.baseline["template_sha256"])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,2 @@
+# Optional RCA-agent runtime. The harness/Guard/Executor core uses the stdlib.
+pandas>=2.2,<4

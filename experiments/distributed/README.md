@@ -1,0 +1,382 @@
+# Multi-process fault runs on one host (P3.01)
+
+This harness runs the networked worker layer as separate operating-system
+processes, injects network, process and timing faults, and checks invariants
+from what the processes left behind. The CI test matrix (ubuntu-latest and
+windows-latest) runs its default subset; only Windows runs have been observed
+so far, so the Linux-only paths (SIGSTOP in S2, the CA made with Linux openssl)
+are not yet verified.
+
+**What it shows.** The Coordinator (`runtime.coordinator_server`) and each
+worker (`runtime.worker_service` as planner-1, guard-1, executor-a, executor-b
+and verifier-1, plus an Observer feed) run as their own Python process. Each
+has its own state directory, its own generated credentials and its own TCP
+connections. Each worker reaches the Coordinator through its own fault proxy.
+Crashes are real process kills, and a Coordinator restart reopens the same
+database file.
+
+**What it does not show.** These are processes on one host. They share one
+kernel, one wall clock, one disk and loopback networking. They are not
+separate machines or containers. S7 and S7b shift one process's clock with a
+gated test offset; every worker measures its offset from the Coordinator
+(Cristian's algorithm) and `summary.json` records it under
+`clock_offsets_measured`, but on one host that measures the simulated offset,
+not skew between machines. The file mode backs Kubernetes with a SQLite file, not
+an API server. The Planner is the deterministic provider, so every summary
+says `synthetic_planner: true`. The kind mode ran in two operator sessions on
+12 Nov 2026, the first with scratch versions of its tools and the second with
+the committed ones, against one kind node on the same host; all 25 of those
+runs are committed evidence bundles ([below](#kind-mode),
+`C-DISTRIBUTED-KIND-ALL`). One kind node on one host is still not separate
+machines.
+
+## Run it
+
+From the repository root with the project virtual environment:
+
+```powershell
+python -m experiments.distributed.run_scenarios --mode file
+python -m experiments.distributed.run_scenarios --mode file --all --repeat 5 --out runs/distributed
+python -m unittest tests.test_distributed_processes -v
+```
+
+The first line runs the plan's CI subset (S1b, S1c, S2, S4, S5). `--all` adds
+S0, S1a, S1d, S1e, S3, S6, S7, S7b and S8. Each run prints one JSON line and, with
+`--out`, writes `<date>-<scenario>[-rN]/` with `summary.json`, `timeline.jsonl`
+(every process's log lines and the transitions journal, in time order) and
+`coordinator-records.json`. These files hold identifiers, states and counts
+only: no credential, lease token, payload or absolute path. The exit code is 0
+when every run matched its expectation. A full `--all` pass takes about
+three minutes. Set `SENTINEL_DISTRIBUTED_ALL=1` to run every scenario
+in the unit tests too (the default subset takes about 90 s).
+
+## Pieces
+
+| Piece | File | Notes |
+| --- | --- | --- |
+| Topology | `topology.py` | Generates tokens (`secrets.token_urlsafe(32)`) and gives each child only its own, in its environment. The Coordinator gets all of them because it checks them. A throwaway CA and a 127.0.0.1 certificate (openssl, with a private configuration file) give HTTPS; the CA key is deleted after signing. Without openssl the run records `tls: false`. Binds loopback only. |
+| Fault proxy | `faultproxy.py` | pass, blackhole, reset, delay and drop-response, per worker, switched at run time. TLS passes through; drop-response lets the handshake finish and then drops the reply. A mode applies to connections accepted after it is set; an open connection keeps its mode. That is a hard partition here only because the worker and approval clients open one connection per request. |
+| Fault points | `runtime/fault_points.py` | Named stop points in the worker and Coordinator code paths. Inert unless `SENTINEL_FAULT_POINTS` names an existing directory and `SENTINEL_FAULT_CLUSTER` is a lab cluster (`file-sentinel-distributed`, `sentinel-boutique-connected`, or `sentinel-dist`, the four-node lab of P4.01 whose workers run in Pods). With either variable (or a clock offset) set, a worker starts only if its configured `cluster_id` is that cluster and any configured context is its lab context; otherwise it refuses to start. An armed point fires once: it exits with code 73, like a crash, or blocks until released. |
+| File cluster | `tests/support/file_cluster.py` | One Deployment in SQLite, shared by every process. It reuses the simulator's RFC 6902 JSON Patch and etcd-like revision counter (`tests/support/sim_apiserver.py`) and answers the kubectl commands of the production adapter, so `KubectlDeploymentAPI` runs unchanged. Every patch is recorded with its outcome and classified by effect: any patch that writes or changed the pod template is a template write, with or without Sentinel's evidence annotation. Workers accept it only in a lab fault run. |
+| Observer feed | `observer_feed.py` | The real Observer state machine and outbox over a synthetic observation series, delivered with the real HTTP ingress. |
+| Inputs | `fixtures.py` | The committed samples, moved to the current time and renamed to the file cluster, with a strict live-profile policy and a short health window. |
+| Invariants | `invariants.py` | I1-I6 and X1-X4, below. |
+| Scenarios | `scenarios.py`, `run_scenarios.py` | S0-S8, below. |
+| Measurements | `claims.py` | P3.06: `rate` (claims per second over a seeded backlog), `restart` (S5 with timed restarts: seconds from the restarted Coordinator's `/readyz` to each worker's first claim, from its access log) and `restore` (a restore drill). Results are in the [distributed model](../../docs/distributed-model.md#recovery-time-and-restore-measured-on-one-host). |
+
+Process faults: kill uses `Popen.kill()` (SIGKILL on POSIX, TerminateProcess on
+Windows). Suspend uses SIGSTOP and SIGCONT on POSIX. psutil is not in the lock
+files, so suspend is not supported on Windows: S2 there stalls the Executor at
+a blocked fault point and blackholes its link, which also stops its lease
+renewals. Workers serve `/healthz` and `/readyz` on 127.0.0.1
+(`--health-port`); the harness waits on `/readyz`.
+
+## Invariants
+
+| Id | Holds when |
+| --- | --- |
+| I1 | At most one committed template write per action, and none without that action's evidence annotation (from the cluster's own record, classified by effect) |
+| I2 | No template write after a revocation unless the action went to review |
+| I3 | Every incident is RECOVERED, FAILED, NEEDS_REVIEW or REJECTED within the scenario deadline |
+| I4 | No delivery has two different acknowledged results |
+| I5 | No command is attempted more than 6 times or refused with HTTP 400 more than twice |
+| I6 | No Executor ledger ends with a write in doubt (WRITE_STARTED or UNCERTAIN) |
+| X1 | No command is claimed by a second identity during another identity's current lease (from the Coordinator's access log, one clock) |
+| X2 | No generated credential or lease token in any log, configuration file or argv |
+| X3 | Every result a worker saw acknowledged, and every incident the Observer saw acknowledged, is recorded by the Coordinator |
+| X4 | Each incident's transitions journal is one unbroken chain ending in its state, and every Executor or Verifier command follows its transition |
+
+I1-I6 follow the A1 design's numbering. X1-X4 are the further properties the
+P3.01 task lists (lease exclusivity, no secret in logs, no lost acknowledged
+message, journal consistent with the outbox).
+
+I7 (P4.01) is checked only on the four-node lab, which has an API server
+audit log: at most one successful template PATCH per action in that log, each
+by the Executor's ServiceAccount and carrying its action's evidence
+(`invariants.py::i7`, `audit.py`). It fails rather than passing on no rows
+when the extract may be short: the operator's injection missing from it, a
+generation the target gained with no write in it, a log that rotated past
+the run's start, or a Sentinel change logged without its body
+(`audit.py::completeness`). See [four-node acceptance](#four-node-acceptance-p401).
+
+## Scenarios and results on this code base
+
+Results from the file mode on one Windows host, three runs per scenario
+(`--all --repeat 3`), each run matching the row below. Nothing here has been
+run on Linux yet.
+
+| Scenario | Fault | Result |
+| --- | --- | --- |
+| S0 | none | RECOVERED, 1 write, all invariants hold |
+| S1a | Planner killed mid-inference, restarted | RECOVERED, 1 write, all hold |
+| S1b | Executor killed after its write intent; peer takes over; crashed host restarted after the incident ends | RECOVERED, 1 write by the peer, all hold. Before P3.04 I6 failed: the crashed host's ledger kept WRITE_STARTED. It now settles the row from the peer's evidence before claiming |
+| S1c | Executor killed after its patch committed; peer takes over | RECOVERED, 1 write; the peer adopted it by its evidence annotation (defect (b) of the plan does not reproduce); all hold (I6 failed before P3.04, as in S1b) |
+| S1d | Verifier killed mid-collection, restarted | RECOVERED, 1 write, all hold |
+| S1e | Executor killed after its write intent, peer stopped, crashed host restarted at once | FAILED with 0 writes: the host fenced its own in-doubt write (P2.06), all hold |
+| S2 | Lease holder stalled past its lease before the patch | RECOVERED, 1 write by the peer; the stale host's patch was refused and it adopted the peer's write (defect (c) did not reproduce on this base), all hold |
+| S3 | Lease holder's link blackholed after its write intent | RECOVERED, 1 write by the peer, all hold |
+| S4 | Response to the Executor's result dropped | RECOVERED; the resent saved body got a replay receipt, all hold |
+| S5 | Coordinator killed after committing a result, before the reply; restarted, and restarted again later | RECOVERED, 1 write, all hold |
+| S6 | Every worker link blackholed for 12 s while an approval was created | no write and no progress during the partition, then RECOVERED, all hold |
+| S7 | Both Executors' clocks 300 s behind (gated offset on the whole Executor clock, including its local Guard re-check), no skew bound, operator approval required | Before P3.03 the write landed but its result was refused with HTTP 400 for the whole run and the incident stayed READY (I3 and I5 failed). Since P3.03 orders results by Coordinator sequence, the result is accepted; the Executor's own Guard re-check sees the Coordinator-stamped approval 300 s in its future and refuses: FAILED, 0 writes, no HTTP 400, all hold, with θ ≈ 300 s measured for both Executors (3 of 3 runs on this branch). It does not recover, because no Executor is within a bound |
+| S8 | Approval revoked while the lease holder is blocked at `executor.before_patch`, after its last checks (P3.04) | The other Executor seals the target; the paused patch is refused (CONFLICT): FAILED, 0 writes, all hold (3 of 3 runs) |
+| S7b | executor-a's clock 5 s behind, a 2 s skew bound on every worker and the Coordinator | executor-a measures θ ≈ 5 s, stays unready (`clock_skew`) and never claims; executor-b does the work: RECOVERED, 1 write, all hold (3 of 3 runs on this branch) |
+
+S1b and S1c keep the crashed Executor down until the incident ends so that
+the peer takes the command every time. In earlier runs that restarted it at
+once, whichever Executor claimed first decided the outcome: sometimes the
+restarted host fenced its own in-doubt write (FAILED with no write, as in S1e)
+or confirmed its own committed write, and I6 then held.
+
+When a known failure is fixed, the matching test in
+`tests/test_distributed_processes.py` fails until the scenario's
+`expected_failures` is updated, so a fix cannot go unrecorded.
+
+Each `summary.json` also gives `verifier_attempts`, the most deliveries of
+any `verifier.request` command, and `verification`: for each action the
+Verifier checked, its readings as seconds after the execution with each
+reading's status judged alone (healthy, unhealthy or incomplete), the first
+healthy one, the deadline and the outcome, read from the Verifier's own store.
+The remote Verifier samples within one claimed pass at most half the
+policy's `max_sample_gap_seconds` apart, until an outcome or the deadline
+([distributed model](../../docs/distributed-model.md#the-verifier-samples-within-one-claimed-pass)),
+so a run normally needs one Verifier delivery. S0 and S2 set
+`max_verifier_attempts` to 2: a run with more, or with no Verifier command at
+all, does not match its expectation (in file mode they take 1). In file mode
+that bound does not tell the old one-reading pass from the new cadence: the
+file-mode collector (`tests/support/file_cluster.py`) returns a whole window
+of readings per call, so one delivery is enough either way. The regression
+guard for the cadence is `tests/test_verifier_sampling.py`; the bound itself
+is tested on fake records in `tests/test_kind_bundle.py`. While a pass
+samples, the single Verifier claims nothing else, so other actions'
+dependency checks, Guard steps and verification wait for it
+([L-VERIFIER-PASS-BLOCKS-WORKER](../../docs/limitations.md#l-verifier-pass-blocks-worker)).
+
+## Kind mode
+
+`--mode kind` accepts only `--context kind-sentinel-boutique-connected` and
+refuses every other context, the original lab cluster included. It needs
+`--kind-bundle DIR` prepared by `kind_bundle.py` (below): `policy.json`,
+`baseline.json`, `allowed-targets.json`, a restricted `kubeconfig`,
+`verifier-inventory.json` and `lab.json` for the target workload. Workers then use the real kubectl readers and the
+restricted Executor adapter, the Observer is the real CLI, and template writes
+are counted from the Deployment itself, independently of Sentinel's records.
+The harness reads the Deployment at the start and then every
+`kind_poll_seconds` (0.5 s), and counts a write by its effect, as file mode
+does (`topology.py::observed_writes`, mirroring
+`tests/support/file_cluster.py::patch_action`): the fingerprint of the whole
+pod template changed since the last read (a RESTART, which changes only the
+restart annotation inside the template, counts), or a new
+`sentinel.io/execution` evidence annotation names the template now in place.
+The new evidence annotation names the action; a template change without one is
+unannotated and fails I1. `metadata.generation` does not count writes: a real
+API server also raises it for an annotation-only change, as the live fence runs
+showed (`C-EXECUTOR-WEDGE-FENCE`), so an Executor fence (the harness sets
+`fence_after_seconds`), a Coordinator seal (the fence marker and its
+`sentinel.io/fence-epoch`, written in one patch, P3.04) or any other metadata
+change counts no write.
+
+Generation is used only to tell when a read missed something. Under the
+apps/v1 Deployment strategy every commit that changes the spec or the
+annotations raises it by one, and changes at least one of four parts: the
+template or its evidence, the fence marker (with a seal's epoch), the other
+annotations, or the rest of the spec. When generation rose between two reads by more than the number of
+parts that differ, the window gets an `unobserved` row (action `unknown`) and
+I1 fails, because two writes, or a write and its revert, can look like one
+write or none from two reads. So a kind-mode I1 pass is not bought by polling
+too slowly; harmless commits close together (two fences or seals between reads) fail it
+too, and the run must be repeated. `summary.json` counts these windows under
+`unobserved_windows`, apart from `committed_writes`. The check is a bound, not
+a full history: one commit that changes several parts lets one more commit go
+unflagged, and without a generation in both reads nothing is flagged. The time
+of a write is when it was first seen, up to `kind_poll_seconds` after it
+committed, so I2 can place a write that committed just before a revocation
+after it. Nothing else may write to the Deployment during a run: the fault is
+injected before the harness takes its first read and restored after its last.
+
+### A reproducible kind-mode run
+
+Prerequisites: the connected lab (`kind-sentinel-boutique-connected`) with
+Online Boutique deployed, the existing `sentinel-executor` ServiceAccount and
+Role (get and patch on the catalog targets only), the target healthy at a
+template pinned by digest, and your own kubeconfig with that context. Never
+point any of it at `sentinel-lab`: the tools refuse any context that names it.
+
+```powershell
+kubectl --context kind-sentinel-boutique-connected -n sentinel-boutique-connected port-forward service/frontend 18631:80
+python -m experiments.distributed.kind_bundle prepare --context kind-sentinel-boutique-connected --storefront http://127.0.0.1:18631
+python -m experiments.distributed.run_scenarios --mode kind --context kind-sentinel-boutique-connected --kind-bundle <bundle> --scenarios S1b,S1c,S2,S4,S5,S8 --repeat 2 --out runs/distributed-kind
+```
+
+Keep the port-forward running in its own terminal. `prepare`
+(`kind_bundle.py`) reads, with your kubeconfig and that context only, the
+target Deployment (R1's shippingservice by default; `--scenario` takes another
+catalog template fault allowed in that scope, such as C1 for cartservice) and
+`deployment/frontend`, checks a healthy window of 4 reads 10 s apart (same
+template, every replica ready and available, `/cart` answering 200), and reads
+the API server URL and CA from `kubectl config view` (your own client
+credentials are never written). It creates one thing on the cluster, a
+TokenRequest for `sentinel-executor` valid for `--token-duration` (2 h by
+default, at most 8 h), and writes the bundle into a new temporary directory
+outside the repository, which it prints. Only `kubeconfig` in it holds a
+credential (that token), readable by its owner only; it is deleted again if the
+`kubectl auth can-i` checks (get and patch the target, but not delete it, patch
+paymentservice, read secrets or list pods) do not match. The other files, and
+the printed summary, hold no credential. `policy.json` is the strict live
+profile that passed in the session below (`distributed-kind-lab-2`: 2 samples,
+a 10 s stable window, a 20 s sample gap, 60 s grace and a 90 s timeout).
+Delete the bundle directory when you finish; the token also expires by itself.
+
+Each run then goes: the operator side (`KindLab`, your kubeconfig) waits until
+the target is at its baseline template, Available and `/cart` answers 200;
+injects the catalog fault (R1: `PORT=invalid-port` on the `server` container)
+and waits until no replica is available and `/cart` fails; the harness starts,
+runs the scenario and stops; then, if Sentinel did not put the baseline back
+(S8 ends FAILED with no write), the operator side restores it with a JSON patch
+that tests the uid and resourceVersion it read, and waits again until the
+target is healthy. So `--repeat` and several scenarios in one invocation each
+get a fresh fault. A fault that does not show, a target that is not at its
+baseline, or a restore that does not end healthy stops the invocation with
+exit code 3, so no run starts on an unknown state.
+
+Once the injection has been sent, any failure before the fault is seen (a
+`kubectl get` that fails or times out, a Deployment recreated with another
+uid, an interrupt) and a fault that never shows are followed by a restore
+attempt. The `stopped` line then says either that the baseline was restored
+and verified healthy, or that the target is not at a verified healthy
+baseline and the fault may still be in place, with the command to restore it.
+A restore after a run that cannot read or patch the target is recorded in
+that run's `summary.json` as `kind_lab.restore` with `healthy` false and the
+error (never kubectl's own error text), and stops the invocation the same
+way. To put the baseline back by hand:
+
+```powershell
+python -m experiments.distributed.kind_bundle restore --context kind-sentinel-boutique-connected --bundle <bundle>
+```
+
+It uses your kubeconfig, not the bundle's token (so an expired bundle still
+works), applies the same tested JSON patch only when the template differs from
+`baseline.json`, waits until the target is healthy, prints the record and exits
+0 only then.
+
+After the template, the restore (after every run and in this command) also
+returns Sentinel's own annotations on the target, `sentinel.io/execution`,
+`sentinel.io/fence` and `sentinel.io/fence-epoch`, to the values `prepare`
+recorded in `lab.json` (`target_annotations`). It sends one metadata-only JSON
+patch that tests the uid and resourceVersion it read; a refused patch (a 409
+or a failed test) reads again, up to 3 times. It writes nothing when they
+already match. It never touches any other annotation: if one changed, was
+added or was removed since `prepare` (the controller's
+`deployment.kubernetes.io/revision` excepted), it writes no annotation,
+records `annotations.status` `refused` with the keys, and the restore is not
+healthy, which stops the invocation. The record's `annotations` says what was
+`removed`, `reset` (from and to) or `added`, with the values. A bundle
+prepared before this change has no `target_annotations`; its restore says
+`not recorded` and leaves the annotations as they are. This is a lab reset
+between runs only: lowering `sentinel.io/fence-epoch` undoes a seal, so it
+must never be part of normal operation. It has run against the lab once, in
+the 02d91e5 session of 13 Nov 2026: every run's restore reported
+`annotations.status` `reset`. After each of the ten non-S8 runs the record
+shows the prepared `sentinel.io/execution` put back; after each of the two S8
+runs it shows only `sentinel.io/fence` and `sentinel.io/fence-epoch` (epoch 2)
+removed, which were not there at `prepare`
+(`C-DISTRIBUTED-KIND-02D91E5`). No reset was refused; one kind node on one
+host.
+
+`summary.json` in kind mode adds `kind_lab` (the injection, whether the fault
+showed and after how long, and the restore with `operator_restore` true only
+when the operator side wrote; both are operator writes, never counted as
+Sentinel's), `deadline_seconds` with `deadline_source`, the Observer's
+`observer_failure_window_seconds`, and `duplicate_incidents`: incidents opened
+after the first one, with their states (the Guard should reject them). The
+count is a lower bound: the run stops once every incident is terminal (or at
+the deadline), so a duplicate the Observer would open after that is not seen.
+Kind-mode defaults that differ from file mode:
+
+- **Deadline.** `--deadline` (kind mode only, 30-1800 s) replaces the
+  scenario's own 60 s; the default is 180 s, since the strict health policy
+  alone may take up to its 90 s timeout after the write. Up to be6e636 the
+  live Verifier took one sample per pass and the Coordinator's retry back-off
+  spaced those passes; it now samples every 10 s within one pass under this
+  policy, and at 02d91e5 its command was delivered once in every non-S8
+  kind run (`C-DISTRIBUTED-KIND-02D91E5`).
+- **Observer failure window.** 15 s
+  (`topology.py::OBSERVER_FAILURE_SECONDS`), written to the run's own Observer
+  policy whatever the bundle says. With 2 s, the Recreate rollout after the
+  rollback was seen as a new failure and opened a second incident about 4 s
+  after the write; an operator restore took about 6.5 s to become Available
+  with `/cart` answering 200, so 15 s outlasts that rollout about twice over
+  and still detects the injected fault well within the deadline. A longer
+  rollout (a cold image pull) can still open a duplicate, which is then
+  counted, not hidden.
+
+**What has run.** Two operator sessions on 12 Nov 2026 ran kind mode against
+`kind-sentinel-boutique-connected`, S1b, S1c, S2, S4, S5 and S8 twice each,
+with the synthetic planner; every run is a committed evidence bundle
+([results](../../docs/results.md#distributed-scenarios)). The first session,
+at 0a8d4d7, used scratch versions of `kind_bundle.py` and of the per-run
+injection: 12 of 12 runs matched their expectation once the health policy was
+relaxed to the profile above (the first attempt, with the stricter profile and
+the 60 s deadline, failed I3 with the action still VERIFYING), and two runs
+(S1b and S2) opened a duplicate incident during the rollout, which the Guard
+rejected (`C-DISTRIBUTED-KIND-0A8D4D7`). The second, at be6e636, used the
+committed `kind_bundle.py`, the in-harness injection and restore, the 180 s
+deadline and the 15 s Observer window: 11 of 12 matched, with no duplicate
+incident, and S2 r2 failed I5 after its Verifier command was delivered 8 times
+(`C-DISTRIBUTED-KIND-BE6E636`; the suspected cause, the retry back-off
+spacing the Verifier's samples past the policy's 20 s gap, is in
+[L-VERIFIER-RETRY-BACKOFF](../../docs/limitations.md#l-verifier-retry-backoff)).
+The Verifier now samples within one pass instead (5341a0d). A third session,
+at 02d91e5 on 13 Nov 2026, re-ran the same six scenarios twice each with the
+committed tools, on the same cluster with Chaos Mesh and metrics-server
+installed: 12 of 12 matched their expectation, every invariant held, and the
+Verifier command was delivered once (`verifier_attempts` 1) in each of the ten
+non-S8 runs, against 5 to 8 deliveries at be6e636
+(`C-DISTRIBUTED-KIND-02D91E5`). The command it used:
+
+```powershell
+python -m experiments.distributed.run_scenarios --mode kind --context kind-sentinel-boutique-connected --kind-bundle <bundle> --scenarios S1b,S1c,S2,S4,S5,S8 --repeat 2 --out runs/distributed-kind-recheck
+```
+
+The first two sessions left the fence annotations of their S8 runs
+(`sentinel.io/fence`, `sentinel.io/fence-epoch`) on the Deployment; the
+restore at those revisions put back the template only, and the operator
+removed them by hand. With the P3.05 admission policy installed, that matters: each run
+starts a fresh Coordinator store, and a seal whose epoch is below the stored
+`sentinel.io/fence-epoch` is denied
+([deploy/README.md](../../deploy/README.md)). The restore now returns those
+annotations to their prepared values after every run (above); in the 02d91e5
+session it removed both fence annotations after each S8 run, so the second S8
+run started without a stored epoch. The session's records do not say whether
+the admission policy was installed, so they do not show `--repeat` of S8 under
+the policy. The reset
+is a lab reset between runs, never normal operation; whether a store should
+seed its epoch from the annotation is still an owner decision listed under
+P3.05.
+
+## Four-node acceptance (P4.01)
+
+`kind_acceptance.py` (with its cluster steps in `kind_acceptance_live.py`)
+runs the same roles as Pods on the four-node kind lab `sentinel-dist`
+instead of as processes: the manifests are in `deploy/sentinel/sentinel-dist`
+and the cluster in `deploy/kind/kind-dist.yaml`. It uses neither this
+topology nor `kind_bundle.py`, so `topology.KIND_CONTEXTS` and
+`kind_bundle.LABS` are unchanged; only `runtime/fault_points.py` lists
+`sentinel-dist`, because its workers run with the fault-point gate. It
+accepts only `kind-sentinel-dist`. The scenarios map S0-S8 of the catalogue
+above onto Chaos Mesh objects, `docker pause` of a node and fault points
+armed inside a Pod, and add S9 (RBAC, admission and network policy denials).
+It copies the Coordinator's and workers' databases and logs out of the Pods
+to compute I1-I6 and X1-X4 with the code above, narrowed to the incidents
+each run opened (`kind_acceptance.py::scope_records`, since one Coordinator
+store serves every run of a deployment), and adds I7 from the API server
+audit log. Written and tested offline only; the recipe and the empty results
+table are in [distributed acceptance](../../docs/distributed-acceptance.md).
+Since one Coordinator store serves every run, ownership epochs keep growing
+across runs, so the admission policy's monotonic fence epoch does not deny
+the seals of later S8 repeats as it would with a fresh store per run. The
+same store still holds every earlier run's incidents, so each run starts
+only on a settled lab, waits for and approves only the incidents it opened,
+and settles after its restore (`kind_acceptance.py::run_unsettled`,
+`Lab.settle`); on 13 Nov 2026, before that, the S0 runs after a passing one
+took its RECOVERED incident as theirs and ended with no incident.

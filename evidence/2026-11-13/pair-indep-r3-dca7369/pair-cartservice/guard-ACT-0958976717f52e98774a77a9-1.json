@@ -1,0 +1,23 @@
+{
+  "action_id": "ACT-0958976717f52e98774a77a9",
+  "checked_at": "2026-11-13T12:19:49.862884Z",
+  "incident_id": "INC-C201A9B15DB0",
+  "inputs_sha256": "11b3a6963c9ad401b1db49e96cc6244edf47f0128c6a8cadd4b8523b9a71c423",
+  "kind": "guard_result",
+  "policy_version": "executor-live-pair-1",
+  "proposal_sha256": "1bdaf1a9b98ad858dc57845d65cceb32b2acef478398521f67725bfad0ce21dc",
+  "reason_codes": [
+    "VALIDATION_PASSED"
+  ],
+  "schema_version": "2.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "cartservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+  },
+  "valid_until": "2026-11-13T12:20:09.862884Z",
+  "validated_resource_version": "195242",
+  "verdict": "ALLOW"
+}

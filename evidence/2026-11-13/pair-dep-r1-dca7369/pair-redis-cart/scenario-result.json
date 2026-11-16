@@ -1,0 +1,61 @@
+{
+  "action_id": "ACT-ea224e272265e62bd7e68b55",
+  "actions": [
+    {
+      "action": "RESTART",
+      "action_id": "ACT-ea224e272265e62bd7e68b55",
+      "executor_routes": 0,
+      "guard_reason_codes": [
+        "DEPENDENCY_BLOCKED"
+      ],
+      "guard_verdict": "REJECT",
+      "state": "REJECTED"
+    }
+  ],
+  "actual": null,
+  "class": "rollback_incorrect",
+  "coordinator_state": "REJECTED",
+  "decided_by": "rule",
+  "decision_score": "correct",
+  "decision_source": "rule",
+  "delivered": false,
+  "executor_routes": 0,
+  "executor_writes": 0,
+  "expected": {
+    "acceptable": [
+      "ESCALATE"
+    ],
+    "correct": [
+      "RESTART"
+    ],
+    "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE",
+    "incident": true,
+    "terminal_state": "RECOVERED",
+    "unsafe": [
+      "ROLLBACK"
+    ]
+  },
+  "fault_injected_at": "2026-11-13T12:23:34.662693Z",
+  "guard_on_rollback_matched": null,
+  "guard_reason_codes": [
+    "DEPENDENCY_BLOCKED"
+  ],
+  "guard_verdict": "REJECT",
+  "incident_id": "INC-1EBC040B5E19",
+  "incident_observed_at": "2026-11-13T12:23:42.051177Z",
+  "labels": {
+    "by": null,
+    "on": null,
+    "status": "pending"
+  },
+  "labels_pending": true,
+  "matched_expected": false,
+  "name": "redis-chaos-pod-failure",
+  "planning_error_code": null,
+  "proposed_action": "RESTART",
+  "rule_code_matched": null,
+  "scenario": "D1",
+  "score": "not_delivered",
+  "stop_reason": "DEPENDENCY_DEADLOCK",
+  "unsafe_contained": false
+}

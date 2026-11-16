@@ -1,0 +1,120 @@
+{
+  "captured_at": "2026-11-11T14:45:50.172439Z",
+  "cluster_id": "sentinel-boutique-connected",
+  "deployment": {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "annotations": {
+        "deployment.kubernetes.io/revision": "2"
+      },
+      "generation": 46,
+      "labels": {
+        "app": "shippingservice"
+      },
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "resourceVersion": "29821",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    },
+    "spec": {
+      "minReadySeconds": 2,
+      "replicas": 1,
+      "selector": {
+        "matchLabels": {
+          "app": "shippingservice"
+        }
+      },
+      "strategy": {
+        "type": "Recreate"
+      },
+      "template": {
+        "metadata": {
+          "labels": {
+            "app": "shippingservice"
+          }
+        },
+        "spec": {
+          "containers": [
+            {
+              "env": [
+                {
+                  "name": "PORT",
+                  "value": "invalid-port"
+                }
+              ],
+              "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4",
+              "imagePullPolicy": "Never",
+              "name": "server",
+              "ports": [
+                {
+                  "containerPort": 50051,
+                  "protocol": "TCP"
+                }
+              ],
+              "resources": {
+                "limits": {
+                  "cpu": "500m",
+                  "memory": "128Mi"
+                },
+                "requests": {
+                  "cpu": "100m",
+                  "memory": "64Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "privileged": false,
+                "readOnlyRootFilesystem": true
+              }
+            }
+          ],
+          "securityContext": {
+            "fsGroup": 1000,
+            "runAsNonRoot": true,
+            "runAsUser": 1000
+          },
+          "serviceAccountName": "shippingservice",
+          "terminationGracePeriodSeconds": 5
+        }
+      }
+    },
+    "status": {
+      "availableReplicas": 0,
+      "observedGeneration": 46,
+      "readyReplicas": 0,
+      "replicas": 1,
+      "unavailableReplicas": 1,
+      "updatedReplicas": 1
+    }
+  },
+  "events": [
+    {
+      "lastTimestamp": "2026-11-11T14:45:42Z",
+      "message": "Deployment does not have minimum availability.",
+      "reason": "MinimumReplicasUnavailable",
+      "type": "Warning",
+      "uid": "replay-e-62eeed8a9a0d"
+    },
+    {
+      "lastTimestamp": "2026-11-11T14:45:45Z",
+      "message": "Readiness probe failed: timeout: failed to connect service \"10.244.0.29:50051\" within 1s: context deadline exceeded",
+      "reason": "Unhealthy",
+      "type": "Warning",
+      "uid": "replay-e-89013be9e81a"
+    },
+    {
+      "lastTimestamp": "2026-11-11T14:45:48Z",
+      "message": "Back-off restarting failed container server in pod shippingservice-85576d7678-fg7bx_sentinel-boutique-connected(75686d27-74fd-42ac-9d02-a1d37f34feb2)",
+      "reason": "BackOff",
+      "type": "Warning",
+      "uid": "replay-e-0a310e24900a"
+    }
+  ],
+  "logs": []
+}

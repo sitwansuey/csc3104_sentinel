@@ -1,0 +1,68 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": null
+    }
+  ],
+  "attempts": 1,
+  "delivered": 1,
+  "error_code": null,
+  "incident_id": "INC-7FEA8BE8A64B",
+  "next_attempt": 0.0,
+  "proposal": {
+    "action": "RESTART",
+    "action_id": "ACT-deff0ed985dac4d85db6a9d2",
+    "based_on_resource_version": "170722",
+    "evidence_refs": [
+      "E-476D784034A1",
+      "E-66B6B4D948CA",
+      "E-0A30775B0A2A",
+      "E-0C262B553689",
+      "E-651592E95160",
+      "E-1DA5A8EA51B8",
+      "E-8B6BCAB0F62E",
+      "E-5203F77BC2F2",
+      "E-F1326E949BD6",
+      "E-71CC71D78F82",
+      "E-30F28A631D53",
+      "E-5D9675F371A7",
+      "E-6CCD2A45C0E8",
+      "E-378379AA8FFA",
+      "E-C80DFC614BF4",
+      "E-57646E97B9C4",
+      "E-553BBA01321E",
+      "E-5EB3659DD548",
+      "E-7F2F24FFD191",
+      "E-FF46C9DB6E5A",
+      "E-51AA8C0E11F2",
+      "E-68C798B5B573",
+      "E-008224E7FFB4",
+      "E-44A1BC802156",
+      "E-17A61E6E45D8",
+      "OTEL-50c2db8c683131c7e9913c9d38d0bcae8ff6a3cd7f200b89fcb50faa0501c14c",
+      "OTEL-47b202457581d343ecd011196b9791d9271175a261ed166052ca3ad8658436ea",
+      "OTEL-12d0167b23f0e17501ca32b8c054aecd5d164341c04bb034e3aca12d6ca6f512",
+      "OTEL-4a49d44f50d2fd690c8ba2d542db2fbda591b7c2c9d57cd552da055401ff1582",
+      "E-D7DCDE1AF26E",
+      "E-4420B3047570",
+      "E-C99854406012"
+    ],
+    "incident_id": "INC-7FEA8BE8A64B",
+    "kind": "proposal",
+    "parameters": {
+      "baseline_id": "BASE-LIVE-2489663bc7a8",
+      "restart_token": "<redacted:4a457834>",
+      "template_sha256": "f1e019b13b53665e9d8e8f4d5c0389c2b1da5fd7bc944d7620a1934304a5fcd4"
+    },
+    "rationale": "Pods are failing while the live configuration equals the reviewed healthy baseline, so a rollback would change nothing; restart the Pods from that template.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    }
+  }
+}

@@ -15,7 +15,7 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from services.grpc_inspection import MAX_BODY, METHODS
+from services.grpc_inspection import MAX_BODY, ROUTE_METHODS
 
 # Reviewed release manifests: Envoy 1.40.2, Boutique 0.10.7, grpcurl 1.9.3.
 ENVOY = "envoyproxy/envoy@sha256:8de97e654644827d62afdbf7e1d3dc9fee01a8690d410dd1c63a30dc6b6cecbb"
@@ -23,10 +23,32 @@ SHIPPING = "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shi
 CLIENT = "fullstorydev/grpcurl@sha256:085e183ca334eb4e81ca81ee12cbb2b2737505d1d77f5e33dabc5d066593d998"
 INSPECTOR = "sentinel-security-inspector:0.1.0"
 PROJECT = "sentinel-security-lab"
+# The protected routes (P5.04). A caller dials its own loopback egress
+# listener; the gateway inspects the call and dials the service's own TLS
+# ingress sidecar, which forwards over loopback to the service port. Each
+# route has its own ports, so a route's listeners admit only its methods. The
+# compose lab below protects shipping only; the Kubernetes overlay
+# (boutique_security_manifest.py) protects every route here.
+ROUTES = {
+    "shipping": {"service": "shippingservice", "port": 50051, "env": "SHIPPING_SERVICE_ADDR", "egress_port": 50052,
+                 "gateway_port": 8443, "upstream_port": 8444, "upstream_identity": "upstream"},
+    "cart": {"service": "cartservice", "port": 7070, "env": "CART_SERVICE_ADDR", "egress_port": 50053,
+             "gateway_port": 8445, "upstream_port": 8446, "upstream_identity": "cart-upstream"},
+}
+# Envoy's connections to the inspector, so its threads stay bounded: twice
+# the inspector's default inflight bound (runtime/security_inspector.py). A
+# call over this bound fails ext_authz, which answers 503 (a denial).
+INSPECTOR_CONNECTIONS = 32
+# P5.06: every Envoy reads its configuration and SDS files from CONFIG_DIR,
+# each identity's key pair from /pki/<identity> and the trusted CAs from
+# TRUST_DIR (a public bundle that holds the old and new CA during a rollover).
+CONFIG_DIR = "/config"
+TRUST_DIR = "/trust"
+TRUST_SDS = "trust-bundle"
 
 
 def run(args, *, timeout=300, required=True):
-    result = subprocess.run([str(arg) for arg in args], capture_output=True, text=True,
+    result = subprocess.run([str(arg) for arg in args], capture_output=True, text=True, encoding="utf-8", errors="replace",
                             timeout=timeout, check=False)
     if required and result.returncode:
         # These commands contain no certificate contents, credentials or bodies.
@@ -38,14 +60,85 @@ def save(path, data):
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
+def sds_source(name):
+    """P5.06: an SDS subscription to one file in the Envoy's own configuration directory.
+
+    The file names only paths, never key material. watched_directory (not the
+    file itself) is watched, because the kubelet updates a ConfigMap or
+    Secret volume by swapping a symlinked directory, which a file watch misses.
+    """
+    return {"path_config_source": {"path": f"{CONFIG_DIR}/sds-{name}.json",
+                                   "watched_directory": {"path": CONFIG_DIR}},
+            "resource_api_version": "V3"}
+
+
+def sds_resource(name):
+    """The one SDS Secret resource behind sds_source(name): an identity's key pair or the trust bundle.
+
+    Envoy rereads the files when their mounted directory changes, so a
+    certificate renewed by cert-manager (or a trust bundle edited for a CA
+    rollover) is served without restarting Envoy. The identity directory is a
+    whole Secret volume mounted without subPath: the kubelet never updates a
+    subPath mount.
+    """
+    if name == TRUST_SDS:
+        secret = {"validation_context": {"trusted_ca": {"filename": TRUST_DIR + "/ca.crt"},
+                                         "watched_directory": {"path": TRUST_DIR}}}
+    elif name.endswith("-cert"):
+        identity = name[:-len("-cert")]
+        secret = {"tls_certificate": {"certificate_chain": {"filename": f"/pki/{identity}/tls.crt"},
+                                      "private_key": {"filename": f"/pki/{identity}/tls.key"},
+                                      "watched_directory": {"path": f"/pki/{identity}"}}}
+    else:
+        raise ValueError("Unknown SDS resource")
+    return {"resources": [{"@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret",
+                           "name": name, **secret}]}
+
+
+def sds_names(config):
+    """The SDS resource names an Envoy configuration subscribes to, sorted."""
+    names = set()
+
+    def walk(value):
+        if isinstance(value, dict):
+            for item in value.get("tls_certificate_sds_secret_configs", []):
+                names.add(item["name"])
+            if "validation_context_sds_secret_config" in value:
+                names.add(value["validation_context_sds_secret_config"]["name"])
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+    walk(config)
+    return sorted(names)
+
+
+def config_files(config, node="sentinel-security-lab"):
+    """Every file of one Envoy's configuration directory: envoy.json and its SDS resources (no keys).
+
+    Envoy refuses an SDS secret source unless the bootstrap names its node ("TlsCertificateSdsApi: node 'id'
+    and 'cluster' are required"; seen live on 14 Nov 2026), so envoy.json carries one; with file-based SDS and
+    no management server the name only labels this Envoy.
+    """
+    files = {"envoy.json": json.dumps({"node": {"id": node, "cluster": node}, **config})}
+    files.update({f"sds-{name}.json": json.dumps(sds_resource(name)) for name in sds_names(config)})
+    return files
+
+
 def tls_context(identity, *, client=False, server_name=None):
+    # P5.06: the key pair and the trusted CAs come from file-based SDS, so they
+    # rotate without a restart. The SAN matchers stay here, in the reviewed
+    # static configuration, never in a file that a rotation could replace.
     common = {"tls_params": {"tls_minimum_protocol_version": "TLSv1_2"},
-              "tls_certificates": [{"certificate_chain": {"filename": f"/pki/{identity}/tls.crt"},
-                                    "private_key": {"filename": f"/pki/{identity}/tls.key"}}],
-              "validation_context": {"trusted_ca": {"filename": f"/pki/{identity}/ca.crt"}},
+              "tls_certificate_sds_secret_configs": [{"name": identity + "-cert",
+                                                      "sds_config": sds_source(identity + "-cert")}],
+              "combined_validation_context": {
+                  "default_validation_context": {},
+                  "validation_context_sds_secret_config": {"name": TRUST_SDS, "sds_config": sds_source(TRUST_SDS)}},
               "alpn_protocols": ["h2"]}
     if client:
-        common["validation_context"]["match_typed_subject_alt_names"] = [
+        common["combined_validation_context"]["default_validation_context"]["match_typed_subject_alt_names"] = [
             {"san_type": "DNS", "matcher": {"exact": server_name}}]
         return {"@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext",
                 "sni": server_name, "common_tls_context": common}
@@ -53,27 +146,37 @@ def tls_context(identity, *, client=False, server_name=None):
             "require_client_certificate": True, "common_tls_context": common}
 
 
-def envoy_config(*, upstream=False):
-    name, port = ("upstream", 8444) if upstream else ("gateway", 8443)
-    cluster = {"name": "shipping", "type": "STRICT_DNS", "connect_timeout": "2s",
+def envoy_config(*, upstream=False, route="shipping"):
+    """One route's gateway (inspecting) or upstream (ingress) Envoy; shipping keeps its original names."""
+    spec = ROUTES[route]
+    suffix = "" if route == "shipping" else "-" + route
+    name = ("upstream" if upstream else "gateway") + suffix
+    identity = spec["upstream_identity"] if upstream else "gateway"
+    port = spec["upstream_port"] if upstream else spec["gateway_port"]
+    cluster = {"name": route, "type": "STRICT_DNS", "connect_timeout": "2s",
                "typed_extension_protocol_options": {"envoy.extensions.upstreams.http.v3.HttpProtocolOptions": {
                    "@type": "type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions",
                    "explicit_http_config": {"http2_protocol_options": {}}}},
-               "load_assignment": {"cluster_name": "shipping", "endpoints": [{"lb_endpoints": [{"endpoint": {
-                   "address": {"socket_address": {"address": "127.0.0.1" if upstream else "upstream",
-                                                   "port_value": 50051 if upstream else 8444}}}}]}]}}
+               "load_assignment": {"cluster_name": route, "endpoints": [{"lb_endpoints": [{"endpoint": {
+                   "address": {"socket_address": {"address": "127.0.0.1" if upstream else spec["upstream_identity"],
+                                                   "port_value": spec["port"] if upstream else spec["upstream_port"]}}}}]}]}}
     if not upstream:
         cluster["transport_socket"] = {"name": "envoy.transport_sockets.tls",
-                                        "typed_config": tls_context("proxy-client", client=True, server_name="upstream.internal")}
-    routes = [{"name": "shipping-rpc", "match": {"path": method, "headers": [
+                                        "typed_config": tls_context("proxy-client", client=True,
+                                                                    server_name=spec["upstream_identity"] + ".internal")}
+    routes = [{"name": route + "-rpc", "match": {"path": method, "headers": [
                    {"name": ":method", "string_match": {"exact": "POST"}},
                    {"name": "content-type", "string_match": {"safe_regex": {
                        "regex": r"(?i)application/grpc(?:\+proto)?(?:;.*)?"}}}]},
-               "route": {"cluster": "shipping", "timeout": "5s"}} for method in sorted(METHODS)]
+               "route": {"cluster": route, "timeout": "5s"}} for method in sorted(ROUTE_METHODS[route])]
     filters = []
     clusters = [cluster]
     if not upstream:
         clusters.append({"name": "inspector", "type": "STATIC", "connect_timeout": "1s",
+                         "circuit_breakers": {"thresholds": [{
+                             "priority": "DEFAULT", "max_connections": INSPECTOR_CONNECTIONS,
+                             "max_pending_requests": INSPECTOR_CONNECTIONS, "max_requests": INSPECTOR_CONNECTIONS,
+                             "max_retries": 0}]},
                          "load_assignment": {"cluster_name": "inspector", "endpoints": [{"lb_endpoints": [{
                              "endpoint": {"address": {"socket_address": {"address": "127.0.0.1", "port_value": 9001}}}}]}]}})
         filters.append({"name": "envoy.filters.http.ext_authz", "typed_config": {
@@ -88,24 +191,37 @@ def envoy_config(*, upstream=False):
                              # translated into HTTP 200 + grpc-status:14, which
                              # HTTP ext_authz interprets as permission to pass.
                              # Original client content-type is enforced above.
+                             # The route lets the inspector refuse another
+                             # route's method even if a route table drifts.
                              "authorization_request": {"headers_to_add": [
                                  {"key": "content-type", "value": "application/octet-stream"},
-                                 {"key": "x-sentinel-body-format", "value": "grpc"}]}}}})
+                                 {"key": "x-sentinel-body-format", "value": "grpc"},
+                                 {"key": "x-sentinel-route", "value": route}]}}}})
     filters.append({"name": "envoy.filters.http.router", "typed_config": {
         "@type": "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router"}})
     manager = {"@type": "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
                "stat_prefix": name, "codec_type": "HTTP2", "stream_idle_timeout": "10s",
                "request_timeout": "10s", "max_request_headers_kb": 16,
-               "route_config": {"name": name, "virtual_hosts": [{"name": "shipping", "domains": ["*"],
+               "route_config": {"name": name, "virtual_hosts": [{"name": route, "domains": ["*"],
                    "routes": routes + [{"name": "denied", "match": {"prefix": "/"}, "direct_response": {"status": 403}}]}]},
                "http_filters": filters,
+               # The upstream sidecar forwards plaintext HTTP/2 to the service on loopback, so the request's
+               # :scheme is http there. A caller that reached the gateway over TLS sends https, which Envoy
+               # passes on; cartservice's Kestrel answers a :scheme that does not match its transport with
+               # RST_STREAM PROTOCOL_ERROR (seen live on 14 Nov 2026). Shipping's Go server did not check.
+               **({"scheme_header_transformation": {"scheme_to_overwrite": "http"}} if upstream else {}),
                "access_log": [{"name": "envoy.access_loggers.stdout", "typed_config": {
                    "@type": "type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog",
                    "log_format": {"json_format": {"route": "%ROUTE_NAME%", "status": "%RESPONSE_CODE%",
-                       "grpc_status": "%GRPC_STATUS%", "flags": "%RESPONSE_FLAGS%", "duration_ms": "%DURATION%"}}}}]}
+                       "grpc_status": "%GRPC_STATUS%", "flags": "%RESPONSE_FLAGS%", "duration_ms": "%DURATION%",
+                       # P5.06: the caller certificate's serial shows a rotated client key in use
+                       # without a restart; a refused upstream certificate is logged with its TLS
+                       # reason, which the Observer reads as CertificateRejected.
+                       "peer_serial": "%DOWNSTREAM_PEER_SERIAL%",
+                       "upstream_tls": "%UPSTREAM_TRANSPORT_FAILURE_REASON%"}}}}]}
     return {"static_resources": {"listeners": [{"name": name, "address": {"socket_address": {
         "address": "0.0.0.0", "port_value": port}}, "filter_chains": [{
-            "transport_socket": {"name": "envoy.transport_sockets.tls", "typed_config": tls_context(name)},
+            "transport_socket": {"name": "envoy.transport_sockets.tls", "typed_config": tls_context(identity)},
             "filters": [{"name": "envoy.filters.network.http_connection_manager", "typed_config": manager}]}]}],
         "clusters": clusters}}
 
@@ -120,6 +236,7 @@ def certificates(directory, *, extra_clients=()):
          "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign",
          "-addext", "subjectKeyIdentifier=hash", "-keyout", ca / "ca.key", "-out", ca / "ca.crt"])
     identities = [("gateway", "gateway.internal", False), ("upstream", "upstream.internal", False),
+                  ("cart-upstream", "cart-upstream.internal", False),
                   ("proxy-client", "proxy-client.internal", True), ("client", "client.internal", True)]
     identities += [(identity, identity + ".internal", True) for identity in extra_clients]
     for identity, host, client in identities:
@@ -140,6 +257,10 @@ def certificates(directory, *, extra_clients=()):
         folder.chmod(0o755)
         for file in folder.iterdir():
             file.chmod(0o444)
+    # The public trust bundle every Envoy reads through SDS (TRUST_DIR).
+    trust = directory / "trust"
+    trust.mkdir(mode=0o755)
+    shutil.copyfile(ca / "ca.crt", trust / "ca.crt")
     (ca / "ca.key").chmod(0o600)
 
 
@@ -167,7 +288,11 @@ def prepare(directory, port):
     images["inspector"] = json.loads(run(["docker", "image", "inspect", INSPECTOR]).stdout)[0]["Id"]
     save(directory / "images.json", images)
     for side in ("gateway", "upstream"):
-        save(directory / f"{side}.json", envoy_config(upstream=side == "upstream"))
+        # P5.06: envoy.json and its SDS files, which name key paths only.
+        folder = directory / (side + "-config")
+        folder.mkdir()
+        for name, text in config_files(envoy_config(upstream=side == "upstream")).items():
+            (folder / name).write_text(text + "\n", encoding="utf-8")
     data = directory / "data"
     data.mkdir()
     if os.name != "nt":
@@ -182,9 +307,10 @@ def prepare(directory, port):
     services = {}
     for side in ("gateway", "upstream"):
         services[side] = {**base, "image": images["envoy"], "user": "10001:10001", "entrypoint": ["envoy"],
-                          "command": ["-c", f"/etc/envoy/{side}.json", "--concurrency", "2", "--log-level", "warn"],
+                          "command": ["-c", CONFIG_DIR + "/envoy.json", "--concurrency", "2", "--log-level", "warn"],
                           "networks": ["front", "backend"] if side == "gateway" else ["backend"],
-                          "volumes": [mount(directory / f"{side}.json", f"/etc/envoy/{side}.json"),
+                          "volumes": [mount(directory / (side + "-config"), CONFIG_DIR),
+                                      mount(directory / "trust", TRUST_DIR),
                                       mount(directory / side, f"/pki/{side}")]}
     services["gateway"]["volumes"].append(mount(directory / "proxy-client", "/pki/proxy-client"))
     services["gateway"]["ports"] = [f"127.0.0.1:{port}:8443"]

@@ -15,8 +15,15 @@ def timestamp():
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def service_inventory(deployments, names):
-    """Missing objects/read failures stay unknown, including during setup."""
+def service_inventory(deployments, names, recovery_targets=None):
+    """Missing objects/read failures stay unknown, including during setup.
+
+    recovery_targets marks the run's restricted recovery target; when None, the
+    scenario catalog's default target (experiments/boutique/catalog.json).
+    """
+    if recovery_targets is None:
+        from experiments.boutique.harness.targets import default_target
+        recovery_targets = {default_target()}
     indexed = {item["metadata"]["name"]: item for item in deployments or []}
     result = []
     for name in sorted(names):
@@ -34,7 +41,7 @@ def service_inventory(deployments, names):
                  and values["available"] >= values["desired"]
                  and values["observed_generation"] >= values["generation"]) if known else None
         result.append({"name": name, **values, "ready_state": ready,
-                       "recovery_target": name == "shippingservice"})
+                       "recovery_target": name in recovery_targets})
     return result
 
 
@@ -48,9 +55,14 @@ def shopping_summary(journey):
                 and journey.get("order_page_confirmed") is True and statuses["checkout_status"] == 200}
 
 
+# Every stage a harness may journal. pair-fault and pair-shop are the scenario-pair run's storefront
+# readings: after both faults, and the shop judged after both incidents settle (multi_fault.py).
+STAGES = frozenset({"inventory", "baseline", "primary-fault", "crash-fault", "verification", "pair-fault", "pair-shop"})
+
+
 def emit_observation(path, *, cluster_id, namespace, stage, services=None, journey=None,
                      incident_id=None, action_id=None):
-    if stage not in {"inventory", "baseline", "primary-fault", "crash-fault", "verification"}:
+    if stage not in STAGES:
         raise ValueError("Unknown Boutique observation stage")
     if (stage == "inventory") != (services is not None) or (stage != "inventory") != (journey is not None):
         raise ValueError("Inventory and shopping observations must remain separate")

@@ -1,0 +1,60 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": {
+        "budget_seconds": 600,
+        "decision": {
+          "codes": [],
+          "decided_by": "model",
+          "eligible": true,
+          "enforced": true,
+          "model_action": "ROLLBACK",
+          "overridden": false,
+          "policy": "gated"
+        },
+        "model_calls": 3,
+        "model_calls_completed": 3,
+        "model_seconds": 26.992,
+        "planning_attempt": 1,
+        "seconds": 27.5
+      }
+    }
+  ],
+  "attempts": 1,
+  "delivered": 1,
+  "error_code": null,
+  "incident_id": "INC-05A3039456BF",
+  "next_attempt": 0.0,
+  "proposal": {
+    "action": "ROLLBACK",
+    "action_id": "ACT-161b0b7ba56603a893ba87b6",
+    "based_on_resource_version": "114422",
+    "evidence_refs": [
+      "E-152E6FABDCD8",
+      "E-59310BB816A5",
+      "E-36070C11F3DE",
+      "E-8B6F4EE5DE4D",
+      "E-22F3996BEEA6",
+      "E-4E97F6FB0A4F",
+      "E-7F53710D3222",
+      "E-64EFA30F1E59",
+      "E-1B89DAAA0EB1"
+    ],
+    "incident_id": "INC-05A3039456BF",
+    "kind": "proposal",
+    "parameters": {
+      "baseline_id": "BASE-LIVE-fcb251d93372",
+      "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+    },
+    "rationale": "The incident evidence indicates a container startup failure in the 'shippingservice' deployment, with the container repeatedly crashing and entering a 'CrashLoopBackOff' state. The readiness probe is failing due to a timeout, and the logs show a failure to listen on the expected port. The change evidence reveals that the 'PORT' environment variable was modified from '50051' to 'invalid-port', which is likely the root cause of the failure. Since this change is the direct cause of the incident and the baseline template is available, a rollback to the last observed healthy baseline is appropriate to restore the correct configuration and resolve the issue.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    }
+  }
+}

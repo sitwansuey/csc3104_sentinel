@@ -1,0 +1,67 @@
+{
+ "bundle": "<home>\\AppData\\Local\\Temp\\sentinel-kind-bundle-jnmtg313",
+ "context": "kind-sentinel-boutique-connected",
+ "target": {
+  "cluster_id": "sentinel-boutique-connected",
+  "namespace": "sentinel-boutique-connected",
+  "kind": "Deployment",
+  "name": "shippingservice",
+  "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+ },
+ "fault_scenario": "R1",
+ "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+ "baseline_id": "BASE-KIND-066e619a85da",
+ "policy_version": "distributed-kind-lab-2",
+ "kubeconfig_expires_at": "2026-11-13T12:03:16.537752Z",
+ "rbac": [
+  {
+   "verb": "get",
+   "resource": "deployment/shippingservice",
+   "answer": "yes",
+   "expected": "yes"
+  },
+  {
+   "verb": "patch",
+   "resource": "deployment/shippingservice",
+   "answer": "yes",
+   "expected": "yes"
+  },
+  {
+   "verb": "delete",
+   "resource": "deployment/shippingservice",
+   "answer": "no",
+   "expected": "no"
+  },
+  {
+   "verb": "patch",
+   "resource": "deployment/paymentservice",
+   "answer": "no",
+   "expected": "no"
+  },
+  {
+   "verb": "get",
+   "resource": "secrets",
+   "answer": "no",
+   "expected": "no"
+  },
+  {
+   "verb": "list",
+   "resource": "pods",
+   "answer": "no",
+   "expected": "no"
+  }
+ ],
+ "sentinel_annotations_at_prepare": [
+  "sentinel.io/execution"
+ ],
+ "files": [
+  "allowed-targets.json",
+  "baseline-health.json",
+  "baseline.json",
+  "kubeconfig",
+  "lab.json",
+  "policy.json",
+  "rbac-checks.json",
+  "verifier-inventory.json"
+ ]
+}

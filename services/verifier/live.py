@@ -7,8 +7,9 @@ import subprocess
 import time
 from urllib.parse import quote
 
-from services.verifier.core import _reachable, inspect_dependencies, verify
+from services.verifier.core import ROLLOUT_FIELDS, _reachable, inspect_dependencies, verify
 from services.verifier.http import EvidenceHTTP, validate_url
+from services.verifier.store import sampling_interval
 from services.guard.common import json_sha256
 from services.verifier.traces import stamp, trace_edges, utc_time
 from shared.contracts import validate_message
@@ -75,13 +76,17 @@ class LiveEvidenceCollector:
         if (type(generation) is not int or generation < 1 or not isinstance(version, str) or not version
                 or type(desired) is not int or desired < 1):
             raise ValueError("Incomplete or scaled-to-zero Deployment state")
-        values = [status.get(key, 0) for key in ("observedGeneration", "readyReplicas", "availableReplicas", "updatedReplicas")]
+        values = [status.get(key, 0) for key in
+                  ("observedGeneration", "readyReplicas", "availableReplicas", "updatedReplicas", "replicas")]
         if any(type(value) is not int or value < 0 for value in values):
             raise ValueError("Invalid readiness counters")
-        observed, ready, available, updated = values
+        observed, ready, available, updated, total = values
         ready = min(ready, available, updated) if observed >= generation else 0
+        # observed_generation, updated_replicas and total_replicas (status.replicas: Pods of every
+        # template) say whether a rollout is still under way; core.py::_awaiting_rollout reads them.
         return {"generation": generation, "resource_version": version,
                 "ready_replicas": ready, "desired_replicas": desired, "available_replicas": available,
+                "observed_generation": observed, "updated_replicas": updated, "total_replicas": total,
                 "template_sha256": json_sha256(spec["template"]) if isinstance(spec.get("template"), dict) else None}
 
     def read_service(self, name):
@@ -183,6 +188,8 @@ class LiveEvidenceCollector:
                   "http_status": root.get("http_status"), "ready_replicas": root.get("ready_replicas"),
                   "desired_replicas": root.get("desired_replicas"),
                   "available_replicas": root.get("available_replicas"),
+                  # Bounded counts from the same Deployment read; absent when that read failed.
+                  **{key: root[key] for key in ROLLOUT_FIELDS if key in root},
                   "template_sha256": root.get("template_sha256"),
                   "configuration_stable": root.get("configuration_stable", False),
                   "dependencies": None if graph["unknowns"] else dependencies,
@@ -219,8 +226,7 @@ def collect_window(collector, execution, policy, *, interval_seconds=None, count
     verify(execution, [], policy)
     rules = policy["health"]
     if interval_seconds is None:
-        interval_seconds = min(rules["max_sample_gap_seconds"] / 2,
-                               rules["stable_window_seconds"] / max(1, rules["minimum_samples"] - 1))
+        interval_seconds = sampling_interval(rules)  # The remote Verifier's in-pass cadence too.
     if (type(interval_seconds) not in (float, int) or not math.isfinite(interval_seconds)
             or not 0 < interval_seconds <= min(60, rules["max_sample_gap_seconds"])):
         raise ValueError("Collection interval must be positive and within the policy gap limit")

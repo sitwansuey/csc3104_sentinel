@@ -1,0 +1,754 @@
+{
+  "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice@sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e",
+  "scan_source": "remote_manifest",
+  "status": "FINDINGS",
+  "scanner": "Trivy",
+  "counts": {
+    "UNKNOWN": 0,
+    "LOW": 54,
+    "MEDIUM": 34,
+    "HIGH": 4,
+    "CRITICAL": 0
+  },
+  "findings": [
+    {
+      "id": "CVE-2026-45447",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "HIGH",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-45447",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "HIGH",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-84782",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.16",
+      "severity": "HIGH",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-84782",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.16",
+      "severity": "HIGH",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2025-15281",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.7",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2025-15467",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.7",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2025-15467",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.7",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-0861",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.7",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-0915",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.7",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-18374",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.12",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-19499",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.9",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-19542",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.9",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-31790",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.9",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-31790",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.9",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-34182",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-34182",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-4046",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.8",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-4437",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.8",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-4438",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.8",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-45445",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-45445",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-5435",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.8",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-5450",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.8",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-5928",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.8",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-6238",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.8",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-63072",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.15",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-63072",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.15",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-63076",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.15",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-63076",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.15",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-6368",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.9",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-6791",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.9",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-77117",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.9",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-80489",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.9",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-84243",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.12",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-8674",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.12",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-86805",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.12",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-95818",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.12",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-97399",
+      "package": "libc6",
+      "installed": "2.39-0ubuntu8.6",
+      "fixed": "2.39-0ubuntu8.12",
+      "severity": "MEDIUM",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2025-68160",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.7",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2025-68160",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.7",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2025-69418",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.7",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2025-69418",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.7",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2025-69419",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.7",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2025-69419",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.7",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2025-69420",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.7",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2025-69420",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.7",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2025-69421",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.7",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2025-69421",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.7",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-22795",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.7",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-22795",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.7",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-22796",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.7",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-22796",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.7",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-28387",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.9",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-28387",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.9",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-28388",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.9",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-28388",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.9",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-28389",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.9",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-28389",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.9",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-28390",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.9",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-28390",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.9",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-31789",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.9",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-31789",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.9",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-34180",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-34180",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-35189",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.16",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-35189",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.16",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-42766",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-42766",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-42767",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-42767",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-42770",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-42770",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-45446",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-45446",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-54872",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.16",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-54872",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.16",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-54874",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.15",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-54874",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.15",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-63074",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.15",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-63074",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.15",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-7383",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-7383",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-75803",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.15",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-75803",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.15",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-75805",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.16",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-75805",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.16",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-75806",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.16",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-75806",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.16",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-77696",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.16",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-77696",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.16",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-9076",
+      "package": "libssl3t64",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    },
+    {
+      "id": "CVE-2026-9076",
+      "package": "openssl",
+      "installed": "3.0.13-0ubuntu3.6",
+      "fixed": "3.0.13-0ubuntu3.11",
+      "severity": "LOW",
+      "recommendation": "Rebuild with the vendor-fixed package; test, rescan and approve a new image digest."
+    }
+  ],
+  "automatic_patching": false,
+  "scanned_at": "2026-11-14T15:04:53.661140Z",
+  "scanner_image": "aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c"
+}

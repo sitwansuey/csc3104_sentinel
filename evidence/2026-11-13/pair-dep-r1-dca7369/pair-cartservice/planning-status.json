@@ -1,0 +1,48 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": null
+    }
+  ],
+  "attempts": 1,
+  "delivered": 1,
+  "error_code": null,
+  "incident_id": "INC-CE21D7451633",
+  "next_attempt": 0.0,
+  "proposal": {
+    "action": "ROLLBACK",
+    "action_id": "ACT-9930abb78203200b41f25059",
+    "based_on_resource_version": "196063",
+    "evidence_refs": [
+      "E-42E38AE0E341",
+      "E-E41A9BF46E25",
+      "E-1FCAF0021FBD",
+      "E-B6D65BE3FB41",
+      "E-2114EB5474A7",
+      "E-8680160DCF18",
+      "E-579197D7575F",
+      "E-26D834C1BC98",
+      "E-63C731AA3645",
+      "E-362C3A2095E6",
+      "E-32823AD28D6C",
+      "E-CD1DB7468A4A",
+      "E-B734B412A46D"
+    ],
+    "incident_id": "INC-CE21D7451633",
+    "kind": "proposal",
+    "parameters": {
+      "baseline_id": "BASE-LIVE-79a66ff461f2",
+      "template_sha256": "95f6de5b5ba31cfa06d2a037180915d658003ad4c81ebd953f509de9658d353f"
+    },
+    "rationale": "Restore the saved observed healthy template described by the failed-rollout runbook.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "cartservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+    }
+  }
+}

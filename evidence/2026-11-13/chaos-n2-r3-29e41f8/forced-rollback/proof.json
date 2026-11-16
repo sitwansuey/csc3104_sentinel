@@ -1,0 +1,16 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-FORCED-f0b53478719d45d69422a40ab1953aa4",
+  "executor_journal_attempts": 0,
+  "executor_patch_attempts": 0,
+  "executor_status": "FAILED",
+  "expected_reason": "ROLLBACK_ALREADY_AT_BASELINE",
+  "generation_unchanged": true,
+  "guard_reason_codes": [
+    "ROLLBACK_ALREADY_AT_BASELINE"
+  ],
+  "guard_verdict": "REJECT",
+  "label": "forced-rollback",
+  "stale_resource_version_attempts": [],
+  "template_unchanged": true
+}

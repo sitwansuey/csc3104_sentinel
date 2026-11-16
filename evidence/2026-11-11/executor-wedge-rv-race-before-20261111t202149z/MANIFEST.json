@@ -1,0 +1,28 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "executor-wedge-rv-race-before-20261111t202149z",
+  "class": "executor-wedge",
+  "captured_at": "2026-11-11T20:21:50.135824Z",
+  "source_run_dir_name": "executor-wedge-rv-race-before-20261111T202149Z",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "d5b2ed9ea2e47ab9bd93b7c905682a8ca2bf2795",
+    "basis": "Operator record: the before run. The harness file was copied from 4afc879 into a checkout of main at this revision, with its shared.log import replaced by a no-op stub because main has no shared/log.py, so it exercised main's Executor. The scenario summary carries no provenance block, so the revision is stated, not stamped."
+  },
+  "files": [
+    {
+      "path": "manifests.json",
+      "sha256": "a8472f2fc8bc31e0266fce2dbc9d54f08f36b2d1ac6f8b12e6720e388fa48625",
+      "bytes": 2416,
+      "redactions": 0
+    },
+    {
+      "path": "rv-race.json",
+      "sha256": "27e0a31a9c18344b17a9562299427a426a5ef73698946eea56631c84dfe0919a",
+      "bytes": 1760,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

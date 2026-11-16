@@ -1,0 +1,28 @@
+{
+  "plan": {
+    "kind": "parallel",
+    "goal": "Inspect live incident telemetry",
+    "children": [
+      {
+        "kind": "tool",
+        "goal": "Read incident-scoped live evidence",
+        "tool": "metrics",
+        "args": {
+          "file": "metrics.csv",
+          "start": "2026-11-12T18:10:21+00:00",
+          "end": "2026-11-12T18:10:57.616830+00:00"
+        }
+      },
+      {
+        "kind": "tool",
+        "goal": "Read incident-scoped live evidence",
+        "tool": "logs",
+        "args": {
+          "file": "logs.csv",
+          "start": "2026-11-12T18:10:21+00:00",
+          "end": "2026-11-12T18:10:57.616830+00:00"
+        }
+      }
+    ]
+  }
+}

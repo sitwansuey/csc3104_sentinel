@@ -1,0 +1,74 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": {
+        "budget_seconds": 1,
+        "model_calls": 0,
+        "model_calls_completed": 0,
+        "model_seconds": 0,
+        "planning_attempt": 1,
+        "seconds": 0.449
+      }
+    },
+    {
+      "attempt": 2,
+      "usage": {
+        "budget_seconds": 1,
+        "model_calls": 0,
+        "model_calls_completed": 0,
+        "model_seconds": 0,
+        "planning_attempt": 2,
+        "seconds": 0.132
+      }
+    },
+    {
+      "attempt": 3,
+      "usage": {
+        "budget_seconds": 1,
+        "model_calls": 0,
+        "model_calls_completed": 0,
+        "model_seconds": 0,
+        "planning_attempt": 3,
+        "seconds": 0.135
+      }
+    }
+  ],
+  "attempts": 3,
+  "delivered": 1,
+  "error_code": "BUDGET_EXCEEDED",
+  "incident_id": "INC-65A5DEA139C3",
+  "next_attempt": 1794435700.784946,
+  "proposal": {
+    "action": "ESCALATE",
+    "action_id": "ACT-08ed5fefe6e250f4427d44b6",
+    "based_on_resource_version": "72839",
+    "evidence_refs": [
+      "E-A212194260F6",
+      "E-8256F28029B5",
+      "E-7DB5B4CF39AC",
+      "E-4722AB0618DB",
+      "E-5C0801AAD6B3",
+      "E-DA23BA937DBE",
+      "E-22980E8C9A82",
+      "E-BB3C37164FFA",
+      "E-A58FD5E5DDF8",
+      "E-A8016ED1502A",
+      "E-1F54A91A550B",
+      "E-03C4B4D51B52",
+      "E-8EDEB70F4CC5"
+    ],
+    "incident_id": "INC-65A5DEA139C3",
+    "kind": "proposal",
+    "parameters": {},
+    "rationale": "Planner exhausted its bounded attempts; operator review is required. No repair is authorized.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    }
+  }
+}

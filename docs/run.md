@@ -25,7 +25,7 @@ checks. Use the three ordered buttons on Overview:
 
 1. **Inject invalid PORT:** shipping's new containers cannot start; cart/checkout
    requests fail. Observer detects sustained failure; a harness proposal goes
-   through Guard, trusted demo approval, restricted execution and Verifier.
+   through Guard, operator approval, restricted execution and Verifier.
 2. **Inject fault + crash Executor:** a real patch succeeds before the worker
    exits. Restart reconciles it from live state/action evidence without another
    repair write, then Verifier measures sustained recovery.
@@ -33,20 +33,44 @@ checks. Use the three ordered buttons on Overview:
    its baseline. Guard rejects the unnecessary rollback with zero repair writes.
 
 The buttons release fixed experiment steps; they do not approve an action or
-run arbitrary Kubernetes commands. Demo approval is pre-authorized local lab
-approval, not an authenticated human approval portal. Human approval never
-bypasses hard Guard constraints. An APPLIED result leaves the incident VERIFYING
-until the independent outcome arrives.
+run arbitrary Kubernetes commands. When the Guard asks for approval, the terminal
+that started the run shows the action's facts and waits: type the exact action
+ID to approve it, anything else refuses. The approval is created through the
+[authenticated approval API](approvals.md#live-harness-approval); it is a typed
+confirmation, not a login portal. A `-UIControls` run therefore still needs that
+terminal, unless you approve from the dashboard instead (below); there is no
+unattended UI-controls mode. Human approval never bypasses hard Guard
+constraints. An APPLIED result leaves the incident VERIFYING until the
+independent outcome arrives.
 
-For unattended execution and automatic cleanup:
+To approve in the dashboard, add `-Approval ui` to a `-Dashboard -UIControls`
+run. When the Guard asks for approval, an **Operator approval** card appears
+above every page. It lists the target, action, baseline, template and proposal
+hashes, the Guard's reasons and the request's expiry, with the model's
+rationale folded away and labelled untrusted. Type the exact action ID, then
+click **Approve**. Until the Executor runs, the card offers **Revoke approval**,
+which also needs the typed action ID. The browser sends only the lab session
+token; the dashboard server relays the decision with the run's own operator
+credential and records it as `dashboard-operator` (or `-Operator NAME`). See
+[Dashboard approval panel](approvals.md#dashboard-approval-panel) for the
+checks and what the record does and does not prove.
+
+For unattended execution and automatic cleanup, opt in to automated lab
+approval. `summary.json` records it as `auto-lab` under the `automated-lab`
+identity, never as a person:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Connected -Dashboard -ExitAfterTest -Cleanup
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-boutique-live.ps1 -Setup -Connected -Dashboard -ExitAfterTest -Approval auto-lab -Cleanup
 ```
 
-The shell equivalent is `bash scripts/run-sentinel.sh --setup --cleanup --connected --dashboard --exit-after-test`.
+The shell equivalent is `bash scripts/run-sentinel.sh --setup --cleanup --connected --dashboard --exit-after-test --approval auto-lab`.
 Omit `-Connected` on Windows for the smaller shipping-only lab. Use
 `-StorefrontPort 8081` or `-DashboardPort 8766` if a port is occupied.
+`-Target cartservice` (with `-Connected`, without `-UIControls`) repairs the
+catalog's second target instead of shipping. The connected harness has run
+with cartservice as the target (C1, harness-authored proposals,
+`C-CART-TARGET-LIVE`); no agent-mode cartservice run has been made (see
+[testing](testing.md#second-recovery-target-cartservice-c1-c2)).
 
 For terminal-controlled injection replace `-UIControls` with
 `-PauseBeforeInjection`. If injecting manually, wait at the first healthy
@@ -61,6 +85,9 @@ starts detection/recovery. It is paused until that point; it is not an always-on
 production controller. Let subsequent scenarios inject themselves and avoid
 changing configuration during recovery. [Planner mode](planner.md) replaces the
 proposal source and runs one agent case; [Chaos Mesh](chaos.md) is separate.
+[Two simultaneous faults](dual-fault.md) (`--pair`; run live once, unscored,
+claim `C-DUAL-FAULT-PAIRS-DCA7369`) inject
+a catalog pair together and repair and verify each target on its own.
 
 ## Observe Sentinel and Boutique
 
@@ -86,7 +113,9 @@ host; their activity is visible through their journals, not six Kubernetes Pods.
 
 The dashboard's `GET /api/snapshot` is a bounded read projection. The default
 server has no mutation routes. Only `-UIControls` enables the separate guarded
-lab-gate routes. The browser receives no kubeconfig or database paths.
+lab-gate routes, and only `-Approval ui` with it adds the approve and revoke
+relay routes. The browser receives no kubeconfig, database paths or approval
+token.
 
 ## What code runs
 
@@ -105,8 +134,10 @@ lab-gate routes. The browser receives no kubeconfig or database paths.
 The printed run directory (normally under `data/experimentation/runs/`) contains
 Coordinator/Observer/Executor/Verifier journals, the baseline, proposal/approval,
 Guard reports, application measurements, dashboard snapshots, outcome and
-cleanup evidence. `summary.json` records actual checks. Preserve sanitised
-evidence separately; output directories and credentials are not source files.
+cleanup evidence. `summary.json` records actual checks, the source revision
+and tool versions (`provenance`) and a phase `timeline`. Output directories and
+credentials are not source files. To keep a run, collect a sanitised bundle with
+`python scripts/evidence/collect.py` as described in [evidence/](../evidence/README.md).
 
 With `-Cleanup`, Ctrl+C tears down the dedicated cluster after stopping the
 dashboard and port forward and removing private Executor credentials.

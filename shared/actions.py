@@ -1,0 +1,136 @@
+"""Pure helpers for the typed recovery actions; no I/O and no Kubernetes client.
+
+Every action is a closed, typed record (shared/contracts.py). This module holds
+the facts that the Planner, Guard, Executor and contract checks must agree on:
+which actions are implemented, and how a RESTART turns a reviewed baseline into
+the exact Pod template it writes.
+
+A RESTART adds one annotation, RESTART_ANNOTATION, to the reviewed baseline Pod
+template. Kubernetes starts new Pods for any template change, so this is a
+rollout restart. It is not `kubectl rollout restart`: the write is the same
+conditional JSON Patch as a ROLLBACK (UID and resourceVersion tests plus action
+evidence), so reconciliation can prove whether it committed. The configuration
+fingerprint ignores only that annotation, so a RESTART can never carry a
+configuration change.
+
+A SCALE (P5.07) restores the replica count recorded in a reviewed baseline,
+after something scaled the workload below it. It changes spec.replicas and
+nothing else, through a conditional JSON Patch with the same UID and
+resourceVersion tests and action evidence. Its parameters name the baseline,
+the replica count (always the baseline's) and the exact live Pod template the
+write leaves in place, whose configuration must equal the baseline's.
+"""
+
+from copy import deepcopy
+from typing import Any
+
+from shared.canonical import sha256_hex
+
+
+# Actions whose Guard checks and Executor handler exist.
+IMPLEMENTED_ACTIONS = frozenset({"ROLLBACK", "RESTART", "SCALE"})
+# Actions that write a reviewed baseline's Pod template (or that template plus a token).
+TEMPLATE_ACTIONS = frozenset({"ROLLBACK", "RESTART"})
+# Actions bound to a reviewed baseline: its identity and template hash are checked for each.
+BASELINE_ACTIONS = IMPLEMENTED_ACTIONS
+# The largest replica count a SCALE may name, whatever a policy says (P5.07). A
+# reviewed baseline above it cannot be restored by Sentinel; the Guard's own
+# per-policy ceiling (workload_constraints.max_replicas) is usually far lower.
+SCALE_MAX_REPLICAS = 10
+RESTART_ANNOTATION = "sentinel.io/restart-token"
+RESTART_TOKEN_PREFIX = "RST-"
+RESTART_TOKEN_HEX = 16
+# The Guard report's record, beside a STALE_RESOURCE_VERSION failure, of the spec its live read saw
+# (services/guard/decisions.py::_core_findings); the Coordinator's re-plan rule reads it
+# (services/coordinator/core.py::_replan_declined). Here so the Coordinator image needs no Guard module.
+STALE_READ_SPEC = "STALE_READ_SPEC"
+# The most restart-history entries the Executor supplies and the Guard accepts.
+# The ledger returns only the newest ones: a budget allows at most 100 restarts,
+# so if every one of them falls in the window the budget is already exhausted.
+RESTART_HISTORY_LIMIT = 1000
+
+
+def restart_token(incident_id: str, baseline_id: str) -> str:
+    """The planner-bound token: one per incident and baseline, never chosen by a model."""
+    if not isinstance(incident_id, str) or not isinstance(baseline_id, str):
+        raise ValueError("Restart token inputs must be strings")
+    return RESTART_TOKEN_PREFIX + sha256_hex([incident_id, baseline_id])[:RESTART_TOKEN_HEX]
+
+
+def _normalised(template: Any) -> dict[str, Any]:
+    """A copy without the restart annotation, and without metadata left empty by removing it."""
+    if not isinstance(template, dict):
+        raise ValueError("Pod template must be an object")
+    result = deepcopy(template)
+    metadata = result.get("metadata")
+    if isinstance(metadata, dict):
+        annotations = metadata.get("annotations")
+        if isinstance(annotations, dict):
+            annotations.pop(RESTART_ANNOTATION, None)
+            if not annotations:
+                del metadata["annotations"]
+        if not metadata:
+            del result["metadata"]
+    return result
+
+
+def config_fingerprint(template: Any) -> str:
+    """SHA-256 of the template's configuration: everything except the restart annotation."""
+    return sha256_hex(_normalised(template))
+
+
+def current_restart_token(template: Any) -> str | None:
+    """The restart annotation on a template, or None."""
+    metadata = template.get("metadata") if isinstance(template, dict) else None
+    annotations = metadata.get("annotations") if isinstance(metadata, dict) else None
+    value = annotations.get(RESTART_ANNOTATION) if isinstance(annotations, dict) else None
+    return value if isinstance(value, str) else None
+
+
+def restart_template(template: Any, token: str) -> dict[str, Any]:
+    """The template with its restart annotation set to token; nothing else changes."""
+    if not isinstance(token, str) or not token:
+        raise ValueError("Restart token must be a nonempty string")
+    result = _normalised(template)
+    metadata = result.setdefault("metadata", {})
+    if not isinstance(metadata, dict):
+        raise ValueError("Pod template metadata must be an object")
+    annotations = metadata.setdefault("annotations", {})
+    if not isinstance(annotations, dict):
+        raise ValueError("Pod template annotations must be an object")
+    annotations[RESTART_ANNOTATION] = token
+    return result
+
+
+def restart_parameters(incident_id: str, baseline: dict[str, Any]) -> dict[str, str]:
+    """The complete RESTART parameters, bound from the incident and a trusted baseline."""
+    token = restart_token(incident_id, baseline["baseline_id"])
+    return {"baseline_id": baseline["baseline_id"], "restart_token": token,
+            "template_sha256": sha256_hex(restart_template(baseline["pod_template"], token))}
+
+
+def baseline_replicas(baseline: Any) -> int | None:
+    """The replica count a reviewed baseline recorded, or None when it has no valid one.
+
+    Valid means an integer from 1 to SCALE_MAX_REPLICAS: a baseline of zero
+    replicas is no healthy state to restore.
+    """
+    value = baseline.get("replicas") if isinstance(baseline, dict) else None
+    return value if type(value) is int and 1 <= value <= SCALE_MAX_REPLICAS else None
+
+
+def scale_parameters(baseline: dict[str, Any], live_template: Any) -> dict[str, Any]:
+    """The complete SCALE parameters, bound from a trusted baseline and a trusted live template read.
+
+    desired_replicas is always the baseline's count, never a provider's or
+    model's choice. template_sha256 is the exact live template the scale
+    leaves in place; its configuration must equal the baseline's (a restart
+    token may differ), otherwise there is no reviewed state to scale up.
+    """
+    replicas = baseline_replicas(baseline)
+    if replicas is None:
+        raise ValueError("The baseline records no replica count to restore")
+    if config_fingerprint(live_template) != config_fingerprint(baseline["pod_template"]):
+        raise ValueError("The live configuration differs from the reviewed baseline")
+    return {"baseline_id": baseline["baseline_id"], "desired_replicas": replicas,
+            "template_sha256": sha256_hex(live_template)}

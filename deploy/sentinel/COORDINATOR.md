@@ -23,11 +23,16 @@ server certificate and key; include
 the port-forward smoke check. Keep the CA certificate available to clients.
 Configure the default StorageClass or adjust the PVC for your cluster.
 
+The examples use the connected Boutique lab cluster, which
+`scripts/test-boutique-live.ps1 -Setup -Connected` creates (without
+`-Cleanup`, so it stays). Do not use `sentinel-lab` for these steps: it may be
+a pre-existing cluster that other work depends on.
+
 From the repository root in PowerShell:
 
 ```powershell
-$context = 'kind-sentinel-lab' # Choose the intended disposable cluster explicitly.
-$kindCluster = 'sentinel-lab'
+$context = 'kind-sentinel-boutique-connected' # A disposable lab cluster, chosen explicitly.
+$kindCluster = 'sentinel-boutique-connected'
 $cert = 'C:/path/to/coordinator.crt'
 $key = 'C:/path/to/coordinator.key'
 $ca = 'C:/path/to/ca.crt'
@@ -66,11 +71,11 @@ The named Deployment must already exist; no wildcard/default approval is created
 Use your explicitly selected Sentinel cluster label, namespace and workload:
 
 ```powershell
-$workloadNamespace = 'sentinel-demo'
-$deployment = 'demo-api'
+$workloadNamespace = 'sentinel-boutique-connected'
+$deployment = 'shippingservice'
 $workload = kubectl --context $context -n $workloadNamespace get deployment $deployment -o json | ConvertFrom-Json
 if (-not $workload.metadata.uid) { throw 'Cannot resolve the exact workload UID.' }
-$approvalTarget = @{cluster_id='sentinel-lab'; namespace=$workloadNamespace; kind='Deployment'; name=$deployment; uid=$workload.metadata.uid}
+$approvalTarget = @{cluster_id='sentinel-boutique-connected'; namespace=$workloadNamespace; kind='Deployment'; name=$deployment; uid=$workload.metadata.uid}
 $approvalPermissions = @{
   'operator-1' = @(@{target=$approvalTarget; operations=@('create','read','revoke','history')})
   'guard-1' = @(@{target=$approvalTarget; operations=@('read')})
@@ -130,6 +135,22 @@ is 15 seconds and SQLite lock timeout is 10 seconds. A killed Pod can replay
 work from the PVC on restart. Lease expiry and explicit retry backoff remain
 transport mechanisms, separate from Executor write fencing.
 
+**Restoring the database from a backup.** The database has a store generation
+and a commit counter (migration 5 in `services/coordinator/store.py`), and
+every worker reply carries both. Before you restore, note the counter of the
+database you are replacing if it can still be read
+(`SELECT commit_counter FROM store_meta`); if it cannot, the positions the
+workers' `transport.db` files remember are the only reference. After the restore, workers
+that see a lower counter or another generation stop claiming and report
+`store_changed`. A worker misses the restore if other workers' requests have
+already made up the lost commits before its next exchange, so do not rely on
+the workers alone. Run `scripts/coordinator_restore_check.py` with the restored
+database, every worker's `transport.db` and `--previous-commit`, then clear
+each worker with `python -m runtime.worker_service --config CONFIG --accept-store`,
+those holding `replay` items first ([remote workers](../../docs/remote-workers.md)).
+This drill has been run only offline, as separate processes on one host in
+the file mode of `experiments/distributed/`, not against this manifest.
+
 To rotate credentials, replace the Secret values, restart the Coordinator and
 the affected worker, and retain saved request bodies. Secret environment
 updates are read at process start. Do not copy credential values into logs.
@@ -154,3 +175,19 @@ another mutation implementation. Keep #62 open until the actual complete worker
 rollout records restricted identities, real request/result exchange, restart
 behavior, image versions and health evidence. Whole-platform fault, cross-host
 ownership and multi-node/cloud acceptance require their own runs.
+
+## The complete rollout on four kind nodes (P4.01)
+
+`deploy/sentinel/sentinel-dist` packages this Coordinator (pinned to node c,
+with its own PVC, a lease of 15 s and the fault-point gate for its lab) with
+the Observer and the planner, guard, executor-a, executor-b and verifier
+workers, each as its own Deployment with its own Secret, PVC and identity, for
+the dedicated cluster `kind-sentinel-dist`, never this guide's example
+context. `experiments/distributed/kind_acceptance.py deploy` generates every
+credential, the CA and the approval permissions bound to the target's UID;
+the recipe is in [distributed acceptance](../../docs/distributed-acceptance.md).
+It is written and tested offline only: no image from it has run in a cluster.
+Packaging it found that this image, and the Observer's, copied
+`runtime/worker_http.py` without `runtime/fault_points.py`, which it imports at
+module level, so either container would have failed at start; both
+Dockerfiles now copy it (`tests/test_dockerfile_copies.py`).

@@ -15,7 +15,12 @@ from runtime.boutique_observability import emit_observation
 from runtime.dashboard import make_server
 from runtime.telemetry import emit_cluster_snapshot, emit_event
 from scripts.dashboard import ensure_frontend
+from experiments.boutique.harness import targets
+from experiments.boutique.harness.targets import default_target
 from experiments.recovery.live import require, save
+from shared import log
+
+LOG = log.get_logger("dashboard")
 
 
 def _instant(value):
@@ -24,13 +29,16 @@ def _instant(value):
 
 class BoutiqueDashboard:
     def __init__(self, directory, *, context, cluster_id, namespace, port=8765, bind="127.0.0.1", lab_control=None,
-                 application_collector=None):
+                 application_collector=None, approval_relay=None, target=None):
         self.directory = Path(directory)
         self.telemetry = self.directory / "telemetry.sqlite3"
         self.context, self.cluster_id, self.namespace = context, cluster_id, namespace
+        # The run's recovery target; the scenario catalog's default when None.
+        self.target = target or default_target()
         self.port = port
         self.bind = bind
         self.lab_control = lab_control
+        self.approval_relay = approval_relay
         self.application_collector = application_collector
         self.stop = threading.Event()
         self.server = None
@@ -39,7 +47,7 @@ class BoutiqueDashboard:
     def start(self):
         ensure_frontend()
         self.server = make_server(self.directory / "coordinator.sqlite", self.telemetry, port=self.port,
-                                  bind=self.bind, lab_control=self.lab_control)
+                                  bind=self.bind, lab_control=self.lab_control, approval_relay=self.approval_relay)
         self.url = f"http://127.0.0.1:{self.server.server_port}"
         self.event(1, "status", "Live Boutique experiment; configured proposal source; Role 6 dependency and outcome verification integrated")
         self.threads = [threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": .25}, daemon=True),
@@ -60,14 +68,16 @@ class BoutiqueDashboard:
                 cluster = collect_cluster_snapshot(context=self.context, cluster_id=self.cluster_id, namespace=self.namespace)
                 emit_cluster_snapshot(self.telemetry, cluster)
                 self.event(2, "heartbeat", "Dashboard cluster inventory collected; missing usage metrics remain unavailable")
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - the dashboard shows the failure and retries
                 # Logs and credentials from subprocess exceptions are not published.
+                log.failure(LOG, "dashboard.collection.failed", error)
                 self.event(2, "error", "Dashboard collection failed: " + type(error).__name__)
             if self.application_collector:
                 try:
                     emit_observation(self.telemetry, cluster_id=self.cluster_id, namespace=self.namespace,
                                      stage="inventory", services=self.application_collector())
-                except Exception as error:
+                except Exception as error:  # noqa: BLE001 - the dashboard shows the failure and retries
+                    log.failure(LOG, "dashboard.inventory.failed", error)
                     self.event(2, "error", "Boutique inventory collection failed: " + type(error).__name__)
             self.stop.wait(2)
 
@@ -82,6 +92,22 @@ class BoutiqueDashboard:
         require(snapshot["sources"]["coordinator"]["connected"], "Dashboard cannot read experiment Coordinator")
         require(snapshot["sources"]["telemetry"]["connected"], "Dashboard cannot read experiment telemetry")
         return snapshot
+
+    def _authenticated_approvals(self, snapshot, folders, operator_id):
+        """Each recovery's approval came through approval_http from the configured identity.
+
+        The dashboard hides a managed approval's record, so the operator identity
+        is read from the approval the harness saved in each recovery folder.
+        """
+        require(isinstance(operator_id, str) and operator_id, "The configured approval identity is required")
+        for folder in folders:
+            saved = json.loads((self.directory / folder / "approval.json").read_text(encoding="utf-8"))
+            require(isinstance(saved, dict) and saved.get("operator_id") == operator_id,
+                    "Approval in " + folder + " is not from the configured identity")
+            shown = [item["record"] for item in snapshot["approvals"]
+                     if item["record"].get("action_id") == saved.get("action_id")]
+            require(len(shown) == 1 and shown[0].get("protected") is True,
+                    "Approval in " + folder + " was not created through the authenticated approval API")
 
     @staticmethod
     def _action_scope(incident, action):
@@ -121,12 +147,22 @@ class BoutiqueDashboard:
                     and "0 patch attempts" in event["summary"] for event in snapshot["telemetry"]),
                 "Recorded Executor refusal evidence is missing from the UI")
 
-    def verify_agent(self):
-        """Validate the single agent-driven recovery using the real dashboard API."""
+    def verify_agent(self, expect="recovered", *, operator_id=None):
+        """Validate the single agent-driven case using the real dashboard API.
+
+        expect="recovered" checks the guarded recovery, including that its one
+        approval came through approval_http from operator_id. expect="escalated"
+        checks the other accepted ending: planning ended in a saved ESCALATE, the
+        incident is NEEDS_REVIEW, and nothing reached Guard, approval, the Executor
+        or the Verifier; that run asks for no approval, so it has no operator_id.
+        """
         snapshot = self._snapshot()
         require(len(snapshot["incidents"]) == len(snapshot["actions"]) == 1,
                 "Agent dashboard must show exactly one incident and action")
         incident, action = snapshot["incidents"][0], snapshot["actions"][0]
+        if expect == "escalated":
+            return self._verify_agent_escalation(snapshot, incident, action)
+        require(expect == "recovered", "Unknown agent dashboard expectation")
         self._action_scope(incident, action)
         require(incident["state"] == action["state"] == "RECOVERED"
                 and action["guard_result"]["verdict"] == "ALLOW"
@@ -140,6 +176,7 @@ class BoutiqueDashboard:
         require(len(snapshot["approvals"]) == 1
                 and snapshot["approvals"][0]["record"]["action_id"] == action["action_id"],
                 "Agent dashboard must expose the matching operator approval")
+        self._authenticated_approvals(snapshot, ["approved-rollback"], operator_id)
         history = snapshot["cluster_history"]
         require(history and all(h["cluster_id"] == self.cluster_id and h["namespace"] == self.namespace for h in history),
                 "Agent dashboard cluster evidence is missing or belongs to another scope")
@@ -151,7 +188,32 @@ class BoutiqueDashboard:
         save(self.directory / "dashboard-check.json", result)
         return result
 
-    def verify(self):
+    def _verify_agent_escalation(self, snapshot, incident, action):
+        proposal = action["proposal"]
+        require(action["incident_id"] == incident["incident_id"] == proposal["incident_id"]
+                and incident["active_action_id"] == action["action_id"] == proposal["action_id"]
+                and proposal["target"] == incident["target"],
+                "Dashboard action does not match its incident")
+        require(incident["state"] == action["state"] == "NEEDS_REVIEW" and proposal["action"] == "ESCALATE",
+                "Agent dashboard must show the saved ESCALATE and the incident in NEEDS_REVIEW")
+        require(action["guard_result"] is None and action["execution_result"] is None
+                and not snapshot["approvals"]
+                and not any(row["topic"] in {"guard.request", "executor.request"} for row in snapshot["outbox"])
+                and not any(m["message"]["kind"] in {"execution_result", "outcome"} for m in snapshot["messages"]),
+                "An escalated agent case must not reach Guard, approval, the Executor or the Verifier")
+        # The approval authority writes this file when it starts; an escalated run never asks for approval.
+        require(not (self.directory / "approval-identities.json").exists(),
+                "An escalated agent case must not start the approval session")
+        status = json.loads((self.directory / "approved-rollback/planning-status.json").read_text(encoding="utf-8"))
+        require(status["proposal"] == proposal and status["delivered"],
+                "The Planner journal must hold the delivered ESCALATE")
+        save(self.directory / "dashboard-snapshot.json", snapshot)
+        result = {"status": "PASS", "scenario": "live-agent-escalated", "url": self.url, "incidents": 1,
+                  "applied_actions": 0, "error_code": status["error_code"], "attempts": status["attempts"]}
+        save(self.directory / "dashboard-check.json", result)
+        return result
+
+    def verify(self, *, operator_id):
         """Validate two real recoveries followed by a refused unnecessary rollback."""
         snapshot = self._snapshot()
         require(len(snapshot["incidents"]) == len(snapshot["actions"]) == 3,
@@ -181,6 +243,7 @@ class BoutiqueDashboard:
         require(len(snapshot["approvals"]) == 2 and
                 {item["record"]["action_id"] for item in snapshot["approvals"]} == recovered_ids,
                 "Dashboard must show the two recovery approvals")
+        self._authenticated_approvals(snapshot, ["approved-rollback", "crash-after-write"], operator_id)
         outcomes = [item["message"] for item in snapshot["messages"] if item["message"]["kind"] == "outcome"]
         dependencies = [item["message"] for item in snapshot["messages"] if item["message"]["kind"] == "dependency_result"]
         require(len(outcomes) == 2 and all(item["status"] == "RECOVERED"
@@ -197,8 +260,8 @@ class BoutiqueDashboard:
         history = snapshot["cluster_history"]
         require(history and all(c["cluster_id"] == self.cluster_id and c["namespace"] == self.namespace for c in history),
                 "Dashboard cluster history is missing or belongs to another experiment")
-        require(any(p["name"].startswith("shippingservice-") for c in history for p in c["pods"]),
-                "Dashboard has not observed the actual shipping Pods")
+        require(any(p["name"].startswith(self.target + "-") for c in history for p in c["pods"]),
+                "Dashboard has not observed the actual " + self.target + " Pods")
         save(self.directory / "dashboard-snapshot.json", snapshot)
         result = {"status": "PASS", "url": self.url, "frontend_http": 200, "snapshot_http": 200,
                   "mode": snapshot["mode"], "incidents": len(snapshot["incidents"]),
@@ -212,12 +275,13 @@ class BoutiqueDashboard:
             inventory = next((item for item in observations if item["stage"] == "inventory"), None)
             require(inventory and len(inventory["services"]) == 11,
                     "Dashboard must expose all eleven Boutique Deployments")
+            # The predicted storefront impact is per target in the catalog: a broken shipping
+            # configuration leaves home and add to cart working, a broken cart breaks every step.
+            profile = targets.profile(self.target)
             for stage in ("primary-fault", "crash-fault"):
                 measured = next((item for item in observations if item["stage"] == stage), None)
-                require(measured and measured["journey"]["home_status"] == 200
-                        and measured["journey"]["cart_status"] != 200
-                        and measured["journey"]["checkout_status"] != 200
-                        and measured["journey"]["passed"] is False,
+                require(measured and measured["journey"]["passed"] is False
+                        and targets.impact_matches(profile, measured["journey"]),
                         "Dashboard must show actual downstream shopping failures")
             measured = [item for item in observations if item["stage"] == "verification"]
             # A failed journey is acceptable only as convergence evidence the outcome itself discloses.
@@ -258,6 +322,8 @@ class BoutiqueDashboard:
 
     def close(self):
         control_error = None
+        if self.approval_relay:
+            self.approval_relay.close()  # A waiting dashboard approver stops waiting; nothing more is relayed.
         if self.lab_control:
             try:
                 self.lab_control.finish("STOPPED")

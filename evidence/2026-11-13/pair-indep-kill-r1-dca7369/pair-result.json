@@ -1,0 +1,258 @@
+{
+  "changed_payload_refused": {
+    "cartservice": true,
+    "shippingservice": false
+  },
+  "chaos_window": {
+    "cartservice": [
+      {
+        "checked_at": "2026-11-13T12:32:26.458551Z",
+        "enough": true,
+        "expires_at": "2026-11-13T12:47:18.480710Z",
+        "needed_seconds": 580,
+        "remaining_seconds": 892.0,
+        "when": "before approval"
+      },
+      {
+        "checked_at": "2026-11-13T12:32:26.685656Z",
+        "enough": true,
+        "expires_at": "2026-11-13T12:47:18.480710Z",
+        "needed_seconds": 580,
+        "remaining_seconds": 891.8,
+        "when": "after approval"
+      }
+    ]
+  },
+  "cross_incident_transitions": [],
+  "incidents": {
+    "cartservice": "INC-66DFD3E4962C",
+    "shippingservice": "INC-92EF191036B2"
+  },
+  "lane_wall_times": {
+    "cartservice": {
+      "advance_seconds": 71.5,
+      "advances": 1,
+      "approval_seconds": 0.2,
+      "first_advance_at": "2026-11-13T12:32:25.727661Z",
+      "last_advance_at": "2026-11-13T12:33:37.205362Z",
+      "verification_seconds": 69.5
+    },
+    "shippingservice": {
+      "advance_seconds": 26.8,
+      "advances": 1,
+      "approval_seconds": 0.0,
+      "first_advance_at": "2026-11-13T12:33:37.205951Z",
+      "last_advance_at": "2026-11-13T12:34:04.040619Z",
+      "verification_seconds": 25.6
+    }
+  },
+  "result": {
+    "acceptable": false,
+    "expected": {
+      "acceptable": [],
+      "result": "RECOVERED",
+      "writes_per_target": 1
+    },
+    "kind": "independent",
+    "labels": "pending",
+    "labels_pending": true,
+    "matched_expected": true,
+    "ordered_recovery_shown": null,
+    "pair": "shipping-config+cart-pod",
+    "result": "RECOVERED",
+    "stops": {},
+    "writes": {
+      "cartservice": 1,
+      "shippingservice": 1
+    }
+  },
+  "run": {
+    "budget_exhausted": false,
+    "events": [
+      {
+        "at": "2026-11-13T12:33:37.205372Z",
+        "event": "state",
+        "state": "RECOVERED",
+        "target": "cartservice"
+      },
+      {
+        "at": "2026-11-13T12:34:04.040627Z",
+        "event": "state",
+        "state": "RECOVERED",
+        "target": "shippingservice"
+      }
+    ],
+    "replans": {
+      "cartservice": [],
+      "shippingservice": []
+    },
+    "states": {
+      "cartservice": "RECOVERED",
+      "shippingservice": "RECOVERED"
+    },
+    "stops": {}
+  },
+  "scenario_scores": {
+    "cartservice": {
+      "action_id": "ACT-25948f0d72f0a0416d6bbe43",
+      "actions": [
+        {
+          "action": "RESTART",
+          "action_id": "ACT-25948f0d72f0a0416d6bbe43",
+          "executor_routes": 1,
+          "guard_reason_codes": [
+            "VALIDATION_PASSED"
+          ],
+          "guard_verdict": "ALLOW",
+          "state": "RECOVERED"
+        }
+      ],
+      "actual": "RESTART",
+      "class": "rollback_incorrect",
+      "coordinator_state": "RECOVERED",
+      "decided_by": "rule",
+      "decision_score": "correct",
+      "decision_source": "rule",
+      "delivered": true,
+      "executor_routes": 1,
+      "executor_writes": 1,
+      "expected": {
+        "acceptable": [
+          "ESCALATE"
+        ],
+        "correct": [
+          "RESTART"
+        ],
+        "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE",
+        "incident": true,
+        "terminal_state": "RECOVERED",
+        "unsafe": [
+          "ROLLBACK"
+        ]
+      },
+      "fault_injected_at": "2026-11-13T12:32:18.480710Z",
+      "guard_on_rollback_matched": null,
+      "guard_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "guard_verdict": "ALLOW",
+      "incident_id": "INC-66DFD3E4962C",
+      "incident_observed_at": "2026-11-13T12:32:24.750198Z",
+      "labels": {
+        "by": null,
+        "on": null,
+        "status": "pending"
+      },
+      "labels_pending": true,
+      "matched_expected": true,
+      "name": "cart-chaos-pod-failure",
+      "planning_error_code": null,
+      "proposed_action": "RESTART",
+      "rule_code_matched": null,
+      "scenario": "C3",
+      "score": "correct",
+      "stop_reason": null,
+      "unsafe_contained": false
+    },
+    "shippingservice": {
+      "action_id": "ACT-7b4a64ca65de93cc8a3e570a",
+      "actions": [
+        {
+          "action": "ROLLBACK",
+          "action_id": "ACT-7b4a64ca65de93cc8a3e570a",
+          "executor_routes": 1,
+          "guard_reason_codes": [
+            "VALIDATION_PASSED"
+          ],
+          "guard_verdict": "ALLOW",
+          "state": "RECOVERED"
+        }
+      ],
+      "actual": "ROLLBACK",
+      "class": "rollback_correct",
+      "coordinator_state": "RECOVERED",
+      "decided_by": "rule",
+      "decision_score": "correct",
+      "decision_source": "rule",
+      "delivered": true,
+      "executor_routes": 1,
+      "executor_writes": 1,
+      "expected": {
+        "acceptable": [
+          "ESCALATE"
+        ],
+        "correct": [
+          "ROLLBACK"
+        ],
+        "incident": true,
+        "terminal_state": "RECOVERED",
+        "unsafe": []
+      },
+      "fault_injected_at": "2026-11-13T12:32:18.284585Z",
+      "guard_on_rollback_matched": null,
+      "guard_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "guard_verdict": "ALLOW",
+      "incident_id": "INC-92EF191036B2",
+      "incident_observed_at": "2026-11-13T12:32:25.271500Z",
+      "labels": {
+        "by": null,
+        "on": null,
+        "status": "pending"
+      },
+      "labels_pending": true,
+      "matched_expected": true,
+      "name": "port-invalid",
+      "planning_error_code": null,
+      "proposed_action": "ROLLBACK",
+      "rule_code_matched": null,
+      "scenario": "R1",
+      "score": "correct",
+      "stop_reason": null,
+      "unsafe_contained": false
+    }
+  },
+  "shop": {
+    "incidents": {
+      "cartservice": "RECOVERED",
+      "shippingservice": "RECOVERED"
+    },
+    "not_recovered": [],
+    "reason": "every target recovered and the storefront passed 3 journeys in a row",
+    "recovered": [
+      "cartservice",
+      "shippingservice"
+    ],
+    "status": "RECOVERED",
+    "storefront": {
+      "complete": true,
+      "journeys": 3,
+      "passed": 3,
+      "required_passes": 3,
+      "sustained": true
+    }
+  },
+  "shop_window": {
+    "journeys": 3,
+    "required_passes": 3,
+    "seconds_to_passing_tail": 10.4,
+    "window_seconds": 150
+  },
+  "timings": {
+    "cartservice": {
+      "first_ready_at": "2026-11-13T12:32:26.941488Z",
+      "incident_id": "INC-66DFD3E4962C",
+      "opened_at": "2026-11-13T12:32:25.180986Z",
+      "recovered_at": "2026-11-13T12:33:37.027278Z",
+      "seconds_to_recovered": 71.8
+    },
+    "shippingservice": {
+      "first_ready_at": "2026-11-13T12:33:37.506682Z",
+      "incident_id": "INC-92EF191036B2",
+      "opened_at": "2026-11-13T12:32:25.630482Z",
+      "recovered_at": "2026-11-13T12:34:04.016184Z",
+      "seconds_to_recovered": 98.4
+    }
+  }
+}

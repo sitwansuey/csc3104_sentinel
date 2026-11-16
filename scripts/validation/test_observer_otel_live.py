@@ -19,6 +19,9 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from scripts.validation.observer_otel_manifest import manifest, NAMESPACE, OBSERVER_IMAGE, WORKLOAD_IMAGE, COLLECTOR_IMAGE
+from shared import log
+
+LOG = log.get_logger("validation")
 
 CLUSTER = "sentinel-observer-otel"
 
@@ -171,13 +174,13 @@ print(json.dumps(result))
             try:
                 save("pods.json", json.loads(kube("get", "pods", "-o", "json")))
                 save("events.json", json.loads(kube("get", "events", "-o", "json")))
-            except Exception:
-                pass
+            except Exception as diagnostic_error:  # noqa: BLE001 - best-effort diagnostics; the failure is re-raised
+                log.failure(LOG, "validation.diagnostics.failed", diagnostic_error)
             for container in ("worker", "receiver"):
                 try:
                     (directory / (container + ".log")).write_text(kube("logs", "deployment/sentinel-observer-otel", "-c", container, "--tail=80"))
-                except Exception:
-                    pass
+                except Exception as diagnostic_error:  # noqa: BLE001 - best-effort diagnostics; the failure is re-raised
+                    log.failure(LOG, "validation.diagnostics.failed", diagnostic_error)
         raise
     finally:
         if created and not args.keep_cluster:

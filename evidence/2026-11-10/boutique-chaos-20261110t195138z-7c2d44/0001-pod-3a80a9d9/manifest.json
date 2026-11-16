@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "run_id": "0001-pod-3a80a9d9",
+  "mode": "demo",
+  "scenario_id": "pod",
+  "started_at": "2026-11-10T19:51:40.019592Z",
+  "source_revision": "d013ea59998d921d29508078f946595923d544e1",
+  "versions": {
+    "boutique": "See environment.json for actual images and pod imageIDs",
+    "chaos_mesh": "2.8.2",
+    "kubernetes": "v1.37.0"
+  },
+  "configuration": {
+    "traffic": {
+      "traffic_interval": 1,
+      "traffic_workers": 1
+    },
+    "telemetry": {
+      "sample_interval": 5,
+      "metrics_source": "kubelet-stats-summary",
+      "traces": false
+    },
+    "fault": {
+      "apiVersion": "chaos-mesh.org/v1alpha1",
+      "kind": "PodChaos",
+      "metadata": {
+        "name": "fault-0001-pod-3a80a9d9",
+        "namespace": "sentinel-boutique-chaos",
+        "labels": {
+          "app.kubernetes.io/managed-by": "sentinel-chaos-demo",
+          "sentinel.dev/run-id": "0001-pod-3a80a9d9"
+        }
+      },
+      "spec": {
+        "action": "pod-failure",
+        "mode": "one",
+        "duration": "60s",
+        "selector": {
+          "namespaces": [
+            "sentinel-boutique-chaos"
+          ],
+          "labelSelectors": {
+            "app": "shippingservice"
+          }
+        }
+      }
+    }
+  },
+  "recovery_enabled": false
+}

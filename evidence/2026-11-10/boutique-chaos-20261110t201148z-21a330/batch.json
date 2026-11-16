@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "batch_id": "boutique-chaos-20261110T201148Z-21a330",
+  "started_at": "2026-11-10T20:11:48.648232Z",
+  "configuration": {
+    "schema_version": 1,
+    "mode": "demo",
+    "faults": [
+      "cpu",
+      "memory",
+      "pod",
+      "network",
+      "http",
+      "dns"
+    ],
+    "baseline_seconds": 30,
+    "fault_seconds": 60,
+    "recovery_seconds": 30,
+    "sample_interval": 5,
+    "traffic_interval": 1,
+    "traffic_workers": 1,
+    "operator_gates": true,
+    "target": null
+  },
+  "context": "kind-sentinel-boutique-chaos",
+  "namespace": "sentinel-boutique-chaos",
+  "order": [
+    "cpu",
+    "memory",
+    "pod",
+    "network",
+    "http",
+    "dns"
+  ],
+  "runs": [],
+  "status": "failed",
+  "error": "RuntimeError: kubectl --context failed: Error from server (Forbidden): error when creating \"STDIN\": admission webhook \"vnetworkchaos.kb.io\" denied the request: Spec.direction: Invalid value: \"both\": `from` and `both` direction cannot be used when targets is empty in netem action\n",
+  "completed_at": "2026-11-10T20:11:50.225306Z"
+}

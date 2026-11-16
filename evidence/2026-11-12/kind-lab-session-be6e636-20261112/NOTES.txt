@@ -1,0 +1,10 @@
+Phase 3 live operator notes, run 2 (kind-sentinel-boutique-connected only). Times UTC, 12 Nov 2026. Revision be6e636.
+Task 1: committed kind_bundle prepare (bundle %TEMP%\sentinel-kind-bundle-k_11gzjq, deleted at end) + run_scenarios --mode kind
+  S1b,S1c,S2,S4,S5,S8 x2 -> kind/, kind-run.out, kind-summary.json (summarize.py). rc=1: S2 r2 FAILED, I5 failed (verifier
+  command 9: 8 attempts > MAX_ATTEMPTS 6). Other 11 matched. restore check: restore-check-inject.json, restore-check.json (rc 0).
+Task 2: image sentinel-worker:p3live2 (463b96f19e5b, revision label be6e636) kept. task2_run.py orchestrates; outputs in task2/.
+  attempt0 failed before creating anything (inherited OPENSSL_CONF names a missing file). The pass_timeout event is a script
+  bug (span lines are on container stderr; script read stdout only); the pass itself finished 18:12:28 (planner log).
+Cleanup: annotation patch state/annotation-patch-shippingservice.json (uid/rv tested, metadata only; generation 186->187).
+  Port-forward stopped; RBAC, container, volume removed; ns/rbac/vap/docker inventories equal to state/before-*.
+  %TEMP%\sentinel-s8-* dirs at 18:04/18:06/18:21/18:24 are not from this session's runs (left untouched).

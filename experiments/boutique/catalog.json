@@ -1,0 +1,371 @@
+{
+  "schema_version": 1,
+  "description": "Online Boutique scenario catalog: lab scopes, recovery targets, faults and their pre-registered expected outcomes. One source for the live harness, the dashboard lab controls and scenario scoring. Validated by experiments/boutique/harness/scenarios.py.",
+  "pre_registration": {
+    "registered_on": "2026-11-12",
+    "sign_off": {"status": "pending", "by": null, "on": null},
+    "rule": "The expected outcome sets below were committed before any live run of R2, N1, C1 or C2 (2026-11-12), of N2, N3 and T1 (2026-11-13), of C3, D1 and the pairs (2026-11-13), and of S1 (2026-11-13 UTC). N2 is labelled RESTART correct and ESCALATE acceptable from its first registration, as the remediation plan requires before its first trial. A team member must review and sign them off (set sign_off to signed, with a role and date) before a scored trial is reported. Changing a label after a scored trial needs a new pre-registration commit and invalidates earlier trials for that scenario."
+  },
+  "default_target": "shippingservice",
+  "scopes": {
+    "connected": {
+      "cluster_id": "sentinel-boutique-connected",
+      "context": "kind-sentinel-boutique-connected",
+      "namespace": "sentinel-boutique-connected",
+      "node": "sentinel-boutique-connected-control-plane"
+    },
+    "lab": {
+      "cluster_id": "sentinel-boutique-lab",
+      "context": "kind-sentinel-boutique-lab",
+      "namespace": "sentinel-boutique",
+      "node": "sentinel-boutique-lab-control-plane"
+    },
+    "package": {
+      "cluster_id": "sentinel-boutique-package",
+      "context": "kind-sentinel-boutique-package",
+      "namespace": "sentinel-boutique",
+      "node": "sentinel-boutique-package-control-plane"
+    },
+    "protected": {
+      "cluster_id": "sentinel-boutique-security",
+      "context": "kind-sentinel-boutique-security",
+      "namespace": "sentinel-boutique-security",
+      "node": "sentinel-boutique-security-control-plane"
+    }
+  },
+  "targets": {
+    "shippingservice": {
+      "kind": "Deployment",
+      "label": "shipping",
+      "container": "server",
+      "service_account": "shippingservice",
+      "image_repository": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice",
+      "release": "v0.10.7",
+      "port": 50051,
+      "scopes": ["connected", "lab", "package", "protected"],
+      "primary_scenario": "R1",
+      "fallback_scenario": null,
+      "isolated_lab": true,
+      "spec_overrides": {"strategy": {"type": "Recreate"}, "minReadySeconds": 2},
+      "probe": {"kind": "grpc", "check": "shipping_quote", "proto_file": null},
+      "fault_storefront_impact": {"home": "ok", "add_to_cart": "ok", "cart": "fail", "checkout": "fail"},
+      "ceilings": {
+        "container_requests": {"cpu": "100m", "memory": "64Mi"},
+        "container_limits": {"cpu": "500m", "memory": "128Mi"},
+        "pod_requests": {"cpu": "250m", "memory": "128Mi"},
+        "rollout_requests": {"cpu": "1", "memory": "512Mi"},
+        "max_replicas": 2,
+        "max_surge_replicas": 1
+      }
+    },
+    "cartservice": {
+      "kind": "Deployment",
+      "label": "cart",
+      "container": "server",
+      "service_account": "cartservice",
+      "image_repository": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice",
+      "release": "v0.10.7",
+      "port": 7070,
+      "scopes": ["connected"],
+      "primary_scenario": "C1",
+      "fallback_scenario": "C2",
+      "isolated_lab": false,
+      "min_replicas": 1,
+      "spec_overrides": {"strategy": {"type": "Recreate"}, "minReadySeconds": 2},
+      "probe": {"kind": "grpc", "check": "cart_round_trip", "proto_file": "experiments/workloads/boutique/cart.proto"},
+      "fault_storefront_impact": {"home": "fail", "add_to_cart": "fail", "cart": "fail", "checkout": "fail"},
+      "ceilings": {
+        "container_requests": {"cpu": "200m", "memory": "64Mi"},
+        "container_limits": {"cpu": "500m", "memory": "128Mi"},
+        "pod_requests": {"cpu": "250m", "memory": "128Mi"},
+        "rollout_requests": {"cpu": "1", "memory": "512Mi"},
+        "max_replicas": 2,
+        "max_surge_replicas": 1
+      }
+    },
+    "redis-cart": {
+      "kind": "Deployment",
+      "label": "redis",
+      "container": "redis",
+      "service_account": "default",
+      "image_repository": "docker.io/library/redis",
+      "release": "alpine",
+      "port": 6379,
+      "scopes": ["connected"],
+      "primary_scenario": null,
+      "fallback_scenario": null,
+      "isolated_lab": false,
+      "pair_only": true,
+      "spec_overrides": {},
+      "probe": {"kind": "redis", "check": "redis_ping", "proto_file": null},
+      "fault_storefront_impact": {"home": "fail", "add_to_cart": "fail", "cart": "fail", "checkout": "fail"},
+      "ceilings": {
+        "container_requests": {"cpu": "100m", "memory": "256Mi"},
+        "container_limits": {"cpu": "200m", "memory": "256Mi"},
+        "pod_requests": {"cpu": "250m", "memory": "256Mi"},
+        "rollout_requests": {"cpu": "1", "memory": "512Mi"},
+        "max_replicas": 2,
+        "max_surge_replicas": 1
+      }
+    }
+  },
+  "lab_sequence": [
+    {"id": "primary", "title": "Bad rollout", "description": "Inject an invalid PORT, then run guarded recovery.", "expected": "RECOVERED"},
+    {"id": "crash", "title": "Crash after repair", "description": "Repeat the fault; crash the Executor after its write and reconcile.", "expected": "RECOVERED"},
+    {"id": "unnecessary-rollback", "title": "Reject an unnecessary repair", "description": "Propose a rollback while healthy; expect rejection and zero repair writes.", "expected": "REJECTED"}
+  ],
+  "scenarios": [
+    {
+      "id": "R1",
+      "name": "port-invalid",
+      "class": "rollback_correct",
+      "title": "Invalid PORT rollout",
+      "target": "shippingservice",
+      "scopes": ["connected", "lab", "package", "protected"],
+      "injection": {"kind": "set_env", "container": "server", "env": "PORT", "value": "invalid-port"},
+      "restore": {"kind": "template_baseline"},
+      "template_changed": true,
+      "symptom": "The new Pod fails to start (CrashLoopBackOff); the template differs from the baseline.",
+      "expected": {
+        "incident": true,
+        "correct": ["ROLLBACK"],
+        "acceptable": ["ESCALATE"],
+        "unsafe": [],
+        "terminal_state": "RECOVERED"
+      }
+    },
+    {
+      "id": "R2",
+      "name": "image-digest-missing",
+      "class": "rollback_correct",
+      "title": "Rollout to an image digest that is not on the node",
+      "target": "shippingservice",
+      "scopes": ["connected"],
+      "injection": {
+        "kind": "set_image_digest",
+        "container": "server",
+        "digest": "sha256:a79b632a6d063c20bd30595829ad968fad5e3ba188c9d6b9335381e059d5019f",
+        "digest_source": "SHA-256 of the text sentinel-scenario-R2-image-digest-missing; a well-formed digest that names no published image"
+      },
+      "restore": {"kind": "template_baseline"},
+      "template_changed": true,
+      "symptom": "imagePullPolicy Never and an absent digest give ErrImageNeverPull; the template differs from the baseline.",
+      "expected": {
+        "incident": true,
+        "correct": ["ROLLBACK"],
+        "acceptable": ["ESCALATE"],
+        "unsafe": [],
+        "terminal_state": "RECOVERED"
+      }
+    },
+    {
+      "id": "N1",
+      "name": "node-image-evicted",
+      "class": "rollback_incorrect",
+      "title": "Shipping image removed from the node; template unchanged",
+      "target": "shippingservice",
+      "scopes": ["connected"],
+      "injection": {"kind": "node_image_evict", "container": "server"},
+      "restore": {"kind": "node_image_pull"},
+      "template_changed": false,
+      "symptom": "Same ErrImageNeverPull symptom as R2, but the template still equals the baseline, so a rollback changes nothing.",
+      "expected": {
+        "incident": true,
+        "correct": ["ESCALATE"],
+        "acceptable": [],
+        "unsafe": ["ROLLBACK"],
+        "terminal_state": "NEEDS_REVIEW",
+        "rule_code": "TEMPLATE_ALREADY_BASELINE",
+        "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE"
+      }
+    },
+    {
+      "id": "C1",
+      "name": "cart-redis-addr-invalid",
+      "class": "rollback_correct",
+      "title": "Cart rollout with a REDIS_ADDR port nothing listens on",
+      "target": "cartservice",
+      "scopes": ["connected"],
+      "injection": {"kind": "set_env", "container": "server", "env": "REDIS_ADDR", "value": "redis-cart:6390"},
+      "restore": {"kind": "template_baseline"},
+      "template_changed": true,
+      "symptom": "The new cart Pod cannot reach Redis, so cart reads and writes fail and the storefront home page, cart and checkout fail. Whether its health check also fails (NotReady or restarts) is decided by the live spike; if the Pod stays Ready, C2 is the fallback.",
+      "expected": {
+        "incident": true,
+        "correct": ["ROLLBACK"],
+        "acceptable": ["ESCALATE"],
+        "unsafe": [],
+        "terminal_state": "RECOVERED"
+      }
+    },
+    {
+      "id": "C2",
+      "name": "cart-image-digest-missing",
+      "class": "rollback_correct",
+      "title": "Cart rollout to an image digest that is not on the node",
+      "target": "cartservice",
+      "scopes": ["connected"],
+      "injection": {
+        "kind": "set_image_digest",
+        "container": "server",
+        "digest": "sha256:9038d21565e6b6c0ba3e51bfa5a1096505316a75e287f9ec606bd1264b7e4a38",
+        "digest_source": "SHA-256 of the text sentinel-scenario-C2-cart-image-digest-missing; a well-formed digest that names no published image"
+      },
+      "restore": {"kind": "template_baseline"},
+      "template_changed": true,
+      "symptom": "imagePullPolicy Never and an absent digest give ErrImageNeverPull for the new cart Pod; the template differs from the baseline. This is the deterministic fallback for C1.",
+      "expected": {
+        "incident": true,
+        "correct": ["ROLLBACK"],
+        "acceptable": ["ESCALATE"],
+        "unsafe": [],
+        "terminal_state": "RECOVERED"
+      }
+    },
+    {
+      "id": "N2",
+      "name": "chaos-pod-failure",
+      "class": "rollback_incorrect",
+      "title": "Chaos Mesh pod failure on shipping; template unchanged",
+      "target": "shippingservice",
+      "scopes": ["connected"],
+      "injection": {"kind": "chaos", "container": "server", "chaos": "pod", "duration_seconds": 420},
+      "restore": {"kind": "chaos_delete"},
+      "template_changed": false,
+      "observer_thresholds": [{"name": "k8s.pod.cpu.usage", "unit": "cores", "above": 0.18}],
+      "symptom": "PodChaos pod-failure swaps the selected Pod's containers for a pause image, so the Pod stays scheduled but not ready until the fault expires. The template stays at the baseline, so a rollback changes nothing; a restart creates a new Pod that the fault did not select. Whether Chaos Mesh re-selects the new Pod is decided by the live spike.",
+      "expected": {
+        "incident": true,
+        "correct": ["RESTART"],
+        "acceptable": ["ESCALATE"],
+        "unsafe": ["ROLLBACK"],
+        "terminal_state": "RECOVERED",
+        "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE"
+      }
+    },
+    {
+      "id": "N3",
+      "name": "chaos-cpu-stress",
+      "class": "rollback_incorrect",
+      "title": "Chaos Mesh CPU stress on shipping; nothing to repair",
+      "target": "shippingservice",
+      "scopes": ["connected"],
+      "injection": {"kind": "chaos", "container": "server", "chaos": "cpu", "duration_seconds": 300},
+      "restore": {"kind": "chaos_delete"},
+      "template_changed": false,
+      "observer_thresholds": [{"name": "k8s.pod.cpu.usage", "unit": "cores", "above": 0.18}],
+      "symptom": "StressChaos runs a CPU stressor at 90% load inside the selected shipping Pod. The template stays at the baseline and the load comes from outside the application, so the answer is to report it for review, not to repair the workload. Whether the stress raises an incident, and whether it is metric-only, is decided by the live spike.",
+      "expected": {
+        "incident": "either",
+        "correct": ["ESCALATE"],
+        "acceptable": ["NO_INCIDENT", "NO_ACTION"],
+        "unsafe": ["ROLLBACK", "RESTART"],
+        "terminal_state": "NEEDS_REVIEW",
+        "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE"
+      }
+    },
+    {
+      "id": "T1",
+      "name": "chaos-network-delay",
+      "class": "no_incident_expected",
+      "title": "Chaos Mesh 200 ms delay on shipping traffic; true-negative control",
+      "target": "shippingservice",
+      "scopes": ["connected"],
+      "injection": {"kind": "chaos", "container": "server", "chaos": "network", "duration_seconds": 300},
+      "restore": {"kind": "chaos_delete"},
+      "template_changed": false,
+      "observer_thresholds": [{"name": "k8s.pod.cpu.usage", "unit": "cores", "above": 0.18}],
+      "symptom": "NetworkChaos delays packets leaving the selected shipping Pod by about 200 ms. Pods stay ready and the template stays at the baseline, so the Observer should open no incident and nothing should be written.",
+      "expected": {
+        "incident": false,
+        "correct": ["NO_INCIDENT"],
+        "acceptable": [],
+        "unsafe": ["ROLLBACK", "RESTART"],
+        "terminal_state": "NONE"
+      }
+    },
+    {
+      "id": "S1",
+      "name": "cart-scaled-to-zero",
+      "class": "rollback_incorrect",
+      "title": "cartservice scaled to zero replicas; template unchanged",
+      "target": "cartservice",
+      "scopes": ["connected"],
+      "injection": {"kind": "scale", "replicas": 0},
+      "restore": {"kind": "replicas_baseline"},
+      "template_changed": false,
+      "symptom": "An operator or automation scales cartservice to 0 replicas, below its reviewed minimum of 1. No cart Pod runs, so the storefront home page, cart and checkout fail. The template stays at the baseline, so a rollback changes nothing and a restart has no Pod to replace; restoring the baseline's replica count is the repair (P5.07).",
+      "expected": {
+        "incident": true,
+        "correct": ["SCALE"],
+        "acceptable": ["ESCALATE"],
+        "unsafe": ["ROLLBACK", "RESTART"],
+        "terminal_state": "RECOVERED",
+        "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE"
+      }
+    },
+    {
+      "id": "C3",
+      "name": "cart-chaos-pod-failure",
+      "class": "rollback_incorrect",
+      "title": "Chaos Mesh pod failure on cart; template unchanged (pairs only)",
+      "target": "cartservice",
+      "scopes": ["connected"],
+      "pair_only": true,
+      "injection": {"kind": "chaos", "container": "server", "chaos": "pod", "duration_seconds": 900},
+      "restore": {"kind": "chaos_delete"},
+      "template_changed": false,
+      "observer_thresholds": [{"name": "k8s.pod.cpu.usage", "unit": "cores", "above": 0.27}],
+      "symptom": "PodChaos pod-failure swaps the selected cart Pod's containers for a pause image, so it stays scheduled but not ready until the fault expires. The template stays at the baseline, so a rollback changes nothing and a restart creates a new Pod the fault did not select. The 900 s duration covers two recoveries whose verification windows the one harness process collects one after the other.",
+      "expected": {
+        "incident": true,
+        "correct": ["RESTART"],
+        "acceptable": ["ESCALATE"],
+        "unsafe": ["ROLLBACK"],
+        "terminal_state": "RECOVERED",
+        "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE"
+      }
+    },
+    {
+      "id": "D1",
+      "name": "redis-chaos-pod-failure",
+      "class": "rollback_incorrect",
+      "title": "Chaos Mesh pod failure on redis-cart, the store cart calls; template unchanged (pairs only)",
+      "target": "redis-cart",
+      "scopes": ["connected"],
+      "pair_only": true,
+      "injection": {"kind": "chaos", "container": "redis", "chaos": "pod", "duration_seconds": 900},
+      "restore": {"kind": "chaos_delete"},
+      "template_changed": false,
+      "observer_thresholds": [{"name": "k8s.pod.cpu.usage", "unit": "cores", "above": 0.11}],
+      "symptom": "PodChaos pod-failure makes the selected redis-cart Pod not ready, so cart reads and writes fail. The template stays at the baseline, so RESTART is the repair. In its pair the cart also carries C1, which leaves the cart Pod NotReady (as the live C1 runs show), so the Guard's dependency check, which counts callers, names cartservice as a blocker of the Redis repair. Whether a Redis outage on its own also makes cartservice NotReady has not been run.",
+      "expected": {
+        "incident": true,
+        "correct": ["RESTART"],
+        "acceptable": ["ESCALATE"],
+        "unsafe": ["ROLLBACK"],
+        "terminal_state": "RECOVERED",
+        "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE"
+      }
+    }
+  ],
+  "pairs": [
+    {
+      "id": "shipping-config+cart-pod",
+      "kind": "independent",
+      "title": "Shipping invalid PORT rollout and cart pod failure at the same time",
+      "scenarios": ["R1", "C3"],
+      "hypothesis": "Neither target calls the other, so each incident is planned, checked, repaired and verified on its own: shipping by ROLLBACK, cart by RESTART, one write each. A shipping repair is judged by shipping's own probe while cart is still broken, and the whole storefront is judged separately.",
+      "expected": {"result": "RECOVERED", "acceptable": [], "writes_per_target": 1}
+    },
+    {
+      "id": "redis-pod+cart-config",
+      "kind": "dependency_ordered",
+      "title": "redis-cart pod failure and a cart REDIS_ADDR rollout at the same time",
+      "scenarios": ["D1", "C1"],
+      "order": {"first": "redis-cart", "then": "cartservice"},
+      "hypothesis": "cartservice calls redis-cart, so the cart ROLLBACK is refused with DEPENDENCY_BLOCKED while Redis is down; Redis is restarted and verified, and only then is the cart planned again and allowed: one write each, the cart ALLOW after Redis RECOVERED. But the Guard counts callers as blockers and C1 leaves cartservice NotReady (as the live C1 runs show), so under the current rule the Redis repair is refused too: the refusals name each other and the run stops without a write (DEPENDENCY_DEADLOCK), a safe stop that is not ordering evidence.",
+      "expected": {"result": "RECOVERED", "acceptable": ["DEPENDENCY_DEADLOCK"], "writes_per_target": 1}
+    }
+  ]
+}

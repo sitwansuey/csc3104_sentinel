@@ -44,7 +44,7 @@ class DurablePlannerTests(unittest.TestCase):
     def step(self):
         never = lambda *args: self.fail("Pending or escalated planning must not authorize a repair")
         return advance(self.f.store, self.incident["incident_id"], plan=self.plan,
-            assess=never, guard=self.f.guard, operator=never, execute=never, verify=never)
+            assess=never, guard=self.f.guard, approve=never, execute=never, verify=never)
 
     def test_saved_proposal_replays_after_delivery_crash_without_model_recall(self):
         with patch("runtime.planner_pipeline.record_message", side_effect=OSError("lost result")):

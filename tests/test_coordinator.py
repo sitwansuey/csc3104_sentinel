@@ -10,6 +10,7 @@ from services.coordinator.core import (
     CoordinatorError, LocalEventBus, SQLiteStore, acknowledge, approve,
     dispatch_pending, handle,
 )
+from experiments.boutique.harness.multi_fault import cross_incident_transitions
 from services.guard.core import evaluate, proposal_fingerprint
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -204,6 +205,22 @@ class CoordinatorTests(unittest.TestCase):
         with self.assertRaises(CoordinatorError):
             self.send(dict(self.execution, recorded_at="2026-10-10T12:00:46Z"))
 
+    def test_superseded_write_fails_without_verification_and_admits_a_new_action(self):
+        for first in ("READY", "NEEDS_RECONCILIATION"):
+            with self.subTest(first=first):
+                self.store = SQLiteStore(clock=lambda: NOW)
+                self.addCleanup(self.store.close)
+                self.bus = LocalEventBus()
+                self.allowed()
+                if first == "NEEDS_RECONCILIATION":
+                    self.send(dict(self.execution, status="NEEDS_RECONCILIATION"))
+                self.send(dict(self.execution, status="SUPERSEDED", recorded_at="2026-10-10T12:00:46Z"))
+                self.assertEqual(self.state(), "FAILED")
+                self.assertFalse(any(event["topic"] == "verifier.request" for event in self.bus.events))
+                self.send(dict(self.proposal, action_id="ACT-NEW"))
+                with self.assertRaises(CoordinatorError):
+                    self.send(dict(self.execution, status="APPLIED", recorded_at="2026-10-10T12:00:47Z"))
+
     def test_uncertain_write_requires_reconciliation_before_new_action(self):
         self.allowed()
         self.send(dict(self.execution, status="NEEDS_RECONCILIATION"))
@@ -301,6 +318,91 @@ class CoordinatorTests(unittest.TestCase):
                 thread.join(timeout=15)
             self.assertFalse(any(thread.is_alive() for thread in threads))
             self.assertCountEqual(results, ["accepted", "rejected"])
+
+
+def other_target(message):
+    """The same lifecycle message for a second incident on another target (cartservice)."""
+    text = json.dumps(message)
+    for old, new in (("INC-DEMO-001", "INC-CART-001"), ("ACT-DEMO-001", "ACT-CART-001"),
+                     ("synthetic-demo-uid-001", "cartservice-uid"), ("demo-api", "cartservice")):
+        text = text.replace(old, new)
+    return json.loads(text)
+
+
+class CrossIncidentTests(unittest.TestCase):
+    """Two incidents on two targets at once (P4.05): one incident's messages never move the other."""
+
+    def setUp(self):
+        self.store = SQLiteStore(clock=lambda: NOW)
+        self.addCleanup(self.store.close)
+        self.bus = LocalEventBus()
+        names = ("incident", "proposal", "guard-result", "execution-result", "outcome")
+        self.a = {name: fixture("messages/" + name + ".json") for name in names}
+        self.b = {name: other_target(message) for name, message in self.a.items()}
+        for messages in (self.a, self.b):
+            messages["guard-result"].update(verdict="ALLOW", reason_codes=["VALIDATION_PASSED"])
+
+    def send(self, message):
+        return handle(message, self.store, self.bus)
+
+    def verifying(self):
+        for name in ("incident", "proposal", "guard-result", "execution-result"):
+            for messages in (self.a, self.b):
+                self.send(messages[name])
+
+    def state(self, messages):
+        return self.store.incident(messages["incident"]["incident_id"])["state"]
+
+    def test_an_outcome_for_one_incident_never_transitions_the_other(self):
+        self.verifying()
+        self.assertEqual((self.state(self.a), self.state(self.b)), ("VERIFYING", "VERIFYING"))
+        before = len(self.store.transitions(self.b["incident"]["incident_id"]))
+        self.send(self.a["outcome"])
+        self.assertEqual((self.state(self.a), self.state(self.b)), ("RECOVERED", "VERIFYING"))
+        self.assertEqual(len(self.store.transitions(self.b["incident"]["incident_id"])), before)
+        # A's outcome cannot be pointed at B's action, nor B's outcome at A's incident.
+        for forged in (dict(self.a["outcome"], action_id=self.b["outcome"]["action_id"]),
+                       dict(self.b["outcome"], incident_id=self.a["incident"]["incident_id"])):
+            with self.subTest(forged=forged["incident_id"]), self.assertRaises(CoordinatorError):
+                self.send(forged)
+        self.assertEqual((self.state(self.a), self.state(self.b)), ("RECOVERED", "VERIFYING"))
+        self.send(dict(self.b["outcome"], status="NOT_RECOVERED"))
+        self.assertEqual((self.state(self.a), self.state(self.b)), ("RECOVERED", "FAILED"))
+        self.assertEqual(cross_incident_transitions(self.store), [])
+
+    def test_rejected_admits_a_new_proposal_but_recovered_never_reopens(self):
+        self.send(self.a["incident"])
+        self.send(self.b["incident"])
+        self.send(self.a["proposal"])
+        self.send(self.b["proposal"])
+        self.send(dict(self.b["guard-result"], verdict="REJECT", reason_codes=["DEPENDENCY_BLOCKED"]))
+        self.assertEqual((self.state(self.a), self.state(self.b)), ("VALIDATING", "REJECTED"))
+        # A rejected incident may be planned again: a new action ID, the same incident.
+        self.send(dict(self.b["proposal"], action_id="ACT-CART-002", rationale="Re-planned after the blocker recovered."))
+        self.assertEqual(self.state(self.b), "VALIDATING")
+        self.assertEqual(self.store.incident(self.b["incident"]["incident_id"])["active_action_id"], "ACT-CART-002")
+        for name in ("guard-result", "execution-result", "outcome"):
+            self.send(self.a[name])
+        self.assertEqual(self.state(self.a), "RECOVERED")
+        with self.assertRaises(CoordinatorError):
+            self.send(dict(self.a["proposal"], action_id="ACT-DEMO-002"))
+        self.assertEqual(self.state(self.a), "RECOVERED")
+        self.assertEqual(self.state(self.b), "VALIDATING")
+        self.assertEqual(cross_incident_transitions(self.store), [])
+
+    def test_the_cross_incident_check_reports_a_transition_caused_by_the_other_incident(self):
+        self.verifying()
+        self.send(self.a["outcome"])
+        caused_by_a = self.store.transitions(self.a["incident"]["incident_id"])[-1]["cause"]
+        # A forged journal row: B moved by A's outcome. The check must name it.
+        self.store.db.execute(
+            "INSERT INTO transitions(incident_id,action_id,from_state,to_state,cause,outbox_high_water,recorded_at)"
+            " VALUES(?,?,?,?,?,?,?)", (self.b["incident"]["incident_id"], self.b["proposal"]["action_id"],
+                                       "VERIFYING", "RECOVERED", caused_by_a, 0, "2026-10-10T12:00:36Z"))
+        found = cross_incident_transitions(self.store)
+        self.assertEqual(len(found), 1)
+        self.assertEqual((found[0]["incident_id"], found[0]["cause_incident_id"]),
+                         (self.b["incident"]["incident_id"], self.a["incident"]["incident_id"]))
 
 
 if __name__ == "__main__":

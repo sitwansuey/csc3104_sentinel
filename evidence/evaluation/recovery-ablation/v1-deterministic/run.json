@@ -1,0 +1,38 @@
+{
+  "identity": {
+    "config": {},
+    "corpus_manifest_sha256": "bec154577393cfff5165a214abf8db3aa6d8378fb3be39d232527053403901a9",
+    "diagnosis": "recorded",
+    "levels": [
+      "V0",
+      "V1",
+      "V2"
+    ],
+    "model_digest": null,
+    "policies": [
+      "P0",
+      "P1",
+      "P1R"
+    ],
+    "schema": "sentinel-recovery-ablation-run-v1",
+    "seeds": [
+      42
+    ],
+    "sources": {
+      "agent/agent.py": "e037b4ac4a030724f711ae056475c4162baf278890dbac2b13a869cffff9ab63",
+      "agent/llm.py": "f9bb198ea7f93522b0dfbffb4a1f600636631f8d4e2b494bb1d998c4e9491a71",
+      "agent/untrusted.py": "75c32669ba8179e61efd19692a19de48db9dccdc77078a62be154c379b941620",
+      "experiments/analysis/replay.py": "3c22ec79cd1ef977cbc32ce46c36d6cdb6a2909036e9bafecc3c9cbcc89426c5",
+      "experiments/analysis/replay_corpus.py": "3fa31eca3b6eaecc38b208c73f603c53d8252ac0441a6ccbfd4e6f6959c6663e",
+      "services/guard/core.py": "14a71c052af80a5fdfd3ea352f60eee5ed8c739a4e7ec805894f9b8785d81265",
+      "services/guard/decisions.py": "3321469d94dc5c17bffccce650034a26dc57c8653daeeaeab158471000e8c84b",
+      "services/guard/eligibility.py": "0e4a30653e1457fe173c96bd1c6bdf18612eeecbb902d02bd3a2831a2dc2e383",
+      "services/planner/agent_provider.py": "9f6c0d03c6409bc41b3f6cd0a15da9a27adc83910177a76ef9fc4c386e62f46c",
+      "services/planner/change.py": "30ee99806826eb23a7d2444fc1640e5cab77cc6a612f9d78ddeaa113b1e05b13",
+      "services/planner/core.py": "7ecbcbaa2ad5b27c595dab44caa817ae7828a8dc8adf1890d2b9376571402ddb",
+      "services/planner/taxonomy.py": "330a33b26ec4725188bcbc5eb3a585da140cb597da4209ae77477020396858f1",
+      "services/planner/worker.py": "8c19991c29482af3bbe976fa20c9266fc1c9063f0cc9d950e932fd16174de557",
+      "services/rca/core.py": "863229a9b617701688174dc94b28e5c6b97c0e280f64f74647d95f354faa688c"
+    }
+  }
+}

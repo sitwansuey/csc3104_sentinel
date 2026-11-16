@@ -1,0 +1,7 @@
+[
+  {
+    "op": "replace",
+    "path": "/metadata/annotations/sentinel.io~1fence-epoch",
+    "value": "06"
+  }
+]

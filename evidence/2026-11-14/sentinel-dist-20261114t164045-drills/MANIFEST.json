@@ -1,0 +1,97 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "sentinel-dist-20261114t164045-drills",
+  "class": "distributed-acceptance",
+  "captured_at": "2026-11-14T08:42:39.998092Z",
+  "source_run_dir_name": "sentinel-dist-20261114t164045-drills",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "recorded",
+    "source_revision": "7ce9863906edf56620ab0354ac7bc9573506cad7"
+  },
+  "files": [
+    {
+      "path": "drills/partition-b387eb29c1b2/records.json",
+      "sha256": "b1c4a8ddb91fa78f4289c3a8e2fe00f9b5ebd4564eebcdfafb442f454db6df6f",
+      "bytes": 18170,
+      "redactions": 0
+    },
+    {
+      "path": "drills/partition-b387eb29c1b2/summary.json",
+      "sha256": "6c9027448cbfc06a0375ffd248e98ce9cb12a9c16ec9e7a29c6cf016a837d2a4",
+      "bytes": 9509,
+      "redactions": 0
+    },
+    {
+      "path": "drills/restore-11918e34bb55/summary.json",
+      "sha256": "07726d2c0f47c95ec6c930c0efb4dc4e917bc171acecbc6662f1bdda5408441b",
+      "bytes": 43947,
+      "redactions": 0
+    },
+    {
+      "path": "inputs/allowed-targets.json",
+      "sha256": "39071cb89c6dea7cf78315dfcb9d8d43a43fab06331f2535c84c4755cb6e350a",
+      "bytes": 190,
+      "redactions": 0
+    },
+    {
+      "path": "inputs/baseline.json",
+      "sha256": "f319e402ad6104d4ec2b4510dd9a48d828a8ab8eff684fa37b36cc1876a43e31",
+      "bytes": 3341,
+      "redactions": 0
+    },
+    {
+      "path": "inputs/observer-policy.json",
+      "sha256": "311b81e7e7c5ddf8f7339ef090b68873c854bd0d6946e9e75a6807e16f84c913",
+      "bytes": 60,
+      "redactions": 0
+    },
+    {
+      "path": "inputs/policy.json",
+      "sha256": "57a98d1d7f2593a96878a5d1737d908c55c534d8bba0d3b8466f6dd68c12b06f",
+      "bytes": 2212,
+      "redactions": 0
+    },
+    {
+      "path": "inputs/verifier-inventory.json",
+      "sha256": "9a1dd00bcc10e6218824c6fd56baca9cd25aa047ea7f5ff2d1da1cb28c0834f5",
+      "bytes": 571,
+      "redactions": 0
+    },
+    {
+      "path": "lab.json",
+      "sha256": "ceb0bb52d79c0934844fbb57d404103404c34970d9ff977851eca2c9adcd98b9",
+      "bytes": 8236,
+      "redactions": 2
+    },
+    {
+      "path": "results.md",
+      "sha256": "058e99a67139e0df59a88ae3108f7ad71cbfe2cf0dc8633eaa1d9674d539c273",
+      "bytes": 765,
+      "redactions": 0
+    },
+    {
+      "path": "summary.json",
+      "sha256": "f3eea2fe47356030446ba36f8b86196a8f2683326a00a3b3de2bcec7fb17f500",
+      "bytes": 2925,
+      "redactions": 0
+    }
+  ],
+  "omitted": [
+    {
+      "path": "drills/partition-b387eb29c1b2/audit-extract.jsonl",
+      "bytes": 379035,
+      "reason": "over per-file cap"
+    },
+    {
+      "path": "drills/restore-11918e34bb55/audit-extract.jsonl",
+      "bytes": 757294,
+      "reason": "over per-file cap"
+    },
+    {
+      "path": "drills/restore-11918e34bb55/records.json",
+      "bytes": 714666,
+      "reason": "over per-file cap"
+    }
+  ]
+}

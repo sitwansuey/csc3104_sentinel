@@ -1,0 +1,83 @@
+{
+  "state": "success",
+  "outputs": [
+    {
+      "evidence_id": "branch-003",
+      "tool": "logs",
+      "result": {
+        "file": "logs.csv",
+        "rows_scanned": 11,
+        "rows_in_window": 10,
+        "rows_retained": 10,
+        "truncated": false,
+        "invalid_timestamps": 0,
+        "error_count": 6,
+        "components": {
+          "shippingservice": 6
+        },
+        "examples": [
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 07:52:47+00:00",
+            "untrusted": true,
+            "template": "Back-off restarting failed container server in pod shippingservice-<hex>-rh4wm_sentinel-boutique-connected(<uuid>)",
+            "excerpt": "Back-off restarting failed container server in pod shippingservice-85576d7678-rh4wm_sentinel-boutique-connected(45d07dc7-8e25-4652-9819-1d52dab03895)",
+            "evidence_id": "branch-003.1"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 07:52:47+00:00",
+            "untrusted": true,
+            "template": "Readiness probe failed: timeout: failed to connect service \"<ip>:<num>\" within 1s: context deadline exceeded",
+            "excerpt": "Readiness probe failed: timeout: failed to connect service \"<private-ip>:50051\" within 1s: context deadline exceeded",
+            "evidence_id": "branch-003.2"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 07:52:47.176481067+00:00",
+            "untrusted": true,
+            "template": "{\"message\":\"<str>\",\"severity\":\"fatal\",\"timestamp\":\"<time>\"}",
+            "excerpt": "{\"message\":\"failed to listen: listen tcp: lookup tcp/invalid-port: unknown port\",\"severity\":\"fatal\",\"timestamp\":\"2026-11-12T07:52:47.176352997Z\"}",
+            "evidence_id": "branch-003.3"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 07:52:48+00:00",
+            "untrusted": true,
+            "template": "Back-off restarting failed container server in pod shippingservice-<hex>-rh4wm_sentinel-boutique-connected(<uuid>)",
+            "excerpt": "Back-off restarting failed container server in pod shippingservice-85576d7678-rh4wm_sentinel-boutique-connected(45d07dc7-8e25-4652-9819-1d52dab03895)",
+            "evidence_id": "branch-003.4"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 07:52:48+00:00",
+            "untrusted": true,
+            "template": "Readiness probe failed: timeout: failed to connect service \"<ip>:<num>\" within 1s: context deadline exceeded",
+            "excerpt": "Readiness probe failed: timeout: failed to connect service \"<private-ip>:50051\" within 1s: context deadline exceeded",
+            "evidence_id": "branch-003.5"
+          },
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 07:52:51+00:00",
+            "untrusted": true,
+            "template": "Back-off restarting failed container server in pod shippingservice-<hex>-rh4wm_sentinel-boutique-connected(<uuid>)",
+            "excerpt": "Back-off restarting failed container server in pod shippingservice-85576d7678-rh4wm_sentinel-boutique-connected(45d07dc7-8e25-4652-9819-1d52dab03895)",
+            "evidence_id": "branch-003.6"
+          }
+        ],
+        "suspected_injection_lines": 0,
+        "untimed_errors": 0,
+        "events": [
+          {
+            "component": "shippingservice",
+            "time": "2026-11-12 07:52:00",
+            "error_count": 6,
+            "baseline_errors_per_minute": 0.016666666666666666,
+            "left_censored": true
+          }
+        ],
+        "burst_baseline_available": true
+      }
+    }
+  ]
+}

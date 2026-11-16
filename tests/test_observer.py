@@ -182,5 +182,60 @@ class ObserverDetectionTests(unittest.TestCase):
         return sequence
 
 
+class CertificateRejectedTests(unittest.TestCase):
+    """P5.06: TLS certificate refusals in collected logs become CertificateRejected; ordinary logs do not."""
+
+    # Envoy access-log lines (scripts/security/security_lab.py upstream_tls) and Envoy/BoringSSL log
+    # lines for an expired certificate, an unknown CA and a SAN mismatch.
+    REJECTIONS = (
+        '{"route":"shipping-rpc","status":"503","flags":"UF","upstream_tls":"TLS_error:|268435581:SSL '
+        'routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED:TLS_error_end"}',
+        "[warning][connection] TLS error: verify cert failed: X509_verify_cert: certificate verification error at "
+        "depth 0: certificate has expired",
+        "TLS_error:|268436502:SSL routines:OPENSSL_internal:TLSV1_ALERT_UNKNOWN_CA:TLS_error_end",
+        "remote error: tls: unknown ca",
+        "verify cert failed: SAN matcher",
+        "2026-10-10T12:00:00Z SSLV3_ALERT_CERTIFICATE_EXPIRED",
+        "x509: certificate signed by unknown authority (possibly because of unable to get local issuer certificate)",
+    )
+    ORDINARY = (
+        '{"route":"shipping-rpc","status":"200","flags":"-","peer_serial":"1A2B","upstream_tls":"-"}',
+        "Invalid startup configuration; process exited with code 1",
+        "loaded certificate chain from /pki/upstream/tls.crt",
+        "certificate rotated; serial 1A2B",
+    )
+
+    def setUp(self):
+        self.observations = fixture("data/sentinel/samples/observations.json")
+        self.policy = fixture("data/sentinel/samples/policy.json")
+
+    def incident(self, text):
+        observations = copy.deepcopy(self.observations["failed-rollout"])
+        for observation in observations:
+            observation["logs"][0]["text"] = text
+        incident = detect(observations, self.policy)
+        validate_message(incident)
+        return {signal["reason"] for signal in incident["signals"] if signal["source"].startswith("container_log")}
+
+    def test_tls_certificate_refusals_are_certificate_rejected(self):
+        for line in self.REJECTIONS:
+            with self.subTest(line=line):
+                self.assertEqual(self.incident(line), {"CertificateRejected"})
+
+    def test_ordinary_logs_and_mentions_of_a_certificate_are_not(self):
+        for line in self.ORDINARY:
+            with self.subTest(line=line):
+                self.assertNotIn("CertificateRejected", self.incident(line))
+        self.assertEqual(self.incident(self.ORDINARY[1]), {"StartupError"})
+
+    def test_a_healthy_deployment_with_a_refusal_in_its_logs_is_still_no_incident(self):
+        # The classification labels evidence; it does not by itself create an incident (docs/security.md).
+        observations = copy.deepcopy(self.observations["healthy"])
+        for observation in observations:
+            observation["logs"] = [{"pod": "demo-api-fixture", "container": "envoy", "text": self.REJECTIONS[0],
+                                    "at": observation["captured_at"]}]
+        self.assertEqual(detect_all(observations, self.policy), [])
+
+
 if __name__ == "__main__":
     unittest.main()

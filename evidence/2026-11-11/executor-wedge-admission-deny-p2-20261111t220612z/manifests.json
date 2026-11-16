@@ -1,0 +1,105 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "wedge-target",
+        "namespace": "sentinel-wedge-c7c78eed",
+        "labels": {
+          "app": "wedge-target"
+        }
+      },
+      "spec": {
+        "replicas": 0,
+        "selector": {
+          "matchLabels": {
+            "app": "wedge-target"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app": "wedge-target"
+            }
+          },
+          "spec": {
+            "automountServiceAccountToken": false,
+            "containers": [
+              {
+                "name": "app",
+                "image": "registry.k8s.io/pause:3.9",
+                "resources": {
+                  "requests": {
+                    "cpu": "10m",
+                    "memory": "16Mi"
+                  },
+                  "limits": {
+                    "cpu": "50m",
+                    "memory": "32Mi"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "automountServiceAccountToken": false,
+      "metadata": {
+        "name": "sentinel-wedge-executor",
+        "namespace": "sentinel-wedge-c7c78eed"
+      }
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "Role",
+      "metadata": {
+        "name": "sentinel-wedge-executor",
+        "namespace": "sentinel-wedge-c7c78eed"
+      },
+      "rules": [
+        {
+          "apiGroups": [
+            "apps"
+          ],
+          "resources": [
+            "deployments"
+          ],
+          "resourceNames": [
+            "wedge-target"
+          ],
+          "verbs": [
+            "get",
+            "patch"
+          ]
+        }
+      ]
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "RoleBinding",
+      "metadata": {
+        "name": "sentinel-wedge-executor",
+        "namespace": "sentinel-wedge-c7c78eed"
+      },
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "sentinel-wedge-executor",
+          "namespace": "sentinel-wedge-c7c78eed"
+        }
+      ],
+      "roleRef": {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": "Role",
+        "name": "sentinel-wedge-executor"
+      }
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "p5conn-r2-wedge-admission-deny-rest",
+  "class": "executor-wedge",
+  "captured_at": "2026-11-14T15:24:04.905000Z",
+  "source_run_dir_name": "r2-wedge-admission-deny-rest",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "7b35066cb253e5d01c268641ea1108fca714e300",
+    "basis": "connected-lab Phase 5 session attempt 7 (14 Nov 2026) run from integration/phase5 at 7b35066, clean worktree plus untracked scratch runner"
+  },
+  "files": [
+    {
+      "path": "admission-deny.json",
+      "sha256": "a606a5b4d751f8461f750e02ea8a9a898e345f197231d03f099447aa4732a735",
+      "bytes": 4112,
+      "redactions": 0
+    },
+    {
+      "path": "admission-policy.json",
+      "sha256": "9a1c79c0a00a4f1f3cf4b23ce55a732375d47e3ee8e07fc6af7e2306c810a846",
+      "bytes": 1830,
+      "redactions": 0
+    },
+    {
+      "path": "manifests.json",
+      "sha256": "c8bea578fa605fa0fd9b8c967565fc151cbb7f5471aa1d17699cdca7159e6294",
+      "bytes": 2416,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

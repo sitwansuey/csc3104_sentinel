@@ -1,0 +1,63 @@
+[
+  {
+    "attempt": 1,
+    "call_id": 1,
+    "eval_duration_seconds": 2.913078,
+    "load_duration_seconds": 0.0239777,
+    "model": "qwen3:14b",
+    "output_tokens": 133,
+    "planning_attempt": 1,
+    "prompt_characters": 5814,
+    "prompt_eval_duration_seconds": 1.665579,
+    "prompt_tokens": 1943,
+    "role": "Analyzer",
+    "seconds": 4.689767799998663,
+    "status": "completed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 2,
+    "error_type": "ValueError",
+    "eval_duration_seconds": 42.702749,
+    "load_duration_seconds": 0.0031243,
+    "model": "qwen3:14b",
+    "output_tokens": 2048,
+    "planning_attempt": 1,
+    "prompt_characters": 7055,
+    "prompt_eval_duration_seconds": 1.850966,
+    "prompt_tokens": 2199,
+    "role": "Reporter",
+    "seconds": 44.66424099999858,
+    "status": "failed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 1,
+    "eval_duration_seconds": 2.863075,
+    "load_duration_seconds": 0.0051824,
+    "model": "qwen3:14b",
+    "output_tokens": 133,
+    "planning_attempt": 2,
+    "prompt_characters": 5814,
+    "prompt_eval_duration_seconds": 0.036055,
+    "prompt_tokens": 1943,
+    "role": "Analyzer",
+    "seconds": 3.100991100000101,
+    "status": "completed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 2,
+    "eval_duration_seconds": 8.37168,
+    "load_duration_seconds": 0.0095929,
+    "model": "qwen3:14b",
+    "output_tokens": 401,
+    "planning_attempt": 2,
+    "prompt_characters": 7055,
+    "prompt_eval_duration_seconds": 0.02087,
+    "prompt_tokens": 2199,
+    "role": "Reporter",
+    "seconds": 8.577083300002414,
+    "status": "completed"
+  }
+]

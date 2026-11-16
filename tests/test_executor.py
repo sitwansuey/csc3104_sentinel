@@ -20,8 +20,10 @@ from runtime.executor_pipeline import GuardAuthorizer
 from experiments.validation.demo_guard import load_fixtures
 from services.executor.core import (
     ACTION_ANNOTATION, ConditionalWriteConflict, ExecutionAdapters,
-    ReadUnavailable, execute,
+    ReadUnavailable, execute, reconcile,
 )
+from services.executor.kubernetes_adapter import WriteOutcomeUnknown
+from services.executor.reconciliation import FENCE_ANNOTATION
 from tests.support.executor_fake import FakeDeploymentAPI
 from services.executor.store import (
     ActionConflict, LocalTargetCoordinator, SQLiteExecutionLedger, TargetBusy,
@@ -469,6 +471,10 @@ except TargetBusy:
         self.assertEqual(len(cluster.writes), 1)
 
     def test_reconciliation_requires_exact_evidence_template_and_target_identity(self):
+        # The version moved, so none of these can be in doubt, yet none proves APPLIED.
+        expected = {"absent": "ADVANCED_WITHOUT_EVIDENCE", "malformed": "ADVANCED_WITHOUT_EVIDENCE",
+                    "action-id-only": "ADVANCED_WITHOUT_EVIDENCE",
+                    "wrong-template": "COMMITTED_THEN_OVERWRITTEN", "wrong-uid": "TARGET_REPLACED"}
         for case in ("absent", "malformed", "action-id-only", "wrong-template", "wrong-uid"):
             with self.subTest(case=case):
                 ledger = SQLiteExecutionLedger(self.directory / (case + ".db"))
@@ -493,7 +499,10 @@ except TargetBusy:
                 else:
                     metadata["uid"] = "recreated-target"
                 result = execute(proposal, self.adapters(cluster=cluster, ledger=ledger))
-                self.assertEqual(result["status"], "NEEDS_RECONCILIATION")
+                self.assertEqual(result["status"], "SUPERSEDED")
+                self.assertNotEqual(result["status"], "APPLIED")
+                self.assertTrue(result["details"].startswith("[basis=" + expected[case] + "]"))
+                self.assertEqual(ledger.get(proposal["action_id"])["phase"], "DONE")
                 self.assertEqual(len(cluster.write_attempts), 1)
 
     def test_uncertain_write_blocks_other_actions_even_after_worker_unlocks(self):
@@ -583,6 +592,316 @@ except TargetBusy:
         self.assertEqual(self.cluster.writes, [])
         self.assertEqual(self.run_action()["status"], "APPLIED")
         self.assertEqual(self.cluster.snapshot["deployment"]["metadata"]["annotations"]["example.org/owner"], "team")
+
+
+class PendingWrite(FakeDeploymentAPI):
+    """The write times out while the API server still holds it; replay() lands it later."""
+
+    def conditional_restore(self, **kwargs):
+        self.write_attempts.append(deepcopy(kwargs))
+        self.pending = deepcopy(kwargs)
+        raise TimeoutError("Request may still be in flight")
+
+    def replay(self):
+        return FakeDeploymentAPI.conditional_restore(self, **self.pending)
+
+
+class FenceForbidden(PendingWrite):
+    """Every fence is refused with an unclear error, as RBAC or admission would."""
+
+    def fence(self, **kwargs):
+        self.fence_attempts.append(deepcopy(kwargs))
+        raise WriteOutcomeUnknown("Live write returned an error; reconcile its outcome")
+
+
+class FencedAbortTests(unittest.TestCase):
+    """A write still in doubt with UID and version unchanged is resolved by a metadata-only fence."""
+
+    setUp = ExecutorTests.setUp
+    read_approval = ExecutorTests.read_approval
+    open_ledger = ExecutorTests.open_ledger
+    restart = ExecutorTests.restart
+    assert_no_writes = ExecutorTests.assert_no_writes
+
+    def adapters(self, **changes):
+        values = dict(fence_after_seconds=30.0, clock=lambda: self.now)
+        values.update(changes)
+        return ExecutorTests.adapters(self, **values)
+
+    def run_action(self, **changes):
+        return execute(deepcopy(self.proposal), self.adapters(**changes))
+
+    def pass_after(self, seconds, **changes):
+        self.now += timedelta(seconds=seconds)
+        return reconcile(deepcopy(self.proposal), self.adapters(**changes))
+
+    def in_doubt(self, cluster_type=PendingWrite, **changes):
+        self.now = NOW
+        cluster = cluster_type(self.fixtures["live_state"], clock=lambda: self.now)
+        result = self.run_action(cluster=cluster, **changes)
+        self.assertEqual((result["status"], basis(result)), ("NEEDS_RECONCILIATION", "UNCHANGED_IN_DOUBT"))
+        self.assertEqual(cluster.fence_attempts, [])  # The attempt's own first check never fences.
+        return cluster
+
+    def rival(self):
+        rival = deepcopy(self.proposal)
+        rival["action_id"] = "rival-after-fence"
+        return rival
+
+    def test_fence_commits_after_settle_and_a_replayed_write_can_never_commit(self):
+        cluster = self.in_doubt()
+        generation = cluster.snapshot["deployment"]["metadata"].get("generation")
+        result = self.pass_after(31, cluster=cluster)
+        self.assertEqual((result["status"], basis(result)), ("CONFLICT", "FENCED"))
+        validate_message(result)
+        self.assertEqual(result["resource_version"], cluster.snapshot["deployment"]["metadata"]["resourceVersion"])
+        self.assertEqual(len(cluster.fences), 1)
+        fences = self.ledger.fences(self.proposal["action_id"])
+        self.assertEqual([fence["committed_version"] for fence in fences], [result["resource_version"]])
+        marker = json.loads(cluster.snapshot["deployment"]["metadata"]["annotations"][FENCE_ANNOTATION])
+        self.assertEqual(marker, {"action_id": self.proposal["action_id"], "nonce": fences[0]["nonce"]})
+        self.assertEqual(cluster.snapshot["deployment"]["spec"]["template"],
+                         self.fixtures["live_state"]["deployment"]["spec"]["template"])
+        self.assertEqual(cluster.snapshot["deployment"]["metadata"].get("generation"), generation)
+        # The original request, still held by the server, can never land now.
+        with self.assertRaises(ConditionalWriteConflict):
+            cluster.replay()
+        self.assertEqual(cluster.writes, [])
+        self.assertEqual(self.ledger.get(self.proposal["action_id"])["phase"], "DONE")
+        self.assertEqual(self.ledger.prepare(self.rival())["phase"], "PREPARED")
+        self.assertEqual(self.pass_after(61, cluster=cluster), result)  # DONE replays; no second fence.
+        self.assertEqual(len(cluster.fence_attempts), 1)
+
+    def test_without_the_fence_the_same_write_stays_in_doubt_and_excludes_the_workload(self):
+        cluster = self.in_doubt()
+        for _ in range(5):
+            result = self.pass_after(61, cluster=cluster, fence_after_seconds=None)
+            self.assertEqual(basis(result), "UNCHANGED_IN_DOUBT")
+        with self.assertRaises(TargetBusy):
+            self.ledger.prepare(self.rival())
+        self.assertEqual(cluster.fence_attempts, [])
+
+    def test_original_write_that_lands_first_wins_and_the_fence_is_refused(self):
+        class WriteLandsFirst(PendingWrite):
+            def fence(api, **kwargs):
+                api.replay()  # The delayed write commits between our read and the fence.
+                return super().fence(**kwargs)
+
+        class WriteLandsFirstAndFenceTimesOut(WriteLandsFirst):
+            def fence(api, **kwargs):
+                try:
+                    super().fence(**kwargs)
+                except ConditionalWriteConflict:
+                    raise TimeoutError("Fence rejected by its resource version test") from None
+
+        for cluster_type in (WriteLandsFirst, WriteLandsFirstAndFenceTimesOut):
+            with self.subTest(cluster=cluster_type.__name__):
+                self.ledger = self.open_ledger_named(cluster_type.__name__)
+                cluster = self.in_doubt(cluster_type)
+                result = self.pass_after(31, cluster=cluster)
+                self.assertEqual((result["status"], basis(result)), ("APPLIED", "EVIDENCE_MATCH"))
+                self.assertEqual(len(cluster.writes), 1)
+                self.assertEqual(cluster.fences, [])
+                self.assertNotIn(FENCE_ANNOTATION, cluster.snapshot["deployment"]["metadata"]["annotations"])
+
+    def open_ledger_named(self, name):
+        ledger = SQLiteExecutionLedger(self.directory / (name + ".db"))
+        self.addCleanup(ledger.close)
+        return ledger
+
+    def test_fence_that_commits_but_loses_its_response_is_recognised_by_its_journaled_nonce(self):
+        class FenceResponseLost(PendingWrite):
+            def fence(api, **kwargs):
+                super().fence(**kwargs)
+                raise TimeoutError("Fence response lost")
+
+        cluster = self.in_doubt(FenceResponseLost)
+        result = self.pass_after(31, cluster=cluster)
+        self.assertEqual((result["status"], basis(result)), ("CONFLICT", "FENCED"))
+        fences = self.ledger.fences(self.proposal["action_id"])
+        self.assertEqual([fence["committed_version"] for fence in fences], [None])  # Proven by the read, not the response.
+
+    def test_fence_still_in_flight_is_followed_by_at_most_one_more_and_only_one_commits(self):
+        class FenceQueued(PendingWrite):
+            queued = None
+            calls = 0
+
+            def fence(api, **kwargs):
+                api.calls += 1
+                if api.queued is None:
+                    api.queued = deepcopy(kwargs)
+                    raise TimeoutError("Fence may still be in flight")
+                return super().fence(**kwargs)
+
+        cluster = self.in_doubt(FenceQueued)
+        first = self.pass_after(31, cluster=cluster)
+        self.assertEqual(basis(first), "UNCHANGED_IN_DOUBT")
+        self.assertEqual(self.pass_after(10, cluster=cluster), first)  # Within the retry interval: no new fence.
+        self.assertEqual(cluster.calls, 1)
+        second = self.pass_after(21, cluster=cluster)
+        self.assertEqual(cluster.calls, 2)
+        self.assertEqual((second["status"], basis(second)), ("CONFLICT", "FENCED"))
+        nonces = [fence["nonce"] for fence in self.ledger.fences(self.proposal["action_id"])]
+        self.assertEqual(len(set(nonces)), 2)
+        # The first fence lands late; it tests the same version, so it can no longer commit.
+        with self.assertRaises(ConditionalWriteConflict):
+            FakeDeploymentAPI.fence(cluster, **cluster.queued)
+        with self.assertRaises(ConditionalWriteConflict):
+            cluster.replay()
+        self.assertEqual((len(cluster.fences), cluster.writes), (1, []))
+
+    def test_late_landing_of_an_earlier_fence_is_recognised_without_another_fence(self):
+        class FenceQueued(PendingWrite):
+            queued = None
+
+            def fence(api, **kwargs):
+                api.queued = deepcopy(kwargs)
+                raise TimeoutError("Fence may still be in flight")
+
+        cluster = self.in_doubt(FenceQueued)
+        self.pass_after(31, cluster=cluster)
+        FakeDeploymentAPI.fence(cluster, **cluster.queued)  # The server finishes the first fence.
+        result = self.pass_after(5, cluster=cluster)
+        self.assertEqual((result["status"], basis(result)), ("CONFLICT", "FENCED"))
+        self.assertEqual(len(self.ledger.fences(self.proposal["action_id"])), 1)
+
+    def test_crash_after_journaling_the_nonce_and_before_the_call_is_safe(self):
+        class CrashBeforeFence(PendingWrite):
+            crashed = False
+
+            def fence(api, **kwargs):
+                if not api.crashed:
+                    api.crashed = True
+                    raise SimulatedCrash()
+                return super().fence(**kwargs)
+
+        cluster = self.in_doubt(CrashBeforeFence)
+        with self.assertRaises(SimulatedCrash):
+            self.pass_after(31, cluster=cluster)
+        self.assertEqual(len(self.ledger.fences(self.proposal["action_id"])), 1)
+        self.ledger.close()
+        self.ledger = self.open_ledger()
+        self.assertEqual(basis(self.pass_after(5, cluster=cluster)), "UNCHANGED_IN_DOUBT")  # Retry interval.
+        result = self.pass_after(30, cluster=cluster)
+        self.assertEqual((result["status"], basis(result)), ("CONFLICT", "FENCED"))
+        self.assertEqual((len(self.ledger.fences(self.proposal["action_id"])), len(cluster.fences)), (2, 1))
+        self.assertEqual((len(cluster.write_attempts), cluster.writes), (1, []))
+
+    def test_crash_after_the_fence_commits_is_recognised_after_restart(self):
+        class CrashAfterFence(PendingWrite):
+            def fence(api, **kwargs):
+                super().fence(**kwargs)
+                raise SimulatedCrash()
+
+        cluster = self.in_doubt(CrashAfterFence)
+        with self.assertRaises(SimulatedCrash):
+            self.pass_after(31, cluster=cluster)
+        self.ledger.close()
+        self.ledger = self.open_ledger()
+        result = self.pass_after(1, cluster=cluster)
+        self.assertEqual((result["status"], basis(result)), ("CONFLICT", "FENCED"))
+        self.assertEqual(len(cluster.fence_attempts), 1)
+
+    def test_confirmed_fence_still_proves_non_commit_after_its_marker_is_stripped(self):
+        cluster = self.in_doubt()
+        with patch.object(self.ledger, "finish", side_effect=SimulatedCrash()):
+            with self.assertRaises(SimulatedCrash):
+                self.pass_after(31, cluster=cluster)
+        self.assertIsNotNone(self.ledger.fences(self.proposal["action_id"])[0]["committed_version"])
+        # A GitOps or server-side-apply owner later drops the unknown annotation.
+        cluster.external_write(lambda deployment: deployment["metadata"]["annotations"].pop(FENCE_ANNOTATION))
+        result = self.pass_after(1, cluster=cluster)
+        self.assertEqual((result["status"], basis(result)), ("CONFLICT", "FENCED"))
+
+    def test_journal_failure_prevents_the_fence(self):
+        cluster = self.in_doubt()
+        failure = sqlite3.OperationalError("Synthetic fence journal failure")
+        with patch.object(self.ledger, "record_fence", side_effect=failure):
+            with self.assertRaises(sqlite3.OperationalError):
+                self.pass_after(31, cluster=cluster)
+        self.assertEqual(cluster.fence_attempts, [])
+
+    def test_no_fence_before_the_settle_delay_or_when_fencing_is_disabled(self):
+        cluster = self.in_doubt()
+        self.assertEqual(basis(self.pass_after(29, cluster=cluster)), "UNCHANGED_IN_DOUBT")
+        for _ in range(10):
+            self.assertEqual(basis(self.pass_after(3600, cluster=cluster, fence_after_seconds=None)),
+                             "UNCHANGED_IN_DOUBT")
+        self.assertEqual(cluster.fence_attempts, [])
+        self.assertEqual(self.ledger.fences(self.proposal["action_id"]), [])
+
+    def test_fence_is_never_attempted_once_the_uid_or_version_has_moved(self):
+        for change in ("bump", "recreate", "delete"):
+            with self.subTest(change=change):
+                self.ledger = self.open_ledger_named("moved-" + change)
+                cluster = self.in_doubt()
+                if change == "bump":
+                    cluster.external_write(lambda d: d["metadata"].setdefault("annotations", {}).update(bump="1"))
+                else:
+                    cluster.delete()
+                    if change == "recreate":
+                        cluster.recreate("recreated-uid")
+                result = self.pass_after(31, cluster=cluster)
+                self.assertEqual(result["status"], "SUPERSEDED")
+                self.assertEqual(cluster.fence_attempts, [])
+
+    def test_zero_settle_delay_never_fences_inside_the_attempt_and_fences_on_the_next_pass(self):
+        cluster = self.in_doubt(fence_after_seconds=0.0)
+        self.assertEqual(self.ledger.fences(self.proposal["action_id"]), [])
+        self.assertEqual(len(cluster.write_attempts), 1)
+        result = self.pass_after(0, cluster=cluster, fence_after_seconds=0.0)
+        self.assertEqual((result["status"], basis(result)), ("CONFLICT", "FENCED"))
+        self.assertEqual(len(cluster.fence_attempts), 1)
+        with self.assertRaises(ConditionalWriteConflict):
+            cluster.replay()
+
+    def test_zero_settle_delay_still_spaces_failing_fences_by_the_retry_interval(self):
+        cluster = self.in_doubt(FenceForbidden, fence_after_seconds=0.0)
+        results = [self.pass_after(10, cluster=cluster, fence_after_seconds=0.0) for _ in range(30)]  # 5 minutes.
+        self.assertEqual({result["status"] for result in results}, {"NEEDS_RECONCILIATION"})
+        self.assertLessEqual(len(cluster.fence_attempts), 300 // 30 + 1)  # Not one per pass.
+        self.assertGreaterEqual(len(cluster.fence_attempts), 2)
+        started = [datetime.fromisoformat(fence["started_at"].replace("Z", "+00:00"))
+                   for fence in self.ledger.fences(self.proposal["action_id"])]
+        self.assertEqual(len(started), len(cluster.fence_attempts))  # Each attempt journaled first.
+        gaps = [(started[i + 1] - started[i]).total_seconds() for i in range(len(started) - 1)]
+        self.assertGreaterEqual(min(gaps), 30)
+
+    def test_a_host_that_never_wrote_fences_once_the_settle_delay_has_passed_since_adoption(self):
+        cluster = self.in_doubt()
+        peer = self.open_ledger_named("peer")
+        adopted = self.pass_after(31, cluster=cluster, ledger=peer)  # The delay counts from adoption.
+        self.assertEqual(basis(adopted), "UNCHANGED_IN_DOUBT")
+        self.assertEqual(cluster.fence_attempts, [])
+        result = self.pass_after(31, cluster=cluster, ledger=peer)
+        self.assertEqual((result["status"], basis(result)), ("CONFLICT", "FENCED"))
+        self.assertEqual((len(cluster.fence_attempts), peer.attempts(self.proposal["action_id"])), (1, []))
+        with self.assertRaises(ConditionalWriteConflict):
+            cluster.replay()
+        # The writing host never journaled the peer's nonce, so it can only say the write can no longer commit.
+        own = self.pass_after(1, cluster=cluster)
+        self.assertEqual((own["status"], basis(own)), ("SUPERSEDED", "ADVANCED_WITHOUT_EVIDENCE"))
+        self.assertEqual((len(cluster.fence_attempts), cluster.writes), (1, []))
+
+    def test_rejected_fence_escalates_once_without_a_busy_loop(self):
+        cluster = self.in_doubt(FenceForbidden)
+        results = [self.pass_after(10, cluster=cluster) for _ in range(90)]  # 15 minutes of 10 s passes.
+        self.assertEqual({result["status"] for result in results}, {"NEEDS_RECONCILIATION"})
+        self.assertLessEqual(len(cluster.fence_attempts), 900 // 30 + 1)  # One per retry interval at most.
+        self.assertGreaterEqual(len(cluster.fence_attempts), 900 // 40)
+        notes = [r for r in self.ledger.results(self.proposal["action_id"]) if "Operator action required" in r["details"]]
+        self.assertEqual(len(notes), 1)
+        self.assertEqual(len(self.ledger.results(self.proposal["action_id"])), 2)  # In doubt, then escalated.
+
+    def test_fence_delay_must_be_none_or_a_non_negative_finite_number(self):
+        for value in (-1, float("inf"), float("nan"), True, "30"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                execute(deepcopy(self.proposal), self.adapters(fence_after_seconds=value))
+        self.assert_no_writes()
+
+
+def basis(result):
+    return result["details"][len("[basis="):result["details"].index("]")]
 
 
 if __name__ == "__main__":

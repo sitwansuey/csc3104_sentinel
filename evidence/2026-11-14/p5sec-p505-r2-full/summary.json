@@ -1,0 +1,195 @@
+{
+  "bypass_checks": {
+    "after": true,
+    "before": true,
+    "during": true
+  },
+  "checks": [
+    {
+      "at": "2026-11-14T18:58:53.771092Z",
+      "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4",
+      "name": "healthy baseline captured with real service samples and immutable image",
+      "passed": true
+    },
+    {
+      "at": "2026-11-14T18:58:54.543001Z",
+      "name": "real ServiceAccount permits only selected Deployment get/patch; forbidden write denied",
+      "passed": true
+    },
+    {
+      "at": "2026-11-14T18:58:59.518314Z",
+      "name": "Executor and Guard-reader RBAC can-i matrix: no Secret read by either; reader gets only its names",
+      "passed": true,
+      "rows": 41
+    },
+    {
+      "at": "2026-11-14T18:59:47.065725Z",
+      "name": "bypass probes blocked before repair: direct Service, Pod IP and gateway outage; authenticated control call succeeded before and after the outage",
+      "passed": true,
+      "stage": "before"
+    },
+    {
+      "at": "2026-11-14T18:59:59.563015Z",
+      "cart_status": 500,
+      "checkout_status": 500,
+      "name": "Connected cart and checkout fail while shipping configuration is broken",
+      "passed": true,
+      "scenario": "primary"
+    },
+    {
+      "at": "2026-11-14T19:00:37.254689Z",
+      "name": "bypass probes blocked during repair: direct Service, Pod IP and gateway outage; authenticated control call succeeded before and after the outage",
+      "passed": true,
+      "stage": "during"
+    },
+    {
+      "at": "2026-11-14T19:00:38.262280Z",
+      "name": "missing-approval makes zero executor writes",
+      "passed": true,
+      "status": "FAILED"
+    },
+    {
+      "at": "2026-11-14T19:00:39.173682Z",
+      "name": "hard-policy-rejection makes zero executor writes",
+      "passed": true,
+      "status": "FAILED"
+    },
+    {
+      "at": "2026-11-14T19:00:39.723876Z",
+      "name": "stale-state makes zero executor writes",
+      "passed": true,
+      "status": "CONFLICT"
+    },
+    {
+      "at": "2026-11-14T19:00:41.311472Z",
+      "name": "competing real worker is excluded before mutation",
+      "passed": true
+    },
+    {
+      "at": "2026-11-14T19:00:42.365552Z",
+      "coordinator_state": "VERIFYING",
+      "name": "approved real rollback, duplicate replay and changed-ID rejection",
+      "passed": true,
+      "status": "APPLIED",
+      "writes": 1
+    },
+    {
+      "action_id": "ACT-LIVE-db406455ed7442b08aa753b8b7312602",
+      "at": "2026-11-14T19:01:12.690664Z",
+      "name": "Role 6 verified gRPC, readiness and template; Coordinator RECOVERED",
+      "outcome": "RECOVERED",
+      "passed": true
+    },
+    {
+      "at": "2026-11-14T19:01:12.690704Z",
+      "name": "Authenticated gRPC through the mTLS gateway, readiness and storefront after executor rollback of the protected template; the authenticated Verifier published RECOVERED",
+      "passed": true
+    },
+    {
+      "at": "2026-11-14T19:01:59.339175Z",
+      "name": "bypass probes blocked after repair: direct Service, Pod IP and gateway outage; authenticated control call succeeded before and after the outage",
+      "passed": true,
+      "stage": "after"
+    }
+  ],
+  "fault_injected_at": "2026-11-14T18:59:47.178986Z",
+  "finished_at": "2026-11-14T19:01:59.566138Z",
+  "guard_reader_rbac_deleted": true,
+  "mode": "LIVE Kubernetes; restricted executor credentials",
+  "operator_approval": {
+    "approvals": [
+      {
+        "action_id": "ACT-LIVE-db406455ed7442b08aa753b8b7312602",
+        "approval_id": 1,
+        "approved_at": "2026-11-14T19:00:40.647060Z",
+        "expires_at": "2026-11-14T19:03:40.631911Z",
+        "operator_id": "automated-lab"
+      }
+    ],
+    "authority_stopped": true,
+    "decided_by": "automated-lab approval: explicit opt-in for an unattended lab run; no person decided",
+    "human": false,
+    "identity": "automated-lab",
+    "mode": "auto-lab",
+    "refusals": [],
+    "via": "approval_http"
+  },
+  "private_executor_credentials_removed": true,
+  "private_reader_credentials_removed": true,
+  "protected_stage": "full",
+  "provenance": {
+    "captured_by": "harness",
+    "dirty": true,
+    "dirty_path_count": 1,
+    "dirty_paths_sha256": "274cc9943bf49d0f608a534d47ef3eb1cfdefbb80431b5d89afd48e795dcd9a3",
+    "host_class": "windows-amd64",
+    "python": "3.13.2",
+    "schema": "sentinel-provenance-v1",
+    "source_revision": "e8d6fed7645ffd15e8fdd728ba5015897400e5a1",
+    "tools": {
+      "docker": "29.4.3",
+      "helm": "4.3.1+gc0d08d0",
+      "kind": "0.33.0",
+      "kubectl": "1.34.1"
+    }
+  },
+  "recovery_target": "shippingservice",
+  "scenario": {
+    "class": "rollback_correct",
+    "id": "R1",
+    "labels": "pending",
+    "name": "port-invalid"
+  },
+  "scope": "Protected security lab: mTLS gateway, inspector and TLS ingress sidecar; shipping-only recovery with a split Guard-reader identity",
+  "started_at": "2026-11-14T18:58:25.750410Z",
+  "status": "PASS",
+  "timeline": [
+    {
+      "at": "2026-11-14T18:59:47.179001Z",
+      "phase": "fault_injected",
+      "scenario": "primary"
+    },
+    {
+      "at": "2026-11-14T18:59:55.308988Z",
+      "phase": "incident_observed",
+      "scenario": "primary"
+    },
+    {
+      "at": "2026-11-14T19:00:37.551439Z",
+      "phase": "proposal_saved",
+      "scenario": "missing-approval"
+    },
+    {
+      "at": "2026-11-14T19:00:38.495385Z",
+      "phase": "proposal_saved",
+      "scenario": "hard-policy-rejection"
+    },
+    {
+      "at": "2026-11-14T19:00:39.382440Z",
+      "phase": "proposal_saved",
+      "scenario": "stale-state"
+    },
+    {
+      "at": "2026-11-14T19:00:39.937774Z",
+      "phase": "proposal_saved",
+      "scenario": "approved-rollback"
+    },
+    {
+      "at": "2026-11-14T19:00:41.092923Z",
+      "phase": "guard_decision",
+      "scenario": "approved-rollback"
+    },
+    {
+      "at": "2026-11-14T19:00:42.360679Z",
+      "phase": "execution_recorded",
+      "scenario": "approved-rollback"
+    },
+    {
+      "at": "2026-11-14T19:01:12.690512Z",
+      "phase": "outcome_recorded",
+      "scenario": "approved-rollback"
+    }
+  ],
+  "verification": "Authenticated shipping gRPC through the gateway, readiness and storefront checkout",
+  "workload": "Online Boutique v0.10.7 in the protected security lab"
+}

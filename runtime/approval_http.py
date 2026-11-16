@@ -8,14 +8,25 @@ import math
 from pathlib import Path
 import socket
 import ssl
+import time
 from urllib.parse import urlsplit
 
 from runtime.service_identity import ProtocolError, authenticate, load_identities
-from runtime.worker_http import WorkerHTTPServer
+from runtime.worker_http import WorkerHTTPServer, access_log, reason_class
 from services.coordinator.approvals import ApprovalAccess, OPERATIONS, ROLES, load_permissions
 from services.coordinator.store import CoordinatorError, SQLiteStore, _digest
+from shared import log
 
 MAX_BODY = 1024 * 1024
+LOG = log.get_logger("approval_http")
+REASONS = {
+    "Invalid credentials": "invalid_credentials",
+    "Approval access denied": "not_permitted",
+    "Proposal precondition changed": "precondition_changed",
+    "Revocation must name the latest approval": "not_latest_approval",
+    "Revocation retry changed": "retry_changed",
+    "Execution already reported; revocation cannot undo a write": "execution_reported",
+}
 
 
 def handler(database, services, permissions, *, clock=None, max_lifetime_seconds=300,
@@ -38,17 +49,22 @@ def handler(database, services, permissions, *, clock=None, max_lifetime_seconds
             if self.path == "/readyz":
                 try:
                     with SQLiteStore(database, clock=clock) as store, store.transaction():
-                        store.db.execute("SELECT 1 FROM approvals LIMIT 1").fetchone()
-                except Exception:
+                        store.database.execute("SELECT 1 FROM approvals LIMIT 1").fetchone()
+                except Exception as error:  # noqa: BLE001 - any failure to open the store means not ready
+                    log.failure(LOG, "http.readiness.failed", error)
                     self.reply(503, {"ready": False})
                     return
             self.reply(200, {"ready": True})
 
         def do_POST(self):
+            prefix = "/v1/approvals/"
+            operation = self.path[len(prefix):] if self.path.startswith(prefix) else ""
+            started, ids, reason, error_type = time.monotonic(), {}, None, None
             try:
                 if stopping is not None and stopping.is_set():
                     raise ProtocolError(503, "Approval authority is stopping")
                 identity, role = authenticate(self.headers, services)
+                ids["identity"] = identity
                 lengths = self.headers.get_all("Content-Length", [])
                 if len(lengths) != 1 or self.headers.get("Transfer-Encoding"):
                     raise ProtocolError(400, "Ambiguous request framing")
@@ -58,22 +74,30 @@ def handler(database, services, permissions, *, clock=None, max_lifetime_seconds
                 raw = self.rfile.read(length)
                 if len(raw) != length:
                     raise ProtocolError(400, "Incomplete request body")
-                prefix = "/v1/approvals/"
-                operation = self.path[len(prefix):] if self.path.startswith(prefix) else ""
+                body = json.loads(raw)
+                if isinstance(body, dict):
+                    ids["action_id"] = body.get("action_id")  # The approval body itself is never logged.
                 with SQLiteStore(database, clock=clock) as store:
                     answer = ApprovalAccess(store, permissions, max_lifetime_seconds=max_lifetime_seconds).call(
-                        identity, role, operation, json.loads(raw))
-                self.reply(200, answer)
+                        identity, role, operation, body)
+                status, response = 200, answer
             except ProtocolError as exc:
-                self.reply(exc.status, {"error": str(exc)})
+                status, reason = exc.status, reason_class(exc.status, str(exc), REASONS)
+                response = {"error": str(exc)}
             except CoordinatorError:
-                self.reply(409, {"error": "Approval conflicts with current lifecycle or binding"})
-            except (ValueError, KeyError, TypeError):
-                self.reply(400, {"error": "Invalid approval input"})
+                status, reason = 409, "lifecycle_conflict"
+                response = {"error": "Approval conflicts with current lifecycle or binding"}
+            except (ValueError, KeyError, TypeError) as exc:
+                status, error_type = 400, type(exc).__name__
+                response = {"error": "Invalid approval input"}
             except (TimeoutError, socket.timeout):
-                self.reply(408, {"error": "Request timed out"})
-            except Exception:
-                self.reply(503, {"error": "Approval authority unavailable"})
+                status, response = 408, {"error": "Request timed out"}
+            except Exception as exc:  # noqa: BLE001 - an internal error answers 503; access_log records error_type
+                status, error_type = 503, type(exc).__name__
+                response = {"error": "Approval authority unavailable"}
+            access_log(LOG, operation if operation in OPERATIONS else "unknown", status, started,
+                       reason=reason, error_type=error_type, **ids)
+            self.reply(status, response)
 
         def reply(self, status, value):
             data = json.dumps(value, allow_nan=False).encode()
@@ -142,13 +166,14 @@ class ApprovalClient:
         return self.post("read", {"action_id": proposal["action_id"], "proposal_sha256": _digest(proposal)})["approval"]
 
 
+@log.entrypoint("approval_http")
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", required=True)
     parser.add_argument("--identities", required=True)
     parser.add_argument("--permissions", required=True)
     parser.add_argument("--bind", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8767)
+    parser.add_argument("--port", type=int, default=8767, help="0 selects a free port; stdout reports the bound port")
     parser.add_argument("--cert")
     parser.add_argument("--key")
     parser.add_argument("--max-lifetime-seconds", type=int, default=300)
@@ -156,6 +181,8 @@ def main():
     if (bool(args.cert) != bool(args.key)
             or not args.cert and not ipaddress.ip_address(args.bind).is_loopback):
         parser.error("Non-loopback serving requires --cert and --key")
+    if not 0 <= args.port <= 65535:
+        parser.error("--port must be between 0 and 65535")
     if not 1 <= args.max_lifetime_seconds <= 86400:
         parser.error("Approval lifetime must be between 1 and 86400 seconds")
     services = load_identities(args.identities, ROLES)
@@ -171,9 +198,10 @@ def main():
     with WorkerHTTPServer((args.bind, args.port), handler(
             args.db, services, permissions, max_lifetime_seconds=args.max_lifetime_seconds),
             tls_context=tls) as server:
-        print(f"Coordinator approval API listening on {args.bind}:{args.port}", flush=True)
+        # One JSON line on stdout, so a parent that asked for port 0 learns the bound port.
+        print(json.dumps({"event": "listening", "bind": args.bind, "port": server.server_address[1]}), flush=True)
         server.serve_forever()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

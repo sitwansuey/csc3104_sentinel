@@ -5,12 +5,34 @@ Digests bind inputs; they do not authenticate a caller or replace execution lock
 
 from datetime import datetime, timedelta, timezone
 
-from services.guard import eligibility as guard_eligibility, resources as guard_resources
+from services.guard import (
+    eligibility as guard_eligibility, resources as guard_resources, restart as guard_restart,
+    scale as guard_scale,
+)
 from services.guard.common import GuardInputError, finding, json_sha256, mapping, utc_timestamp
+from shared.actions import BASELINE_ACTIONS, STALE_READ_SPEC, config_fingerprint
 from shared.contracts import validate_message
 
 
 _MAX_AGE_SECONDS = 366 * 24 * 60 * 60
+_MAX_CLOCK_SKEW_SECONDS = 60
+# STALE_READ_SPEC (shared/actions.py) records, beside a STALE_RESOURCE_VERSION failure, the spec the live read
+# saw: its metadata.generation and Pod template digest. It never changes the verdict. The Coordinator re-plans
+# a stale refusal only when this generation is still the incident's (services/coordinator/core.py::replan_after_stale).
+
+
+def _live_spec(live_state):
+    """(metadata.generation, Pod template digest) of the live read; None for a part that is missing or malformed."""
+    deployment = live_state.get("deployment") if isinstance(live_state, dict) else None
+    metadata = deployment.get("metadata") if isinstance(deployment, dict) else None
+    spec = deployment.get("spec") if isinstance(deployment, dict) else None
+    generation = metadata.get("generation") if isinstance(metadata, dict) else None
+    template = spec.get("template") if isinstance(spec, dict) else None
+    try:
+        digest = json_sha256(template) if isinstance(template, dict) else None
+    except (TypeError, ValueError, RecursionError):
+        digest = None
+    return (generation if type(generation) is int and generation >= 1 else None), digest
 
 
 def _integer(policy, key, *, required=False, maximum=None):
@@ -33,11 +55,16 @@ def validate_policy(policy, *, require_live=False):
     for key in ("max_state_age_seconds", "max_dependency_age_seconds"):
         if key in policy and (type(policy[key]) is not int or not 0 <= policy[key] <= _MAX_AGE_SECONDS):
             raise GuardInputError(f"policy.{key}: expected a bounded nonnegative age")
+    if "max_clock_skew_seconds" in policy and (type(policy["max_clock_skew_seconds"]) is not int
+                                               or not 0 <= policy["max_clock_skew_seconds"] <= _MAX_CLOCK_SKEW_SECONDS):
+        raise GuardInputError("policy.max_clock_skew_seconds: expected a nonnegative bound of at most 60 seconds")
     if "require_server_dry_run" in policy and type(policy["require_server_dry_run"]) is not bool:
         raise GuardInputError("policy.require_server_dry_run: expected boolean")
     _integer(policy, "max_server_dry_run_age_seconds", required=policy.get("require_server_dry_run", False), maximum=300)
     guard_eligibility.validate_policy(policy)
     guard_resources.validate_policy(policy)
+    guard_restart.validate_policy(policy)
+    guard_scale.validate_policy(policy)
     for key in ("max_age_seconds", "min_healthy_duration_seconds"):
         if key in policy.get("baseline_constraints", {}) and policy["baseline_constraints"][key] > _MAX_AGE_SECONDS:
             raise GuardInputError(f"policy.baseline_constraints.{key}: duration exceeds supported bound")
@@ -128,7 +155,10 @@ def _preview_checks(proposal, live_state, baseline, policy, preview, checked_at)
         if not isinstance(preview["details_code"], str) or not preview["details_code"].strip():
             raise GuardInputError("preview: missing status detail")
         version = live_state["deployment"]["metadata"]["resourceVersion"]
-        template_hash = json_sha256(baseline["pod_template"])
+        # A RESTART previews its bound candidate (baseline plus token); restart.py binds that hash.
+        # A SCALE previews its replica change on the bound live template; scale.py binds that hash.
+        template_hash = (proposal["parameters"]["template_sha256"] if proposal["action"] in ("RESTART", "SCALE")
+                         else json_sha256(baseline["pod_template"]))
         linked = (
             preview["proposal_sha256"] == json_sha256(proposal)
             and preview["target"] == proposal["target"]
@@ -158,8 +188,11 @@ def _rollback_change_checks(proposal, live_state, baseline, policy, trace):
 
     Replica unavailability alone does not make rewriting an identical template
     useful. Kubernetes can replace a failed Pod without a Deployment rollback.
-    This compares hashes only after the core has validated baseline identity and
-    content, and never includes template contents in the audit report.
+    This compares configuration fingerprints (the restart token is ignored) only
+    after the core has validated baseline identity and content, so a template
+    that differs from the baseline only by a restart token is already at the
+    baseline: ROLLBACK is never a disguised restart. The audit report never
+    includes template contents.
     """
     if proposal["action"] != "ROLLBACK" or any(
             code == "INVALID_BASELINE" or code.startswith("BASELINE_")
@@ -176,13 +209,13 @@ def _rollback_change_checks(proposal, live_state, baseline, policy, trace):
                 not isinstance(container, dict) for container in containers):
             raise GuardInputError("Live template requires container specifications")
         current_hash = json_sha256(template)
-    except GuardInputError:
+        unchanged = config_fingerprint(template) == config_fingerprint(baseline["pod_template"])
+    except (GuardInputError, TypeError, ValueError, RecursionError):
         return [finding("ROLLBACK_CHANGE_UNKNOWN", path, None,
                         "a valid current pod template",
                         "The current template is unavailable; a useful rollback cannot be established.",
                         "UNKNOWN" if policy.get("profile") == "live" else "SKIP")]
     baseline_hash = baseline["template_sha256"]
-    unchanged = current_hash == baseline_hash
     return [finding("ROLLBACK_ALREADY_AT_BASELINE" if unchanged else "ROLLBACK_CHANGES_TEMPLATE",
                     path, {"template_sha256": current_hash},
                     {"different_from_baseline_sha256": baseline_hash},
@@ -216,6 +249,14 @@ def _core_findings(core_result, proposal, live_state, policy, trace):
             result.append(finding(code, path, actual, expected,
                                   "Refresh the indicated input or correct the policy violation, then revalidate.",
                                   "FAIL" if code in failures else "UNKNOWN"))
+    if "STALE_RESOURCE_VERSION" in failures:
+        # SKIP: a record for the audit and the Coordinator, never a reason code. A status write moves the
+        # resourceVersion and leaves the generation; a change to the spec moves both.
+        generation, template = _live_spec(live_state)
+        result.append(finding(STALE_READ_SPEC, "live_state.deployment.metadata.generation",
+                              {"generation": generation, "template_sha256": template},
+                              "the generation the incident observed, for a re-plan",
+                              "The spec the stale read saw; it does not change this decision.", "SKIP"))
     families = (
         ("TARGET_POLICY", ("TARGET_NOT_ALLOWED",), "policy.targets"),
         ("ACTION_POLICY", ("ACTION_NOT_ALLOWED", "ACTION_NOT_IMPLEMENTED"), "proposal.action"),
@@ -226,7 +267,7 @@ def _core_findings(core_result, proposal, live_state, policy, trace):
     )
     for code, errors, path in families:
         if not set(codes).intersection(errors):
-            skipped = code == "BASELINE_IDENTITY_HASH" and proposal["action"] != "ROLLBACK"
+            skipped = code == "BASELINE_IDENTITY_HASH" and proposal["action"] not in BASELINE_ACTIONS
             result.append(finding(code, path, "not applicable" if skipped else "validated", "matching reviewed input", "Core check completed.", "SKIP" if skipped else "PASS"))
     approval_problem = any("APPROVAL" in code or code == "OPERATOR_REJECTED" for code in codes)
     # Specific approval findings above already explain failures/uncertainty.
@@ -248,11 +289,14 @@ def _deadline(start, seconds):
 
 def _valid_until(policy, live_state, baseline, dependencies, approval, preview, checked_at):
     limits = [_deadline(checked_at, policy.get("decision_ttl_seconds", 30))]
-    for value, field, key in ((live_state, "captured_at", "max_state_age_seconds"),
-                              (dependencies, "checked_at", "max_dependency_age_seconds")):
+    # Findings and approvals carry another process's clock: their deadlines
+    # come forward by the skew bound, as in the core checks.
+    skew = policy.get("max_clock_skew_seconds", 0)
+    for value, field, key, margin in ((live_state, "captured_at", "max_state_age_seconds", 0),
+                                      (dependencies, "checked_at", "max_dependency_age_seconds", skew)):
         if value is not None and key in policy:
             try:
-                limits.append(_deadline(utc_timestamp(value[field], field), policy[key]))
+                limits.append(_deadline(utc_timestamp(value[field], field), policy[key] - margin))
             except (GuardInputError, KeyError, TypeError):
                 pass  # A failing check already prevents approval.
     if preview is not None:
@@ -270,7 +314,7 @@ def _valid_until(policy, live_state, baseline, dependencies, approval, preview, 
             pass
     if isinstance(approval, dict) and "expires_at" in approval:
         try:
-            limits.append(utc_timestamp(approval["expires_at"], "approval.expires_at"))
+            limits.append(_deadline(utc_timestamp(approval["expires_at"], "approval.expires_at"), -skew))
         except GuardInputError:
             pass
     return max(checked_at, min(limits))
@@ -284,6 +328,9 @@ def evaluate_with_report(core, proposal, live_state, policy, baseline, dependenc
     original = core(proposal, live_state, policy, baseline, dependencies, approval, now=checked_at, _trace=trace)
     checks = _core_findings(original, proposal, live_state, policy, trace)
     checks += _rollback_change_checks(proposal, live_state, baseline, policy, trace)
+    baseline_valid = not any(code == "INVALID_BASELINE" or code.startswith("BASELINE_") for code in trace["rejected"])
+    checks += guard_restart.assess(proposal, live_state, baseline, policy, checked_at, baseline_valid)
+    checks += guard_scale.assess(proposal, live_state, baseline, policy, baseline_valid)
     checks += guard_eligibility.assess(proposal, live_state, baseline, policy, checked_at)
     checks += guard_resources.assess(proposal, live_state, baseline, policy, checked_at)
     checks += _approval_checks(policy, approval, checked_at)

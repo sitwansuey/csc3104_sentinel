@@ -1,8 +1,21 @@
-"""Full Boutique deployment with scoped shipping recovery and checkout evidence.
+"""Full Boutique deployment with scoped, catalog-driven recovery and checkout evidence.
 
 Topology comes from the pinned upstream manifest, not discovery from traces.
 Readiness informs pre-action dependency assessment; real shopping requests are
-mandatory post-action evidence. Executor permissions remain shipping-only.
+mandatory post-action evidence. The recovery targets, their reviewed spec
+overrides and the storefront impact a fault must show come from the scenario
+catalog (experiments/boutique/catalog.json). Executor permissions name exactly
+the catalog targets enabled in the connected scope (shippingservice and
+cartservice), never the whole namespace.
+
+Verification has two scopes. A single-target run keeps the shop scope: every
+other application must be ready and a real storefront checkout must pass in
+every reading. A scenario-pair run (P4.05, multi_fault.py) uses the target
+scope: a target is judged by its own probe, readiness and template and by the
+readiness of the services it calls (verification_dependencies), never by its
+callers or by an unrelated broken service, so the other fault cannot mark a
+correct repair NOT_RECOVERED. The storefront is still recorded in every
+reading, and the pair judges it separately as a ShopOutcome.
 """
 
 from copy import deepcopy
@@ -16,7 +29,9 @@ import time
 from urllib.request import urlopen
 
 from experiments.boutique.traffic.storefront import StorefrontProbe
+from experiments.boutique.harness import targets
 from experiments.boutique.harness.live import BoutiqueExperiment, CLIENT_IMAGE, command, shipping_manifest
+from experiments.boutique.harness.scenarios import CONNECTED_SCOPE
 from experiments.recovery.live import now, require, save, utc
 from services.executor.store import fingerprint
 from services.observer.kubernetes import KubernetesEvidenceCollector, KubectlReader
@@ -65,9 +80,15 @@ def image_digest(image, records):
 
 
 def connected_manifest(resources, images, namespace):
-    """Preserve upstream application wiring; remove external exposure/loadgen."""
+    """Preserve upstream application wiring; remove external exposure/loadgen.
+
+    Each catalog recovery target gets its reviewed spec: shipping keeps its
+    isolated lab manifest's spec, and other targets get their catalog overrides
+    (strategy Recreate, so a bad rollout replaces the serving Pod).
+    """
     items = [{"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": namespace}}]
     deployments = set()
+    profiles = {name: targets.profile(name) for name in targets.enabled_targets(CONNECTED_SCOPE)}
     for source in resources:
         item = deepcopy(source)
         kind, name = item.get("kind"), item.get("metadata", {}).get("name")
@@ -84,9 +105,11 @@ def connected_manifest(resources, images, namespace):
             for container in pod["containers"]:
                 container["image"] = images[container["image"]]
                 container["imagePullPolicy"] = "Never"
-            if name == "shippingservice":
+            if name in profiles and profiles[name].isolated_lab:
                 reviewed = shipping_manifest(pod["containers"][0]["image"])["items"][2]
                 item["spec"] = reviewed["spec"]
+            elif name in profiles:
+                item["spec"] = targets.apply_spec_overrides(item["spec"], profiles[name])
         elif kind == "ServiceAccount":
             item["automountServiceAccountToken"] = False
         else:
@@ -112,10 +135,47 @@ def configured_graph(manifest):
             "edges": [{"from": caller, "to": callee} for caller, callee in sorted(edges)]}
 
 
-def readiness(deployments):
+def verification_dependencies(graph, name):
+    """The direct callees of name in the reviewed caller-to-callee graph, sorted.
+
+    A target-scope repair is judged by the target and what it calls, never by
+    its callers or by an unrelated broken service.
+    """
+    if not isinstance(graph, dict) or graph.get("edge_direction") != "caller_to_callee":
+        raise ValueError("The dependency graph must declare caller_to_callee edges")
+    return sorted({edge["to"] for edge in graph.get("edges", []) if edge.get("from") == name and edge.get("to") != name})
+
+
+def service_ports(manifest):
+    """Each application's one Service port and Pod targetPort, read from the manifest's Services.
+
+    NetworkPolicy matches the Pod port (targetPort), while a client dials the
+    Service port; emailservice (5000 -> 8080) and frontend (80 -> 8080) differ.
+    """
+    ports = {}
+    for item in manifest["items"]:
+        if item["kind"] != "Service":
+            continue
+        selector = item.get("spec", {}).get("selector") or {}
+        app = selector.get("app")
+        if app not in APPLICATIONS or item["metadata"]["name"] != app:
+            continue
+        entries = item["spec"].get("ports") or []
+        require(len(entries) == 1, "Each application Service needs exactly one port")
+        port, target = entries[0].get("port"), entries[0].get("targetPort", entries[0].get("port"))
+        require(all(type(value) is int and 0 < value < 65536 for value in (port, target)),
+                "Application Service ports must be numeric")
+        require(app not in ports, "Duplicate application Service")
+        ports[app] = {"service": port, "target": target}
+    require(set(ports) == APPLICATIONS, "Every application needs its Service")
+    return dict(sorted(ports.items()))
+
+
+def readiness(deployments, target=None):
+    """Readiness of every application except the recovery target (the catalog default when None)."""
     result = {}
     indexed = {item["metadata"]["name"]: item for item in deployments}
-    for name in sorted(APPLICATIONS - {"shippingservice"}):
+    for name in sorted(APPLICATIONS - {target or targets.default_target()}):
         item = indexed.get(name)
         if item is None:
             result[name] = None
@@ -138,6 +198,8 @@ class ConnectedBoutiqueExperiment(BoutiqueExperiment):
     namespace = "sentinel-boutique-connected"
     restricted_context = "sentinel-executor-boutique-connected"
     health_source = "sentinel-boutique-connected-checkout"
+    # "shop" (single-target runs) or "target" (scenario pairs); see the module docstring.
+    verification_scope = "shop"
 
     def __init__(self, directory, *, storefront_port=8080):
         super().__init__(directory)
@@ -174,16 +236,16 @@ class ConnectedBoutiqueExperiment(BoutiqueExperiment):
         for name in sorted(APPLICATIONS):
             self.kubectl("rollout", "status", "deployment/" + name, "--timeout=600s", timeout=650)
         self.client_image = images[CLIENT_IMAGE]
+        self.install_probe_schema()
         self.observer_collector = KubernetesEvidenceCollector(KubectlReader(self.context), namespace=self.namespace,
             name=self.name, cluster_id=self.cluster_id, collect_logs=True)
-        rbac = Path(__file__).resolve().parents[3] / "deploy/sentinel/executor-rbac.yaml"
-        self.rbac_path = self.directory / "executor-rbac.yaml"
-        self.rbac_path.write_text(rbac.read_text().replace("sentinel-demo", self.namespace).replace("demo-api", self.name), encoding="utf-8")
+        self.write_executor_rbac()
         self._start_storefront()
+        label = self.profile.label
         self.summary.update(workload="Full Online Boutique v0.10.7 with synthetic checkout traffic",
-            scope="Dedicated single-node cluster; shipping-only recovery; harness planning",
+            scope=f"Dedicated single-node cluster; {label}-only recovery; harness planning",
             dependencies="Configured upstream address graph; live component readiness; no trace discovery",
-            verification="Actual shipping gRPC, full storefront cart/checkout and dependency readiness")
+            verification=f"Actual {label} gRPC, full storefront cart/checkout and dependency readiness")
         return next(item["spec"]["template"]["spec"]["containers"][0]["image"]
                     for item in manifest["items"] if item["kind"] == "Deployment" and item["metadata"]["name"] == self.name)
 
@@ -212,9 +274,22 @@ class ConnectedBoutiqueExperiment(BoutiqueExperiment):
                 time.sleep(.3)
         raise RuntimeError("Storefront forwarding did not become available")
 
+    def required_dependencies(self):
+        """The dependency names every verification reading must cover, for this run's verification scope."""
+        if self.verification_scope == "target":
+            return verification_dependencies(self.graph, self.name)
+        return sorted(APPLICATIONS - {self.name}) + ["storefront-checkout"]
+
+    def dependency_readings(self, deployments, journey):
+        """One verification reading's dependencies: what required_dependencies names, measured now."""
+        ready = readiness(deployments, self.name)
+        if self.verification_scope == "target":
+            return {name: ready.get(name) for name in self.required_dependencies()}
+        return {**ready, "storefront-checkout": journey["passed"]}
+
     def prepare(self):
         super().prepare()
-        self.policy["health"]["required_dependencies"] = sorted(APPLICATIONS - {self.name}) + ["storefront-checkout"]
+        self.policy["health"]["required_dependencies"] = self.required_dependencies()
         self.policy["health"]["max_sample_gap_seconds"] = 90
         save(self.directory / "policy.json", self.policy)
 
@@ -222,15 +297,19 @@ class ConnectedBoutiqueExperiment(BoutiqueExperiment):
         deployments = json.loads(self.kubectl("get", "deployments", "-o", "json").stdout)["items"]
         target = next(item for item in deployments if item["metadata"]["name"] == self.name)
         state = {"cluster_id": self.cluster_id, "captured_at": utc(), "deployment": target,
-                 "known_health": readiness(deployments)}
-        save(self.directory / "dependency-readiness.json", state)
+                 "known_health": readiness(deployments, self.name)}
+        save(self.readiness_path(), state)
         return inspect_dependencies(proposal, self.graph, state, now=now())
+
+    def readiness_path(self):
+        """Where the last dependency-readiness read is kept; one file for a single-target run."""
+        return self.directory / "dependency-readiness.json"
 
     def application_inventory(self):
         # Called by the dashboard thread: no Coordinator connection or mutation.
         response = self.kubectl("get", "deployments", "-o", "json", timeout=8, allow_failure=True)
         deployments = json.loads(response.stdout)["items"] if response.returncode == 0 else None
-        return service_inventory(deployments, APPLICATIONS)
+        return service_inventory(deployments, APPLICATIONS, recovery_targets={self.name})
 
     def record_shopping(self, stage, journey, *, incident_id=None, action_id=None):
         emit_observation(self.directory / "telemetry.sqlite3", cluster_id=self.cluster_id,
@@ -250,14 +329,17 @@ class ConnectedBoutiqueExperiment(BoutiqueExperiment):
 
     def fault(self, label):
         incident = super().fault(label)
+        if incident is None:  # A scored NO_INCIDENT that the scenario's label allows.
+            return None
         impact = self.storefront.journey()
         self.record_shopping(label + "-fault", impact, incident_id=incident["incident_id"])
         save(self.directory / (label + "-storefront-impact.json"), impact)
-        require(impact["home_status"] == 200 and impact["add_to_cart_status"] in {302, 303}
-                and impact["cart_status"] != 200 and impact["checkout_status"] != 200,
-                "Expected cart and checkout failure with the frontend still reachable")
-        self.check("Connected cart and checkout fail while shipping configuration is broken", scenario=label,
-                   cart_status=impact["cart_status"], checkout_status=impact["checkout_status"])
+        # The catalog pre-registers which storefront steps the target's fault breaks.
+        require(targets.impact_matches(self.profile, impact),
+                "Storefront impact differs from the catalog prediction: " + json.dumps(
+                    self.profile.fault_storefront_impact, sort_keys=True))
+        self.check(f"Connected {targets.impact_phrase(self.profile)} while {self.profile.label} configuration is broken",
+                   scenario=label, cart_status=impact["cart_status"], checkout_status=impact["checkout_status"])
         return incident
 
     def verification_samples(self, execution):
@@ -267,7 +349,7 @@ class ConnectedBoutiqueExperiment(BoutiqueExperiment):
             deployments = json.loads(self.kubectl("get", "deployments", "-o", "json").stdout)["items"]
             target = next(item for item in deployments if item["metadata"]["name"] == self.name)
             metadata, status = target["metadata"], target.get("status", {})
-            sample["dependencies"] = {**readiness(deployments), "storefront-checkout": journey["passed"]}
+            sample["dependencies"] = self.dependency_readings(deployments, journey)
             sample["storefront"] = journey
             sample["configuration_stable"] = (sample["configuration_stable"]
                 and metadata["uid"] == execution["target"]["uid"]

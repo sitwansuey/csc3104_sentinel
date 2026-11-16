@@ -1,0 +1,8 @@
+# Development and CI tools only; nothing here is imported by Sentinel code.
+# Shared transitive packages must match the runtime locks.
+-c agent/datasets/requirements.lock
+coverage[toml]>=7.6
+mypy>=1.13
+pip-audit>=2.7
+pip-tools>=7.4
+ruff>=0.8

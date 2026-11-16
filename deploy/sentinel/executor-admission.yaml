@@ -1,0 +1,185 @@
+# Field-level limits for the Executor identity (P3.05). Apply with an
+# administrator after executor-rbac.yaml; Kubernetes 1.30 or later is needed
+# for admissionregistration.k8s.io/v1 ValidatingAdmissionPolicy.
+#
+# RBAC (executor-rbac.yaml) limits the Executor to get and patch on the
+# Deployments its Role names. This policy limits what such a patch may change. It applies to
+# every Deployment UPDATE (a PATCH is an UPDATE here) made by a ServiceAccount
+# named sentinel-executor, in the namespaces the binding selects:
+#   - spec: apart from spec.replicas under the SCALE rule below, only
+#     spec.template may change, and only together with a new
+#     sentinel.io/execution evidence annotation, as a ROLLBACK or RESTART
+#     writes it (a RESTART's token is a Pod template annotation);
+#   - spec.replicas may change only as a reviewed SCALE writes it (P5.07): up,
+#     to at most 10, with the Pod template, fence and epoch unchanged and new
+#     sentinel.io/execution evidence whose canonical JSON names the SCALE
+#     action and that replica count. CEL has no JSON parser here, so the
+#     evidence is matched as text: this bounds the write's shape, it does not
+#     prove who wrote the evidence (the Guard and the Executor's journal do);
+#   - metadata: labels, finalizers and ownerReferences stay as they are, no
+#     annotation is removed, and only sentinel.io/execution, sentinel.io/fence
+#     and sentinel.io/fence-epoch may be added or changed;
+#   - a fence or seal is metadata-only: it may not change the Pod template;
+#   - sentinel.io/fence-epoch is a decimal integer below 10^18 that never
+#     decreases.
+# It does not limit what the Pod template contains: a ROLLBACK writes a whole
+# reviewed template, which the policy cannot see. It reads no parameters, so it
+# compares the stored object with the new one inside the same update. The spec
+# rule names the 8 DeploymentSpec fields that exist today; a field Kubernetes
+# adds later is not held until it is added here.
+#
+# The fence epoch belongs to one Coordinator store (target_ownership starts at
+# 1), but the annotation stays on the Deployment. With this policy installed, a
+# new, reset or restored store cannot seal a Deployment whose
+# sentinel.io/fence-epoch is higher than its own epoch: each seal is denied and
+# ends UNSEALED, so the workload goes to review. Before pointing a new store at
+# such a Deployment, an administrator removes the annotation:
+#   kubectl annotate deployment <name> sentinel.io/fence-epoch-
+#
+# Status: checked structurally (tests/test_deploy_manifests.py) and evaluated
+# once by an API server (Kubernetes 1.37 on kind, 12 Nov 2026: 24 of 24 probes,
+# claim C-ADMISSION-POLICY-LIVE) by
+# scripts/validation/test_executor_admission_live.py, in a disposable namespace.
+# The SCALE exception to the replicas rule (P5.07) was added after that run and
+# has only been checked offline; the live recipe is in docs/testing.md.
+# Nothing installs it in the Boutique lab namespaces.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: sentinel-executor-writes
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["deployments"]
+  matchConditions:
+    - name: sentinel-executor-identity
+      expression: |-
+        request.userInfo.username.startsWith('system:serviceaccount:') &&
+        request.userInfo.username.endsWith(':sentinel-executor')
+  variables:
+    - name: oldAnnotations
+      expression: |-
+        has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}
+    - name: newAnnotations
+      expression: |-
+        has(object.metadata.annotations) ? object.metadata.annotations : {}
+    - name: writable
+      expression: |-
+        ['sentinel.io/execution', 'sentinel.io/fence', 'sentinel.io/fence-epoch']
+    - name: oldEpoch
+      expression: |-
+        'sentinel.io/fence-epoch' in variables.oldAnnotations ?
+        variables.oldAnnotations['sentinel.io/fence-epoch'] : ''
+    - name: newEpoch
+      expression: |-
+        'sentinel.io/fence-epoch' in variables.newAnnotations ?
+        variables.newAnnotations['sentinel.io/fence-epoch'] : ''
+    - name: oldFence
+      expression: |-
+        'sentinel.io/fence' in variables.oldAnnotations ?
+        variables.oldAnnotations['sentinel.io/fence'] : ''
+    - name: newFence
+      expression: |-
+        'sentinel.io/fence' in variables.newAnnotations ?
+        variables.newAnnotations['sentinel.io/fence'] : ''
+    - name: templateChanged
+      expression: |-
+        object.spec.template != oldObject.spec.template
+    - name: oldExecution
+      expression: |-
+        'sentinel.io/execution' in variables.oldAnnotations ?
+        variables.oldAnnotations['sentinel.io/execution'] : ''
+    - name: newExecution
+      expression: |-
+        'sentinel.io/execution' in variables.newAnnotations ?
+        variables.newAnnotations['sentinel.io/execution'] : ''
+  validations:
+    - expression: |-
+        has(object.spec.replicas) == has(oldObject.spec.replicas) &&
+        (!has(object.spec.replicas) || object.spec.replicas == oldObject.spec.replicas ||
+         (!variables.templateChanged &&
+          object.spec.replicas > oldObject.spec.replicas && object.spec.replicas <= 10 &&
+          variables.newFence == variables.oldFence && variables.newEpoch == variables.oldEpoch &&
+          variables.newExecution != '' && variables.newExecution != variables.oldExecution &&
+          variables.newExecution.contains('"action":"SCALE"') &&
+          variables.newExecution.contains('"replicas":' + string(object.spec.replicas) + ',"target_uid":')))
+      message: The Sentinel Executor may not change spec.replicas except as a reviewed SCALE (up, to at most 10, with new SCALE evidence naming that count and no template or fence change)
+      reason: Forbidden
+    - expression: |-
+        object.spec.selector == oldObject.spec.selector &&
+        has(object.spec.strategy) == has(oldObject.spec.strategy) &&
+        (!has(object.spec.strategy) || object.spec.strategy == oldObject.spec.strategy) &&
+        has(object.spec.minReadySeconds) == has(oldObject.spec.minReadySeconds) &&
+        (!has(object.spec.minReadySeconds) || object.spec.minReadySeconds == oldObject.spec.minReadySeconds) &&
+        has(object.spec.revisionHistoryLimit) == has(oldObject.spec.revisionHistoryLimit) &&
+        (!has(object.spec.revisionHistoryLimit) || object.spec.revisionHistoryLimit == oldObject.spec.revisionHistoryLimit) &&
+        has(object.spec.progressDeadlineSeconds) == has(oldObject.spec.progressDeadlineSeconds) &&
+        (!has(object.spec.progressDeadlineSeconds) || object.spec.progressDeadlineSeconds == oldObject.spec.progressDeadlineSeconds) &&
+        has(object.spec.paused) == has(oldObject.spec.paused) &&
+        (!has(object.spec.paused) || object.spec.paused == oldObject.spec.paused)
+      message: The Sentinel Executor may change no spec field other than spec.template (spec.replicas only as the SCALE rule allows)
+      reason: Forbidden
+    - expression: |-
+        has(object.metadata.labels) == has(oldObject.metadata.labels) &&
+        (!has(object.metadata.labels) || object.metadata.labels == oldObject.metadata.labels)
+      message: The Sentinel Executor may not change metadata.labels
+      reason: Forbidden
+    - expression: |-
+        has(object.metadata.finalizers) == has(oldObject.metadata.finalizers) &&
+        (!has(object.metadata.finalizers) || object.metadata.finalizers == oldObject.metadata.finalizers) &&
+        has(object.metadata.ownerReferences) == has(oldObject.metadata.ownerReferences) &&
+        (!has(object.metadata.ownerReferences) || object.metadata.ownerReferences == oldObject.metadata.ownerReferences)
+      message: The Sentinel Executor may not change metadata.finalizers or metadata.ownerReferences
+      reason: Forbidden
+    - expression: |-
+        variables.oldAnnotations.all(key, key in variables.newAnnotations) &&
+        variables.newAnnotations.all(key, key in variables.writable ||
+          (key in variables.oldAnnotations && variables.oldAnnotations[key] == variables.newAnnotations[key]))
+      message: The Sentinel Executor may remove no annotation and may change only sentinel.io/execution, sentinel.io/fence and sentinel.io/fence-epoch
+      reason: Forbidden
+    - expression: |-
+        !('sentinel.io/fence-epoch' in variables.newAnnotations) ||
+        variables.newEpoch.matches('^(0|[1-9][0-9]{0,17})$')
+      message: sentinel.io/fence-epoch must be a decimal integer
+      reason: Invalid
+    - expression: |-
+        variables.oldEpoch == '' ||
+        (variables.oldEpoch.matches('^(0|[1-9][0-9]{0,17})$') &&
+         variables.newEpoch.matches('^(0|[1-9][0-9]{0,17})$') &&
+         int(variables.newEpoch) >= int(variables.oldEpoch))
+      message: sentinel.io/fence-epoch may not decrease
+      reason: Forbidden
+    - expression: |-
+        !variables.templateChanged ||
+        ('sentinel.io/execution' in variables.newAnnotations &&
+         (!('sentinel.io/execution' in variables.oldAnnotations) ||
+          variables.newAnnotations['sentinel.io/execution'] != variables.oldAnnotations['sentinel.io/execution']))
+      message: A Pod template change by the Sentinel Executor must write new sentinel.io/execution evidence
+      reason: Forbidden
+    - expression: |-
+        !variables.templateChanged ||
+        (variables.newFence == variables.oldFence && variables.newEpoch == variables.oldEpoch)
+      message: A fence or seal by the Sentinel Executor may not change the Pod template
+      reason: Forbidden
+---
+# Enforces the policy in the namespace that executor-rbac.yaml grants. Deny
+# rejects the request; Audit also records the failure in the audit log. A live
+# test installs the same policy under another name with a binding for one
+# disposable namespace instead (scripts/validation/test_executor_admission_live.py).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: sentinel-executor-writes
+spec:
+  policyName: sentinel-executor-writes
+  validationActions: ["Deny", "Audit"]
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: ["sentinel-demo"]

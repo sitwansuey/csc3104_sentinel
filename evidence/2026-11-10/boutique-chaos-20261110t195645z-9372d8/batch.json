@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "batch_id": "boutique-chaos-20261110T195645Z-9372d8",
+  "started_at": "2026-11-10T19:56:45.320229Z",
+  "configuration": {
+    "schema_version": 1,
+    "mode": "demo",
+    "faults": [
+      "memory"
+    ],
+    "baseline_seconds": 30,
+    "fault_seconds": 60,
+    "recovery_seconds": 30,
+    "sample_interval": 5,
+    "traffic_interval": 1,
+    "traffic_workers": 1,
+    "operator_gates": true,
+    "target": null
+  },
+  "context": "kind-sentinel-boutique-chaos",
+  "namespace": "sentinel-boutique-chaos",
+  "order": [
+    "memory"
+  ],
+  "runs": [
+    {
+      "run_id": "0001-memory-33259e96",
+      "status": "complete",
+      "injection_confirmed": true,
+      "cleanup_confirmed": true,
+      "baseline_healthy": true,
+      "recovery_healthy": true,
+      "recovery_attribution": "no_sentinel_action; chaos_expiry_or_harness_cleanup",
+      "errors": [],
+      "telemetry_complete": true,
+      "injection_end_conditions": {
+        "AllInjected": "False",
+        "AllRecovered": "True",
+        "Paused": "False",
+        "Selected": "True"
+      },
+      "collection_errors": 0,
+      "log_gaps": 0,
+      "collection_samples": 26,
+      "collection_overruns": 0,
+      "completed_at": "2026-11-10T19:58:50.746449Z",
+      "fault_window_journeys": 55,
+      "observed_failed_fault_journeys": 0
+    }
+  ],
+  "status": "complete",
+  "completed_at": "2026-11-10T19:58:51.042331Z"
+}

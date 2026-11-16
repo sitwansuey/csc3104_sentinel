@@ -1,0 +1,63 @@
+trace dc867e7312f3eb3ad7d36cc5055d815b  spans=55  total=9223.4 ms  incident=INC-19298C687A08
+      0.0      31.4 ms |#                                       | observer.ingest [observer]
+     22.6       8.8 ms |#                                       |   coordinator.ingest [coordinator] operation=ingest http_status=200 outcome=accepted
+     29.7       0.7 ms |#                                       |     coordinator.record [coordinator] message_kind=incident
+                                                                        > - -> OPEN (seq 1)
+   5410.3     135.1 ms |                       #                |       worker.process [worker_service] topic=planner.request
+   5427.6       8.8 ms |                       #                |         coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   5489.0       8.4 ms |                       #                |         coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   5498.1      46.4 ms |                       #                |         worker.result [worker_service] topic=planner.request
+   5520.3       9.1 ms |                       #                |           coordinator.result [coordinator] operation=result http_status=200 outcome=accepted
+   5528.5       0.9 ms |                       #                |             coordinator.record [coordinator] message_kind=proposal
+                                                                                > OPEN -> VALIDATING (seq 2)
+   5570.5     107.9 ms |                        #               |       worker.process [worker_service] topic=dependency.request
+   5597.1       8.3 ms |                        #               |         coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   5631.6       7.8 ms |                        #               |         coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   5639.8      37.6 ms |                        #               |         worker.result [worker_service] topic=dependency.request
+   5659.9       9.5 ms |                        #               |           coordinator.result [coordinator] operation=result http_status=200 outcome=accepted
+   5668.8       0.6 ms |                        #               |             coordinator.record [coordinator] message_kind=dependency_result
+   5802.6     230.8 ms |                         #              |               worker.process [worker_service] topic=guard.request
+   5815.8       8.6 ms |                         #              |                 coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   5848.3       1.1 ms |                         #              |                 coordinator.dependencies [coordinator] operation=dependencies http_status=200
+   5910.0       1.4 ms |                         #              |                 coordinator.dependencies [coordinator] operation=dependencies http_status=200
+   5972.5       7.9 ms |                         #              |                 coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   5980.9      51.5 ms |                         #              |                 worker.result [worker_service] topic=guard.request
+   6004.7      20.8 ms |                          #             |                   coordinator.result [coordinator] operation=result http_status=200 outcome=accepted
+   6024.1       0.3 ms |                          #             |                     coordinator.record [coordinator] message_kind=guard_result
+                                                                                        > VALIDATING -> AWAITING_APPROVAL (seq 3)
+   6144.2     114.2 ms |                          #             |       worker.process [worker_service] topic=dependency.request
+   6161.4      20.0 ms |                          #             |         coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   6208.1       9.3 ms |                          #             |         coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   6218.0      40.4 ms |                          #             |         worker.result [worker_service] topic=dependency.request
+   6239.1      11.3 ms |                           #            |           coordinator.result [coordinator] operation=result http_status=200 outcome=accepted
+   6249.7       0.7 ms |                           #            |             coordinator.record [coordinator] message_kind=dependency_result
+   6285.7     175.7 ms |                           #            |               worker.process [worker_service] topic=guard.request
+   6301.1       9.3 ms |                           #            |                 coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   6331.3       1.1 ms |                           #            |                 coordinator.dependencies [coordinator] operation=dependencies http_status=200
+   6378.4       1.0 ms |                           #            |                 coordinator.dependencies [coordinator] operation=dependencies http_status=200
+   6406.5       7.9 ms |                           #            |                 coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   6415.1      45.3 ms |                           #            |                 worker.result [worker_service] topic=guard.request
+   6441.9      10.5 ms |                           #            |                   coordinator.result [coordinator] operation=result http_status=200 outcome=accepted
+   6450.4       1.0 ms |                           #            |                     coordinator.record [coordinator] message_kind=guard_result
+                                                                                        > VALIDATING -> READY (seq 5)
+   6475.1     349.3 ms |                            ##          |                       worker.process [worker_service] topic=executor.request
+   6490.0      51.4 ms |                            #           |                         coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   6552.3       9.1 ms |                            #           |                         coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   6581.4       2.0 ms |                            #           |                         coordinator.dependencies [coordinator] operation=dependencies http_status=200
+   6629.5       7.9 ms |                            #           |                         coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   6691.5       8.0 ms |                             #          |                         coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   6777.3       8.1 ms |                             #          |                         coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   6786.6      37.8 ms |                             #          |                         worker.result [worker_service] topic=executor.request
+   6799.5       8.9 ms |                             #          |                           coordinator.result [coordinator] operation=result http_status=200 outcome=accepted
+   6807.8       0.6 ms |                             #          |                             coordinator.record [coordinator] message_kind=execution_result
+                                                                                                > READY -> VERIFYING (seq 6)
+   6955.1    2268.3 ms |                              ##########|                               worker.process [worker_service] topic=verifier.request
+   6971.4      36.0 ms |                              #         |                                 coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   8356.9       8.5 ms |                                    #   |                                 coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   9167.4       8.0 ms |                                       #|                                 coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed
+   9175.7      46.7 ms |                                       #|                                 worker.result [worker_service] topic=verifier.request
+   9197.0      10.4 ms |                                       #|                                   coordinator.result [coordinator] operation=result http_status=200 outcome=accepted
+   9206.7       0.7 ms |                                       #|                                     coordinator.record [coordinator] message_kind=outcome
+                                                                                                        > VERIFYING -> RECOVERED (seq 7)
+    149.0       8.4 ms |#                                       | coordinator.renew [coordinator] operation=renew http_status=200 outcome=renewed  (parent not in these logs)
+  transition outside logged spans: AWAITING_APPROVAL -> VALIDATING (seq 4)

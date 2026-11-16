@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "batch_id": "boutique-chaos-20261110T200246Z-885ecc",
+  "started_at": "2026-11-10T20:02:46.184200Z",
+  "configuration": {
+    "schema_version": 1,
+    "mode": "demo",
+    "faults": [
+      "dns"
+    ],
+    "baseline_seconds": 30,
+    "fault_seconds": 60,
+    "recovery_seconds": 30,
+    "sample_interval": 5,
+    "traffic_interval": 1,
+    "traffic_workers": 1,
+    "operator_gates": true,
+    "target": null
+  },
+  "context": "kind-sentinel-boutique-chaos",
+  "namespace": "sentinel-boutique-chaos",
+  "order": [
+    "dns"
+  ],
+  "runs": [],
+  "status": "failed",
+  "error": "RuntimeError: An existing Chaos Mesh experiment is present; finish it before the demo",
+  "completed_at": "2026-11-10T20:02:46.952581Z"
+}

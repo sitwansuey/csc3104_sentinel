@@ -1,0 +1,175 @@
+{
+  "schema": "sentinel-dist-acceptance-run-v1",
+  "scenario": "S9",
+  "title": "RBAC, admission and network policy denials",
+  "fault": "the Executor reads a Secret, patches another Deployment, asks for pods/exec and changes spec.replicas; the Planner opens a TCP connection to the API server; the Executor to the target's port",
+  "file_mode_counterpart": "design S9 (A6)",
+  "expect": "every probe as expected, 0 Sentinel template writes",
+  "repeat_index": 2,
+  "context": "kind-sentinel-dist",
+  "date": "2026-11-14",
+  "started_at": "2026-11-14T10:07:28.530904Z",
+  "ended_at": "2026-11-14T10:07:50.450460Z",
+  "duration_seconds": 35.2,
+  "fault_at": "2026-11-14T10:07:29.891122Z",
+  "notes": {
+    "probes": [
+      {
+        "probe": "Executor reads its own Secret",
+        "identity": "executor-a",
+        "expected": "denied",
+        "observed": "denied",
+        "passed": true
+      },
+      {
+        "probe": "Executor patches the Coordinator's Deployment",
+        "identity": "executor-a",
+        "expected": "denied",
+        "observed": "denied",
+        "passed": true
+      },
+      {
+        "probe": "Executor opens pods/exec on the target",
+        "identity": "executor-a",
+        "expected": "denied",
+        "observed": "denied",
+        "passed": true
+      },
+      {
+        "probe": "Executor changes spec.replicas (admission policy)",
+        "identity": "executor-a",
+        "expected": "denied",
+        "observed": "denied",
+        "passed": true
+      },
+      {
+        "probe": "Guard patches the target",
+        "identity": "guard-1",
+        "expected": "denied",
+        "observed": "denied",
+        "passed": true
+      },
+      {
+        "probe": "Planner opens TCP to the API service",
+        "identity": "planner-1",
+        "expected": "timeout",
+        "observed": "timeout",
+        "passed": true
+      },
+      {
+        "probe": "Planner opens TCP to the API server endpoint",
+        "identity": "planner-1",
+        "expected": "timeout",
+        "observed": "timeout",
+        "passed": true
+      },
+      {
+        "probe": "Executor opens TCP to the target's port",
+        "identity": "executor-a",
+        "expected": "timeout",
+        "observed": "timeout",
+        "passed": true
+      },
+      {
+        "probe": "Verifier opens TCP to the target's port (allowed control)",
+        "identity": "verifier-1",
+        "expected": "open",
+        "observed": "open",
+        "passed": true
+      }
+    ]
+  },
+  "harness_error": null,
+  "restore_error": null,
+  "terminal_in_time": true,
+  "states": [],
+  "incidents": [],
+  "earlier_incidents": 10,
+  "settle": null,
+  "invariants": [
+    {
+      "id": "I7",
+      "name": "At most one successful template PATCH per action in the API server audit log",
+      "passed": true,
+      "detail": "0 template PATCH(es) over 0 action(s); 0 fence or seal PATCH(es) and 2 denied change(s) not counted"
+    }
+  ],
+  "invariants_passed": true,
+  "expectation": {
+    "expect": "every probe as expected, 0 Sentinel template writes",
+    "met": true,
+    "failures": []
+  },
+  "passed": true,
+  "audit": {
+    "events": 67,
+    "effects": {
+      "denied": 2,
+      "request": 65
+    },
+    "sentinel_template_writes_per_action": {},
+    "max_template_writes_per_action": 0,
+    "sentinel_template_writes": 0,
+    "operator_template_writes": 0,
+    "sentinel_denials": {
+      "system:serviceaccount:sentinel-dist:sentinel-executor get deployments": 1,
+      "system:serviceaccount:sentinel-dist:sentinel-executor get pods": 1,
+      "system:serviceaccount:sentinel-dist:sentinel-executor get secrets": "<redacted:6b86b273>",
+      "system:serviceaccount:sentinel-dist:sentinel-executor patch deployments": 1,
+      "system:serviceaccount:sentinel-dist:sentinel-guard patch deployments": 1
+    },
+    "unclassified": {
+      "sentinel": 0,
+      "operator": 0
+    }
+  },
+  "audit_lines_skipped": 0,
+  "audit_completeness": {
+    "complete": true,
+    "problems": [],
+    "files": 4,
+    "first_event_at": "2026-11-13T10:26:21.581188Z",
+    "window": [
+      "2026-11-14T10:07:27.420904Z",
+      "2026-11-14T10:07:50.543460Z"
+    ],
+    "generation": {
+      "before": 22,
+      "before_restore": 22,
+      "after": 22
+    }
+  },
+  "clock": {
+    "control_plane_minus_harness": [
+      {
+        "offset_seconds": -0.008,
+        "uncertainty_seconds": 0.101,
+        "at": "2026-11-14T10:07:28.239130Z"
+      },
+      {
+        "offset_seconds": -0.014,
+        "uncertainty_seconds": 0.096,
+        "at": "2026-11-14T10:07:49.258436Z"
+      }
+    ],
+    "fault_at_cluster_clock": "2026-11-14T10:07:29.883122Z"
+  },
+  "takeover_seconds": null,
+  "coordinator_recovery": null,
+  "operator_actions": [],
+  "operator": {
+    "attempts_failed": 0,
+    "failures": [],
+    "outages": [],
+    "fatal": [],
+    "still_running": false
+  },
+  "read_outages": [],
+  "cleanup": {
+    "actions": [],
+    "problems": []
+  },
+  "synthetic_planner": true,
+  "git_revision": "47e3aaea1dfc0b06149df2a3df90e980a74b50b7",
+  "limits": "Four kind nodes (containers) on one Docker host: separate network namespaces and kubelets, one shared kernel, clock and disk. Not separate machines. The Planner is the deterministic lab planner (synthetic proposals), and clock skew is injected by Chaos Mesh TimeChaos, not measured between hosts."
+}

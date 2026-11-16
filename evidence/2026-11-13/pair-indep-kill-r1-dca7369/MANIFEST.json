@@ -1,0 +1,232 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "pair-indep-kill-r1-dca7369",
+  "class": "scenario-pair",
+  "captured_at": "2026-11-13T12:29:46.979315Z",
+  "source_run_dir_name": "boutique-pair-20261113T122946Z-a54274",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "recorded",
+    "captured_by": "harness",
+    "dirty": false,
+    "dirty_path_count": 0,
+    "dirty_paths_sha256": null,
+    "host_class": "windows-amd64",
+    "python": "3.13.2",
+    "schema": "sentinel-provenance-v1",
+    "source_revision": "dca73699c9bb7c6d99faa0cec517c75e98fa916b",
+    "tools": {
+      "docker": "29.4.3",
+      "helm": "4.3.1+gc0d08d0",
+      "kind": "0.33.0",
+      "kubectl": "1.34.1"
+    }
+  },
+  "files": [
+    {
+      "path": "attribution.json",
+      "sha256": "c6e61520f70240c9400f16e8f10fb270bf3397f1d95b95b078f65173c69c4f74",
+      "bytes": 1128,
+      "redactions": 0
+    },
+    {
+      "path": "cartservice-pair-2-incident.json",
+      "sha256": "1521add437ea9a43a039ec29fbd205f4b8bf238bfe2ed320030bc40c39074a1b",
+      "bytes": 12157,
+      "redactions": 0
+    },
+    {
+      "path": "chaos-experiment.json",
+      "sha256": "8bb4cc44229352a7b540d49c7a935526d819664b47604b76ab2325700426bbf9",
+      "bytes": 745,
+      "redactions": 0
+    },
+    {
+      "path": "dependency-readiness-cartservice.json",
+      "sha256": "9d880f655ebf3ecf2d9fdba2a7df18c72e99b40efbb8a6c295391e0575ab8dc1",
+      "bytes": 6765,
+      "redactions": 1
+    },
+    {
+      "path": "dependency-readiness-shippingservice.json",
+      "sha256": "7520e42cf28d38898311a321373bb4fded54c80eb93fc887a0e829b51442e192",
+      "bytes": 6952,
+      "redactions": 0
+    },
+    {
+      "path": "images.json",
+      "sha256": "c84b74cdbde235194701e1d35ac5bf5f82a0ea23bbd1545ee13be25f0d74b4a7",
+      "bytes": 2741,
+      "redactions": 0
+    },
+    {
+      "path": "pair-cartservice/dependencies-ACT-25948f0d72f0a0416d6bbe43.json",
+      "sha256": "8fb4536650d7ca03bde1340401316900c325952bd65541f17cd41163c9f12139",
+      "bytes": 573,
+      "redactions": 0
+    },
+    {
+      "path": "pair-cartservice/dependencies.json",
+      "sha256": "ca1c7acdca599dc444a3d844793077c1de384ecdb2f3762728bd754be8b3c61c",
+      "bytes": 573,
+      "redactions": 0
+    },
+    {
+      "path": "pair-cartservice/execution-ACT-25948f0d72f0a0416d6bbe43.json",
+      "sha256": "ce2c565dc806e7fe3ab0f7cf430ffeab4bb86164a5ab2883fcb2ed83bd0d397b",
+      "bytes": 639,
+      "redactions": 0
+    },
+    {
+      "path": "pair-cartservice/guard-ACT-25948f0d72f0a0416d6bbe43-0.json",
+      "sha256": "bbcf3e179b9b88880b5661f4e4e7cfdcec8c24ea94919aeaa5341671342b0873",
+      "bytes": 799,
+      "redactions": 0
+    },
+    {
+      "path": "pair-cartservice/guard-ACT-25948f0d72f0a0416d6bbe43-1.json",
+      "sha256": "5c57c72119f759336134e060d39d16e43a38520d3d4845e35bc8b9b8f32800a2",
+      "bytes": 787,
+      "redactions": 0
+    },
+    {
+      "path": "pair-cartservice/outcome-ACT-25948f0d72f0a0416d6bbe43.json",
+      "sha256": "12b0c0bbaa8d83b5cc76c94e06d9ed2727486eb2e11b92b4b7bc3af88b7c5ef7",
+      "bytes": 2261,
+      "redactions": 0
+    },
+    {
+      "path": "pair-cartservice/outcome.json",
+      "sha256": "12b0c0bbaa8d83b5cc76c94e06d9ed2727486eb2e11b92b4b7bc3af88b7c5ef7",
+      "bytes": 2261,
+      "redactions": 0
+    },
+    {
+      "path": "pair-cartservice/planning-status.json",
+      "sha256": "43c27370bf04ea50b84b278536b106951d97029c07076f7370aa5169b2e60019",
+      "bytes": 2042,
+      "redactions": 1
+    },
+    {
+      "path": "pair-cartservice/proposal-ACT-25948f0d72f0a0416d6bbe43.json",
+      "sha256": "ffdb578ce013856eb0db1dd832ff7bae3fcd4c2451c1c8ac07e239864e1db2c2",
+      "bytes": 1723,
+      "redactions": 1
+    },
+    {
+      "path": "pair-cartservice/scenario-result.json",
+      "sha256": "03a143b539d5908048a998cbaffa1c94f65742478b83c209bfd4ee127dea6f20",
+      "bytes": 1436,
+      "redactions": 0
+    },
+    {
+      "path": "pair-result.json",
+      "sha256": "b89100cc249914118df56e0ca1a0c89286a232eda15324db5ea71eaefe8a2c7c",
+      "bytes": 6809,
+      "redactions": 0
+    },
+    {
+      "path": "pair-shippingservice/dependencies-ACT-7b4a64ca65de93cc8a3e570a.json",
+      "sha256": "c1b5036e16ee9150abef1f900ef55025fa7bcee339e55b4f8ee0d379ea5eaa04",
+      "bytes": 563,
+      "redactions": 0
+    },
+    {
+      "path": "pair-shippingservice/dependencies.json",
+      "sha256": "ae5efccfb89ef8308bb2dc0f40736349438b03a4595d2a29c6dc9213376573fd",
+      "bytes": 563,
+      "redactions": 0
+    },
+    {
+      "path": "pair-shippingservice/guard-ACT-7b4a64ca65de93cc8a3e570a-0.json",
+      "sha256": "9a495b8a1c7fe03fd3dbe6f911d2ccbbde54781467b3c240985c45d9499e6007",
+      "bytes": 803,
+      "redactions": 0
+    },
+    {
+      "path": "pair-shippingservice/guard-ACT-7b4a64ca65de93cc8a3e570a-1.json",
+      "sha256": "fda5b9c8277847933f43106fe8f9d817668c8e3928069cae78b073433dedf803",
+      "bytes": 791,
+      "redactions": 0
+    },
+    {
+      "path": "pair-shippingservice/outcome-ACT-7b4a64ca65de93cc8a3e570a.json",
+      "sha256": "3e06f85d6c1ff52d8e37d80581c4d883a040b56e2b5f5ef7de297a72ab8c72e3",
+      "bytes": 2265,
+      "redactions": 0
+    },
+    {
+      "path": "pair-shippingservice/outcome.json",
+      "sha256": "3e06f85d6c1ff52d8e37d80581c4d883a040b56e2b5f5ef7de297a72ab8c72e3",
+      "bytes": 2265,
+      "redactions": 0
+    },
+    {
+      "path": "pair-shippingservice/planning-status.json",
+      "sha256": "5c8118ae61d45b4655634542b6f6bf53c226f0d3bd60fdefc5b89d18a3e7457b",
+      "bytes": 1277,
+      "redactions": 0
+    },
+    {
+      "path": "pair-shippingservice/proposal-ACT-7b4a64ca65de93cc8a3e570a.json",
+      "sha256": "c85567c8e0a8cc2305b82f9ad4dba239a73ef03f0970149e6a8042f453a39358",
+      "bytes": 996,
+      "redactions": 0
+    },
+    {
+      "path": "pair-shippingservice/proposal.json",
+      "sha256": "c85567c8e0a8cc2305b82f9ad4dba239a73ef03f0970149e6a8042f453a39358",
+      "bytes": 996,
+      "redactions": 0
+    },
+    {
+      "path": "pair-shippingservice/reconciliation.json",
+      "sha256": "9046f7acd26d74bda21c7fe1d74cbbfdb5f10070be9b4515173f9eb1aeb799ef",
+      "bytes": 605,
+      "redactions": 0
+    },
+    {
+      "path": "pair-shippingservice/scenario-result.json",
+      "sha256": "971dae33de4f89684440a388db5860c0da93a8bb7b541abf902ca060c9655ffd",
+      "bytes": 1349,
+      "redactions": 0
+    },
+    {
+      "path": "pair-storefront-impact.json",
+      "sha256": "f7da349a43837b9c9a4152842dca9670e14214d9f8f2fd2cef8db72edffc8272",
+      "bytes": 313,
+      "redactions": 0
+    },
+    {
+      "path": "policies/cartservice.json",
+      "sha256": "4d31697953d127ec4dec9ee377763b0a88d4ec55fb63a15a524579cae77246eb",
+      "bytes": 2470,
+      "redactions": 0
+    },
+    {
+      "path": "policies/shippingservice.json",
+      "sha256": "e1bf41ca4ec82fc09e41e09fc68974a8e8358acf6f2225c40c79a4a2fb1d4040",
+      "bytes": 2462,
+      "redactions": 0
+    },
+    {
+      "path": "rbac-checks.json",
+      "sha256": "19194ab214937ae9614f592fe485f65c01aab95382fb53cb8e816bc745d3e7ae",
+      "bytes": 826,
+      "redactions": 0
+    },
+    {
+      "path": "shippingservice-pair-2-incident.json",
+      "sha256": "e84a354ea0fdd984e0c3eb855861c75a780282f2cf96c68ba274ff1a5087487f",
+      "bytes": 5087,
+      "redactions": 1
+    },
+    {
+      "path": "summary.json",
+      "sha256": "1573bc45f8ef38b1391eae31a5f55622510eba29a0034c10f4e4cc1a51e7cab3",
+      "bytes": 8974,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "batch_id": "boutique-chaos-20261110T195858Z-9d2d56",
+  "started_at": "2026-11-10T19:58:58.834533Z",
+  "configuration": {
+    "schema_version": 1,
+    "mode": "demo",
+    "faults": [
+      "http"
+    ],
+    "baseline_seconds": 30,
+    "fault_seconds": 60,
+    "recovery_seconds": 30,
+    "sample_interval": 5,
+    "traffic_interval": 1,
+    "traffic_workers": 1,
+    "operator_gates": true,
+    "target": null
+  },
+  "context": "kind-sentinel-boutique-chaos",
+  "namespace": "sentinel-boutique-chaos",
+  "order": [
+    "http"
+  ],
+  "runs": [
+    {
+      "run_id": "0001-http-f5135659",
+      "status": "failed",
+      "injection_confirmed": false,
+      "cleanup_confirmed": false,
+      "baseline_healthy": true,
+      "recovery_healthy": false,
+      "recovery_attribution": "no_sentinel_action; chaos_expiry_or_harness_cleanup",
+      "errors": [
+        "RuntimeError: Chaos Mesh did not confirm injection into selected pods",
+        "Fault cleanup: kubectl --context failed: error: timed out waiting for the condition on httpchaos/fault-0001-http-f5135659\n"
+      ],
+      "telemetry_complete": true,
+      "collection_errors": 0,
+      "log_gaps": 0,
+      "collection_samples": 38,
+      "collection_overruns": 0,
+      "completed_at": "2026-11-10T20:02:04.133632Z",
+      "fault_window_journeys": 0,
+      "observed_failed_fault_journeys": 0
+    }
+  ],
+  "status": "failed",
+  "error": "RuntimeError: Stopping after an incomplete demonstration: RuntimeError: Chaos Mesh did not confirm injection into selected pods; Fault cleanup: kubectl --context failed: error: timed out waiting for the condition on httpchaos/fault-0001-http-f5135659\n",
+  "completed_at": "2026-11-10T20:02:04.436905Z"
+}

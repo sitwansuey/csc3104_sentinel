@@ -1,0 +1,24 @@
+{
+  "run_id": "0001-memory-33259e96",
+  "status": "complete",
+  "injection_confirmed": true,
+  "cleanup_confirmed": true,
+  "baseline_healthy": true,
+  "recovery_healthy": true,
+  "recovery_attribution": "no_sentinel_action; chaos_expiry_or_harness_cleanup",
+  "errors": [],
+  "telemetry_complete": true,
+  "injection_end_conditions": {
+    "AllInjected": "False",
+    "AllRecovered": "True",
+    "Paused": "False",
+    "Selected": "True"
+  },
+  "collection_errors": 0,
+  "log_gaps": 0,
+  "collection_samples": 26,
+  "collection_overruns": 0,
+  "completed_at": "2026-11-10T19:58:50.746449Z",
+  "fault_window_journeys": 55,
+  "observed_failed_fault_journeys": 0
+}

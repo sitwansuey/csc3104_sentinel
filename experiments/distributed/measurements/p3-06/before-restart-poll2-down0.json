@@ -1,0 +1,222 @@
+{
+  "schema": "sentinel-claims-restart-v1",
+  "label": "before (bab8563)",
+  "started_at": "2026-11-12T09:47:08Z",
+  "mode": "file",
+  "single_host": true,
+  "separate_processes": true,
+  "loopback": "127.0.0.1",
+  "measured": "scenario S5: time from /readyz to each worker's first successful claim",
+  "git_revision": null,
+  "python": "3.13.2",
+  "os": "Windows",
+  "backoff": {
+    "cap_seconds": 60,
+    "jitter": null,
+    "formula": "min(60, poll_seconds * 2 ** min(failures, 5))"
+  },
+  "limits": "Separate OS processes on one host: one kernel clock, one disk, loopback networking. Not separate machines, and not a Coordinator Pod restart in a cluster.",
+  "poll_seconds": 2.0,
+  "down_seconds": 0.0,
+  "summary": [
+    {
+      "restart": 1,
+      "runs": 5,
+      "median_seconds": 5.528,
+      "max_seconds": 5.602
+    },
+    {
+      "restart": 2,
+      "runs": 5,
+      "median_seconds": 1.505,
+      "max_seconds": 1.849
+    }
+  ],
+  "runs": [
+    {
+      "poll_seconds": 2.0,
+      "restarts": [
+        {
+          "down_seconds": 0.0,
+          "ready_after_start_seconds": 0.531,
+          "first_claim_seconds": {
+            "planner-1": 1.128,
+            "guard-1": 1.361,
+            "executor-a": 5.473,
+            "executor-b": 1.067,
+            "verifier-1": 1.16
+          },
+          "all_workers_claimed_seconds": 5.473,
+          "first_delivery_seconds": 1.16
+        },
+        {
+          "down_seconds": 0.0,
+          "ready_after_start_seconds": 0.539,
+          "first_claim_seconds": {
+            "planner-1": 1.209,
+            "guard-1": 1.461,
+            "executor-a": 1.475,
+            "executor-b": 1.131,
+            "verifier-1": 1.425
+          },
+          "all_workers_claimed_seconds": 1.475,
+          "first_delivery_seconds": null
+        }
+      ],
+      "states": [
+        "RECOVERED"
+      ],
+      "terminal": true,
+      "harness_error": null,
+      "tls": true
+    },
+    {
+      "poll_seconds": 2.0,
+      "restarts": [
+        {
+          "down_seconds": 0.0,
+          "ready_after_start_seconds": 0.526,
+          "first_claim_seconds": {
+            "planner-1": 1.219,
+            "guard-1": 2.01,
+            "executor-a": 5.534,
+            "executor-b": 1.157,
+            "verifier-1": 1.39
+          },
+          "all_workers_claimed_seconds": 5.534,
+          "first_delivery_seconds": 1.39
+        },
+        {
+          "down_seconds": 0.0,
+          "ready_after_start_seconds": 0.53,
+          "first_claim_seconds": {
+            "planner-1": 1.051,
+            "guard-1": 1.848,
+            "executor-a": 1.303,
+            "executor-b": 1.004,
+            "verifier-1": 1.396
+          },
+          "all_workers_claimed_seconds": 1.848,
+          "first_delivery_seconds": null
+        }
+      ],
+      "states": [
+        "RECOVERED"
+      ],
+      "terminal": true,
+      "harness_error": null,
+      "tls": true
+    },
+    {
+      "poll_seconds": 2.0,
+      "restarts": [
+        {
+          "down_seconds": 0.0,
+          "ready_after_start_seconds": 0.537,
+          "first_claim_seconds": {
+            "planner-1": 1.209,
+            "guard-1": 2.02,
+            "executor-a": 5.528,
+            "executor-b": 1.147,
+            "verifier-1": 1.303
+          },
+          "all_workers_claimed_seconds": 5.528,
+          "first_delivery_seconds": 1.303
+        },
+        {
+          "down_seconds": 0.0,
+          "ready_after_start_seconds": 0.515,
+          "first_claim_seconds": {
+            "planner-1": 1.038,
+            "guard-1": 1.849,
+            "executor-a": 1.321,
+            "executor-b": 0.991,
+            "verifier-1": 1.352
+          },
+          "all_workers_claimed_seconds": 1.849,
+          "first_delivery_seconds": null
+        }
+      ],
+      "states": [
+        "RECOVERED"
+      ],
+      "terminal": true,
+      "harness_error": null,
+      "tls": true
+    },
+    {
+      "poll_seconds": 2.0,
+      "restarts": [
+        {
+          "down_seconds": 0.0,
+          "ready_after_start_seconds": 0.516,
+          "first_claim_seconds": {
+            "planner-1": 1.257,
+            "guard-1": 3.557,
+            "executor-a": 1.288,
+            "executor-b": 5.602,
+            "verifier-1": 1.366
+          },
+          "all_workers_claimed_seconds": 5.602,
+          "first_delivery_seconds": 1.366
+        },
+        {
+          "down_seconds": 0.0,
+          "ready_after_start_seconds": 0.524,
+          "first_claim_seconds": {
+            "planner-1": 1.129,
+            "guard-1": 1.397,
+            "executor-a": 1.161,
+            "executor-b": 1.412,
+            "verifier-1": 1.478
+          },
+          "all_workers_claimed_seconds": 1.478,
+          "first_delivery_seconds": null
+        }
+      ],
+      "states": [
+        "RECOVERED"
+      ],
+      "terminal": true,
+      "harness_error": null,
+      "tls": true
+    },
+    {
+      "poll_seconds": 2.0,
+      "restarts": [
+        {
+          "down_seconds": 0.0,
+          "ready_after_start_seconds": 0.531,
+          "first_claim_seconds": {
+            "planner-1": 1.18,
+            "guard-1": 1.442,
+            "executor-a": 1.13,
+            "executor-b": 5.509,
+            "verifier-1": 1.428
+          },
+          "all_workers_claimed_seconds": 5.509,
+          "first_delivery_seconds": 1.428
+        },
+        {
+          "down_seconds": 0.0,
+          "ready_after_start_seconds": 0.531,
+          "first_claim_seconds": {
+            "planner-1": 1.02,
+            "guard-1": 1.318,
+            "executor-a": 0.975,
+            "executor-b": 1.306,
+            "verifier-1": 1.505
+          },
+          "all_workers_claimed_seconds": 1.505,
+          "first_delivery_seconds": null
+        }
+      ],
+      "states": [
+        "RECOVERED"
+      ],
+      "terminal": true,
+      "harness_error": null,
+      "tls": true
+    }
+  ]
+}

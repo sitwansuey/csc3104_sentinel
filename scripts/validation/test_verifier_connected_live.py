@@ -19,6 +19,9 @@ from scripts.validation.verifier_connected_lab import VerifierLab, require, save
 from scripts.validation.verifier_lab_manifest import COLLECTOR, IMAGE
 from services.coordinator.core import SQLiteStore
 from services.verifier.store import VerificationStore
+from shared import log
+
+LOG = log.get_logger("validation")
 
 
 def monitor(lab, folder, *, inventory=None, trace_url=None, restart=False):
@@ -159,22 +162,24 @@ def main(argv=None):
                     lab.fault("payment" if name == "dependency_failure" else "checkout", False)
         report["status"] = "PASSED"
         exit_code = 0
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - the failure is saved in the report and the run exits 1
+        log.failure(LOG, "validation.run.failed", error, level=log.ERROR)
         report.update(status="FAILED", error=str(error))
         if lab.created:
             for deployment, container in (("collector", "otel"), ("checkout", "checkout"), ("payment", "payment")):
                 try:
                     (lab.directory / (deployment + "-diagnostic.log")).write_text(
                         lab.kube("logs", "deployment/" + deployment, "-c", container, "--tail=40"), encoding="utf-8")
-                except Exception:
-                    pass
+                except Exception as diagnostic_error:  # noqa: BLE001 - best-effort diagnostics; the run still fails
+                    log.failure(LOG, "validation.diagnostics.failed", diagnostic_error)
         print("FAIL: " + str(error), file=sys.stderr)
         exit_code = 1
     finally:
         try:
             lab.close()
             report["cleanup"] = "Workers and port forwards stopped; private credentials removed; unique namespace deletion requested"
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - the cleanup error is saved in the report
+            log.failure(LOG, "validation.cleanup.failed", error, level=log.ERROR)
             report["cleanup_error"] = str(error)
             report["status"] = "FAILED"
             exit_code = 1

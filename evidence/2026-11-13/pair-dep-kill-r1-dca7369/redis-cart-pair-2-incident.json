@@ -1,0 +1,171 @@
+{
+  "incident_id": "INC-46CFFFD831FA",
+  "kind": "incident",
+  "observed_at": "2026-11-13T12:36:50.222177Z",
+  "observed_generation": 2,
+  "observed_resource_version": "198618",
+  "schema_version": "1.0",
+  "signals": [
+    {
+      "at": "2026-11-13T12:36:44.368085Z",
+      "detail": "Deployment sentinel-boutique-connected/redis-cart desired 1, ready 0, available 0; resourceVersion 198618, generation 2",
+      "evidence_id": "E-1365C4EF2E46",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-13T12:36:44.368085Z",
+      "detail": "Pod redis-cart-58cd57c677-f2rg7 container redis is not ready; phase Running; restartCount 10; Container image \"gcr.io/google-containers/pause:latest\" is not present with pull policy of Never; last exitCode 0",
+      "evidence_id": "E-6BD82F9DCCA6",
+      "reason": "ErrImageNeverPull",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-13T12:36:43Z",
+      "detail": "Deployment does not have minimum availability.",
+      "evidence_id": "E-2E6D5E184756",
+      "reason": "MinimumReplicasUnavailable",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:36:43Z",
+      "detail": "Readiness probe failed: dial tcp <private-ip>:6379: connect: connection refused",
+      "evidence_id": "E-C05A9587973E",
+      "reason": "Unhealthy",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:36:43Z",
+      "detail": "Container image \"gcr.io/google-containers/pause:latest\" is not present with pull policy of Never",
+      "evidence_id": "E-1AA41A863C59",
+      "reason": "ErrImageNeverPull",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:36:43Z",
+      "detail": "Error: ErrImageNeverPull",
+      "evidence_id": "E-344D2EA7F3DC",
+      "reason": "Failed",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:36:43Z",
+      "detail": "Back-off restarting failed container redis in pod redis-cart-58cd57c677-f2rg7_sentinel-boutique-connected(6dce7205-9b86-46af-8a84-a3cbd31c3473)",
+      "evidence_id": "E-AEE5CA6C3358",
+      "reason": "BackOff",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-13T12:34:24.096455Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:34:24.096455570Z 1:M 13 Nov 2026 12:34:24.096 * 100 changes in 300 seconds. Saving...",
+      "evidence_id": "E-FBB019251357",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:34:24.096949Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:34:24.096949424Z 1:M 13 Nov 2026 12:34:24.096 * Background saving started by pid 22",
+      "evidence_id": "E-852AFCC80910",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:34:24.098001Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:34:24.098001283Z 22:C 13 Nov 2026 12:34:24.097 * BGSAVE done, 473 keys saved, 0 keys skipped, 38587 bytes written.",
+      "evidence_id": "E-7933F2C14223",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:34:24.107775Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:34:24.107775865Z 22:C 13 Nov 2026 12:34:24.107 * DB saved on disk",
+      "evidence_id": "E-10AC7DE299F1",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:34:24.108210Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:34:24.108210830Z 22:C 13 Nov 2026 12:34:24.108 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB",
+      "evidence_id": "E-D7B0CAF229F1",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:34:24.197326Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:34:24.197326508Z 1:M 13 Nov 2026 12:34:24.197 * Background saving terminated with success",
+      "evidence_id": "E-9C4A31F70CE1",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:36:43.151324Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:36:43.151324398Z 1:signal-handler (1794573403) Received SIGTERM scheduling shutdown...",
+      "evidence_id": "E-289E49ADCBEE",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:36:43.247625Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:36:43.247625816Z 1:M 13 Nov 2026 12:36:43.247 * User requested shutdown...",
+      "evidence_id": "E-A72D1CE2459C",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:36:43.247640Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:36:43.247640938Z 1:M 13 Nov 2026 12:36:43.247 * Saving the final RDB snapshot before exiting.",
+      "evidence_id": "E-216AF35D21B9",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:36:43.248569Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:36:43.248569897Z 1:M 13 Nov 2026 12:36:43.248 * BGSAVE done, 482 keys saved, 0 keys skipped, 39244 bytes written.",
+      "evidence_id": "E-88415830515D",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:36:43.270450Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:36:43.270450516Z 1:M 13 Nov 2026 12:36:43.270 * DB saved on disk",
+      "evidence_id": "E-7577BBEC640F",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:36:43.270460Z",
+      "detail": "6dce7205-9b86-46af-8a84-a3cbd31c3473/redis-cart-58cd57c677-f2rg7/redis: 2026-11-13T12:36:43.270460727Z 1:M 13 Nov 2026 12:36:43.270 # Redis is now ready to exit, bye bye...",
+      "evidence_id": "E-05FC763935B6",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-13T12:36:50.222177Z",
+      "detail": "Deployment sentinel-boutique-connected/redis-cart desired 1, ready 0, available 0; resourceVersion 198618, generation 2",
+      "evidence_id": "E-6943262C00BF",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-13T12:36:50.222177Z",
+      "detail": "Pod redis-cart-58cd57c677-f2rg7 container redis is not ready; phase Running; restartCount 10; back-off 2m40s restarting failed container=redis pod=redis-cart-58cd57c677-f2rg7_sentinel-boutique-connected(6dce7205-9b86-46af-8a84-a3cbd31c3473); last exitCode 0",
+      "evidence_id": "E-7C8ECD42D59F",
+      "reason": "CrashLoopBackOff",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-13T12:36:46Z",
+      "detail": "Back-off restarting failed container redis in pod redis-cart-58cd57c677-f2rg7_sentinel-boutique-connected(6dce7205-9b86-46af-8a84-a3cbd31c3473)",
+      "evidence_id": "E-3B9E7CDFED1A",
+      "reason": "BackOff",
+      "source": "event"
+    }
+  ],
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "redis-cart",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "1f95bce9-4a04-441b-8395-6370d7200682"
+  }
+}

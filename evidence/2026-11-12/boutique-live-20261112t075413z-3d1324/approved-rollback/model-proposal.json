@@ -1,0 +1,26 @@
+{
+  "action": "ESCALATE",
+  "action_id": "ACT-d03f762128956590820c366d",
+  "based_on_resource_version": "95090",
+  "evidence_refs": [
+    "E-7A1AD9F8A1F8",
+    "E-5E59CA91C02B",
+    "E-F8105B2264A8",
+    "E-32CAE6C98D2C",
+    "E-A4A597BA9B61",
+    "E-6C63F2EE9E44",
+    "E-90195C02518D"
+  ],
+  "incident_id": "INC-2AF84E386B99",
+  "kind": "proposal",
+  "parameters": {},
+  "rationale": "RCA abstained: the evidence does not support a diagnosis. Operator review is required. No repair is authorized.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

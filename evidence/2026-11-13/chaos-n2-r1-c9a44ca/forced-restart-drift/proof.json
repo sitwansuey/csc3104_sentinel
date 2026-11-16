@@ -1,0 +1,13 @@
+{
+  "action": "RESTART",
+  "action_id": "ACT-FORCED-21969de6015749d4912c996a2f7dba62",
+  "executor_journal_attempts": 0,
+  "executor_patch_attempts": 0,
+  "executor_status": "CONFLICT",
+  "expected_reason": "RESTART_TEMPLATE_DRIFT",
+  "generation_unchanged": true,
+  "guard_reason_codes": [],
+  "guard_verdict": null,
+  "label": "forced-restart-drift",
+  "template_unchanged": true
+}

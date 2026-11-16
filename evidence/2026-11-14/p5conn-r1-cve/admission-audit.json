@@ -1,0 +1,84 @@
+{
+  "apiVersion": "admissionregistration.k8s.io/v1",
+  "kind": "ValidatingAdmissionPolicy",
+  "metadata": {
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"admissionregistration.k8s.io/v1\",\"kind\":\"ValidatingAdmissionPolicy\",\"metadata\":{\"annotations\":{},\"name\":\"sentinel-approved-images\"},\"spec\":{\"failurePolicy\":\"Fail\",\"matchConstraints\":{\"resourceRules\":[{\"apiGroups\":[\"apps\"],\"apiVersions\":[\"v1\"],\"operations\":[\"CREATE\",\"UPDATE\"],\"resources\":[\"deployments\"]},{\"apiGroups\":[\"\"],\"apiVersions\":[\"v1\"],\"operations\":[\"CREATE\"],\"resources\":[\"pods\"]}]},\"paramKind\":{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\"},\"validations\":[{\"expression\":\"variables.images.all(image, image != '' \\u0026\\u0026 image in variables.approved)\",\"message\":\"Every container image must be an approved repository@sha256 digest (sentinel-approved-images)\",\"reason\":\"Forbidden\"}],\"variables\":[{\"expression\":\"has(params.data) \\u0026\\u0026 'digests' in params.data ? params.data['digests'].split('\\\\n') : []\",\"name\":\"approved\"},{\"expression\":\"request.resource.resource == 'pods' ? object.spec : object.spec.template.spec\",\"name\":\"podSpec\"},{\"expression\":\"variables.podSpec.containers.map(c, c.image) +\\n(has(variables.podSpec.initContainers) ? variables.podSpec.initContainers.map(c, c.image) : []) +\\n(has(variables.podSpec.ephemeralContainers) ? variables.podSpec.ephemeralContainers.map(c, c.image) : [])\",\"name\":\"images\"}]}}\n"
+    },
+    "creationTimestamp": "2026-11-14T15:05:47Z",
+    "generation": 1,
+    "name": "sentinel-approved-images",
+    "resourceVersion": "339123",
+    "uid": "bf887b4a-503d-4678-abbe-c0195efc24a7"
+  },
+  "spec": {
+    "failurePolicy": "Fail",
+    "matchConstraints": {
+      "matchPolicy": "Equivalent",
+      "namespaceSelector": {},
+      "objectSelector": {},
+      "resourceRules": [
+        {
+          "apiGroups": [
+            "apps"
+          ],
+          "apiVersions": [
+            "v1"
+          ],
+          "operations": [
+            "CREATE",
+            "UPDATE"
+          ],
+          "resources": [
+            "deployments"
+          ],
+          "scope": "*"
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "apiVersions": [
+            "v1"
+          ],
+          "operations": [
+            "CREATE"
+          ],
+          "resources": [
+            "pods"
+          ],
+          "scope": "*"
+        }
+      ]
+    },
+    "paramKind": {
+      "apiVersion": "v1",
+      "kind": "ConfigMap"
+    },
+    "validations": [
+      {
+        "expression": "variables.images.all(image, image != '' && image in variables.approved)",
+        "message": "Every container image must be an approved repository@sha256 digest (sentinel-approved-images)",
+        "reason": "Forbidden"
+      }
+    ],
+    "variables": [
+      {
+        "expression": "has(params.data) && 'digests' in params.data ? params.data['digests'].split('\\n') : []",
+        "name": "approved"
+      },
+      {
+        "expression": "request.resource.resource == 'pods' ? object.spec : object.spec.template.spec",
+        "name": "podSpec"
+      },
+      {
+        "expression": "variables.podSpec.containers.map(c, c.image) +\n(has(variables.podSpec.initContainers) ? variables.podSpec.initContainers.map(c, c.image) : []) +\n(has(variables.podSpec.ephemeralContainers) ? variables.podSpec.ephemeralContainers.map(c, c.image) : [])",
+        "name": "images"
+      }
+    ]
+  },
+  "status": {
+    "observedGeneration": 1,
+    "typeChecking": {}
+  }
+}

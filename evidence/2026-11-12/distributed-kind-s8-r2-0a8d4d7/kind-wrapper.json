@@ -1,0 +1,82 @@
+{
+  "scenario": "S8",
+  "label": "r2",
+  "pre": {
+    "at": "2026-11-12T16:09:07.680169Z",
+    "generation": 150,
+    "resource_version": "140102",
+    "observed_generation": 150,
+    "available": 1,
+    "ready": 1,
+    "template_is_baseline": true,
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+    "sentinel_annotations": {
+      "sentinel.io/execution": "{\"action_id\":\"ACT-6d2bc760e5a3df18921bcb25\",\"attempt_id\":\"b77969d466874b7cbefc72292c6c4116\",\"proposal_sha256\":\"e1d53d67f86fbfcd74a2f28c2673eadcab25e54a1b104697766a2c4fe96b181d\",\"target_uid\":\"7afb61df-2d75-4529-ae2c-5825a573335d\",\"template_sha256\":\"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"}",
+      "sentinel.io/fence": "{\"action_id\":\"ACT-04a8923f64b74e3bdacb3913\",\"epoch\":2,\"nonce\":\"aef70cc330ce416ea1207ce8d711753c\"}",
+      "sentinel.io/fence-epoch": "2"
+    }
+  },
+  "inject": {
+    "at": "2026-11-12T16:09:07.893588Z",
+    "rc": 0,
+    "stdout": "deployment.apps/shippingservice env updated"
+  },
+  "fault_visible": {
+    "at": "2026-11-12T16:09:08.020571Z",
+    "cart_http_status": 500,
+    "generation": 151,
+    "resource_version": "140145",
+    "observed_generation": 151,
+    "available": 0,
+    "ready": 0,
+    "template_is_baseline": false,
+    "template_sha256": "bbf3cdf1bdf5cb2da049b116f062f52273d7cc6d1b40a2109adb21a60b1ad7ae",
+    "sentinel_annotations": {
+      "sentinel.io/execution": "{\"action_id\":\"ACT-6d2bc760e5a3df18921bcb25\",\"attempt_id\":\"b77969d466874b7cbefc72292c6c4116\",\"proposal_sha256\":\"e1d53d67f86fbfcd74a2f28c2673eadcab25e54a1b104697766a2c4fe96b181d\",\"target_uid\":\"7afb61df-2d75-4529-ae2c-5825a573335d\",\"template_sha256\":\"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"}",
+      "sentinel.io/fence": "{\"action_id\":\"ACT-04a8923f64b74e3bdacb3913\",\"epoch\":2,\"nonce\":\"aef70cc330ce416ea1207ce8d711753c\"}",
+      "sentinel.io/fence-epoch": "2"
+    }
+  },
+  "harness": {
+    "rc": 0,
+    "seconds": 10.0,
+    "stdout": "{\"scenario\": \"S8\", \"repeat\": 1, \"states\": [\"FAILED\"], \"writes\": 0, \"failed\": [], \"matches_expectation\": true, \"seconds\": 9.7, \"error\": null}",
+    "stderr_tail": ""
+  },
+  "post": {
+    "at": "2026-11-12T16:09:18.071703Z",
+    "generation": 152,
+    "resource_version": "140194",
+    "observed_generation": 152,
+    "available": 0,
+    "ready": 0,
+    "template_is_baseline": false,
+    "template_sha256": "bbf3cdf1bdf5cb2da049b116f062f52273d7cc6d1b40a2109adb21a60b1ad7ae",
+    "sentinel_annotations": {
+      "sentinel.io/execution": "{\"action_id\":\"ACT-6d2bc760e5a3df18921bcb25\",\"attempt_id\":\"b77969d466874b7cbefc72292c6c4116\",\"proposal_sha256\":\"e1d53d67f86fbfcd74a2f28c2673eadcab25e54a1b104697766a2c4fe96b181d\",\"target_uid\":\"7afb61df-2d75-4529-ae2c-5825a573335d\",\"template_sha256\":\"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"}",
+      "sentinel.io/fence": "{\"action_id\":\"ACT-a1f8efeb56822bebd68a1857\",\"epoch\":2,\"nonce\":\"9553cd69a78c4d09b5094c1cf1479857\"}",
+      "sentinel.io/fence-epoch": "2"
+    }
+  },
+  "operator_restore": {
+    "at": "2026-11-12T16:09:18.158982Z",
+    "rc": 0,
+    "stderr": ""
+  },
+  "healthy_after": true,
+  "final": {
+    "at": "2026-11-12T16:09:24.667569Z",
+    "generation": 153,
+    "resource_version": "140241",
+    "observed_generation": 153,
+    "available": 1,
+    "ready": 1,
+    "template_is_baseline": true,
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+    "sentinel_annotations": {
+      "sentinel.io/execution": "{\"action_id\":\"ACT-6d2bc760e5a3df18921bcb25\",\"attempt_id\":\"b77969d466874b7cbefc72292c6c4116\",\"proposal_sha256\":\"e1d53d67f86fbfcd74a2f28c2673eadcab25e54a1b104697766a2c4fe96b181d\",\"target_uid\":\"7afb61df-2d75-4529-ae2c-5825a573335d\",\"template_sha256\":\"5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26\"}",
+      "sentinel.io/fence": "{\"action_id\":\"ACT-a1f8efeb56822bebd68a1857\",\"epoch\":2,\"nonce\":\"9553cd69a78c4d09b5094c1cf1479857\"}",
+      "sentinel.io/fence-epoch": "2"
+    }
+  }
+}

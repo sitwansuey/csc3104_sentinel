@@ -2,12 +2,14 @@ name: Checks
 on: [push, pull_request]
 permissions:
   contents: read
+# Actions are pinned to full commit SHAs; the comment names the release.
+# Dependabot (.github/dependabot.yml) proposes updates.
 jobs:
   dashboard:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
           cache: npm
@@ -18,19 +20,70 @@ jobs:
         working-directory: dashboard
       - run: npm test
         working-directory: dashboard
+      - name: Audit production dependencies (fails on High or Critical)
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: dashboard
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --require-hashes -r requirements-dev.lock
+      - name: Lock files are hashed, pinned and fresh
+        run: python scripts/ci/locks.py --check
+      - name: Ruff
+        run: python -m ruff check --output-format github .
+      - name: Ruff baseline only shrinks
+        run: python scripts/ci/ruff_baseline.py --check
+      - name: Broad exception handlers are justified and logged
+        run: python scripts/ci/except_audit.py --report
+      - name: mypy on the strict subset
+        run: python -m mypy
+      - name: pip-audit (RCAEval is a URL dependency and is reported as skipped)
+        run: >-
+          python -m pip_audit --require-hashes --disable-pip --progress-spinner off
+          -r requirements.lock -r agent/datasets/requirements.lock -r requirements-dev.lock
   test:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - run: python -m pip install -r requirements.txt -r agent/datasets/requirements.txt
+      - run: >-
+          python -m pip install --require-hashes
+          -r requirements.lock -r agent/datasets/requirements.lock -r requirements-dev.lock
       - run: python scripts/check_contracts.py
       - run: python experiments/validation/demo_offline_flow.py
-      - run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Unit tests
+        if: runner.os != 'Linux'
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Unit tests with coverage and the ratchet gate
+        if: runner.os == 'Linux'
+        run: |
+          python -m coverage run -m unittest discover -s tests -p "test_*.py" -v
+          python -m coverage json -o coverage.json
+          python -m coverage xml -o coverage.xml
+          python scripts/ci/coverage_gate.py coverage.json
+      - name: Upload coverage report
+        if: runner.os == 'Linux' && always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage
+          path: coverage.xml
+          if-no-files-found: ignore
+      - run: python scripts/evidence/summarize.py --check
+      - run: python scripts/evidence/limitations.py --strict
+      - run: python scripts/check_doc_links.py
+      - run: python scripts/check_doc_citations.py
+      - name: Instructions steps name existing scripts and flags
+        run: python scripts/instructions/extract_commands.py --check
+      - name: CVE gate exceptions are reviewed and none has expired
+        run: python scripts/security/gate_images.py check-exceptions deploy/security/cve-exceptions.json
       - run: bash -n scripts/run-sentinel.sh
         if: runner.os == 'Linux'

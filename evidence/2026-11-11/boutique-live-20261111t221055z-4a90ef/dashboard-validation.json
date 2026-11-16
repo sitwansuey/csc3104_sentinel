@@ -1,0 +1,12 @@
+{
+  "executor_patch_attempts": 0,
+  "executor_routes": 0,
+  "frontend_http": 200,
+  "guard_verdict": "REJECT",
+  "incident_id": "INC-FALSE-ALARM-435C9E488A4C",
+  "scenario": "guard-rejection",
+  "snapshot_http": 200,
+  "status": "PASS",
+  "url": "http://127.0.0.1:8765",
+  "workload_unchanged": true
+}

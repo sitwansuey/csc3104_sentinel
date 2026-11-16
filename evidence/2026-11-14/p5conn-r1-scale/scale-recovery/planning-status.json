@@ -1,0 +1,38 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": null
+    }
+  ],
+  "attempts": 1,
+  "delivered": 1,
+  "error_code": null,
+  "incident_id": "INC-A837B3642CB7",
+  "next_attempt": 0.0,
+  "proposal": {
+    "action": "SCALE",
+    "action_id": "ACT-799d2ce54d736dae6631bec2",
+    "based_on_resource_version": "338441",
+    "evidence_refs": [
+      "E-5548A59BA03F",
+      "E-67A8EBAE2721"
+    ],
+    "incident_id": "INC-A837B3642CB7",
+    "kind": "proposal",
+    "parameters": {
+      "baseline_id": "BASE-LIVE-65dcc0335236",
+      "desired_replicas": 1,
+      "template_sha256": "9dc77abaca57971da673e2316c27ad3a991171d850e733054e7c1c6d6a5ff45d"
+    },
+    "rationale": "The Deployment was scaled below its reviewed minimum while its configuration equals the reviewed healthy baseline; restore the replica count recorded with that baseline.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "cartservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+    }
+  }
+}

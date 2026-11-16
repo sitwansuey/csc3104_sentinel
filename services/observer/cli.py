@@ -16,6 +16,9 @@ from runtime.observer_pipeline import LocalCoordinatorSink, ObserverStore, is_re
 from services.observer.kubernetes import InClusterReader, KubectlReader, KubernetesEvidenceCollector
 from services.observer.telemetry import CorrelatedEvidenceCollector, TelemetryStore
 from runtime.observer_fleet import fleet_health, load_targets, run_fleet
+from shared import log
+
+LOG = log.get_logger("observer")
 
 
 def main(argv=None):
@@ -134,7 +137,8 @@ def main(argv=None):
                                  "events_read": len(observation["events"]), "logs_read": len(observation["logs"]),
                                  "warnings": observation["collection_warnings"],
                                  "incident_id": incident["incident_id"] if incident else None}
-                    except Exception as error:
+                    except Exception as error:  # noqa: BLE001 - a failed poll is counted and retried up to a limit
+                        log.failure(LOG, "observer.collection.failed", error)
                         consecutive_errors += 1
                         store.collection_failed(error)
                         event = {"kind": "observer.collection_error", "error": type(error).__name__,

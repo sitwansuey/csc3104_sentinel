@@ -1,0 +1,117 @@
+{
+  "baseline_id": "BASE-DIST-b355d98f5a92",
+  "target": {
+    "cluster_id": "sentinel-dist",
+    "namespace": "sentinel-dist-workload",
+    "kind": "Deployment",
+    "name": "demo-api",
+    "uid": "5f569368-3fc1-4df1-862c-70823dca3ebb"
+  },
+  "healthy_observed_at": "2026-11-14T08:12:26.680129Z",
+  "pod_template": {
+    "metadata": {
+      "labels": {
+        "app": "demo-api"
+      }
+    },
+    "spec": {
+      "automountServiceAccountToken": false,
+      "containers": [
+        {
+          "env": [
+            {
+              "name": "STARTUP_FAILURE",
+              "value": "false"
+            }
+          ],
+          "image": "docker.io/library/sentinel-demo@sha256:8e22dda818dcdd626e66809b0e17a1b97189f4d98e793397fa4eeb8063d82064",
+          "imagePullPolicy": "Never",
+          "livenessProbe": {
+            "failureThreshold": 3,
+            "httpGet": {
+              "path": "/healthz",
+              "port": "http",
+              "scheme": "HTTP"
+            },
+            "initialDelaySeconds": 5,
+            "periodSeconds": 5,
+            "successThreshold": 1,
+            "timeoutSeconds": 2
+          },
+          "name": "demo-api",
+          "ports": [
+            {
+              "containerPort": 8080,
+              "name": "http",
+              "protocol": "TCP"
+            }
+          ],
+          "readinessProbe": {
+            "failureThreshold": 3,
+            "httpGet": {
+              "path": "/readyz",
+              "port": "http",
+              "scheme": "HTTP"
+            },
+            "periodSeconds": 3,
+            "successThreshold": 1,
+            "timeoutSeconds": 2
+          },
+          "resources": {
+            "limits": {
+              "cpu": "200m",
+              "memory": "64Mi"
+            },
+            "requests": {
+              "cpu": "50m",
+              "memory": "32Mi"
+            }
+          },
+          "securityContext": {
+            "allowPrivilegeEscalation": false,
+            "capabilities": {
+              "drop": [
+                "ALL"
+              ]
+            },
+            "readOnlyRootFilesystem": true
+          },
+          "terminationMessagePath": "/dev/termination-log",
+          "terminationMessagePolicy": "File"
+        }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "nodeSelector": {
+        "sentinel.io/host": "c"
+      },
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {
+        "runAsGroup": 10001,
+        "runAsNonRoot": true,
+        "runAsUser": 10001,
+        "seccompProfile": {
+          "type": "RuntimeDefault"
+        }
+      },
+      "terminationGracePeriodSeconds": 30
+    }
+  },
+  "template_sha256": "9962bde0dc29003a0424c51a8220de546f2cbcd90ea9182ea8a8130d4c0ed5f1",
+  "reference_versions": [],
+  "health_evidence": {
+    "source": "sentinel-dist-kind-acceptance",
+    "evidence_id": "HEALTH-29ad0f55421cc2e45f1044e23ba7aa79",
+    "status": "HEALTHY",
+    "target": {
+      "cluster_id": "sentinel-dist",
+      "namespace": "sentinel-dist-workload",
+      "kind": "Deployment",
+      "name": "demo-api",
+      "uid": "5f569368-3fc1-4df1-862c-70823dca3ebb"
+    },
+    "template_sha256": "9962bde0dc29003a0424c51a8220de546f2cbcd90ea9182ea8a8130d4c0ed5f1",
+    "window_start": "2026-11-14T08:11:56.193351Z",
+    "window_end": "2026-11-14T08:12:26.680129Z"
+  }
+}

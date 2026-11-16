@@ -1,0 +1,29 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-17471e46276a40d5eaf4d7e5",
+  "based_on_resource_version": "29821",
+  "evidence_refs": [
+    "E-36B74D80A669",
+    "E-62EEED8A9A0D",
+    "E-6A23E4507F6B",
+    "E-33B877DACB01",
+    "E-89013BE9E81A",
+    "E-0A310E24900A",
+    "E-0B1AEC308882"
+  ],
+  "incident_id": "INC-F9CF2357FAB6",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-1f2252754dfd",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence clearly indicates a failure due to an invalid port configuration in the 'shippingservice' deployment. The container log (E-0B1AEC308882) explicitly states: 'failed to listen: listen tcp: lookup tcp/invalid-port: unknown port', which directly points to a misconfigured port in the deployment. This misconfiguration is the root cause of the CrashLoopBackOff (E-33B877DACB01), readiness probe failure (E-89013BE9E81A), and the UnavailableReplicas status (E-36B74D80A669, E-6A23E4507F6B). The baseline configuration (BASE-LIVE-1f2252754dfd) is known to be healthy, as confirmed by the health_evidence and the template_sha256 hash. Rolling back to this baseline will restore the correct configuration and resolve the issue.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

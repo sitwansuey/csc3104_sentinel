@@ -13,19 +13,26 @@ from runtime.service_identity import load_identities
 from runtime.worker_http import WorkerHTTPServer, handler as worker_handler, identities, serve_until_stopped
 from runtime.worker_transport import Delivery
 from services.coordinator.approvals import ROLES, load_permissions
+from services.coordinator.core import MAX_STALE_REPLANS
 from services.coordinator.store import SQLiteStore
+from shared import log
+
+LOG = log.get_logger("coordinator_server")
 
 
 @contextmanager
 def servers(database, services, approval_services, permissions, *, bind="127.0.0.1",
             port=8766, approval_port=8767, tls_context=None, request_timeout=15,
-            lease_seconds=30, retention_seconds=86400, max_lifetime_seconds=300, clock=None):
+            lease_seconds=30, retention_seconds=86400, max_lifetime_seconds=300, clock=None,
+            max_clock_skew=None, stale_replans=0):
     stopping = threading.Event()
     with SQLiteStore(database, clock=clock) as store:
-        Delivery(store, lease_seconds=lease_seconds, retention_seconds=retention_seconds, dependency_requests=True)
+        Delivery(store, lease_seconds=lease_seconds, retention_seconds=retention_seconds, dependency_requests=True,
+                 max_clock_skew=max_clock_skew, stale_replans=stale_replans)
     with ExitStack() as stack:
         workers = stack.enter_context(WorkerHTTPServer((bind, port), worker_handler(
-            database, services, lease_seconds, retention_seconds, request_timeout, stopping, clock, True),
+            database, services, lease_seconds, retention_seconds, request_timeout, stopping, clock, True,
+            max_clock_skew, stale_replans=stale_replans),
             tls_context=tls_context, request_timeout=request_timeout))
         approvals = stack.enter_context(WorkerHTTPServer((bind, approval_port), approval_handler(
             database, approval_services, permissions, clock=clock, max_lifetime_seconds=max_lifetime_seconds,
@@ -35,15 +42,19 @@ def servers(database, services, approval_services, permissions, *, bind="127.0.0
                    for server in (workers, approvals)]
         for thread in threads:
             thread.start()
+        log.emit(LOG, "coordinator.serving", port=workers.server_port)
+        log.emit(LOG, "coordinator.approvals.serving", port=approvals.server_port)
         try:
             yield workers, approvals, stopping, threads
         finally:
             stopping.set()
             for thread in threads:
                 thread.join(request_timeout + 1)
+            log.emit(LOG, "coordinator.stopped")
             # ExitStack closes and drains both sets of bounded HTTP handlers.
 
 
+@log.entrypoint("coordinator")
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", required=True)
@@ -59,12 +70,22 @@ def main(argv=None):
     parser.add_argument("--retention-seconds", type=int, default=86400)
     parser.add_argument("--request-timeout", type=float, default=15)
     parser.add_argument("--max-lifetime-seconds", type=int, default=300)
+    parser.add_argument("--max-clock-skew-seconds", type=float,
+                        help="Refuse claims from a worker whose reported clock offset plus uncertainty exceeds this")
+    parser.add_argument("--stale-replans", type=int, default=0,
+                        help="Re-plans per incident, in all, after a Guard refusal for a stale resource version only "
+                             "or an Executor CONFLICT that provably wrote nothing "
+                             f"(0 to {MAX_STALE_REPLANS}; default 0, the refusal or CONFLICT is final)")
     args = parser.parse_args(argv)
     if (bool(args.cert) != bool(args.key) or not args.cert and not ipaddress.ip_address(args.bind).is_loopback):
         parser.error("Non-loopback serving requires --cert and --key")
     if (args.lease_seconds < 1 or args.retention_seconds < 1 or not 1 <= args.max_lifetime_seconds <= 86400
             or not math.isfinite(args.request_timeout) or args.request_timeout <= 0):
         parser.error("Lease, retention, request timeout and approval lifetime must be positive and bounded")
+    if args.max_clock_skew_seconds is not None and not 0 < args.max_clock_skew_seconds <= 3600:
+        parser.error("The clock skew bound must be positive and at most one hour")
+    if not 0 <= args.stale_replans <= MAX_STALE_REPLANS:
+        parser.error(f"--stale-replans must be from 0 to {MAX_STALE_REPLANS}")
     services = identities(args.identities)
     approval_services = load_identities(args.approval_identities, ROLES)
     if set(secret for _, secret in services.values()) & set(secret for _, secret in approval_services.values()):
@@ -81,12 +102,15 @@ def main(argv=None):
         with servers(args.db, services, approval_services, permissions, bind=args.bind, port=args.port,
                 approval_port=args.approval_port, tls_context=tls, request_timeout=args.request_timeout,
                 lease_seconds=args.lease_seconds, retention_seconds=args.retention_seconds,
-                max_lifetime_seconds=args.max_lifetime_seconds) as (workers, approvals, stopping, threads):
+                max_lifetime_seconds=args.max_lifetime_seconds,
+                max_clock_skew=args.max_clock_skew_seconds,
+                stale_replans=args.stale_replans) as (workers, approvals, stopping, threads):
             for sig in (signal.SIGINT, signal.SIGTERM):
                 previous[sig] = signal.signal(sig, lambda *_: stopping.set())
             print(f"Coordinator delivery :{workers.server_port}, approvals :{approvals.server_port}", flush=True)
             while not stopping.wait(0.25):
                 if any(not thread.is_alive() for thread in threads):
+                    log.emit(LOG, "coordinator.server_thread_stopped", level=log.ERROR)
                     return 1
     finally:
         for sig, value in previous.items():

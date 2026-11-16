@@ -10,6 +10,9 @@ import sqlite3
 from runtime.observer_pipeline import ObserverStore, is_ready, status_file
 from services.observer.kubernetes import KubernetesEvidenceCollector
 from services.observer.telemetry import CorrelatedEvidenceCollector, TelemetryStore
+from shared import log
+
+LOG = log.get_logger("observer")
 
 
 def load_targets(path):
@@ -74,7 +77,8 @@ def run_fleet(args, reader, policy, sink, stop):
                     observation = collector.collect()
                     incident = store.observe(observation)
                     event = {"kind": "observer.poll", "incident_id": incident["incident_id"] if incident else None}
-                except Exception as error:
+                except Exception as error:  # noqa: BLE001 - one target's failed poll must not stop the others
+                    log.failure(LOG, "observer.collection.failed", error)
                     store.collection_failed(error)
                     event = {"kind": "observer.collection_error", "error": type(error).__name__}
                 delivery = store.flush(sink)

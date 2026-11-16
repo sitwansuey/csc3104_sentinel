@@ -3,15 +3,31 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from copy import deepcopy
-import hashlib
 import json
+import re
 
+from shared.canonical import sha256_hex
 from shared.contracts import ContractError, validate_message
 from services.observer.telemetry import TelemetryError, validate_context
 
 
 DEFAULT_FAILURE_DURATION_SECONDS = 30
 TARGET_FIELDS = ("cluster_id", "namespace", "kind", "name", "uid")
+# The largest reviewed minimum replica count a detection policy may name (P5.07).
+MAX_EXPECTED_REPLICAS = 10
+REPLICAS_BELOW_MINIMUM = "ReplicasBelowReviewedMinimum"
+# P5.06: a TLS peer refused a certificate (expired, unknown CA, bad or
+# mismatched identity). Envoy writes these reasons in its access log
+# (upstream_tls, scripts/security/security_lab.py) and in its own log lines;
+# BoringSSL and OpenSSL spell them with these tokens. A bare mention of a
+# certificate is not one of them.
+CERTIFICATE_REJECTED = "CertificateRejected"
+_CERTIFICATE_REJECTION = re.compile(
+    r"CERTIFICATE_VERIFY_FAILED|certificate verify failed|verify cert failed"
+    r"|certificate has expired|CERTIFICATE_EXPIRED|certificate is not yet valid"
+    r"|unknown ca(?![a-z])|UNKNOWN_CA|unable to get local issuer certificate|self[- ]signed certificate in certificate chain"
+    r"|BAD_CERTIFICATE|bad certificate|CERTIFICATE_REQUIRED|SAN matcher",
+    re.IGNORECASE)
 
 
 class ObservationError(ContractError):
@@ -68,13 +84,14 @@ class Observer:
         self.max_sample_gap = detection.get("max_sample_gap_seconds")
         if self.max_sample_gap is not None:
             _integer(self.max_sample_gap, "policy.detection.max_sample_gap_seconds", minimum=1)
+        self.min_replicas = _min_replicas(detection.get("expected_min_replicas"))
         self._latest_snapshots: dict[tuple, ObservationSnapshot] = {}
         self._episodes_by_target: dict[tuple, FailureEpisode] = {}
 
     def observe(self, observation: dict) -> dict | None:
         """Process one observation and return a new incident only when warranted."""
         snapshot = validate_observation(observation)
-        signals = _failure_signals(snapshot)
+        signals = _failure_signals(snapshot, self.min_replicas)
         target_key = _target_key(snapshot.target)
         previous = self._latest_snapshots.get(target_key)
         if previous is not None and (snapshot.captured_at < previous.captured_at or (
@@ -128,7 +145,7 @@ class Observer:
         if episode.last_seen_at - episode.first_seen_at < self.failure_duration:
             return None
 
-        incident = _incident_from_episode(episode, signals)
+        incident = _incident_from_episode(episode, signals, self.min_replicas)
         validate_message(incident)
         episode.emitted = True
         return incident
@@ -139,7 +156,7 @@ class Observer:
         self._episodes_by_target = {key: value for key, value in self._episodes_by_target.items() if value.emitted}
 
     def export_state(self):
-        return {
+        state = {
             "version": 1,
             "failure_duration_seconds": self.failure_duration.total_seconds(),
             "max_sample_gap_seconds": self.max_sample_gap,
@@ -150,13 +167,18 @@ class Observer:
                           "last_seen_at": _format_timestamp(episode.last_seen_at)}
                          for episode in self._episodes_by_target.values()],
         }
+        if self.min_replicas:
+            # Only a policy with reviewed minimums records them, so earlier checkpoints stay byte-identical.
+            state["expected_min_replicas"] = dict(self.min_replicas)
+        return state
 
     @classmethod
     def from_state(cls, policy, state):
         observer = cls(policy)
         if (state.get("version") != 1
                 or state.get("failure_duration_seconds") != observer.failure_duration.total_seconds()
-                or state.get("max_sample_gap_seconds") != observer.max_sample_gap):
+                or state.get("max_sample_gap_seconds") != observer.max_sample_gap
+                or state.get("expected_min_replicas", {}) != observer.min_replicas):
             raise ObservationError("Incompatible Observer checkpoint")
         if len(state["latest"]) > 1024 or len(state["episodes"]) > 1024:
             raise ObservationError("Observer checkpoint exceeds target budget")
@@ -172,13 +194,14 @@ class Observer:
             last_seen = _utc_timestamp(item.get("last_seen_at", item["last"]["captured_at"]), "last_seen_at")
             key = _target_key(last.target)
             latest = observer._latest_snapshots.get(key)
-            unknown_last = (item["emitted"] is True and not _failure_signals(last)
+            minimums = observer.min_replicas
+            unknown_last = (item["emitted"] is True and not _failure_signals(last, minimums)
                             and last.observation.get("telemetry", {}).get("thresholds_complete") is False
                             and first.target == last.target and first.generation == last.generation)
             if (type(item["emitted"]) is not bool or (not unknown_last and _correlation_key(first) != _correlation_key(last))
                     or first.captured_at > last.captured_at or latest is None
-                    or latest.observation != last.observation or not _failure_signals(first)
-                    or (not _failure_signals(last) and not (item["emitted"] and
+                    or latest.observation != last.observation or not _failure_signals(first, minimums)
+                    or (not _failure_signals(last, minimums) and not (item["emitted"] and
                         last.observation.get("telemetry", {}).get("thresholds_complete") is False))
                     or first_seen > last_seen or first_seen > first.captured_at or last_seen > last.captured_at
                     or key in observer._episodes_by_target):
@@ -275,6 +298,29 @@ def _failure_duration(policy: dict) -> timedelta:
     )
 
 
+def _min_replicas(value):
+    """The reviewed minimum replica count per "namespace/name" target; empty when none is configured.
+
+    A Deployment scaled to zero is intentional unless a reviewed minimum says
+    otherwise, so without this block replicas=0 still raises no incident.
+    """
+    if value is None:
+        return {}
+    value = _mapping(value, "policy.detection.expected_min_replicas")
+    if len(value) > 1024:
+        raise ObservationError("policy.detection.expected_min_replicas: too many targets")
+    result = {}
+    for key, minimum in value.items():
+        path = f"policy.detection.expected_min_replicas[{key!r}]"
+        namespace, separator, name = key.partition("/") if isinstance(key, str) else ("", "", "")
+        if not separator or not namespace.strip() or not name.strip() or "/" in name:
+            raise ObservationError(path + ": expected a namespace/name key")
+        if type(minimum) is not int or not 1 <= minimum <= MAX_EXPECTED_REPLICAS:
+            raise ObservationError(f"{path}: expected an integer from 1 to {MAX_EXPECTED_REPLICAS}")
+        result[key] = minimum
+    return result
+
+
 def _observation_batch(observations):
     if not isinstance(observations, list):
         raise ObservationError("observations: expected a list")
@@ -363,8 +409,22 @@ def _validate_logs(value):
         _utc_timestamp(entry["at"], f"{log_path}.at")
 
 
-def _failure_signals(snapshot: ObservationSnapshot) -> list[dict]:
+def _failure_signals(snapshot: ObservationSnapshot, min_replicas=None) -> list[dict]:
     signals = []
+    minimum = (min_replicas or {}).get(snapshot.target["namespace"] + "/" + snapshot.target["name"])
+    if minimum is not None and snapshot.desired_replicas < minimum:
+        # P5.07: a scale-down below the reviewed count is a fault, not an intentional zero.
+        signals.append(_signal(
+            snapshot,
+            "deployment_status",
+            REPLICAS_BELOW_MINIMUM,
+            (
+                f"Deployment {snapshot.target['namespace']}/{snapshot.target['name']} "
+                f"spec.replicas is {snapshot.desired_replicas}, below the reviewed minimum {minimum}; "
+                f"resourceVersion {snapshot.resource_version}, generation {snapshot.generation}"
+            ),
+            snapshot.captured_at,
+        ))
     if snapshot.observed_generation < snapshot.generation:
         signals.append(_signal(
             snapshot,
@@ -506,6 +566,8 @@ def _container_failure_detail(pod_name, pod_phase, container):
 
 
 def _log_reason(text):
+    if _CERTIFICATE_REJECTION.search(text):
+        return CERTIFICATE_REJECTED
     return "StartupError" if "startup" in text.lower() else "ContainerLog"
 
 
@@ -526,7 +588,7 @@ def _signal(snapshot, source, reason, detail, at):
     }
 
 
-def _incident_from_episode(episode: FailureEpisode, signals: list[dict]) -> dict:
+def _incident_from_episode(episode: FailureEpisode, signals: list[dict], min_replicas=None) -> dict:
     snapshot = episode.last_snapshot
     incident_id = _stable_id(
         "INC",
@@ -542,7 +604,7 @@ def _incident_from_episode(episode: FailureEpisode, signals: list[dict]) -> dict
         "observed_at": _format_timestamp(snapshot.captured_at),
         "observed_resource_version": snapshot.resource_version,
         "observed_generation": snapshot.generation,
-        "signals": _unique_signals(_failure_signals(episode.first_snapshot) + signals),
+        "signals": _unique_signals(_failure_signals(episode.first_snapshot, min_replicas) + signals),
     }
 
 
@@ -593,12 +655,9 @@ def _stable_id(prefix, *parts) -> str:
 
 def _json_sha256(value) -> str:
     try:
-        canonical = json.dumps(
-            value, sort_keys=True, separators=(",", ":"), allow_nan=False
-        ).encode("utf-8")
+        return sha256_hex(value)
     except (TypeError, ValueError) as exc:
         raise ObservationError("observation: expected JSON-serializable content") from exc
-    return hashlib.sha256(canonical).hexdigest()
 
 
 def _format_timestamp(value: datetime) -> str:

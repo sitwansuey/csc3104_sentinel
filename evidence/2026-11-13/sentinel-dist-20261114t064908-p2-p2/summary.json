@@ -1,0 +1,90 @@
+{
+  "schema": "sentinel-dist-acceptance-v1",
+  "context": "kind-sentinel-dist",
+  "started_at": "2026-11-13T22:51:04.286455Z",
+  "provenance": {
+    "source_revision": "3ba0d123333ac66f7cf9fc989b5a6310abb5ac0f"
+  },
+  "runs": 22,
+  "passed": 21,
+  "scenarios": [
+    "S0",
+    "S1a",
+    "S1b",
+    "S1c",
+    "S2"
+  ],
+  "placement": {
+    "pods": {
+      "sentinel-coordinator": {
+        "pod": "sentinel-coordinator-77f69bd4ff-qvxnv",
+        "node": "sentinel-dist-worker3",
+        "host": "c"
+      },
+      "sentinel-observer-1": {
+        "pod": "sentinel-observer-1-66df84cdb7-vtfjg",
+        "node": "sentinel-dist-worker3",
+        "host": "c"
+      },
+      "sentinel-planner-1": {
+        "pod": "sentinel-planner-1-7c5b54fbd5-rfrss",
+        "node": "sentinel-dist-worker3",
+        "host": "c"
+      },
+      "sentinel-guard-1": {
+        "pod": "sentinel-guard-1-855cf6588d-l2ppb",
+        "node": "sentinel-dist-worker3",
+        "host": "c"
+      },
+      "sentinel-executor-a": {
+        "pod": "sentinel-executor-a-6b7fdf7cfb-hs6wt",
+        "node": "sentinel-dist-worker",
+        "host": "a"
+      },
+      "sentinel-executor-b": {
+        "pod": "sentinel-executor-b-7b46d445db-hz5ww",
+        "node": "sentinel-dist-worker2",
+        "host": "b"
+      },
+      "sentinel-verifier-1": {
+        "pod": "sentinel-verifier-1-f45b888b7-x86v9",
+        "node": "sentinel-dist-worker3",
+        "host": "c"
+      }
+    },
+    "pinned": {
+      "sentinel-coordinator": "c",
+      "sentinel-executor-a": "a",
+      "sentinel-executor-b": "b"
+    },
+    "pinned_on_distinct_nodes": true
+  },
+  "versions": {
+    "images": {
+      "coordinator": {
+        "image": "sentinel-coordinator:0.1.0",
+        "id": "sha256:599bd609f2f2baf67edceca62305849fd237251c9868b218975f74bab101b2df"
+      },
+      "observer": {
+        "image": "sentinel-observer:0.2.0",
+        "id": "sha256:cae903ff12f24dcb75691f20d6b48fb656e6d868369f47c734a253aee055330b"
+      },
+      "worker": {
+        "image": "sentinel-worker:local",
+        "id": "sha256:ee82cca4de7ecb3f32bb547a202ebfdcd4c065f0e450253593c69df6bf820218"
+      },
+      "demo": {
+        "image": "sentinel-demo:0.1.0",
+        "id": "sha256:8e22dda818dcdd626e66809b0e17a1b97189f4d98e793397fa4eeb8063d82064"
+      }
+    },
+    "node_image": "kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5",
+    "chaos_mesh_chart": "2.8.2",
+    "kubectl": "v1.34.1",
+    "server": "v1.37.0",
+    "kind": "kind v0.33.0 go1.26.7 windows/amd64",
+    "git_revision": "3ba0d123333ac66f7cf9fc989b5a6310abb5ac0f",
+    "python": "3.13.2"
+  },
+  "limits": "Four kind nodes (containers) on one Docker host: separate network namespaces and kubelets, one shared kernel, clock and disk. Not separate machines. The Planner is the deterministic lab planner (synthetic proposals), and clock skew is injected by Chaos Mesh TimeChaos, not measured between hosts."
+}

@@ -1,0 +1,112 @@
+{
+  "baseline_attempts": [
+    {
+      "at": "2026-11-10T20:45:53.940816Z",
+      "home_status": 200,
+      "add_to_cart_status": 302,
+      "cart_status": 200,
+      "checkout_status": 200,
+      "cart_contains_product": true,
+      "order_confirmation_id": "b8cff4c4-dd47-11f1-b5b6-be081df9d2d5",
+      "order_confirmation_found": true,
+      "order_page_confirmed": true,
+      "passed": true,
+      "errors": {}
+    }
+  ],
+  "shopping_and_checkout": {
+    "at": "2026-11-10T20:45:53.940816Z",
+    "home_status": 200,
+    "add_to_cart_status": 302,
+    "cart_status": 200,
+    "checkout_status": 200,
+    "cart_contains_product": true,
+    "order_confirmation_id": "b8cff4c4-dd47-11f1-b5b6-be081df9d2d5",
+    "order_confirmation_found": true,
+    "order_page_confirmed": true,
+    "passed": true,
+    "errors": {}
+  },
+  "valid_mtls_quote": {
+    "succeeded": true,
+    "output": "{\n  \"costUsd\": {\n    \"currencyCode\": \"USD\",\n    \"units\": \"8\",\n    \"nanos\": 990000000\n  }\n}\n"
+  },
+  "invalid_quantity": {
+    "succeeded": false,
+    "output": "ERROR:\n  Code: PermissionDenied\n  Message: \n"
+  },
+  "missing_client_certificate": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"security-gateway:8443\": context deadline exceeded\n"
+  },
+  "wrong_client_identity": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"security-gateway:8443\": context deadline exceeded\n"
+  },
+  "direct_service_bypass": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"shippingservice:50051\": context deadline exceeded\n"
+  },
+  "direct_pod_ip_bypass": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"192.168.78.205:50051\": context deadline exceeded\n"
+  },
+  "direct_egress_bypass": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"192.168.78.207:50052\": connection error: desc = \"transport: error while dialing: dial tcp 192.168.78.207:50052: connect: connection refused\"\n"
+  },
+  "proxy_outage": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"security-gateway:8443\": connection error: desc = \"transport: error while dialing: dial tcp 10.96.50.226:8443: connect: connection refused\"\n"
+  },
+  "outage_direct_bypass": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"shippingservice:50051\": context deadline exceeded\n"
+  },
+  "restore_attempts": [
+    {
+      "at": "2026-11-10T20:47:00.285241Z",
+      "home_status": 200,
+      "add_to_cart_status": 302,
+      "cart_status": 500,
+      "checkout_status": 500,
+      "cart_contains_product": false,
+      "order_confirmation_id": null,
+      "order_confirmation_found": false,
+      "order_page_confirmed": false,
+      "passed": false,
+      "errors": {}
+    },
+    {
+      "at": "2026-11-10T20:47:03.469978Z",
+      "home_status": 200,
+      "add_to_cart_status": 302,
+      "cart_status": 200,
+      "checkout_status": 200,
+      "cart_contains_product": true,
+      "order_confirmation_id": "e24aa7c9-dd47-11f1-b5b6-be081df9d2d5",
+      "order_confirmation_found": true,
+      "order_page_confirmed": true,
+      "passed": true,
+      "errors": {}
+    }
+  ],
+  "shopping_after_proxy_restore": {
+    "at": "2026-11-10T20:47:03.469978Z",
+    "home_status": 200,
+    "add_to_cart_status": 302,
+    "cart_status": 200,
+    "checkout_status": 200,
+    "cart_contains_product": true,
+    "order_confirmation_id": "e24aa7c9-dd47-11f1-b5b6-be081df9d2d5",
+    "order_confirmation_found": true,
+    "order_page_confirmed": true,
+    "passed": true,
+    "errors": {}
+  },
+  "empty_cart": {
+    "status": 200,
+    "error": null
+  },
+  "passed": true
+}

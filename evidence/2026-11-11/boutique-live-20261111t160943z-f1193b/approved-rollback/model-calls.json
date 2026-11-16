@@ -1,0 +1,44 @@
+[
+  {
+    "attempt": 1,
+    "call_id": 1,
+    "eval_duration_seconds": 10.694241,
+    "load_duration_seconds": 0.0059956,
+    "model": "qwen3:14b",
+    "output_tokens": 209,
+    "prompt_characters": 6193,
+    "prompt_eval_duration_seconds": 2.604924,
+    "prompt_tokens": 2606,
+    "role": "Analyzer",
+    "seconds": 14.063080100000661,
+    "status": "completed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 2,
+    "eval_duration_seconds": 16.088895,
+    "load_duration_seconds": 0.0208576,
+    "model": "qwen3:14b",
+    "output_tokens": 302,
+    "prompt_characters": 7364,
+    "prompt_eval_duration_seconds": 3.464347,
+    "prompt_tokens": 2853,
+    "role": "Reporter",
+    "seconds": 19.746089300000676,
+    "status": "completed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 3,
+    "eval_duration_seconds": 14.725296,
+    "load_duration_seconds": 0.0100268,
+    "model": "qwen3:14b",
+    "output_tokens": 297,
+    "prompt_characters": 6683,
+    "prompt_eval_duration_seconds": 2.376388,
+    "prompt_tokens": 2413,
+    "role": "Recovery Planner",
+    "seconds": 17.328191399999923,
+    "status": "completed"
+  }
+]

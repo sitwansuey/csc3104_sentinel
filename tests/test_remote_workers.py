@@ -1,11 +1,13 @@
 """Actual component algorithms over loopback HTTP, using fake Kubernetes only."""
 from contextlib import ExitStack
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import replace
 from datetime import timedelta
 import json
 import io
 from pathlib import Path
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import Mock, patch
@@ -15,12 +17,19 @@ from runtime.approval_http import ApprovalClient
 from runtime.coordinator_server import servers
 from runtime.remote_adapters import ExecutorAdapter, GuardAdapter, PlannerAdapter, VerifierAdapter
 from runtime.remote_worker import RemoteIngress, RemoteWorker, WorkerJournal
+from runtime.worker_health import PreflightFailed, WorkerHealth
 from runtime.worker_http import WorkerClient
 from runtime.worker_transport import ProtocolError, digest
+from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedger
 from services.observer.core import detect
 from services.planner.core import mock_provider
+from services.coordinator.read import read_records
 from services.planner.store import PlannerStore
 from services.verifier.core import inspect_dependencies
+from scripts import trace_view
+from shared import log, tracing
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class RemoteWorkerTests(unittest.TestCase):
@@ -33,6 +42,7 @@ class RemoteWorkerTests(unittest.TestCase):
         self.incident = detect(fixture("observations.json")["failed-rollout"], self.f.policy)
         self.services = {role: (role, role[0] * 40) for role in ("observer", "planner", "guard", "executor", "verifier")}
         self.services["replacement"] = ("planner", "r" * 40)
+        self.services["executor-2"] = ("executor", "x" * 40)
         self.approval_services = {role: (role, "a" + role[0] * 40) for role in ("operator", "guard", "executor")}
         self.permissions = {role: [{"target": self.incident["target"], "operations": (
             ["create", "read", "revoke", "history"] if role == "operator" else ["read"])}]
@@ -61,13 +71,25 @@ class RemoteWorkerTests(unittest.TestCase):
     def approval_client(self, role):
         return ApprovalClient(self.approval_url, role, self.approval_services[role][1], timeout=2)
 
-    def worker(self, role, adapter, *, client=None):
+    def worker(self, role, adapter, *, client=None, before_claim=None):
         journal = WorkerJournal(self.f.path / (role + "-transport.db"))
         self.stack.callback(journal.close)
-        return RemoteWorker(client or self.client(role), journal, adapter, renewal_interval=0.1)
+        return RemoteWorker(client or self.client(role), journal, adapter, renewal_interval=0.1,
+                            before_claim=before_claim)
 
     def state(self):
         return self.f.store.incident(self.incident["incident_id"])["state"]
+
+    def captured_logs(self):
+        stream = io.StringIO()
+        self.stack.enter_context(log.configured("test", level="DEBUG", stream=stream))
+        return stream
+
+    def secrets(self):
+        values = [token for _, token in (*self.services.values(), *self.approval_services.values())]
+        values += [row[0] for row in self.f.store.db.execute(
+            "SELECT lease_token FROM transport_receipts WHERE lease_token IS NOT NULL")]
+        return values
 
     def plan(self):
         RemoteIngress(self.client("observer"))(self.incident)
@@ -110,6 +132,181 @@ class RemoteWorkerTests(unittest.TestCase):
         self.assertEqual(len(self.f.cluster.writes), 1)
         for journal in (executor.journal, verifier.journal, self.planning, self.f.ledger, self.f.verification):
             self.assertNotEqual(Path(journal.db.execute("PRAGMA database_list").fetchone()[2]), self.f.path / "coordinator.db")
+
+    def test_full_loopback_flow_logs_correlate_one_action_and_never_contain_secrets(self):
+        stream = self.captured_logs()
+        self.test_all_six_components_recover_over_http_with_managed_approval_and_owned_stores()
+        text = stream.getvalue()
+        records = [json.loads(line) for line in text.splitlines()]
+        for secret in self.secrets():
+            self.assertNotIn(secret, text)
+        for fragment in ("Bearer", "lease_token", "payload", self.proposal["parameters"]["template_sha256"]):
+            self.assertNotIn(fragment, text)
+        action_id = self.proposal["action_id"]
+        loggers = {r["logger"] for r in records if r.get("action_id") == action_id}
+        self.assertLessEqual({"sentinel.coordinator", "sentinel.worker_http", "sentinel.approval_http"}, loggers)
+        logged = [(r["seq"], r["to_state"]) for r in records if r["event"] == "coordinator.state.transition"
+                  and r.get("action_id") == action_id]
+        journal = [(t["seq"], t["to_state"]) for t in reversed(read_records(self.f.path / "coordinator.db")["transitions"])
+                   if t["action_id"] == action_id]
+        self.assertEqual(logged, journal)
+        self.assertEqual(logged[-1][1], "RECOVERED")
+        claims = [r for r in records if r["event"] == "http.access" and r["operation"] == "claim"
+                  and r["outcome"] == "claimed"]
+        self.assertTrue(claims and all({"delivery_id", "event_id", "topic", "attempt"} <= set(r) for r in claims))
+
+    def test_full_loopback_flow_is_one_connected_trace(self):
+        stream = self.captured_logs()
+        self.test_all_six_components_recover_over_http_with_managed_approval_and_owned_stores()
+        text = stream.getvalue()
+        records = [json.loads(line) for line in text.splitlines()]
+        ends = [r for r in records if r["event"] == "span.end"]
+        self.assertEqual(len({r["trace_id"] for r in ends}), 1)
+        (trace,) = trace_view.build(records).values()
+        (root,) = trace["roots"]
+        self.assertEqual((root["span_name"], root.get("missing_parent")), ("observer.ingest", False))
+        processed = [r.get("topic") for r in ends if r["span_name"] == "worker.process"]
+        self.assertEqual(sorted(processed), ["executor.request", "guard.request", "guard.request",
+                                             "planner.request", "verifier.request"])
+        self.assertLessEqual({"coordinator.ingest", "coordinator.result", "coordinator.renew", "coordinator.record",
+                              "worker.result"}, {r["span_name"] for r in ends})
+        moves = [r["to_state"] for r in trace["transitions"] if r.get("action_id") == self.proposal["action_id"]]
+        self.assertEqual(moves[-1], "RECOVERED")
+        for secret in self.secrets():
+            self.assertNotIn(secret, text)
+        output = io.StringIO()
+        log_file = self.f.path / "trace.log"
+        log_file.write_text(text, encoding="utf-8")
+        self.assertEqual(trace_view.main([str(log_file), "--db", str(self.f.path / "coordinator.db")],
+                                         stdout=output), 0)
+        self.assertIn("-> RECOVERED", output.getvalue())
+        self.assertIn("journal for " + self.incident["incident_id"], output.getvalue())
+        self.assertNotIn("parent not in these logs", output.getvalue())
+
+    def test_a_result_replayed_after_restart_keeps_the_original_parent(self):
+        stream = self.captured_logs()
+        RemoteIngress(self.client("observer"))(self.incident)
+        worker = self.worker("planner", self.planner)
+        with patch.object(worker, "_send", side_effect=TimeoutError("worker stopped before sending")):
+            with self.assertRaises(TimeoutError):
+                worker.once()
+        (saved,) = worker.journal.pending()
+        parent = tracing.parse_traceparent(saved["delivery"]["traceparent"])
+        self.assertEqual(self.worker("planner", self.planner).once()["status"], "accepted")
+        ends = [json.loads(line) for line in stream.getvalue().splitlines()]
+        ends = {r["span_name"]: r for r in ends if r["event"] == "span.end"}
+        process, result, server = ends["worker.process"], ends["worker.result"], ends["coordinator.result"]
+        self.assertEqual(process["status"], "error")
+        for span in (process, result):
+            self.assertEqual((span["trace_id"], span["parent_span_id"]), (parent.trace_id, parent.span_id))
+        self.assertEqual(server["parent_span_id"], result["span_id"])
+        self.assertEqual(self.provider.call_count, 1)
+
+    def test_worker_http_denials_and_conflicts_log_exactly_one_line_without_secrets(self):
+        stream = self.captured_logs()
+        RemoteIngress(self.client("observer"))(self.incident)
+        delivery = self.client("planner").post("claim", {})["delivery"]
+        lease = {key: delivery[key] for key in ("delivery_id", "lease_token")}
+        wrong = "w" * 40
+        cases = (
+            (401, "auth.denied", "invalid_credentials",
+             lambda: WorkerClient(self.url, "planner", wrong, timeout=2).post("claim", {})),
+            (403, "auth.denied", "role_not_permitted", lambda: self.client("observer").post("claim", {})),
+            (403, "auth.denied", "not_lease_owner", lambda: self.client("guard").post("renew", lease)),
+            (409, "http.access", "lease_replaced", lambda: self.client("planner").post(
+                "result", {"delivery_id": delivery["delivery_id"], "lease_token": "f" * 32, "result": {}})),
+        )
+        for status, event, reason, call in cases:
+            with self.subTest(status=status, reason=reason):
+                offset = len(stream.getvalue())
+                with self.assertRaises(ProtocolError) as error:
+                    call()
+                self.assertEqual(error.exception.status, status)
+                (record,) = [json.loads(line) for line in stream.getvalue()[offset:].splitlines()]
+                self.assertEqual((record["event"], record["http_status"], record["reason"]), (event, status, reason))
+                self.assertEqual(record["level"], "warning")
+                self.assertEqual("identity" in record, status != 401)
+        text = stream.getvalue()
+        for secret in (*self.secrets(), wrong, delivery["lease_token"], "f" * 32, "Bearer"):
+            self.assertNotIn(secret, text)
+
+    def test_unchanged_uncertainty_is_retried_with_growing_backoff_then_resolved(self):
+        self.authorize()
+        cluster, real_restore = self.f.cluster, self.f.cluster.conditional_restore
+        pending = []
+
+        def timeout(**kwargs):
+            pending.append(kwargs)
+            raise TimeoutError("request completion is unknown")
+
+        cluster.conditional_restore = timeout
+        executor = self.worker("executor", ExecutorAdapter(self.f.adapters))
+        self.assertEqual(executor.once()["status"], "accepted")
+        self.assertEqual(self.state(), "NEEDS_RECONCILIATION")
+
+        def receipt():
+            return self.f.store.db.execute("""SELECT r.attempts, r.available FROM transport_receipts r
+                JOIN outbox o ON o.id=r.event_id WHERE o.topic='executor.reconcile'""").fetchone()
+
+        gaps = []
+        for _ in range(2):
+            self.assertEqual(executor.once()["status"], "pending")
+            attempts, available = receipt()
+            gaps.append(available - time.time())
+            time.sleep(max(0, available - time.time()) + 0.05)
+        self.assertEqual(receipt()[0], 2)
+        self.assertGreater(gaps[1], gaps[0])
+        self.assertEqual(len(self.f.ledger.results(self.proposal["action_id"])), 1)
+        self.assertEqual(self.state(), "NEEDS_RECONCILIATION")
+        # The original request lands late; the next delivery reports APPLIED.
+        real_restore(**pending[0])
+        self.assertEqual(executor.once()["status"], "accepted")
+        self.assertEqual(self.state(), "VERIFYING")
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(len(cluster.writes), 1)
+
+    def test_older_own_uncertainty_after_a_peer_report_is_retried_not_acknowledged(self):
+        self.authorize()
+        cluster, real_restore = self.f.cluster, self.f.cluster.conditional_restore
+        pending = []
+
+        def timeout(**kwargs):
+            pending.append(kwargs)
+            raise TimeoutError("request completion is unknown")
+
+        cluster.conditional_restore = timeout
+        host_a = self.worker("executor", ExecutorAdapter(self.f.adapters))
+        self.assertEqual(host_a.once()["status"], "accepted")
+        own = self.f.ledger.results(self.proposal["action_id"])
+        self.assertEqual([result["status"] for result in own], ["NEEDS_RECONCILIATION"])
+        # Host B: its own ledger, lock directory and transport journal.
+        ledger_b = SQLiteExecutionLedger(self.f.path / "host-b-ledger.db")
+        self.stack.callback(ledger_b.close)
+        adapters_b = replace(self.f.adapters, ledger=ledger_b,
+                             coordination=LocalTargetCoordinator(self.f.path / "host-b-locks"))
+        journal_b = WorkerJournal(self.f.path / "host-b-transport.db")
+        self.stack.callback(journal_b.close)
+        host_b = RemoteWorker(self.client("executor"), journal_b, ExecutorAdapter(adapters_b), renewal_interval=0.1)
+        self.f.now += timedelta(seconds=61)
+        self.assertEqual(host_b.once()["status"], "accepted")
+        self.assertEqual(self.state(), "NEEDS_RECONCILIATION")
+        # Host A deduplicates to its older saved result; the command must stay open.
+        self.f.now += timedelta(seconds=61)
+        self.assertEqual(host_a.once()["status"], "pending")
+        self.assertEqual(self.f.ledger.results(self.proposal["action_id"]), own)
+        unfinished = self.f.store.db.execute(
+            "SELECT COUNT(*) FROM outbox o LEFT JOIN transport_receipts r ON r.event_id=o.id "
+            "WHERE o.topic='executor.reconcile' AND r.finished IS NULL").fetchone()[0]
+        self.assertEqual(unfinished, 1)
+        # The original request lands late; a retry of the open command reports APPLIED.
+        real_restore(**pending[0])
+        available = self.f.store.db.execute("""SELECT MAX(r.available) FROM transport_receipts r
+            JOIN outbox o ON o.id=r.event_id WHERE o.topic='executor.reconcile'""").fetchone()[0]
+        time.sleep(max(0, available - time.time()) + 0.05)
+        self.assertEqual(host_a.once()["status"], "accepted")
+        self.assertEqual(self.state(), "VERIFYING")
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(len(cluster.writes), 1)
 
     def test_remote_verification_binds_the_executed_template_and_detects_a_second_fault(self):
         from tests.test_verifier_pipeline import grpc_policy, grpc_samples
@@ -193,6 +390,76 @@ class RemoteWorkerTests(unittest.TestCase):
         self.assertEqual(self.provider.call_count, 1)
         self.assertEqual(self.state(), "VALIDATING")
 
+    def failing_prerequisite(self):
+        return Mock(side_effect=PreflightFailed("MODEL_UNAVAILABLE"))
+
+    def recording_client(self, role, operations):
+        client = self.client(role)
+        original = client.post
+
+        def post(operation, body):
+            operations.append(operation)
+            return original(operation, body)
+        client.post = post
+        return client
+
+    def test_a_failing_claim_prerequisite_claims_nothing(self):
+        RemoteIngress(self.client("observer"))(self.incident)
+        operations, prerequisite = [], self.failing_prerequisite()
+        worker = self.worker("planner", self.planner, client=self.recording_client("planner", operations),
+                             before_claim=prerequisite)
+        with self.assertRaises(PreflightFailed):
+            worker.once()
+        # A worker with no skew bound still measures its clock once before its first claim
+        # (a Coordinator with its own bound refuses a claim without an estimate); it never claims.
+        self.assertEqual((operations, prerequisite.call_count, self.provider.call_count), (["clock"], 1, 0))
+        self.assertEqual(self.client("replacement").post("claim", {})["delivery"]["topic"], "planner.request")
+
+    def test_a_failing_claim_prerequisite_never_holds_back_a_saved_result(self):
+        RemoteIngress(self.client("observer"))(self.incident)
+        client = self.client("planner")
+        original = client.post
+
+        def post(operation, body):
+            if operation == "result":
+                raise TimeoutError("the result request was lost before the Coordinator read it")
+            return original(operation, body)
+        client.post = post
+        with self.assertRaises(TimeoutError):
+            self.worker("planner", self.planner, client=client).once()
+        self.assertEqual(self.state(), "OPEN")
+        prerequisite = self.failing_prerequisite()
+        restarted = self.worker("planner", self.planner, before_claim=prerequisite)
+        self.assertEqual(restarted.once(), {"status": "accepted", "replay": False})
+        self.assertEqual((prerequisite.call_count, self.provider.call_count), (0, 1))
+        self.assertEqual(self.state(), "VALIDATING")
+
+    def test_a_released_saved_result_is_claimed_back_without_the_prerequisite(self):
+        RemoteIngress(self.client("observer"))(self.incident)
+        worker = self.worker("planner", self.planner)
+        with patch.object(worker, "_send", side_effect=TimeoutError("before result delivery")):
+            with self.assertRaises(TimeoutError):
+                worker.once()
+        time.sleep(3.1)  # The lease expires, so the saved result is released and its request claimed again.
+        prerequisite = self.failing_prerequisite()
+        self.assertEqual(self.worker("planner", self.planner, before_claim=prerequisite).once()["status"], "accepted")
+        self.assertEqual((prerequisite.call_count, self.provider.call_count), (0, 1))
+        self.assertEqual(self.state(), "VALIDATING")
+
+    def test_new_work_claimed_for_a_released_result_is_handed_back_when_the_prerequisite_fails(self):
+        RemoteIngress(self.client("observer"))(self.incident)
+        operations, prerequisite = [], self.failing_prerequisite()
+        worker = self.worker("planner", self.planner, client=self.recording_client("planner", operations),
+                             before_claim=prerequisite)
+        with patch.object(worker.journal, "held", return_value=True):  # Some other saved result waits.
+            with self.assertRaises(PreflightFailed):
+                worker.once()
+        self.assertEqual((operations, prerequisite.call_count, self.provider.call_count),
+                         (["clock", "claim", "retry"], 1, 0))
+        (row,) = worker.journal.db.execute("SELECT delivery, result FROM worker_deliveries").fetchall()
+        self.assertEqual(tuple(row), (None, None))
+        self.assertEqual(self.state(), "OPEN")
+
     def test_heartbeat_renews_a_long_provider_call_and_blocks_a_competing_claim(self):
         RemoteIngress(self.client("observer"))(self.incident)
         def long_call(context):
@@ -202,6 +469,87 @@ class RemoteWorkerTests(unittest.TestCase):
         self.provider.side_effect = long_call
         self.assertEqual(self.worker("planner", self.planner).once()["status"], "accepted")
         self.assertEqual(self.provider.call_count, 1)
+
+    def readiness_during_a_long_pass(self, client, steps):
+        """Run one planner pass whose model call advances the probe clock 20 s per step; return /readyz each step."""
+        RemoteIngress(self.client("observer"))(self.incident)
+        seen = []
+
+        def long_call(context):
+            for _ in range(steps):
+                self.now[0] += 20
+                time.sleep(0.6)  # Several 0.1 s lease renewals in real time.
+                seen.append(self.health.ready())
+            return mock_provider(context)
+        self.provider.side_effect = long_call
+        return self.worker("planner", self.planner, client=client), seen
+
+    def probe(self):
+        self.now = [1000.0]
+        self.health = WorkerHealth(ready_seconds=30, clock=lambda: self.now[0])
+        self.health.configured()
+
+    def test_lease_renewals_keep_a_pass_longer_than_the_readiness_window_ready(self):
+        # Live, a working agent Planner failed two Docker health checks in one 128 s pass: only
+        # the end of a pass counted as contact. Each successful renewal now counts.
+        self.probe()
+        client = WorkerClient(self.url, "planner", self.services["planner"][1], timeout=2,
+                              answered=self.health.contacted)
+        worker, seen = self.readiness_during_a_long_pass(client, 4)  # 80 s of probe time, window 30 s.
+        self.assertEqual(worker.once()["status"], "accepted")
+        self.assertEqual([status for status, _ in seen], [200, 200, 200, 200])
+        self.assertTrue(all(body["contact_age_seconds"] < 30 for _, body in seen), seen)
+
+    def test_a_pass_whose_renewals_fail_turns_not_ready_after_the_readiness_window(self):
+        self.probe()
+
+        class RefusedRenewals(WorkerClient):
+            renewals = 0
+
+            def post(self, operation, body):
+                if operation == "renew":
+                    self.renewals += 1
+                    if self.renewals > 1:  # The first renewal, on entering the lease, succeeds.
+                        body = dict(body, lease_token="x" * 40)  # The Coordinator answers, but refuses it.
+                return super().post(operation, body)
+        client = RefusedRenewals(self.url, "planner", self.services["planner"][1], timeout=2,
+                                 answered=self.health.contacted)
+        worker, seen = self.readiness_during_a_long_pass(client, 2)
+        # The lost lease ends the pass: the saved result is released, never posted under it.
+        self.assertEqual(worker.once(), {"status": "released", "reason": "lease_not_current"})
+        self.assertGreater(client.renewals, 1)
+        self.assertEqual(seen[0], (200, {"ready": True, "contact_age_seconds": 20.0}))
+        self.assertEqual(seen[1], (503, {"ready": False, "contact_age_seconds": 40.0}))
+
+    def test_only_a_coordinator_answer_of_200_counts_as_contact(self):
+        answered = Mock()
+        client = WorkerClient(self.url, "planner", self.services["planner"][1], timeout=2, answered=answered)
+        self.assertIsNone(client.post("claim", {})["delivery"])
+        self.assertEqual(answered.call_count, 1)
+        with self.assertRaises(ProtocolError) as refused:  # Refused: answered, but not a successful exchange.
+            client.post("renew", {"delivery_id": "d", "lease_token": "x" * 40})
+        self.assertNotEqual(refused.exception.status, 200)
+        with self.assertRaises(OSError):  # Unreachable: nothing answered.
+            WorkerClient("http://127.0.0.1:9", "planner", "p" * 40, timeout=2, answered=answered).post("claim", {})
+        self.assertEqual(answered.call_count, 1)
+
+    def test_a_reply_that_is_not_a_200_json_object_is_not_contact(self):
+        answered = Mock()
+        client = WorkerClient("http://127.0.0.1:9", "planner", "p" * 40, timeout=2, answered=answered)
+
+        def reply(status, raw):
+            response = Mock(spec=["status", "read"], status=status)  # No headers: a minimal stand-in.
+            response.read.return_value = raw
+            return Mock(**{"getresponse.return_value": response})
+        for status, raw in ((200, b"not json"), (200, b"[1]"), (200, b"\xff"), (500, b"Internal error"),
+                            (503, b'{"error": "Coordinator unavailable"}')):
+            with self.subTest(status=status, raw=raw), self.assertRaises(ProtocolError), \
+                    patch("runtime.worker_http.HTTPConnection", return_value=reply(status, raw)):
+                client.post("claim", {})
+        self.assertEqual(answered.call_count, 0)
+        with patch("runtime.worker_http.HTTPConnection", return_value=reply(200, b"{}")):
+            client.post("claim", {})
+        self.assertEqual(answered.call_count, 1)
 
     def test_expired_saved_result_is_rebound_without_recalling_the_provider(self):
         RemoteIngress(self.client("observer"))(self.incident)
@@ -247,9 +595,9 @@ class RemoteWorkerTests(unittest.TestCase):
                 "approval_id": self.created["approval_id"], "reason": "withdraw during handoff"})
         worker = self.worker("executor", ExecutorAdapter(self.f.adapters))
         with patch.object(self.f.ledger, "start_write", side_effect=revoke_after_journal):
-            with self.assertRaises(ProtocolError) as error:
-                worker.once()
-        self.assertEqual(error.exception.status, 409)
+            # The withdrawn command retired the delivery (409): its FAILED result is kept, never posted.
+            self.assertEqual(worker.once(), {"status": "released", "reason": "lease_not_current"})
+        self.assertEqual(worker.journal.pending(), [])
         self.assertEqual(self.f.cluster.write_attempts, [])
         self.assertNotEqual(self.state(), "VERIFYING")
 
@@ -294,9 +642,18 @@ class RemoteWorkerTests(unittest.TestCase):
         config.write_text(json.dumps({"role": "planner", "url": self.url, "identity": "planner",
             "token_env": "TEST_PLANNER_CREDENTIAL", "state_directory": str(state),
             "model_config": str(model), "baselines": str(baseline)}))
+        errors = io.StringIO()
         with patch.dict("os.environ", {"TEST_PLANNER_CREDENTIAL": self.services["planner"][1]}), \
-                patch("runtime.worker_service.OllamaProvider", return_value=self.provider), redirect_stdout(io.StringIO()):
+                patch("runtime.worker_service.OllamaProvider", return_value=self.provider), \
+                redirect_stdout(io.StringIO()), redirect_stderr(errors):
             self.assertEqual(main(["--config", str(config), "--once"]), 0)
+        status = [record for record in map(json.loads, errors.getvalue().splitlines())
+                  if record["event"] == "worker.status"]
+        self.assertEqual([(s["status"], s["identity"], s["topic"]) for s in status],
+                         [("accepted", "planner", "planner.request")])
+        self.assertIn("delivery_id", status[0])
+        for secret in self.secrets():
+            self.assertNotIn(secret, errors.getvalue())
         self.assertEqual(self.state(), "VALIDATING")
         self.assertTrue((state / "planner.db").is_file())
         self.assertTrue((state / "transport.db").is_file())
@@ -327,6 +684,251 @@ class RemoteWorkerTests(unittest.TestCase):
         local_sink.assert_not_called()
         self.assertTrue(state.is_file())
         self.assertEqual(self.state(), "OPEN")
+
+    # A worker whose lease another worker took (P4.01 S2 at 3ba0d12): its result is refused with
+    # 403 not_lease_owner, and before the fix it re-posted that result on every pass and never claimed.
+
+    def refusing_client(self, role, operations, refusal=(403, "Delivery belongs to another worker")):
+        """A Coordinator client whose result posts are refused (while refusing[0]); every operation is recorded."""
+        client = self.recording_client(role, operations)
+        inner, refusing = client.post, [True]
+
+        def post(operation, body):
+            if operation == "result" and refusing[0]:
+                operations.append(operation)
+                raise ProtocolError(*refusal)
+            return inner(operation, body)
+        client.post = post
+        return client, refusing
+
+    def saved_rows(self, worker):
+        return [(row["delivery"] is None, row["result"]["kind"], row["accepted"])
+                for row in (worker.journal.get(key) for (key,) in worker.journal.db.execute(
+                    "SELECT request_key FROM worker_deliveries WHERE result IS NOT NULL"))]
+
+    def test_an_executor_refused_as_not_lease_owner_drops_the_delivery_and_claims_again(self):
+        self.authorize()
+        logs = self.captured_logs()
+        operations = []
+        client, refusing = self.refusing_client("executor", operations)
+        worker = self.worker("executor", ExecutorAdapter(self.f.adapters), client=client)
+        self.assertEqual(worker.once(), {"status": "released", "reason": "not_lease_owner"})
+        self.assertEqual(len(self.f.cluster.writes), 1)
+        for _ in range(3):  # The live worker re-posted here, every pass, for minutes.
+            self.assertEqual(worker.once(), {"status": "idle"})
+        self.assertEqual((operations.count("result"), operations.count("claim")), (1, 4))
+        # Nothing is thrown away: the transport keeps the saved result, the ledger keeps the write.
+        self.assertEqual(self.saved_rows(worker), [(True, "execution_result", 0)])
+        row = self.f.ledger.get(self.proposal["action_id"])
+        self.assertEqual((row["phase"], row["result"]["status"], row["delivered"]), ("DONE", "APPLIED", 0))
+        self.assertEqual(self.state(), "READY")
+        # The request comes back to this worker once its lease has expired: it re-sends the
+        # saved result under the new lease and writes nothing again.
+        time.sleep(3.1)  # The 2 s lease plus the redelivery back-off, on the transport's own clock.
+        refusing[0] = False
+        self.assertEqual(worker.once(), {"status": "accepted", "replay": False})
+        self.assertEqual((self.state(), len(self.f.cluster.writes)), ("VERIFYING", 1))
+        released = [json.loads(line) for line in logs.getvalue().splitlines()
+                    if '"transport.result.released"' in line]
+        self.assertEqual([(line["reason"], line["level"]) for line in released], [("not_lease_owner", "warning")])
+        self.assertFalse(any(secret in logs.getvalue() for secret in self.secrets()))
+
+    def test_an_executor_whose_write_is_in_doubt_keeps_it_open_in_its_ledger_when_its_result_is_refused(self):
+        """Release forgets the lease, never the ledger row of a write that may have landed."""
+        self.authorize()
+        operations = []
+        client, _refusing = self.refusing_client("executor", operations)
+        worker = self.worker("executor", ExecutorAdapter(self.f.adapters), client=client)
+        with patch.object(self.f.cluster, "conditional_restore",
+                          side_effect=TimeoutError("request completion is unknown")):
+            self.assertEqual(worker.once(), {"status": "released", "reason": "not_lease_owner"})
+        self.assertEqual(worker.once(), {"status": "idle"})
+        self.assertEqual((operations.count("result"), operations.count("claim")), (1, 2))
+        self.assertEqual(self.saved_rows(worker), [(True, "execution_result", 0)])
+        row = self.f.ledger.get(self.proposal["action_id"])
+        self.assertEqual((row["phase"], row["attempts"], row["result"]["status"], row["delivered"]),
+                         ("UNCERTAIN", 1, "NEEDS_RECONCILIATION", 0))
+        # The row is still open: the sweep keeps reconciling it and its result is still undelivered.
+        self.assertEqual([proposal["action_id"] for proposal in self.f.ledger.pending_proposals()],
+                         [self.proposal["action_id"]])
+        self.assertEqual([result["status"] for result in self.f.ledger.undelivered_results()],
+                         ["NEEDS_RECONCILIATION"])
+        self.assertEqual(self.f.cluster.writes, [])
+
+    def test_a_planner_refused_as_not_lease_owner_drops_the_delivery_and_claims_again(self):
+        RemoteIngress(self.client("observer"))(self.incident)
+        operations = []
+        client, _refusing = self.refusing_client("planner", operations)
+        worker = self.worker("planner", self.planner, client=client)
+        self.assertEqual(worker.once(), {"status": "released", "reason": "not_lease_owner"})
+        self.assertEqual(worker.once(), {"status": "idle"})
+        self.assertEqual((operations.count("result"), operations.count("claim")), (1, 2))
+        self.assertEqual(self.saved_rows(worker), [(True, "proposal", 0)])
+        self.assertEqual((self.provider.call_count, self.state()), (1, "OPEN"))
+
+    def test_a_guard_whose_saved_result_is_refused_as_not_lease_owner_on_resend_claims_again(self):
+        self.plan()
+        operations = []
+        client, refusing = self.refusing_client("guard", operations)
+        refusing[0] = False
+        guard = self.worker("guard", self.guard, client=client)
+        with patch.object(guard, "_send", side_effect=TimeoutError("lost before the result was sent")):
+            with self.assertRaises(TimeoutError):
+                guard.once()
+        refusing[0] = True  # The saved result is now pending, and its re-send is refused.
+        self.assertEqual(guard.once(), {"status": "idle"})
+        self.assertEqual(guard.once(), {"status": "idle"})
+        self.assertEqual((operations.count("result"), operations.count("claim")), (1, 3))
+        self.assertEqual(self.saved_rows(guard), [(True, "guard_result", 0)])
+
+    def test_lease_conflicts_on_the_final_check_drop_the_delivery_without_posting_the_result(self):
+        for status, message, reason in ((409, "Delivery retired or lease expired/replaced", "lease_not_current"),
+                                         (403, "Delivery belongs to another worker", "not_lease_owner")):
+            with self.subTest(reason=reason):
+                with ExitStack() as stack:
+                    directory = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+                    journal = WorkerJournal(directory / "transport.db")
+                    stack.callback(journal.close)
+                    client = LeaseLostClient(ProtocolError(status, message))
+                    adapter = Mock(spec=["process"])
+                    adapter.process.return_value = (fixture_proposal(), None)
+                    worker = RemoteWorker(client, journal, adapter, renewal_interval=60)
+                    self.assertEqual(worker.once(), {"status": "released", "reason": reason})
+                    self.assertNotIn("result", client.operations)
+                    self.assertEqual(worker.once(), {"status": "idle"})
+                    self.assertEqual(client.operations.count("result"), 0)
+                    self.assertEqual(adapter.process.call_count, 1)
+
+    def test_a_lost_lease_executor_that_wrote_leaves_evidence_the_next_owner_adopts_without_a_second_write(self):
+        self.authorize()
+        peer_directory = self.f.path / "executor-2"
+        peer_directory.mkdir()
+        peer_ledger = SQLiteExecutionLedger(peer_directory / "executor.db")
+        self.stack.callback(peer_ledger.close)
+        peer = self.worker("executor-2", ExecutorAdapter(replace(
+            self.f.adapters, ledger=peer_ledger, coordination=LocalTargetCoordinator(peer_directory / "locks"))))
+        original, peer_status = self.f.cluster.conditional_restore, []
+
+        def write_then_pause(**kwargs):
+            applied = original(**kwargs)  # The holder's write commits; then its node pauses past the lease.
+            if not peer_status:
+                running.clear()
+                time.sleep(3.1)  # No renewal leaves the paused node: the 2 s lease runs out.
+                peer_status.append(peer.once())  # The other Executor claims the command (attempt 2).
+                running.set()
+            return applied
+        operations, running = [], threading.Event()
+        running.set()
+        client = self.recording_client("executor", operations)
+        inner = client.post
+
+        def paused_node(operation, body):
+            running.wait()  # While the node is paused no request leaves it, renewals included.
+            return inner(operation, body)
+        client.post = paused_node
+        holder = self.worker("executor", ExecutorAdapter(self.f.adapters), client=client)
+        with patch.object(self.f.cluster, "conditional_restore", side_effect=write_then_pause):
+            self.assertEqual(holder.once(), {"status": "released", "reason": "not_lease_owner"})
+        self.assertEqual(peer_status, [{"status": "accepted", "replay": False}])
+        # One write in all; the next owner reconciled it from the cluster's evidence to APPLIED.
+        self.assertEqual((len(self.f.cluster.writes), len(self.f.cluster.write_attempts)), (1, 1))
+        self.assertEqual(self.state(), "VERIFYING")
+        adopted = peer_ledger.get(self.proposal["action_id"])
+        self.assertEqual((adopted["result"]["status"], adopted["attempts"]), ("APPLIED", 0))
+        self.assertIn("adopted peer write", adopted["result"]["details"])
+        # The holder never posted a result under the lease it lost, and kept its evidence.
+        self.assertNotIn("result", operations)
+        row = self.f.ledger.get(self.proposal["action_id"])
+        self.assertEqual((row["phase"], row["attempts"], row["result"]["status"]), ("DONE", 1, "APPLIED"))
+        self.assertIsNotNone(row["evidence"])
+        self.assertEqual(self.saved_rows(holder), [(True, "execution_result", 0)])
+        self.assertEqual(holder.once(), {"status": "idle"})
+        self.assertNotIn("result", operations)
+
+    def test_a_result_that_keeps_failing_is_dropped_after_the_bound_so_the_worker_claims_again(self):
+        # Not only refusals: a post that times out or cannot connect is bounded the same way.
+        for error in (ProtocolError(503, "Coordinator unavailable; retry the saved request"),
+                      ProtocolError(403, "Only the Guard may submit an authorization report"),
+                      TimeoutError("the result post timed out"),
+                      ConnectionRefusedError("the Coordinator refused the connection")):
+            with self.subTest(error=repr(error)), ExitStack() as stack:
+                directory = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+                journal = WorkerJournal(directory / "transport.db")
+                stack.callback(journal.close)
+                client = LeaseLostClient(None, result_error=error)
+                adapter = Mock(spec=["process"])
+                adapter.process.return_value = (fixture_proposal(), None)
+                clock = [100.0]
+                worker = RemoteWorker(client, journal, adapter, renewal_interval=60,
+                                      monotonic=lambda clock=clock: clock[0],
+                                      result_retry_attempts=3, result_retry_seconds=60)
+                logs = self.captured_logs()
+                for _ in range(2):  # Within the bound the saved result is retried, as before.
+                    with self.assertRaises(type(error)):
+                        worker.once()
+                    clock[0] += 20
+                with self.assertRaises(type(error)):  # Three attempts, but only 40 s.
+                    worker.once()
+                self.assertEqual(client.operations.count("claim"), 1)
+                clock[0] += 20
+                self.assertEqual(worker.once(), {"status": "idle"})  # Dropped; the pass goes on to claim.
+                self.assertEqual((client.operations.count("result"), client.operations.count("claim")), (4, 2))
+                self.assertEqual(worker.once(), {"status": "idle"})
+                self.assertEqual(client.operations.count("result"), 4)
+                key = digest({"topic": client.delivery["topic"], "payload": client.delivery["payload"]})
+                self.assertEqual((journal.get(key)["delivery"], journal.get(key)["result"]["kind"]),
+                                 (None, "proposal"))
+                abandoned = [json.loads(line) for line in logs.getvalue().splitlines()
+                             if '"transport.result.abandoned"' in line]
+                self.assertEqual([(line["attempts"], line["error_type"]) for line in abandoned],
+                                 [(4, type(error).__name__)])
+
+    def test_the_worker_service_loop_no_longer_retries_a_refused_result_for_minutes(self):
+        """The live log: worker.status retry ProtocolError on every pass for one delivery, no claims."""
+        from runtime import worker_service
+        self.authorize()
+        operations = []
+        client, _refusing = self.refusing_client("executor", operations)
+        worker = self.worker("executor", ExecutorAdapter(self.f.adapters), client=client)
+        stopping, passes = Mock(), []
+        stopping.is_set.side_effect = lambda: len(passes) >= 8
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = worker_service.poll(worker, WorkerHealth(), stopping, 2, wait=passes.append, random=lambda: 0.5)
+        statuses = [json.loads(line)["status"] for line in output.getvalue().splitlines()]
+        self.assertEqual((code, statuses), (0, ["released"] + ["idle"] * 7))
+        self.assertEqual(passes, [2] * 8)  # No failure back-off.
+        self.assertEqual((operations.count("result"), operations.count("claim")), (1, 8))
+
+
+def fixture_proposal():
+    return json.loads((ROOT / "data/sentinel/samples/messages/proposal.json").read_text(encoding="utf-8"))
+
+
+class LeaseLostClient:
+    """A stand-in Coordinator with one planner.request: renewals fail with renew_error, results with result_error."""
+    def __init__(self, renew_error, *, result_error=None):
+        self.renew_error, self.result_error = renew_error, result_error
+        self.operations, self.claimed = [], False
+        proposal = fixture_proposal()
+        self.delivery = {"delivery_id": "d" * 32, "lease_token": "t" * 32, "expires_at": time.time() + 30,
+                         "expires_in": 30, "attempt": 1, "topic": "planner.request", "event_id": 1,
+                         "payload": {"incident": {"incident_id": proposal["incident_id"]}}}
+
+    def post(self, operation, body):
+        self.operations.append(operation)
+        if operation == "claim":
+            if self.claimed:
+                return {"delivery": None}
+            self.claimed = True
+            return {"delivery": self.delivery}
+        if operation == "renew" and self.renew_error is not None and self.operations.count("renew") > 1:
+            raise self.renew_error  # The first renewal (entering the lease) succeeds; the final check fails.
+        if operation == "result" and self.result_error is not None:
+            raise self.result_error
+        if operation == "result":
+            return {"accepted": True}
+        return {"expires_at": time.time() + 30, "expires_in": 30, "recorded": True}
 
 
 if __name__ == "__main__":

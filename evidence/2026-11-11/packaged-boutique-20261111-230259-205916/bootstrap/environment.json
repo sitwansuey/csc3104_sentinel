@@ -1,0 +1,7 @@
+{
+  "context": "kind-sentinel-boutique-package",
+  "shipping": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4",
+  "client": "docker.io/fullstorydev/grpcurl@sha256:085e183ca334eb4e81ca81ee12cbb2b2737505d1d77f5e33dabc5d066593d998",
+  "node_name": "sentinel-boutique-package-control-plane",
+  "cluster_id": "sentinel-boutique-package"
+}

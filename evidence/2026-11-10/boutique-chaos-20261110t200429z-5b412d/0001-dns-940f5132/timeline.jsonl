@@ -1,0 +1,5 @@
+{"run_id": "0001-dns-940f5132", "captured_at": "2026-11-10T20:07:47.572247Z", "event": "baseline_started"}
+{"run_id": "0001-dns-940f5132", "captured_at": "2026-11-10T20:08:17.653824Z", "event": "injection_requested"}
+{"run_id": "0001-dns-940f5132", "captured_at": "2026-11-10T20:09:18.195922Z", "event": "run_failed", "error": "RuntimeError: Chaos Mesh did not confirm injection into selected pods"}
+{"run_id": "0001-dns-940f5132", "captured_at": "2026-11-10T20:09:18.196400Z", "event": "final_cleanup_requested"}
+{"run_id": "0001-dns-940f5132", "captured_at": "2026-11-10T20:09:18.532377Z", "event": "final_cleanup_confirmed"}

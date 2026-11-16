@@ -1,0 +1,906 @@
+[
+  {
+    "run": "2026-11-12-S1b",
+    "scenario": "S1b",
+    "repeat": 1,
+    "states": [
+      "RECOVERED"
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "duplicate_incidents": {
+      "count": 0,
+      "incidents": []
+    },
+    "deadline_seconds": 180,
+    "deadline_source": "kind default",
+    "duration_seconds": 50.8,
+    "matches_expectation": true,
+    "passed": true,
+    "expected_failures": [],
+    "harness_error": null,
+    "invariants": {
+      "I1": [
+        true,
+        "1 committed write(s) over 1 action(s)"
+      ],
+      "I2": [
+        true,
+        "0 revocation(s), no write after any"
+      ],
+      "I3": [
+        true,
+        "RECOVERED"
+      ],
+      "I4": [
+        true,
+        "7 acknowledged command(s), one result each"
+      ],
+      "I5": [
+        true,
+        "at most 5 attempt(s) per command, 0 HTTP 400 result(s)"
+      ],
+      "I6": [
+        true,
+        "2 ledger row(s), none in doubt"
+      ],
+      "X1": [
+        true,
+        "7 delivery lease(s), each held by one identity at a time"
+      ],
+      "X2": [
+        true,
+        "27 file(s) and 7 argv list(s) clean"
+      ],
+      "X3": [
+        true,
+        "7 acknowledged result(s) all recorded"
+      ],
+      "X4": [
+        true,
+        "7 transition(s) consistent"
+      ]
+    },
+    "notes": {
+      "fault_point": "executor.after_start_write",
+      "crashed": "executor-b",
+      "exit_code": 73,
+      "restarted": "after the incident ended"
+    },
+    "fault_visible": true,
+    "fault_visible_after_seconds": 1.4,
+    "operator_restore": false,
+    "restore_healthy": true,
+    "restore_seconds": 0.2,
+    "git_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+    "tls": true
+  },
+  {
+    "run": "2026-11-12-S1b-r2",
+    "scenario": "S1b",
+    "repeat": 2,
+    "states": [
+      "RECOVERED"
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "duplicate_incidents": {
+      "count": 0,
+      "incidents": []
+    },
+    "deadline_seconds": 180,
+    "deadline_source": "kind default",
+    "duration_seconds": 75.6,
+    "matches_expectation": true,
+    "passed": true,
+    "expected_failures": [],
+    "harness_error": null,
+    "invariants": {
+      "I1": [
+        true,
+        "1 committed write(s) over 1 action(s)"
+      ],
+      "I2": [
+        true,
+        "0 revocation(s), no write after any"
+      ],
+      "I3": [
+        true,
+        "RECOVERED"
+      ],
+      "I4": [
+        true,
+        "7 acknowledged command(s), one result each"
+      ],
+      "I5": [
+        true,
+        "at most 6 attempt(s) per command, 0 HTTP 400 result(s)"
+      ],
+      "I6": [
+        true,
+        "2 ledger row(s), none in doubt"
+      ],
+      "X1": [
+        true,
+        "7 delivery lease(s), each held by one identity at a time"
+      ],
+      "X2": [
+        true,
+        "27 file(s) and 7 argv list(s) clean"
+      ],
+      "X3": [
+        true,
+        "7 acknowledged result(s) all recorded"
+      ],
+      "X4": [
+        true,
+        "7 transition(s) consistent"
+      ]
+    },
+    "notes": {
+      "fault_point": "executor.after_start_write",
+      "crashed": "executor-a",
+      "exit_code": 73,
+      "restarted": "after the incident ended"
+    },
+    "fault_visible": true,
+    "fault_visible_after_seconds": 1.5,
+    "operator_restore": false,
+    "restore_healthy": true,
+    "restore_seconds": 0.2,
+    "git_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+    "tls": true
+  },
+  {
+    "run": "2026-11-12-S1c",
+    "scenario": "S1c",
+    "repeat": 1,
+    "states": [
+      "RECOVERED"
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "duplicate_incidents": {
+      "count": 0,
+      "incidents": []
+    },
+    "deadline_seconds": 180,
+    "deadline_source": "kind default",
+    "duration_seconds": 54.3,
+    "matches_expectation": true,
+    "passed": true,
+    "expected_failures": [],
+    "harness_error": null,
+    "invariants": {
+      "I1": [
+        true,
+        "1 committed write(s) over 1 action(s)"
+      ],
+      "I2": [
+        true,
+        "0 revocation(s), no write after any"
+      ],
+      "I3": [
+        true,
+        "RECOVERED"
+      ],
+      "I4": [
+        true,
+        "7 acknowledged command(s), one result each"
+      ],
+      "I5": [
+        true,
+        "at most 5 attempt(s) per command, 0 HTTP 400 result(s)"
+      ],
+      "I6": [
+        true,
+        "2 ledger row(s), none in doubt"
+      ],
+      "X1": [
+        true,
+        "7 delivery lease(s), each held by one identity at a time"
+      ],
+      "X2": [
+        true,
+        "27 file(s) and 7 argv list(s) clean"
+      ],
+      "X3": [
+        true,
+        "7 acknowledged result(s) all recorded"
+      ],
+      "X4": [
+        true,
+        "7 transition(s) consistent"
+      ]
+    },
+    "notes": {
+      "fault_point": "executor.after_patch_before_save",
+      "crashed": "executor-b",
+      "exit_code": 73,
+      "restarted": "after the incident ended"
+    },
+    "fault_visible": true,
+    "fault_visible_after_seconds": 1.4,
+    "operator_restore": false,
+    "restore_healthy": true,
+    "restore_seconds": 0.2,
+    "git_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+    "tls": true
+  },
+  {
+    "run": "2026-11-12-S1c-r2",
+    "scenario": "S1c",
+    "repeat": 2,
+    "states": [
+      "RECOVERED"
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "duplicate_incidents": {
+      "count": 0,
+      "incidents": []
+    },
+    "deadline_seconds": 180,
+    "deadline_source": "kind default",
+    "duration_seconds": 48.4,
+    "matches_expectation": true,
+    "passed": true,
+    "expected_failures": [],
+    "harness_error": null,
+    "invariants": {
+      "I1": [
+        true,
+        "1 committed write(s) over 1 action(s)"
+      ],
+      "I2": [
+        true,
+        "0 revocation(s), no write after any"
+      ],
+      "I3": [
+        true,
+        "RECOVERED"
+      ],
+      "I4": [
+        true,
+        "7 acknowledged command(s), one result each"
+      ],
+      "I5": [
+        true,
+        "at most 5 attempt(s) per command, 0 HTTP 400 result(s)"
+      ],
+      "I6": [
+        true,
+        "2 ledger row(s), none in doubt"
+      ],
+      "X1": [
+        true,
+        "7 delivery lease(s), each held by one identity at a time"
+      ],
+      "X2": [
+        true,
+        "27 file(s) and 7 argv list(s) clean"
+      ],
+      "X3": [
+        true,
+        "7 acknowledged result(s) all recorded"
+      ],
+      "X4": [
+        true,
+        "7 transition(s) consistent"
+      ]
+    },
+    "notes": {
+      "fault_point": "executor.after_patch_before_save",
+      "crashed": "executor-b",
+      "exit_code": 73,
+      "restarted": "after the incident ended"
+    },
+    "fault_visible": true,
+    "fault_visible_after_seconds": 20.3,
+    "operator_restore": false,
+    "restore_healthy": true,
+    "restore_seconds": 0.2,
+    "git_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+    "tls": true
+  },
+  {
+    "run": "2026-11-12-S2",
+    "scenario": "S2",
+    "repeat": 1,
+    "states": [
+      "RECOVERED"
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "duplicate_incidents": {
+      "count": 0,
+      "incidents": []
+    },
+    "deadline_seconds": 180,
+    "deadline_source": "kind default",
+    "duration_seconds": 63.5,
+    "matches_expectation": true,
+    "passed": true,
+    "expected_failures": [],
+    "harness_error": null,
+    "invariants": {
+      "I1": [
+        true,
+        "1 committed write(s) over 1 action(s)"
+      ],
+      "I2": [
+        true,
+        "0 revocation(s), no write after any"
+      ],
+      "I3": [
+        true,
+        "RECOVERED"
+      ],
+      "I4": [
+        true,
+        "7 acknowledged command(s), one result each"
+      ],
+      "I5": [
+        true,
+        "at most 5 attempt(s) per command, 0 HTTP 400 result(s)"
+      ],
+      "I6": [
+        true,
+        "2 ledger row(s), none in doubt"
+      ],
+      "X1": [
+        true,
+        "7 delivery lease(s), each held by one identity at a time"
+      ],
+      "X2": [
+        true,
+        "27 file(s) and 7 argv list(s) clean"
+      ],
+      "X3": [
+        true,
+        "7 acknowledged result(s) all recorded"
+      ],
+      "X4": [
+        true,
+        "7 transition(s) consistent"
+      ]
+    },
+    "notes": {
+      "stalled": "executor-a",
+      "stall": "block+blackhole"
+    },
+    "fault_visible": true,
+    "fault_visible_after_seconds": 20.4,
+    "operator_restore": false,
+    "restore_healthy": true,
+    "restore_seconds": 0.3,
+    "git_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+    "tls": true
+  },
+  {
+    "run": "2026-11-12-S2-r2",
+    "scenario": "S2",
+    "repeat": 2,
+    "states": [
+      "FAILED"
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "duplicate_incidents": {
+      "count": 0,
+      "incidents": []
+    },
+    "deadline_seconds": 180,
+    "deadline_source": "kind default",
+    "duration_seconds": 158.5,
+    "matches_expectation": false,
+    "passed": false,
+    "expected_failures": [],
+    "harness_error": null,
+    "invariants": {
+      "I1": [
+        true,
+        "1 committed write(s) over 1 action(s)"
+      ],
+      "I2": [
+        true,
+        "0 revocation(s), no write after any"
+      ],
+      "I3": [
+        true,
+        "FAILED"
+      ],
+      "I4": [
+        true,
+        "7 acknowledged command(s), one result each"
+      ],
+      "I5": [
+        false,
+        "command 9: 8 attempts"
+      ],
+      "I6": [
+        true,
+        "2 ledger row(s), none in doubt"
+      ],
+      "X1": [
+        true,
+        "7 delivery lease(s), each held by one identity at a time"
+      ],
+      "X2": [
+        true,
+        "27 file(s) and 7 argv list(s) clean"
+      ],
+      "X3": [
+        true,
+        "7 acknowledged result(s) all recorded"
+      ],
+      "X4": [
+        true,
+        "7 transition(s) consistent"
+      ]
+    },
+    "notes": {
+      "stalled": "executor-b",
+      "stall": "block+blackhole"
+    },
+    "fault_visible": true,
+    "fault_visible_after_seconds": 21.7,
+    "operator_restore": false,
+    "restore_healthy": true,
+    "restore_seconds": 0.2,
+    "git_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+    "tls": true
+  },
+  {
+    "run": "2026-11-12-S4",
+    "scenario": "S4",
+    "repeat": 1,
+    "states": [
+      "RECOVERED"
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "duplicate_incidents": {
+      "count": 0,
+      "incidents": []
+    },
+    "deadline_seconds": 180,
+    "deadline_source": "kind default",
+    "duration_seconds": 43.6,
+    "matches_expectation": true,
+    "passed": true,
+    "expected_failures": [],
+    "harness_error": null,
+    "invariants": {
+      "I1": [
+        true,
+        "1 committed write(s) over 1 action(s)"
+      ],
+      "I2": [
+        true,
+        "0 revocation(s), no write after any"
+      ],
+      "I3": [
+        true,
+        "RECOVERED"
+      ],
+      "I4": [
+        true,
+        "7 acknowledged command(s), one result each"
+      ],
+      "I5": [
+        true,
+        "at most 5 attempt(s) per command, 0 HTTP 400 result(s)"
+      ],
+      "I6": [
+        true,
+        "1 ledger row(s), none in doubt"
+      ],
+      "X1": [
+        true,
+        "7 delivery lease(s), each held by one identity at a time"
+      ],
+      "X2": [
+        true,
+        "27 file(s) and 7 argv list(s) clean"
+      ],
+      "X3": [
+        true,
+        "7 acknowledged result(s) all recorded"
+      ],
+      "X4": [
+        true,
+        "7 transition(s) consistent"
+      ]
+    },
+    "notes": {
+      "dropped_for": "executor-b",
+      "replay_receipt": true
+    },
+    "fault_visible": true,
+    "fault_visible_after_seconds": 1.4,
+    "operator_restore": false,
+    "restore_healthy": true,
+    "restore_seconds": 0.2,
+    "git_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+    "tls": true
+  },
+  {
+    "run": "2026-11-12-S4-r2",
+    "scenario": "S4",
+    "repeat": 2,
+    "states": [
+      "RECOVERED"
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "duplicate_incidents": {
+      "count": 0,
+      "incidents": []
+    },
+    "deadline_seconds": 180,
+    "deadline_source": "kind default",
+    "duration_seconds": 60.2,
+    "matches_expectation": true,
+    "passed": true,
+    "expected_failures": [],
+    "harness_error": null,
+    "invariants": {
+      "I1": [
+        true,
+        "1 committed write(s) over 1 action(s)"
+      ],
+      "I2": [
+        true,
+        "0 revocation(s), no write after any"
+      ],
+      "I3": [
+        true,
+        "RECOVERED"
+      ],
+      "I4": [
+        true,
+        "7 acknowledged command(s), one result each"
+      ],
+      "I5": [
+        true,
+        "at most 6 attempt(s) per command, 0 HTTP 400 result(s)"
+      ],
+      "I6": [
+        true,
+        "1 ledger row(s), none in doubt"
+      ],
+      "X1": [
+        true,
+        "7 delivery lease(s), each held by one identity at a time"
+      ],
+      "X2": [
+        true,
+        "27 file(s) and 7 argv list(s) clean"
+      ],
+      "X3": [
+        true,
+        "7 acknowledged result(s) all recorded"
+      ],
+      "X4": [
+        true,
+        "7 transition(s) consistent"
+      ]
+    },
+    "notes": {
+      "dropped_for": "executor-b",
+      "replay_receipt": true
+    },
+    "fault_visible": true,
+    "fault_visible_after_seconds": 1.5,
+    "operator_restore": false,
+    "restore_healthy": true,
+    "restore_seconds": 0.2,
+    "git_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+    "tls": true
+  },
+  {
+    "run": "2026-11-12-S5",
+    "scenario": "S5",
+    "repeat": 1,
+    "states": [
+      "RECOVERED"
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "duplicate_incidents": {
+      "count": 0,
+      "incidents": []
+    },
+    "deadline_seconds": 180,
+    "deadline_source": "kind default",
+    "duration_seconds": 44.1,
+    "matches_expectation": true,
+    "passed": true,
+    "expected_failures": [],
+    "harness_error": null,
+    "invariants": {
+      "I1": [
+        true,
+        "1 committed write(s) over 1 action(s)"
+      ],
+      "I2": [
+        true,
+        "0 revocation(s), no write after any"
+      ],
+      "I3": [
+        true,
+        "RECOVERED"
+      ],
+      "I4": [
+        true,
+        "7 acknowledged command(s), one result each"
+      ],
+      "I5": [
+        true,
+        "at most 5 attempt(s) per command, 0 HTTP 400 result(s)"
+      ],
+      "I6": [
+        true,
+        "1 ledger row(s), none in doubt"
+      ],
+      "X1": [
+        true,
+        "7 delivery lease(s), each held by one identity at a time"
+      ],
+      "X2": [
+        true,
+        "27 file(s) and 7 argv list(s) clean"
+      ],
+      "X3": [
+        true,
+        "7 acknowledged result(s) all recorded"
+      ],
+      "X4": [
+        true,
+        "7 transition(s) consistent"
+      ]
+    },
+    "notes": {
+      "fault_point": "coordinator.after_commit_before_reply",
+      "exit_code": 73,
+      "restarts": 2
+    },
+    "fault_visible": true,
+    "fault_visible_after_seconds": 1.4,
+    "operator_restore": false,
+    "restore_healthy": true,
+    "restore_seconds": 0.3,
+    "git_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+    "tls": true
+  },
+  {
+    "run": "2026-11-12-S5-r2",
+    "scenario": "S5",
+    "repeat": 2,
+    "states": [
+      "RECOVERED"
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "duplicate_incidents": {
+      "count": 0,
+      "incidents": []
+    },
+    "deadline_seconds": 180,
+    "deadline_source": "kind default",
+    "duration_seconds": 44.3,
+    "matches_expectation": true,
+    "passed": true,
+    "expected_failures": [],
+    "harness_error": null,
+    "invariants": {
+      "I1": [
+        true,
+        "1 committed write(s) over 1 action(s)"
+      ],
+      "I2": [
+        true,
+        "0 revocation(s), no write after any"
+      ],
+      "I3": [
+        true,
+        "RECOVERED"
+      ],
+      "I4": [
+        true,
+        "7 acknowledged command(s), one result each"
+      ],
+      "I5": [
+        true,
+        "at most 5 attempt(s) per command, 0 HTTP 400 result(s)"
+      ],
+      "I6": [
+        true,
+        "1 ledger row(s), none in doubt"
+      ],
+      "X1": [
+        true,
+        "7 delivery lease(s), each held by one identity at a time"
+      ],
+      "X2": [
+        true,
+        "27 file(s) and 7 argv list(s) clean"
+      ],
+      "X3": [
+        true,
+        "7 acknowledged result(s) all recorded"
+      ],
+      "X4": [
+        true,
+        "7 transition(s) consistent"
+      ]
+    },
+    "notes": {
+      "fault_point": "coordinator.after_commit_before_reply",
+      "exit_code": 73,
+      "restarts": 2
+    },
+    "fault_visible": true,
+    "fault_visible_after_seconds": 1.4,
+    "operator_restore": false,
+    "restore_healthy": true,
+    "restore_seconds": 0.2,
+    "git_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+    "tls": true
+  },
+  {
+    "run": "2026-11-12-S8",
+    "scenario": "S8",
+    "repeat": 1,
+    "states": [
+      "FAILED"
+    ],
+    "committed_writes": 0,
+    "unobserved_windows": 0,
+    "duplicate_incidents": {
+      "count": 0,
+      "incidents": []
+    },
+    "deadline_seconds": 180,
+    "deadline_source": "kind default",
+    "duration_seconds": 29.6,
+    "matches_expectation": true,
+    "passed": true,
+    "expected_failures": [],
+    "harness_error": null,
+    "invariants": {
+      "I1": [
+        true,
+        "0 committed write(s) over 0 action(s)"
+      ],
+      "I2": [
+        true,
+        "1 revocation(s), no write after any"
+      ],
+      "I3": [
+        true,
+        "FAILED"
+      ],
+      "I4": [
+        true,
+        "7 acknowledged command(s), one result each"
+      ],
+      "I5": [
+        true,
+        "at most 1 attempt(s) per command, 0 HTTP 400 result(s)"
+      ],
+      "I6": [
+        true,
+        "1 ledger row(s), none in doubt"
+      ],
+      "X1": [
+        true,
+        "8 delivery lease(s), each held by one identity at a time"
+      ],
+      "X2": [
+        true,
+        "27 file(s) and 7 argv list(s) clean"
+      ],
+      "X3": [
+        true,
+        "7 acknowledged result(s) all recorded"
+      ],
+      "X4": [
+        true,
+        "7 transition(s) consistent"
+      ]
+    },
+    "notes": {
+      "paused": "executor-b",
+      "paused_result": "CONFLICT",
+      "sealed_epoch": 2,
+      "epoch": 2,
+      "writes_after_release": 0
+    },
+    "fault_visible": true,
+    "fault_visible_after_seconds": 1.4,
+    "operator_restore": true,
+    "restore_healthy": true,
+    "restore_seconds": 4.6,
+    "git_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+    "tls": true
+  },
+  {
+    "run": "2026-11-12-S8-r2",
+    "scenario": "S8",
+    "repeat": 2,
+    "states": [
+      "FAILED"
+    ],
+    "committed_writes": 0,
+    "unobserved_windows": 0,
+    "duplicate_incidents": {
+      "count": 0,
+      "incidents": []
+    },
+    "deadline_seconds": 180,
+    "deadline_source": "kind default",
+    "duration_seconds": 29.6,
+    "matches_expectation": true,
+    "passed": true,
+    "expected_failures": [],
+    "harness_error": null,
+    "invariants": {
+      "I1": [
+        true,
+        "0 committed write(s) over 0 action(s)"
+      ],
+      "I2": [
+        true,
+        "1 revocation(s), no write after any"
+      ],
+      "I3": [
+        true,
+        "FAILED"
+      ],
+      "I4": [
+        true,
+        "7 acknowledged command(s), one result each"
+      ],
+      "I5": [
+        true,
+        "at most 1 attempt(s) per command, 0 HTTP 400 result(s)"
+      ],
+      "I6": [
+        true,
+        "1 ledger row(s), none in doubt"
+      ],
+      "X1": [
+        true,
+        "9 delivery lease(s), each held by one identity at a time"
+      ],
+      "X2": [
+        true,
+        "27 file(s) and 7 argv list(s) clean"
+      ],
+      "X3": [
+        true,
+        "7 acknowledged result(s) all recorded"
+      ],
+      "X4": [
+        true,
+        "7 transition(s) consistent"
+      ]
+    },
+    "notes": {
+      "paused": "executor-b",
+      "paused_result": "CONFLICT",
+      "sealed_epoch": 2,
+      "epoch": 2,
+      "writes_after_release": 0
+    },
+    "fault_visible": true,
+    "fault_visible_after_seconds": 20.2,
+    "operator_restore": true,
+    "restore_healthy": true,
+    "restore_seconds": 4.5,
+    "git_revision": "be6e636e45379e8a095b68fd5c469559ec497b86",
+    "tls": true
+  }
+]

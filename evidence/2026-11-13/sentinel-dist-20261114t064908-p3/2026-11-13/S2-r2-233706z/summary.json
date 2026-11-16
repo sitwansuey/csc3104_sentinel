@@ -1,0 +1,241 @@
+{
+  "schema": "sentinel-dist-acceptance-run-v1",
+  "scenario": "S2",
+  "title": "Stall the lease holder's node past its lease (docker pause)",
+  "fault": "fault point executor.before_patch (block), then docker pause of the holder's node past the lease, unpause after the other Executor wrote",
+  "file_mode_counterpart": "S2",
+  "expect": "RECOVERED, exactly 1 Sentinel template write, not from the paused holder's Pod",
+  "repeat_index": 2,
+  "context": "kind-sentinel-dist",
+  "date": "2026-11-13",
+  "started_at": "2026-11-13T23:37:06.876118Z",
+  "ended_at": "2026-11-13T23:41:45.491479Z",
+  "duration_seconds": 285.5,
+  "fault_at": "2026-11-13T23:37:32.349182Z",
+  "notes": {
+    "fault_point": "executor.before_patch",
+    "holder": "executor-a",
+    "paused_node": "sentinel-dist-worker",
+    "pause": {
+      "node": "sentinel-dist-worker",
+      "paused_at": "2026-11-13T23:37:32.349197Z",
+      "paused": true,
+      "unpaused": true,
+      "confirmed_at": "2026-11-13T23:37:32.705856Z",
+      "unpaused_at": "2026-11-13T23:40:33.624636Z"
+    }
+  },
+  "harness_error": "TimeoutError: the other Executor did not write",
+  "terminal_in_time": true,
+  "states": [
+    "RECOVERED"
+  ],
+  "incidents": [
+    {
+      "incident_id": "INC-59B2039F1C24",
+      "state": "RECOVERED",
+      "opened_at": "2026-11-13T23:37:24.943539Z"
+    }
+  ],
+  "earlier_incidents": 21,
+  "settle": {
+    "settled": true,
+    "seconds": 23.3,
+    "target": [],
+    "open": [],
+    "leftovers": []
+  },
+  "invariants": [
+    {
+      "id": "I1",
+      "name": "At most one committed template write per action",
+      "passed": true,
+      "detail": "1 committed write(s) over 1 action(s)"
+    },
+    {
+      "id": "I2",
+      "name": "No template write after revocation unless surfaced for review",
+      "passed": true,
+      "detail": "0 revocation(s), no write after any"
+    },
+    {
+      "id": "I3",
+      "name": "Every incident terminal or reviewable within the deadline",
+      "passed": true,
+      "detail": "RECOVERED"
+    },
+    {
+      "id": "I4",
+      "name": "No delivery has two acknowledged results",
+      "passed": true,
+      "detail": "211 acknowledged command(s), one result each"
+    },
+    {
+      "id": "I5",
+      "name": "No poison loop (bounded attempts, at most two HTTP 400 refusals per command)",
+      "passed": true,
+      "detail": "at most 5 attempt(s) per command, 0 HTTP 400 result(s)"
+    },
+    {
+      "id": "I6",
+      "name": "No Executor ledger ends with a write in doubt",
+      "passed": true,
+      "detail": "40 ledger row(s), none in doubt"
+    },
+    {
+      "id": "X1",
+      "name": "Lease ownership exclusive",
+      "passed": true,
+      "detail": "13 delivery lease(s), each held by one identity at a time"
+    },
+    {
+      "id": "X2",
+      "name": "No secret in logs, configuration files or argv",
+      "passed": true,
+      "detail": "7 file(s) and 7 argv list(s) clean"
+    },
+    {
+      "id": "X3",
+      "name": "No acknowledged message lost",
+      "passed": true,
+      "detail": "211 acknowledged result(s) all recorded"
+    },
+    {
+      "id": "X4",
+      "name": "Transitions journal consistent with incidents and outbox",
+      "passed": true,
+      "detail": "13 transition(s) consistent"
+    },
+    {
+      "id": "I7",
+      "name": "At most one successful template PATCH per action in the API server audit log",
+      "passed": true,
+      "detail": "1 template PATCH(es) over 1 action(s); 0 fence or seal PATCH(es) and 0 denied change(s) not counted"
+    }
+  ],
+  "invariants_passed": true,
+  "expectation": {
+    "expect": "RECOVERED, exactly 1 Sentinel template write, not from the paused holder's Pod",
+    "met": false,
+    "failures": [
+      "the paused holder's Pod wrote the template"
+    ]
+  },
+  "passed": false,
+  "audit": {
+    "events": 792,
+    "effects": {
+      "request": 790,
+      "template_write": 2
+    },
+    "sentinel_template_writes_per_action": {
+      "ACT-d9280889b39a9e217ee4c0ad": 1
+    },
+    "max_template_writes_per_action": 1,
+    "sentinel_template_writes": 1,
+    "operator_template_writes": 1,
+    "sentinel_denials": {},
+    "unclassified": {
+      "sentinel": 0,
+      "operator": 0
+    }
+  },
+  "audit_lines_skipped": 0,
+  "audit_completeness": {
+    "complete": true,
+    "problems": [],
+    "files": 2,
+    "first_event_at": "2026-11-13T10:26:21.581188Z",
+    "window": [
+      "2026-11-13T23:37:05.767118Z",
+      "2026-11-13T23:41:45.568479Z"
+    ],
+    "generation": {
+      "before": 44,
+      "before_restore": 46,
+      "after": 46
+    }
+  },
+  "clock": {
+    "control_plane_minus_harness": [
+      {
+        "offset_seconds": -0.016,
+        "uncertainty_seconds": 0.093,
+        "at": "2026-11-13T23:37:06.598883Z"
+      },
+      {
+        "offset_seconds": -0.015,
+        "uncertainty_seconds": 0.092,
+        "at": "2026-11-13T23:41:44.307994Z"
+      }
+    ],
+    "fault_at_cluster_clock": "2026-11-13T23:37:32.333182Z"
+  },
+  "takeover_seconds": null,
+  "coordinator_recovery": null,
+  "operator_actions": [
+    {
+      "operator_action": "inject STARTUP_FAILURE=true",
+      "at": "2026-11-13T23:37:08.045488Z"
+    },
+    {
+      "operator_action": "unpause node",
+      "node": "sentinel-dist-worker",
+      "at": "2026-11-13T23:40:33.624649Z"
+    },
+    {
+      "operator_action": "release fault point",
+      "identity": "executor-a",
+      "stem": "executor.before_patch",
+      "pod": "sentinel-executor-a-6b7fdf7cfb-hs6wt",
+      "at": "2026-11-13T23:40:34.836482Z",
+      "released_in_pod": "sentinel-executor-a-6b7fdf7cfb-hs6wt"
+    },
+    {
+      "operator_action": "disarm fault point",
+      "identity": "executor-b",
+      "stem": "executor.before_patch",
+      "at": "2026-11-13T23:40:35.336921Z"
+    },
+    {
+      "operator_restore": false
+    },
+    {
+      "operator_action": "approve",
+      "action_id": "ACT-e756b26acaeb6f6e5977c560",
+      "at": "2026-11-13T23:37:26.888084Z"
+    },
+    {
+      "operator_action": "approve",
+      "action_id": "ACT-d9280889b39a9e217ee4c0ad",
+      "at": "2026-11-13T23:40:46.287026Z"
+    }
+  ],
+  "cleanup": {
+    "actions": [
+      {
+        "operator_action": "unpause node",
+        "node": "sentinel-dist-worker",
+        "at": "2026-11-13T23:40:33.624649Z"
+      },
+      {
+        "operator_action": "release fault point",
+        "identity": "executor-a",
+        "stem": "executor.before_patch",
+        "pod": "sentinel-executor-a-6b7fdf7cfb-hs6wt",
+        "at": "2026-11-13T23:40:34.836482Z",
+        "released_in_pod": "sentinel-executor-a-6b7fdf7cfb-hs6wt"
+      },
+      {
+        "operator_action": "disarm fault point",
+        "identity": "executor-b",
+        "stem": "executor.before_patch",
+        "at": "2026-11-13T23:40:35.336921Z"
+      }
+    ],
+    "problems": []
+  },
+  "synthetic_planner": true,
+  "git_revision": "3ba0d123333ac66f7cf9fc989b5a6310abb5ac0f",
+  "limits": "Four kind nodes (containers) on one Docker host: separate network namespaces and kubelets, one shared kernel, clock and disk. Not separate machines. The Planner is the deterministic lab planner (synthetic proposals), and clock skew is injected by Chaos Mesh TimeChaos, not measured between hosts."
+}

@@ -31,6 +31,15 @@ class ContractBoundaryTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_message(message)
 
+    def test_execution_status_vocabulary_includes_superseded_only(self):
+        message = json.loads((ROOT / "data/sentinel/samples/messages/execution-result.json").read_text())
+        for status in ("APPLIED", "NOOP", "FAILED", "CONFLICT", "SUPERSEDED", "NEEDS_RECONCILIATION"):
+            with self.subTest(status=status):
+                validate_message(dict(message, status=status))
+        for status in ("superseded", "OVERWRITTEN", "", None):
+            with self.subTest(status=status), self.assertRaises(ContractError):
+                validate_message(dict(message, status=status))
+
     def test_missing_uid_is_rejected(self):
         message = self.proposal()
         del message["target"]["uid"]
@@ -45,15 +54,24 @@ class ContractBoundaryTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_message(message)
 
-    def test_scale_uses_explicit_nonnegative_integer(self):
+    def test_scale_names_its_baseline_template_and_a_bounded_replica_count(self):
+        # P5.07: SCALE restores a reviewed count, so zero and counts above 10 are refused.
         message = self.proposal()
         message["action"] = "SCALE"
-        for invalid in [-1, True, 1.5, "3"]:
+        bound = {"baseline_id": "BASE-1", "template_sha256": "a" * 64}
+        for invalid in [-1, 0, 11, True, 1.5, "3"]:
             with self.subTest(value=invalid), self.assertRaises(ContractError):
                 bad = copy.deepcopy(message)
-                bad["parameters"] = {"desired_replicas": invalid}
+                bad["parameters"] = {**bound, "desired_replicas": invalid}
                 validate_message(bad)
-        message["parameters"] = {"desired_replicas": 3}
+        for incomplete in ({"desired_replicas": 3}, {"baseline_id": "BASE-1", "desired_replicas": 3},
+                           {**bound, "desired_replicas": 3, "replicas": 3},
+                           {**bound, "template_sha256": "not-a-digest", "desired_replicas": 3}):
+            with self.subTest(parameters=incomplete), self.assertRaises(ContractError):
+                validate_message({**message, "parameters": incomplete})
+        message["parameters"] = {**bound, "desired_replicas": 3}
+        validate_message(message)
+        message["parameters"]["desired_replicas"] = 10
         validate_message(message)
 
     def test_invalid_template_digest_is_rejected(self):

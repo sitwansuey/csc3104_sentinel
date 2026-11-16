@@ -1,0 +1,155 @@
+{
+  "schema": "sentinel-evidence-profiles-v1",
+  "note": "Allowlisted globs per run class. '*' stays inside one folder and '**' crosses folders. The code deny-list in collect.py always wins.",
+  "classes": {
+    "connected-harness": {
+      "description": "Connected Boutique walkthrough: two recoveries, crash reconciliation and an unnecessary rollback refused",
+      "include": ["summary.json", "rbac-checks.json", "dashboard-validation.json", "images.json", "policy.json",
+                  "primary-incident.json", "primary-storefront-impact.json", "crash-incident.json",
+                  "*/initial-guard.json", "*/execution.json", "*/outcome.json", "*/proposal.json",
+                  "*/reconciliation.json", "*/result.json"]
+    },
+    "agent": {
+      "description": "Connected Boutique with the live RCA agent and Ollama Recovery Planner",
+      "include": ["summary.json", "rbac-checks.json", "dashboard-validation.json", "images.json", "policy.json",
+                  "primary-incident.json", "primary-storefront-impact.json",
+                  "*/initial-guard.json", "*/execution.json", "*/outcome.json", "*/proposal.json",
+                  "*/model-proposal.json", "*/model-calls.json", "model-runtime.json", "scenario-result.json",
+                  "*/planning-status.json", "*/attempt-*/agent/report.json", "*/attempt-*/agent/rejected-report.json",
+                  "*/attempt-*/agent/branch-*/result.json"]
+    },
+    "guard-rejection": {
+      "description": "Healthy service, unnecessary rollback proposed; Guard must refuse with zero Executor writes",
+      "include": ["summary.json", "rbac-checks.json", "dashboard-validation.json", "images.json", "policy.json",
+                  "*/guard-decision.json", "*/approved-guard-decision.json", "*/proof.json",
+                  "*/execution.json", "*/proposal.json"]
+    },
+    "shipping-lab": {
+      "description": "Single-service Boutique lab with operator-authored proposals",
+      "include": ["summary.json", "rbac-checks.json", "dashboard-validation.json", "images.json", "policy.json",
+                  "primary-incident.json", "crash-incident.json",
+                  "*/initial-guard.json", "*/execution.json", "*/outcome.json", "*/proposal.json",
+                  "*/reconciliation.json", "*/result.json"]
+    },
+    "provider-recovery": {
+      "description": "Connected Boutique driven by a configured provider script",
+      "include": ["summary.json", "rbac-checks.json", "dashboard-validation.json", "images.json", "policy.json",
+                  "primary-incident.json", "*/initial-guard.json", "*/execution.json", "*/outcome.json",
+                  "*/proposal.json"]
+    },
+    "ui-session": {
+      "description": "Browser-controlled session; records whether a scenario was ever triggered",
+      "include": ["summary.json", "lab-session.json", "rbac-checks.json", "images.json"]
+    },
+    "packaged": {
+      "description": "Packaged runner image driving the Boutique walkthrough",
+      "include": ["package-session.json", "host-cleanup.json", "bootstrap/environment.json",
+                  "data/evidence/summary.json", "data/evidence/dashboard-validation.json",
+                  "data/evidence/rbac-checks.json", "data/evidence/images.json",
+                  "data/evidence/*/initial-guard.json", "data/evidence/*/execution.json",
+                  "data/evidence/*/outcome.json", "data/evidence/*/proposal.json",
+                  "data/evidence/*/reconciliation.json", "data/evidence/*/result.json"]
+    },
+    "chaos-recovery": {
+      "description": "Connected Boutique catalog run with one Chaos Mesh fault and harness planning (P4.03, scripts/test_boutique_live.py --connected --scenario N2, N3 or T1): the scenario result, the chaos record, RESTART attribution and the true-negative proof, the recovery's proposal, Guard decision, execution and outcome, and each forced wrong action with its zero-write proof; never the Executor worker configuration, baselines or databases. NOTES.txt is an operator record attached from beside the run folder",
+      "include": ["summary.json", "scenario-result.json", "rbac-checks.json", "images.json", "policy.json",
+                  "primary-incident.json", "primary-storefront-impact.json", "attribution.json", "true-negative.json",
+                  "chaos-experiment.json", "*/initial-guard.json", "*/execution.json", "*/outcome.json", "*/proposal.json",
+                  "*/planning-status.json", "*/proof.json", "*/dependencies.json", "NOTES.txt"]
+    },
+    "scenario-pair": {
+      "description": "Two simultaneous catalog faults on the connected Boutique (P4.05, scripts/test_boutique_live.py --connected --pair): the pair result, ShopOutcome, injection, chaos record and attribution, and per target its proposals, Guard decisions, dependency findings, executions, outcomes and scenario score; never the Executor worker configuration, baselines or databases",
+      "include": ["summary.json", "pair-result.json", "pair-storefront-impact.json", "rbac-checks.json", "images.json",
+                  "policies/*.json", "attribution.json", "chaos-experiment.json", "dependency-readiness-*.json",
+                  "*-pair-*-incident.json", "pair-*/proposal-*.json", "pair-*/proposal.json", "pair-*/replan-*.json",
+                  "pair-*/guard-*.json", "pair-*/dependencies-*.json", "pair-*/dependencies.json",
+                  "pair-*/planning-status.json",
+                  "pair-*/execution-*.json", "pair-*/reconciliation.json", "pair-*/outcome-*.json",
+                  "pair-*/outcome.json", "pair-*/scenario-result.json"]
+    },
+    "chaos-batch": {
+      "description": "Chaos Mesh fault batch: injection, cleanup and recovery windows; no Sentinel action",
+      "include": ["batch.json", "*/manifest.json", "*/outcome.json", "*/fault.json", "*/ground-truth.json",
+                  "*/timeline.jsonl"]
+    },
+    "security-lab": {
+      "description": "Protected Boutique security lab: mTLS gateway, bypass and outage probes",
+      "include": ["validation.json", "scan-inventory.json", "session.json", "network-policies.json",
+                  "network-matrix.json", "gateway-load.json", "inspector-burst.json", "inspection-comparison.json",
+                  "inspector-outage.json", "inspector-readiness-*.json", "resources.json", "NOTES.txt"]
+    },
+    "scale-recovery": {
+      "description": "P5.07 reviewed replica restoration and forced SCALE refusal; no baselines or worker credentials",
+      "include": ["summary.json", "scenario-result.json", "rbac-checks.json", "images.json", "policy.json",
+                  "primary-incident.json", "primary-storefront-impact.json", "*/proposal.json",
+                  "*/initial-guard.json", "*/execution.json", "*/execution-results.json", "*/outcome.json",
+                  "*/transport-stats.json", "*/planning-status.json", "forced-scale/proof.json", "NOTES.txt"]
+    },
+    "cve-gate": {
+      "description": "P5.02 operator records: inventory, digest parameters, Audit then Deny and Guard zero-write proofs",
+      "include": ["inventory.json", "queue.json", "approved-images.json", "vap-report.json", "admission-*.json",
+                  "guard-*.json", "zero-write.json", "checks.json", "scans/**/summary.json", "NOTES.txt"]
+    },
+    "protected-recovery": {
+      "description": "P5.05 protected baseline or recovery: split-reader RBAC, bypass time points and one-write proof",
+      "include": ["summary.json", "protected-rbac-checks.json", "rbac-checks.json", "images.json", "policy.json",
+                  "bypass-*.json", "*/proposal.json", "*/initial-guard.json", "*/execution.json",
+                  "*/outcome.json", "*/result.json", "*/transport-stats.json", "NOTES.txt"]
+    },
+    "cert-lifecycle": {
+      "description": "P5.06 public rotation, refused-identity, expiry and CA-overlap operator records; never PKI or keys",
+      "include": ["rotation.json", "identity-*.json", "negatives.json", "rollover-*.json", "checkout-*.json",
+                  "checks.json", "NOTES.txt"]
+    },
+    "observer-acceptance": {
+      "description": "Live Observer acceptance on Boutique: detection and duplicate suppression",
+      "include": ["summary.json", "images.json", "policy.json", "polls.json"]
+    },
+    "executor-wedge": {
+      "description": "Live Executor wedge harness: one scenario in a disposable namespace; the first action must resolve without a write, a second proposal is then admitted",
+      "include": ["rv-race.json", "delete-recreate.json", "admission-deny.json", "admission-policy.json",
+                  "manifests.json", "recreate.json"]
+    },
+    "guard-eval": {
+      "description": "Offline Guard fixture evaluation (scripts/evaluate_guard.py)",
+      "include": ["results.json", "README.md"]
+    },
+    "distributed-scenario": {
+      "description": "One experiments/distributed/run_scenarios.py run: Coordinator and workers as separate processes on one host, against the file-backed test cluster (file mode) or a kind lab Deployment (kind mode); kind-wrapper.json and trace-waterfall.txt are operator records attached from beside the run folder",
+      "include": ["summary.json", "timeline.jsonl", "coordinator-records.json", "kind-wrapper.json",
+                  "trace-waterfall.txt"]
+    },
+    "kind-lab-session": {
+      "description": "Operator records of one kind-mode lab session: bundle preparation and its RBAC checks, the Verifier policy, a restore check, the run index and lab-state snapshots; no scenario results (those are distributed-scenario bundles)",
+      "include": ["prepare.out", "restore-check-inject.json", "restore-check.json", "kind-summary.json",
+                  "summary-all.json", "NOTES.txt", "bundle/rbac-checks.json", "bundle/policy.json",
+                  "bundle/allowed-targets.json", "bundle/baseline-health.json", "cleanup-patch.json",
+                  "state/policy-v1.json", "state/start-targets.json", "state/pre-cleanup-*.json",
+                  "state/annotation-patch-*.json", "state/before-deployments.json", "state/after-deployments.json"]
+    },
+    "executor-admission": {
+      "description": "Live check of the Executor admission policy (scripts/validation/test_executor_admission_live.py) in a disposable namespace with a restricted executor token",
+      "include": ["admission.json", "deployment.json", "executor-admission.yaml", "executor-rbac.yaml", "check.json",
+                  "probe.json"]
+    },
+    "worker-container": {
+      "description": "A worker image run as a container against a Coordinator on the host: orchestrator events, health and /readyz samples, container logs and Docker state, and the Planner's saved report",
+      "include": ["events.jsonl", "health.jsonl", "incident.json", "restore.json", "*.state.json", "*planner*.log",
+                  "coordinator.stderr.log", "config/worker.json", "config/model.json", "config-*/worker.json",
+                  "config-*/model.json", "planner-data/agent/*/attempt-*/agent/report.json",
+                  "planner-data/agent/*/attempt-*/agent/plan-0.json",
+                  "planner-data/agent/*/attempt-*/agent/usage.json",
+                  "planner-data/agent/*/attempt-*/agent/execution-summary.json"]
+    },
+    "rcaeval": {
+      "description": "One method on one split of the pre-registered RCAEval sample (scripts/evaluation/rcaeval_run.py); scores and predictions only, never telemetry or trajectories",
+      "include": ["summary.json", "versions.json", "run.json", "predictions.jsonl", "scores/summary.json",
+                  "scores/per-case.jsonl"]
+    },
+    "distributed-acceptance": {
+      "description": "Four-node kind lab sentinel-dist (experiments/distributed/kind_acceptance.py): per-run summaries, timelines, sanitised API server audit extracts, Coordinator records and versions; never databases, logs, keys or certificates",
+      "include": ["summary.json", "results.md", "lab.json", "inputs/*.json", "*/*/summary.json", "*/*/timeline.jsonl",
+                  "*/*/audit-extract.jsonl", "*/*/records.json", "*/*/versions.json"]
+    }
+  }
+}

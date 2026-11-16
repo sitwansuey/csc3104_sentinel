@@ -1,0 +1,28 @@
+{
+  "attempt": 2,
+  "citations": {
+    "1": [
+      "branch-002",
+      "branch-003"
+    ]
+  },
+  "incident_id": "INC-A600F431B0E4",
+  "prediction": {
+    "1": {
+      "root cause component": "shippingservice",
+      "root cause reason": "faulty configuration rollout"
+    }
+  },
+  "tools": [
+    {
+      "evidence_id": "branch-002",
+      "success": true,
+      "tool": "metrics"
+    },
+    {
+      "evidence_id": "branch-003",
+      "success": true,
+      "tool": "logs"
+    }
+  ]
+}

@@ -4,14 +4,34 @@ param([switch]$Setup, [switch]$Cleanup, [switch]$Dashboard,
       [switch]$PauseBeforeInjection, [switch]$GuardRejection, [switch]$UIControls, [switch]$Connected,
       [ValidateRange(1,65535)][int]$StorefrontPort = 8080,
       [switch]$Agent, [string]$AgentConfig, [string]$ProviderScript, [string]$ProviderPolicy,
-      [string]$Operator, [string]$RunDirectory)
+      [ValidateSet('interactive','auto-lab','reject','ui')][string]$Approval = 'interactive',
+      [string]$Operator, [string]$RunDirectory,
+      [ValidateSet('recovered','escalated')][string]$Expect = 'recovered',
+      [string]$Scenario,
+      [ValidateSet('shippingservice','cartservice')][string]$Target = 'shippingservice')
 
 $ErrorActionPreference = 'Stop'
 if ($ExitAfterTest -and -not $Dashboard) { throw '-ExitAfterTest requires -Dashboard.' }
 if ($AgentConfig -and -not $Agent) { throw '-AgentConfig requires -Agent.' }
+if ($Expect -ne 'recovered' -and -not $Agent) { throw '-Expect escalated requires -Agent.' }
+# Fail fast before any cluster setup; the harness applies the same catalog rules (experiments/boutique/catalog.json).
+$operatorScenarios = @{shippingservice = @('R1'); cartservice = @('C1', 'C2')}
+if ($Target -ne 'shippingservice' -and -not $Connected) { throw "-Target $Target requires -Connected." }
+# Chaos Mesh scenarios plan with the code rule provider unless -Agent is given; they still need -Connected.
+$chaosScenarios = @('N2', 'N3', 'T1')
+if ($Scenario -and $chaosScenarios -contains $Scenario -and -not $Connected) { throw "-Scenario $Scenario (Chaos Mesh) requires -Connected." }
+# A Chaos Mesh scenario takes its expected outcome from its catalog label. Only -Agent -Expect escalated may be given;
+# the harness then refuses it unless the label accepts ESCALATE (N2) or names it (N3).
+if ($Scenario -and $chaosScenarios -contains $Scenario -and $PSBoundParameters.ContainsKey('Expect') -and $Expect -ne 'escalated') { throw "-Scenario $Scenario (Chaos Mesh) takes its expected outcome from the catalog; drop -Expect $Expect." }
+# P5.07: the scale fault plans with the code rule provider, on the connected lab only, and takes its outcome from the catalog.
+$scaleScenarios = @('S1')
+if ($Scenario -and $scaleScenarios -contains $Scenario -and -not $Connected) { throw "-Scenario $Scenario (scale) requires -Connected." }
+if ($Scenario -and $scaleScenarios -contains $Scenario -and ($Agent -or $PSBoundParameters.ContainsKey('Expect'))) { throw "-Scenario $Scenario (scale) plans with the code rule provider and takes its outcome from the catalog; drop -Agent and -Expect." }
+if ($Scenario -and $operatorScenarios[$Target] -notcontains $Scenario -and $chaosScenarios -notcontains $Scenario -and $scaleScenarios -notcontains $Scenario -and -not ($Agent -and $Connected)) { throw "-Scenario $Scenario requires -Agent -Connected." }
 if ($Agent -and $GuardRejection) { throw '-Agent and -GuardRejection are separate scenarios.' }
 if ($Agent -and $ProviderScript) { throw '-Agent and -ProviderScript are separate planning modes.' }
 if ($UIControls -and (-not $Dashboard -or $PauseBeforeInjection)) { throw '-UIControls requires -Dashboard and replaces -PauseBeforeInjection.' }
+if ($Approval -eq 'ui' -and -not $UIControls) { throw '-Approval ui requires -Dashboard -UIControls.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
 . (Join-Path $PSScriptRoot 'install-dependencies.ps1') -FunctionsOnly
@@ -52,8 +72,12 @@ try {
     $testOptions = @()
     if ($Agent) { $testOptions += '--agent' }
     if ($AgentConfig) { $testOptions += @('--agent-config', $AgentConfig) }
+    if ($Expect -ne 'recovered') { $testOptions += @('--expect', $Expect) }
+    if ($Scenario) { $testOptions += @('--scenario', $Scenario) }
+    if ($Target -ne 'shippingservice') { $testOptions += @('--target', $Target) }
     if ($ProviderScript) { $testOptions += @('--provider-script', $ProviderScript) }
     if ($ProviderPolicy) { $testOptions += @('--provider-policy', $ProviderPolicy) }
+    $testOptions += @('--approval', $Approval)
     if ($Operator) { $testOptions += @('--operator', $Operator) }
     if ($RunDirectory) { $testOptions += @('--run-dir', $RunDirectory) }
     if ($Dashboard) { $testOptions += @('--dashboard', '--dashboard-port', "$DashboardPort") }

@@ -1,0 +1,51 @@
+{
+  "edge_direction": "caller_to_callee",
+  "source": {
+    "manifest": "deploy/boutique/upstream.yaml",
+    "sha256": "ae3c20181c051048e6a5cae51fa530681affa4043ba60ae95d4f39e1262f2744",
+    "derived_by": "experiments/boutique/harness/connected.py configured_graph and service_ports"
+  },
+  "nodes": [
+    "adservice",
+    "cartservice",
+    "checkoutservice",
+    "currencyservice",
+    "emailservice",
+    "frontend",
+    "paymentservice",
+    "productcatalogservice",
+    "recommendationservice",
+    "redis-cart",
+    "shippingservice"
+  ],
+  "ports": {
+    "adservice": {"service": 9555, "target": 9555},
+    "cartservice": {"service": 7070, "target": 7070},
+    "checkoutservice": {"service": 5050, "target": 5050},
+    "currencyservice": {"service": 7000, "target": 7000},
+    "emailservice": {"service": 5000, "target": 8080},
+    "frontend": {"service": 80, "target": 8080},
+    "paymentservice": {"service": 50051, "target": 50051},
+    "productcatalogservice": {"service": 3550, "target": 3550},
+    "recommendationservice": {"service": 8080, "target": 8080},
+    "redis-cart": {"service": 6379, "target": 6379},
+    "shippingservice": {"service": 50051, "target": 50051}
+  },
+  "edges": [
+    {"from": "cartservice", "to": "redis-cart"},
+    {"from": "checkoutservice", "to": "cartservice"},
+    {"from": "checkoutservice", "to": "currencyservice"},
+    {"from": "checkoutservice", "to": "emailservice"},
+    {"from": "checkoutservice", "to": "paymentservice"},
+    {"from": "checkoutservice", "to": "productcatalogservice"},
+    {"from": "checkoutservice", "to": "shippingservice"},
+    {"from": "frontend", "to": "adservice"},
+    {"from": "frontend", "to": "cartservice"},
+    {"from": "frontend", "to": "checkoutservice"},
+    {"from": "frontend", "to": "currencyservice"},
+    {"from": "frontend", "to": "productcatalogservice"},
+    {"from": "frontend", "to": "recommendationservice"},
+    {"from": "frontend", "to": "shippingservice"},
+    {"from": "recommendationservice", "to": "productcatalogservice"}
+  ]
+}

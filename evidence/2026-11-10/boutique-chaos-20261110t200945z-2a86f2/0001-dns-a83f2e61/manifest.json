@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "run_id": "0001-dns-a83f2e61",
+  "mode": "demo",
+  "scenario_id": "dns",
+  "started_at": "2026-11-10T20:09:47.246198Z",
+  "source_revision": "d013ea59998d921d29508078f946595923d544e1",
+  "versions": {
+    "boutique": "See environment.json for actual images and pod imageIDs",
+    "chaos_mesh": "2.8.2",
+    "kubernetes": "v1.37.0"
+  },
+  "configuration": {
+    "traffic": {
+      "traffic_interval": 1,
+      "traffic_workers": 1
+    },
+    "telemetry": {
+      "sample_interval": 5,
+      "metrics_source": "kubelet-stats-summary",
+      "traces": false
+    },
+    "fault": {
+      "apiVersion": "chaos-mesh.org/v1alpha1",
+      "kind": "DNSChaos",
+      "metadata": {
+        "name": "fault-0001-dns-a83f2e61",
+        "namespace": "sentinel-boutique-chaos",
+        "labels": {
+          "app.kubernetes.io/managed-by": "sentinel-chaos-demo",
+          "sentinel.dev/run-id": "0001-dns-a83f2e61"
+        }
+      },
+      "spec": {
+        "action": "error",
+        "patterns": [
+          "productcatalogservice",
+          "productcatalogservice.*"
+        ],
+        "mode": "one",
+        "duration": "60s",
+        "selector": {
+          "namespaces": [
+            "sentinel-boutique-chaos"
+          ],
+          "labelSelectors": {
+            "app": "recommendationservice"
+          }
+        }
+      }
+    }
+  },
+  "recovery_enabled": false
+}

@@ -38,8 +38,33 @@ resource notes in [setup](docs/setup.md) before using Apple Silicon.
 [Run and observe](docs/run.md) explains manual/automatic injection, evidence,
 the files used at each stage and interrupted cleanup. [Planner mode](docs/planner.md)
 adds `-Agent`; it requires a reachable Ollama server and a model you installed.
-Real-model acceptance is still pending. [Testing](docs/testing.md) explains
-how to validate each mode and distinguish live recovery from injected-model tests.
+Live agent-mode runs are committed as evidence. Almost all cover one fault
+type, where ROLLBACK is always the right action; runs before 4139385 used
+pre-authorised lab approval and later runs automated `auto-lab` approval through
+the authenticated API, with no person deciding. The catalog scenarios R2 and N1
+have run live but are unscored while their labels await sign-off
+(C-SCENARIO-LIVE-UNSCORED). None of this shows diagnosis accuracy in general. Owner acceptance is tracked in #56.
+
+<!-- BEGIN GENERATED:claim-c-agent-warm -->
+> **C-AGENT-WARM:** qwen3:14b agent mode reached RECOVERED in 3/3 consecutive runs after the target-name fix.
+> Scope: Three runs only, chosen as the latest consecutive set; earlier agent runs include failures (see C-AGENT-ALL). One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind; provenance inferred, not recorded.
+<!-- END GENERATED:claim-c-agent-warm -->
+
+The runs above have inferred provenance. Three later runs were stamped with
+their source revision:
+
+<!-- BEGIN GENERATED:claim-c-agent-recorded -->
+> **C-AGENT-RECORDED:** At a recorded revision, qwen3:14b agent mode reached RECOVERED in 3/3 consecutive runs.
+> Scope: Three runs only, on a warm model: each bundle's model-runtime.json records qwen3:14b Q4_K_M fully on the GPU (gpu_fraction 1.0) with keep_alive 30m, and every model call loaded in under 1 s. The preflight negative test that ran just before is counted in C-AGENT-PREFLIGHT-RECORDED, not here. One fault type (invalid shipping PORT) where ROLLBACK is always the correct action; lab approval pre-authorised. One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: 4afc879 on integration/phase1, clean tree, 2026-11-11 UTC.
+<!-- END GENERATED:claim-c-agent-recorded -->
+
+<!-- BEGIN GENERATED:claim-c-agent-all -->
+> **C-AGENT-ALL:** Across every recorded agent-mode attempt, 25/40 reached RECOVERED.
+> Scope: Every committed agent bundle, failures included: deliberate negative tests (unreachable model server, missing model, a forced 1 s planning budget), runs on older revisions, and the 2026-11-12 catalog runs R2 and N1, which are unscored (labels pending), and the R1 run at b79fb5d on the connected lab as changed for the cartservice target. A run counts only when it passed expecting RECOVERED; the two runs that passed as an expected escalation (the forced budget run and N1 at dab3b3f) never recover and count as not recovered. Mostly one fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Lab approval pre-authorised before 4139385; from 4139385 automated auto-lab (automated-lab identity, no person), except the forced-budget run and both N1 runs, which asked for no approval (mode not-requested). One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 20 runs from 4afc879 onwards.
+<!-- END GENERATED:claim-c-agent-all -->
+
+[Testing](docs/testing.md) explains how to validate each mode and distinguish
+live recovery from injected-model tests.
 
 ## Team responsibilities
 
@@ -53,10 +78,18 @@ how to validate each mode and distinguish live recovery from injected-model test
 | 6 Verifier | Dependency assessments and sustained post-action outcomes | [Verifier](services/verifier/README.md) |
 
 The current source runs these components through local workers/harnesses. It
-does not deploy six independent Sentinel microservices. Demo approval is trusted
-lab approval. An [authenticated approval service](docs/approvals.md) is available
-for explicit Guard/Executor wiring; deployed acceptance and cross-host execution
-ownership remain unfinished. See [architecture](docs/architecture.md) for the exact boundaries.
+does not deploy six independent Sentinel microservices. The Executor experiment
+and the Boutique harness (walkthrough, provider and agent modes) approve through
+the [authenticated approval service](docs/approvals.md#live-harness-approval):
+a person types the action ID, or an unattended run opts in to recorded automated
+lab approval. The Verifier acceptance script still uses local lab approval. Live
+runs from 4139385 used this path in automated `auto-lab` mode, recorded under the
+`automated-lab` identity (C-CONNECTED-HARNESS-AUTOLAB, C-APPROVAL-REJECT); no live
+run yet shows a person approving, and earlier live evidence used pre-authorised
+lab approval. Deployed
+acceptance and cross-host execution ownership remain unfinished; the
+[known limitations](#known-limitations-and-open-defects) list what that means
+in code. See [architecture](docs/architecture.md) for the exact boundaries.
 
 ## Repository map
 
@@ -72,9 +105,14 @@ ownership remain unfinished. See [architecture](docs/architecture.md) for the ex
 | `runbooks/` | Recovery guidance; distinct from diagnostic knowledge in `agent/knowledge/` |
 | `tests/` | Meaningful component, concurrency, restart and cross-role regressions |
 | `docs/` | Setup, operation, architecture, testing and optional-mode guides |
+| `evidence/` | Sanitised, append-only run bundles, their index and the claims registry |
 
 Generated databases, logs, screenshots, model artifacts and dataset downloads
-are ignored. Preserve/share sanitised evidence separately; do not commit credentials.
+are ignored; never commit credentials. Sanitised run evidence is committed under
+[evidence/](evidence/README.md): bundles are append-only, copied through an
+allowlist, hashed and labelled `recorded` or `inferred`. Results tables in
+[docs/results.md](docs/results.md) and the evaluation report in
+[docs/evaluation.md](docs/evaluation.md) are generated from them and checked in CI.
 
 ## Validate and extend
 
@@ -88,7 +126,68 @@ prove live Kubernetes recovery. [Testing](docs/testing.md) also documents the
 browser-driven live run and specialised role checks.
 
 Optional work stays separate: [Chaos Mesh](docs/chaos.md) injects/collects faults
-without claiming Sentinel repair; [security](docs/security.md) is a protected
-lab awaiting recovery integration; [RCAEval](agent/datasets/README.md) measures
-offline diagnosis, not recovery; [packaging](docs/packaging.md) describes the
-existing runner and its pending rebuild/scan. No old image is the current release.
+without claiming Sentinel repair (claim `C-CHAOS-ALL`), and three Chaos Mesh
+catalog scenarios have driven guarded recovery in the connected lab, unscored
+with labels pending (claims `C-CHAOS-RECOVERY-C9A44CA`, `C-CHAOS-RECOVERY-29E41F8`);
+[security](docs/security.md) is a protected lab with mTLS for the shipping path
+only, shown live (a cart route is in code with offline tests only), and graph-derived L4 NetworkPolicies for every service, not yet combined
+with guarded recovery (claims `C-SECURITY-LAB`, `C-SECURITY-NETPOL-LIVE`); [RCAEval](agent/datasets/README.md) measures
+offline diagnosis, not recovery, and has no committed result yet; [packaging](docs/packaging.md)
+describes the packaged runner (claim `C-PACKAGED`). The runner was rebuilt and
+scanned for PR #98, but there is no tagged release image yet. Claims and their
+scope caveats are listed in [results](docs/results.md#claims).
+
+## Known limitations and open defects
+
+Sentinel is a single-host prototype. This list is generated from
+[docs/limitations.json](docs/limitations.json).
+[docs/limitations.md](docs/limitations.md) gives each entry's impact, workaround
+and the code or evidence it cites, and CI fails when a citation stops resolving.
+
+<!-- BEGIN GENERATED:limitations-summary -->
+- [L-EXEC-WEDGE](docs/limitations.md#l-exec-wedge): A write rejected with its resource version unchanged waits in NEEDS_RECONCILIATION unless fencing is on (defect, mitigated; planned P2.06, P5.08)
+- [L-EXEC-REDELIVERY](docs/limitations.md#l-exec-redelivery): A replacement Executor without the ledger row reported CONFLICT for a write that was applied (defect, mitigated; planned P3.01, P4.01)
+- [L-CLOCK-ORDERING](docs/limitations.md#l-clock-ordering): Lifecycle ordering compared wall-clock timestamps written by different components (defect, mitigated; planned P3.03, P4.01)
+- [L-AGENT-JOURNAL](docs/limitations.md#l-agent-journal): Agent mode bypasses the durable Planner journal (defect, mitigated; planned P2.01, P3.07)
+- [L-AGENT-APPROVAL](docs/limitations.md#l-agent-approval): No live run yet shows a person approving through the authenticated API (defect, mitigated; planned P2.02, P2.03)
+- [L-RAW-LOGS-PROMPT](docs/limitations.md#l-raw-logs-prompt): Sentinel's planning prompts carry log text only cleaned and quoted, and the injection gate is a pattern list no live adversarial run has exercised (defect, mitigated; planned P2.04, P2.05, P4.04)
+- [L-FREE-TEXT-DECISION](docs/limitations.md#l-free-text-decision): The live diagnosis was model free text and the rollback choice had no change evidence (defect, mitigated; planned P2.05, P4.04)
+- [L-NO-LOGGING](docs/limitations.md#l-no-logging): Structured logs cover only the networked entrypoints, and no live run has collected them (defect, mitigated; planned P1.07, P3.02)
+- [L-OBSERVER-ZERO-REPLICAS](docs/limitations.md#l-observer-zero-replicas): A Deployment scaled to zero replicas is healthy unless a reviewed minimum is configured (defect, mitigated; planned P5.07)
+- [L-STALE-PROPOSAL](docs/limitations.md#l-stale-proposal): A tokenless Planner's proposal goes stale when the target's rollout moves its resourceVersion (defect, mitigated; planned P4.01)
+- [L-WORKER-READINESS-LONG-PASS](docs/limitations.md#l-worker-readiness-long-pass): A worker's /readyz turned 503 during a long pass while it was renewing its lease (defect, mitigated; planned P3.07)
+- [L-VERIFIER-RETRY-BACKOFF](docs/limitations.md#l-verifier-retry-backoff): In kind mode the Coordinator's retry back-off spaced the Verifier's samples past the health policy's gap (defect, mitigated; planned P3.06, P4.01)
+- [L-ORPHANED-EXECUTOR-LEDGER](docs/limitations.md#l-orphaned-executor-ledger): A crashed Executor whose peer finished the action kept it in doubt and refused that workload (defect, mitigated; planned P3.04, P4.01)
+- [L-VERIFIER-ROLLOUT-READING](docs/limitations.md#l-verifier-rollout-reading): A reading with no Pod during a Recreate rollout kept a repaired target UNKNOWN (defect, mitigated; planned P4.01)
+- [L-DIST-CHAOS-UNCONFIRMED](docs/limitations.md#l-dist-chaos-unconfirmed): The sentinel-dist harness removed a chaos object before Chaos Mesh acted on it (defect, mitigated; planned P4.01)
+- [L-WORKER-LOST-LEASE-LOOP](docs/limitations.md#l-worker-lost-lease-loop): A worker whose lease another worker took re-posted its result on every pass and claimed nothing (defect, mitigated; planned P4.01)
+- [L-SINGLE-COORDINATOR](docs/limitations.md#l-single-coordinator): The Coordinator is one process with one SQLite file (limitation, open; planned P4.02, P5.01)
+- [L-COORDINATOR-POSTGRES](docs/limitations.md#l-coordinator-postgres): The Coordinator's Postgres backend is a SQL dialect only and has never run (limitation, open; planned P5.01)
+- [L-SINGLE-HOST-DISTRIBUTION](docs/limitations.md#l-single-host-distribution): The networked worker layer has only run on one host (limitation, open; planned P3.01, P3.07, P4.01)
+- [L-VERIFIER-PASS-BLOCKS-WORKER](docs/limitations.md#l-verifier-pass-blocks-worker): While one Verifier pass samples, the single Verifier delays other actions' dependency checks, Guard steps and verification (limitation, open; planned P4.01)
+- [L-RESTART-BUDGET-LOCAL](docs/limitations.md#l-restart-budget-local): The restart budget is kept per Executor ledger, and only local wiring gives it to the Guard (limitation, open; planned P4.03)
+- [L-NO-DIAGNOSIS-ACCURACY](docs/limitations.md#l-no-diagnosis-accuracy): No diagnosis-accuracy evaluation (limitation, open; planned P2.07, P4.04)
+- [L-REPLAY-MODEL-ROWS](docs/limitations.md#l-replay-model-rows): The recovery decision ablation has model rows for qwen3:14b only, all unscored because its labels are unreviewed, and its state is reconstructed (limitation, open; planned P4.04, P4.07)
+- [L-EVALUATION-UNINTERPRETED](docs/limitations.md#l-evaluation-uninterpreted): The evaluation report is generated but unscored, partly not yet run and not yet interpreted (limitation, open; planned P4.07)
+- [L-CALLER-BLOCKS-CALLEE-REPAIR](docs/limitations.md#l-caller-blocks-callee-repair): A callee cannot be repaired while a caller it broke is NotReady, so the dependency-ordered pair cannot show its ordering (limitation, open; planned P4.05)
+- [L-SECURITY-SHIPPING-ONLY](docs/limitations.md#l-security-shipping-only): Shipping and cart mTLS/inspection passed four live rounds; other edges remain plaintext and policies stay lab-only (limitation, open; planned P4.06, P5.04, P5.05)
+- [L-SECURITY-GATEWAY-CAPACITY](docs/limitations.md#l-security-gateway-capacity): Inspector shedding held fail-closed in smoke, but 200-worker storefront load mostly failed and the gateway is a single replica (limitation, open; planned P5.04)
+- [L-NO-RELEASE](docs/limitations.md#l-no-release): No tagged, scanned release image (limitation, open; planned P2.09, P2.10)
+- [L-RESTORE-DETECTION](docs/limitations.md#l-restore-detection): A Coordinator restored from a backup is detected, but lost acknowledged results are re-driven by hand (limitation, mitigated; planned P4.02)
+- [L-HOST-LOCAL-EXECUTOR](docs/limitations.md#l-host-local-executor): The Executor ledger and target locks are host-local (limitation, mitigated; planned P3.04, P4.01)
+- [L-NO-FENCING](docs/limitations.md#l-no-fencing): Abandoned or revoked Executor writes are fenced only by a seal, run live on one Docker host (limitation, mitigated; planned P3.04, P3.05, P4.01)
+- [L-EXECUTOR-FIELD-LIMITS](docs/limitations.md#l-executor-field-limits): The Executor's field limits are an admission policy, live in sentinel-dist but not installed by default (limitation, mitigated; planned P3.05, P4.01, P5.07)
+- [L-ONE-FAULT-ONE-ACTION](docs/limitations.md#l-one-fault-one-action): One fault type, one repair action and one live target (limitation, mitigated; planned P2.08, P3.08, P3.09, P5.07)
+- [L-SCALE-OFFLINE-ONLY](docs/limitations.md#l-scale-offline-only): SCALE passed four connected-lab rounds; distributed inputs, admission probes and owner sign-off remain (limitation, mitigated; planned P5.07)
+- [L-REST-TRANSPORT-OFFLINE](docs/limitations.md#l-rest-transport-offline): REST passed 12 live wedge runs beside 12 kubectl runs; broader rejection coverage and owner sign-off remain (limitation, mitigated; planned P5.08)
+- [L-OVERLAPPING-FAULTS](docs/limitations.md#l-overlapping-faults): Two simultaneous faults have run live only as two unscored lab pairs, and the dependency pair stopped without ordering (limitation, mitigated; planned P4.05)
+- [L-MODEL-LATENCY](docs/limitations.md#l-model-latency): Model cold loads make agent planning slow and variable (limitation, mitigated; planned P2.01)
+- [L-PROTECTED-RECOVERY-OFFLINE](docs/limitations.md#l-protected-recovery-offline): Protected shipping baseline and recovery passed four live rounds; coverage gaps and owner sign-off remain (limitation, mitigated; planned P5.05, P5.06)
+- [L-UNGATED-CVES](docs/limitations.md#l-ungated-cves): CVE gate passed four connected-lab rounds; inherited vulnerabilities and strict-mode owner decisions remain (limitation, mitigated; planned P5.02, P5.03)
+- [L-UNPINNED-BASE-IMAGES](docs/limitations.md#l-unpinned-base-images): Sentinel component images used unpinned base image tags (limitation, mitigated; planned P1.09)
+- [L-CHAOS-NOT-WIRED](docs/limitations.md#l-chaos-not-wired): Chaos Mesh recovery has run live in the connected lab only, unscored, and HTTP and DNS faults do not run on this host (limitation, mitigated; planned P4.03)
+- [L-EVIDENCE-INFERRED](docs/limitations.md#l-evidence-inferred): Most committed evidence has inferred provenance (limitation, mitigated; planned P2.09)
+- [L-LAB-CERTS](docs/limitations.md#l-lab-certs): Certificate rotation, client refusals, rollover and one expiry escalation ran in smoke; owner review and identity gaps remain (limitation, mitigated; planned P5.06)
+
+8 fixed entries stay in the register as history.
+<!-- END GENERATED:limitations-summary -->

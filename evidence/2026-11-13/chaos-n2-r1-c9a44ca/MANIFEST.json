@@ -1,0 +1,172 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "chaos-n2-r1-c9a44ca",
+  "class": "chaos-recovery",
+  "captured_at": "2026-11-13T08:49:52.695934Z",
+  "source_run_dir_name": "boutique-live-20261113T084952Z-99b1f1",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "recorded",
+    "captured_by": "harness",
+    "dirty": false,
+    "dirty_path_count": 0,
+    "dirty_paths_sha256": null,
+    "host_class": "windows-amd64",
+    "python": "3.13.2",
+    "schema": "sentinel-provenance-v1",
+    "source_revision": "c9a44cacc004350f25bd3d76ddf85296d1af84e2",
+    "tools": {
+      "docker": "29.4.3",
+      "helm": "4.3.1+gc0d08d0",
+      "kind": "0.33.0",
+      "kubectl": "1.34.1"
+    }
+  },
+  "files": [
+    {
+      "path": "attribution.json",
+      "sha256": "03cea918c7e286c09d8d0aefe1437900f6daf4dd9d4e60701b7a700937e7e221",
+      "bytes": 1128,
+      "redactions": 0
+    },
+    {
+      "path": "chaos-experiment.json",
+      "sha256": "854507b599288d612fc9feae33ae71990d909ff2ad31a3e6fd238dcbe7672549",
+      "bytes": 757,
+      "redactions": 0
+    },
+    {
+      "path": "chaos-recovery/dependencies.json",
+      "sha256": "b62d7bba51df97384b6e3c3d8527d556d201ef0c170553ae3cdd30cc4fcc4b28",
+      "bytes": 563,
+      "redactions": 0
+    },
+    {
+      "path": "chaos-recovery/execution.json",
+      "sha256": "6b45bfe9f2bc29094a4c235b83897f59fd8a495ffda0f433457d2f82eb95da02",
+      "bytes": 605,
+      "redactions": 0
+    },
+    {
+      "path": "chaos-recovery/initial-guard.json",
+      "sha256": "055827e2191acf7befa2037e3001cfcac9e6cba2723815e2bcfceb1cea8c2f8d",
+      "bytes": 790,
+      "redactions": 0
+    },
+    {
+      "path": "chaos-recovery/outcome.json",
+      "sha256": "cc99fe129f0bb5cb21b33d69ac3deeb2f1623a4bbcc19c382d4560746e56046c",
+      "bytes": 2265,
+      "redactions": 0
+    },
+    {
+      "path": "chaos-recovery/planning-status.json",
+      "sha256": "da963727d9df002dd4c67f4e2dad64cfc6b288cb7647ee996032ba114a756ef0",
+      "bytes": 2070,
+      "redactions": 1
+    },
+    {
+      "path": "chaos-recovery/proposal.json",
+      "sha256": "1ece41ab92ef99458239eada0948a7cc17241d45e3d420c60eee1ac3506ac6b7",
+      "bytes": 1749,
+      "redactions": 1
+    },
+    {
+      "path": "forced-restart-drift/dependencies.json",
+      "sha256": "3623e432ee4ba592b708c50d9733adde6423eaa5191962eb14fb8322e4581495",
+      "bytes": 633,
+      "redactions": 0
+    },
+    {
+      "path": "forced-restart-drift/proof.json",
+      "sha256": "f576cc1e158806982eadcb750827c490234c85f56a3adf95f5da868ca32ec37f",
+      "bytes": 384,
+      "redactions": 0
+    },
+    {
+      "path": "forced-restart-drift/proposal.json",
+      "sha256": "efad2ab6e7ee47422fb48e19625bd4d6c7eeaed2ea793ec1bcaec7273b324814",
+      "bytes": 859,
+      "redactions": 1
+    },
+    {
+      "path": "forced-rollback/dependencies.json",
+      "sha256": "bba84b202186ecb492d2123b9638287ec768dd95af996a574244a98fcba7bf58",
+      "bytes": 578,
+      "redactions": 0
+    },
+    {
+      "path": "forced-rollback/proof.json",
+      "sha256": "7d969bf05688f7d3b8bee166f7c0a5a9ce355ee69ccc7ebeb0ae8adb880d8522",
+      "bytes": 426,
+      "redactions": 0
+    },
+    {
+      "path": "forced-rollback/proposal.json",
+      "sha256": "98a6da30a6a7dc7a49e1c25659b16bd836dcf3a9f12b4f011ea2add272b6894b",
+      "bytes": 790,
+      "redactions": 0
+    },
+    {
+      "path": "images.json",
+      "sha256": "c84b74cdbde235194701e1d35ac5bf5f82a0ea23bbd1545ee13be25f0d74b4a7",
+      "bytes": 2741,
+      "redactions": 0
+    },
+    {
+      "path": "policy.json",
+      "sha256": "c4dcc31bd1e6fb293e5a04b0ad7944d948127b52ef2a83c1c39f03ac12af1951",
+      "bytes": 2713,
+      "redactions": 0
+    },
+    {
+      "path": "primary-incident.json",
+      "sha256": "278b180c4f387a854821a50cb13ec48b7c7c88d4fa58682820560a50b3f27e99",
+      "bytes": 13648,
+      "redactions": 0
+    },
+    {
+      "path": "primary-storefront-impact.json",
+      "sha256": "b7d0787e3c1b1903e92b1ab6a28e1439d1e3c63a025e43a8715db3d144d3b11a",
+      "bytes": 313,
+      "redactions": 0
+    },
+    {
+      "path": "rbac-checks.json",
+      "sha256": "76dfdd78d7cbfafb0f5191ecf06f1531f7288f274daaae96432a494810070fc3",
+      "bytes": 830,
+      "redactions": 0
+    },
+    {
+      "path": "scenario-result.json",
+      "sha256": "e42ff0eb912c139cf2d889d2ec180984a2085b0a8118bbf4f8de2b76437a604c",
+      "bytes": 1060,
+      "redactions": 0
+    },
+    {
+      "path": "summary.json",
+      "sha256": "35272663c9659bf3ef1fcb770a7b855f324547174de97a40a4de575b84e7f6aa",
+      "bytes": 7511,
+      "redactions": 0
+    },
+    {
+      "path": "coordinator-journal.json",
+      "sha256": "4edfa8abdff71cbbbe28c82063d422dae167f1b494353f84ac35cd12207e4142",
+      "bytes": 43359,
+      "redactions": 4
+    },
+    {
+      "path": "NOTES.txt",
+      "sha256": "88f2dd468bfda711e9c4c7300e498f7986f917a4904e698489af4c1fad8708a4",
+      "bytes": 3411,
+      "redactions": 0
+    }
+  ],
+  "omitted": [],
+  "attached": [
+    {
+      "path": "NOTES.txt",
+      "source_name": "NOTES.txt"
+    }
+  ]
+}

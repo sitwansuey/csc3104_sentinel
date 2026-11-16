@@ -1,0 +1,36 @@
+{
+  "checks": [
+    {
+      "at": "2026-11-10T19:25:45.780765Z",
+      "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4",
+      "name": "healthy baseline captured with real service samples and immutable image",
+      "passed": true
+    },
+    {
+      "at": "2026-11-10T19:25:46.289358Z",
+      "name": "real ServiceAccount permits only selected Deployment get/patch; forbidden write denied",
+      "passed": true
+    },
+    {
+      "at": "2026-11-10T19:25:54.146790Z",
+      "cart_status": 500,
+      "checkout_status": 500,
+      "name": "Connected cart and checkout fail while shipping configuration is broken",
+      "passed": true,
+      "scenario": "primary"
+    }
+  ],
+  "dependencies": "Configured upstream address graph; live component readiness; no trace discovery",
+  "error": "Ollama Planner failed for qwen3:14b: <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>",
+  "error_type": "RuntimeError",
+  "finished_at": "2026-11-10T19:26:01.639756Z",
+  "integration_error": "RuntimeError",
+  "mode": "LIVE Kubernetes; restricted executor credentials",
+  "operator_emergency_restore": true,
+  "private_executor_credentials_removed": true,
+  "scope": "Dedicated single-node cluster; shipping-only recovery; harness planning",
+  "started_at": "2026-11-10T19:24:36.742353Z",
+  "status": "FAILED",
+  "verification": "Actual shipping gRPC, full storefront cart/checkout and dependency readiness",
+  "workload": "Full Online Boutique v0.10.7 with synthetic checkout traffic"
+}

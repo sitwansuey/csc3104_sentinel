@@ -1,12 +1,13 @@
 """Validate synthetic development messages and their cross-component links."""
 
-import hashlib
 import json
 from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from shared.actions import restart_parameters, scale_parameters
+from shared.canonical import sha256_hex
 from shared.contracts import validate_message
 
 
@@ -18,6 +19,10 @@ def main():
     for path, message in zip(paths, messages):
         validate_message(message)
         print(f"PASS {path.relative_to(ROOT)}")
+    # RESTART and SCALE samples belong to their own incidents; the rest form one ROLLBACK chain.
+    restarts = [m for m in messages if m["kind"] == "proposal" and m["action"] == "RESTART"]
+    scales = [m for m in messages if m["kind"] == "proposal" and m["action"] == "SCALE"]
+    messages = [m for m in messages if m not in restarts and m not in scales]
     incident = next(m for m in messages if m["kind"] == "incident")
     proposal = next(m for m in messages if m["kind"] == "proposal")
     for message in messages:
@@ -29,13 +34,26 @@ def main():
     if not set(proposal["evidence_refs"]) <= known_evidence:
         raise ValueError("Proposal references missing evidence")
     baseline = json.loads((ROOT / "data/sentinel/samples/baseline.json").read_text())
-    canonical = json.dumps(baseline["pod_template"], sort_keys=True, separators=(",", ":")).encode()
-    digest = hashlib.sha256(canonical).hexdigest()
+    # Same encoding as Guard and Executor, so NaN and Infinity are rejected here too.
+    digest = sha256_hex(baseline["pod_template"])
     if digest != proposal["parameters"]["template_sha256"] or digest != baseline["template_sha256"]:
         raise ValueError("Proposal does not reference the exact saved baseline template")
     if baseline["baseline_id"] != proposal["parameters"]["baseline_id"] or baseline["target"] != proposal["target"]:
         raise ValueError("Baseline identity does not match the proposal")
-    print(f"Validated {len(messages)} example messages and shared references.")
+    for restart in restarts:
+        # Planner-bound: token from incident and baseline, hash of baseline plus token.
+        if restart["target"] != baseline["target"] or restart["parameters"] != restart_parameters(
+                restart["incident_id"], baseline):
+            raise ValueError("RESTART sample is not bound to its incident and the saved baseline")
+    for scale in scales:
+        # Planner-bound (P5.07): the saved baseline's id, the live template it leaves in place (in a scale
+        # fault that is the baseline template itself) and the replica count. The sample baseline records no
+        # count, so the count is only checked against the contract here; the binding of the count is tested
+        # in tests/test_scale_action.py.
+        if scale["target"] != baseline["target"] or scale["parameters"] != scale_parameters(
+                {**baseline, "replicas": scale["parameters"]["desired_replicas"]}, baseline["pod_template"]):
+            raise ValueError("SCALE sample is not bound to the saved baseline and its unchanged template")
+    print(f"Validated {len(messages) + len(restarts) + len(scales)} example messages and shared references.")
     print("These are fixture checks; no recovery action was executed.")
 
 

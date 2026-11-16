@@ -1,0 +1,132 @@
+{
+  "schema": "sentinel-distributed-run-v1",
+  "scenario": "S2",
+  "title": "Stall the lease-holding Executor past its lease",
+  "mode": "kind",
+  "repeat": 1,
+  "date": "2026-11-12",
+  "started_at": "2026-11-12T16:06:42.090723Z",
+  "duration_seconds": 49.3,
+  "single_host": true,
+  "separate_processes": true,
+  "synthetic_planner": true,
+  "cluster": "kind-sentinel-boutique-connected",
+  "tls": true,
+  "lease_seconds": 4,
+  "deadline_seconds": 60,
+  "git_revision": "0a8d4d72abc6c6b26146558200ba6b42605fbb14",
+  "python": "3.13.2",
+  "os": "Windows",
+  "notes": {
+    "stalled": "executor-a",
+    "stall": "block+blackhole"
+  },
+  "harness_error": null,
+  "clock_offsets_simulated": {},
+  "max_clock_skew_seconds": null,
+  "clock_offsets_measured": {
+    "executor-a": {
+      "theta_seconds": 0.013,
+      "uncertainty_seconds": 0.013,
+      "max_abs_theta_seconds": 0.018,
+      "reports": 24
+    },
+    "executor-b": {
+      "theta_seconds": 0.006,
+      "uncertainty_seconds": 0.006,
+      "max_abs_theta_seconds": 0.013,
+      "reports": 200
+    },
+    "guard-1": {
+      "theta_seconds": 0.006,
+      "uncertainty_seconds": 0.006,
+      "max_abs_theta_seconds": 0.013,
+      "reports": 202
+    },
+    "planner-1": {
+      "theta_seconds": 0.006,
+      "uncertainty_seconds": 0.006,
+      "max_abs_theta_seconds": 0.013,
+      "reports": 203
+    },
+    "verifier-1": {
+      "theta_seconds": 0.011,
+      "uncertainty_seconds": 0.011,
+      "max_abs_theta_seconds": 0.013,
+      "reports": 196
+    }
+  },
+  "states": [
+    "RECOVERED",
+    "REJECTED"
+  ],
+  "committed_writes": 1,
+  "unobserved_windows": 0,
+  "invariants": [
+    {
+      "id": "I1",
+      "name": "At most one committed template write per action",
+      "passed": true,
+      "detail": "1 committed write(s) over 1 action(s)"
+    },
+    {
+      "id": "I2",
+      "name": "No template write after revocation unless surfaced for review",
+      "passed": true,
+      "detail": "0 revocation(s), no write after any"
+    },
+    {
+      "id": "I3",
+      "name": "Every incident terminal or reviewable within the deadline",
+      "passed": true,
+      "detail": "RECOVERED, REJECTED"
+    },
+    {
+      "id": "I4",
+      "name": "No delivery has two acknowledged results",
+      "passed": true,
+      "detail": "10 acknowledged command(s), one result each"
+    },
+    {
+      "id": "I5",
+      "name": "No poison loop (bounded attempts, at most two HTTP 400 refusals per command)",
+      "passed": true,
+      "detail": "at most 6 attempt(s) per command, 0 HTTP 400 result(s)"
+    },
+    {
+      "id": "I6",
+      "name": "No Executor ledger ends with a write in doubt",
+      "passed": true,
+      "detail": "2 ledger row(s), none in doubt"
+    },
+    {
+      "id": "X1",
+      "name": "Lease ownership exclusive",
+      "passed": true,
+      "detail": "10 delivery lease(s), each held by one identity at a time"
+    },
+    {
+      "id": "X2",
+      "name": "No secret in logs, configuration files or argv",
+      "passed": true,
+      "detail": "26 file(s) and 7 argv list(s) clean"
+    },
+    {
+      "id": "X3",
+      "name": "No acknowledged message lost",
+      "passed": true,
+      "detail": "10 acknowledged result(s) all recorded"
+    },
+    {
+      "id": "X4",
+      "name": "Transitions journal consistent with incidents and outbox",
+      "passed": true,
+      "detail": "10 transition(s) consistent"
+    }
+  ],
+  "passed": true,
+  "expected_failures": [],
+  "known_defect": null,
+  "matches_expectation": true,
+  "limits": "Separate OS processes on one host: one kernel clock, one disk, loopback networking. Not separate machines; clock skew is simulated by a gated offset, and the measured offsets measure that simulation over loopback, not skew between hosts."
+}

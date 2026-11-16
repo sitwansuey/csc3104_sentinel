@@ -1,0 +1,23 @@
+{
+  "scenario": "R1",
+  "injection": {
+    "kind": "set_env",
+    "container": "server",
+    "env": "PORT",
+    "value": "invalid-port"
+  },
+  "injected_at": "2026-11-12T18:09:25.174031Z",
+  "health_http_status": 500,
+  "fault_visible": true,
+  "visible_after_seconds": 1.6,
+  "state": {
+    "generation": 183,
+    "observed_generation": 183,
+    "resource_version": "151789",
+    "desired": 1,
+    "available": 0,
+    "updated": 0,
+    "template_is_baseline": false,
+    "template_sha256": "bbf3cdf1bdf5cb2da049b116f062f52273d7cc6d1b40a2109adb21a60b1ad7ae"
+  }
+}

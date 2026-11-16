@@ -64,6 +64,40 @@ def _target(target):
     _enum(target["kind"], {"Deployment"}, "target.kind")
 
 
+def _sha256(value, path):
+    if not isinstance(value, str) or not re.fullmatch(r"[a-f0-9]{64}", value):
+        raise ContractError(f"{path}: expected a lowercase SHA-256 digest")
+
+
+def _restart_token(value, path):
+    # Planner-bound: "RST-" plus 16 hex characters of a hash, never free text.
+    if not isinstance(value, str) or not re.fullmatch(r"RST-[a-f0-9]{16}", value):
+        raise ContractError(f"{path}: expected a planner-bound restart token")
+
+
+def _replicas(value, path):
+    # SCALE restores a reviewed count (P5.07): scaling to zero is never a repair, and
+    # shared/actions.py SCALE_MAX_REPLICAS (10) bounds every count.
+    if type(value) is not int or not 1 <= value <= 10:
+        raise ContractError(f"{path}: expected an integer from 1 to 10")
+
+
+# The action registry: every action and its closed parameter schema. No action
+# takes a free-form field. ROLLBACK and RESTART both name the exact Pod template
+# they write (template_sha256) and the reviewed baseline it comes from. SCALE
+# names the baseline whose replica count it restores and the exact live template
+# it leaves in place (P5.07; before it, SCALE carried desired_replicas alone and
+# was never executed).
+ACTION_PARAMETERS = {
+    "ROLLBACK": {"baseline_id": _string, "template_sha256": _sha256},
+    "RESTART": {"baseline_id": _string, "restart_token": _restart_token, "template_sha256": _sha256},
+    "SCALE": {"baseline_id": _string, "desired_replicas": _replicas, "template_sha256": _sha256},
+    "NO_ACTION": {},
+    "ESCALATE": {},
+}
+assert set(ACTION_PARAMETERS) == ACTION_TYPES
+
+
 FIELDS = {
     "incident": {"incident_id", "observed_at", "observed_resource_version", "observed_generation", "signals"},
     "proposal": {"incident_id", "action_id", "action", "parameters", "based_on_resource_version", "rationale", "evidence_refs"},
@@ -71,7 +105,22 @@ FIELDS = {
     "dependency_result": {"incident_id", "action_id", "status", "affected_services", "blockers", "unknowns", "checked_at"},
     "execution_result": {"incident_id", "action_id", "status", "resource_version", "recorded_at", "details"},
     "outcome": {"incident_id", "action_id", "status", "window_start", "window_end", "checks"},
+    # An Executor's answer to an executor.seal command (services/executor/core.py::seal). epoch is the
+    # Coordinator's target-ownership epoch of the seal delivery; resource_version is the version the
+    # seal observed or left, or null when the target is gone.
+    "fence_result": {"incident_id", "action_id", "epoch", "outcome", "resource_version", "recorded_at"},
 }
+# SEALED: no write of the action can commit any more, and none had. APPLIED: a write of the action
+# landed before the seal. UNSEALED: the seal could not finish within its bounded attempts.
+FENCE_OUTCOMES = frozenset({"SEALED", "APPLIED", "UNSEALED"})
+# Optional fields a message kind may carry. An execution_result with status CONFLICT may name why
+# no write of the action committed and what the Executor then read of the same target
+# (services/executor/core.py::_conflict); the Coordinator's re-plan rule reads it
+# (services/coordinator/core.py::replan_after_conflict). NOT_SENT: this Executor sent no write,
+# because its own read already showed another version. REFUSED: the adapter refused the write's
+# preconditions without committing it (ConditionalWriteConflict).
+OPTIONAL_FIELDS = {"execution_result": {"conflict"}}
+CONFLICT_BASES = frozenset({"NOT_SENT", "REFUSED"})
 
 
 def validate_message(message):
@@ -83,7 +132,8 @@ def validate_message(message):
         raise ContractError("message.kind: unknown message type")
     version = message.get("schema_version")
     bound_fields = {"proposal_sha256", "inputs_sha256", "valid_until"} if kind == "guard_result" and version == "2.0" else set()
-    _object(message, {"kind", "schema_version", "target"} | FIELDS[kind] | bound_fields)
+    _object(message, {"kind", "schema_version", "target"} | FIELDS[kind] | bound_fields,
+            OPTIONAL_FIELDS.get(kind, ()))
     if version != "1.0" and not (kind == "guard_result" and version == "2.0"):
         raise ContractError("schema_version: unsupported message version")
     _target(message["target"])
@@ -111,19 +161,10 @@ def validate_message(message):
         _string(message["rationale"], "rationale")
         _strings(message["evidence_refs"], "evidence_refs", 1)
         params = message["parameters"]
-        if action == "ROLLBACK":
-            _object(params, {"baseline_id", "template_sha256"}, path="parameters")
-            _string(params["baseline_id"], "parameters.baseline_id")
-            if not isinstance(params["template_sha256"], str) or not re.fullmatch(r"[a-f0-9]{64}", params["template_sha256"]):
-                raise ContractError("parameters.template_sha256: expected a lowercase SHA-256 digest")
-        elif action == "SCALE":
-            _object(params, {"desired_replicas"}, path="parameters")
-            _integer(params["desired_replicas"], "parameters.desired_replicas")
-        elif action == "RESTART":
-            _object(params, {"restart_token"}, path="parameters")
-            _string(params["restart_token"], "parameters.restart_token")
-        else:
-            _object(params, set(), path="parameters")
+        schema = ACTION_PARAMETERS[action]
+        _object(params, set(schema), path="parameters")
+        for key, check in schema.items():
+            check(params[key], f"parameters.{key}")
 
     elif kind == "guard_result":
         _enum(message["verdict"], {"ALLOW", "REJECT", "ESCALATE"}, "verdict")
@@ -145,11 +186,22 @@ def validate_message(message):
         _timestamp(message["checked_at"], "checked_at")
 
     elif kind == "execution_result":
-        _enum(message["status"], {"APPLIED", "NOOP", "FAILED", "CONFLICT", "NEEDS_RECONCILIATION"}, "status")
+        _enum(message["status"], {"APPLIED", "NOOP", "FAILED", "CONFLICT", "SUPERSEDED",
+                                  "NEEDS_RECONCILIATION"}, "status")
         if message["resource_version"] is not None:
             _string(message["resource_version"], "resource_version")
         _timestamp(message["recorded_at"], "recorded_at")
         _string(message["details"], "details", allow_empty=True)
+        if "conflict" in message:
+            if message["status"] != "CONFLICT":
+                raise ContractError("conflict: only a CONFLICT result names why nothing committed")
+            conflict = message["conflict"]
+            _object(conflict, {"basis", "resource_version", "generation"}, path="conflict")
+            _enum(conflict["basis"], CONFLICT_BASES, "conflict.basis")
+            _string(conflict["resource_version"], "conflict.resource_version")
+            if len(conflict["resource_version"]) > 256:
+                raise ContractError("conflict.resource_version: at most 256 characters")
+            _integer(conflict["generation"], "conflict.generation", 1)
 
     elif kind == "outcome":
         _enum(message["status"], {"RECOVERED", "NOT_RECOVERED", "UNKNOWN"}, "status")
@@ -166,3 +218,10 @@ def validate_message(message):
             _string(check["detail"], "check.detail")
             if type(check["passed"]) is not bool:
                 raise ContractError("check.passed: expected a boolean")
+
+    elif kind == "fence_result":
+        _integer(message["epoch"], "epoch", 1)
+        _enum(message["outcome"], FENCE_OUTCOMES, "outcome")
+        if message["resource_version"] is not None:
+            _string(message["resource_version"], "resource_version")
+        _timestamp(message["recorded_at"], "recorded_at")

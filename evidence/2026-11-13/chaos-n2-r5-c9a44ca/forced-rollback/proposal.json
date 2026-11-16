@@ -1,0 +1,24 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-FORCED-2ca2f0abc535461f9ae6800c73d74b51",
+  "based_on_resource_version": "170722",
+  "evidence_refs": [
+    "INC-7FEA8BE8A64B",
+    "HEALTH-115461388c5a43d7b3675ac6a3827319"
+  ],
+  "incident_id": "INC-7FEA8BE8A64B",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-2489663bc7a8",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "Harness-forced wrong action for the negative matrix; the Guard must refuse it.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

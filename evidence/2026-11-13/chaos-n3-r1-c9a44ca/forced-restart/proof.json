@@ -1,0 +1,15 @@
+{
+  "action": "RESTART",
+  "action_id": "ACT-FORCED-c81febd0e394417e80c1dd0841807de1",
+  "executor_journal_attempts": 0,
+  "executor_patch_attempts": 0,
+  "executor_status": "FAILED",
+  "expected_reason": "RESTART_NOT_JUSTIFIED",
+  "generation_unchanged": true,
+  "guard_reason_codes": [
+    "RESTART_NOT_JUSTIFIED"
+  ],
+  "guard_verdict": "REJECT",
+  "label": "forced-restart",
+  "template_unchanged": true
+}

@@ -1,4 +1,4 @@
-"""Non-persisting Kubernetes admission preview for a bound rollback candidate.
+"""Non-persisting Kubernetes admission preview for a bound ROLLBACK, RESTART or SCALE candidate.
 
 Every Kubernetes patch in this module includes ``--dry-run=server``. A passing
 Deployment preview establishes API acceptance of that exact template only; it
@@ -9,7 +9,6 @@ mapping and must still obtain fresh Guard validation before actual execution.
 
 from copy import deepcopy
 from datetime import datetime, timezone
-import json
 import os
 from pathlib import Path
 import subprocess
@@ -19,6 +18,8 @@ from services.guard.core import GuardInputError, proposal_fingerprint, template_
 from services.guard.adapters import (
     AdapterError, KUBECTL_TIMEOUT_SECONDS, _DNS_LABEL, _DNS_SUBDOMAIN, _parse_json,
 )
+from shared.actions import baseline_replicas, config_fingerprint, restart_template, restart_token
+from shared.canonical import canonical_json
 from shared.contracts import ContractError
 
 
@@ -58,7 +59,12 @@ def _private_file(path):
 def server_dry_run(proposal: dict, live_state: dict, baseline: dict, *,
                    context: str, cluster_id: str,
                    kubeconfig: str | Path | None = None) -> dict:
-    """Preview an exact rollback via a UID/version-conditional JSON Patch.
+    """Preview an exact candidate template via a UID/version-conditional JSON Patch.
+
+    A ROLLBACK candidate is the baseline template; a RESTART candidate is the
+    baseline template plus the planner-bound restart token. A SCALE candidate
+    is the baseline's replica count on the bound live template: its patch
+    replaces spec.replicas only, and the admitted object must keep both.
 
     Invalid proposal/context inputs raise a safe AdapterError. Inconsistent
     snapshots, unavailable API access and ambiguous kubectl errors return
@@ -102,7 +108,7 @@ def server_dry_run(proposal: dict, live_state: dict, baseline: dict, *,
                         checked_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
         return snapshot
 
-    if proposal["action"] != "ROLLBACK":
+    if proposal["action"] not in ("ROLLBACK", "RESTART", "SCALE"):
         return finish("UNKNOWN", "UNSUPPORTED_PREVIEW_ACTION")
     if not isinstance(live_state, dict) or live_state.get("cluster_id") != cluster_id:
         return finish("UNKNOWN", "LIVE_PRECONDITION_FAILED")
@@ -119,17 +125,38 @@ def server_dry_run(proposal: dict, live_state: dict, baseline: dict, *,
         digest = template_sha256(template)
     except (GuardInputError, TypeError, ValueError, RecursionError):
         return finish("UNKNOWN", "BASELINE_PRECONDITION_FAILED")
-    if digest != baseline.get("template_sha256") or digest != snapshot["template_sha256"]:
+    if digest != baseline.get("template_sha256"):
         return finish("UNKNOWN", "BASELINE_PRECONDITION_FAILED")
     if (not isinstance(template.get("spec"), dict)
             or not isinstance(template["spec"].get("containers"), list)
             or not template["spec"]["containers"]):
         return finish("UNKNOWN", "BASELINE_PRECONDITION_FAILED")
+    if proposal["action"] == "RESTART":
+        token = restart_token(proposal["incident_id"], baseline["baseline_id"])
+        if proposal["parameters"]["restart_token"] != token:
+            return finish("UNKNOWN", "BASELINE_PRECONDITION_FAILED")
+        template = restart_template(template, token)
+        digest = template_sha256(template)
+    replicas = None
+    if proposal["action"] == "SCALE":
+        replicas = proposal["parameters"]["desired_replicas"]
+        spec = deployment.get("spec")
+        live_template = spec.get("template") if isinstance(spec, dict) else None
+        try:
+            unchanged = config_fingerprint(live_template) == config_fingerprint(template)
+            template, digest = live_template, template_sha256(live_template)
+        except (GuardInputError, TypeError, ValueError, RecursionError):
+            return finish("UNKNOWN", "LIVE_PRECONDITION_FAILED")
+        if baseline_replicas(baseline) != replicas or not unchanged:
+            return finish("UNKNOWN", "BASELINE_PRECONDITION_FAILED")
+    if digest != snapshot["template_sha256"]:
+        return finish("UNKNOWN", "BASELINE_PRECONDITION_FAILED")
 
     patch = [
         {"op": "test", "path": "/metadata/uid", "value": target["uid"]},
         {"op": "test", "path": "/metadata/resourceVersion", "value": snapshot["resource_version"]},
-        {"op": "replace", "path": "/spec/template", "value": template},
+        ({"op": "replace", "path": "/spec/replicas", "value": replicas} if replicas is not None
+         else {"op": "replace", "path": "/spec/template", "value": template}),
     ]
     command = ["kubectl", f"--context={context}", f"--namespace={namespace}",
                "--request-timeout=10s"]
@@ -143,7 +170,7 @@ def server_dry_run(proposal: dict, live_state: dict, baseline: dict, *,
         patch_path = Path(path)
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
             _private_file(patch_path)
-            json.dump(patch, stream, sort_keys=True, separators=(",", ":"), allow_nan=False)
+            stream.write(canonical_json(patch))
         command.extend(["patch", "deployment", name, "--type=json", "--patch-file",
                         str(patch_path), "--dry-run=server", "--output=json"])
         result = subprocess.run(command, capture_output=True, check=False,
@@ -179,6 +206,8 @@ def server_dry_run(proposal: dict, live_state: dict, baseline: dict, *,
         return finish("UNKNOWN", "INVALID_SERVER_RESPONSE")
     if admitted_digest != digest:
         return finish("REJECTED", "ADMISSION_TEMPLATE_MUTATED", admitted_digest)
+    if replicas is not None and admitted["spec"].get("replicas") != replicas:
+        return finish("REJECTED", "ADMISSION_REPLICAS_MUTATED", admitted_digest)
     return finish("PASSED", "SERVER_DRY_RUN_PASSED", admitted_digest)
 
 

@@ -1,0 +1,26 @@
+{
+  "run_id": "0001-pod-3a80a9d9",
+  "status": "failed",
+  "injection_confirmed": true,
+  "cleanup_confirmed": true,
+  "baseline_healthy": true,
+  "recovery_healthy": false,
+  "recovery_attribution": "no_sentinel_action; chaos_expiry_or_harness_cleanup",
+  "errors": [
+    "RuntimeError: Application recovery was not confirmed"
+  ],
+  "telemetry_complete": true,
+  "injection_end_conditions": {
+    "Selected": "True",
+    "AllInjected": "False",
+    "AllRecovered": "True",
+    "Paused": "False"
+  },
+  "collection_errors": 0,
+  "log_gaps": 0,
+  "collection_samples": 27,
+  "collection_overruns": 0,
+  "completed_at": "2026-11-10T19:53:50.202607Z",
+  "fault_window_journeys": 55,
+  "observed_failed_fault_journeys": 55
+}

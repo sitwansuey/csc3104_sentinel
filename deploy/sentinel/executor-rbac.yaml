@@ -2,6 +2,10 @@
 # using a kubeconfig containing only this service account's credentials.
 # Kubernetes RBAC limits resources/verbs, not individual Deployment fields;
 # the restricted executor adapter supplies the exact conditional JSON Patch.
+# executor-admission.yaml adds field limits for this ServiceAccount (P3.05) in
+# the namespaces its binding selects: Pod template changes only with new
+# evidence, only the sentinel.io execution and fence annotations, and never a
+# lower fence epoch. Evaluated live once (C-ADMISSION-POLICY-LIVE); not installed in the labs.
 apiVersion: v1
 kind: ServiceAccount
 metadata:

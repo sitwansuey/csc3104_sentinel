@@ -1,8 +1,22 @@
 """Advance one observed incident through durable component handoffs."""
-from services.coordinator.core import approve
+from services.coordinator.core import approve as _local_approve
 
 
-def advance(store, incident_id, *, plan, assess, guard, operator, execute, verify):
+def legacy_local_approve(store, operator):
+    """Trusted local, offline demo approval only; it authenticates nobody.
+
+    operator(proposal) returns an identity or None. The approval is written with
+    the Coordinator's direct approve(), which the authenticated lookup never
+    promotes. Live harnesses inject an approver from runtime.approval_session.
+    """
+    def approve(proposal, decision):
+        identity = operator(proposal)
+        return _local_approve(proposal["action_id"], identity, store) if identity else None
+    return approve
+
+
+def advance(store, incident_id, *, plan, assess, guard, approve, execute, verify):
+    """approve(proposal, guard_decision) records an approval and returns it, or None to refuse."""
     def state():
         return store.incident(incident_id)["state"]
 
@@ -21,8 +35,8 @@ def advance(store, incident_id, *, plan, assess, guard, operator, execute, verif
         if state() == "VALIDATING":
             guard()
         return state()
-    if proposal["action"] != "ROLLBACK":
-        raise ValueError("Recovery requires a supported rollback proposal")
+    if proposal["action"] not in ("ROLLBACK", "RESTART", "SCALE"):
+        raise ValueError("Recovery requires a supported rollback, restart or scale proposal")
 
     if state() == "VALIDATING":
         assess(proposal)
@@ -30,9 +44,7 @@ def advance(store, incident_id, *, plan, assess, guard, operator, execute, verif
     if state() == "AWAITING_APPROVAL":
         decision = store.action(action_id)["guard_result"]
         if decision["reason_codes"] == ["OPERATOR_APPROVAL_REQUIRED"]:
-            identity = operator(proposal)
-            if identity:
-                approve(action_id, identity, store)
+            if approve(proposal, decision):
                 assess(proposal)
                 guard()
     if state() in {"READY", "NEEDS_RECONCILIATION"}:

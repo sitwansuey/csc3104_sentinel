@@ -1,0 +1,10 @@
+{
+  "agent_model_calls": 2,
+  "attempts": 1,
+  "decided_by": null,
+  "decision_policy": "gated",
+  "model": "qwen3:14b",
+  "model_action": null,
+  "planning_error_code": "ABSTAINED",
+  "source_revision": "870aa7d49e87003b25c93a1149a535f33eb88d2d"
+}

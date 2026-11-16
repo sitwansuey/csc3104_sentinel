@@ -1,0 +1,91 @@
+{
+  "incidents": [
+    {
+      "sequence": 1,
+      "incident_id": "INC-8FC61A784B80",
+      "target": {
+        "cluster_id": "sentinel-boutique-connected",
+        "kind": "Deployment",
+        "name": "shippingservice",
+        "namespace": "sentinel-boutique-connected",
+        "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+      },
+      "state": "NEEDS_REVIEW",
+      "active_action_id": "ACT-e365adcfbce8337fdf9b4a89"
+    }
+  ],
+  "actions": [
+    {
+      "sequence": 1,
+      "action_id": "ACT-e365adcfbce8337fdf9b4a89",
+      "incident_id": "INC-8FC61A784B80",
+      "proposal": {
+        "action": "ESCALATE",
+        "action_id": "ACT-e365adcfbce8337fdf9b4a89",
+        "based_on_resource_version": "95346",
+        "evidence_refs": [
+          "E-D3EFE84F754F",
+          "E-EDBC197DFBB4",
+          "E-05EAACA3B700",
+          "E-3414A3696665",
+          "E-F8E406BF40F0",
+          "E-004B9AB5AB0F",
+          "E-B57582F26462"
+        ],
+        "incident_id": "INC-8FC61A784B80",
+        "kind": "proposal",
+        "parameters": {},
+        "rationale": "RCA abstained: the evidence does not support a diagnosis. Operator review is required. No repair is authorized.",
+        "schema_version": "1.0",
+        "target": {
+          "cluster_id": "sentinel-boutique-connected",
+          "kind": "Deployment",
+          "name": "shippingservice",
+          "namespace": "sentinel-boutique-connected",
+          "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+        }
+      },
+      "state": "NEEDS_REVIEW",
+      "guard_result": null,
+      "execution_result": null
+    }
+  ],
+  "approvals": [],
+  "outbox": [
+    {
+      "id": 2,
+      "topic": "incident.review",
+      "action_id": "ACT-e365adcfbce8337fdf9b4a89",
+      "delivered": 0
+    },
+    {
+      "id": 1,
+      "topic": "planner.request",
+      "action_id": null,
+      "delivered": 1
+    }
+  ],
+  "reports": [],
+  "transitions": [
+    {
+      "seq": 2,
+      "incident_id": "INC-8FC61A784B80",
+      "action_id": "ACT-e365adcfbce8337fdf9b4a89",
+      "from_state": "OPEN",
+      "to_state": "NEEDS_REVIEW",
+      "cause": "[\"proposal\",\"ACT-e365adcfbce8337fdf9b4a89\",\"\"]",
+      "outbox_high_water": 1,
+      "recorded_at": "2026-11-12T07:57:23.052506Z"
+    },
+    {
+      "seq": 1,
+      "incident_id": "INC-8FC61A784B80",
+      "action_id": null,
+      "from_state": null,
+      "to_state": "OPEN",
+      "cause": "[\"incident\",\"INC-8FC61A784B80\",\"\"]",
+      "outbox_high_water": null,
+      "recorded_at": "2026-11-12T07:57:09.040375Z"
+    }
+  ]
+}

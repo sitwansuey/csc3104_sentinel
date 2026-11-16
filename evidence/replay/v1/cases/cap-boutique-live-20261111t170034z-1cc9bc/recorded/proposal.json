@@ -1,0 +1,31 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-7c3101bb737c125379b5a540",
+  "based_on_resource_version": "43361",
+  "evidence_refs": [
+    "E-0E60D004A115",
+    "E-6208B3F4B4F7",
+    "E-5792EFFF7157",
+    "E-F4C21CFC103E",
+    "E-62DFD94433FF",
+    "E-A76718F091AB",
+    "E-6CA218EA51ED",
+    "E-F6F0623ED428",
+    "E-C4C2594C287B"
+  ],
+  "incident_id": "INC-278B276B26CE",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-f5881039e10e",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence indicates that the 'shippingservice' container is failing to listen on an invalid port, as confirmed by the log entry with evidence ID 'E-C4C2594C287B'. This failure leads to the container not being ready, as evidenced by the readiness probe failure (evidence ID 'E-62DFD94433FF') and the 'CrashLoopBackOff' state of the pod (evidence ID 'E-F4C21CFC103E'). The unavailability of replicas and the 'MinimumReplicasUnavailable' event are downstream effects of this failure. The root cause is a configuration issue, likely introduced in a recent deployment. Since a healthy baseline is available and the evidence supports the conclusion that the current configuration is harmful, the appropriate action is to rollback to the known healthy baseline.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

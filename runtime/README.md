@@ -30,7 +30,7 @@ All calls are POST requests with JSON bodies, an Authorization bearer token, and
 | Operation | Body and result |
 | --- | --- |
 | /v1/ingest | Observer submits an incident, or Verifier submits dependency evidence, as {"message": ...}. Validate, deduplicate and commit before responding. |
-| /v1/claim | Send {}. Returns {"delivery": null} or a delivery containing topic, payload, delivery_id, lease_token, attempt and expiry (Unix UTC seconds). Planner, Guard, Executor and Verifier can claim only their own topics. |
+| /v1/claim | Send {}. Returns {"delivery": null} or a delivery containing topic, payload, delivery_id, lease_token, attempt, expiry (Unix UTC seconds) and event_id (the outbox id, for log correlation only). Planner, Guard, Executor and Verifier can claim only their own topics. |
 | /v1/result | Send delivery_id, lease_token and result. Planner returns a proposal, Guard a decision, Executor an execution result, and Verifier an outcome. Correlate target, incident and action IDs. Commit the result, resulting outbox entries and acknowledgment atomically before responding. |
 | /v1/retry | Send delivery_id and lease_token to give up a failed attempt. Returns retry_after in seconds. |
 | /v1/renew | Send delivery_id and lease_token to extend current work. Returns expires_at. Expired, retired, replaced or wrong-role work cannot renew. |
@@ -43,7 +43,8 @@ If a result response is lost, resend the exact saved result with the same lease.
 `WorkerClient.post` sends one request, bounds both bodies to 1 MiB, validates an
 origin URL and uses the configured socket timeout. It does not retry
 automatically. On a timeout or 503, the component keeps its saved body and uses
-bounded exponential backoff before retransmitting it. On 409, reconcile the
+exponential backoff, capped at 15 s with full jitter
+(`runtime/worker_service.py::backoff_seconds`), before retransmitting it. On 409, reconcile the
 delivery lease and business state; on 401/403, fix the service configuration.
 Never regenerate a timestamp or result payload just to retry a lost response.
 

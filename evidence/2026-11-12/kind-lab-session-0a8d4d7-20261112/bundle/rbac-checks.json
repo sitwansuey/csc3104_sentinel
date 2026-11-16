@@ -1,0 +1,38 @@
+[
+  {
+    "verb": "get",
+    "resource": "deployment/shippingservice",
+    "answer": "yes",
+    "expected": "yes"
+  },
+  {
+    "verb": "patch",
+    "resource": "deployment/shippingservice",
+    "answer": "yes",
+    "expected": "yes"
+  },
+  {
+    "verb": "delete",
+    "resource": "deployment/shippingservice",
+    "answer": "no",
+    "expected": "no"
+  },
+  {
+    "verb": "patch",
+    "resource": "deployment/paymentservice",
+    "answer": "no",
+    "expected": "no"
+  },
+  {
+    "verb": "get",
+    "resource": "secrets",
+    "answer": "no",
+    "expected": "no"
+  },
+  {
+    "verb": "list",
+    "resource": "pods",
+    "answer": "no",
+    "expected": "no"
+  }
+]

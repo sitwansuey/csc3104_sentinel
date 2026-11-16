@@ -1,0 +1,94 @@
+{
+  "incident_id": "INC-6A9117748440",
+  "kind": "incident",
+  "observed_at": "2026-11-10T17:08:38.663119Z",
+  "observed_generation": 2,
+  "observed_resource_version": "1372",
+  "schema_version": "1.0",
+  "signals": [
+    {
+      "at": "2026-11-10T17:08:31.558237Z",
+      "detail": "Deployment sentinel-boutique-connected/shippingservice desired 1, ready 0, available 0; resourceVersion 1372, generation 2",
+      "evidence_id": "E-6CC20E89DA8F",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-10T17:08:31.558237Z",
+      "detail": "Pod shippingservice-85576d7678-xltnq container server is not ready; phase Running; restartCount 1; current exitCode 1; last exitCode 1",
+      "evidence_id": "E-6AA6B03F9103",
+      "reason": "Error",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-10T17:08:29Z",
+      "detail": "Deployment does not have minimum availability.",
+      "evidence_id": "E-76B66CA14895",
+      "reason": "MinimumReplicasUnavailable",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-10T17:08:30Z",
+      "detail": "Readiness probe failed: timeout: failed to connect service \"10.244.0.19:50051\" within 1s: context deadline exceeded",
+      "evidence_id": "E-2B9076A4DDC0",
+      "reason": "Unhealthy",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-10T17:08:30Z",
+      "detail": "Back-off restarting failed container server in pod shippingservice-85576d7678-xltnq_sentinel-boutique-connected(c24ae2d5-890e-4403-8b45-3e6638a62618)",
+      "evidence_id": "E-4B367BA60903",
+      "reason": "BackOff",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-10T17:08:31.558237Z",
+      "detail": "unable to retrieve container logs for containerd://4087a6dd77cc882dae8fb352ab08e597102ee8bf1355e1164a3651f27c52a569",
+      "evidence_id": "E-F601ACC9D8FF",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-10T17:08:38.663119Z",
+      "detail": "Deployment sentinel-boutique-connected/shippingservice desired 1, ready 0, available 0; resourceVersion 1372, generation 2",
+      "evidence_id": "E-8B167243F7DA",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-10T17:08:38.663119Z",
+      "detail": "Pod shippingservice-85576d7678-xltnq container server is not ready; phase Running; restartCount 1; back-off 10s restarting failed container=server pod=shippingservice-85576d7678-xltnq_sentinel-boutique-connected(c24ae2d5-890e-4403-8b45-3e6638a62618); last exitCode 1",
+      "evidence_id": "E-70DF099D5165",
+      "reason": "CrashLoopBackOff",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-10T17:08:31Z",
+      "detail": "Readiness probe failed: timeout: failed to connect service \"10.244.0.19:50051\" within 1s: context deadline exceeded",
+      "evidence_id": "E-F82EDC503F13",
+      "reason": "Unhealthy",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-10T17:08:34Z",
+      "detail": "Back-off restarting failed container server in pod shippingservice-85576d7678-xltnq_sentinel-boutique-connected(c24ae2d5-890e-4403-8b45-3e6638a62618)",
+      "evidence_id": "E-C0AD257E6D58",
+      "reason": "BackOff",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-10T17:08:38.663119Z",
+      "detail": "2026-11-10T17:08:30.057428692Z {\"message\":\"Tracing disabled.\",\"severity\":\"info\",\"timestamp\":\"2026-11-10T17:08:30.057274423Z\"}\n2026-11-10T17:08:30.057448083Z {\"message\":\"Profiling disabled.\",\"severity\":\"info\",\"timestamp\":\"2026-11-10T17:08:30.057344528Z\"}\n2026-11-10T17:08:30.057728880Z {\"message\":\"failed to listen: listen tcp: lookup tcp/invalid-port: unknown port\",\"severity\":\"fatal\",\"timestamp\":\"2026-11-10T17:08:30.057623044Z\"}\n",
+      "evidence_id": "E-438F0D8696AD",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    }
+  ],
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

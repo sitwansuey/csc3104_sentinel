@@ -5,7 +5,10 @@ baselines, retrieves bounded guidance and validates a provider's typed action.
 It binds incident/target/version/evidence and assigns a proposal-content action
 ID. Invented evidence/baselines, future/tampered templates and malformed
 responses are rejected. Missing evidence/baselines or diagnosis abstention yield
-an escalation proposal; the model is never execution authority.
+an escalation proposal; the model is never execution authority. A metric-only
+incident (a metric alert while no Deployment or Pod status signal shows a
+failure) is escalated by a code rule before any provider or model call, with a
+fixed rationale that names `runbooks/resource-saturation.md`.
 
 `services/rca/core.py` adapts incidents to the read-only `agent/` engine.
 `experiments/boutique/harness/agent_live.py` connects actual Observer CSV exports,
@@ -15,7 +18,10 @@ its optional `PlannerStore` journals bounded attempts, backoff, leases and exact
 proposal replay before Coordinator delivery. The subprocess-provider Boutique
 path enables it. `worker.py` shares the bounded attempt logic with the
 [remote worker](../../docs/remote-workers.md), and the journal retains exact
-model context and available usage/provenance for each attempt. Independently
+model context and available usage/provenance for each attempt. In agent mode,
+`taxonomy.py` owns the diagnosis vocabulary and the rollback eligibility rule,
+and `change.py` computes what a rollback would change in the live template
+(see [code-owned decision context](../../docs/planner.md#code-owned-decision-context)). Independently
 deployed acceptance remains unfinished; the separate RCA agent experiment still
 has its documented limits.
 

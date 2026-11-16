@@ -1,0 +1,84 @@
+{
+  "policy_id": "distributed-kind-lab",
+  "policy_version": "distributed-kind-lab-1",
+  "profile": "live",
+  "targets": [
+    {
+      "cluster_id": "sentinel-boutique-connected",
+      "namespace": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    }
+  ],
+  "allowed_actions": [
+    "ROLLBACK"
+  ],
+  "require_operator_approval": true,
+  "unknown_dependency_result": "ESCALATE",
+  "max_state_age_seconds": 30,
+  "max_dependency_age_seconds": 300,
+  "decision_ttl_seconds": 300,
+  "max_approval_lifetime_seconds": 300,
+  "require_server_dry_run": false,
+  "baseline_constraints": {
+    "max_age_seconds": 14400,
+    "min_healthy_duration_seconds": 30,
+    "trusted_sources": [
+      "sentinel-boutique-connected-cart-http"
+    ],
+    "require_health_evidence": true,
+    "require_compatible_references": true,
+    "require_image_digests": true
+  },
+  "security_constraints": {
+    "deny_privileged": true,
+    "deny_host_access": true,
+    "allowed_image_registries": [
+      "us-central1-docker.pkg.dev"
+    ],
+    "allowed_service_accounts": [
+      "shippingservice"
+    ],
+    "forbid_service_account_change": true
+  },
+  "resource_constraints": {
+    "require_requests_and_limits": true,
+    "max_container_requests": {
+      "cpu": "100m",
+      "memory": "64Mi"
+    },
+    "max_container_limits": {
+      "cpu": "500m",
+      "memory": "128Mi"
+    }
+  },
+  "workload_constraints": {
+    "max_pod_requests": {
+      "cpu": "250m",
+      "memory": "128Mi"
+    },
+    "max_rollout_requests": {
+      "cpu": "1",
+      "memory": "512Mi"
+    },
+    "max_replicas": 2,
+    "max_surge_replicas": 1
+  },
+  "detection": {
+    "failure_duration_seconds": 2
+  },
+  "health": {
+    "protocol": "http",
+    "required_http_status": 200,
+    "minimum_samples": 3,
+    "stable_window_seconds": 4,
+    "max_sample_gap_seconds": 10,
+    "require_target_identity": true,
+    "require_template_match": true,
+    "require_available_replicas": true,
+    "convergence_grace_seconds": 30,
+    "verification_timeout_seconds": 60
+  },
+  "note": "Kind-mode distributed lab bundle (scratch). Health is the storefront /cart page over a loopback port-forward plus replica readiness."
+}

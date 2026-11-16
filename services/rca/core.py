@@ -20,10 +20,17 @@ def propose_from_telemetry(incident, baselines, telemetry, workspace, provider, 
                    provider, diagnosis=diagnosis)
 
 
-def diagnose(incident, telemetry, workspace, *, config=None, llm=None, progress=None):
+def diagnose(incident, telemetry, workspace, *, config=None, llm=None, progress=None, deadline=None, clock=None,
+             vocabulary=None):
     """Analyze exported CSV telemetry and persist the full evidence trail.
 
     The output directory must be new. No cluster actions are performed here.
+    deadline (a clock() value, time.monotonic by default) stops the agent
+    before a new round or report once the planning budget is used up.
+    vocabulary ({"components": [...], "reasons": [...]}, built in code by
+    services/planner/taxonomy.py, never from telemetry) restricts the reported
+    component and reason to those names and requires each failure to cite the
+    evidence ids it rests on; the cited ids are returned as "citations".
     """
     validate_message(incident)
     if incident["kind"] != "incident":
@@ -31,6 +38,8 @@ def diagnose(incident, telemetry, workspace, *, config=None, llm=None, progress=
     from agent.agent import Agent, FIELDS, save
     from agent.llm import Ollama
     from agent.tools import Telemetry
+    from agent.untrusted import prompt_incident
+    from services.planner.taxonomy import vocabulary_context
 
     settings = json.loads(DEFAULT_CONFIG.read_text(encoding="utf-8"))
     settings["allow_abstention"] = True
@@ -38,13 +47,14 @@ def diagnose(incident, telemetry, workspace, *, config=None, llm=None, progress=
     for key in ("max_rounds", "max_steps", "max_depth", "max_rows", "num_ctx", "num_predict"):
         if type(settings[key]) is not int or settings[key] <= 0:
             raise ValueError(f"{key} must be a positive integer")
-    agent = Agent(llm if llm is not None else Ollama(settings, progress=progress),
-                  Telemetry(telemetry, settings["max_rows"]), settings, workspace, progress=progress)
+    timing = {"deadline": deadline} if clock is None else {"deadline": deadline, "clock": clock}
+    agent = Agent(llm if llm is not None else Ollama(settings, progress=progress, deadline=deadline),
+                  Telemetry(telemetry, settings["max_rows"]), settings, workspace, progress=progress, **timing)
     save(Path(workspace) / "incident.json", incident)
     instruction = (
         "Diagnose the initiating root cause of this incident using the supplied telemetry. "
         "Identify the component and reason; distinguish symptoms and downstream effects. "
-        "Abstain if evidence is insufficient. Use the incident signals in system_context."
+        "Abstain if evidence is insufficient. Use the incident signals quoted in system_context."
     )
     initial_plan = None
     if settings.get("bootstrap_live_tools", True):
@@ -62,8 +72,18 @@ def diagnose(incident, telemetry, workspace, *, config=None, llm=None, progress=
                                         "end": end.isoformat()}})
         if leaves:
             initial_plan = {"plan": {"kind": "parallel", "goal": "Inspect live incident telemetry", "children": leaves}}
-    prediction = agent.run(instruction, context=json.dumps({"incident": incident}),
-                           required_fields=FIELDS[1:], initial_plan=initial_plan)
-    return {"incident_id": incident["incident_id"], "prediction": prediction,
+    # Signal details quote workload log lines, so the model sees them only as
+    # quoted, untrusted data (agent/untrusted.py), never as raw text.
+    context = json.dumps(prompt_incident(incident))
+    if vocabulary is not None:
+        # The candidate sections are built from code-owned names only. The incident
+        # JSON above is a single line, so a quoted signal cannot add a "- " entry.
+        context += "\n" + vocabulary_context(vocabulary)
+    prediction = agent.run(instruction, context=context, required_fields=FIELDS[1:], initial_plan=initial_plan,
+                           cite_evidence=vocabulary is not None)
+    return {"incident_id": incident["incident_id"], "prediction": prediction, "citations": agent.citations,
             "report": json.loads((Path(workspace) / "report.json").read_text(encoding="utf-8")),
-            "workspace": str(Path(workspace).resolve())}
+            "workspace": str(Path(workspace).resolve()),
+            # Tool names and evidence IDs only: no arguments, file paths or results.
+            "tools": [{"tool": call["tool"], "evidence_id": call["evidence_id"], "success": call["success"]}
+                      for call in agent.call_history]}

@@ -1,0 +1,173 @@
+# Network policy of the sentinel-dist lab (P4.01). Everything in sentinel-dist
+# is denied in both directions unless a policy below allows it:
+#   - every worker and the Observer may reach the Coordinator's delivery port
+#     8766, and cluster DNS;
+#   - the Guard and the two Executors may also reach the approval port 8767;
+#   - Pods labelled sentinel.io/api-access=true (Guard, Executors, Verifier,
+#     Observer) may reach the Kubernetes API server;
+#   - the Verifier may also reach the target's health port in
+#     sentinel-dist-workload;
+#   - the Coordinator accepts 8766 from those Pods and 8767 from the Guard and
+#     the Executors, and opens no connection of its own.
+# The Planner, in the default deterministic mode, reaches only the
+# Coordinator and DNS. kind's own CNI (kindnet) enforces NetworkPolicy; that
+# enforcement is checked live by S9, not assumed.
+#
+# The API server addresses below are TEST-NET-1 (RFC 5737) placeholders that
+# match nothing, so this file fails closed as shipped. The acceptance harness
+# (experiments/distributed/kind_acceptance.py, render_api_server_policy)
+# replaces them with the kubernetes Service's ClusterIP (port 443) and the API
+# server endpoint (port 6443) it reads from the cluster, because a policy may
+# be checked before or after the Service address is translated.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sentinel-dist-default-deny
+  namespace: sentinel-dist
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sentinel-dist-dns
+  namespace: sentinel-dist
+spec:
+  podSelector:
+    matchExpressions:
+      - key: sentinel.io/component
+        operator: In
+        values: ["planner", "guard", "executor", "verifier", "observer"]
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sentinel-dist-to-coordinator
+  namespace: sentinel-dist
+spec:
+  podSelector:
+    matchExpressions:
+      - key: sentinel.io/component
+        operator: In
+        values: ["planner", "guard", "executor", "verifier", "observer"]
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: sentinel-coordinator
+      ports:
+        - protocol: TCP
+          port: 8766
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sentinel-dist-to-approvals
+  namespace: sentinel-dist
+spec:
+  podSelector:
+    matchExpressions:
+      - key: sentinel.io/component
+        operator: In
+        values: ["guard", "executor"]
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: sentinel-coordinator
+      ports:
+        - protocol: TCP
+          port: 8767
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sentinel-dist-coordinator-ingress
+  namespace: sentinel-dist
+spec:
+  podSelector:
+    matchLabels:
+      app: sentinel-coordinator
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: sentinel.io/component
+                operator: In
+                values: ["planner", "guard", "executor", "verifier", "observer"]
+      ports:
+        - protocol: TCP
+          port: 8766
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: sentinel.io/component
+                operator: In
+                values: ["guard", "executor"]
+      ports:
+        - protocol: TCP
+          port: 8767
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sentinel-dist-api-server
+  namespace: sentinel-dist
+spec:
+  podSelector:
+    matchLabels:
+      sentinel.io/api-access: "true"
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 192.0.2.1/32
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - ipBlock:
+            cidr: 192.0.2.2/32
+      ports:
+        - protocol: TCP
+          port: 6443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sentinel-dist-verifier-to-target
+  namespace: sentinel-dist
+spec:
+  podSelector:
+    matchLabels:
+      sentinel.io/component: verifier
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: sentinel-dist-workload
+          podSelector:
+            matchLabels:
+              app: demo-api
+      ports:
+        - protocol: TCP
+          port: 8080

@@ -1,0 +1,24 @@
+{
+  "action_id": "ACT-FORCED-068c3faa0fe74ae696689653ec579cc8",
+  "affected_services": [
+    "checkoutservice",
+    "frontend",
+    "shippingservice"
+  ],
+  "blockers": [],
+  "checked_at": "2026-11-13T08:58:24.919896Z",
+  "incident_id": "INC-FORCED-DRIFT-87DF0D2EF603",
+  "kind": "dependency_result",
+  "schema_version": "1.0",
+  "status": "UNKNOWN",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  },
+  "unknowns": [
+    "live-resource-version-mismatch"
+  ]
+}

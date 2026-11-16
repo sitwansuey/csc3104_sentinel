@@ -5,6 +5,10 @@ larger effective request, and includes observed terminating replicas. It is a
 policy bound for the supplied snapshot, not a reservation or proof that nodes
 can schedule the workload. Admission defaults, older ReplicaSets, unreported
 terminating Pods and future scale changes require live admission/capacity checks.
+
+A SCALE (P5.07) writes no template: it is priced at its requested replica
+count, with the baseline template's effective request (the live configuration
+must equal it), and the replica ceiling applies to that requested count.
 """
 
 from fractions import Fraction
@@ -214,12 +218,19 @@ def _int_or_percent(value, replicas, path, *, round_up):
     return (replicas * percent + (99 if round_up else 0)) // 100
 
 
-def _rollout_counts(live_state, findings):
+def _rollout_counts(live_state, findings, desired=None):
+    """(replicas, surge, priced replicas); a SCALE passes its requested count as desired.
+
+    A SCALE changes no template, so nothing rolls out and no surge Pods start:
+    it is priced at max(desired, observed replicas) plus terminating replicas.
+    """
     path = "live_state.deployment"
     try:
         deployment = mapping(live_state.get("deployment"), path)
         spec = mapping(deployment.get("spec"), f"{path}.spec")
         replicas = _replica_count(spec.get("replicas"), f"{path}.spec.replicas")
+        if desired is not None:
+            replicas = desired
         strategy = mapping(spec.get("strategy", {}), f"{path}.spec.strategy")
         mode = strategy.get("type", "RollingUpdate")
         if mode == "Recreate":
@@ -244,6 +255,8 @@ def _rollout_counts(live_state, findings):
         status = mapping(deployment.get("status", {}), f"{path}.status")
         observed = _replica_count(status.get("replicas", 0), f"{path}.status.replicas")
         terminating = _replica_count(status.get("terminatingReplicas", 0), f"{path}.status.terminatingReplicas")
+        if desired is not None:
+            return replicas, surge, max(replicas, observed) + terminating
         return replicas, surge, max(replicas + surge, observed) + terminating
     except GuardInputError as exc:
         findings.append(finding("WORKLOAD_RESOURCE_UNKNOWN", path, None, "trustworthy replicas and rollout strategy", str(exc), "UNKNOWN"))
@@ -254,10 +267,11 @@ def assess(proposal, live_state, baseline, policy, checked_at):
     """Return detailed PASS/FAIL/UNKNOWN/SKIP findings without external I/O."""
     validate_policy(policy)
     findings = []
-    if proposal.get("action") != "ROLLBACK":
+    if proposal.get("action") not in ("ROLLBACK", "RESTART", "SCALE"):
         action = proposal.get("action")
-        safe_action = action if isinstance(action, str) and action in {"RESTART", "SCALE", "NO_ACTION", "ESCALATE"} else "invalid action"
-        return [finding("RESOURCE_CHECKS_SKIPPED", "proposal.action", safe_action, "ROLLBACK", "Resource checks apply to rollback templates.", "SKIP")]
+        safe_action = action if isinstance(action, str) and action in {"NO_ACTION", "ESCALATE"} else "invalid action"
+        return [finding("RESOURCE_CHECKS_SKIPPED", "proposal.action", safe_action, "ROLLBACK, RESTART or SCALE", "Resource checks apply to the Pods that a ROLLBACK, RESTART or SCALE starts.", "SKIP")]
+    scale = proposal["action"] == "SCALE"
     constraints = _container_policy(policy) if "resource_constraints" in policy else None
     workload = _workload_policy(policy) if "workload_constraints" in policy else None
     if constraints is None and workload is None:
@@ -271,11 +285,12 @@ def assess(proposal, live_state, baseline, policy, checked_at):
         findings.append(finding("RESOURCE_WITHIN_POLICY", "baseline.pod_template", "valid container resource values", policy["resource_constraints"], "All configured per-container resource rules passed.", "PASS"))
     if workload is None:
         return findings
-    counts = _rollout_counts(live_state, findings)
+    counts = _rollout_counts(live_state, findings, proposal["parameters"]["desired_replicas"] if scale else None)
     if counts is not None:
         replicas, surge, rollout_count = counts
+        replica_path = "proposal.parameters.desired_replicas" if scale else "live_state.deployment.spec.replicas"
         for field, actual, path, code in (
-            ("max_replicas", replicas, "live_state.deployment.spec.replicas", "WORKLOAD_REPLICAS_EXCEED_POLICY"),
+            ("max_replicas", replicas, replica_path, "WORKLOAD_REPLICAS_EXCEED_POLICY"),
             ("max_surge_replicas", surge, "live_state.deployment.spec.strategy", "WORKLOAD_SURGE_EXCEEDS_POLICY"),
         ):
             if field in workload:

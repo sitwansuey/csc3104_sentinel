@@ -1,0 +1,68 @@
+{
+  "action_id": "ACT-7b686f65959ca12567aaba1a",
+  "checks": [
+    {
+      "detail": "Requires an applied/no-op action with resource-version evidence",
+      "name": "execution",
+      "passed": true
+    },
+    {
+      "detail": "Received 3 readings; at least 3 required",
+      "name": "sample_count",
+      "passed": true
+    },
+    {
+      "detail": "All readings must belong to the execution target",
+      "name": "sample_identity",
+      "passed": true
+    },
+    {
+      "detail": "Readings must be UTC, strictly ordered and at/after execution",
+      "name": "sample_timestamps",
+      "passed": true
+    },
+    {
+      "detail": "Observed 27.5131 seconds; at least 10 required",
+      "name": "stable_window",
+      "passed": true
+    },
+    {
+      "detail": "No gap may exceed 90 seconds",
+      "name": "sample_gaps",
+      "passed": true
+    },
+    {
+      "detail": "Requires complete successful GRPC application and positive desired-replica readiness readings; latest reading: grpc_status=0, application_check_passed=True, ready_replicas=1, desired_replicas=1, available_replicas=1",
+      "name": "service_health",
+      "passed": true
+    },
+    {
+      "detail": "Every required/observed dependency must be present and healthy in every reading",
+      "name": "dependency_health",
+      "passed": true
+    },
+    {
+      "detail": "Each reading must retain the approved template and a stable observation identity; expected=54e42b870f37699c0f9d39d4f91995ebce735a5204a78e8a159fe0873dec21ba; latest=54e42b870f37699c0f9d39d4f91995ebce735a5204a78e8a159fe0873dec21ba; configuration_stable=True",
+      "name": "sample_configuration",
+      "passed": true
+    },
+    {
+      "detail": "No reading was excluded; the 150-second convergence allowance was not used",
+      "name": "convergence",
+      "passed": true
+    }
+  ],
+  "incident_id": "INC-5973B0951D0B",
+  "kind": "outcome",
+  "schema_version": "1.0",
+  "status": "RECOVERED",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  },
+  "window_end": "2026-11-13T08:55:53.066425Z",
+  "window_start": "2026-11-13T08:55:25.553360Z"
+}

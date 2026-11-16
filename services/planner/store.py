@@ -11,9 +11,7 @@ import math
 import secrets
 import sqlite3
 
-
-def _json(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+from shared.canonical import canonical_json as _json
 
 
 class PlannerStore:
@@ -66,15 +64,22 @@ class PlannerStore:
         value["proposal"] = json.loads(value["proposal"]) if value["proposal"] else None
         return value
 
-    def claim(self, incident, *, max_attempts, lease_seconds):
-        """Return (token, exhausted), or None while another attempt/backoff holds."""
+    def claim(self, incident, *, max_attempts, lease_seconds, key=None):
+        """Return (token, exhausted), or None while another attempt/backoff holds.
+
+        key names the planning row; it defaults to the incident ID. A re-plan
+        after a stale Guard refusal is planned under its own key
+        (services/planner/worker.py::replan_key), so it gets its own bounded
+        attempts and saved proposal, and the incident's first proposal stays
+        as it was saved. The other methods take that key as incident_id.
+        """
         if (isinstance(max_attempts, bool) or not isinstance(max_attempts, int)
                 or not 1 <= max_attempts <= 100):
             raise ValueError("Planner max_attempts must be between 1 and 100")
         if (isinstance(lease_seconds, bool) or not isinstance(lease_seconds, (int, float))
                 or not math.isfinite(lease_seconds) or not 0 < lease_seconds <= 86400):
             raise ValueError("Planner lease_seconds must be positive and at most one day")
-        incident_id, encoded = incident["incident_id"], _json(incident)
+        incident_id, encoded = (incident["incident_id"] if key is None else key), _json(incident)
         now = self._now()
         with self._transaction():
             self.db.execute("INSERT OR IGNORE INTO planning(incident_id,incident) VALUES(?,?)",
@@ -115,6 +120,16 @@ class PlannerStore:
     def delivered(self, incident_id):
         self.db.execute("UPDATE planning SET delivered=1 WHERE incident_id=? AND proposal IS NOT NULL",
                         (incident_id,))
+
+    def delivered_proposal(self, proposal):
+        """Mark the row that saved exactly this proposal delivered, under whatever key it was planned."""
+        self.db.execute("UPDATE planning SET delivered=1 WHERE proposal=?", (_json(proposal),))
+
+    def attempt_usage(self, incident_id):
+        """The saved usage of the latest recorded attempt, or None."""
+        row = self.db.execute("SELECT usage FROM planning_attempts WHERE incident_id=? ORDER BY attempt DESC LIMIT 1",
+                              (incident_id,)).fetchone()
+        return json.loads(row[0]) if row and row[0] else None
 
     def save_context(self, incident_id, token, context, usage=None):
         with self._transaction():

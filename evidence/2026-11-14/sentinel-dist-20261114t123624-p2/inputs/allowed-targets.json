@@ -1,0 +1,9 @@
+[
+  {
+    "cluster_id": "sentinel-dist",
+    "namespace": "sentinel-dist-workload",
+    "kind": "Deployment",
+    "name": "demo-api",
+    "uid": "35bff4fa-0f26-4812-bf12-875c4641825a"
+  }
+]

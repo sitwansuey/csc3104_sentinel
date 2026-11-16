@@ -1,0 +1,4 @@
+{"run_id": "0001-cpu-f6f66b73", "captured_at": "2026-11-10T20:16:14.828533Z", "event": "baseline_started"}
+{"run_id": "0001-cpu-f6f66b73", "captured_at": "2026-11-10T20:16:19.908162Z", "event": "run_failed", "error": "EOFError: EOF when reading a line"}
+{"run_id": "0001-cpu-f6f66b73", "captured_at": "2026-11-10T20:16:19.908631Z", "event": "final_cleanup_requested"}
+{"run_id": "0001-cpu-f6f66b73", "captured_at": "2026-11-10T20:16:19.988344Z", "event": "final_cleanup_confirmed"}

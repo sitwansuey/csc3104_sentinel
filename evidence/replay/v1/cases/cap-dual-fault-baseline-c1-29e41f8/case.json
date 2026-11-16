@@ -1,0 +1,36 @@
+{
+  "attack": null,
+  "case_id": "cap-dual-fault-baseline-c1-29e41f8",
+  "kept": [
+    "incident",
+    "policy",
+    "guard",
+    "proposal"
+  ],
+  "provenance": "captured",
+  "reconstructed": {
+    "baseline": "Pod template from the catalog target and the run's pinned image digest; the recorded baseline id is kept, its template hash is not recoverable",
+    "baseline_healthy_observed_at": "guard report BASELINE_AGE",
+    "dependency_finding": "held at CLEAR for every case, like the fixture approval",
+    "live_state_captured_at": "recorded Guard check time",
+    "observations": "one Observer snapshot rebuilt from the incident's quoted signals",
+    "planning_state": "baseline template with the catalog fault applied, recorded resource versions and generation, not-ready status"
+  },
+  "schema": "sentinel-replay-case-v1",
+  "source": {
+    "bundle_class": "connected-harness",
+    "bundle_id": "dual-fault-baseline-c1-29e41f8",
+    "bundle_manifest_sha256": "a13e599202edb8a73d6083b85d0edfa9180e4ffdbe4a77fab33503111395739c",
+    "provenance": "recorded",
+    "source_revision": "29e41f87632fe789cf8771f2242126aca87d4e6f"
+  },
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "cartservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+  },
+  "twin": null,
+  "variant": null
+}

@@ -1,0 +1,17 @@
+{
+  "about": "Line and branch coverage floors for scripts/ci/coverage_gate.py. First measured on 2026-11-12 on Windows with Python 3.13 (total 85.69%). Each floor is about one point below that measurement because CI measures on Linux with Python 3.12. Raise floors as coverage improves; never lower them.",
+  "packages": {
+    "total": 84.6,
+    "agent": 78.3,
+    "runtime": 81.0,
+    "services": 88.1,
+    "services/coordinator": 96.3,
+    "services/executor": 91.7,
+    "services/guard": 91.1,
+    "services/observer": 81.7,
+    "services/planner": 90.3,
+    "services/rca": 64.7,
+    "services/verifier": 85.2,
+    "shared": 93.7
+  }
+}

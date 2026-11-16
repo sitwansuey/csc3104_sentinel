@@ -1,0 +1,817 @@
+[
+  {
+    "run": "S1b r1",
+    "duration_s": 49.5,
+    "states": [
+      "RECOVERED",
+      "REJECTED"
+    ],
+    "incidents": [
+      [
+        "INC-31E14618F79F",
+        "RECOVERED"
+      ],
+      [
+        "INC-1609F6CD6857",
+        "REJECTED"
+      ]
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "invariants": {
+      "I1": "PASS",
+      "I2": "PASS",
+      "I3": "PASS",
+      "I4": "PASS",
+      "I5": "PASS",
+      "I6": "PASS",
+      "X1": "PASS",
+      "X2": "PASS",
+      "X3": "PASS",
+      "X4": "PASS"
+    },
+    "matches_expectation": true,
+    "harness_error": null,
+    "notes": {
+      "fault_point": "executor.after_start_write",
+      "crashed": "executor-a",
+      "exit_code": 73,
+      "restarted": "after the incident ended"
+    },
+    "cluster_writes": [
+      {
+        "marker": "write",
+        "template_changed": 1,
+        "resource_version": "138321",
+        "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+      }
+    ],
+    "ledgers": {
+      "executor-a": [
+        {
+          "action_id": "ACT-6793c6907ac6a0d07f6f64b0",
+          "phase": "DONE"
+        }
+      ],
+      "executor-b": [
+        {
+          "action_id": "ACT-6793c6907ac6a0d07f6f64b0",
+          "phase": "DONE"
+        }
+      ]
+    },
+    "deployment_pre": {
+      "generation": 128,
+      "resource_version": "138262"
+    },
+    "deployment_post": {
+      "generation": 129,
+      "resource_version": "138367",
+      "template_is_baseline": true,
+      "available": 1
+    },
+    "post_fence": {},
+    "operator_restore": null
+  },
+  {
+    "run": "S1c r1",
+    "duration_s": 32.0,
+    "states": [
+      "RECOVERED"
+    ],
+    "incidents": [
+      [
+        "INC-437E7665D9B1",
+        "RECOVERED"
+      ]
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "invariants": {
+      "I1": "PASS",
+      "I2": "PASS",
+      "I3": "PASS",
+      "I4": "PASS",
+      "I5": "PASS",
+      "I6": "PASS",
+      "X1": "PASS",
+      "X2": "PASS",
+      "X3": "PASS",
+      "X4": "PASS"
+    },
+    "matches_expectation": true,
+    "harness_error": null,
+    "notes": {
+      "fault_point": "executor.after_patch_before_save",
+      "crashed": "executor-a",
+      "exit_code": 73,
+      "restarted": "after the incident ended"
+    },
+    "cluster_writes": [
+      {
+        "marker": "write",
+        "template_changed": 1,
+        "resource_version": "138557",
+        "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+      }
+    ],
+    "ledgers": {
+      "executor-a": [
+        {
+          "action_id": "ACT-75230fff19871a1c0cbd58fd",
+          "phase": "DONE"
+        }
+      ],
+      "executor-b": [
+        {
+          "action_id": "ACT-75230fff19871a1c0cbd58fd",
+          "phase": "DONE"
+        }
+      ]
+    },
+    "deployment_pre": {
+      "generation": 130,
+      "resource_version": "138482"
+    },
+    "deployment_post": {
+      "generation": 131,
+      "resource_version": "138578",
+      "template_is_baseline": true,
+      "available": 1
+    },
+    "post_fence": {},
+    "operator_restore": null
+  },
+  {
+    "run": "S2 r1",
+    "duration_s": 32.3,
+    "states": [
+      "RECOVERED"
+    ],
+    "incidents": [
+      [
+        "INC-7D8D80B29B5C",
+        "RECOVERED"
+      ]
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "invariants": {
+      "I1": "PASS",
+      "I2": "PASS",
+      "I3": "PASS",
+      "I4": "PASS",
+      "I5": "PASS",
+      "I6": "PASS",
+      "X1": "PASS",
+      "X2": "PASS",
+      "X3": "PASS",
+      "X4": "PASS"
+    },
+    "matches_expectation": true,
+    "harness_error": null,
+    "notes": {
+      "stalled": "executor-b",
+      "stall": "block+blackhole"
+    },
+    "cluster_writes": [
+      {
+        "marker": "write",
+        "template_changed": 1,
+        "resource_version": "138724",
+        "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+      }
+    ],
+    "ledgers": {
+      "executor-a": [
+        {
+          "action_id": "ACT-751dfb23e7b7312ce74f65b8",
+          "phase": "DONE"
+        }
+      ],
+      "executor-b": [
+        {
+          "action_id": "ACT-751dfb23e7b7312ce74f65b8",
+          "phase": "DONE"
+        }
+      ]
+    },
+    "deployment_pre": {
+      "generation": 132,
+      "resource_version": "138639"
+    },
+    "deployment_post": {
+      "generation": 133,
+      "resource_version": "138767",
+      "template_is_baseline": true,
+      "available": 1
+    },
+    "post_fence": {},
+    "operator_restore": null
+  },
+  {
+    "run": "S4 r1",
+    "duration_s": 42.9,
+    "states": [
+      "RECOVERED"
+    ],
+    "incidents": [
+      [
+        "INC-9508A7C39E09",
+        "RECOVERED"
+      ]
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "invariants": {
+      "I1": "PASS",
+      "I2": "PASS",
+      "I3": "PASS",
+      "I4": "PASS",
+      "I5": "PASS",
+      "I6": "PASS",
+      "X1": "PASS",
+      "X2": "PASS",
+      "X3": "PASS",
+      "X4": "PASS"
+    },
+    "matches_expectation": true,
+    "harness_error": null,
+    "notes": {
+      "dropped_for": "executor-b",
+      "replay_receipt": true
+    },
+    "cluster_writes": [
+      {
+        "marker": "write",
+        "template_changed": 1,
+        "resource_version": "138922",
+        "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+      }
+    ],
+    "ledgers": {
+      "executor-a": [],
+      "executor-b": [
+        {
+          "action_id": "ACT-4c9ecb623b820452cc54e6ec",
+          "phase": "DONE"
+        }
+      ]
+    },
+    "deployment_pre": {
+      "generation": 134,
+      "resource_version": "138820"
+    },
+    "deployment_post": {
+      "generation": 135,
+      "resource_version": "138941",
+      "template_is_baseline": true,
+      "available": 1
+    },
+    "post_fence": {},
+    "operator_restore": null
+  },
+  {
+    "run": "S5 r1",
+    "duration_s": 27.6,
+    "states": [
+      "RECOVERED"
+    ],
+    "incidents": [
+      [
+        "INC-75C9590E7A95",
+        "RECOVERED"
+      ]
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "invariants": {
+      "I1": "PASS",
+      "I2": "PASS",
+      "I3": "PASS",
+      "I4": "PASS",
+      "I5": "PASS",
+      "I6": "PASS",
+      "X1": "PASS",
+      "X2": "PASS",
+      "X3": "PASS",
+      "X4": "PASS"
+    },
+    "matches_expectation": true,
+    "harness_error": null,
+    "notes": {
+      "fault_point": "coordinator.after_commit_before_reply",
+      "exit_code": 73,
+      "restarts": 2
+    },
+    "cluster_writes": [
+      {
+        "marker": "write",
+        "template_changed": 1,
+        "resource_version": "139102",
+        "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+      }
+    ],
+    "ledgers": {
+      "executor-a": [],
+      "executor-b": [
+        {
+          "action_id": "ACT-ef3a90b9b6f7ac1173669132",
+          "phase": "DONE"
+        }
+      ]
+    },
+    "deployment_pre": {
+      "generation": 136,
+      "resource_version": "139018"
+    },
+    "deployment_post": {
+      "generation": 137,
+      "resource_version": "139137",
+      "template_is_baseline": true,
+      "available": 1
+    },
+    "post_fence": {},
+    "operator_restore": null
+  },
+  {
+    "run": "S8 r1",
+    "duration_s": 9.4,
+    "states": [
+      "FAILED"
+    ],
+    "incidents": [
+      [
+        "INC-5E7BD7D1AE74",
+        "FAILED"
+      ]
+    ],
+    "committed_writes": 0,
+    "unobserved_windows": 0,
+    "invariants": {
+      "I1": "PASS",
+      "I2": "PASS",
+      "I3": "PASS",
+      "I4": "PASS",
+      "I5": "PASS",
+      "I6": "PASS",
+      "X1": "PASS",
+      "X2": "PASS",
+      "X3": "PASS",
+      "X4": "PASS"
+    },
+    "matches_expectation": true,
+    "harness_error": null,
+    "notes": {
+      "paused": "executor-b",
+      "paused_result": "CONFLICT",
+      "sealed_epoch": 2,
+      "epoch": 2,
+      "writes_after_release": 0
+    },
+    "cluster_writes": [],
+    "ledgers": {
+      "executor-a": [],
+      "executor-b": [
+        {
+          "action_id": "ACT-04a8923f64b74e3bdacb3913",
+          "phase": "DONE"
+        }
+      ]
+    },
+    "deployment_pre": {
+      "generation": 138,
+      "resource_version": "139193"
+    },
+    "deployment_post": {
+      "generation": 139,
+      "resource_version": "139268",
+      "template_is_baseline": false,
+      "available": 0
+    },
+    "post_fence": {
+      "sentinel.io/fence": "{\"action_id\":\"ACT-04a8923f64b74e3bdacb3913\",\"epoch\":2,\"nonce\":\"aef70cc330ce416ea1207ce8d711753c\"}",
+      "sentinel.io/fence-epoch": "2"
+    },
+    "operator_restore": {
+      "at": "2026-11-12T16:05:09.060588Z",
+      "rc": 0,
+      "stderr": ""
+    }
+  },
+  {
+    "run": "S1b r2",
+    "duration_s": 48.5,
+    "states": [
+      "RECOVERED"
+    ],
+    "incidents": [
+      [
+        "INC-24460CF1090D",
+        "RECOVERED"
+      ]
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "invariants": {
+      "I1": "PASS",
+      "I2": "PASS",
+      "I3": "PASS",
+      "I4": "PASS",
+      "I5": "PASS",
+      "I6": "PASS",
+      "X1": "PASS",
+      "X2": "PASS",
+      "X3": "PASS",
+      "X4": "PASS"
+    },
+    "matches_expectation": true,
+    "harness_error": null,
+    "notes": {
+      "fault_point": "executor.after_start_write",
+      "crashed": "executor-a",
+      "exit_code": 73,
+      "restarted": "after the incident ended"
+    },
+    "cluster_writes": [
+      {
+        "marker": "write",
+        "template_changed": 1,
+        "resource_version": "139410",
+        "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+      }
+    ],
+    "ledgers": {
+      "executor-a": [
+        {
+          "action_id": "ACT-83a4f52d04d3d4ad116f9a4c",
+          "phase": "DONE"
+        }
+      ],
+      "executor-b": [
+        {
+          "action_id": "ACT-83a4f52d04d3d4ad116f9a4c",
+          "phase": "DONE"
+        }
+      ]
+    },
+    "deployment_pre": {
+      "generation": 141,
+      "resource_version": "139340"
+    },
+    "deployment_post": {
+      "generation": 142,
+      "resource_version": "139440",
+      "template_is_baseline": true,
+      "available": 1
+    },
+    "post_fence": {
+      "sentinel.io/fence": "{\"action_id\":\"ACT-04a8923f64b74e3bdacb3913\",\"epoch\":2,\"nonce\":\"aef70cc330ce416ea1207ce8d711753c\"}",
+      "sentinel.io/fence-epoch": "2"
+    },
+    "operator_restore": null
+  },
+  {
+    "run": "S1c r2",
+    "duration_s": 32.3,
+    "states": [
+      "RECOVERED"
+    ],
+    "incidents": [
+      [
+        "INC-CD2F1BC959F8",
+        "RECOVERED"
+      ]
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "invariants": {
+      "I1": "PASS",
+      "I2": "PASS",
+      "I3": "PASS",
+      "I4": "PASS",
+      "I5": "PASS",
+      "I6": "PASS",
+      "X1": "PASS",
+      "X2": "PASS",
+      "X3": "PASS",
+      "X4": "PASS"
+    },
+    "matches_expectation": true,
+    "harness_error": null,
+    "notes": {
+      "fault_point": "executor.after_patch_before_save",
+      "crashed": "executor-a",
+      "exit_code": 73,
+      "restarted": "after the incident ended"
+    },
+    "cluster_writes": [
+      {
+        "marker": "write",
+        "template_changed": 1,
+        "resource_version": "139562",
+        "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+      }
+    ],
+    "ledgers": {
+      "executor-a": [
+        {
+          "action_id": "ACT-d362b1c0609cd9df8d2932c8",
+          "phase": "DONE"
+        }
+      ],
+      "executor-b": [
+        {
+          "action_id": "ACT-d362b1c0609cd9df8d2932c8",
+          "phase": "DONE"
+        }
+      ]
+    },
+    "deployment_pre": {
+      "generation": 143,
+      "resource_version": "139503"
+    },
+    "deployment_post": {
+      "generation": 144,
+      "resource_version": "139594",
+      "template_is_baseline": true,
+      "available": 1
+    },
+    "post_fence": {
+      "sentinel.io/fence": "{\"action_id\":\"ACT-04a8923f64b74e3bdacb3913\",\"epoch\":2,\"nonce\":\"aef70cc330ce416ea1207ce8d711753c\"}",
+      "sentinel.io/fence-epoch": "2"
+    },
+    "operator_restore": null
+  },
+  {
+    "run": "S2 r2",
+    "duration_s": 49.3,
+    "states": [
+      "RECOVERED",
+      "REJECTED"
+    ],
+    "incidents": [
+      [
+        "INC-C2CCB0E8516E",
+        "RECOVERED"
+      ],
+      [
+        "INC-9784806D6BA0",
+        "REJECTED"
+      ]
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "invariants": {
+      "I1": "PASS",
+      "I2": "PASS",
+      "I3": "PASS",
+      "I4": "PASS",
+      "I5": "PASS",
+      "I6": "PASS",
+      "X1": "PASS",
+      "X2": "PASS",
+      "X3": "PASS",
+      "X4": "PASS"
+    },
+    "matches_expectation": true,
+    "harness_error": null,
+    "notes": {
+      "stalled": "executor-a",
+      "stall": "block+blackhole"
+    },
+    "cluster_writes": [
+      {
+        "marker": "write",
+        "template_changed": 1,
+        "resource_version": "139714",
+        "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+      }
+    ],
+    "ledgers": {
+      "executor-a": [
+        {
+          "action_id": "ACT-a97423aabe6c7ec184a53588",
+          "phase": "DONE"
+        }
+      ],
+      "executor-b": [
+        {
+          "action_id": "ACT-a97423aabe6c7ec184a53588",
+          "phase": "DONE"
+        }
+      ]
+    },
+    "deployment_pre": {
+      "generation": 145,
+      "resource_version": "139644"
+    },
+    "deployment_post": {
+      "generation": 146,
+      "resource_version": "139755",
+      "template_is_baseline": true,
+      "available": 1
+    },
+    "post_fence": {
+      "sentinel.io/fence": "{\"action_id\":\"ACT-04a8923f64b74e3bdacb3913\",\"epoch\":2,\"nonce\":\"aef70cc330ce416ea1207ce8d711753c\"}",
+      "sentinel.io/fence-epoch": "2"
+    },
+    "operator_restore": null
+  },
+  {
+    "run": "S4 r2",
+    "duration_s": 43.2,
+    "states": [
+      "RECOVERED"
+    ],
+    "incidents": [
+      [
+        "INC-7DBC563C84E2",
+        "RECOVERED"
+      ]
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "invariants": {
+      "I1": "PASS",
+      "I2": "PASS",
+      "I3": "PASS",
+      "I4": "PASS",
+      "I5": "PASS",
+      "I6": "PASS",
+      "X1": "PASS",
+      "X2": "PASS",
+      "X3": "PASS",
+      "X4": "PASS"
+    },
+    "matches_expectation": true,
+    "harness_error": null,
+    "notes": {
+      "dropped_for": "executor-a",
+      "replay_receipt": true
+    },
+    "cluster_writes": [
+      {
+        "marker": "write",
+        "template_changed": 1,
+        "resource_version": "139889",
+        "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+      }
+    ],
+    "ledgers": {
+      "executor-a": [
+        {
+          "action_id": "ACT-727ecde6cfb6692e018eab19",
+          "phase": "DONE"
+        }
+      ],
+      "executor-b": []
+    },
+    "deployment_pre": {
+      "generation": 147,
+      "resource_version": "139819"
+    },
+    "deployment_post": {
+      "generation": 148,
+      "resource_version": "139913",
+      "template_is_baseline": true,
+      "available": 1
+    },
+    "post_fence": {
+      "sentinel.io/fence": "{\"action_id\":\"ACT-04a8923f64b74e3bdacb3913\",\"epoch\":2,\"nonce\":\"aef70cc330ce416ea1207ce8d711753c\"}",
+      "sentinel.io/fence-epoch": "2"
+    },
+    "operator_restore": null
+  },
+  {
+    "run": "S5 r2",
+    "duration_s": 27.5,
+    "states": [
+      "RECOVERED"
+    ],
+    "incidents": [
+      [
+        "INC-A09608781F81",
+        "RECOVERED"
+      ]
+    ],
+    "committed_writes": 1,
+    "unobserved_windows": 0,
+    "invariants": {
+      "I1": "PASS",
+      "I2": "PASS",
+      "I3": "PASS",
+      "I4": "PASS",
+      "I5": "PASS",
+      "I6": "PASS",
+      "X1": "PASS",
+      "X2": "PASS",
+      "X3": "PASS",
+      "X4": "PASS"
+    },
+    "matches_expectation": true,
+    "harness_error": null,
+    "notes": {
+      "fault_point": "coordinator.after_commit_before_reply",
+      "exit_code": 73,
+      "restarts": 2
+    },
+    "cluster_writes": [
+      {
+        "marker": "write",
+        "template_changed": 1,
+        "resource_version": "140070",
+        "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+      }
+    ],
+    "ledgers": {
+      "executor-a": [],
+      "executor-b": [
+        {
+          "action_id": "ACT-6d2bc760e5a3df18921bcb25",
+          "phase": "DONE"
+        }
+      ]
+    },
+    "deployment_pre": {
+      "generation": 149,
+      "resource_version": "139986"
+    },
+    "deployment_post": {
+      "generation": 150,
+      "resource_version": "140102",
+      "template_is_baseline": true,
+      "available": 1
+    },
+    "post_fence": {
+      "sentinel.io/fence": "{\"action_id\":\"ACT-04a8923f64b74e3bdacb3913\",\"epoch\":2,\"nonce\":\"aef70cc330ce416ea1207ce8d711753c\"}",
+      "sentinel.io/fence-epoch": "2"
+    },
+    "operator_restore": null
+  },
+  {
+    "run": "S8 r2",
+    "duration_s": 9.7,
+    "states": [
+      "FAILED"
+    ],
+    "incidents": [
+      [
+        "INC-69A6088F4C03",
+        "FAILED"
+      ]
+    ],
+    "committed_writes": 0,
+    "unobserved_windows": 0,
+    "invariants": {
+      "I1": "PASS",
+      "I2": "PASS",
+      "I3": "PASS",
+      "I4": "PASS",
+      "I5": "PASS",
+      "I6": "PASS",
+      "X1": "PASS",
+      "X2": "PASS",
+      "X3": "PASS",
+      "X4": "PASS"
+    },
+    "matches_expectation": true,
+    "harness_error": null,
+    "notes": {
+      "paused": "executor-a",
+      "paused_result": "CONFLICT",
+      "sealed_epoch": 2,
+      "epoch": 2,
+      "writes_after_release": 0
+    },
+    "cluster_writes": [],
+    "ledgers": {
+      "executor-a": [
+        {
+          "action_id": "ACT-a1f8efeb56822bebd68a1857",
+          "phase": "DONE"
+        }
+      ],
+      "executor-b": []
+    },
+    "deployment_pre": {
+      "generation": 151,
+      "resource_version": "140145"
+    },
+    "deployment_post": {
+      "generation": 152,
+      "resource_version": "140194",
+      "template_is_baseline": false,
+      "available": 0
+    },
+    "post_fence": {
+      "sentinel.io/fence": "{\"action_id\":\"ACT-a1f8efeb56822bebd68a1857\",\"epoch\":2,\"nonce\":\"9553cd69a78c4d09b5094c1cf1479857\"}",
+      "sentinel.io/fence-epoch": "2"
+    },
+    "operator_restore": {
+      "at": "2026-11-12T16:09:18.158982Z",
+      "rc": 0,
+      "stderr": ""
+    }
+  }
+]

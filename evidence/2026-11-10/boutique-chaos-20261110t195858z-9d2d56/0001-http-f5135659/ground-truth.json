@@ -1,0 +1,20 @@
+{
+  "run_id": "0001-http-f5135659",
+  "fault": "http",
+  "target": {
+    "namespaces": [
+      "sentinel-boutique-chaos"
+    ],
+    "labelSelectors": {
+      "app": "frontend"
+    }
+  },
+  "windows": {
+    "baseline": [
+      "2026-11-10T19:59:01.097793Z",
+      "2026-11-10T19:59:31.098932Z"
+    ]
+  },
+  "injection_confirmed": false,
+  "note": "Host-observed windows; authoritative controller transitions are in chaos-status.jsonl. Injection is not proof of user-visible impact."
+}

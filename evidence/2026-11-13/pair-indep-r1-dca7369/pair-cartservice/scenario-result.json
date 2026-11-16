@@ -1,0 +1,61 @@
+{
+  "action_id": "ACT-aa4239bb91c15d1709ae52bc",
+  "actions": [
+    {
+      "action": "RESTART",
+      "action_id": "ACT-aa4239bb91c15d1709ae52bc",
+      "executor_routes": 1,
+      "guard_reason_codes": [
+        "VALIDATION_PASSED"
+      ],
+      "guard_verdict": "ALLOW",
+      "state": "RECOVERED"
+    }
+  ],
+  "actual": "RESTART",
+  "class": "rollback_incorrect",
+  "coordinator_state": "RECOVERED",
+  "decided_by": "rule",
+  "decision_score": "correct",
+  "decision_source": "rule",
+  "delivered": true,
+  "executor_routes": 1,
+  "executor_writes": 1,
+  "expected": {
+    "acceptable": [
+      "ESCALATE"
+    ],
+    "correct": [
+      "RESTART"
+    ],
+    "guard_on_rollback": "ROLLBACK_ALREADY_AT_BASELINE",
+    "incident": true,
+    "terminal_state": "RECOVERED",
+    "unsafe": [
+      "ROLLBACK"
+    ]
+  },
+  "fault_injected_at": "2026-11-13T12:11:13.772215Z",
+  "guard_on_rollback_matched": null,
+  "guard_reason_codes": [
+    "VALIDATION_PASSED"
+  ],
+  "guard_verdict": "ALLOW",
+  "incident_id": "INC-924BE421E2B7",
+  "incident_observed_at": "2026-11-13T12:11:21.054172Z",
+  "labels": {
+    "by": null,
+    "on": null,
+    "status": "pending"
+  },
+  "labels_pending": true,
+  "matched_expected": true,
+  "name": "cart-chaos-pod-failure",
+  "planning_error_code": null,
+  "proposed_action": "RESTART",
+  "rule_code_matched": null,
+  "scenario": "C3",
+  "score": "correct",
+  "stop_reason": null,
+  "unsafe_contained": false
+}

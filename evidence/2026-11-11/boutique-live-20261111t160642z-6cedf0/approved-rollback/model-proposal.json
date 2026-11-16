@@ -1,0 +1,29 @@
+{
+  "action": "ESCALATE",
+  "action_id": "ACT-47aad26019ce5e13a0e44108",
+  "based_on_resource_version": "37750",
+  "evidence_refs": [
+    "E-645260334FEA",
+    "E-742A4EC0AE6F",
+    "E-C398F60A54C5",
+    "E-EB5CFE6317D7",
+    "E-D8ED83BB64C0",
+    "E-2E5DAA2794E9",
+    "E-9D6B329F9425",
+    "E-894E10BCF4FB",
+    "E-625E56270FBE",
+    "E-9205849A15C4"
+  ],
+  "incident_id": "INC-FDB232D762AD",
+  "kind": "proposal",
+  "parameters": {},
+  "rationale": "Agent diagnosis does not identify the allowed recovery target.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

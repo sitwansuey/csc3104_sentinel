@@ -1,0 +1,29 @@
+{
+  "action": "ROLLBACK",
+  "action_id": "ACT-07670c16be7b2f0652715135",
+  "based_on_resource_version": "96284",
+  "evidence_refs": [
+    "E-48273C3EA42F",
+    "E-A3AD24D3BA73",
+    "E-879A06276DC5",
+    "E-373380C644EF",
+    "E-92307B7EA06B",
+    "E-1CE42D2D8F2E",
+    "E-F8E3388A8EB1"
+  ],
+  "incident_id": "INC-98840727F2C4",
+  "kind": "proposal",
+  "parameters": {
+    "baseline_id": "BASE-LIVE-f77fc0a484d7",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+  },
+  "rationale": "The incident evidence indicates that the deployment 'shippingservice' is in a failed state, with no available replicas and a pod in the 'Pending' phase due to 'ErrImageNeverPull'. This error suggests that the container image specified in the current configuration is not available, and the pull policy is set to 'Never', which prevents the container from being pulled. The diagnosis identifies a 'faulty configuration rollout' as the root cause, and the change evidence confirms that the image was changed from a previous version to a new one that is not accessible. Since the baseline configuration is known and healthy, and the current configuration is faulty, a rollback to the baseline is appropriate to restore the service to a known working state.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

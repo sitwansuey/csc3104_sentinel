@@ -1,0 +1,38 @@
+[
+  {
+    "at": "2026-11-12T15:55:36.949107Z",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+    "ready_replicas": 1,
+    "available_replicas": 1,
+    "desired_replicas": 1,
+    "cart_http_status": 200,
+    "resource_version": "114566"
+  },
+  {
+    "at": "2026-11-12T15:55:47.074535Z",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+    "ready_replicas": 1,
+    "available_replicas": 1,
+    "desired_replicas": 1,
+    "cart_http_status": 200,
+    "resource_version": "114566"
+  },
+  {
+    "at": "2026-11-12T15:55:57.193502Z",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+    "ready_replicas": 1,
+    "available_replicas": 1,
+    "desired_replicas": 1,
+    "cart_http_status": 200,
+    "resource_version": "114566"
+  },
+  {
+    "at": "2026-11-12T15:56:07.309433Z",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+    "ready_replicas": 1,
+    "available_replicas": 1,
+    "desired_replicas": 1,
+    "cart_http_status": 200,
+    "resource_version": "114566"
+  }
+]

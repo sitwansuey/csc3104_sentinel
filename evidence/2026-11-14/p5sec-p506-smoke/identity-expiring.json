@@ -1,0 +1,734 @@
+{
+  "passed": true,
+  "executor_write_attempts": 0,
+  "guard_reports": [
+    {
+      "schema_version": "1.0",
+      "kind": "guard_report",
+      "incident_id": "INC-836976862B67",
+      "action_id": "ACT-LIVE-d0ffe3f3a2e442c3870cfb0e93a75a41",
+      "verdict": "ESCALATE",
+      "checked_at": "2026-11-14T17:58:32.699404Z",
+      "valid_until": "2026-11-14T17:58:52.699404Z",
+      "proposal_sha256": "89e8ac4d4af11a80b38e2b02f1e8a5c4bf50448e751e275e61d5c47f14249d7a",
+      "inputs_sha256": "4cd534bb0538de6163b5e2e2e764912de7a5348798c156c06f00e78be35132f5",
+      "decision_sha256": "8a25f9947b091614282d3ae9eedca46fc7b639a3a782da04024bd9cf83a160d5",
+      "checks": [
+        {
+          "code": "OPERATOR_APPROVAL_REQUIRED",
+          "status": "UNKNOWN",
+          "path": "approval",
+          "actual": "check failed",
+          "expected": "valid current trusted input",
+          "message": "Refresh the indicated input or correct the policy violation, then revalidate."
+        },
+        {
+          "code": "TARGET_POLICY",
+          "status": "PASS",
+          "path": "policy.targets",
+          "actual": "validated",
+          "expected": "matching reviewed input",
+          "message": "Core check completed."
+        },
+        {
+          "code": "ACTION_POLICY",
+          "status": "PASS",
+          "path": "proposal.action",
+          "actual": "validated",
+          "expected": "matching reviewed input",
+          "message": "Core check completed."
+        },
+        {
+          "code": "LIVE_IDENTITY_VERSION",
+          "status": "PASS",
+          "path": "live_state.deployment.metadata",
+          "actual": "validated",
+          "expected": "matching reviewed input",
+          "message": "Core check completed."
+        },
+        {
+          "code": "LIVE_TIMESTAMP",
+          "status": "PASS",
+          "path": "live_state.captured_at",
+          "actual": "validated",
+          "expected": "matching reviewed input",
+          "message": "Core check completed."
+        },
+        {
+          "code": "BASELINE_IDENTITY_HASH",
+          "status": "PASS",
+          "path": "baseline",
+          "actual": "validated",
+          "expected": "matching reviewed input",
+          "message": "Core check completed."
+        },
+        {
+          "code": "DEPENDENCY_VALIDATION",
+          "status": "PASS",
+          "path": "dependencies",
+          "actual": "validated",
+          "expected": "matching reviewed input",
+          "message": "Core check completed."
+        },
+        {
+          "code": "ROLLBACK_CHANGES_TEMPLATE",
+          "status": "PASS",
+          "path": "live_state.deployment.spec.template",
+          "actual": {
+            "template_sha256": "76bd5568b787f371abdb84ec9b98f358a55015eb27f0a22a4329bf2dd3db17ba"
+          },
+          "expected": {
+            "different_from_baseline_sha256": "2448936f230911c376a4595ca06790b78f88efd8fae61fc2b26da61fee8369ff"
+          },
+          "message": "Rollback would restore a different, previously verified template."
+        },
+        {
+          "code": "BASELINE_AGE",
+          "status": "PASS",
+          "path": "baseline.healthy_observed_at",
+          "actual": 111.768299,
+          "expected": {
+            "min_age_seconds": 0,
+            "max_age_seconds": 1800
+          },
+          "message": "Baseline health evidence must be recent and not in the future."
+        },
+        {
+          "code": "BASELINE_HEALTH_STATUS",
+          "status": "PASS",
+          "path": "baseline.health_evidence.status",
+          "actual": "HEALTHY",
+          "expected": "HEALTHY",
+          "message": "Baseline must have a healthy verification result."
+        },
+        {
+          "code": "BASELINE_HEALTH_TARGET",
+          "status": "PASS",
+          "path": "baseline.health_evidence.target",
+          "actual": {
+            "cluster_id": "sentinel-boutique-security",
+            "kind": "Deployment",
+            "name": "shippingservice",
+            "namespace": "sentinel-boutique-security",
+            "uid": "a766418e-3241-4cb5-b683-9bed5b1a0e06"
+          },
+          "expected": {
+            "cluster_id": "sentinel-boutique-security",
+            "kind": "Deployment",
+            "name": "shippingservice",
+            "namespace": "sentinel-boutique-security",
+            "uid": "a766418e-3241-4cb5-b683-9bed5b1a0e06"
+          },
+          "message": "Health evidence must identify the exact recovery target."
+        },
+        {
+          "code": "BASELINE_HEALTH_TEMPLATE",
+          "status": "PASS",
+          "path": "baseline.health_evidence.template_sha256",
+          "actual": "2448936f230911c376a4595ca06790b78f88efd8fae61fc2b26da61fee8369ff",
+          "expected": "2448936f230911c376a4595ca06790b78f88efd8fae61fc2b26da61fee8369ff",
+          "message": "Health evidence must identify the exact saved template."
+        },
+        {
+          "code": "BASELINE_HEALTH_WINDOW",
+          "status": "PASS",
+          "path": "baseline.health_evidence.window_end",
+          "actual": "2026-11-14T17:56:40.931105Z",
+          "expected": "ordered, nonfuture, ending at healthy_observed_at",
+          "message": "Health window must be ordered, nonfuture and consistent with the saved baseline."
+        },
+        {
+          "code": "BASELINE_HEALTH_SOURCE",
+          "status": "PASS",
+          "path": "baseline.health_evidence.source",
+          "actual": "sentinel-boutique-security-authenticated",
+          "expected": [
+            "sentinel-boutique-security-authenticated"
+          ],
+          "message": "Health evidence must originate from a configured verifier."
+        },
+        {
+          "code": "BASELINE_HEALTH_DURATION",
+          "status": "PASS",
+          "path": "baseline.health_evidence.window_start",
+          "actual": 21.747198,
+          "expected": {
+            "min_seconds": 10
+          },
+          "message": "Health verification must cover the configured stability window."
+        },
+        {
+          "code": "BASELINE_IMAGE_DIGEST",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[0].image",
+          "actual": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4",
+          "expected": "repository@sha256:<64 lowercase hex characters>",
+          "message": "Rollback images must use immutable SHA-256 digests."
+        },
+        {
+          "code": "BASELINE_IMAGE_DIGEST",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].image",
+          "actual": "envoyproxy/envoy@sha256:8de97e654644827d62afdbf7e1d3dc9fee01a8690d410dd1c63a30dc6b6cecbb",
+          "expected": "repository@sha256:<64 lowercase hex characters>",
+          "message": "Rollback images must use immutable SHA-256 digests."
+        },
+        {
+          "code": "BASELINE_REFERENCE_CHANGED",
+          "status": "PASS",
+          "path": "live_state.reference_versions",
+          "actual": {
+            "reference": "ConfigMap/sentinel-boutique-security/security-trust-bundle",
+            "uid": "a00eb411-f09f-4003-b2a9-09a49bdab0d5",
+            "resource_version": "1565"
+          },
+          "expected": {
+            "uid": "a00eb411-f09f-4003-b2a9-09a49bdab0d5",
+            "resource_version": "1565"
+          },
+          "message": "Referenced configuration must match the version verified with the baseline."
+        },
+        {
+          "code": "BASELINE_REFERENCE_CHANGED",
+          "status": "PASS",
+          "path": "live_state.reference_versions",
+          "actual": {
+            "reference": "ConfigMap/sentinel-boutique-security/security-upstream",
+            "uid": "c7946e95-1d16-4740-8e06-90e8484f3e15",
+            "resource_version": "1411"
+          },
+          "expected": {
+            "uid": "c7946e95-1d16-4740-8e06-90e8484f3e15",
+            "resource_version": "1411"
+          },
+          "message": "Referenced configuration must match the version verified with the baseline."
+        },
+        {
+          "code": "BASELINE_REFERENCE_CHANGED",
+          "status": "PASS",
+          "path": "live_state.certificates",
+          "actual": {
+            "reference": "Secret/sentinel-boutique-security/security-upstream",
+            "certificate": "security-upstream",
+            "uid": "e3fabb65-becd-4537-8e8a-4f6cffab5d15",
+            "generation": 1
+          },
+          "expected": {
+            "uid": "e3fabb65-becd-4537-8e8a-4f6cffab5d15",
+            "generation": 1
+          },
+          "message": "The Certificate that owns this Secret must be the one verified with the baseline."
+        },
+        {
+          "code": "SECURITY_HOST_ACCESS",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.hostNetwork",
+          "actual": false,
+          "expected": false,
+          "message": "Rollback must not share host namespaces."
+        },
+        {
+          "code": "SECURITY_HOST_ACCESS",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.hostPID",
+          "actual": false,
+          "expected": false,
+          "message": "Rollback must not share host namespaces."
+        },
+        {
+          "code": "SECURITY_HOST_ACCESS",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.hostIPC",
+          "actual": false,
+          "expected": false,
+          "message": "Rollback must not share host namespaces."
+        },
+        {
+          "code": "SECURITY_HOST_ACCESS",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[0].ports[0].hostPort",
+          "actual": 0,
+          "expected": 0,
+          "message": "Rollback must not bind a host port."
+        },
+        {
+          "code": "SECURITY_HOST_ACCESS",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].ports[0].hostPort",
+          "actual": 0,
+          "expected": 0,
+          "message": "Rollback must not bind a host port."
+        },
+        {
+          "code": "SECURITY_ROOT_USER",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.securityContext.runAsUser",
+          "actual": 1000,
+          "expected": "nonzero UID",
+          "message": "Rollback must not explicitly select the root user."
+        },
+        {
+          "code": "SECURITY_ROOT_USER",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.securityContext.runAsNonRoot",
+          "actual": true,
+          "expected": true,
+          "message": "Rollback must not explicitly allow a root user."
+        },
+        {
+          "code": "SECURITY_SECCOMP",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.securityContext.seccompProfile.type",
+          "actual": "RuntimeDefault",
+          "expected": [
+            "RuntimeDefault",
+            "Localhost"
+          ],
+          "message": "An unconfined seccomp profile is forbidden."
+        },
+        {
+          "code": "SECURITY_PRIVILEGED",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[0].securityContext.privileged",
+          "actual": false,
+          "expected": false,
+          "message": "Privileged containers are forbidden."
+        },
+        {
+          "code": "SECURITY_PRIVILEGE_ESCALATION",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[0].securityContext.allowPrivilegeEscalation",
+          "actual": false,
+          "expected": false,
+          "message": "Explicitly disable privilege escalation."
+        },
+        {
+          "code": "SECURITY_CAPABILITIES",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[0].securityContext.capabilities.add",
+          "actual": [],
+          "expected": [],
+          "message": "Additional Linux capabilities are forbidden."
+        },
+        {
+          "code": "SECURITY_PRIVILEGED",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].securityContext.privileged",
+          "actual": false,
+          "expected": false,
+          "message": "Privileged containers are forbidden."
+        },
+        {
+          "code": "SECURITY_PRIVILEGE_ESCALATION",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].securityContext.allowPrivilegeEscalation",
+          "actual": false,
+          "expected": false,
+          "message": "Explicitly disable privilege escalation."
+        },
+        {
+          "code": "SECURITY_CAPABILITIES",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].securityContext.capabilities.add",
+          "actual": [],
+          "expected": [],
+          "message": "Additional Linux capabilities are forbidden."
+        },
+        {
+          "code": "SECURITY_ROOT_USER",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].securityContext.runAsUser",
+          "actual": 10001,
+          "expected": "nonzero UID",
+          "message": "Rollback must not explicitly select the root user."
+        },
+        {
+          "code": "SECURITY_ROOT_USER",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].securityContext.runAsNonRoot",
+          "actual": true,
+          "expected": true,
+          "message": "Rollback must not explicitly allow a root user."
+        },
+        {
+          "code": "SECURITY_IMAGE_REGISTRY",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[0].image",
+          "actual": "us-central1-docker.pkg.dev",
+          "expected": [
+            "us-central1-docker.pkg.dev",
+            "docker.io"
+          ],
+          "message": "Image registry must match an exact configured host."
+        },
+        {
+          "code": "SECURITY_IMAGE_REGISTRY",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].image",
+          "actual": "docker.io",
+          "expected": [
+            "us-central1-docker.pkg.dev",
+            "docker.io"
+          ],
+          "message": "Image registry must match an exact configured host."
+        },
+        {
+          "code": "SECURITY_SERVICE_ACCOUNT",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.serviceAccountName",
+          "actual": "shippingservice",
+          "expected": [
+            "shippingservice"
+          ],
+          "message": "Rollback service account must be allowlisted."
+        },
+        {
+          "code": "SECURITY_SERVICE_ACCOUNT_CHANGE",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.serviceAccountName",
+          "actual": "shippingservice",
+          "expected": "shippingservice",
+          "message": "Rollback must preserve the current service account."
+        },
+        {
+          "code": "SECURITY_SIDECAR_IMAGE",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].image",
+          "actual": "envoyproxy/envoy@sha256:8de97e654644827d62afdbf7e1d3dc9fee01a8690d410dd1c63a30dc6b6cecbb",
+          "expected": "envoyproxy/envoy@sha256:8de97e654644827d62afdbf7e1d3dc9fee01a8690d410dd1c63a30dc6b6cecbb",
+          "message": "A reviewed sidecar must run its reviewed image digest."
+        },
+        {
+          "code": "SECURITY_SIDECAR_COMMAND",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].args",
+          "actual": [
+            "-c",
+            "/config/envoy.json",
+            "--concurrency",
+            "2",
+            "--log-level",
+            "warn"
+          ],
+          "expected": [
+            "-c",
+            "/config/envoy.json",
+            "--concurrency",
+            "2",
+            "--log-level",
+            "warn"
+          ],
+          "message": "A reviewed sidecar must run its reviewed command and arguments."
+        },
+        {
+          "code": "SECURITY_SIDECAR_COMMAND",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].command",
+          "actual": [
+            "envoy"
+          ],
+          "expected": [
+            "envoy"
+          ],
+          "message": "A reviewed sidecar must run its reviewed command and arguments."
+        },
+        {
+          "code": "SECURITY_SIDECAR_COMMAND",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1]",
+          "actual": [],
+          "expected": [],
+          "message": "A reviewed sidecar runs no lifecycle hook and no exec probe."
+        },
+        {
+          "code": "SECURITY_SIDECAR_FIELDS",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1]",
+          "actual": [],
+          "expected": [],
+          "message": "A reviewed sidecar carries only reviewed container fields and network probes."
+        },
+        {
+          "code": "SECURITY_SIDECAR_MOUNTS",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].volumeMounts",
+          "actual": [
+            {
+              "volume": "security-trust-bundle",
+              "mount_path": "/trust",
+              "source": {
+                "kind": "ConfigMap",
+                "name": "security-trust-bundle"
+              }
+            },
+            {
+              "volume": "security-upstream",
+              "mount_path": "/config",
+              "source": {
+                "kind": "ConfigMap",
+                "name": "security-upstream"
+              }
+            },
+            {
+              "volume": "upstream",
+              "mount_path": "/pki/upstream",
+              "source": {
+                "kind": "Secret",
+                "name": "security-upstream"
+              }
+            }
+          ],
+          "expected": [
+            {
+              "volume": "security-trust-bundle",
+              "mount_path": "/trust",
+              "source": {
+                "kind": "ConfigMap",
+                "name": "security-trust-bundle"
+              }
+            },
+            {
+              "volume": "security-upstream",
+              "mount_path": "/config",
+              "source": {
+                "kind": "ConfigMap",
+                "name": "security-upstream"
+              }
+            },
+            {
+              "volume": "upstream",
+              "mount_path": "/pki/upstream",
+              "source": {
+                "kind": "Secret",
+                "name": "security-upstream"
+              }
+            }
+          ],
+          "message": "A reviewed sidecar may mount only its reviewed ConfigMaps and Secrets, read-only."
+        },
+        {
+          "code": "SECURITY_SIDECAR_ENV",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].env",
+          "actual": "none",
+          "expected": "none",
+          "message": "A reviewed sidecar takes its configuration from its reviewed mounts only."
+        },
+        {
+          "code": "SECURITY_SIDECAR_NOT_ALLOWED",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers",
+          "actual": [
+            "server"
+          ],
+          "expected": {
+            "application_containers": 1,
+            "reviewed_sidecars": [
+              "shipping-ingress"
+            ]
+          },
+          "message": "Only one application container and the target's reviewed sidecars may run in the restored template."
+        },
+        {
+          "code": "SECURITY_IDENTITY_SPEC",
+          "status": "PASS",
+          "path": "live_state.certificates[security-upstream].spec",
+          "actual": {
+            "secret": "<redacted:80b4f07d>",
+            "issuer": {
+              "group": "cert-manager.io",
+              "kind": "ClusterIssuer",
+              "name": "sentinel-lab-ca"
+            },
+            "dns_names": [
+              "upstream.internal"
+            ]
+          },
+          "expected": {
+            "secret": "<redacted:80b4f07d>",
+            "issuer": {
+              "group": "cert-manager.io",
+              "kind": "ClusterIssuer",
+              "name": "sentinel-lab-ca"
+            },
+            "dns_names": [
+              "upstream.internal"
+            ]
+          },
+          "message": "The certificate must be the reviewed identity: its Secret, issuer and DNS names."
+        },
+        {
+          "code": "SECURITY_IDENTITY_NOT_READY",
+          "status": "PASS",
+          "path": "live_state.certificates[security-upstream].ready",
+          "actual": {
+            "ready": "True",
+            "observed_generation": 1,
+            "generation": 1
+          },
+          "expected": "True for the current generation",
+          "message": "The certificate must be Ready for its current spec."
+        },
+        {
+          "code": "SECURITY_IDENTITY_NOT_YET_VALID",
+          "status": "PASS",
+          "path": "live_state.certificates[security-upstream].not_before",
+          "actual": "2026-11-14T17:25:10Z",
+          "expected": "not after the check time",
+          "message": "The certificate is not valid yet."
+        },
+        {
+          "code": "SECURITY_IDENTITY_EXPIRING",
+          "status": "UNKNOWN",
+          "path": "live_state.certificates[security-upstream].not_after",
+          "actual": {
+            "remaining_seconds": 1597.300596,
+            "revision": 2
+          },
+          "expected": {
+            "min_remaining_seconds": 1800
+          },
+          "message": "The certificate has expired or expires within the reviewed margin; its renewal is failing."
+        },
+        {
+          "code": "RESOURCE_WITHIN_POLICY",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[0].resources.requests.cpu",
+          "actual": "100m",
+          "expected": "100m",
+          "message": "Container 'server' (baseline.pod_template.spec.containers[0]): cpu request 100m is within policy maximum 100m."
+        },
+        {
+          "code": "RESOURCE_WITHIN_POLICY",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[0].resources.limits.cpu",
+          "actual": "200m",
+          "expected": "500m",
+          "message": "Container 'server' (baseline.pod_template.spec.containers[0]): cpu limit 200m is within policy maximum 500m."
+        },
+        {
+          "code": "RESOURCE_WITHIN_POLICY",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[0].resources.requests.memory",
+          "actual": "64Mi",
+          "expected": "64Mi",
+          "message": "Container 'server' (baseline.pod_template.spec.containers[0]): memory request 64Mi is within policy maximum 64Mi."
+        },
+        {
+          "code": "RESOURCE_WITHIN_POLICY",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[0].resources.limits.memory",
+          "actual": "128Mi",
+          "expected": "192Mi",
+          "message": "Container 'server' (baseline.pod_template.spec.containers[0]): memory limit 128Mi is within policy maximum 192Mi."
+        },
+        {
+          "code": "RESOURCE_WITHIN_POLICY",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].resources.requests.cpu",
+          "actual": "20m",
+          "expected": "100m",
+          "message": "Container 'shipping-ingress' (baseline.pod_template.spec.containers[1]): cpu request 20m is within policy maximum 100m."
+        },
+        {
+          "code": "RESOURCE_WITHIN_POLICY",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].resources.limits.cpu",
+          "actual": "300m",
+          "expected": "500m",
+          "message": "Container 'shipping-ingress' (baseline.pod_template.spec.containers[1]): cpu limit 300m is within policy maximum 500m."
+        },
+        {
+          "code": "RESOURCE_WITHIN_POLICY",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].resources.requests.memory",
+          "actual": "48Mi",
+          "expected": "64Mi",
+          "message": "Container 'shipping-ingress' (baseline.pod_template.spec.containers[1]): memory request 48Mi is within policy maximum 64Mi."
+        },
+        {
+          "code": "RESOURCE_WITHIN_POLICY",
+          "status": "PASS",
+          "path": "baseline.pod_template.spec.containers[1].resources.limits.memory",
+          "actual": "192Mi",
+          "expected": "192Mi",
+          "message": "Container 'shipping-ingress' (baseline.pod_template.spec.containers[1]): memory limit 192Mi is within policy maximum 192Mi."
+        },
+        {
+          "code": "WORKLOAD_WITHIN_POLICY",
+          "status": "PASS",
+          "path": "live_state.deployment.spec.replicas",
+          "actual": 1,
+          "expected": 2,
+          "message": "max_replicas: calculated 1, configured maximum 2."
+        },
+        {
+          "code": "WORKLOAD_WITHIN_POLICY",
+          "status": "PASS",
+          "path": "live_state.deployment.spec.strategy",
+          "actual": 0,
+          "expected": 1,
+          "message": "max_surge_replicas: calculated 0, configured maximum 1."
+        },
+        {
+          "code": "WORKLOAD_WITHIN_POLICY",
+          "status": "PASS",
+          "path": "baseline.pod_template.effective_requests.cpu",
+          "actual": "120m",
+          "expected": "250m",
+          "message": "Effective Pod cpu request includes concurrent apps, restartable init sidecars, initialization peak and overhead."
+        },
+        {
+          "code": "WORKLOAD_WITHIN_POLICY",
+          "status": "PASS",
+          "path": "baseline.pod_template.effective_requests.memory",
+          "actual": "112Mi",
+          "expected": "128Mi",
+          "message": "Effective Pod memory request includes concurrent apps, restartable init sidecars, initialization peak and overhead."
+        },
+        {
+          "code": "WORKLOAD_WITHIN_POLICY",
+          "status": "PASS",
+          "path": "live_state.deployment.rollout_requests.cpu",
+          "actual": {
+            "request_bound": "120m",
+            "priced_replicas": 1,
+            "per_pod_max": "120m"
+          },
+          "expected": "1000m",
+          "message": "Conservative snapshot estimate: max(current, candidate) effective request times max(desired + surge, observed replicas), plus observed terminating replicas; this is not a schedulability guarantee."
+        },
+        {
+          "code": "WORKLOAD_WITHIN_POLICY",
+          "status": "PASS",
+          "path": "live_state.deployment.rollout_requests.memory",
+          "actual": {
+            "request_bound": "112Mi",
+            "priced_replicas": 1,
+            "per_pod_max": "112Mi"
+          },
+          "expected": "512Mi",
+          "message": "Conservative snapshot estimate: max(current, candidate) effective request times max(desired + surge, observed replicas), plus observed terminating replicas; this is not a schedulability guarantee."
+        },
+        {
+          "code": "SERVER_DRY_RUN_DISABLED",
+          "status": "SKIP",
+          "path": "preview",
+          "actual": null,
+          "expected": "optional",
+          "message": "Server preview is not required by policy."
+        }
+      ],
+      "input_fingerprints": {
+        "proposal": "89e8ac4d4af11a80b38e2b02f1e8a5c4bf50448e751e275e61d5c47f14249d7a",
+        "live_state": "a0d9563c856511ec5ee4259be55d57c53ac030fbc9c0715c4f95e3bc66110784",
+        "policy": "09717ecb40dec93c454a9190cdd40b1d585f4bddb56d21f96d379672ee9955eb",
+        "baseline": "8d58625a7ce0110573e71d6f7ef8a227a4cfd61d18a445ca5eb1ad1d27d3e148",
+        "dependencies": "780cd46dcc8d5ef68d3753b8ed22b70e1278916b3e11b643a90a8430786ea00e",
+        "approval": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "preview": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+      }
+    }
+  ],
+  "administrator_restore": true
+}

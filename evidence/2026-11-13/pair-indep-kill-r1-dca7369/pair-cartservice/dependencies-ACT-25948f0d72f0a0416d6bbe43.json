@@ -1,0 +1,23 @@
+{
+  "action_id": "ACT-25948f0d72f0a0416d6bbe43",
+  "affected_services": [
+    "cartservice",
+    "checkoutservice",
+    "frontend",
+    "redis-cart"
+  ],
+  "blockers": [],
+  "checked_at": "2026-11-13T12:32:26.768671Z",
+  "incident_id": "INC-66DFD3E4962C",
+  "kind": "dependency_result",
+  "schema_version": "1.0",
+  "status": "CLEAR",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "cartservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+  },
+  "unknowns": []
+}

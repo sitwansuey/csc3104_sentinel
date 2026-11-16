@@ -1,0 +1,32 @@
+{
+  "run_id": "0002-pod-534f4f23",
+  "fault": "pod",
+  "target": {
+    "namespaces": [
+      "sentinel-boutique-chaos"
+    ],
+    "labelSelectors": {
+      "app": "shippingservice"
+    }
+  },
+  "windows": {
+    "baseline": [
+      "2026-11-11T14:32:29.902530Z",
+      "2026-11-11T14:32:59.903307Z"
+    ],
+    "fault": [
+      "2026-11-11T14:33:00.339992Z",
+      "2026-11-11T14:34:00.299927Z"
+    ],
+    "settle": [
+      "2026-11-11T14:34:01.662468Z",
+      "2026-11-11T14:34:17.087769Z"
+    ],
+    "recovery": [
+      "2026-11-11T14:34:17.088158Z",
+      "2026-11-11T14:34:47.088907Z"
+    ]
+  },
+  "injection_confirmed": true,
+  "note": "Host-observed windows; authoritative controller transitions are in chaos-status.jsonl. Injection is not proof of user-visible impact."
+}

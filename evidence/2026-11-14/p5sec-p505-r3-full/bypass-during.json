@@ -1,0 +1,30 @@
+{
+  "bypasses": {
+    "direct_pod_ip_bypass": {
+      "attempted": true,
+      "succeeded": false
+    },
+    "direct_service_bypass": {
+      "attempted": true,
+      "succeeded": false
+    },
+    "gateway_outage": {
+      "attempted": true,
+      "succeeded": false
+    },
+    "outage_direct_bypass": {
+      "attempted": true,
+      "succeeded": false
+    }
+  },
+  "passed": true,
+  "positive_control": {
+    "after_restore": {
+      "succeeded": true
+    },
+    "before_outage": {
+      "succeeded": true
+    },
+    "call": "lab client cart GetCart through the gateway"
+  }
+}

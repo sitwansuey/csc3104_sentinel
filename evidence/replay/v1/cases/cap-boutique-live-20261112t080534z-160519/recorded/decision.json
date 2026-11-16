@@ -1,0 +1,10 @@
+{
+  "agent_model_calls": 3,
+  "attempts": 1,
+  "decided_by": "model",
+  "decision_policy": "gated",
+  "model": "qwen3:14b",
+  "model_action": "ROLLBACK",
+  "planning_error_code": null,
+  "source_revision": "dab3b3fc7ddb3df0223897b3f2a7d005df3d1bd8"
+}

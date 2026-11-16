@@ -1,0 +1,121 @@
+{
+  "agent_model_calls": 3,
+  "checks": [
+    {
+      "at": "2026-11-11T20:30:12.607488Z",
+      "image": "us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice@sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4",
+      "name": "healthy baseline captured with real service samples and immutable image",
+      "passed": true
+    },
+    {
+      "at": "2026-11-11T20:30:13.137233Z",
+      "name": "real ServiceAccount permits only selected Deployment get/patch; forbidden write denied",
+      "passed": true
+    },
+    {
+      "at": "2026-11-11T20:30:21.040728Z",
+      "cart_status": 500,
+      "checkout_status": 500,
+      "name": "Connected cart and checkout fail while shipping configuration is broken",
+      "passed": true,
+      "scenario": "primary"
+    },
+    {
+      "at": "2026-11-11T20:30:45.501262Z",
+      "name": "competing real worker is excluded before mutation",
+      "passed": true
+    },
+    {
+      "at": "2026-11-11T20:30:46.007774Z",
+      "coordinator_state": "VERIFYING",
+      "name": "approved real rollback, duplicate replay and changed-ID rejection",
+      "passed": true,
+      "status": "APPLIED",
+      "writes": 1
+    },
+    {
+      "action_id": "ACT-9f2a1ebda5f70bded448b38a",
+      "at": "2026-11-11T20:31:29.738225Z",
+      "convergence": "Excluded 2 unhealthy reading(s) from 2026-11-11T20:30:52.255023Z to 2026-11-11T20:31:01.581743Z, within 150 seconds of execution (dependency storefront-checkout); sustained health was assessed only on the readings after them",
+      "name": "Role 6 verified gRPC, readiness and template; Coordinator RECOVERED",
+      "outcome": "RECOVERED",
+      "passed": true
+    },
+    {
+      "at": "2026-11-11T20:31:29.750644Z",
+      "name": "gRPC quote and replica health after executor rollback; Role 6 published RECOVERED",
+      "passed": true
+    }
+  ],
+  "dashboard": {
+    "applied_actions": 1,
+    "incidents": 1,
+    "model_calls": 3,
+    "role6_outcomes": 1,
+    "scenario": "live-agent",
+    "status": "PASS",
+    "url": "http://127.0.0.1:8765"
+  },
+  "dependencies": "Configured upstream address graph; live component readiness; no trace discovery",
+  "fault_injected_at": "2026-11-11T20:30:13.232497Z",
+  "finished_at": "2026-11-11T20:31:29.840901Z",
+  "mode": "LIVE Kubernetes; restricted executor credentials",
+  "model": "qwen3:14b",
+  "operator_approval": "pre-authorized local E2E test",
+  "planning": "Live RCA agent and Ollama Recovery Planner",
+  "private_executor_credentials_removed": true,
+  "provenance": {
+    "captured_by": "harness",
+    "dirty": false,
+    "dirty_path_count": 0,
+    "dirty_paths_sha256": null,
+    "host_class": "windows-amd64",
+    "python": "3.13.2",
+    "schema": "sentinel-provenance-v1",
+    "source_revision": "4afc87992c6b76e49bc56be86a7f4114623f35e9",
+    "tools": {
+      "docker": "29.4.3",
+      "helm": "4.3.1+gc0d08d0",
+      "kind": "0.33.0",
+      "kubectl": "1.34.1",
+      "ollama": "0.40.16"
+    }
+  },
+  "scope": "Online Boutique shippingservice; real Observer/Coordinator/Agent/Guard/Executor/Verifier",
+  "started_at": "2026-11-11T20:28:47.577063Z",
+  "status": "PASS",
+  "timeline": [
+    {
+      "at": "2026-11-11T20:30:13.243407Z",
+      "phase": "fault_injected",
+      "scenario": "primary"
+    },
+    {
+      "at": "2026-11-11T20:30:20.887005Z",
+      "phase": "incident_observed",
+      "scenario": "primary"
+    },
+    {
+      "at": "2026-11-11T20:30:45.066391Z",
+      "phase": "proposal_saved",
+      "scenario": "approved-rollback"
+    },
+    {
+      "at": "2026-11-11T20:30:45.269762Z",
+      "phase": "guard_decision",
+      "scenario": "approved-rollback"
+    },
+    {
+      "at": "2026-11-11T20:30:46.001600Z",
+      "phase": "execution_recorded",
+      "scenario": "approved-rollback"
+    },
+    {
+      "at": "2026-11-11T20:31:29.716983Z",
+      "phase": "outcome_recorded",
+      "scenario": "approved-rollback"
+    }
+  ],
+  "verification": "Actual shipping gRPC, full storefront cart/checkout and dependency readiness",
+  "workload": "Full Online Boutique v0.10.7 with synthetic checkout traffic"
+}

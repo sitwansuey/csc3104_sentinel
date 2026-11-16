@@ -1,0 +1,5 @@
+Phase 4 kind-mode recheck, integration/phase4 02d91e5 (Verifier in-pass sampling + kind restore annotation reset + healthcheck + lab lock merged), 2026-11-13 10:03-10:16Z, kind-sentinel-boutique-connected (Chaos Mesh + metrics-server now installed there).
+- prepare: bundle %TEMP%\sentinel-kind-bundle-jnmtg313 (deleted after restore; held a kubeconfig), storefront port-forward 18631 (stopped).
+- run_scenarios --mode kind S1b,S1c,S2,S4,S5,S8 --repeat 2: rc 0, 12/12 matched expectation. Verifier attempts 1 in all 10 non-S8 runs (be6e636: 5-6, S2 r2 8). S8 x2 FAILED with 0 writes as expected (seal).
+- S8 restore: kind_lab.restore.annotations status "reset", removed sentinel.io/fence and sentinel.io/fence-epoch (epoch 2) in both runs. After: annotations equal lab.json target_annotations apart from revision (sentinel.io/race and sentinel.io/stale-probe were already there at prepare, set by the connected harness's RV race/stale probe checks).
+- Final restore rc 0: template_is_baseline true (5434e0fd...), available 1.
