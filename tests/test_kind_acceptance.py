@@ -349,20 +349,23 @@ class ChaosTests(unittest.TestCase):
 
 
 class ScenarioTests(unittest.TestCase):
-    def test_the_matrix_is_s0_to_s9_and_maps_onto_the_file_mode_catalogue(self):
+    def test_the_matrix_includes_deployed_duplicate_and_refusal_scenarios(self):
         self.assertEqual(acceptance.select("all"), ["S0", "S1a", "S1b", "S1c", "S2", "S3", "S4", "S5", "S6", "S7",
-                                                    "S8", "S9"])
+                                                    "S8", "S9", "S10", "S11a", "S11b", "S11c"])
         self.assertEqual(set(acceptance.SCENARIOS), set(live.RUNNERS))
         for name, scenario in acceptance.SCENARIOS.items():
             with self.subTest(name=name):
                 if name == "S9":
                     self.assertEqual(scenario.checks, ("I7",))
+                elif name in {"S10", "S11a", "S11b", "S11c"}:
+                    self.assertTrue(scenario.catalogue.startswith("deployed "))
+                    self.assertEqual(scenario.checks, acceptance.ALL_CHECKS)
                 else:
                     self.assertIn(scenario.catalogue, file_scenarios.SCENARIOS)
                     self.assertIn("I7", scenario.checks)
         self.assertEqual(acceptance.select(["S8", "S0"]), ["S0", "S8"])
         with self.assertRaises(acceptance.AcceptanceError):
-            acceptance.select(["S10"])
+            acceptance.select(["S12"])
 
     def test_takeover_latency_counts_only_the_other_executors_claim_after_the_fault(self):
         access = [
@@ -460,7 +463,7 @@ class ScopeTests(unittest.TestCase):
 class EvidenceTests(unittest.TestCase):
     def test_the_results_table_starts_empty_and_fills_from_summaries(self):
         empty = acceptance.results_table([])
-        self.assertEqual(empty.count("not yet run"), 12)
+        self.assertEqual(empty.count("not yet run"), len(acceptance.ORDER))
         runs = [{"scenario": "S2", "passed": True, "invariants_passed": True, "expectation": {"met": True},
                  "audit": {"max_template_writes_per_action": 1}, "takeover_seconds": 17.2,
                  "coordinator_recovery": None},
@@ -476,7 +479,7 @@ class EvidenceTests(unittest.TestCase):
         table = acceptance.results_table(runs)
         self.assertIn("| S2 | 3 | 1/3 | 2/3 | 2/3 | 2 | 17.2-19.0 | - / - |", table)
         self.assertIn("| S5 | 1 | 1/1 | 1/1 | 1/1 | 1 | - | 7.5-7.5 / 9.2-9.2 |", table)
-        self.assertEqual(table.count("not yet run"), 10)
+        self.assertEqual(table.count("not yet run"), len(acceptance.ORDER) - 2)
 
     def test_the_documented_results_are_the_recorded_unscored_ones(self):
         # The live runs have happened: the document records their results, never the empty table, and says
@@ -821,6 +824,55 @@ class ExpectationTests(unittest.TestCase):
                           "1 Sentinel template write(s), expected 0"])
         self.assertEqual(self.check("S7", ["FAILED"], []), [])
 
+    def test_s10_needs_both_claims_one_write_and_the_other_executors_refused_patch(self):
+        first = {"delivery_id": "D1", "action_id": "ACT-1", "owner": "executor-a", "attempts": 1}
+        second = dict(first, owner="executor-b", attempts=2)
+        notes = {"duplicate": {"first": first, "second": second}}
+        records = {"access": [{"operation": "claim", "http_status": 200, "outcome": "claimed",
+                               "delivery_id": "D1", "identity": identity} for identity in acceptance.EXECUTORS]}
+        rows = [audit_row("template_write", pod=B_POD), audit_row("denied", code=422)]
+        self.assertEqual(self.check("S10", ["RECOVERED"], rows, notes=notes, records=records), [])
+        self.assertEqual(self.check("S10", ["RECOVERED"], [rows[0], dict(rows[1], code=403)],
+                                    notes=notes, records=records), [])
+        for changed in ([rows[0]], [rows[0], dict(rows[1], pod=B_POD)],
+                        [rows[0], dict(rows[1], action_id="OTHER")],
+                        [rows[0], dict(rows[1], code=500)]):
+            with self.subTest(rows=changed):
+                self.assertTrue(self.check("S10", ["RECOVERED"], changed, notes=notes, records=records))
+        for changed in ({}, {"access": records["access"][:1]}):
+            self.assertTrue(self.check("S10", ["RECOVERED"], rows, notes=notes, records=changed))
+        for changed in (dict(second, action_id="OTHER"), dict(second, delivery_id="D2"),
+                        dict(second, owner="executor-a"), dict(second, attempts=1)):
+            self.assertTrue(self.check("S10", ["RECOVERED"], rows, records=records,
+                                       notes={"duplicate": {"first": first, "second": changed}}))
+        self.assertTrue(self.check("S10", ["RECOVERED"], rows + [rows[0]], notes=notes, records=records))
+
+    def test_deployed_refusals_need_the_specific_guard_answer_and_zero_writes(self):
+        records = {"actions": [{"action_id": "ACT-1"}]}
+        for name, verdict, reason in (("S11a", "REJECT", "ACTION_NOT_ALLOWED"),
+                                      ("S11b", "ESCALATE", "OPERATOR_APPROVAL_REQUIRED"),
+                                      ("S11c", "REJECT", "STALE_RESOURCE_VERSION")):
+            with self.subTest(scenario=name):
+                refusal = {"action_id": "ACT-1", "verdict": verdict, "reason_codes": [reason],
+                           "until": "2026-11-13T10:00:30Z", "observed_seconds": 30}
+                rows = [audit_row("template_write")] if name == "S11b" else []
+                states = ["RECOVERED"] if name == "S11b" else ["REJECTED"]
+                self.assertEqual(self.check(name, states, rows, notes={"refusal": refusal}, records=records), [])
+                for changed in ({}, dict(refusal, verdict="ALLOW"), dict(refusal, reason_codes=[]),
+                                dict(refusal, until=None)):
+                    self.assertTrue(self.check(name, states, rows, notes={"refusal": changed}, records=records))
+                self.assertTrue(self.check(name, states, rows, notes={"refusal": refusal}, records={}))
+                for effect in ("template_write", "fence", "metadata_write", "unclassified"):
+                    before = audit_row(effect, at="2026-11-13T10:00:29Z", action_id="unannotated")
+                    self.assertTrue(self.check(name, states, [*rows, before],
+                                               notes={"refusal": refusal}, records=records))
+                if name != "S11b":
+                    self.assertTrue(self.check(name, states, [audit_row("template_write")],
+                                               notes={"refusal": refusal}, records=records))
+                else:
+                    self.assertTrue(self.check(name, states, rows, records=records,
+                                               notes={"refusal": dict(refusal, observed_seconds=29)}))
+
     def s8_rows(self):
         return [audit_row("template_write", pod=None, sentinel=False, generation=2, at="2026-11-13T10:00:00Z"),
                 audit_row("fence", pod=B_POD, generation=3, at="2026-11-13T10:00:40Z", action_id="ACT-1"),
@@ -1133,6 +1185,153 @@ class ExpectationTests(unittest.TestCase):
                 self.assertNotIn("replayed", scenario.expect)
 
 
+class DeployedScenarioTests(unittest.TestCase):
+    def setUp(self):
+        from tests.test_kind_chaos_confirmation import FakeCluster, ScenarioLab
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.cluster = FakeCluster(reachers=("planner-1", *acceptance.EXECUTORS))
+        self.lab = ScenarioLab(self.cluster, self.directory.name)
+        self.lab.incidents = lambda: [{"incident_id": "INC-1"}]
+
+    def run_case(self, name):
+        run = live.Run(self.lab, acceptance.SCENARIOS[name], 1, "v1")
+        self.addCleanup(run.cleanup)
+        return run
+
+    def guard_answer(self, verdict, reason):
+        decision = {"incident_id": "INC-1", "action_id": "ACT-1", "verdict": verdict, "reason_codes": [reason]}
+        self.lab.query = lambda sql, parameters=(): ([] if sql.startswith("SELECT id FROM approvals") else
+                                                     [{"action_id": "ACT-1", "guard_result": json.dumps(decision)}])
+
+    def test_s10_holds_the_same_delivery_in_both_pods_before_releasing_either(self):
+        self.lab.rows = [audit_row("denied", code=422), audit_row("template_write", pod=B_POD)]
+        both_held = []
+
+        def claimed(sql, parameters, strict=False):
+            identity = parameters[0]
+            if identity == "executor-b":
+                both_held.extend(set(self.cluster.current("sentinel-" + item)["blocked"])
+                                 for item in acceptance.EXECUTORS)
+                self.assertTrue(self.cluster.effective())
+                self.assertEqual(self.cluster.releases, [])
+            return [{"delivery_id": "D1", "action_id": "ACT-1", "owner": identity,
+                     "attempts": 1 if identity == "executor-a" else 2}]
+        self.lab.query = claimed
+        run = self.run_case("S10")
+        live.s10(run)
+        self.assertEqual(both_held, [{"executor.before_submit"}, {"executor.before_submit"}])
+        self.assertEqual(run.notes["duplicate"]["second"]["attempts"], 2)
+        self.assertEqual([(identity, stem) for identity, stem, _ in self.cluster.releases],
+                         [("executor-b", "executor.before_submit"), ("executor-a", "executor.before_submit")])
+        self.assertTrue(all(not faults for _, _, faults in self.cluster.releases))
+        self.assertEqual(run.cleanup()["problems"], [])
+        self.assertEqual(run.leftovers(), [])
+
+    def test_s10_different_action_fails_and_cleanup_releases_both_and_removes_the_partition(self):
+        self.lab.query = lambda sql, parameters, strict=False: [
+            {"delivery_id": "D1", "action_id": parameters[0], "owner": parameters[0], "attempts": 1}]
+        run = self.run_case("S10")
+        with self.assertRaisesRegex(acceptance.AcceptanceError, "different delivery or action"):
+            live.s10(run)
+        self.assertEqual(run.cleanup()["problems"], [])
+        self.assertEqual(run.leftovers(), [])
+        self.assertEqual({identity for identity, _, _ in self.cluster.releases}, set(acceptance.EXECUTORS))
+
+    def policy_mounts(self):
+        policy = {"policy_version": "v1", "allowed_actions": ["ROLLBACK"]}
+        self.data = {"policy.json": json.dumps(policy), "baseline.json": "{}"}
+        self.mounted = policy
+        self.applied = []
+        original = self.lab.exec_python
+
+        def mounted(deployment, container, script, *args, **kwargs):
+            if "/inputs/policy.json" in script:
+                return done(json.dumps(self.mounted))
+            return original(deployment, container, script, *args, **kwargs)
+
+        def apply(document):
+            self.applied.append(document)
+            self.mounted = json.loads(document["data"]["policy.json"])
+        self.lab.exec_python = mounted
+        original_json = self.lab.shell.json
+        def read(*args, **kwargs):
+            return {"data": self.data} if args[:2] == ("get", "configmap") else original_json(*args, **kwargs)
+        for mocked in (patch.object(self.lab.shell, "json", side_effect=read),
+                       patch.object(self.lab.shell, "apply", side_effect=apply)):
+            mocked.start()
+            self.addCleanup(mocked.stop)
+        return policy
+
+    def test_s11a_changes_the_deployed_policy_then_restores_it_before_the_next_approval(self):
+        policy = self.policy_mounts()
+        self.guard_answer("REJECT", "ACTION_NOT_ALLOWED")
+        run = self.run_case("S11a")
+        live.s11a(run)
+        self.assertEqual(self.mounted["allowed_actions"], [])
+        self.assertEqual(run.notes["refusal"]["reason_codes"], ["ACTION_NOT_ALLOWED"])
+        self.assertEqual(run.cleanup()["problems"], [])
+        self.assertEqual(self.mounted, policy)
+        self.assertEqual(self.applied[-1]["data"], self.data)
+        self.assertEqual(run.leftovers(), [])
+
+    def test_s11a_failure_still_restores_policy_and_failed_restoration_blocks_the_next_run(self):
+        self.policy_mounts()
+        run = self.run_case("S11a")
+        with patch.object(live, "_policy_visible", side_effect=TimeoutError("mount did not update")):
+            with self.assertRaises(TimeoutError):
+                live.s11a(run)
+            cleaned = run.cleanup()
+        self.assertIn("Guard policy could not be restored", cleaned["problems"][0])
+        self.assertIn("Guard policy has not been restored", run.leftovers())
+        self.assertTrue(live.left_behind({"cleanup": cleaned}))
+        self.assertEqual(run.cleanup()["problems"], [])
+        self.assertEqual(run.leftovers(), [])
+
+    def test_s11b_observes_two_leases_without_approving_then_records_the_real_guard_answer(self):
+        self.guard_answer("ESCALATE", "OPERATOR_APPROVAL_REQUIRED")
+        run = self.run_case("S11b")
+        run.offset = {"offset_seconds": 5}
+        live.s11b(run)
+        self.assertGreaterEqual(run.notes["refusal"]["observed_seconds"], 2 * acceptance.LEASE_SECONDS)
+        self.assertEqual(run.notes["refusal"]["until"], acceptance.shift(acceptance.stamp(self.lab.clock()), 5))
+        self.assertNotIn("approve", [step for step, _ in self.lab.seen])
+
+    def test_s11b_refuses_an_approval_during_its_observation_window(self):
+        self.lab.query = lambda sql, parameters=(): [{"id": 1}]
+        with self.assertRaisesRegex(acceptance.AcceptanceError, "received an approval"):
+            live.s11b(self.run_case("S11b"))
+
+    def test_s11c_advances_state_without_changing_the_template_and_removes_its_annotation(self):
+        self.guard_answer("REJECT", "STALE_RESOURCE_VERSION")
+        run = self.run_case("S11c")
+        live.s11c(run)
+        annotations = [call for call in self.cluster.calls if "annotate" in call]
+        self.assertEqual(len(annotations), 2)
+        self.assertTrue(any("sentinel.io/acceptance-stale=" in part for part in annotations[0]))
+        self.assertIn("sentinel.io/acceptance-stale-", annotations[1])
+        self.assertEqual(run.notes["refusal"]["reason_codes"], ["STALE_RESOURCE_VERSION"])
+        self.assertIsNone(run.stale_annotation)
+        self.assertEqual(run.cleanup()["problems"], [])
+
+    def test_s11c_failed_annotation_cleanup_is_recorded_and_blocks_the_next_run(self):
+        run = self.run_case("S11c")
+        original = self.lab.shell.kubectl
+        def refuse_removal(*args, **kwargs):
+            if "sentinel.io/acceptance-stale-" in args:
+                raise acceptance.AcceptanceError("annotation removal refused")
+            return original(*args, **kwargs)
+        with patch.object(self.lab.shell, "kubectl", side_effect=refuse_removal):
+            with self.assertRaisesRegex(acceptance.AcceptanceError, "annotation removal refused"):
+                live.s11c(run)
+            cleaned = run.cleanup()
+        self.assertIn("stale-state annotation could not be removed", cleaned["problems"][0])
+        self.assertIn("stale-state annotation has not been removed", run.leftovers())
+        self.assertTrue(live.left_behind({"cleanup": cleaned}))
+        self.assertEqual(run.cleanup()["problems"], [])
+        self.assertEqual(run.leftovers(), [])
+
+
 class ClockTests(unittest.TestCase):
     def test_the_offset_is_taken_at_the_midpoint_with_half_the_round_trip_as_error(self):
         before = datetime(2026, 11, 13, 10, 0, 0, tzinfo=UTC)
@@ -1322,7 +1521,9 @@ class RunOneTests(unittest.TestCase):
     def test_s6_approves_by_hand_during_the_partition_and_waiting_actions_only_after_it(self):
         """S6 with --stale-replans: a re-plan after the partition waits for approval and still gets its operator."""
         self.assertEqual(acceptance.SCENARIOS["S6"].options["auto_approve"], acceptance.AFTER_FAULT)
-        for name, expected in (("S6", ["runner", "approver"]), ("S0", ["approver", "runner"]),
+        for name, expected in (("S6", ["runner", "approver"]), ("S11a", ["runner", "approver"]),
+                               ("S11b", ["runner", "approver"]), ("S11c", ["runner", "approver"]),
+                               ("S0", ["approver", "runner"]),
                                ("S9", ["runner"])):
             with self.subTest(scenario=name):
                 lab = FakeLab(self.rows)
@@ -1415,6 +1616,16 @@ class RunOneTests(unittest.TestCase):
 
 
 class CommandLineTests(unittest.TestCase):
+    def test_s8_can_run_alone_five_times_without_other_scenarios_or_deploy(self):
+        with tempfile.TemporaryDirectory() as directory, patch("subprocess.run", side_effect=AssertionError), \
+                patch.object(acceptance, "LabLock") as lock, patch.object(live, "run", return_value=[]) as run, \
+                patch.object(live, "deploy", side_effect=AssertionError), patch("sys.stdout", io.StringIO()):
+            self.assertEqual(acceptance.main(["run", "--context", "kind-sentinel-dist", "--run-dir", directory,
+                                              "--scenarios", "S8", "--repeat", "5"]), 0)
+        self.assertEqual(run.call_args.args[2], ["S8"])
+        self.assertEqual(run.call_args.kwargs["repeat"], 5)
+        self.assertEqual(run.call_args.kwargs["lock"], lock.return_value.__enter__.return_value)
+
     def test_plan_is_offline_and_lists_every_scenario(self):
         with patch("subprocess.run", side_effect=AssertionError("no command")), \
                 patch("sys.stdout", io.StringIO()) as stdout:
