@@ -33,7 +33,6 @@ RUN cp /kubernetes/cmd/kubectl/kubectl.go main.go \
 FROM python:3.12-alpine3.23@sha256:3d0ca66b723a0ff2a7a6e424cc2d01443e1b7c75ffcc110145f75d0f4daf6d63
 ARG SOURCE_REVISION=unknown
 LABEL org.opencontainers.image.title="Sentinel Boutique demo runner" \
-      org.opencontainers.image.version="0.3.0" \
       org.opencontainers.image.revision=${SOURCE_REVISION}
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HOME=/tmp
 RUN apk upgrade --no-cache && apk add --no-cache ca-certificates-bundle \

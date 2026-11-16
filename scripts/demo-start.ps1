@@ -22,7 +22,7 @@ if (-not $SkipBuild -and -not $Offline) {
         $revision = & git rev-parse HEAD 2>$null
         if ($LASTEXITCODE -eq 0) { $sourceRevision = $revision }
     }
-    & $DemoDocker build --pull --build-arg "SOURCE_REVISION=$sourceRevision" -f deploy/docker/demo-runner.Dockerfile -t $PackagedImage .
+    & $DemoDocker build --pull --build-arg "SOURCE_REVISION=$sourceRevision" --label "org.opencontainers.image.version=$PackagedVersion" -f deploy/docker/demo-runner.Dockerfile -t $PackagedImage .
     if ($LASTEXITCODE -ne 0) { throw 'Demo image build failed.' }
 }
 & $DemoDocker image inspect $PackagedImage --format '{{.Id}}'

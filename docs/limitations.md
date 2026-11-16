@@ -296,9 +296,9 @@ the fix and regenerate.
 
 **No tagged, scanned release image.** Limitation, open; recorded 2026-11-11. Planned: P2.09, P2.10. Issues: #63, #73.
 
-- Impact: The packaged runner is built locally from the checkout. It was rebuilt and scanned for PR #98, but no image is tagged or published, and that scan is not a committed evidence bundle. A release preflight, a tag-triggered build with a Trivy gate, SBOMs and checksums now exist (docs/release.md) but have not run: no tag has been pushed, and the launcher still names the 0.3.0 runner.
+- Impact: The packaged runner is built locally from the checkout. It was rebuilt and scanned for PR #98, but no image is tagged or published, and that scan is not a committed evidence bundle. A release preflight, a tag-triggered build with a Trivy gate, SBOMs and checksums now exist (docs/release.md) but have not run: no tag has been pushed. The launcher now derives the runner tag and local build's OCI version label from VERSION; this does not supply a scanned release image.
 - Workaround: Build the runner from the revision you are testing.
-- Evidence: claim `C-PACKAGED`; `scripts/packaged-demo-common.ps1:5`; `.github/workflows/release.yml`.
+- Evidence: claim `C-PACKAGED`; `scripts/packaged-demo-common.ps1:9`; `.github/workflows/release.yml`.
 
 ### L-RESTORE-DETECTION
 

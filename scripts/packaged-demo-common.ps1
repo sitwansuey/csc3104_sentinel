@@ -2,7 +2,11 @@
 . (Join-Path $PSScriptRoot 'kube-context.ps1')
 $script:PackagedCluster = 'sentinel-boutique-package'
 $script:PackagedContainer = 'sentinel-boutique-runner'
-$script:PackagedImage = 'sentinel-boutique-runner:0.3.0'
+$script:PackagedVersion = (Get-Content -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'VERSION') -Raw -ErrorAction Stop).Trim()
+if ($script:PackagedVersion -cnotmatch '\A(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-rc\.[1-9]\d*)?\z') {
+    throw 'VERSION must be X.Y.Z or X.Y.Z-rc.N.'
+}
+$script:PackagedImage = "sentinel-boutique-runner:$script:PackagedVersion"
 $script:ShippingImage = 'us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice:v0.10.7'
 $script:ProbeImage = 'fullstorydev/grpcurl:v1.9.3'
 
