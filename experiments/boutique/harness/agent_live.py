@@ -233,13 +233,16 @@ class AgentPlanningMixin(ScenarioScoringMixin):
         folder = self.directory / PLANNING_FOLDER
         folder.mkdir(exist_ok=True)
         planner = None
+        with PlannerStore(folder / "planner.db") as journal:
+            previous_calls = [call for attempt in journal.attempts(incident["incident_id"])
+                              for call in (attempt["usage"] or {}).get("calls", [])]
 
         def progress(update):
             # This stream is safe operational metadata: never raw prompts,
             # application logs, generated text or hidden model reasoning.
             with (folder / "planning-progress.jsonl").open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps({"at": datetime.now(timezone.utc).isoformat(), **update}) + "\n")
-            save(folder / "model-calls.json", planner.calls)
+            save(folder / "model-calls.json", previous_calls + planner.calls)
             label = update.get("role") or update.get("tool") or update["stage"]
             elapsed = f" ({update['seconds']:.0f}s)" if "seconds" in update else ""
             self.event(3, "heartbeat" if update["status"] == "running" else
@@ -262,8 +265,8 @@ class AgentPlanningMixin(ScenarioScoringMixin):
             self.score_delivered(incident, folder, planner)
             raise
         finally:
-            save(folder / "model-calls.json", planner.calls)
-            self.summary["agent_model_calls"] = len(planner.calls)
+            save(folder / "model-calls.json", previous_calls + planner.calls)
+            self.summary["agent_model_calls"] = len(previous_calls) + len(planner.calls)
             if planner.finding:
                 # Rule ids and counts from the code-owned injection gate, never the flagged text.
                 self.summary["injection_finding"] = planner.finding

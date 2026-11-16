@@ -15,8 +15,10 @@ import re
 import urllib.parse
 import urllib.request
 import urllib.error
+from copy import deepcopy
 from .jsonschema_lite import check_schema, validate
 from .progress import notify
+from .untrusted import sha256
 from shared import log
 
 LOG = log.get_logger("model")
@@ -34,6 +36,24 @@ WARM_UP_SCHEMA = {"type": "object", "properties": {"ready": {"type": "boolean"}}
                   "required": ["ready"], "additionalProperties": False}
 # A call is not started when less than this is left of the planning deadline.
 MIN_CALL_SECONDS = 5
+
+
+def ask_with_provenance(llm, role, prompt, schema, *, prompt_version, passages=()):
+    """Label every transport attempt, including retries and failures, without keeping passage text.
+
+    Runbooks hash their UTF-8 content. Structured RCA workflows hash the JSON
+    object as serialised in the prompt; their legacy name is their identifier.
+    """
+    provenance = {"prompt_version": prompt_version, "retrieved_passages": [
+        {"id": item["id"] if "id" in item else item["name"],
+         "content_sha256": sha256(item["content"] if "content" in item else json.dumps(item))}
+        for item in passages]}
+    before = len(llm.calls)
+    try:
+        return llm.ask(role, prompt, schema)
+    finally:
+        for call in llm.calls[before:]:
+            call.update(deepcopy(provenance))
 
 
 class ModelResponseTooLarge(ValueError):

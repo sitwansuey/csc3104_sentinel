@@ -205,12 +205,21 @@ class LiveAgentTests(unittest.TestCase):
         saved = self.journal(harness)
         self.assertEqual((saved["delivered"], self.state(harness)), (0, "OPEN"))
         calls = len(model.calls)
+        folder = self.root / "approved-rollback"
+        recorded_calls = (folder / "model-calls.json").read_bytes()
+        report = (folder / "attempt-1/agent/report.json").read_bytes()
+        provenance = json.loads(recorded_calls)[-1]
+        self.assertEqual(provenance["prompt_version"], "agent-recovery-v1")
+        self.assertTrue(provenance["retrieved_passages"])
         # A restarted harness: new Coordinator connection, same run folder and journal.
         harness.store.close()
         harness.store = SQLiteStore(self.root / "coordinator.sqlite")
         self.addCleanup(harness.store.close)
         self.assertEqual(self.planned(harness, model), saved["proposal"])
         self.assertEqual(len(model.calls), calls)
+        self.assertEqual((folder / "model-calls.json").read_bytes(), recorded_calls)
+        self.assertEqual((folder / "attempt-1/agent/report.json").read_bytes(), report)
+        self.assertEqual(harness.summary["agent_model_calls"], calls)
         self.assertEqual((self.journal(harness)["attempts"], self.journal(harness)["delivered"]), (1, 1))
 
     def test_abstention_stops_recovery_without_fallback(self):
