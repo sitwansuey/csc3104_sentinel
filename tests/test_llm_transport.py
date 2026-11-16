@@ -13,7 +13,7 @@ import threading
 import time
 import unittest
 from urllib.error import HTTPError, URLError
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from agent.agent import ANALYSIS, PLAN
 from agent.jsonschema_lite import check_schema, validate
@@ -158,6 +158,46 @@ class ModelTransportTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "reset by peer"):
                 self.model().ask("Planner", "fixture", {"type": "object"})
         self.assertEqual(request.call_count, 2)
+
+    def test_interruption_closes_transport_without_retry_or_model_result(self):
+        headers = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n"
+        body = json.dumps(chat_reply({"action": "ESCALATE"}, prompt_eval_count=321, eval_count=12)).encode()
+        for stage, prefix in (
+                ("status", b""),
+                ("headers", headers[:-2]),
+                ("body", headers + body[:len(body) // 2]),
+                ("before EOF", headers + body),
+                ("HTTP error body", headers.replace(b"200 OK", b"503 Busy") + b'{"error":')):
+            with self.subTest(stage=stage):
+                model = self.model()
+                interruption = KeyboardInterrupt()
+                stream = Response(prefix)
+
+                def interrupted_read(buffer, readinto=stream.readinto, interruption=interruption):
+                    count = readinto(buffer)
+                    if not count:
+                        raise interruption
+                    return count
+
+                # Exercise urllib and the deadline reader over an injected socket.
+                sock = Mock(spec=["makefile", "sendall", "settimeout", "close"])
+                sock.makefile.return_value = stream
+                with patch("agent.llm.http.client.HTTPConnection.connect", autospec=True,
+                           side_effect=lambda connection, sock=sock: setattr(connection, "sock", sock)) as connect, \
+                        patch.object(stream, "readinto", side_effect=interrupted_read), \
+                        patch("agent.llm.time.sleep") as sleep, patch.object(model, "_content") as content:
+                    with self.assertRaises(KeyboardInterrupt) as caught:
+                        model.ask("Planner", "fixture", {"type": "object"})
+                self.assertIs(caught.exception, interruption)
+                connect.assert_called_once()
+                sock.close.assert_called_once()
+                self.assertTrue(stream.closed)
+                sleep.assert_not_called()
+                content.assert_not_called()
+                self.assertEqual(model.requests, 1)
+                self.assertEqual([call["status"] for call in model.calls], ["failed"])
+                self.assertNotIn("prompt_tokens", model.calls[0])
+                self.assertNotIn("output_tokens", model.calls[0])
 
 
 class FakeServerTests(unittest.TestCase):
