@@ -45,7 +45,7 @@ Read each number with its limits:
 <!-- BEGIN GENERATED:runs -->
 | Class | Runs | PASS | FAILED | INTERRUPTED | INCOMPLETE | Provenance |
 | --- | --- | --- | --- | --- | --- | --- |
-| agent | 45 | 31 | 14 | 0 | 0 | 25 recorded, 20 inferred |
+| agent | 47 | 31 | 16 | 0 | 0 | 27 recorded, 20 inferred |
 | cert-lifecycle | 4 | 4 | 0 | 0 | 0 | 0 recorded, 4 inferred |
 | chaos-batch | 17 | 3 | 13 | 0 | 1 | 0 recorded, 17 inferred |
 | chaos-recovery | 25 | 20 | 5 | 0 | 0 | 25 recorded, 0 inferred |
@@ -154,6 +154,8 @@ recovered and do not enter the medians.
 | 29e41f8 | recorded | 1 | 0/1 | 1 | n/a | n/a | expected escalation x1 |
 | f30b596 | recorded | 3 | 0/3 | 3 | n/a | n/a | agent escalated (ABSTAINED) x1; expected unavailable-evidence x1; expected unhealthy x1 |
 | 19661f3 | recorded | 1 | 1/1 | 0 | 3 | 68.9 | none |
+| fc3ed0d | recorded | 1 | 0/1 | 1 | n/a | n/a | agent escalated (ABSTAINED) x1 |
+| 97fa813 | recorded | 1 | 0/1 | 1 | n/a | n/a | agent escalated (ABSTAINED) x1 |
 <!-- END GENERATED:agent-runs -->
 
 ### Catalog scenario runs (unscored)
@@ -207,6 +209,8 @@ these rows are not scored trials.
 | boutique-live-20261116t175115z-3b106e | R1 | f30b596 | PASS | ROLLBACK | decided by the model | 1 | FAILED | yes | pending |
 | boutique-live-20261116t175656z-bdb808 | R1 | f30b596 | PASS | ROLLBACK | decided by the model | 1 | NEEDS_REVIEW | yes | pending |
 | boutique-live-20261116t182043z-1a0d96 | R1 | 19661f3 | PASS | ROLLBACK | decided by the model | 1 | RECOVERED | yes | pending |
+| boutique-live-20261116t183439z-7e47ab | C1 | fc3ed0d | FAILED | ESCALATE | from a planning failure (ABSTAINED) | 0 | NEEDS_REVIEW | no | pending |
+| boutique-live-20261116t183747z-12dd16 | C1 | 97fa813 | FAILED | ESCALATE | from a planning failure (ABSTAINED) | 0 | NEEDS_REVIEW | no | pending |
 <!-- END GENERATED:scenario-runs -->
 
 ## Guard rejection
@@ -357,12 +361,12 @@ with these limits:
   from the one harness process). See [dual-fault.md](dual-fault.md).
 
 <!-- BEGIN GENERATED:latency -->
-- agent: 45 runs, 31 PASS; stopped at: planning x12; verification x2.
+- agent: 47 runs, 31 PASS; stopped at: planning x14; verification x2.
 - harness: 20 runs, 18 PASS; stopped at: after_recovery x1; decision x1.
 
 | Mode | Stage | n | Median s | p90 s | Min s | Max s | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| agent | detection: start -> incident observed | 44 | 7.3 | 9.8 | 5.0 | 10.2 | bundle; start: first failing snapshot x20, injection x24 |
+| agent | detection: start -> incident observed | 46 | 7.3 | 9.8 | 5.0 | 10.2 | bundle; start: first failing snapshot x20, injection x26 |
 | agent | planning: incident -> last planning record | 25 | 29.0 | 69.8 | 16.5 | 208.4 | bundle + run folder |
 | agent | model calls: sum per run (part of planning) | 32 | 44.6 | 68.9 | 21.9 | 206.8 | bundle |
 | agent | Guard: planning end -> ALLOW (incl. lab approval) | 22 | 0.7 | 1.0 | 0.2 | 126.2 | bundle + run folder |
@@ -401,7 +405,7 @@ load during a run has been measured with that transport.
 | agent | model time per run, warm runs | 23 | 27.7 | 68.9 | 206.8 |
 | agent | model time per run, cold runs | 1 | 43.1 | 43.1 | 43.1 |
 | agent | model time per run, unclassified runs | 8 | 50.3 | 109.3 | 109.3 |
-| agent | one call, warm | 89 | 8.7 | 22.0 | 118.5 |
+| agent | one call, warm | 97 | 9.1 | 25.0 | 118.5 |
 | agent | one call, cold | 2 | 32.5 | 41.1 | 41.1 |
 | agent | one call, unclassified | 33 | 11.2 | 28.9 | 46.3 |
 | agent | model load time of cold calls | 2 | 21.1 | 25.6 | 25.6 |

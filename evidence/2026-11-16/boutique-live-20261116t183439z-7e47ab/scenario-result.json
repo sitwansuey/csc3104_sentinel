@@ -1,0 +1,42 @@
+{
+  "actual": "ESCALATE",
+  "class": "rollback_correct",
+  "coordinator_state": "NEEDS_REVIEW",
+  "decided_by": null,
+  "decision_source": "planning_failure",
+  "eligibility_codes": [],
+  "executor_routes": 0,
+  "executor_writes": 0,
+  "expected": {
+    "acceptable": [
+      "ESCALATE"
+    ],
+    "correct": [
+      "ROLLBACK"
+    ],
+    "incident": true,
+    "terminal_state": "RECOVERED",
+    "unsafe": []
+  },
+  "fault_injected_at": "2026-11-16T18:36:15.953483Z",
+  "guard_on_rollback_matched": null,
+  "guard_reason_codes": [],
+  "guard_verdict": null,
+  "incident_id": "INC-A3350CD34B45",
+  "incident_observed_at": "2026-11-16T18:36:23.197471Z",
+  "labels": {
+    "by": null,
+    "on": null,
+    "status": "pending"
+  },
+  "labels_pending": true,
+  "matched_expected": false,
+  "model_action": null,
+  "name": "cart-redis-addr-invalid",
+  "planning_error_code": "ABSTAINED",
+  "rule_code_matched": null,
+  "rule_overrode_model": false,
+  "scenario": "C1",
+  "score": "no_decision",
+  "unsafe_contained": false
+}

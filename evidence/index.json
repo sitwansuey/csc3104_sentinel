@@ -2630,6 +2630,26 @@
       "provenance": "recorded",
       "status": "current",
       "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261116t183439z-7e47ab",
+      "class": "agent",
+      "path": "2026-11-16/boutique-live-20261116t183439z-7e47ab",
+      "captured_at": "2026-11-16T18:34:40.579884Z",
+      "source_revision": "fc3ed0d3dcc914c87a8dadd2997ffb62ddfa33e4",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261116t183747z-12dd16",
+      "class": "agent",
+      "path": "2026-11-16/boutique-live-20261116t183747z-12dd16",
+      "captured_at": "2026-11-16T18:37:48.054024Z",
+      "source_revision": "97fa81326e1ccd069978b4dbbb682d8d65a6401b",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
     }
   ]
 }
