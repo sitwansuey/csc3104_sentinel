@@ -46,6 +46,7 @@ from services.executor.store import LocalTargetCoordinator, SQLiteExecutionLedge
 from shared.contracts import ContractError, validate_message
 from tests.support.executor_fake import FakeDeploymentAPI
 from tests.support.file_cluster import FileCluster
+from tests.support.sim_apiserver import SimAPIServer, SimKubectl
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -432,6 +433,45 @@ class BrokenFence(FakeDeploymentAPI):
 
 
 class OwnershipTests(FencingLab):
+    def test_recreated_deployment_keeps_name_keyed_ownership_and_refuses_old_uid(self):
+        self.ready()
+        first = self.claim("executor-a")
+        owner = self.owner()
+        replacement = dict(self.target, uid="recreated-deployment-uid")
+        server = SimAPIServer.from_snapshot(self.inputs["snapshot"])
+        recreated = {}
+
+        def recreate_before_patch(verb, command):
+            if verb == "patch":  # After the production adapter's last pre-read and UID/version check.
+                server.delete()
+                server.recreate(replacement["uid"])
+                recreated.update(deepcopy(server.deployment))
+                self.same_target_request("INC-RECREATED", "ACT-RECREATED", target=replacement)
+                self.assertIsNone(self.claim("executor-b"))  # The old UID's live lease still holds the name.
+                self.assertEqual(self.owner(replacement), owner)
+
+        runner = SimKubectl(server, host="executor-a", before=recreate_before_patch)
+        result, _ = ExecutorAdapter(self.adapters("executor-a", runner=runner)).process(
+            first, self.lease("executor-a", first))
+        (rejected,) = server.requests
+        self.assertEqual(rejected.state, "rejected")
+        self.assertEqual(rejected.operations[0],
+                         {"op": "test", "path": "/metadata/uid", "value": self.target["uid"]})
+        # Check UID alone, so the changed resourceVersion cannot mask a missing UID guard.
+        self.assertFalse(server.allowed([rejected.operations[0]]))
+        self.assertEqual(server.committed(), [])
+        self.assertEqual(server.deployment, recreated)  # No template, annotation or version write to the new object.
+        self.assertEqual(result["status"], "SUPERSEDED")
+        self.assertTrue(self.finish("executor-a", first, result)["accepted"])
+
+        second = self.claim("executor-b")
+        self.assertEqual(second["payload"]["proposal"]["target"], replacement)
+        self.assertEqual((first["fence_epoch"], second["fence_epoch"]), (1, 2))
+        self.assertEqual(self.owner(), self.owner(replacement))
+        self.assertEqual((self.owner()["holder"], self.owner()["uid"], self.owner()["epoch"]),
+                         ("executor-b", replacement["uid"], 2))
+        self.assertEqual(self.store.database.execute("SELECT COUNT(*) FROM target_ownership").fetchone()[0], 1)
+
     def test_one_live_executor_claim_per_workload_while_other_workloads_proceed(self):
         self.ready()
         first = self.claim("executor-a")
@@ -496,9 +536,9 @@ class OwnershipTests(FencingLab):
         released = self.claim("executor-b")
         self.assertEqual((released["event_id"], released["fence_epoch"]), (second, sealing["fence_epoch"] + 1))
 
-    def same_target_request(self, incident_id, action_id):
+    def same_target_request(self, incident_id, action_id, *, target=None):
         """A second READY action on the same workload, written directly (planning_blocker would forbid it)."""
-        incident, proposal, guard = self.messages(incident_id, action_id)
+        incident, proposal, guard = self.messages(incident_id, action_id, target)
         with self.store.transaction():
             self.store.add_incident(incident_id, incident["target"], "OPEN")
             self.store.add_action(action_id, incident_id, proposal, "READY")
