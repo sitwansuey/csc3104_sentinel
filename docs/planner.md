@@ -287,6 +287,16 @@ in `agent/jsonschema_lite.py` instead of trusting Ollama's format grammar. A
 mismatch fails without retry, and errors name the JSON path without echoing the
 model's text. Schemas may use only the keywords that checker supports.
 
+The synchronous urllib transport supports operator or process interruption via
+`KeyboardInterrupt` and has no separate cancellation API. An interruption while
+waiting for or reading a response propagates without retry, closes the
+response/socket and stops the progress heartbeat; the started request consumes
+its call budget but yields no completed model result or accepted partial output.
+Abrupt process termination cannot run Python cleanup. Restart with the same
+Planner journal and evidence directory: after an abandoned attempt's lease
+expires, the next bounded attempt starts afresh, while an already saved,
+validated proposal is replayed without another model call.
+
 In `-Agent` mode the harness checks the model before it touches the cluster. It
 lists installed models (`/api/tags`), then sends one tiny warm-up chat with the
 planning `num_ctx`, so the cold load happens before the incident clock starts.
