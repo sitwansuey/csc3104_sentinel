@@ -35,8 +35,11 @@ Docker socket or Docker/kind/Node/npm runtime tools. Actual repair still uses
 separate restricted Executor credentials. The trusted setup harness's admin
 credentials are not process-level isolation from that harness.
 
-The launcher names `sentinel-boutique-runner:0.3.0` and builds it from your
-checkout; old local images and the exported 0.3.0 TAR/source ZIP were retired.
+The shared `packaged-demo-common.ps1` reads the repository's `VERSION` once
+and sets `sentinel-boutique-runner:<VERSION>` (`1.0.0-rc.1` currently).
+The launcher builds it from your checkout with the same OCI version label
+as the release workflow. Missing or malformed versions stop the launcher.
+Old local images and the exported 0.3.0 TAR/source ZIP were retired.
 Committed packaged runs:
 
 <!-- BEGIN GENERATED:claim-c-packaged -->
@@ -50,8 +53,10 @@ For PR #98 (merged 11 November 2026) the runner was rebuilt with
 `demo-start.ps1 -Unattended` with 13 of 13 checks. That scan and run are
 reported in the PR, not committed as evidence bundles. There is no tagged or
 published release image yet (`L-NO-RELEASE` in [limitations](limitations.md)).
-Use `-SkipBuild` or `-Offline` only with an image you built from the same
-revision. Full connected/agent packaging is not supplied by the old bootstrap.
+Use `-SkipBuild` or `-Offline` only with an image built from the same revision
+as your checkout, either locally or from the matching release assets. The tag
+alone does not establish that the source revisions match; check the revision
+label. Full connected/agent packaging is not supplied by the old bootstrap.
 
 The [release process](release.md) automates the following from a version tag;
 it has not run yet. For a future release, build from the reviewed revision,

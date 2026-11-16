@@ -165,10 +165,12 @@ Compare the hash with `SHA256SUMS` and the revision with the manifest. On
 Docker Desktop with the containerd image store, `docker image inspect` may
 show a manifest digest as the ID instead of the configuration digest that the
 manifest records, so the archive hash and the revision label are the checks
-to rely on. The packaged launcher still names `sentinel-boutique-runner:0.3.0`
-and its Dockerfile still carries a `0.3.0` version label that the release
-build overrides; until the launcher reads `VERSION`, `docker tag` the loaded
-image to that name before `demo-start.ps1 -SkipBuild`.
+to rely on. Use a checkout of the release's source revision. The shared
+`scripts/packaged-demo-common.ps1` reads its `VERSION` once for the runner tag
+and the local build's OCI version label, matching the release workflow.
+Run `scripts/demo-start.ps1 -SkipBuild` with the loaded image, or add
+`-Offline` after caching the required workload and node images; see
+[packaging](packaging.md).
 
 ## When something goes wrong
 

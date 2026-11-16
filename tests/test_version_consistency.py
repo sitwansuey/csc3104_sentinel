@@ -4,7 +4,7 @@ from pathlib import Path
 import tomllib
 import unittest
 
-from scripts.release import policy
+from scripts.release import build, policy
 from scripts.release.preflight import pep440
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +18,23 @@ class VersionTests(unittest.TestCase):
 
     def test_version_file_is_one_line(self):
         self.assertEqual(len((ROOT / "VERSION").read_text(encoding="utf-8").splitlines()), 1)
+
+    def test_packaged_launcher_uses_version_for_the_release_image_tag_and_label(self):
+        common = (ROOT / "scripts/packaged-demo-common.ps1").read_text(encoding="utf-8")
+        self.assertIn("$script:PackagedVersion = (Get-Content -LiteralPath "
+                      "(Join-Path (Split-Path -Parent $PSScriptRoot) 'VERSION') -Raw -ErrorAction Stop).Trim()", common)
+        self.assertEqual([line for line in common.splitlines() if line.startswith("$script:PackagedImage =")],
+                         ['$script:PackagedImage = "sentinel-boutique-runner:$script:PackagedVersion"'])
+        launcher = (ROOT / "scripts/demo-start.ps1").read_text(encoding="utf-8")
+        self.assertIn(". (Join-Path $PSScriptRoot 'packaged-demo-common.ps1')", launcher)
+        self.assertIn("-t $PackagedImage", launcher)
+        self.assertIn('--label "org.opencontainers.image.version=$PackagedVersion"', launcher)
+        image = next(image for image in policy.IMAGES if image.name == "sentinel-boutique-runner")
+        version = policy.read_version(ROOT)
+        command = build.build_command(image, version, "f" * 40)
+        self.assertEqual(command[command.index("--tag") + 1], f"{image.name}:{version}")
+        self.assertIn(f"org.opencontainers.image.version={version}", command)
+        self.assertNotIn("org.opencontainers.image.version=", (ROOT / image.dockerfile).read_text(encoding="utf-8"))
 
     def test_release_doc_names_the_current_version(self):
         version = policy.read_version(ROOT)
