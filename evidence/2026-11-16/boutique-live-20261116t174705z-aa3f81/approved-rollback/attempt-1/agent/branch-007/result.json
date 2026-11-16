@@ -1,0 +1,26 @@
+{
+  "state": "failure",
+  "outputs": [
+    {
+      "evidence_id": "branch-003",
+      "tool": "logs",
+      "result": {
+        "file": "logs.csv",
+        "rows_scanned": 9,
+        "rows_in_window": 9,
+        "rows_retained": 9,
+        "truncated": false,
+        "invalid_timestamps": 0,
+        "error_count": 0,
+        "components": {},
+        "examples": [],
+        "suspected_injection_lines": 0,
+        "untimed_errors": 0,
+        "events": [],
+        "burst_baseline_available": false
+      },
+      "cache_hit": true,
+      "reused_by": "branch-008"
+    }
+  ]
+}

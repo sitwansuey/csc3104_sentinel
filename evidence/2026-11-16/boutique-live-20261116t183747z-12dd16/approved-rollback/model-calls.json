@@ -1,0 +1,79 @@
+[
+  {
+    "attempt": 1,
+    "call_id": 1,
+    "eval_duration_seconds": 8.032876,
+    "load_duration_seconds": 0.0058674,
+    "model": "qwen3:14b",
+    "output_tokens": 158,
+    "planning_attempt": 1,
+    "prompt_characters": 8154,
+    "prompt_eval_duration_seconds": 2.973516,
+    "prompt_tokens": 3114,
+    "prompt_version": "rca-v1",
+    "retrieved_passages": [],
+    "role": "Analyzer",
+    "seconds": 11.518774899999698,
+    "status": "completed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 2,
+    "eval_duration_seconds": 37.829813,
+    "load_duration_seconds": 0.0032699,
+    "model": "qwen3:14b",
+    "output_tokens": 542,
+    "planning_attempt": 1,
+    "prompt_characters": 14056,
+    "prompt_eval_duration_seconds": 4.570148,
+    "prompt_tokens": 4554,
+    "prompt_version": "rca-v1",
+    "retrieved_passages": [
+      {
+        "content_sha256": "c3ddbc6a197681e509603771ed301e8271155fde0b24bb118a8da6efe7adba28",
+        "id": "multimodal_rca"
+      },
+      {
+        "content_sha256": "639659abc6805c31099ad2232a2f6daaa5488f49b60aaed8cb01bde374ac2ca3",
+        "id": "cpu_exhaustion"
+      }
+    ],
+    "role": "Planner",
+    "seconds": 42.56100809999771,
+    "status": "completed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 3,
+    "eval_duration_seconds": 7.437035,
+    "load_duration_seconds": 0.0046493,
+    "model": "qwen3:14b",
+    "output_tokens": 150,
+    "planning_attempt": 1,
+    "prompt_characters": 8945,
+    "prompt_eval_duration_seconds": 0.781621,
+    "prompt_tokens": 3255,
+    "prompt_version": "rca-v1",
+    "retrieved_passages": [],
+    "role": "Analyzer",
+    "seconds": 8.502620299997943,
+    "status": "completed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 4,
+    "eval_duration_seconds": 19.073867,
+    "load_duration_seconds": 0.0052177,
+    "model": "qwen3:14b",
+    "output_tokens": 344,
+    "planning_attempt": 1,
+    "prompt_characters": 10477,
+    "prompt_eval_duration_seconds": 3.862432,
+    "prompt_tokens": 3554,
+    "prompt_version": "rca-v1",
+    "retrieved_passages": [],
+    "role": "Reporter",
+    "seconds": 23.063978500002122,
+    "status": "completed"
+  }
+]

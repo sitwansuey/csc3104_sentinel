@@ -197,14 +197,16 @@ the holder's node, which is the A6 design's S3; S3 here is the network
 partition of the catalogue. S7 expects what file mode showed: with operator
 approval required, an Executor whose clock is 300 s behind refuses the
 Coordinator-stamped approval, so the action ends FAILED with no write. S0
-has only the approved path; the A6 design's S0 also has a Guard-refused path
-and an unapproved path, each with no write, which are not in this harness.
+has only the approved path; Phase 6 adds the Guard-refused and unapproved
+paths as S11a/S11b, plus stale-state refusal S11c (see the Phase 6 results).
 
-Approvals are scripted: in every scenario but S6 a harness thread approves
-each action waiting for approval, through the authenticated approval API with
-the operator's credential, and in S6 the harness approves once during the
-partition. No person reads or types an approval, so these runs show the
-approval API and its checks working under faults, not a human in the loop.
+Approvals are scripted: except in S6 and the S11 refusal checks, a harness
+thread approves each action waiting for approval through the authenticated
+approval API with the operator's credential. S6 approves once during the
+partition. S11a/S11c request no approval; S11b withholds it for two leases
+before approving a later action. No person reads or types an approval, so
+these runs show the approval API and its checks working under faults, not
+a human in the loop.
 
 Measured in each run: takeover latency (S1b, S1c, S2, S3: from the fault to
 the other Executor's first claim, from the Coordinator's access log) and, in
@@ -1548,7 +1550,7 @@ restore and settle ordering; moving it into `s8` would bypass that path.
 ## Results (P4.01)
 
 All runs are **unscored; owner sign-off is pending** (#59, #61, #63).
-These results cover deploys 10-15: 71/80 completed runs passed as recorded;
+For deploys 10-15, S0-S9 recorded 71/80 completed runs passing;
 every summary has `invariants_passed: true` (80/80). No invariant failed in
 this result set. Failures were harness issues except S2 r2's worker
 lost-lease loop; all are explained below. Earlier attempts, including their
@@ -1562,6 +1564,37 @@ The [collected bundles](../evidence/2026-11-14/) hold all 80 run summaries
 from A-E; some audit extracts and records were omitted at the per-file size
 cap, as their MANIFEST.json files record. Counts below retain the recorded
 verdicts.
+
+### Phase 6 runs (17 Nov 2026)
+
+The [Phase 6 bundle](../evidence/2026-11-16/sentinel-dist-20261116t170342-p6/)
+records 10 runs: 9/10 passed, invariants 10/10. Four kind nodes share one
+Docker host; the planner is synthetic, approvals are harness-issued, and
+the runs are unscored with owner sign-off pending. Provenance records deployed
+source `0a33bcf`; capture times are 16 Nov UTC (17 Nov in Singapore).
+
+| Scenario | Passed | Invariants | Writes |
+| --- | --- | --- | --- |
+| S8: revoke mid-patch, seal, refuse holder PATCH | 5/5 | 5/5 | Zero for revoked actions; audit maximum 1 template write per action, including separately approved later incidents |
+| S11a: Guard-refused; S11b: missing approval; S11c: stale state | 1/1 each | 3/3 | Zero for each refused action; S11b later approved a different action, which wrote once |
+| S10: duplicate delivery of one action | 1/2 | 2/2 | One template write per run |
+
+S10 run `S10-r1-170532z` held the holder at `executor.before_submit`.
+The original delivery was redelivered (attempt 2), but a moved
+resourceVersion made the peer return `CONFLICT`, so the Coordinator
+re-planned. The harness then observed a different action and failed its
+expectation; invariants held and only the replacement action wrote.
+The fix in `b8e8c42` holds at `executor.after_patch_before_save` and waits
+for the peer's accepted result for the same delivery and action.
+Run `S10-r1-173528z` passed: the peer adopted the committed write with
+`EVIDENCE_MATCH` and sent no second PATCH. This second run was judged by
+the harness committed in `b8e8c42` against the same deployed images from
+`0a33bcf`.
+
+The [claims registry](../evidence/claims.json) records
+`C-DISTRIBUTED-KIND-S8-0A33BCF`, `C-DISTRIBUTED-KIND-S11-0A33BCF` and
+`C-DISTRIBUTED-KIND-S10-0A33BCF`. S11a's audit extract was omitted by the
+per-file cap; its summary and records remain in the bundle.
 
 ### S0
 
@@ -1635,6 +1668,7 @@ use C's five completed runs.
 | --- | --- | --- | --- |
 | D r1-r5 (5) | 0/5 | 14 / 7ce9863 | No holder stale PATCH reached the API server; zero writes |
 | E r1-r5 (5) | 3/5 | 15 / d8d90e3 | Holder PATCH refused 422 and revoked action wrote zero in all five |
+| Phase 6 r1-r5 (5) | 5/5 | source 0a33bcf | Holder PATCH refused 422 after seal; zero writes for revoked actions; invariants 5/5 |
 
 - Deploy 14 r1: the pre-read stopped the PATCH; the expectation also missed a seal past V0 without a fence write; fixed d8d90e3.
 - Deploy 14 r2: the pre-read stopped the PATCH; the expectation also missed a seal past V0 without a fence write; fixed d8d90e3.

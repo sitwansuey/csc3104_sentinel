@@ -1,0 +1,68 @@
+{
+  "action_id": "ACT-963ce3814d75213083778c90",
+  "checks": [
+    {
+      "detail": "Requires an applied/no-op action with resource-version evidence",
+      "name": "execution",
+      "passed": true
+    },
+    {
+      "detail": "Received 60 readings; at least 3 required",
+      "name": "sample_count",
+      "passed": true
+    },
+    {
+      "detail": "All readings must belong to the execution target",
+      "name": "sample_identity",
+      "passed": false
+    },
+    {
+      "detail": "Readings must be UTC, strictly ordered and at/after execution",
+      "name": "sample_timestamps",
+      "passed": true
+    },
+    {
+      "detail": "Observed 295.512 seconds; at least 10 required",
+      "name": "stable_window",
+      "passed": true
+    },
+    {
+      "detail": "No gap may exceed 90 seconds",
+      "name": "sample_gaps",
+      "passed": true
+    },
+    {
+      "detail": "Requires complete successful GRPC application and positive desired-replica readiness readings; latest reading: ",
+      "name": "service_health",
+      "passed": false
+    },
+    {
+      "detail": "Every required/observed dependency must be present and healthy in every reading",
+      "name": "dependency_health",
+      "passed": false
+    },
+    {
+      "detail": "Each reading must retain the approved template and a stable observation identity; expected=5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26; latest=unavailable; configuration_stable=False",
+      "name": "sample_configuration",
+      "passed": false
+    },
+    {
+      "detail": "No reading was excluded; the 150-second convergence allowance was not used",
+      "name": "convergence",
+      "passed": true
+    }
+  ],
+  "incident_id": "INC-148CC69E7173",
+  "kind": "outcome",
+  "schema_version": "1.0",
+  "status": "UNKNOWN",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  },
+  "window_end": "2026-11-16T18:07:06.564492Z",
+  "window_start": "2026-11-16T18:02:11.052349Z"
+}

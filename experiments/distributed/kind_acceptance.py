@@ -142,6 +142,7 @@ import time
 
 from experiments import lab_lock
 from experiments.distributed import audit, invariants
+from shared.canonical import sha256_hex
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTEXT = "kind-sentinel-dist"
@@ -1028,6 +1029,24 @@ SCENARIOS = {item.name: item for item in (
              "another Deployment, asks for pods/exec and changes spec.replicas; the Planner opens a TCP "
              "connection to the API server; the Executor to the target's port", "design S9 (A6)",
              "every probe as expected, 0 Sentinel template writes", checks=("I7",)),
+    Scenario("S10", "Concurrent duplicate action delivery to both Executors",
+             "hold the first Executor at executor.after_patch_before_save, partition it from the Coordinator until "
+             "the other Executor answers the same delivery by adopting its write, then release", "deployed duplicate",
+             "same delivery and action redelivered while the first Executor is held, RECOVERED, exactly 1 Sentinel "
+             "template write for that action, the other Executor's PATCH refused or its write deduplicated"),
+    Scenario("S11a", "Guard-refused proposal on the deployed topology",
+             "hold the Planner while the deployed Guard policy disallows ROLLBACK; restore the policy afterwards",
+             "deployed refusal", "Guard REJECT with ACTION_NOT_ALLOWED, 0 Executor writes for the refused action",
+             options={"auto_approve": AFTER_FAULT}),
+    Scenario("S11b", "Missing approval on the deployed topology",
+             "withhold approval for two leases after the Guard asks for it, then authorise recovery",
+             "deployed refusal", "Guard ESCALATE with OPERATOR_APPROVAL_REQUIRED, 0 Executor writes while "
+             "unapproved, then RECOVERED with exactly 1 Sentinel template write",
+             options={"auto_approve": AFTER_FAULT}),
+    Scenario("S11c", "Stale state on the deployed topology",
+             "hold the Planner while a temporary operator annotation advances the target's resourceVersion",
+             "deployed refusal", "Guard REJECT with STALE_RESOURCE_VERSION, 0 Executor writes for the stale action",
+             options={"auto_approve": AFTER_FAULT}),
 )}
 ORDER = tuple(SCENARIOS)
 
@@ -1043,7 +1062,7 @@ def select(names):
     return [name for name in ORDER if name in names]
 
 
-RECOVERS = frozenset({"S0", "S1a", "S1b", "S1c", "S2", "S4", "S5"})
+RECOVERS = frozenset({"S0", "S1a", "S1b", "S1c", "S2", "S4", "S5", "S10", "S11b"})
 
 
 def _from_pod(row, identity):
@@ -1167,6 +1186,15 @@ def s8_seal(rows, records, stalled):
     return None
 
 
+def refusal_writes(name, rows, refusal):
+    """Audit mutations during a refusal check, or later mutations attributed to a rejected action."""
+    until, action = refusal.get("until"), refusal.get("action_id")
+    return [row for row in rows if row["sentinel"] and row["effect"] in
+            {"template_write", "metadata_write", "fence", "unclassified"}
+            and ((until and _seconds(row["at"]) <= _seconds(until))
+                 or (name != "S11b" and row.get("action_id") == action))]
+
+
 def expectation(name, *, incidents, rows, notes=None, stalled=None, takeover=None, recovery=None,
                 generation_at_end=None, records=None, operator_actions=()):
     """Failures of scenario name's expected outcome (Scenario.expect), from what the run recorded; [] when met.
@@ -1193,7 +1221,10 @@ def expectation(name, *, incidents, rows, notes=None, stalled=None, takeover=Non
     the holder's Pod unless separately approved for a different incident
     opened after the revoked incident went terminal, and no generation change
     between seal and refused PATCH (or first later incident opening); S9's
-    probes all behave as expected with no write.
+    probes all behave as expected with no write. S10 requires overlapping
+    duplicate delivery, one write and the peer's refused PATCH or durably
+    confirmed adoption without a PATCH; S11a-S11c require the deployed Guard
+    answer and zero writes during refusal.
     """
     notes, failures = notes or {}, []
     states = sorted({row["state"] for row in incidents})
@@ -1223,6 +1254,61 @@ def expectation(name, *, incidents, rows, notes=None, stalled=None, takeover=Non
         need("FAILED" in states and "RECOVERED" not in states,
              f"expected FAILED and none RECOVERED (states: {', '.join(states) or 'none'})")
         need(not writes, f"{len(writes)} Sentinel template write(s), expected 0")
+    if name == "S10":
+        duplicate = notes.get("duplicate") or {}
+        first, second = duplicate.get("first") or {}, duplicate.get("second") or {}
+        action = first.get("action_id")
+        need(bool(action) and first.get("delivery_id") == second.get("delivery_id")
+             and bool(first.get("delivery_id")) and action == second.get("action_id")
+             and first.get("event_id") == second.get("event_id")
+             and {first.get("owner"), second.get("owner")} == set(EXECUTORS)
+             and second.get("attempts", 0) > first.get("attempts", 0),
+             "no overlapping delivery of the same action to both Executors was recorded")
+        claims = [row for row in (records or {}).get("access", []) if row.get("operation") == "claim"
+                  and row.get("http_status") == 200 and row.get("outcome") == "claimed"
+                  and row.get("delivery_id") == first.get("delivery_id")]
+        need({row.get("identity") for row in claims} == set(EXECUTORS),
+             "the Coordinator log does not show both Executors claiming the duplicate delivery")
+        own = [row for row in writes if row.get("action_id") == action]
+        need(len(own) == 1, "the single template write is not attributable to the duplicated action")
+        loser = [identity for identity in EXECUTORS if not any(_from_pod(row, identity) for row in own)]
+        refused = len(loser) == 1 and any(row.get("action_id") == action and row["effect"] == "denied"
+                  and row["code"] in {403, 409, 422} for row in holder_patches(rows, loser[0]))
+        result = second.get("result") or {}
+        result_digest = sha256_hex(result)
+        deduplicated = (loser == [second.get("owner")] and result.get("kind") == "execution_result"
+                        and result.get("action_id") == action and result.get("status") == "APPLIED"
+                        and result.get("details", "").startswith("[basis=EVIDENCE_MATCH]")
+                        and "adopted peer write" in result.get("details", "")
+                        and not holder_patches(rows, second.get("owner"))
+                        and any(row.get("delivery_id") == first.get("delivery_id")
+                                and row.get("event_id") == second.get("event_id")
+                                and row.get("event_id") is not None and row.get("owner") == second.get("owner")
+                                and row.get("finished") is not None and row.get("result_digest") == result_digest
+                                for row in (records or {}).get("receipts", []))
+                        and any(row.get("identity") == second.get("owner") and row.get("accepted")
+                                and row.get("event_id") == second.get("event_id")
+                                and row.get("message_digest") == result_digest
+                                for row in (records or {}).get("worker_results", [])))
+        need(refused or deduplicated,
+             "no refused PATCH (403, 409 or 422) or confirmed peer adoption for the duplicated action")
+    if name in {"S11a", "S11b", "S11c"}:
+        refusal = notes.get("refusal") or {}
+        verdict, reason = {"S11a": ("REJECT", "ACTION_NOT_ALLOWED"),
+                           "S11b": ("ESCALATE", "OPERATOR_APPROVAL_REQUIRED"),
+                           "S11c": ("REJECT", "STALE_RESOURCE_VERSION")}[name]
+        action = refusal.get("action_id")
+        need(bool(action) and refusal.get("verdict") == verdict and reason in refusal.get("reason_codes", []),
+             f"no deployed Guard {verdict} with {reason} was recorded")
+        need(any(row["action_id"] == action for row in (records or {}).get("actions", [])),
+             "the refused action is not in this run's records")
+        until = refusal.get("until")
+        need(bool(until), "the refusal audit window was not recorded")
+        forbidden = refusal_writes(name, rows, refusal)
+        need(not forbidden, f"{len(forbidden)} Executor write(s) during refusal or for a refused action, expected 0")
+        if name == "S11b":
+            need(refusal.get("observed_seconds", 0) >= 2 * LEASE_SECONDS,
+                 "missing approval was not observed for two leases")
     if name == "S8":
         revoked = _s8_revoked(records)
         need(revoked is not None, "no single revoked action identified in the run's records")

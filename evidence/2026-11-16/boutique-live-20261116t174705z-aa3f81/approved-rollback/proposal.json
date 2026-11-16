@@ -1,0 +1,32 @@
+{
+  "action": "ESCALATE",
+  "action_id": "ACT-fe674927fcbc9b3ffac39fd1",
+  "based_on_resource_version": "380245",
+  "evidence_refs": [
+    "E-4DC715C1D2FE",
+    "E-A0AFAD67680A",
+    "E-26065C56E327",
+    "E-CD6E7FA1FBB8",
+    "E-76B294169413",
+    "E-7E916BBEE50C",
+    "E-EED6E92C3CDA",
+    "E-9D2E456581ED",
+    "E-7B3FEE62C64F",
+    "E-8909AFFC1F05",
+    "E-509E2110F75C",
+    "E-113F6A2BD6CD",
+    "E-7A2A488FDB13"
+  ],
+  "incident_id": "INC-9D1090F2768F",
+  "kind": "proposal",
+  "parameters": {},
+  "rationale": "RCA abstained: the evidence does not support a diagnosis. Operator review is required. No repair is authorized.",
+  "schema_version": "1.0",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "cartservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+  }
+}

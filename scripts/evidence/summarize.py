@@ -310,6 +310,13 @@ def pass_ratio(bundles):
     return ratio(sum(outcome(b) == "PASS" for b in bundles), len(bundles))
 
 
+def acceptance_pass_ratio(bundles, scenarios):
+    """Count selected scenario runs, keeping failed and incomplete summaries in the denominator."""
+    runs = [run for bundle in bundles if bundle.run_class == "distributed-acceptance"
+            for run in acceptance_runs(bundle, scenarios)]
+    return ratio(sum(run.get("passed") is True for run in runs), len(runs))
+
+
 def failure_class(summary):
     """Short failure label from a FAILED summary; unknown text keeps its error type."""
     failure = summary.get("agent_failure")
@@ -352,11 +359,17 @@ def expected_escalation(bundle):
     return outcome(bundle) == "PASS" and summary_of(bundle).get("expected_outcome") == "escalated"
 
 
+def recovery_passed(bundle):
+    """A passing recovery, excluding expected escalations and negative outcome variants."""
+    return (outcome(bundle) == "PASS" and summary_of(bundle).get("expected_outcome") in (None, "recovered")
+            and scenario_result(bundle).get("coordinator_state") in (None, "RECOVERED"))
+
+
 def agent_runs(bundles):
     """Rows per source revision; every run is in the denominator.
 
-    RECOVERED counts PASS runs that expected a recovery. An expected escalation
-    counts as not recovered, labelled as such.
+    RECOVERED counts PASS runs that expected a recovery. Expected escalations
+    and negative outcome variants count as not recovered, labelled as such.
     """
     groups = {}
     for bundle in bundles:
@@ -367,11 +380,14 @@ def agent_runs(bundles):
     for (revision, provenance), members in sorted(groups.items(), key=lambda item: min(
             b.entry.get("captured_at") or "" for b in item[1])):
         outcomes = [outcome(b) for b in members]
-        recovered = [b for b, result in zip(members, outcomes) if result == "PASS" and not expected_escalation(b)]
+        recovered = [b for b in members if recovery_passed(b)]
         failures = {}
         for bundle, result in zip(members, outcomes):
             if expected_escalation(bundle):
                 failures["expected escalation"] = failures.get("expected escalation", 0) + 1
+            elif result == "PASS" and not recovery_passed(bundle):
+                label = "expected " + str(summary_of(bundle).get("expected_outcome") or "non-recovery")
+                failures[label] = failures.get(label, 0) + 1
             elif result != "PASS":
                 label = failure_class(summary_of(bundle)) if result == "FAILED" else result.lower()
                 failures[label] = failures.get(label, 0) + 1
@@ -1142,8 +1158,46 @@ def wedge_resolutions(bundles):
 
 
 def recovered_ratio(bundles):
-    """Cited runs that passed expecting a recovery; an expected escalation passes but never recovers."""
-    return ratio(sum(outcome(b) == "PASS" and not expected_escalation(b) for b in bundles), len(bundles))
+    """Cited runs that passed expecting a recovery; negative demonstrations never count as recoveries."""
+    return ratio(sum(recovery_passed(b) for b in bundles), len(bundles))
+
+
+def interactive_approved_recoveries(bundles):
+    """Recoveries with a person's interactive approval through the authenticated API."""
+    approved = 0
+    for bundle in bundles:
+        approval = summary_of(bundle).get("operator_approval") or {}
+        approved += (recovery_passed(bundle) and approval.get("human") is True
+                     and approval.get("mode") == "interactive" and approval.get("via") == "approval_http"
+                     and bool(approval.get("approvals")))
+    return ratio(approved, len(bundles))
+
+
+def outcome_variant_matches(bundles):
+    """Passing negative demonstrations whose Verifier outcome and Coordinator state match the expectation."""
+    matched = 0
+    for bundle in bundles:
+        summary = summary_of(bundle)
+        expected = summary.get("outcome_expectation") or {}
+        actual = bundle.json("approved-rollback/outcome.json") or {}
+        verdict, state = {"unhealthy": ("NOT_RECOVERED", "FAILED"),
+                          "unavailable-evidence": ("UNKNOWN", "NEEDS_REVIEW")}.get(
+                              summary.get("expected_outcome"), (None, None))
+        matched += (outcome(bundle) == "PASS" and verdict is not None and expected.get("matched_expected") is True
+                    and actual.get("status") == expected.get("actual_outcome")
+                    == expected.get("expected_outcome") == verdict
+                    and scenario_result(bundle).get("coordinator_state") == expected.get("actual_state")
+                    == expected.get("expected_state") == state)
+    return ratio(matched, len(bundles))
+
+
+def recovery_writes(bundles):
+    """Recovery ratio and recorded Executor writes; missing counters stay explicit."""
+    writes = [scenario_result(b).get("executor_writes") for b in bundles]
+    measured = [value for value in writes if isinstance(value, int)]
+    unknown = len(writes) - len(measured)
+    return (f"{recovered_ratio(bundles)} recovered, {sum(measured)} Executor writes"
+            + (f" ({unknown} unmeasured)" if unknown else ""))
 
 
 def expected_escalations(bundles):
@@ -1317,12 +1371,18 @@ DERIVATIONS = {
     "preflight_stops": preflight_stops,
     "wedge_resolutions": wedge_resolutions,
     "recovered_ratio": recovered_ratio,
+    "interactive_approved_recoveries": interactive_approved_recoveries,
+    "outcome_variant_matches": outcome_variant_matches,
+    "recovery_writes": recovery_writes,
     "expected_escalations": expected_escalations,
     "approval_refusals": approval_refusals,
     "injection_free": injection_free,
     "scenario_outcomes": scenario_outcomes,
     "pair_outcomes": pair_outcomes,
     "distributed_expectations": distributed_expectations,
+    "acceptance_s8_ratio": lambda bundles: acceptance_pass_ratio(bundles, ("S8",)),
+    "acceptance_s10_ratio": lambda bundles: acceptance_pass_ratio(bundles, ("S10",)),
+    "acceptance_s11_ratio": lambda bundles: acceptance_pass_ratio(bundles, ("S11a", "S11b", "S11c")),
     "seal_outcomes": seal_outcomes,
     "trace_shapes": trace_shapes,
     "admission_probes": admission_probes,
@@ -1542,7 +1602,7 @@ def approval_kind(bundle):
     return "not recorded"
 
 
-def acceptance_runs(bundle):
+def acceptance_runs(bundle, scenarios=None):
     """Dated scenario-run summaries of a sentinel-dist bundle, in path order; excludes P4.02 drills.
 
     A summary that is not an object (a run that crashed while writing it) is
@@ -1551,7 +1611,8 @@ def acceptance_runs(bundle):
     """
     runs = []
     for item in sorted(bundle.manifest.get("files", []), key=lambda item: item["path"]):
-        if ACCEPTANCE_RUN.fullmatch(item["path"]):
+        if ACCEPTANCE_RUN.fullmatch(item["path"]) and (
+                scenarios is None or item["path"].split("/")[1].split("-")[0] in scenarios):
             value = bundle.json(item["path"])
             runs.append(value if isinstance(value, dict) else {})
     return runs

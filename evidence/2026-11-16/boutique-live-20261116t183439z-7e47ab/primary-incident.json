@@ -1,0 +1,101 @@
+{
+  "incident_id": "INC-A3350CD34B45",
+  "kind": "incident",
+  "observed_at": "2026-11-16T18:36:23.197471Z",
+  "observed_generation": 99,
+  "observed_resource_version": "385417",
+  "schema_version": "1.0",
+  "signals": [
+    {
+      "at": "2026-11-16T18:36:16.025807Z",
+      "detail": "Deployment sentinel-boutique-connected/cartservice desired 1, ready 0, available 0; resourceVersion 385403, generation 99",
+      "evidence_id": "E-16A019F9A8A0",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-16T18:36:16Z",
+      "detail": "Deployment does not have minimum availability.",
+      "evidence_id": "E-1D021769DB12",
+      "reason": "MinimumReplicasUnavailable",
+      "source": "event"
+    },
+    {
+      "at": "2026-11-16T18:36:23.197471Z",
+      "detail": "Deployment sentinel-boutique-connected/cartservice desired 1, ready 0, available 0; resourceVersion 385417, generation 99",
+      "evidence_id": "E-1FC776277090",
+      "reason": "UnavailableReplicas",
+      "source": "deployment_status"
+    },
+    {
+      "at": "2026-11-16T18:36:23.197471Z",
+      "detail": "Pod cartservice-766d8dbc8f-bgcxz container server is not ready; phase Running; restartCount 0",
+      "evidence_id": "E-F2D6DDEF877F",
+      "reason": "ContainerNotReady",
+      "source": "pod_status"
+    },
+    {
+      "at": "2026-11-16T18:36:18.588588Z",
+      "detail": "d54faad1-68ea-490d-8a08-660b924dba98/cartservice-766d8dbc8f-bgcxz/server: 2026-11-16T18:36:18.588588053Z info: Microsoft.Hosting.Lifetime[14]",
+      "evidence_id": "E-5DFDB5575452",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-16T18:36:18.588620Z",
+      "detail": "d54faad1-68ea-490d-8a08-660b924dba98/cartservice-766d8dbc8f-bgcxz/server: 2026-11-16T18:36:18.588620845Z       Now listening on: http://[::]:7070",
+      "evidence_id": "E-A2CC25BF65CF",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-16T18:36:18.590353Z",
+      "detail": "d54faad1-68ea-490d-8a08-660b924dba98/cartservice-766d8dbc8f-bgcxz/server: 2026-11-16T18:36:18.590353217Z info: Microsoft.Hosting.Lifetime[0]",
+      "evidence_id": "E-EEAE32A21661",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-16T18:36:18.590361Z",
+      "detail": "d54faad1-68ea-490d-8a08-660b924dba98/cartservice-766d8dbc8f-bgcxz/server: 2026-11-16T18:36:18.590361247Z       Application started. Press Ctrl+C to shut down.",
+      "evidence_id": "E-E2A0421ED84D",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-16T18:36:18.591266Z",
+      "detail": "d54faad1-68ea-490d-8a08-660b924dba98/cartservice-766d8dbc8f-bgcxz/server: 2026-11-16T18:36:18.591266746Z info: Microsoft.Hosting.Lifetime[0]",
+      "evidence_id": "E-46A4244B60D1",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-16T18:36:18.591271Z",
+      "detail": "d54faad1-68ea-490d-8a08-660b924dba98/cartservice-766d8dbc8f-bgcxz/server: 2026-11-16T18:36:18.591271617Z       Hosting environment: Production",
+      "evidence_id": "E-AE4222A162E9",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-16T18:36:18.591273Z",
+      "detail": "d54faad1-68ea-490d-8a08-660b924dba98/cartservice-766d8dbc8f-bgcxz/server: 2026-11-16T18:36:18.591273417Z info: Microsoft.Hosting.Lifetime[0]",
+      "evidence_id": "E-191E7BCCE171",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    },
+    {
+      "at": "2026-11-16T18:36:18.591275Z",
+      "detail": "d54faad1-68ea-490d-8a08-660b924dba98/cartservice-766d8dbc8f-bgcxz/server: 2026-11-16T18:36:18.591275167Z       Content root path: /app",
+      "evidence_id": "E-91A012A2CA9D",
+      "reason": "ContainerLog",
+      "source": "container_log"
+    }
+  ],
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "cartservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "a049b7c4-ad14-4680-b3d3-d31ef3944221"
+  }
+}

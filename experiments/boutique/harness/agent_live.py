@@ -229,17 +229,21 @@ class AgentPlanningMixin(ScenarioScoringMixin):
         config = self.load_agent_config()
         # The evidence summarizer reads this to keep an expected escalation out
         # of the RECOVERED column, since both end with status PASS.
-        self.summary["expected_outcome"] = self.expect
+        variant = getattr(self, "outcome_variant", None)
+        self.summary["expected_outcome"] = variant or self.expect
         folder = self.directory / PLANNING_FOLDER
         folder.mkdir(exist_ok=True)
         planner = None
+        with PlannerStore(folder / "planner.db") as journal:
+            previous_calls = [call for attempt in journal.attempts(incident["incident_id"])
+                              for call in (attempt["usage"] or {}).get("calls", [])]
 
         def progress(update):
             # This stream is safe operational metadata: never raw prompts,
             # application logs, generated text or hidden model reasoning.
             with (folder / "planning-progress.jsonl").open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps({"at": datetime.now(timezone.utc).isoformat(), **update}) + "\n")
-            save(folder / "model-calls.json", planner.calls)
+            save(folder / "model-calls.json", previous_calls + planner.calls)
             label = update.get("role") or update.get("tool") or update["stage"]
             elapsed = f" ({update['seconds']:.0f}s)" if "seconds" in update else ""
             self.event(3, "heartbeat" if update["status"] == "running" else
@@ -262,8 +266,8 @@ class AgentPlanningMixin(ScenarioScoringMixin):
             self.score_delivered(incident, folder, planner)
             raise
         finally:
-            save(folder / "model-calls.json", planner.calls)
-            self.summary["agent_model_calls"] = len(planner.calls)
+            save(folder / "model-calls.json", previous_calls + planner.calls)
+            self.summary["agent_model_calls"] = len(previous_calls) + len(planner.calls)
             if planner.finding:
                 # Rule ids and counts from the code-owned injection gate, never the flagged text.
                 self.summary["injection_finding"] = planner.finding
@@ -283,16 +287,21 @@ class AgentPlanningMixin(ScenarioScoringMixin):
         require(state != "AWAITING_APPROVAL" or self.expect == "escalated",
                 "Operator did not approve " + (proposal or {}).get("action_id", "the proposal")
                 + "; no Executor write attempted")
-        expected = "NEEDS_REVIEW" if self.expect == "escalated" else "RECOVERED"
-        require(state == expected and (state != "NEEDS_REVIEW" or proposal["action"] == "ESCALATE"),
+        expected = ({"unhealthy": "FAILED", "unavailable-evidence": "NEEDS_REVIEW"}[variant] if variant else
+                    "NEEDS_REVIEW" if self.expect == "escalated" else "RECOVERED")
+        require(state == expected and (self.expect != "escalated" or proposal["action"] == "ESCALATE"),
                 f"Agent recovery stopped at {state}; expected {expected}")
+        if variant:
+            require(proposal["action"] == "ROLLBACK"
+                    and self.summary.get("outcome_expectation", {}).get("matched_expected") is True,
+                    "Expected the lab variant's independently verified post-repair outcome")
         if graded is not None and self.scenario_gates_pass:
             require(graded["matched_expected"],
                     f"Scenario {graded['scenario']} scored {graded['score']}: decision {graded['actual']} "
                     f"from {graded['decision_source']}; pre-registered correct {graded['expected']['correct']}"
                     + (f", rule code {graded['expected']['rule_code']} matched {graded['rule_code_matched']}"
                        if "rule_code" in graded["expected"] else ""))
-        if state == "NEEDS_REVIEW":
+        if state == "NEEDS_REVIEW" and not variant:
             # The expected escalation is not a repair: the administrator removes the fault.
             require(self.emergency_restore(), "Administrator restore after the expected escalation failed")
             source = (graded or {}).get("decision_source")

@@ -37,7 +37,8 @@ from experiments.distributed.kind_acceptance import (
     AcceptanceError, Lab, ReadUnavailable, RunView, TransientRead,
     approval_permissions, certificate_names, cluster_identity, config_map, control_plane_window, coordinator_recovery,
     credentials, expectation, holder_patches, partition, pod_facts, pod_failure, pod_kill, load_summaries,
-    preflight, ready_since, render_admission, render_api_server_policy, results_table, s8_later_incidents, s8_seal,
+    preflight, ready_since, refusal_writes, render_admission, render_api_server_policy, results_table,
+    s8_later_incidents, s8_seal,
     secret_documents,
     scope_records, secret_name, selector_apps, shift, stamp, takeover_seconds, target_inputs, time_skew,
     transient_failure)
@@ -285,6 +286,8 @@ class Run:
         self.api_endpoint = None  # The API server endpoint address deploy recorded (no scenario delays it now).
         self.notes, self.fault_at, self.stalled = {}, None, None
         self.saved_logs = {}  # Logs of a Pod this run deletes, read before it goes.
+        self.policy_restore = None
+        self.stale_annotation = None
 
     def save_logs(self, identity, since):
         self.saved_logs[identity] = self.saved_logs.get(identity, "") + self.lab.log_text(identity, since)
@@ -431,8 +434,13 @@ class Run:
         window = control_plane_window(since, None, [self.offset] if self.offset else [])
         return self.lab.audit_rows(*window)
 
+    def clear_stale_annotation(self):
+        self.lab.shell.kubectl("annotate", "deployment", TARGET, self.stale_annotation + "-", namespace=WORKLOAD)
+        self.stale_annotation = None
+        self._act("remove stale-state annotation")
+
     def cleanup(self):
-        """Undo every fault still in place: unpause, remove chaos, release held and disarm armed fault points.
+        """Undo every fault: restore policy, remove annotations/chaos, unpause, release and disarm fault points.
 
         Called in run_one's finally, so a run never leaves a node paused, a
         chaos object behind or a process blocked at a fault point without
@@ -442,6 +450,19 @@ class Run:
         """
         start, problems = len(self.actions), []
         failures = (AcceptanceError, subprocess.SubprocessError, TimeoutError, OSError, ValueError, KeyError)
+        if self.policy_restore is not None:
+            try:
+                self.lab.shell.apply(self.policy_restore)
+                _policy_visible(self.lab, json.loads(self.policy_restore["data"]["policy.json"]))
+                self.policy_restore = None
+                self._act("restore Guard policy")
+            except failures as error:
+                problems.append(f"Guard policy could not be restored: {error}")
+        if self.stale_annotation is not None:
+            try:
+                self.clear_stale_annotation()
+            except failures as error:
+                problems.append(f"stale-state annotation could not be removed: {error}")
         for node in list(self.paused):
             try:
                 self.unpause(node)
@@ -518,6 +539,10 @@ class Run:
                 found.append(f"node {node} could not be read: {error}")
         found += [f"fault point {entry['stem']} may still hold {entry['identity']}'s process" for entry in self.held]
         found += [f"fault point {stem} may still be armed in {identity}'s Pod" for identity, stem in self.armed]
+        if self.policy_restore is not None:
+            found.append("Guard policy has not been restored")
+        if self.stale_annotation is not None:
+            found.append("stale-state annotation has not been removed")
         return found
 
 
@@ -905,8 +930,118 @@ def s9(run):
         raise AssertionError("Denial probe(s) did not behave as expected: " + "; ".join(failed))
 
 
+def _claimed(run, identity):
+    rows = run.lab.query("SELECT r.event_id, r.delivery_id, r.owner, r.attempts, o.action_id FROM transport_receipts r "
+                         "JOIN outbox o ON o.id=r.event_id WHERE r.owner=? AND r.finished IS NULL "
+                         "AND o.topic='executor.request' ORDER BY o.id DESC LIMIT 1", (identity,), strict=True)
+    if len(rows) != 1:
+        raise AcceptanceError(f"No unfinished executor.request claimed by {identity}")
+    return rows[0]
+
+
+def s10(run):
+    """Redeliver a committed but unreported write while its first Executor is still held.
+
+    Before submission, Deployment status updates can advance resourceVersion during the lease wait:
+    the peer then correctly reports CONFLICT and the Coordinator re-plans. After submission the atomic
+    action evidence lets the peer adopt this very write, even when status advances, without another PATCH.
+    """
+    stem = "executor.after_patch_before_save"
+    holder = _holder(run, stem)
+    first = _claimed(run, holder)
+    other = next(identity for identity in EXECUTORS if identity != holder)
+    run.mark()
+    cut = run.create(partition(run.name("duplicate"), _app(holder), ["sentinel-coordinator"], 180),
+                     expect=_holder_uid(run, holder))
+
+    def adopted():
+        # Read an accepted answer, not just a transient claim: adoption sends no PATCH and hits no write hook.
+        rows = run.lab.query("SELECT r.event_id, r.delivery_id, r.owner, r.attempts, o.action_id, m.payload AS result "
+                             "FROM transport_receipts r JOIN outbox o ON o.id=r.event_id "
+                             "JOIN messages m ON m.answers=o.id AND m.producer=r.owner "
+                             "WHERE r.delivery_id=? AND r.owner=? AND r.finished IS NOT NULL "
+                             "AND m.kind='execution_result'", (first["delivery_id"], other))
+        return rows[0] if rows else None
+
+    second = run.lab.wait(adopted, min(120, run.window_left(cut)),
+                          "the peer's accepted result for the held delivery", interval=2)
+    second["result"] = json.loads(second["result"])
+    run.notes["duplicate"] = {"first": first, "second": second}
+    if (first["delivery_id"], first["action_id"]) != (second["delivery_id"], second["action_id"]):
+        raise AcceptanceError("The peer received a different delivery or action, not the held duplicate")
+    run.remove(cut)
+    # The peer answered the same command before the first attempt could save or report its result.
+    _release(run, holder, stem)
+
+
+def _policy_visible(lab, policy):
+    script = "import pathlib; print(pathlib.Path('/inputs/policy.json').read_text())"
+    lab.wait(lambda: all(json.loads(lab.exec_python(_app(identity), "worker", script).stdout) == policy
+                         for identity in ("guard-1", *EXECUTORS)),
+             180, "the policy mounted in the Guard and both Executors", interval=2)
+
+
+def _refusal(run, reason, verdict):
+    """Keep the actual deployed Guard answer, without its proposal or evidence payloads."""
+    def found():
+        for incident in run.lab.incidents():
+            for row in run.lab.query("SELECT action_id, guard_result FROM actions WHERE incident_id=?",
+                                     (incident["incident_id"],)):
+                decision = json.loads(row["guard_result"]) if row["guard_result"] else {}
+                if decision.get("verdict") == verdict and reason in decision.get("reason_codes", []):
+                    return {key: decision[key] for key in ("incident_id", "action_id", "verdict", "reason_codes")}
+        return None
+    refusal = run.lab.wait(found, 120, f"the deployed Guard's {reason} answer", interval=2)
+    # This exact cluster-clock boundary precedes any approval started after the runner returns.
+    refusal["until"] = shift(stamp(run.lab.clock()), run.offset["offset_seconds"] if run.offset else 0)
+    run.notes["refusal"] = refusal
+    return refusal
+
+
+def s11a(run):
+    holder = _holder(run, "planner.mid_inference", identities=("planner-1",))
+    data = run.lab.shell.json("get", "configmap", "sentinel-dist-inputs", namespace=NAMESPACE)["data"]
+    run.policy_restore = config_map("sentinel-dist-inputs", data)
+    policy = json.loads(data["policy.json"])
+    policy["allowed_actions"] = []
+    run.lab.shell.apply(config_map("sentinel-dist-inputs", {**data, "policy.json": policy}))
+    _policy_visible(run.lab, policy)
+    _release(run, holder, "planner.mid_inference")
+    _refusal(run, "ACTION_NOT_ALLOWED", "REJECT")
+
+
+def s11b(run):
+    pending = run.lab.wait_state({"AWAITING_APPROVAL"}, 120)
+    action_id = pending["active_action_id"]
+    start = run.lab.monotonic()
+    # Keep polling the real store for two leases; a quiet or empty audit log alone proves nothing.
+    def unapproved():
+        if run.lab.query("SELECT id FROM approvals WHERE action_id=?", (action_id,)):
+            raise AcceptanceError("The missing-approval check received an approval during its observation window")
+        return run.lab.monotonic() - start >= 2 * LEASE_SECONDS
+    run.lab.wait(unapproved, 2 * LEASE_SECONDS + 10, "two leases without approval", interval=2)
+    refusal = _refusal(run, "OPERATOR_APPROVAL_REQUIRED", "ESCALATE")
+    if refusal["action_id"] != action_id:
+        raise AcceptanceError("The missing-approval Guard answer belongs to a different action")
+    refusal["observed_seconds"] = run.lab.monotonic() - start
+
+
+def s11c(run):
+    holder = _holder(run, "planner.mid_inference", identities=("planner-1",))
+    # Add and remove only this run's annotation. The template stays intact, but V0 is now stale.
+    annotation = "sentinel.io/acceptance-stale"
+    if annotation in run.lab.target()["metadata"].get("annotations", {}):
+        raise AcceptanceError("A stale-state annotation from an earlier run is still present")
+    run.stale_annotation = annotation  # Cleanup owns it even if the write's reply is lost.
+    run.lab.shell.kubectl("annotate", "deployment", TARGET, annotation + "=" + run.name("stale"),
+                           namespace=WORKLOAD)
+    run.clear_stale_annotation()
+    _release(run, holder, "planner.mid_inference")
+    _refusal(run, "STALE_RESOURCE_VERSION", "REJECT")
+
+
 RUNNERS = {"S0": s0, "S1a": s1a, "S1b": s1b, "S1c": s1c, "S2": s2, "S3": s3, "S4": s4, "S5": s5, "S6": s6,
-           "S7": s7, "S8": s8, "S9": s9}
+           "S7": s7, "S8": s8, "S9": s9, "S10": s10, "S11a": s11a, "S11b": s11b, "S11c": s11c}
 
 
 # Running -------------------------------------------------------------------------------------------------
@@ -1208,6 +1343,9 @@ def run_one(lab, scenario, index, deployed, baseline, tokens, out, policy=None):
     failures = expectation(scenario.name, incidents=records["incidents"], rows=rows, notes=run.notes,
                            stalled=run.stalled, takeover=takeover, recovery=recovery,
                            generation_at_end=generation_at_end, records=records, operator_actions=operator_actions)
+    refusal = run.notes.get("refusal")
+    if refusal is not None:
+        refusal["executor_writes"] = len(refusal_writes(scenario.name, rows, refusal))
     seal = s8_seal(rows, records, run.stalled) if scenario.name == "S8" else None
     unsettled = settled is not None and not settled["settled"]
     passed = invariants_passed and not failures and not problems and error is None and not unsettled

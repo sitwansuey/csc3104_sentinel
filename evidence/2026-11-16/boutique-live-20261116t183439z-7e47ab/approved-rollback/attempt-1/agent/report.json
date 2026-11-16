@@ -1,0 +1,39 @@
+{
+  "failures": [],
+  "explanation": "Abstained: No result cited for failure 1 names the diagnosed component.",
+  "limitations": "A diagnosis must use the code-owned vocabulary and cite collected evidence that names its component.",
+  "provenance": {
+    "prompt_version": "rca-v1",
+    "calls": [
+      {
+        "role": "Analyzer",
+        "prompt_version": "rca-v1",
+        "retrieved_passages": []
+      },
+      {
+        "role": "Planner",
+        "prompt_version": "rca-v1",
+        "retrieved_passages": [
+          {
+            "id": "multimodal_rca",
+            "content_sha256": "c3ddbc6a197681e509603771ed301e8271155fde0b24bb118a8da6efe7adba28"
+          },
+          {
+            "id": "cpu_exhaustion",
+            "content_sha256": "639659abc6805c31099ad2232a2f6daaa5488f49b60aaed8cb01bde374ac2ca3"
+          }
+        ]
+      },
+      {
+        "role": "Analyzer",
+        "prompt_version": "rca-v1",
+        "retrieved_passages": []
+      },
+      {
+        "role": "Reporter",
+        "prompt_version": "rca-v1",
+        "retrieved_passages": []
+      }
+    ]
+  }
+}

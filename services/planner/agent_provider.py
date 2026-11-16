@@ -32,7 +32,7 @@ import math
 from pathlib import Path
 import time
 
-from agent.llm import ModelOutputInvalid, Ollama, PlanningBudgetExceeded
+from agent.llm import ModelOutputInvalid, Ollama, PlanningBudgetExceeded, ask_with_provenance
 from agent.progress import notify
 from agent.untrusted import LABEL_LIMIT, RULES, clean, prompt_incident, suspicious
 from services.guard.common import json_sha256
@@ -44,6 +44,7 @@ from services.rca.core import diagnose
 from shared.contracts import validate_message
 
 DEFAULT_BUDGET_SECONDS = 600
+PROMPT_VERSION = "agent-recovery-v1"
 # The journal lease must outlive an attempt, so a live attempt is never fenced
 # out by a second worker. The margin covers the steps after the last model call.
 LEASE_MARGIN_SECONDS = 60
@@ -267,6 +268,10 @@ class AgentPlanner:
             return None
         calls = self.clients[self.attempt].calls if self.attempt in self.clients else []
         usage = {"planning_attempt": self.attempt, "model_calls": len(calls),
+                 "prompt_version": PROMPT_VERSION,
+                 "retrieved_passages": [deepcopy(passage) for call in calls
+                                        for passage in call.get("retrieved_passages", [])],
+                 "calls": [deepcopy(call) for call in self.calls if call["planning_attempt"] == self.attempt],
                  "model_calls_completed": sum(call.get("status") == "completed" for call in calls),
                  "model_seconds": round(sum(call.get("seconds", 0) for call in calls), 3),
                  "seconds": round(self.clock() - self.started, 3),
@@ -391,8 +396,11 @@ class AgentPlanner:
             payload["change_evidence"] = deepcopy(self.change)
             prompt += CHANGE_NOTE
         try:
-            answer = self.clients[self.attempt].ask("Recovery Planner", prompt + json.dumps(payload, default=str),
-                                                    RECOVERY_SCHEMA)
+            runbooks = payload["runbooks"]
+            answer = ask_with_provenance(
+                self.clients[self.attempt], "Recovery Planner", prompt + json.dumps(payload, default=str),
+                RECOVERY_SCHEMA, prompt_version=PROMPT_VERSION,
+                passages=runbooks["kp"] if isinstance(runbooks, dict) else runbooks)
         except Exception as error:  # noqa: BLE001 - model failures are classified for the journal
             raise self._failed(_model_error(error), error) from error
         if not isinstance(answer, dict):

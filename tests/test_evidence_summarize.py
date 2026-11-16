@@ -425,6 +425,68 @@ class Phase2DerivationTests(unittest.TestCase):
                          "agent escalated (ABSTAINED)")
 
 
+class LiveApprovalOutcomeTests(unittest.TestCase):
+    """Human approval, negative outcomes and a failed cart recovery keep distinct claims."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def bundle(self, name, *, approval=None, variant=None, outcome_status=None, **options):
+        if variant:
+            verdict, state = {"unhealthy": ("NOT_RECOVERED", "FAILED"),
+                              "unavailable-evidence": ("UNKNOWN", "NEEDS_REVIEW")}[variant]
+            options.update(expected=variant, state=state)
+        run = fx.scenario_run(self.root / "source", name, **options)
+        summary = json.loads((run / "summary.json").read_text(encoding="utf-8"))
+        if approval is not None:
+            summary["operator_approval"] = approval
+        if variant:
+            summary["outcome_expectation"] = {"variant": variant, "matched_expected": True,
+                "expected_outcome": verdict, "actual_outcome": verdict,
+                "expected_state": state, "actual_state": state}
+            fx.write(run / "approved-rollback/outcome.json", {"status": outcome_status or verdict})
+        fx.write(run / "summary.json", summary)
+        collect.collect(run, "agent", name, evidence_root=self.root / "evidence", context=fx.context(),
+                        inferred_revision=fx.REVISION, inferred_basis="fixture")
+        return next(b for b in summarize.load_bundles(self.root) if b.bundle_id == name)
+
+    def test_person_approval_needs_interactive_api_approval_and_a_passing_recovery(self):
+        approval = {"human": True, "mode": "interactive", "via": "approval_http",
+                    "approvals": [{"action_id": "ACT-1", "operator_id": "person"}]}
+        bundles = [self.bundle("human", approval=approval)]
+        for i, change in enumerate(({"human": False}, {"mode": "auto-lab"}, {"via": "file"},
+                                     {"approvals": []})):
+            bundles.append(self.bundle(f"other-{i}", approval=approval | change))
+        bundles.append(self.bundle("failed", approval=approval, status="FAILED"))
+        bundles.append(self.bundle("negative", approval=approval, variant="unhealthy"))
+        self.assertEqual(summarize.derive({"derive": "interactive_approved_recoveries",
+            "bundles": [b.bundle_id for b in bundles]}, bundles), "1/7")
+
+    def test_negative_variants_match_verifier_and_state_but_never_count_as_recovered(self):
+        bundles = [self.bundle("unhealthy", variant="unhealthy"),
+                   self.bundle("unavailable", variant="unavailable-evidence")]
+        row = summarize.agent_runs(bundles)[0]
+        self.assertEqual(row[2:5], ["2", "0/2", "2"])
+        self.assertEqual(row[-1], "expected unavailable-evidence x1; expected unhealthy x1")
+        bundles += [self.bundle("failed", variant="unhealthy", status="FAILED"),
+                    self.bundle("mismatch", variant="unavailable-evidence", outcome_status="RECOVERED"),
+                    self.bundle("ordinary")]
+        self.assertEqual(summarize.derive({"derive": "outcome_variant_matches",
+            "bundles": [b.bundle_id for b in bundles]}, bundles), "2/5")
+        self.assertEqual(summarize.recovered_ratio(bundles), "1/5")
+
+    def test_failed_cart_escalation_keeps_its_recovery_denominator_and_zero_writes(self):
+        bundle = self.bundle("cart", scenario="C1", status="FAILED", actual="ESCALATE",
+                             source="planning_failure", writes=0, state="NEEDS_REVIEW", error_code="ABSTAINED")
+        self.assertEqual(summarize.derive({"derive": "recovery_writes", "bundles": ["cart"]}, [bundle]),
+                         "0/1 recovered, 0 Executor writes")
+        unknown = self.bundle("unknown", status="FAILED", writes=None)
+        self.assertEqual(summarize.recovery_writes([bundle, unknown]),
+                         "0/2 recovered, 0 Executor writes (1 unmeasured)")
+
+
 class ChaosRecoveryTests(unittest.TestCase):
     """Catalog runs with a Chaos Mesh fault: scenario rows, attribution and forced wrong actions."""
 
@@ -872,6 +934,26 @@ class AcceptanceOutcomeTests(unittest.TestCase):
         bundle = self.bundle(summaries=(("2026-11-14/S0-r1-120000z/summary.json", []),))
         self.assertEqual(summarize.acceptance_runs(bundle), [{}])
         self.assertEqual(summarize.outcome(bundle), "INCOMPLETE")
+
+    def test_scenario_claims_count_runs_and_keep_failed_or_incomplete_summaries(self):
+        summaries = [(f"2026-11-16/{name}/summary.json", summary) for name, summary in (
+            ("S8-r1-120000z", {"scenario": "S8", "passed": True}),
+            ("S8-r2-120000z", []),
+            ("S10-r1-120000z", {"scenario": "S10", "passed": False}),
+            ("S10-r2-120000z", {"scenario": "S10", "passed": True}),
+            ("S11a-r1-120000z", {"scenario": "S11a", "passed": True}),
+            ("S11b-r1-120000z", {"scenario": "S11b", "passed": True}),
+            ("S11c-r1-120000z", {"scenario": "S11c"}))]
+        bundle = self.bundle(summaries=summaries + [
+            ("drills/restore-abcd/summary.json", {"scenario": "S8", "passed": True})])
+        unrelated = self.bundle(summaries=summaries)
+        unrelated.entry["class"] = "distributed-scenario"
+        for derivation, expected in (("acceptance_s8_ratio", "1/2"), ("acceptance_s10_ratio", "1/2"),
+                                     ("acceptance_s11_ratio", "2/3")):
+            with self.subTest(derivation=derivation):
+                claim = {"derive": derivation, "bundles": ["dist"]}
+                self.assertEqual(summarize.derive(claim, [bundle]), expected)
+                self.assertEqual(summarize.DERIVATIONS[derivation]([unrelated]), "0/0")
 
 class CveGateOutcomeTests(unittest.TestCase):
     """A P5.02 round passes only when every gate proof it records holds."""

@@ -59,8 +59,8 @@ their source revision:
 <!-- END GENERATED:claim-c-agent-recorded -->
 
 <!-- BEGIN GENERATED:claim-c-agent-all -->
-> **C-AGENT-ALL:** Across every recorded agent-mode attempt, 25/40 reached RECOVERED.
-> Scope: Every committed agent bundle, failures included: deliberate negative tests (unreachable model server, missing model, a forced 1 s planning budget), runs on older revisions, and the 2026-11-12 catalog runs R2 and N1, which are unscored (labels pending), and the R1 run at b79fb5d on the connected lab as changed for the cartservice target. A run counts only when it passed expecting RECOVERED; the two runs that passed as an expected escalation (the forced budget run and N1 at dab3b3f) never recover and count as not recovered. Mostly one fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Lab approval pre-authorised before 4139385; from 4139385 automated auto-lab (automated-lab identity, no person), except the forced-budget run and both N1 runs, which asked for no approval (mode not-requested). One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 20 runs from 4afc879 onwards.
+> **C-AGENT-ALL:** Across every recorded agent-mode attempt, 26/45 reached RECOVERED.
+> Scope: Every committed agent bundle, failures included: deliberate negative tests, older revisions, and catalog runs with labels pending, so unscored. A recovery counts only when the run passed expecting recovery; expected escalations and the unhealthy and unavailable-evidence demonstrations count as not recovered. The cartservice C1 attempt FAILED after model abstention: safe escalation, zero Executor writes and administrator cleanup, not recovery. Mostly invalid shipping PORT faults where ROLLBACK is correct; the set also includes R2, N1 and Chaos Mesh N2. Earlier approval was pre-authorised or automated auto-lab, with no approval requested on expected escalations; one R1 run on 17 Nov 2026 SGT records a person approving interactively through approval_http (C-AGENT-HUMAN-APPROVAL). One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 25 later runs.
 <!-- END GENERATED:claim-c-agent-all -->
 
 [Testing](docs/testing.md) explains how to validate each mode and distinguish
@@ -149,7 +149,7 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-EXEC-REDELIVERY](docs/limitations.md#l-exec-redelivery): A replacement Executor without the ledger row reported CONFLICT for a write that was applied (defect, mitigated; planned P3.01, P4.01)
 - [L-CLOCK-ORDERING](docs/limitations.md#l-clock-ordering): Lifecycle ordering compared wall-clock timestamps written by different components (defect, mitigated; planned P3.03, P4.01)
 - [L-AGENT-JOURNAL](docs/limitations.md#l-agent-journal): Agent mode bypasses the durable Planner journal (defect, mitigated; planned P2.01, P3.07)
-- [L-AGENT-APPROVAL](docs/limitations.md#l-agent-approval): No live run yet shows a person approving through the authenticated API (defect, mitigated; planned P2.02, P2.03)
+- [L-AGENT-APPROVAL](docs/limitations.md#l-agent-approval): One person-approved live run; dashboard UI approval has not run live (defect, mitigated; planned P2.02, P2.03)
 - [L-RAW-LOGS-PROMPT](docs/limitations.md#l-raw-logs-prompt): Sentinel's planning prompts carry log text only cleaned and quoted, and the injection gate is a pattern list no live adversarial run has exercised (defect, mitigated; planned P2.04, P2.05, P4.04)
 - [L-FREE-TEXT-DECISION](docs/limitations.md#l-free-text-decision): The live diagnosis was model free text and the rollback choice had no change evidence (defect, mitigated; planned P2.05, P4.04)
 - [L-NO-LOGGING](docs/limitations.md#l-no-logging): Structured logs cover only the networked entrypoints, and no live run has collected them (defect, mitigated; planned P1.07, P3.02)

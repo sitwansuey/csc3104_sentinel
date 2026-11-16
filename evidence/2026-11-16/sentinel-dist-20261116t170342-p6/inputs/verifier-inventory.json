@@ -1,0 +1,21 @@
+{
+  "cluster_id": "sentinel-dist",
+  "services": {
+    "demo-api": {
+      "target": {
+        "cluster_id": "sentinel-dist",
+        "namespace": "sentinel-dist-workload",
+        "kind": "Deployment",
+        "name": "demo-api",
+        "uid": "b6ca7fef-d0a5-4742-9159-ed99050210a0"
+      },
+      "health_url": "http://demo-api.sentinel-dist-workload.svc:8080/readyz"
+    }
+  },
+  "declared_edges": [],
+  "dependency_inventory_complete": true,
+  "require_traces": false,
+  "max_collection_seconds": 20,
+  "max_health_age_seconds": 10,
+  "max_trace_age_seconds": 300
+}

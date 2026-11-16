@@ -8,6 +8,7 @@ model call.
 """
 from copy import deepcopy
 from datetime import timedelta
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -16,7 +17,8 @@ import unittest
 from unittest.mock import Mock, patch
 
 from agent.agent import ANALYSIS
-from agent.llm import (ModelOutputInvalid, ModelUnavailable, Ollama, PlanningBudgetExceeded)
+from agent.llm import (ModelOutputInvalid, ModelUnavailable, Ollama, PlanningBudgetExceeded, ask_with_provenance)
+from experiments.boutique.harness.durable_case import planning_status
 from experiments.validation.demo_offline_flow import OfflineFlow, fixture
 from runtime.guard_pipeline import process_guard_requests
 from runtime.planner_pipeline import process_planner_requests
@@ -290,6 +292,71 @@ class AgentJournalTests(unittest.TestCase):
         self.assertEqual(self.f.store.action(saved["proposal"]["action_id"])["proposal"], saved["proposal"])
         self.assertEqual(self.plan(), [])
 
+    def test_prompt_and_retrieval_provenance_replay_unchanged_after_restart(self):
+        self.agent = self.planner(bootstrap_live_tools=False)
+        self.script.overrides["Planner"] = lambda attempt: {"plan": {
+            "kind": "tool", "goal": "Read startup errors", "tool": "logs", "args": {"file": "logs.csv"}}}
+        prompts = []
+        original = ScriptedClient.ask
+
+        def recording(client, role, prompt, schema):
+            prompts.append(prompt)
+            return original(client, role, prompt, schema)
+
+        # Hash the retrieved content actually put in the prompt, including whitespace and Unicode.
+        passages = [{"id": "offline-runbook", "content": "Review recovery.\n  Preserve this space: \u00a3\n"}]
+        with patch.object(ScriptedClient, "ask", recording), \
+                patch("services.planner.agent_provider.retrieve_runbooks", return_value=passages), \
+                patch("runtime.planner_pipeline.record_message", side_effect=OSError("lost result")), \
+                self.assertRaises(OSError):
+            self.plan()
+        saved = self.saved()
+        status = planning_status(self.journal, self.incident["incident_id"])
+        usage = status["attempt_usage"][0]["usage"]
+        calls = usage["calls"]
+        self.assertEqual((saved["delivered"], saved["attempts"], usage["prompt_version"]),
+                         (0, 1, "agent-recovery-v1"))
+        self.assertEqual([call["role"] for call in calls], ["Planner", "Analyzer", "Reporter", "Recovery Planner"])
+        self.assertEqual([call["prompt_version"] for call in calls],
+                         ["rca-v1", "rca-v1", "rca-v1", "agent-recovery-v1"])
+        workflows = json.JSONDecoder().raw_decode(prompts[0])[0]["workflows"]
+        self.assertTrue(workflows)
+        self.assertEqual(calls[0]["retrieved_passages"], [
+            {"id": item["name"], "content_sha256": hashlib.sha256(json.dumps(item).encode("utf-8")).hexdigest()}
+            for item in workflows])
+        supplied = json.loads(prompts[-1].splitlines()[-1])["runbooks"]["kp"]
+        self.assertEqual(supplied, passages)
+        self.assertEqual(calls[-1]["retrieved_passages"], [
+            {"id": item["id"], "content_sha256": hashlib.sha256(item["content"].encode("utf-8")).hexdigest()}
+            for item in supplied])
+        self.assertEqual([call["retrieved_passages"] for call in calls[1:3]], [[], []])
+        self.assertEqual(usage["retrieved_passages"],
+                         calls[0]["retrieved_passages"] + calls[-1]["retrieved_passages"])
+        for call in calls:
+            for passage in call["retrieved_passages"]:
+                self.assertEqual(set(passage), {"id", "content_sha256"})
+        self.assertNotIn("Review recovery.", json.dumps(usage))
+        report_path = self.root / "agent/attempt-1/agent/report.json"
+        report_bytes = report_path.read_bytes()
+        report = json.loads(report_bytes)
+        self.assertEqual(report["provenance"], {"prompt_version": "rca-v1", "calls": [
+            {key: call[key] for key in ("role", "prompt_version", "retrieved_passages")}
+            for call in calls[:-1]]})
+        asked = list(self.script.asked)
+        self.restart()
+        # Replay must not even construct a client or retrieve changed runbooks.
+        self.agent.llm_factory = Mock(side_effect=AssertionError("replay called the model"))
+        with patch("services.planner.agent_provider.retrieve_runbooks",
+                   side_effect=AssertionError("replay retrieved new passages")):
+            self.assertEqual(self.plan(), [saved["proposal"]])
+        replay = planning_status(self.journal, self.incident["incident_id"])
+        self.assertEqual(replay, dict(status, delivered=1))
+        self.assertEqual(self.script.asked, asked)
+        self.assertEqual(self.agent.calls, [])
+        self.agent.llm_factory.assert_not_called()
+        self.assertEqual(report_path.read_bytes(), report_bytes)
+        self.assertEqual(self.f.store.action(saved["proposal"]["action_id"])["proposal"], saved["proposal"])
+
     def test_process_death_mid_diagnosis_expires_lease_and_fences_the_stale_attempt(self):
         tokens = []
         claim = self.journal.claim
@@ -396,6 +463,9 @@ class AgentJournalTests(unittest.TestCase):
         self.assertEqual((self.saved()["attempts"], self.saved()["error_code"]), (1, code))
         self.assertEqual(self.script.asked, [])
         self.assertEqual(self.agent.failures[-1]["code"], code)
+        usage = self.journal.attempt_usage(self.incident["incident_id"])
+        self.assertEqual((usage["prompt_version"], usage["calls"]), ("agent-recovery-v1", []))
+        self.assertEqual(usage["retrieved_passages"], [])
 
     def test_failed_telemetry_export_is_a_classified_retry(self):
         self.agent.telemetry = Mock(side_effect=OSError("disk full"))
@@ -491,6 +561,22 @@ class PlanningDeadlineTransportTests(unittest.TestCase):
             llm.ask("Analyzer", "{}", ANALYSIS)
         self.assertEqual(self.server.paths("/api/chat"), [])
         self.assertEqual(llm.calls, [])
+
+    def test_provenance_labels_every_failed_transport_retry_without_passage_text(self):
+        self.server.chat = Reply({"error": "temporarily unavailable"}, status=503)
+        llm = self.client()
+        passages = [{"id": "recovery", "content": "Check the healthy baseline.\n"}]
+        with self.assertRaises(ModelUnavailable):
+            ask_with_provenance(llm, "Analyzer", json.dumps({"runbooks": passages}), ANALYSIS,
+                                prompt_version="offline-v1", passages=passages)
+        self.assertEqual(len(self.server.paths("/api/chat")), 2)
+        self.assertEqual(len(llm.calls), 2)
+        expected = [{"id": "recovery", "content_sha256": hashlib.sha256(
+            passages[0]["content"].encode("utf-8")).hexdigest()}]
+        for call in llm.calls:
+            self.assertEqual((call["status"], call["prompt_version"], call["retrieved_passages"]),
+                             ("failed", "offline-v1", expected))
+            self.assertNotIn("Check the healthy baseline", json.dumps(call))
 
     def test_a_slow_reply_is_cut_at_the_planning_deadline_and_not_retried(self):
         answer = {"summary": "s", "complete": True, "confidence": 1, "next_steps": ""}

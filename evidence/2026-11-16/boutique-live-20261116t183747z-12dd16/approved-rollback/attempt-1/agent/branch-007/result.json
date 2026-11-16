@@ -1,0 +1,21 @@
+{
+  "state": "failure",
+  "outputs": [
+    {
+      "evidence_id": "branch-002",
+      "tool": "metrics",
+      "result": {
+        "file": "metrics.csv",
+        "rows_scanned": 21,
+        "rows_in_window": 18,
+        "rows_retained": 18,
+        "truncated": false,
+        "invalid_timestamps": 0,
+        "findings": [],
+        "total_findings": 0
+      },
+      "cache_hit": true,
+      "reused_by": "branch-007"
+    }
+  ]
+}

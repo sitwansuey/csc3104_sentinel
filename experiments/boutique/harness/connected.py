@@ -34,6 +34,7 @@ from experiments.boutique.harness.live import BoutiqueExperiment, CLIENT_IMAGE, 
 from experiments.boutique.harness.scenarios import CONNECTED_SCOPE
 from experiments.recovery.live import now, require, save, utc
 from services.executor.store import fingerprint
+from services.verifier.store import observation_seconds
 from services.observer.kubernetes import KubernetesEvidenceCollector, KubectlReader
 from services.verifier.core import inspect_dependencies
 from runtime.boutique_observability import emit_observation, service_inventory
@@ -343,6 +344,15 @@ class ConnectedBoutiqueExperiment(BoutiqueExperiment):
         return incident
 
     def verification_samples(self, execution):
+        if self.outcome_variant == "unavailable-evidence":
+            # Deliberately disable the collector, recording missing evidence rather than unhealthy defaults.
+            self.summary["outcome_injection"] = {"health_collection": "disabled until verification deadline"}
+            limit = time.monotonic() + observation_seconds(self.policy["health"]) + 5
+            while True:
+                yield {"at": utc(), "service": self.name, "collection_error": "LabHealthCollectionDisabled"}
+                if time.monotonic() >= limit:
+                    return
+                time.sleep(5)
         for sample in super().verification_samples(execution):
             journey = self.storefront.journey()
             self.record_shopping("verification", journey, incident_id=execution["incident_id"], action_id=execution["action_id"])
@@ -360,6 +370,54 @@ class ConnectedBoutiqueExperiment(BoutiqueExperiment):
                           desired_replicas=target["spec"].get("replicas", 1),
                           resource_version=metadata.get("resourceVersion"))
             yield sample
+
+    def complete_recovery(self, folder, proposal, execution, *, clock=None):
+        if not self.outcome_variant:
+            return super().complete_recovery(folder, proposal, execution, clock=clock)
+        require((self.cluster_id, self.context, self.namespace) == (
+            "sentinel-boutique-connected", "kind-sentinel-boutique-connected", "sentinel-boutique-connected")
+            and self.name in {"shippingservice", "cartservice"} and self.verification_scope == "shop",
+            "Outcome variants require the dedicated connected lab and shop verification")
+        if self.outcome_variant == "unavailable-evidence":
+            return super().complete_recovery(folder, proposal, execution, clock=clock)
+        require(self.outcome_variant == "unhealthy", "Unknown outcome variant")
+        # adservice is required by shop verification but neither target's gRPC probe calls it.
+        # Break it only after the restricted Executor has applied its approved repair.
+        def dependency():
+            return json.loads(self.kubectl("get", "deployment", "adservice", "-o", "json").stdout)
+
+        before = dependency()
+        require(readiness([before], self.name)["adservice"] is True, "The lab dependency must start healthy")
+        replicas, uid = before["spec"].get("replicas", 1), before["metadata"]["uid"]
+        injected = self.summary["outcome_injection"] = {
+            "dependency": "adservice", "uid": uid, "original_replicas": replicas,
+            "applied": False, "restored": False, "by": "lab administrator; outside Executor counters"}
+        save(folder / "outcome-dependency-before.json", before)
+        try:
+            self.kubectl("scale", "deployment/adservice", "--replicas=0", "--current-replicas=" + str(replicas),
+                         "--resource-version=" + before["metadata"]["resourceVersion"])
+            injected["applied"] = True
+            self.kubectl("rollout", "status", "deployment/adservice", "--timeout=90s", timeout=100)
+            down = dependency()
+            save(folder / "outcome-dependency-unhealthy.json", down)
+            require(down["metadata"]["uid"] == uid and down["spec"]["replicas"] == 0,
+                    "The lab dependency was not held at zero replicas")
+            return super().complete_recovery(folder, proposal, execution, clock=clock)
+        finally:
+            current = dependency()
+            require(current["metadata"]["uid"] == uid, "Lab dependency identity changed; refusing cleanup write")
+            count = current["spec"].get("replicas", 1)
+            require(count in (0, replicas), "Lab dependency replicas changed; refusing cleanup write")
+            if count == 0:
+                self.kubectl("scale", "deployment/adservice", "--replicas=" + str(replicas), "--current-replicas=0",
+                             "--resource-version=" + current["metadata"]["resourceVersion"])
+            self.kubectl("rollout", "status", "deployment/adservice", "--timeout=120s", timeout=160)
+            restored = dependency()
+            save(folder / "outcome-dependency-restored.json", restored)
+            injected["restored"] = (restored["metadata"]["uid"] == uid
+                                    and restored["spec"].get("replicas", 1) == replicas
+                                    and readiness([restored], self.name)["adservice"] is True)
+            require(injected["restored"], "Lab dependency cleanup did not restore healthy replicas")
 
     def close(self):
         if self.forward is not None:

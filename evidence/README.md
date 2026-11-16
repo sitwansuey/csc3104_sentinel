@@ -104,13 +104,13 @@ is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.
 <!-- BEGIN GENERATED:index -->
 | Class | Bundles | Recorded | Inferred | Superseded | Withdrawn |
 | --- | --- | --- | --- | --- | --- |
-| agent | 41 | 21 | 20 | 0 | 0 |
+| agent | 47 | 27 | 20 | 0 | 0 |
 | cert-lifecycle | 4 | 0 | 4 | 0 | 0 |
 | chaos-batch | 17 | 0 | 17 | 0 | 0 |
 | chaos-recovery | 25 | 25 | 0 | 1 | 0 |
 | connected-harness | 20 | 16 | 4 | 0 | 0 |
 | cve-gate | 4 | 0 | 4 | 0 | 0 |
-| distributed-acceptance | 15 | 13 | 2 | 0 | 0 |
+| distributed-acceptance | 16 | 14 | 2 | 0 | 0 |
 | distributed-scenario | 39 | 0 | 39 | 0 | 0 |
 | executor-admission | 1 | 0 | 1 | 0 | 0 |
 | executor-wedge | 31 | 0 | 31 | 0 | 0 |

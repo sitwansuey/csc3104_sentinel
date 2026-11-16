@@ -70,10 +70,15 @@
         "boutique-live-20261112t080534z-160519",
         "boutique-live-20261112t080756z-29fd09",
         "boutique-live-20261112t081032z-63d609",
-        "boutique-live-20261112t112406z-01cb56"
+        "boutique-live-20261112t112406z-01cb56",
+        "chaos-n2-agent-r1-29e41f8",
+        "boutique-live-20261116t174705z-aa3f81",
+        "boutique-live-20261116t175115z-3b106e",
+        "boutique-live-20261116t175656z-bdb808",
+        "boutique-live-20261116t182043z-1a0d96"
       ],
-      "scope_caveat": "Every committed agent bundle, failures included: deliberate negative tests (unreachable model server, missing model, a forced 1 s planning budget), runs on older revisions, and the 2026-11-12 catalog runs R2 and N1, which are unscored (labels pending), and the R1 run at b79fb5d on the connected lab as changed for the cartservice target. A run counts only when it passed expecting RECOVERED; the two runs that passed as an expected escalation (the forced budget run and N1 at dab3b3f) never recover and count as not recovered. Mostly one fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Lab approval pre-authorised before 4139385; from 4139385 automated auto-lab (automated-lab identity, no person), except the forced-budget run and both N1 runs, which asked for no approval (mode not-requested). One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 20 runs from 4afc879 onwards.",
-      "value": "25/40"
+      "scope_caveat": "Every committed agent bundle, failures included: deliberate negative tests, older revisions, and catalog runs with labels pending, so unscored. A recovery counts only when the run passed expecting recovery; expected escalations and the unhealthy and unavailable-evidence demonstrations count as not recovered. The cartservice C1 attempt FAILED after model abstention: safe escalation, zero Executor writes and administrator cleanup, not recovery. Mostly invalid shipping PORT faults where ROLLBACK is correct; the set also includes R2, N1 and Chaos Mesh N2. Earlier approval was pre-authorised or automated auto-lab, with no approval requested on expected escalations; one R1 run on 17 Nov 2026 SGT records a person approving interactively through approval_http (C-AGENT-HUMAN-APPROVAL). One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 25 later runs.",
+      "value": "26/45"
     },
     {
       "id": "C-AGENT-FAIL-CLOSED",
@@ -481,7 +486,7 @@
         "boutique-live-20261112t111640z-b8eaa6",
         "boutique-live-20261112t112846z-f1c4ed"
       ],
-      "scope_caveat": "Two runs; C1's labels are pending owner sign-off, so these are not scored trials. The first run, at b79fb5d, FAILED with only status FAILED and integration_error RuntimeError in its bundle: every check its summary.json lists passed, and it has no dashboard-validation.json. The reason, the harness's dashboard acceptance check ('Dashboard must show actual downstream shopping failures'), which still expected shipping's impact (home working), comes from the run's console output, an operator record that is not in the bundle. Every Sentinel check in it passed, including two RECOVERED rollbacks, the crash reconciliation without resubmission and the Guard's ROLLBACK_ALREADY_AT_BASELINE rejection with zero Executor patch attempts. The check was fixed in a932a5f, and the rerun at a932a5f passed every check. Both runs showed the impact the catalog predicts for C1: home, add to cart, cart and checkout all answered 500, so C1 stays the primary cart fault and C2 was not needed. Harness-authored proposals, no model; no agent-mode cartservice run has been made. Approval auto-lab (automated-lab identity, no person). One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: b79fb5d and a932a5f, clean trees, 2026-11-12 UTC.",
+      "scope_caveat": "Two runs; C1's labels are pending owner sign-off, so these are not scored trials. The first run, at b79fb5d, FAILED with only status FAILED and integration_error RuntimeError in its bundle: every check its summary.json lists passed, and it has no dashboard-validation.json. The reason, the harness's dashboard acceptance check ('Dashboard must show actual downstream shopping failures'), which still expected shipping's impact (home working), comes from the run's console output, an operator record that is not in the bundle. Every Sentinel check in it passed, including two RECOVERED rollbacks, the crash reconciliation without resubmission and the Guard's ROLLBACK_ALREADY_AT_BASELINE rejection with zero Executor patch attempts. The check was fixed in a932a5f, and the rerun at a932a5f passed every check. Both runs showed the impact the catalog predicts for C1: home, add to cart, cart and checkout all answered 500, so C1 stays the primary cart fault and C2 was not needed. These two runs used harness-authored proposals, no model; the later agent-mode C1 attempt escalated safely without recovery (C-AGENT-CART-C1). Approval auto-lab (automated-lab identity, no person). One Windows/amd64 host with Docker Desktop and kind (cluster kind-sentinel-boutique-connected); containers on one host are not separate machines. Provenance recorded: b79fb5d and a932a5f, clean trees, 2026-11-12 UTC.",
       "value": "1/2"
     },
     {
@@ -625,6 +630,67 @@
       ],
       "scope_caveat": "Eight runs on 13 Nov 2026 between 12:09 and 12:38 UTC: three of each pair and one Executor-kill variant of each. The pair labels in experiments/boutique/catalog.json are not signed off (labels pending), so these runs are checked against the pre-registered expectations but are not scored trials. Proposals came from the code rule provider with a trusted live-template read (no model), and every approval was auto-lab (automated-lab identity, no person decided). One Windows/amd64 host with Docker Desktop, one kind node (cluster kind-sentinel-boutique-connected) and one harness process that drove both incidents and verified one target at a time, so the pair timings do not measure independent workers or machines. In all four redis-pod+cart-config runs the Guard refused both repairs with DEPENDENCY_BLOCKED, the refusals named each other and the run stopped with DEPENDENCY_DEADLOCK and no write: the catalog accepts that as a safe stop, but it shows no ordered recovery (ordered_recovery_shown false), and none of the three storefront journeys taken after it passed (ShopOutcome FAILED). After scoring, the harness's administrator cleanup returned cartservice's C1 configuration to its baseline in each of those runs; that is lab cleanup, not a Sentinel repair, and the check recorded in those bundles still uses the older wording 'put the remaining faulted configuration back'. The dependency pair's kill variant stopped before any write, so there was nothing to kill and it shows nothing about reconciliation; only the independent pair's kill variant killed a worker. Whether a NotReady caller should block its callee's repair is still an owner decision (L-CALLER-BLOCKS-CALLEE-REPAIR). The eight earlier pair runs at 29e41f8 failed on a harness defect and are in evidence/exclusions.json. Provenance recorded: dca7369, clean tree, 2026-11-13 UTC.",
       "value": "shipping-config+cart-pod at dca7369 PASS x3: RECOVERED, ShopOutcome RECOVERED, Executor writes cartservice 1 and shippingservice 1, RESTART attributed, chaos cleaned up, labels pending; shipping-config+cart-pod with an Executor kill on shippingservice at dca7369 PASS: RECOVERED, ShopOutcome RECOVERED, Executor writes cartservice 1 and shippingservice 1, RESTART attributed, shippingservice worker killed after 1 write, reconciled APPLIED with 0 further writes, chaos cleaned up, labels pending; redis-pod+cart-config at dca7369 PASS x3: DEPENDENCY_DEADLOCK, ShopOutcome FAILED, Executor writes cartservice 0 and redis-cart 0, ordered recovery shown: no, chaos cleaned up, administrator restored cartservice to baseline after scoring (not a repair), labels pending; redis-pod+cart-config with an Executor kill on cartservice at dca7369 PASS: DEPENDENCY_DEADLOCK, ShopOutcome FAILED, Executor writes cartservice 0 and redis-cart 0, no cartservice write, so no worker was killed, ordered recovery shown: no, chaos cleaned up, administrator restored cartservice to baseline after scoring (not a repair), labels pending"
+    },
+    {
+      "id": "C-DISTRIBUTED-KIND-S8-0A33BCF",
+      "text": "Phase 6 deployed S8 (revocation mid-patch, seal, holder PATCH refused) passed in {value} runs",
+      "derive": "acceptance_s8_ratio",
+      "bundles": [
+        "sentinel-dist-20261116t170342-p6"
+      ],
+      "scope_caveat": "Invariants held in 5/5. Every holder PATCH was refused 422 after the seal; revoked actions made zero template writes. The audit maximum of 1 template write per action includes separately approved later incidents. Four kind nodes on one Docker host (shared kernel, clock and disk), synthetic planner, harness approvals; unscored, owner sign-off pending. Provenance recorded at deployed source 0a33bcf, captured 16 Nov 2026 UTC (17 Nov Singapore).",
+      "value": "5/5"
+    },
+    {
+      "id": "C-DISTRIBUTED-KIND-S11-0A33BCF",
+      "text": "Phase 6 deployed refusal checks S11a (Guard-refused), S11b (missing approval) and S11c (stale state) passed in {value} runs",
+      "derive": "acceptance_s11_ratio",
+      "bundles": [
+        "sentinel-dist-20261116t170342-p6"
+      ],
+      "scope_caveat": "One run each, all passed with every invariant holding and zero Executor writes for each refused action. S11b observed two leases without approval, then a separately approved action wrote once. S11a's audit extract was omitted by the per-file cap; its summary and records remain collected. Four kind nodes on one Docker host (shared kernel, clock and disk), synthetic planner, harness approvals; unscored, owner sign-off pending. Provenance recorded at deployed source 0a33bcf, captured 16 Nov 2026 UTC (17 Nov Singapore).",
+      "value": "3/3"
+    },
+    {
+      "id": "C-DISTRIBUTED-KIND-S10-0A33BCF",
+      "text": "Phase 6 deployed S10 (duplicate delivery of the same action) passed in {value} runs",
+      "derive": "acceptance_s10_ratio",
+      "bundles": [
+        "sentinel-dist-20261116t170342-p6"
+      ],
+      "scope_caveat": "Both runs remain in the denominator; invariants held in 2/2, one template write per run. S10-r1-170532z held at executor.before_submit: the original delivery was redelivered (attempt 2), but the peer found resourceVersion moved and returned CONFLICT; the Coordinator re-planned, the replacement action wrote, and the harness expectation failed. S10-r1-173528z held at executor.after_patch_before_save: the peer adopted the committed write with EVIDENCE_MATCH and no second PATCH. Run 2 was judged by the harness committed in b8e8c42 against the same deployed images from 0a33bcf. Four kind nodes on one Docker host (shared kernel, clock and disk), synthetic planner, harness approvals; unscored, owner sign-off pending. Provenance recorded at deployed source 0a33bcf, captured 16 Nov 2026 UTC (17 Nov Singapore).",
+      "value": "1/2"
+    },
+    {
+      "id": "C-AGENT-HUMAN-APPROVAL",
+      "text": "With a person approving interactively through the authenticated approval API, qwen3:14b agent R1 reached RECOVERED in {value} runs",
+      "derive": "interactive_approved_recoveries",
+      "bundles": [
+        "boutique-live-20261116t182043z-1a0d96"
+      ],
+      "scope_caveat": "First live run with a person approving: operator youzerwan typed the action ID; summary.json records human true, mode interactive and via approval_http. The model chose ROLLBACK for the invalid shipping PORT; one Executor write, RECOVERED. Dashboard UI approval has not run live. One run on one Windows/amd64 Docker host with the connected lab and qwen3:14b; R1 labels pending, so unscored. Provenance recorded: 19661f3, clean tree, 2026-11-16 UTC (17 Nov SGT).",
+      "value": "1/1"
+    },
+    {
+      "id": "C-AGENT-OUTCOME-VARIANTS",
+      "text": "Agent R1 negative outcome variants matched the expected Verifier outcome and Coordinator state in {value} runs",
+      "derive": "outcome_variant_matches",
+      "bundles": [
+        "boutique-live-20261116t175115z-3b106e",
+        "boutique-live-20261116t175656z-bdb808"
+      ],
+      "scope_caveat": "One unhealthy run ended NOT_RECOVERED / FAILED after the lab administrator scaled adservice to zero following the target rollback; one unavailable-evidence run ended UNKNOWN / NEEDS_REVIEW with health collection disabled until the deadline, not a network outage. Both acceptance runs PASS, with one Executor rollback write each; neither counts as recovered. Approval auto-lab, no person deciding. One Windows/amd64 Docker host, connected lab, qwen3:14b; labels pending, so unscored. Provenance recorded: f30b596, clean tree, 2026-11-16 UTC (17 Nov SGT).",
+      "value": "2/2"
+    },
+    {
+      "id": "C-AGENT-CART-C1",
+      "text": "Agent cartservice C1: {value}; safe escalation only",
+      "derive": "recovery_writes",
+      "bundles": [
+        "boutique-live-20261116t174705z-aa3f81"
+      ],
+      "scope_caveat": "One attempt, retained as FAILED: expected RECOVERED, but the model abstained after four completed calls, producing ESCALATE / NEEDS_REVIEW (ABSTAINED, no_decision). Per team decision D6 this is a safe escalation; it shows no agent recovery on cartservice. Zero Executor routes and writes; harness administrator cleanup is not recovery. Approval mode auto-lab was configured, with no repair reaching approval. One Windows/amd64 Docker host, connected lab, qwen3:14b; C1 labels pending, so unscored. Provenance recorded: f30b596, clean tree, 2026-11-16 UTC (17 Nov SGT).",
+      "value": "0/1 recovered, 0 Executor writes"
     }
   ]
 }

@@ -1,0 +1,105 @@
+[
+  {
+    "attempt": 1,
+    "call_id": 1,
+    "eval_duration_seconds": 12.705454,
+    "load_duration_seconds": 0.005986,
+    "model": "qwen3:14b",
+    "output_tokens": 216,
+    "planning_attempt": 1,
+    "prompt_characters": 9797,
+    "prompt_eval_duration_seconds": 3.618816,
+    "prompt_tokens": 3570,
+    "prompt_version": "rca-v1",
+    "retrieved_passages": [],
+    "role": "Analyzer",
+    "seconds": 16.403848400001152,
+    "status": "completed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 2,
+    "eval_duration_seconds": 112.393675,
+    "load_duration_seconds": 0.003732,
+    "model": "qwen3:14b",
+    "output_tokens": 1113,
+    "planning_attempt": 1,
+    "prompt_characters": 15992,
+    "prompt_eval_duration_seconds": 5.870815,
+    "prompt_tokens": 5069,
+    "prompt_version": "rca-v1",
+    "retrieved_passages": [
+      {
+        "content_sha256": "c3ddbc6a197681e509603771ed301e8271155fde0b24bb118a8da6efe7adba28",
+        "id": "multimodal_rca"
+      },
+      {
+        "content_sha256": "639659abc6805c31099ad2232a2f6daaa5488f49b60aaed8cb01bde374ac2ca3",
+        "id": "cpu_exhaustion"
+      }
+    ],
+    "role": "Planner",
+    "seconds": 118.5077547999972,
+    "status": "completed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 3,
+    "eval_duration_seconds": 14.71779,
+    "load_duration_seconds": 0.0341633,
+    "model": "qwen3:14b",
+    "output_tokens": 209,
+    "planning_attempt": 1,
+    "prompt_characters": 10882,
+    "prompt_eval_duration_seconds": 0.395301,
+    "prompt_tokens": 3770,
+    "prompt_version": "rca-v1",
+    "retrieved_passages": [],
+    "role": "Analyzer",
+    "seconds": 15.607745400000567,
+    "status": "completed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 4,
+    "eval_duration_seconds": 23.371622,
+    "load_duration_seconds": 0.003648,
+    "model": "qwen3:14b",
+    "output_tokens": 309,
+    "planning_attempt": 1,
+    "prompt_characters": 12693,
+    "prompt_eval_duration_seconds": 5.425134,
+    "prompt_tokens": 4123,
+    "prompt_version": "rca-v1",
+    "retrieved_passages": [],
+    "role": "Reporter",
+    "seconds": 28.978043099999923,
+    "status": "completed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 5,
+    "eval_duration_seconds": 17.089416,
+    "load_duration_seconds": 0.0031029,
+    "model": "qwen3:14b",
+    "output_tokens": 262,
+    "planning_attempt": 1,
+    "prompt_characters": 10240,
+    "prompt_eval_duration_seconds": 4.339076,
+    "prompt_tokens": 3646,
+    "prompt_version": "agent-recovery-v1",
+    "retrieved_passages": [
+      {
+        "content_sha256": "ee695a3fe86de107f83928612f9bfedaa893a20af52851bb35fff26609fb6ec6",
+        "id": "failed-rollout"
+      },
+      {
+        "content_sha256": "71fc9a2b439a85b6b4e973754bc6152f74fe43c5c9868cf4d79b1493bd356e6c",
+        "id": "pod-failure"
+      }
+    ],
+    "role": "Recovery Planner",
+    "seconds": 27.259092399999645,
+    "status": "completed"
+  }
+]

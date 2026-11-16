@@ -1,0 +1,62 @@
+[
+  {
+    "attempt": 1,
+    "call_id": 1,
+    "eval_duration_seconds": 15.408859,
+    "load_duration_seconds": 0.0036567,
+    "model": "qwen3:14b",
+    "output_tokens": 236,
+    "planning_attempt": 1,
+    "prompt_characters": 11748,
+    "prompt_eval_duration_seconds": 4.237175,
+    "prompt_tokens": 4267,
+    "prompt_version": "rca-v1",
+    "retrieved_passages": [],
+    "role": "Analyzer",
+    "seconds": 20.165884600002755,
+    "status": "completed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 2,
+    "eval_duration_seconds": 21.629171,
+    "load_duration_seconds": 0.0031476,
+    "model": "qwen3:14b",
+    "output_tokens": 310,
+    "planning_attempt": 1,
+    "prompt_characters": 13633,
+    "prompt_eval_duration_seconds": 5.118343,
+    "prompt_tokens": 4641,
+    "prompt_version": "rca-v1",
+    "retrieved_passages": [],
+    "role": "Reporter",
+    "seconds": 26.961316299999453,
+    "status": "completed"
+  },
+  {
+    "attempt": 1,
+    "call_id": 3,
+    "eval_duration_seconds": 16.802754,
+    "load_duration_seconds": 0.0031007,
+    "model": "qwen3:14b",
+    "output_tokens": 261,
+    "planning_attempt": 1,
+    "prompt_characters": 12197,
+    "prompt_eval_duration_seconds": 4.78823,
+    "prompt_tokens": 4394,
+    "prompt_version": "agent-recovery-v1",
+    "retrieved_passages": [
+      {
+        "content_sha256": "ee695a3fe86de107f83928612f9bfedaa893a20af52851bb35fff26609fb6ec6",
+        "id": "failed-rollout"
+      },
+      {
+        "content_sha256": "71fc9a2b439a85b6b4e973754bc6152f74fe43c5c9868cf4d79b1493bd356e6c",
+        "id": "pod-failure"
+      }
+    ],
+    "role": "Recovery Planner",
+    "seconds": 21.80289569999877,
+    "status": "completed"
+  }
+]

@@ -1,0 +1,232 @@
+{
+  "schema": "sentinel-dist-acceptance-run-v1",
+  "scenario": "S11b",
+  "title": "Missing approval on the deployed topology",
+  "fault": "withhold approval for two leases after the Guard asks for it, then authorise recovery",
+  "file_mode_counterpart": "deployed refusal",
+  "expect": "Guard ESCALATE with OPERATOR_APPROVAL_REQUIRED, 0 Executor writes while unapproved, then RECOVERED with exactly 1 Sentinel template write",
+  "repeat_index": 1,
+  "context": "kind-sentinel-dist",
+  "date": "2026-11-16",
+  "started_at": "2026-11-16T17:11:42.953937Z",
+  "ended_at": "2026-11-16T17:13:52.680975Z",
+  "duration_seconds": 146.1,
+  "fault_at": null,
+  "notes": {
+    "refusal": {
+      "incident_id": "INC-73707D4FE48C",
+      "action_id": "ACT-d21bb33270cdfd3be22beb30",
+      "verdict": "ESCALATE",
+      "reason_codes": [
+        "OPERATOR_APPROVAL_REQUIRED"
+      ],
+      "until": "2026-11-16T17:12:35.748944Z",
+      "observed_seconds": 31.232504399999016,
+      "executor_writes": 0
+    }
+  },
+  "harness_error": null,
+  "restore_error": null,
+  "terminal_in_time": true,
+  "states": [
+    "RECOVERED"
+  ],
+  "incidents": [
+    {
+      "incident_id": "INC-73707D4FE48C",
+      "state": "RECOVERED",
+      "opened_at": "2026-11-16T17:12:00.897715Z"
+    }
+  ],
+  "earlier_incidents": 2,
+  "settle": {
+    "settled": true,
+    "seconds": 21.9,
+    "target": [],
+    "open": [],
+    "leftovers": []
+  },
+  "invariants": [
+    {
+      "id": "I1",
+      "name": "At most one committed template write per action",
+      "passed": true,
+      "detail": "1 committed write(s) over 1 action(s)"
+    },
+    {
+      "id": "I2",
+      "name": "No template write after revocation unless surfaced for review",
+      "passed": true,
+      "detail": "0 revocation(s), no write after any"
+    },
+    {
+      "id": "I3",
+      "name": "Every incident terminal or reviewable within the deadline",
+      "passed": true,
+      "detail": "RECOVERED"
+    },
+    {
+      "id": "I4",
+      "name": "No delivery has two acknowledged results",
+      "passed": true,
+      "detail": "28 acknowledged command(s), one result each"
+    },
+    {
+      "id": "I5",
+      "name": "No poison loop (bounded attempts, at most two HTTP 400 refusals per command)",
+      "passed": true,
+      "detail": "at most 2 attempt(s) per command, 0 HTTP 400 result(s)"
+    },
+    {
+      "id": "I6",
+      "name": "No Executor ledger ends with a write in doubt",
+      "passed": true,
+      "detail": "4 ledger row(s), none in doubt"
+    },
+    {
+      "id": "X1",
+      "name": "Lease ownership exclusive",
+      "passed": true,
+      "detail": "12 delivery lease(s), each held by one identity at a time"
+    },
+    {
+      "id": "X2",
+      "name": "No secret in logs, configuration files or argv",
+      "passed": true,
+      "detail": "7 file(s) and 7 argv list(s) clean"
+    },
+    {
+      "id": "X3",
+      "name": "No acknowledged message lost",
+      "passed": true,
+      "detail": "28 acknowledged result(s) all recorded"
+    },
+    {
+      "id": "X4",
+      "name": "Transitions journal consistent with incidents and outbox",
+      "passed": true,
+      "detail": "12 transition(s) consistent"
+    },
+    {
+      "id": "I7",
+      "name": "At most one successful template PATCH per action in the API server audit log",
+      "passed": true,
+      "detail": "1 template PATCH(es) over 1 action(s); 0 fence or seal PATCH(es) and 0 denied change(s) not counted"
+    }
+  ],
+  "invariants_passed": true,
+  "expectation": {
+    "expect": "Guard ESCALATE with OPERATOR_APPROVAL_REQUIRED, 0 Executor writes while unapproved, then RECOVERED with exactly 1 Sentinel template write",
+    "met": true,
+    "failures": []
+  },
+  "passed": true,
+  "audit": {
+    "events": 366,
+    "effects": {
+      "request": 364,
+      "template_write": 2
+    },
+    "sentinel_template_writes_per_action": {
+      "ACT-9e6aa605e793aa9b006a4e26": 1
+    },
+    "max_template_writes_per_action": 1,
+    "sentinel_template_writes": 1,
+    "operator_template_writes": 1,
+    "sentinel_denials": {},
+    "unclassified": {
+      "sentinel": 0,
+      "operator": 0
+    }
+  },
+  "audit_lines_skipped": 0,
+  "audit_completeness": {
+    "complete": true,
+    "problems": [],
+    "files": 4,
+    "first_event_at": "2026-11-13T10:26:21.581188Z",
+    "window": [
+      "2026-11-16T17:11:41.846937Z",
+      "2026-11-16T17:13:52.759975Z"
+    ],
+    "generation": {
+      "before": 6,
+      "before_restore": 8,
+      "after": 8
+    }
+  },
+  "clock": {
+    "control_plane_minus_harness": [
+      {
+        "offset_seconds": -0.014,
+        "uncertainty_seconds": 0.093,
+        "at": "2026-11-16T17:11:42.681668Z"
+      },
+      {
+        "offset_seconds": -0.016,
+        "uncertainty_seconds": 0.09,
+        "at": "2026-11-16T17:13:51.500854Z"
+      }
+    ],
+    "fault_at_cluster_clock": null
+  },
+  "seal_path": null,
+  "seal": null,
+  "later_incidents": [],
+  "takeover_seconds": null,
+  "coordinator_recovery": null,
+  "operator_actions": [
+    {
+      "operator_action": "inject STARTUP_FAILURE=true",
+      "at": "2026-11-16T17:11:44.482164Z"
+    },
+    {
+      "operator_restore": false
+    },
+    {
+      "operator_action": "approve",
+      "action_id": "ACT-d21bb33270cdfd3be22beb30",
+      "at": "2026-11-16T17:12:37.575168Z",
+      "confirmed_by": "answer"
+    },
+    {
+      "operator_action": "approve",
+      "action_id": "ACT-9e6aa605e793aa9b006a4e26",
+      "at": "2026-11-16T17:12:52.575013Z",
+      "confirmed_by": "answer"
+    }
+  ],
+  "operator": {
+    "attempts_failed": 0,
+    "failures": [],
+    "outages": [],
+    "fatal": [],
+    "still_running": false
+  },
+  "read_outages": [],
+  "approval_attempts": [
+    {
+      "operation": "create",
+      "action_id": "ACT-d21bb33270cdfd3be22beb30",
+      "attempt": 1,
+      "sent_at": "2026-11-16T17:12:37.550775Z",
+      "fresh_port_forward": false,
+      "outcome": "answered"
+    },
+    {
+      "operation": "create",
+      "action_id": "ACT-9e6aa605e793aa9b006a4e26",
+      "attempt": 1,
+      "sent_at": "2026-11-16T17:12:52.555707Z",
+      "fresh_port_forward": false,
+      "outcome": "answered"
+    }
+  ],
+  "cleanup": {
+    "actions": [],
+    "problems": []
+  },
+  "synthetic_planner": true,
+  "git_revision": "0a33bcfab5bcb8a67b0e25d4cfe2250bf37ac027",
+  "limits": "Four kind nodes (containers) on one Docker host: separate network namespaces and kubelets, one shared kernel, clock and disk. Not separate machines. The Planner is the deterministic lab planner (synthetic proposals), and clock skew is injected by Chaos Mesh TimeChaos, not measured between hosts."
+}

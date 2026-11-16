@@ -1,0 +1,328 @@
+{
+  "schema": "sentinel-dist-acceptance-run-v1",
+  "scenario": "S10",
+  "title": "Concurrent duplicate action delivery to both Executors",
+  "fault": "hold the first Executor at executor.before_submit, partition it from the Coordinator until the same delivery reaches the other Executor at the same point, then release both",
+  "file_mode_counterpart": "deployed duplicate",
+  "expect": "same delivery and action held by both Executors, RECOVERED, exactly 1 Sentinel template write, the other Pod's PATCH refused (403, 409 or 422)",
+  "repeat_index": 1,
+  "context": "kind-sentinel-dist",
+  "date": "2026-11-16",
+  "started_at": "2026-11-16T17:05:32.332829Z",
+  "ended_at": "2026-11-16T17:07:36.122149Z",
+  "duration_seconds": 142.2,
+  "fault_at": "2026-11-16T17:06:03.069593Z",
+  "notes": {
+    "fault_point": "executor.before_submit",
+    "holder": "executor-b",
+    "chaos": [
+      {
+        "kind": "NetworkChaos",
+        "name": "s10-r1-duplicate",
+        "at": "2026-11-16T17:06:03.608577Z",
+        "targets": {
+          ".": [
+            {
+              "pod": "sentinel-executor-b-7b46d445db-ln7v7",
+              "uid": "e22b118d-58b0-4ac8-877d-da0835e8cfea"
+            }
+          ],
+          ".Target": [
+            {
+              "pod": "sentinel-coordinator-77f69bd4ff-hs7xt",
+              "uid": "7dfb4a09-3bc4-43b3-bd21-e2f8df828bdd"
+            }
+          ]
+        },
+        "confirmation": {
+          "desired_phase": "Run",
+          "records": [
+            {
+              "id": "sentinel-dist/sentinel-executor-b-7b46d445db-ln7v7",
+              "selector_key": ".",
+              "phase": "Injected"
+            },
+            {
+              "id": "sentinel-dist/sentinel-coordinator-77f69bd4ff-hs7xt",
+              "selector_key": ".Target",
+              "phase": "Injected"
+            }
+          ],
+          "confirmed_at": "2026-11-16T17:06:04.783905Z",
+          "waited_seconds": 1.2
+        },
+        "removed_at": "2026-11-16T17:06:32.302197Z"
+      }
+    ],
+    "duplicate": {
+      "first": {
+        "delivery_id": "5fbdbfe2f3834226a5f5d2f8f20cfc61",
+        "owner": "executor-b",
+        "attempts": 1,
+        "action_id": "ACT-8eb5b492014bae7e98403dfc"
+      },
+      "second": {
+        "delivery_id": "ea2e6f7ea1474382b1b8b9b1e2cfb357",
+        "owner": "executor-a",
+        "attempts": 1,
+        "action_id": "ACT-095048ac7623cb3dee50deca"
+      }
+    }
+  },
+  "harness_error": "AcceptanceError: The peer received a different delivery or action, not the held duplicate",
+  "restore_error": null,
+  "terminal_in_time": true,
+  "states": [
+    "RECOVERED"
+  ],
+  "incidents": [
+    {
+      "incident_id": "INC-14C592AE6A91",
+      "state": "RECOVERED",
+      "opened_at": "2026-11-16T17:05:51.057504Z"
+    }
+  ],
+  "earlier_incidents": 0,
+  "settle": {
+    "settled": true,
+    "seconds": 20.2,
+    "target": [],
+    "open": [],
+    "leftovers": []
+  },
+  "invariants": [
+    {
+      "id": "I1",
+      "name": "At most one committed template write per action",
+      "passed": true,
+      "detail": "1 committed write(s) over 1 action(s)"
+    },
+    {
+      "id": "I2",
+      "name": "No template write after revocation unless surfaced for review",
+      "passed": true,
+      "detail": "0 revocation(s), no write after any"
+    },
+    {
+      "id": "I3",
+      "name": "Every incident terminal or reviewable within the deadline",
+      "passed": true,
+      "detail": "RECOVERED"
+    },
+    {
+      "id": "I4",
+      "name": "No delivery has two acknowledged results",
+      "passed": true,
+      "detail": "13 acknowledged command(s), one result each"
+    },
+    {
+      "id": "I5",
+      "name": "No poison loop (bounded attempts, at most two HTTP 400 refusals per command)",
+      "passed": true,
+      "detail": "at most 2 attempt(s) per command, 0 HTTP 400 result(s)"
+    },
+    {
+      "id": "I6",
+      "name": "No Executor ledger ends with a write in doubt",
+      "passed": true,
+      "detail": "3 ledger row(s), none in doubt"
+    },
+    {
+      "id": "X1",
+      "name": "Lease ownership exclusive",
+      "passed": true,
+      "detail": "13 delivery lease(s), each held by one identity at a time"
+    },
+    {
+      "id": "X2",
+      "name": "No secret in logs, configuration files or argv",
+      "passed": true,
+      "detail": "7 file(s) and 7 argv list(s) clean"
+    },
+    {
+      "id": "X3",
+      "name": "No acknowledged message lost",
+      "passed": true,
+      "detail": "13 acknowledged result(s) all recorded"
+    },
+    {
+      "id": "X4",
+      "name": "Transitions journal consistent with incidents and outbox",
+      "passed": true,
+      "detail": "13 transition(s) consistent"
+    },
+    {
+      "id": "I7",
+      "name": "At most one successful template PATCH per action in the API server audit log",
+      "passed": true,
+      "detail": "1 template PATCH(es) over 1 action(s); 0 fence or seal PATCH(es) and 1 denied change(s) not counted"
+    }
+  ],
+  "invariants_passed": true,
+  "expectation": {
+    "expect": "same delivery and action held by both Executors, RECOVERED, exactly 1 Sentinel template write, the other Pod's PATCH refused (403, 409 or 422)",
+    "met": false,
+    "failures": [
+      "no overlapping delivery of the same action to both Executors was recorded",
+      "the single template write is not attributable to the duplicated action",
+      "no refused PATCH (403, 409 or 422) from the other Executor for the duplicated action"
+    ]
+  },
+  "passed": false,
+  "audit": {
+    "events": 365,
+    "effects": {
+      "denied": 1,
+      "request": 362,
+      "template_write": 2
+    },
+    "sentinel_template_writes_per_action": {
+      "ACT-095048ac7623cb3dee50deca": 1
+    },
+    "max_template_writes_per_action": 1,
+    "sentinel_template_writes": 1,
+    "operator_template_writes": 1,
+    "sentinel_denials": {
+      "system:serviceaccount:sentinel-dist:sentinel-executor patch deployments": 1
+    },
+    "unclassified": {
+      "sentinel": 0,
+      "operator": 0
+    }
+  },
+  "audit_lines_skipped": 0,
+  "audit_completeness": {
+    "complete": true,
+    "problems": [],
+    "files": 4,
+    "first_event_at": "2026-11-13T10:26:21.581188Z",
+    "window": [
+      "2026-11-16T17:05:31.223829Z",
+      "2026-11-16T17:07:36.212149Z"
+    ],
+    "generation": {
+      "before": 2,
+      "before_restore": 4,
+      "after": 4
+    }
+  },
+  "clock": {
+    "control_plane_minus_harness": [
+      {
+        "offset_seconds": -0.009,
+        "uncertainty_seconds": 0.099,
+        "at": "2026-11-16T17:05:32.048525Z"
+      },
+      {
+        "offset_seconds": -0.016,
+        "uncertainty_seconds": 0.093,
+        "at": "2026-11-16T17:07:34.935440Z"
+      }
+    ],
+    "fault_at_cluster_clock": "2026-11-16T17:06:03.060593Z"
+  },
+  "seal_path": null,
+  "seal": null,
+  "later_incidents": [],
+  "takeover_seconds": null,
+  "coordinator_recovery": null,
+  "operator_actions": [
+    {
+      "operator_action": "inject STARTUP_FAILURE=true",
+      "at": "2026-11-16T17:05:34.016282Z"
+    },
+    {
+      "operator_action": "remove chaos",
+      "kind": "NetworkChaos",
+      "name": "s10-r1-duplicate",
+      "at": "2026-11-16T17:06:32.302214Z"
+    },
+    {
+      "operator_action": "release fault point",
+      "identity": "executor-b",
+      "stem": "executor.before_submit",
+      "pod": "sentinel-executor-b-7b46d445db-ln7v7",
+      "at": "2026-11-16T17:06:32.904023Z",
+      "released_in_pod": "sentinel-executor-b-7b46d445db-ln7v7"
+    },
+    {
+      "operator_action": "release fault point",
+      "identity": "executor-a",
+      "stem": "executor.before_submit",
+      "pod": "sentinel-executor-a-6b7fdf7cfb-8fsj4",
+      "at": "2026-11-16T17:06:33.497904Z",
+      "released_in_pod": "sentinel-executor-a-6b7fdf7cfb-8fsj4"
+    },
+    {
+      "operator_restore": false
+    },
+    {
+      "operator_action": "approve",
+      "action_id": "ACT-8eb5b492014bae7e98403dfc",
+      "at": "2026-11-16T17:05:57.515407Z",
+      "confirmed_by": "answer"
+    },
+    {
+      "operator_action": "approve",
+      "action_id": "ACT-095048ac7623cb3dee50deca",
+      "at": "2026-11-16T17:06:25.927753Z",
+      "confirmed_by": "answer"
+    }
+  ],
+  "operator": {
+    "attempts_failed": 0,
+    "failures": [],
+    "outages": [],
+    "fatal": [],
+    "still_running": false
+  },
+  "read_outages": [],
+  "approval_attempts": [
+    {
+      "operation": "create",
+      "action_id": "ACT-8eb5b492014bae7e98403dfc",
+      "attempt": 1,
+      "sent_at": "2026-11-16T17:05:55.445612Z",
+      "fresh_port_forward": false,
+      "outcome": "answered"
+    },
+    {
+      "operation": "create",
+      "action_id": "ACT-095048ac7623cb3dee50deca",
+      "attempt": 1,
+      "sent_at": "2026-11-16T17:06:25.891310Z",
+      "fresh_port_forward": false,
+      "outcome": "answered"
+    }
+  ],
+  "cleanup": {
+    "actions": [
+      {
+        "operator_action": "remove chaos",
+        "kind": "NetworkChaos",
+        "name": "s10-r1-duplicate",
+        "at": "2026-11-16T17:06:32.302214Z"
+      },
+      {
+        "operator_action": "release fault point",
+        "identity": "executor-b",
+        "stem": "executor.before_submit",
+        "pod": "sentinel-executor-b-7b46d445db-ln7v7",
+        "at": "2026-11-16T17:06:32.904023Z",
+        "released_in_pod": "sentinel-executor-b-7b46d445db-ln7v7"
+      },
+      {
+        "operator_action": "release fault point",
+        "identity": "executor-a",
+        "stem": "executor.before_submit",
+        "pod": "sentinel-executor-a-6b7fdf7cfb-8fsj4",
+        "at": "2026-11-16T17:06:33.497904Z",
+        "released_in_pod": "sentinel-executor-a-6b7fdf7cfb-8fsj4"
+      }
+    ],
+    "problems": []
+  },
+  "synthetic_planner": true,
+  "git_revision": "0a33bcfab5bcb8a67b0e25d4cfe2250bf37ac027",
+  "limits": "Four kind nodes (containers) on one Docker host: separate network namespaces and kubelets, one shared kernel, clock and disk. Not separate machines. The Planner is the deterministic lab planner (synthetic proposals), and clock skew is injected by Chaos Mesh TimeChaos, not measured between hosts."
+}

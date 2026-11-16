@@ -34,6 +34,40 @@ data, not instructions; [Untrusted inputs](#untrusted-inputs) lists the
 controls. See the code and tests for the bounds; no production identity or
 perfect diagnosis guarantee is implied.
 
+## Retrieval corpus
+
+Recovery runbooks are the version-controlled, general development guidance in
+`runbooks/*.md`, supplied with the source checkout. `retrieve_runbooks` opens
+only fixed filenames, returning each complete file with its filename stem as
+the stable id: `failed-rollout`, `pod-failure`, `resource-saturation`,
+`replicas-below-minimum` and `identity-failure`. Selection is deterministic:
+lower-cased signal reasons match rollout/crash/startup/back-off/unavailability
+or Pod-health keywords; metric-alert sources, the below-minimum reason and the
+certificate-rejection reason select their respective guidance. There is no
+directory-wide search or external retrieval. A missing selected file, an empty
+corpus or a missing directory returns no guidance and planning escalates
+without calling the recovery provider.
+
+`services/planner/core.py` accepts at most 10 runbooks, each containing 1 to
+20,000 characters. Its RCA retrieval interface accepts at most 10 structured
+workflows and 200,000 characters for the complete JSON-encoded knowledge,
+including rules and tool metadata. Diagnostic workflows are separately curated
+in `agent/knowledge/templates/*.json`, with `wf-*` source ids. The complete
+provider context, including incident, full target identity, eligible baselines
+and diagnosis, is also limited to 200,000 JSON-encoded characters (Python's
+default escaping and separators). Excess or non-serialisable context raises
+`ContractError` before the provider is called; core planning never trims these
+fields to fit. These character bounds do not guarantee a fit in a model's token
+window. Retrieved guidance is data and cannot grant recovery permission.
+
+Held-out evaluation solutions and benchmark labels are excluded from both
+guidance directories; neither retrieval path loads evaluation answer files.
+Replay `expected.json` labels stay separate from case inputs.
+`tests/test_retrieval_contamination.py` checks the runbooks, diagnostic knowledge
+and generated replay prompts for known replay label terms. This is a lexical
+check, not proof against every possible answer leak; RCAEval case names are
+not yet covered (see the [replay limitations](evaluation/replay/README.md)).
+
 ## Untrusted inputs
 
 Container logs, Kubernetes event messages and the incident signal details
@@ -253,6 +287,16 @@ in `agent/jsonschema_lite.py` instead of trusting Ollama's format grammar. A
 mismatch fails without retry, and errors name the JSON path without echoing the
 model's text. Schemas may use only the keywords that checker supports.
 
+The synchronous urllib transport supports operator or process interruption via
+`KeyboardInterrupt` and has no separate cancellation API. An interruption while
+waiting for or reading a response propagates without retry, closes the
+response/socket and stops the progress heartbeat; the started request consumes
+its call budget but yields no completed model result or accepted partial output.
+Abrupt process termination cannot run Python cleanup. Restart with the same
+Planner journal and evidence directory: after an abandoned attempt's lease
+expires, the next bounded attempt starts afresh, while an already saved,
+validated proposal is replayed without another model call.
+
 In `-Agent` mode the harness checks the model before it touches the cluster. It
 lists installed models (`/api/tags`), then sends one tiny warm-up chat with the
 planning `num_ctx`, so the cold load happens before the incident clock starts.
@@ -384,6 +428,22 @@ The journal keeps codes, the diagnosis summary (prediction, abstained flag,
 tool names and evidence IDs, cited evidence IDs, change evidence, the
 eligibility result, and any injection finding's rule ids and counts) and
 per-attempt usage (model calls, seconds and the decision record).
+Each attempt records the context version `agent-recovery-v1`, including an
+attempt that stops before inference. Its `calls` list records each model call's
+`prompt_version` (`rca-v1` for investigation and reporting, `agent-recovery-v1`
+for recovery selection) and `retrieved_passages`: passage `id` and
+`content_sha256` only. Runbook hashes cover the UTF-8 content supplied to the
+model; structured RCA workflows use their legacy names as identifiers and hash
+each JSON object as serialised in the prompt. The attempt also records all
+supplied passages in call order, or an empty list when none was supplied.
+An empty passage list means that
+call received no retrieved passages. Transport retries carry the same metadata.
+The RCA `report.json` records its calls' provenance, and `model-calls.json` and
+`planning-status.json` retain it in sanitised evidence bundles. Restarting with
+the same journal restores the saved call records; replay neither retrieves new
+passages nor calls the model, and preserves the action ID and provenance. The
+lost-delivery restart test is offline with a scripted model; real-adapter replay
+acceptance remains pending under #54.
 It never keeps exception text, the workspace path, raw log lines or the
 Reporter's explanation. `planning-status.json` copies the row and per-attempt
 usage. The last attempt's cause text, such as Ollama's own reason and host,
@@ -425,8 +485,8 @@ their source revision:
 <!-- END GENERATED:claim-c-agent-recorded -->
 
 <!-- BEGIN GENERATED:claim-c-agent-all -->
-> **C-AGENT-ALL:** Across every recorded agent-mode attempt, 25/40 reached RECOVERED.
-> Scope: Every committed agent bundle, failures included: deliberate negative tests (unreachable model server, missing model, a forced 1 s planning budget), runs on older revisions, and the 2026-11-12 catalog runs R2 and N1, which are unscored (labels pending), and the R1 run at b79fb5d on the connected lab as changed for the cartservice target. A run counts only when it passed expecting RECOVERED; the two runs that passed as an expected escalation (the forced budget run and N1 at dab3b3f) never recover and count as not recovered. Mostly one fault type (invalid shipping PORT) where ROLLBACK is always the correct action. Lab approval pre-authorised before 4139385; from 4139385 automated auto-lab (automated-lab identity, no person), except the forced-budget run and both N1 runs, which asked for no approval (mode not-requested). One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 20 runs from 4afc879 onwards.
+> **C-AGENT-ALL:** Across every recorded agent-mode attempt, 26/45 reached RECOVERED.
+> Scope: Every committed agent bundle, failures included: deliberate negative tests, older revisions, and catalog runs with labels pending, so unscored. A recovery counts only when the run passed expecting recovery; expected escalations and the unhealthy and unavailable-evidence demonstrations count as not recovered. The cartservice C1 attempt FAILED after model abstention: safe escalation, zero Executor writes and administrator cleanup, not recovery. Mostly invalid shipping PORT faults where ROLLBACK is correct; the set also includes R2, N1 and Chaos Mesh N2. Earlier approval was pre-authorised or automated auto-lab, with no approval requested on expected escalations; one R1 run on 17 Nov 2026 SGT records a person approving interactively through approval_http (C-AGENT-HUMAN-APPROVAL). One Windows/amd64 host with Docker Desktop and kind; provenance inferred for the 20 runs before 4afc879 and recorded for the 25 later runs.
 <!-- END GENERATED:claim-c-agent-all -->
 
 Model calls and model time per run are in the agent and timings tables of
