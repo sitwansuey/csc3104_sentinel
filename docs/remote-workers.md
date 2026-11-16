@@ -161,7 +161,7 @@ executor-a's lease and the run failed; there was still one write.
    closed read-only by its own sweep from live state before each claim
    ([settle](distributed-model.md#crashed-executors-settle-their-own-ledger-p304)).
 
-Tests (offline; not yet run live): in `tests/test_remote_workers.py`, a
+The loop was first seen live (S2 r1 of [distributed acceptance](distributed-acceptance.md)); the fix is covered offline. In `tests/test_remote_workers.py`, a
 Coordinator that answers every result with 403 `not_lease_owner` makes an
 Executor, a Planner and a Guard (whose re-sent result is refused) release
 the result once and go on claiming with no further post, and the
@@ -185,9 +185,12 @@ check and the bound. See
 Use one process per worker state directory and persist that directory on its own
 volume. SIGTERM stops new polling, and the in-flight bounded component step can
 finish. Give the process enough termination time for its configured model/read
-timeout. A killed process resumes from its journals. Network leases are not
-cross-host write fences: multiple Executor hosts still need #18's ownership
-acceptance. Retain an uncertain Executor ledger/locks rather than starting a
+timeout. A killed process resumes from its journals. A network lease is not a
+write fence on its own. The Coordinator gives each workload one Executor owner
+at a time with an ownership epoch, and a withdrawn command is sealed before
+another Executor acts ([L-NO-FENCING](limitations.md#l-no-fencing)). That has run
+on the `sentinel-dist` lab, whose four nodes share one Docker host, not on
+separate machines ([L-SINGLE-HOST-DISTRIBUTION](limitations.md#l-single-host-distribution)). Retain an uncertain Executor ledger/locks rather than starting a
 replacement host with an empty ledger. Authorization revoked after the final
 lookup can still race with the Kubernetes request already being submitted.
 
@@ -244,6 +247,13 @@ its own state directory, and these additional fields:
   }
 }
 ```
+
+That example is generic. The `sentinel-dist` manifests differ: the Coordinator
+is `sentinel-coordinator.sentinel-dist.svc`, `cluster_id` is `sentinel-dist`,
+`context` is `kind-sentinel-dist`, `server_dry_run` is false, `fence_after_seconds`
+is 30. Delivery and approval tokens come from the Pod's own Secret;
+Kubernetes access uses its projected ServiceAccount token through
+`/kube/kubeconfig` (see `deploy/sentinel/sentinel-dist/executor-a.yaml`).
 
 Guard uses `guard-1`/`SENTINEL_APPROVAL_GUARD_TOKEN` and read-only Kubernetes
 credentials; `allowed_targets` is required only by Executor. Remote dependency
@@ -508,7 +518,7 @@ path, the injection gate, vocabulary, citation and eligibility checks end in
 their fixed escalations, `/readyz` follows both the skew bound and the
 preflight, and one test runs the worker as its own OS process with a loopback
 Coordinator, the file test cluster and `tests/support/fake_ollama.py`, then
-runs it again and sees no second model call. That is one host. No live model, container or cluster has run agent mode remotely.
+runs it again and sees no second model call. That is one host. The recorded live remote agent-mode Planner check is the container run described under [the worker image](#worker-image). No remote agent-mode Planner run in a cluster Pod is recorded; `planner-agent.yaml` is not applied by default.
 
 ## Probes, the deterministic planner and lab runs
 
@@ -612,12 +622,54 @@ needs read-only `get` on its target Deployment. Keep Guard/Verifier Kubernetes a
 reuse `executor-rbac.yaml` and Executor packaging for writes. Coordinator's
 image/Service and optional Observer composition are provided. The complete
 rollout, every worker as its own Deployment with its own Secret and PVC on a
-four-node kind lab, is written for P4.01 (`deploy/sentinel/sentinel-dist`,
-[distributed acceptance](distributed-acceptance.md)): the deterministic
+four-node kind lab, is `deploy/sentinel/sentinel-dist`
+([distributed acceptance](distributed-acceptance.md)): the deterministic
 Planner there mounts no token, and the Guard and Executors run kubectl with
-an in-Pod kubeconfig that names their projected token file. It is tested
-offline only, so a live rollout, restricted identity evidence, multi-host
-ownership and owner release sign-off remain #62/#63 acceptance work.
+an in-Pod kubeconfig that names their projected token file. It has been
+deployed and run live on one Docker host (scenarios S0-S9, unscored, owner
+sign-off pending). Separate physical machines remain a limitation
+([L-SINGLE-HOST-DISTRIBUTION](limitations.md#l-single-host-distribution)).
+
+### Upgrade and restart an Executor worker on sentinel-dist
+
+Each Executor (`sentinel-executor-a` on node a, `sentinel-executor-b` on node b)
+is a one-replica Deployment with the `Recreate` strategy, a ReadWriteOnce PVC
+for its state directory (`executor.db`, locks, `transport.db`) and the image
+`sentinel-worker:local` with `imagePullPolicy: Never`. The tag does not change
+when you rebuild, so loading a new image does not by itself start it; restart
+the Deployment. The PVC and the ledger survive, and a restarted Executor
+attempts to settle rows it left in doubt from live state before it claims again
+([Delivery and restart](#delivery-and-restart)). Do not delete the PVC, and do
+not replace an Executor with an empty ledger. Replace one Executor at a time,
+and not while the lab run harness is running.
+
+```powershell
+docker build -f deploy/docker/worker.Dockerfile -t sentinel-worker:local .
+kind load docker-image sentinel-worker:local --name sentinel-dist
+kubectl --context kind-sentinel-dist --namespace sentinel-dist rollout restart deployment/sentinel-executor-a
+kubectl --context kind-sentinel-dist --namespace sentinel-dist rollout status deployment/sentinel-executor-a --timeout=180s
+kubectl --context kind-sentinel-dist --namespace sentinel-dist get pods -o wide
+```
+
+Repeat with `sentinel-executor-b` once the first is Ready. To restart without
+a new image, run only the `rollout restart` and `rollout status` lines. To
+change an Executor's manifest or configuration, edit
+`deploy/sentinel/sentinel-dist/executor-a.yaml` (or `executor-b.yaml`) and
+apply that file to the existing lab:
+
+```powershell
+kubectl --context kind-sentinel-dist --namespace sentinel-dist apply --filename deploy/sentinel/sentinel-dist/executor-a.yaml
+```
+
+Then run the `rollout restart` and `rollout status` lines above for that
+Executor so it reloads `worker.json` at startup. Retain its existing PVC and
+`state_directory`. The harness's `deploy` command is for a fresh lab: it
+creates new Secrets and fails if those Secrets already exist (step 4 of the
+[live recipe](distributed-acceptance.md#live-recipe)). Every kubectl command
+above names `--context kind-sentinel-dist`. The harness itself kills an
+Executor Pod with Chaos Mesh and a Coordinator Pod with `kubectl delete pod`
+(scenarios S1b and S5); `rollout restart` is plain kubectl and is not part of
+a recorded run.
 
 ## Worker image
 
@@ -703,4 +755,4 @@ kubeconfig whose API server address the container can also reach.
 Containers on one Docker host are still not separate machines. The P4.01
 manifests take the other route, every worker in its own Pod on the
 `sentinel-dist` lab ([distributed acceptance](distributed-acceptance.md)),
-with the deterministic Planner by default; no Pod from them has run.
+with the deterministic Planner by default; those Pods have run live ([results](distributed-acceptance.md#results-p401)).
