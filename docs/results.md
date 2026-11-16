@@ -347,20 +347,20 @@ with these limits:
   from the one harness process). See [dual-fault.md](dual-fault.md).
 
 <!-- BEGIN GENERATED:latency -->
-- agent: 41 runs, 28 PASS; stopped at: planning x11; verification x2.
+- agent: 44 runs, 30 PASS; stopped at: planning x12; verification x2.
 - harness: 20 runs, 18 PASS; stopped at: after_recovery x1; decision x1.
 
 | Mode | Stage | n | Median s | p90 s | Min s | Max s | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| agent | detection: start -> incident observed | 40 | 7.3 | 9.7 | 5.0 | 10.2 | bundle; start: first failing snapshot x20, injection x20 |
-| agent | planning: incident -> last planning record | 22 | 27.7 | 57.9 | 16.5 | 76.2 | bundle + run folder |
-| agent | model calls: sum per run (part of planning) | 29 | 43.1 | 66.6 | 21.9 | 109.3 | bundle |
-| agent | Guard: planning end -> ALLOW (incl. lab approval) | 19 | 0.7 | 0.9 | 0.2 | 1.0 | bundle + run folder |
-| agent | incident -> Guard ALLOW (planning + Guard) | 27 | 44.3 | 76.9 | 23.3 | 355.8 | bundle |
-| agent | execution: ALLOW -> Executor result | 27 | 0.7 | 0.8 | 0.5 | 0.8 | bundle |
-| agent | verification: Executor result -> outcome window end | 27 | 43.3 | 55.2 | 8.0 | 62.5 | bundle |
-| agent | fault to repair: start -> Executor result | 27 | 52.3 | 84.8 | 31.5 | 363.7 | bundle; start: first failing snapshot x13, injection x14 |
-| agent | total: start -> outcome window end | 27 | 85.7 | 147.4 | 56.9 | 407.0 | bundle; start: first failing snapshot x13, injection x14 |
+| agent | detection: start -> incident observed | 43 | 7.3 | 9.8 | 5.0 | 10.2 | bundle; start: first failing snapshot x20, injection x23 |
+| agent | planning: incident -> last planning record | 24 | 28.6 | 67.1 | 16.5 | 208.4 | bundle + run folder |
+| agent | model calls: sum per run (part of planning) | 31 | 43.3 | 66.6 | 21.9 | 206.8 | bundle |
+| agent | Guard: planning end -> ALLOW (incl. lab approval) | 21 | 0.7 | 1.0 | 0.2 | 1.5 | bundle + run folder |
+| agent | incident -> Guard ALLOW (planning + Guard) | 29 | 45.8 | 111.8 | 23.3 | 355.8 | bundle |
+| agent | execution: ALLOW -> Executor result | 29 | 0.7 | 0.8 | 0.5 | 0.8 | bundle |
+| agent | verification: Executor result -> outcome window end | 29 | 43.4 | 62.5 | 8.0 | 316.8 | bundle |
+| agent | fault to repair: start -> Executor result | 29 | 53.7 | 119.6 | 31.5 | 363.7 | bundle; start: first failing snapshot x13, injection x16 |
+| agent | total: start -> outcome window end | 29 | 100.5 | 232.6 | 56.9 | 534.9 | bundle; start: first failing snapshot x13, injection x16 |
 | harness | detection: start -> incident observed | 20 | 7.3 | 7.6 | 5.1 | 9.7 | bundle; start: first failing snapshot x4, injection x16 |
 | harness | planning: incident -> last planning record | 16 | 3.0 | 4.2 | 2.4 | 4.4 | bundle |
 | harness | model calls: sum per run (part of planning) | 0 | n/a | n/a | n/a | n/a | - |
@@ -388,10 +388,10 @@ load during a run has been measured with that transport.
 <!-- BEGIN GENERATED:model-calls -->
 | Mode | Measure | n | Median s | p90 s | Max s |
 | --- | --- | --- | --- | --- | --- |
-| agent | model time per run, warm runs | 20 | 26.7 | 56.8 | 70.1 |
+| agent | model time per run, warm runs | 22 | 27.4 | 65.1 | 206.8 |
 | agent | model time per run, cold runs | 1 | 43.1 | 43.1 | 43.1 |
 | agent | model time per run, unclassified runs | 8 | 50.3 | 109.3 | 109.3 |
-| agent | one call, warm | 74 | 8.4 | 18.5 | 25.0 |
+| agent | one call, warm | 86 | 8.7 | 21.0 | 118.5 |
 | agent | one call, cold | 2 | 32.5 | 41.1 | 41.1 |
 | agent | one call, unclassified | 33 | 11.2 | 28.9 | 46.3 |
 | agent | model load time of cold calls | 2 | 21.1 | 25.6 | 25.6 |
