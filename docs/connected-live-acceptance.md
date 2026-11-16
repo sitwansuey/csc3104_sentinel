@@ -63,3 +63,22 @@ evidence review, prompt/context provenance and component-owner acceptance on
 the same revision remain necessary before closing #56 or #74. Catalog labels
 remain unscored until their owners sign them off. These commands do not claim
 protected traffic; that requires the separate protected recovery acceptance.
+
+## Live results (17 Nov 2026)
+
+Four agent runs on the connected lab, one Docker host, qwen3:14b; recorded
+16 Nov UTC / 17 Nov SGT. Scenario labels remain pending, so all are unscored.
+
+| Run | Bundle | Result |
+| --- | --- | --- |
+| R1, interactive approval | [boutique-live-20261116t182043z-1a0d96](../evidence/2026-11-16/boutique-live-20261116t182043z-1a0d96/summary.json) | First live run with a person approving: youzerwan typed the action ID; `human=true`, `mode=interactive`, `via=approval_http`; ROLLBACK, RECOVERED, PASS. |
+| R1, unhealthy | [boutique-live-20261116t175115z-3b106e](../evidence/2026-11-16/boutique-live-20261116t175115z-3b106e/summary.json) | Auto-lab approval; ROLLBACK, NOT_RECOVERED, Coordinator FAILED; matched the expected negative outcome, acceptance PASS. |
+| R1, unavailable-evidence | [boutique-live-20261116t175656z-bdb808](../evidence/2026-11-16/boutique-live-20261116t175656z-bdb808/summary.json) | Auto-lab approval; ROLLBACK, UNKNOWN, Coordinator NEEDS_REVIEW; matched the expected negative outcome, acceptance PASS. |
+| Cartservice C1 | [boutique-live-20261116t174705z-aa3f81](../evidence/2026-11-16/boutique-live-20261116t174705z-aa3f81/summary.json) | Model abstained after four completed calls: ESCALATE, NEEDS_REVIEW, zero Executor writes; administrator cleanup; expected RECOVERED, so FAILED. |
+
+Claims: C-AGENT-HUMAN-APPROVAL **1/1** person-approved recovery;
+C-AGENT-OUTCOME-VARIANTS **2/2** matched negative outcomes;
+C-AGENT-CART-C1 **0/1 recovered, 0 Executor writes**. The failed cart attempt
+stays in the denominator and, per D6, supports safe escalation only.
+Dashboard UI approval has not run live. Each run's `model-calls.json` records
+`prompt_version` and retrieved runbook IDs with SHA-256 content hashes (#54).

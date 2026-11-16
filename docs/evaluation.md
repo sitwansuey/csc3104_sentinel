@@ -202,6 +202,13 @@ Guard rejection runs. Per-run tables, with every bundle id, are in
 [results](results.md); the scenarios are described in [Chaos Mesh](chaos.md)
 and [two simultaneous faults](dual-fault.md).
 
+The [17 Nov live results](connected-live-acceptance.md#live-results-17-nov-2026)
+add one person-approved R1 recovery (`C-AGENT-HUMAN-APPROVAL`), two expected
+negative outcomes (`C-AGENT-OUTCOME-VARIANTS`) and a failed agent C1 recovery
+that escalated safely with zero Executor writes (`C-AGENT-CART-C1`, D6).
+All remain unscored; the negative outcomes and failed C1 stay in recovery
+denominators without counting as recoveries.
+
 <!-- BEGIN GENERATED:evaluation-live -->
 **Live recovery runs by class.** PASS means the run's own checks passed; an expected escalation passes without a repair. Only these classes are counted here and in the live-run lines of the threats to validity; current bundles of other classes, counted in [runs by class](results.md#runs-by-class) only: cert-lifecycle x4, cve-gate x4, executor-admission x1, executor-wedge x31, kind-lab-session x3, observer-acceptance x3, protected-recovery x9, scale-recovery x4, ui-session x7, worker-container x2.
 
