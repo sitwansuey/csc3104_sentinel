@@ -1,0 +1,2792 @@
+{
+  "schema_version": "1.0",
+  "suite_version": "guard-cases-v1",
+  "suite_sha256": "659ceed41a8f0b1448df9cca67498376a51a6c143d73c6cf1a406bd46e496273",
+  "status": "PRELIMINARY_NOT_FROZEN",
+  "release_prerequisite": "GitHub issue #63 freeze conditions are not met (no_manifest); rerun on the accepted frozen release before final scoring.",
+  "release": {
+    "status": "PRELIMINARY_NOT_FROZEN",
+    "reason": "no_manifest",
+    "freeze_issue": 63,
+    "manifest": null
+  },
+  "evidence_kind": "synthetic_fixture",
+  "started_at": "2026-11-16T19:31:39.711354Z",
+  "generated_at": "2026-11-16T19:31:41.351272+00:00",
+  "provenance": {
+    "schema": "sentinel-provenance-v1",
+    "source_revision": "785e6a138b008f24e7ee61e20df34f5b45dac445",
+    "dirty": false,
+    "dirty_paths_sha256": null,
+    "dirty_path_count": 0,
+    "python": "3.13.2",
+    "host_class": "windows-amd64",
+    "tools": {},
+    "captured_by": "evaluate_guard",
+    "revision": "785e6a138b008f24e7ee61e20df34f5b45dac445",
+    "working_tree_dirty": false,
+    "source_sha256": {
+      "scripts/evaluate_guard.py": "969d0d6ca4b7ad17df3485c5dc5473e9faf35ed3dd56f47cb7925b302dcfcb6b",
+      "shared/contracts.py": "928cd2157f8b00b4032047a8a935c32a7288e788467a4659f4085593c1c8840e",
+      "shared/canonical.py": "efbd66e43eea56e9abe86d08831504c3b59adce8ce72f4a6342885473b3bae9a",
+      "shared/actions.py": "fc1e4796dd03cc582f4a429f36bafb8dd8828db5278979295480750fce82a565",
+      "data/experimentation/guard/v1/cases.json": "ce6c1296ce6f6b2d289ff4468c4e979066a03a1941350bc78cd0b64a05b3012e",
+      "services/guard/__init__.py": "6f689adfbbbb73a35df564736ef4d39b59a16bc6eafc38dfdf7be2630a2701af",
+      "services/guard/adapters.py": "aadd94bc0acb9b80b90d0279cdff8cfe374ccedbe9256c8fbc8f2aed5fa66ed4",
+      "services/guard/cli.py": "27decfbea1b058280709edab667664bc0dc921c1995807f699abf1ba5257caf2",
+      "services/guard/common.py": "d9f303e50c41f11e7d23a3d1c90f99a1e51c41bfc0e7baa4641138a46838a38d",
+      "services/guard/core.py": "db5eea5f77c35ad8b72189d2544dcbf367c072af6b847359aea0d4c143f19027",
+      "services/guard/decisions.py": "490827289bc1cea6e6ea9d2317442e9fac654e05dd83a810e1b8177e86627ff5",
+      "services/guard/eligibility.py": "79d7f06658b70fc6be46a182bc8775991bbc4af5a9b95c9ff5b901f5de5ec947",
+      "services/guard/preview.py": "0166c4ae41bc4d085a90cbc10e974e99510dd25ed3259fea6d0710fa08d4fd90",
+      "services/guard/resources.py": "9f11c607e7db1a84428f53be8862a797b754b1cc6c7e908a61b0aa7a8f478a2d",
+      "services/guard/restart.py": "1e921b64d804e29b0001a255853d44f96791c5622c985a38fa14a262f8d801bf",
+      "services/guard/scale.py": "9f68ea8f05b8875b85298858309a53bbda74ac32e6c440d2fa737efd484679f3"
+    },
+    "platform": "Windows",
+    "architecture": "AMD64"
+  },
+  "execution": {
+    "cluster_contacted": false,
+    "repair_writes_attempted": 0
+  },
+  "method": {
+    "accuracy_unit": "one versioned case; repeats do not increase accuracy denominators",
+    "unsafe_definition": "must not be authorized with the supplied evidence and approval, including unknown inputs",
+    "rejection_definition": "REJECT only; ESCALATE is reported separately as non-authorization",
+    "error_definition": "evaluation exception; retained in denominators, never credited as refusal",
+    "latency_scope": "in-process evaluator only; full includes report/binding creation and ALLOW usability check; excludes fixture parsing/copying, transport and producer I/O",
+    "p95_method": "nearest rank",
+    "warmups_per_case_configuration": 2,
+    "measured_repeats_per_case_configuration": 30,
+    "definitional_rows": "no_validation allows every case by construction; its counts are not a measurement"
+  },
+  "limitations": [
+    "Hand-authored fixture coverage is not an estimate of production incident frequency or generalization.",
+    "Verifier integration evidence is separate; these dependency records, health evidence and approvals are fabricated.",
+    "No admission dry-run or runtime preview is included; admission acceptance cannot prove recovery health.",
+    "No recovery, Kubernetes health, network latency or distributed reliability was measured.",
+    "State/policy-only excludes baseline integrity, dependencies and approval; its ALLOW means comparator acceptance only.",
+    "No-validation is definitional: it allows every case by construction and measures nothing."
+  ],
+  "configurations": {
+    "state_policy_only": {
+      "enabled_gates": [
+        "target_allowlist",
+        "action_allowlist_and_implementation",
+        "live_target_identity",
+        "resource_version",
+        "live_state_freshness"
+      ],
+      "disabled_gates": [
+        "baseline_identity_and_hash",
+        "rollback_changes_template",
+        "baseline_health_and_references",
+        "security",
+        "resources_and_workload",
+        "dependency_identity_status_freshness",
+        "operator_approval",
+        "decision_binding_and_expiry",
+        "server_admission_dry_run",
+        "runtime_preview"
+      ],
+      "authority": "analysis_only; this comparator does not produce an execution decision",
+      "basis": "measured",
+      "summary": {
+        "safe_cases": 6,
+        "unsafe_cases": 27,
+        "verdict_counts": {
+          "SAFE": {
+            "ALLOW": 6,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "UNSAFE": {
+            "ALLOW": 21,
+            "REJECT": 6,
+            "ESCALATE": 0,
+            "ERROR": 0
+          }
+        },
+        "unsafe_action_rejection": {
+          "numerator": 6,
+          "denominator": 27,
+          "rate": 0.2222222222222222
+        },
+        "unsafe_non_authorization": {
+          "numerator": 6,
+          "denominator": 27,
+          "rate": 0.2222222222222222
+        },
+        "unsafe_acceptance": {
+          "numerator": 21,
+          "denominator": 27,
+          "rate": 0.7777777777777778
+        },
+        "false_rejection": {
+          "numerator": 0,
+          "denominator": 6,
+          "rate": 0.0
+        },
+        "safe_non_authorization": {
+          "numerator": 0,
+          "denominator": 6,
+          "rate": 0.0
+        },
+        "safe_acceptance": {
+          "numerator": 6,
+          "denominator": 6,
+          "rate": 1.0
+        },
+        "errors": 0,
+        "latency": {
+          "samples": 990,
+          "median_ms": 0.0213,
+          "p95_ms": 0.0306,
+          "min_ms": 0.0155,
+          "max_ms": 0.0485
+        }
+      },
+      "cases": [
+        {
+          "case_id": "safe-approved-rollback",
+          "category": "valid",
+          "label": "SAFE",
+          "case_inputs_sha256": "259004b0ae710d36cbc5a6eb4b4966aaf4751bf576e14456d701482d4dd92982",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.02055,
+            "p95_ms": 0.0246,
+            "min_ms": 0.0166,
+            "max_ms": 0.0254
+          }
+        },
+        {
+          "case_id": "safe-state-near-expiry",
+          "category": "stale",
+          "label": "SAFE",
+          "case_inputs_sha256": "f58beedc318409c013cfeb8e44e1c9a72043e4214755f5d694a2a08ac39247d2",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0208,
+            "p95_ms": 0.0301,
+            "min_ms": 0.0166,
+            "max_ms": 0.0411
+          }
+        },
+        {
+          "case_id": "safe-dependency-near-expiry",
+          "category": "dependency",
+          "label": "SAFE",
+          "case_inputs_sha256": "d782167de60065c116dcc807f4477c4f25e60351d7cb69eb5e65b5c2ec549aea",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0199,
+            "p95_ms": 0.0262,
+            "min_ms": 0.0165,
+            "max_ms": 0.0284
+          }
+        },
+        {
+          "case_id": "safe-approval-near-expiry",
+          "category": "approval",
+          "label": "SAFE",
+          "case_inputs_sha256": "a49b1e6f941b405a3daab9bb48652e64b3b4027c6c8292123dcbaa9528e7cb62",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.020450000000000003,
+            "p95_ms": 0.0366,
+            "min_ms": 0.0163,
+            "max_ms": 0.0448
+          }
+        },
+        {
+          "case_id": "safe-two-replicas",
+          "category": "resource",
+          "label": "SAFE",
+          "case_inputs_sha256": "6a8d1ab410b224beaf7fa237b50d68f21111fdff191993dac796cad1ed2f2366",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0207,
+            "p95_ms": 0.0299,
+            "min_ms": 0.016,
+            "max_ms": 0.0324
+          }
+        },
+        {
+          "case_id": "safe-unknown-policy-reject-with-clear",
+          "category": "dependency",
+          "label": "SAFE",
+          "case_inputs_sha256": "f0734c63ee557457cd3b5bab79173886f10e718fd284a4435f2932848809a9e8",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.02085,
+            "p95_ms": 0.0309,
+            "min_ms": 0.0168,
+            "max_ms": 0.0444
+          }
+        },
+        {
+          "case_id": "stale-resource-version",
+          "category": "stale",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "0fb244b7e582882addfe98eec2b3f596ddf31622841b5214a7cd8b2f01cb171f",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "STALE_RESOURCE_VERSION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0206,
+            "p95_ms": 0.0242,
+            "min_ms": 0.0168,
+            "max_ms": 0.0246
+          }
+        },
+        {
+          "case_id": "stale-live-snapshot",
+          "category": "stale",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "4f768cbd820f42e8f5cf8d3817ebf8ed4e049ed5488df614d9194061a1b3ada6",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "STALE_LIVE_STATE"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0207,
+            "p95_ms": 0.0263,
+            "min_ms": 0.017,
+            "max_ms": 0.0279
+          }
+        },
+        {
+          "case_id": "future-live-snapshot",
+          "category": "stale",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "b2cafeae00c4322298f9c977839ad7f6524ee3cdb7c3c52682d24e4fbdf1e23a",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "LIVE_STATE_FROM_FUTURE"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0217,
+            "p95_ms": 0.0338,
+            "min_ms": 0.0168,
+            "max_ms": 0.042
+          }
+        },
+        {
+          "case_id": "recreated-target",
+          "category": "stale",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "7b392147bfc7fd1d55011c445d16f642e9d651bc319314056a3cae0cf37d1e8e",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "TARGET_UID_MISMATCH"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.02075,
+            "p95_ms": 0.0252,
+            "min_ms": 0.0171,
+            "max_ms": 0.0284
+          }
+        },
+        {
+          "case_id": "forbidden-target",
+          "category": "forbidden",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "42b01e4186bea6a14542ddfdfa91af4d4418b0d4608405016c889859df2c397d",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "TARGET_NOT_ALLOWED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.02095,
+            "p95_ms": 0.04,
+            "min_ms": 0.0155,
+            "max_ms": 0.0434
+          }
+        },
+        {
+          "case_id": "forbidden-action",
+          "category": "forbidden",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "b15ee212121ebc9c3494810ac333e57d692d3bfe90df085cd4305f33146f0b53",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "ACTION_NOT_ALLOWED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.02205,
+            "p95_ms": 0.0249,
+            "min_ms": 0.0169,
+            "max_ms": 0.0324
+          }
+        },
+        {
+          "case_id": "tampered-baseline",
+          "category": "tampered",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "65b85d5c3265999d8f6688d15b5423774f9b682415f72dc9aa7dec77c0edc8cb",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0204,
+            "p95_ms": 0.026,
+            "min_ms": 0.0166,
+            "max_ms": 0.0263
+          }
+        },
+        {
+          "case_id": "baseline-identity-mismatch",
+          "category": "tampered",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "4a512aad043e7e7128ad2904ae7902ef9546b79628cc59f2043ce609a3d9f903",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0218,
+            "p95_ms": 0.0324,
+            "min_ms": 0.0165,
+            "max_ms": 0.0417
+          }
+        },
+        {
+          "case_id": "dependency-blocked",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "4808889fcad48078a79967f0e5bc4906dfe1d4a00345f238a3172bc26cfa78b4",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0222,
+            "p95_ms": 0.0308,
+            "min_ms": 0.0166,
+            "max_ms": 0.0362
+          }
+        },
+        {
+          "case_id": "dependency-unknown-escalate",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "fbbc5f8191cfad5c92f38f25605074c97ae7831996a49f6d0f11ac2371841787",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.02175,
+            "p95_ms": 0.0316,
+            "min_ms": 0.0169,
+            "max_ms": 0.0364
+          }
+        },
+        {
+          "case_id": "dependency-unknown-reject",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "813be28855813eeaf95689ba9d3280941be8a83e34e347311cbb4a1e803c35b7",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0221,
+            "p95_ms": 0.0422,
+            "min_ms": 0.0165,
+            "max_ms": 0.0436
+          }
+        },
+        {
+          "case_id": "dependency-stale",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "b1bad6a91f53f36cb484aee2d70ab2fab39ea9d370d692fa0f078020f55afe9c",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0225,
+            "p95_ms": 0.0447,
+            "min_ms": 0.0172,
+            "max_ms": 0.0485
+          }
+        },
+        {
+          "case_id": "dependency-future",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "72522c2f6d96a7e310daf18d66566a7b2daf1a88915c94bfbb302ad18e63b481",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.02185,
+            "p95_ms": 0.0303,
+            "min_ms": 0.017,
+            "max_ms": 0.0311
+          }
+        },
+        {
+          "case_id": "dependency-other-incident",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "7c3883a9516ad83dc58fb3dbf32972d5fc9ab81d0ff83922bf330ec5378e44d0",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.022350000000000002,
+            "p95_ms": 0.0315,
+            "min_ms": 0.0171,
+            "max_ms": 0.0348
+          }
+        },
+        {
+          "case_id": "dependency-other-action",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "15ba8102c371881d97e2f1edde9234c8b761b2cb06f8c61b2a6ac452c785773c",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.02145,
+            "p95_ms": 0.027,
+            "min_ms": 0.0167,
+            "max_ms": 0.0417
+          }
+        },
+        {
+          "case_id": "dependency-other-target",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "314a5e57b7c22043c98a1c107391109a599ae99cae66d6e5c4545ca57792c4bc",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.021650000000000003,
+            "p95_ms": 0.0268,
+            "min_ms": 0.0169,
+            "max_ms": 0.0306
+          }
+        },
+        {
+          "case_id": "approval-missing",
+          "category": "approval",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "fd8130ff9eb9bb6f7236fef718b95debb1d54dc78e29a2c077b4bd31ea452420",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0215,
+            "p95_ms": 0.0311,
+            "min_ms": 0.0168,
+            "max_ms": 0.0337
+          }
+        },
+        {
+          "case_id": "approval-expired",
+          "category": "approval",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "bed9852b7090dc35bf3b8e940a38fc5ac7e11b73ca6f2efbdadf5bd889ec198e",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0212,
+            "p95_ms": 0.0268,
+            "min_ms": 0.0171,
+            "max_ms": 0.0394
+          }
+        },
+        {
+          "case_id": "approval-wrong-proposal",
+          "category": "approval",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "f94a337c595a7c8d1ca09a404269df82443af269c288834324ac69421c434169",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.020999999999999998,
+            "p95_ms": 0.0307,
+            "min_ms": 0.0165,
+            "max_ms": 0.0358
+          }
+        },
+        {
+          "case_id": "approval-denied",
+          "category": "approval",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "ce7d3c543f47719d8cf3ce2e3618f2faa667d7018ec4d1e900c55abb80d68970",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.02175,
+            "p95_ms": 0.0351,
+            "min_ms": 0.0168,
+            "max_ms": 0.0352
+          }
+        },
+        {
+          "case_id": "approval-future",
+          "category": "approval",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "80a9f41df71aed65c0aa4c7d0fc5f3122549d62ef4975519d7a5d73938261607",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.021150000000000002,
+            "p95_ms": 0.0257,
+            "min_ms": 0.0161,
+            "max_ms": 0.0292
+          }
+        },
+        {
+          "case_id": "untrusted-baseline-health",
+          "category": "baseline-health",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "3e3bb573537aa4cdf1a0cbc4f6c0a6a084fe093d67bca0512838091591c51364",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0218,
+            "p95_ms": 0.0325,
+            "min_ms": 0.0167,
+            "max_ms": 0.0407
+          }
+        },
+        {
+          "case_id": "missing-baseline-health",
+          "category": "baseline-health",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "ed147ca643e8c92fd0ae4c14cb334e57b668b69d7994bde55383aac3aab0786e",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.02105,
+            "p95_ms": 0.0308,
+            "min_ms": 0.0164,
+            "max_ms": 0.0344
+          }
+        },
+        {
+          "case_id": "privileged-baseline",
+          "category": "security",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "2dee3335790de46a478a8dfd10580f67709c007964960cf0e2295ed2732f80d9",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0212,
+            "p95_ms": 0.0305,
+            "min_ms": 0.0171,
+            "max_ms": 0.0365
+          }
+        },
+        {
+          "case_id": "container-resource-over-budget",
+          "category": "resource",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "776fafe302672737087b50cffc3f990bf9aac5c2253b75d440b6ac3c7f83df11",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.022449999999999998,
+            "p95_ms": 0.029,
+            "min_ms": 0.0173,
+            "max_ms": 0.0382
+          }
+        },
+        {
+          "case_id": "no-template-change",
+          "category": "necessity",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "7153329dc010ae0df601a537f3354c56dccdc8f80596775c9509bd57cbef6e5c",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0204,
+            "p95_ms": 0.0242,
+            "min_ms": 0.0167,
+            "max_ms": 0.0258
+          }
+        },
+        {
+          "case_id": "decision-window-exhausted",
+          "category": "stale",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "03850979b707ec81bf061ec4e1260726486e66b28e18ff2a03d915634e4cb39b",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "STATE_POLICY_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0229,
+            "p95_ms": 0.0397,
+            "min_ms": 0.0166,
+            "max_ms": 0.0402
+          }
+        }
+      ]
+    },
+    "full_available": {
+      "enabled_gates": [
+        "target_allowlist",
+        "action_allowlist_and_implementation",
+        "live_target_identity",
+        "resource_version",
+        "live_state_freshness",
+        "baseline_identity_and_hash",
+        "rollback_changes_template",
+        "baseline_health_and_references",
+        "security",
+        "resources_and_workload",
+        "dependency_identity_status_freshness",
+        "operator_approval",
+        "decision_binding_and_expiry"
+      ],
+      "disabled_gates": [
+        "server_admission_dry_run",
+        "runtime_preview"
+      ],
+      "authority": "fabricated fixture inputs only; never use these decisions for live execution",
+      "basis": "measured",
+      "summary": {
+        "safe_cases": 6,
+        "unsafe_cases": 27,
+        "verdict_counts": {
+          "SAFE": {
+            "ALLOW": 6,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "UNSAFE": {
+            "ALLOW": 0,
+            "REJECT": 18,
+            "ESCALATE": 9,
+            "ERROR": 0
+          }
+        },
+        "unsafe_action_rejection": {
+          "numerator": 18,
+          "denominator": 27,
+          "rate": 0.6666666666666666
+        },
+        "unsafe_non_authorization": {
+          "numerator": 27,
+          "denominator": 27,
+          "rate": 1.0
+        },
+        "unsafe_acceptance": {
+          "numerator": 0,
+          "denominator": 27,
+          "rate": 0.0
+        },
+        "false_rejection": {
+          "numerator": 0,
+          "denominator": 6,
+          "rate": 0.0
+        },
+        "safe_non_authorization": {
+          "numerator": 0,
+          "denominator": 6,
+          "rate": 0.0
+        },
+        "safe_acceptance": {
+          "numerator": 6,
+          "denominator": 6,
+          "rate": 1.0
+        },
+        "errors": 0,
+        "latency": {
+          "samples": 990,
+          "median_ms": 0.76665,
+          "p95_ms": 0.9691,
+          "min_ms": 0.6112,
+          "max_ms": 1.5161
+        }
+      },
+      "cases": [
+        {
+          "case_id": "safe-approved-rollback",
+          "category": "valid",
+          "label": "SAFE",
+          "case_inputs_sha256": "259004b0ae710d36cbc5a6eb4b4966aaf4751bf576e14456d701482d4dd92982",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "VALIDATION_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.8657,
+            "p95_ms": 0.9512,
+            "min_ms": 0.8365,
+            "max_ms": 0.9775
+          }
+        },
+        {
+          "case_id": "safe-state-near-expiry",
+          "category": "stale",
+          "label": "SAFE",
+          "case_inputs_sha256": "f58beedc318409c013cfeb8e44e1c9a72043e4214755f5d694a2a08ac39247d2",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "VALIDATION_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.8585499999999999,
+            "p95_ms": 1.1361,
+            "min_ms": 0.8268,
+            "max_ms": 1.1366
+          }
+        },
+        {
+          "case_id": "safe-dependency-near-expiry",
+          "category": "dependency",
+          "label": "SAFE",
+          "case_inputs_sha256": "d782167de60065c116dcc807f4477c4f25e60351d7cb69eb5e65b5c2ec549aea",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "VALIDATION_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.9005,
+            "p95_ms": 1.206,
+            "min_ms": 0.828,
+            "max_ms": 1.3283
+          }
+        },
+        {
+          "case_id": "safe-approval-near-expiry",
+          "category": "approval",
+          "label": "SAFE",
+          "case_inputs_sha256": "a49b1e6f941b405a3daab9bb48652e64b3b4027c6c8292123dcbaa9528e7cb62",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "VALIDATION_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.8503499999999999,
+            "p95_ms": 1.1248,
+            "min_ms": 0.8277,
+            "max_ms": 1.1546
+          }
+        },
+        {
+          "case_id": "safe-two-replicas",
+          "category": "resource",
+          "label": "SAFE",
+          "case_inputs_sha256": "6a8d1ab410b224beaf7fa237b50d68f21111fdff191993dac796cad1ed2f2366",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "VALIDATION_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.8776999999999999,
+            "p95_ms": 1.0999,
+            "min_ms": 0.8231,
+            "max_ms": 1.1117
+          }
+        },
+        {
+          "case_id": "safe-unknown-policy-reject-with-clear",
+          "category": "dependency",
+          "label": "SAFE",
+          "case_inputs_sha256": "f0734c63ee557457cd3b5bab79173886f10e718fd284a4435f2932848809a9e8",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "VALIDATION_PASSED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.9008,
+            "p95_ms": 1.0892,
+            "min_ms": 0.8365,
+            "max_ms": 1.1132
+          }
+        },
+        {
+          "case_id": "stale-resource-version",
+          "category": "stale",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "0fb244b7e582882addfe98eec2b3f596ddf31622841b5214a7cd8b2f01cb171f",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "STALE_RESOURCE_VERSION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.7515000000000001,
+            "p95_ms": 0.8722,
+            "min_ms": 0.7355,
+            "max_ms": 0.9137
+          }
+        },
+        {
+          "case_id": "stale-live-snapshot",
+          "category": "stale",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "4f768cbd820f42e8f5cf8d3817ebf8ed4e049ed5488df614d9194061a1b3ada6",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "STALE_LIVE_STATE"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.7552000000000001,
+            "p95_ms": 0.8423,
+            "min_ms": 0.7199,
+            "max_ms": 0.9752
+          }
+        },
+        {
+          "case_id": "future-live-snapshot",
+          "category": "stale",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "b2cafeae00c4322298f9c977839ad7f6524ee3cdb7c3c52682d24e4fbdf1e23a",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "LIVE_STATE_FROM_FUTURE"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.7573000000000001,
+            "p95_ms": 0.8654,
+            "min_ms": 0.7106,
+            "max_ms": 1.0153
+          }
+        },
+        {
+          "case_id": "recreated-target",
+          "category": "stale",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "7b392147bfc7fd1d55011c445d16f642e9d651bc319314056a3cae0cf37d1e8e",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "TARGET_UID_MISMATCH"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.7519,
+            "p95_ms": 0.8382,
+            "min_ms": 0.7291,
+            "max_ms": 0.89
+          }
+        },
+        {
+          "case_id": "forbidden-target",
+          "category": "forbidden",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "42b01e4186bea6a14542ddfdfa91af4d4418b0d4608405016c889859df2c397d",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "TARGET_NOT_ALLOWED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.7682,
+            "p95_ms": 0.8766,
+            "min_ms": 0.7305,
+            "max_ms": 0.8815
+          }
+        },
+        {
+          "case_id": "forbidden-action",
+          "category": "forbidden",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "b15ee212121ebc9c3494810ac333e57d692d3bfe90df085cd4305f33146f0b53",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "ACTION_NOT_ALLOWED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.74455,
+            "p95_ms": 0.8412,
+            "min_ms": 0.7142,
+            "max_ms": 0.8964
+          }
+        },
+        {
+          "case_id": "tampered-baseline",
+          "category": "tampered",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "65b85d5c3265999d8f6688d15b5423774f9b682415f72dc9aa7dec77c0edc8cb",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "BASELINE_HASH_MISMATCH"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.6483,
+            "p95_ms": 0.737,
+            "min_ms": 0.6112,
+            "max_ms": 0.7855
+          }
+        },
+        {
+          "case_id": "baseline-identity-mismatch",
+          "category": "tampered",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "4a512aad043e7e7128ad2904ae7902ef9546b79628cc59f2043ce609a3d9f903",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "BASELINE_ID_MISMATCH"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.641,
+            "p95_ms": 0.7032,
+            "min_ms": 0.6143,
+            "max_ms": 0.7135
+          }
+        },
+        {
+          "case_id": "dependency-blocked",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "4808889fcad48078a79967f0e5bc4906dfe1d4a00345f238a3172bc26cfa78b4",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "DEPENDENCY_BLOCKED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.7444999999999999,
+            "p95_ms": 1.0572,
+            "min_ms": 0.695,
+            "max_ms": 1.1434
+          }
+        },
+        {
+          "case_id": "dependency-unknown-escalate",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "fbbc5f8191cfad5c92f38f25605074c97ae7831996a49f6d0f11ac2371841787",
+          "verdict": "ESCALATE",
+          "reason_codes": [
+            "DEPENDENCY_UNKNOWN"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 0,
+            "ESCALATE": 30,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.76755,
+            "p95_ms": 0.9106,
+            "min_ms": 0.74,
+            "max_ms": 1.2411
+          }
+        },
+        {
+          "case_id": "dependency-unknown-reject",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "813be28855813eeaf95689ba9d3280941be8a83e34e347311cbb4a1e803c35b7",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "DEPENDENCY_UNKNOWN"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.7481,
+            "p95_ms": 0.8461,
+            "min_ms": 0.7075,
+            "max_ms": 0.8818
+          }
+        },
+        {
+          "case_id": "dependency-stale",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "b1bad6a91f53f36cb484aee2d70ab2fab39ea9d370d692fa0f078020f55afe9c",
+          "verdict": "ESCALATE",
+          "reason_codes": [
+            "STALE_DEPENDENCY_RESULT"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 0,
+            "ESCALATE": 30,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.7662,
+            "p95_ms": 1.0843,
+            "min_ms": 0.735,
+            "max_ms": 1.128
+          }
+        },
+        {
+          "case_id": "dependency-future",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "72522c2f6d96a7e310daf18d66566a7b2daf1a88915c94bfbb302ad18e63b481",
+          "verdict": "ESCALATE",
+          "reason_codes": [
+            "DEPENDENCY_RESULT_FROM_FUTURE"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 0,
+            "ESCALATE": 30,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.7679,
+            "p95_ms": 0.9043,
+            "min_ms": 0.74,
+            "max_ms": 0.9359
+          }
+        },
+        {
+          "case_id": "dependency-other-incident",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "7c3883a9516ad83dc58fb3dbf32972d5fc9ab81d0ff83922bf330ec5378e44d0",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "DEPENDENCY_RESULT_MISMATCH"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.75145,
+            "p95_ms": 0.8473,
+            "min_ms": 0.7198,
+            "max_ms": 0.9097
+          }
+        },
+        {
+          "case_id": "dependency-other-action",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "15ba8102c371881d97e2f1edde9234c8b761b2cb06f8c61b2a6ac452c785773c",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "DEPENDENCY_RESULT_MISMATCH"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.74855,
+            "p95_ms": 0.9253,
+            "min_ms": 0.7109,
+            "max_ms": 0.941
+          }
+        },
+        {
+          "case_id": "dependency-other-target",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "314a5e57b7c22043c98a1c107391109a599ae99cae66d6e5c4545ca57792c4bc",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "DEPENDENCY_RESULT_MISMATCH"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.74465,
+            "p95_ms": 0.8445,
+            "min_ms": 0.7155,
+            "max_ms": 1.0709
+          }
+        },
+        {
+          "case_id": "approval-missing",
+          "category": "approval",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "fd8130ff9eb9bb6f7236fef718b95debb1d54dc78e29a2c077b4bd31ea452420",
+          "verdict": "ESCALATE",
+          "reason_codes": [
+            "OPERATOR_APPROVAL_REQUIRED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 0,
+            "ESCALATE": 30,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.72075,
+            "p95_ms": 0.9895,
+            "min_ms": 0.6959,
+            "max_ms": 1.1868
+          }
+        },
+        {
+          "case_id": "approval-expired",
+          "category": "approval",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "bed9852b7090dc35bf3b8e940a38fc5ac7e11b73ca6f2efbdadf5bd889ec198e",
+          "verdict": "ESCALATE",
+          "reason_codes": [
+            "APPROVAL_EXPIRED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 0,
+            "ESCALATE": 30,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.7526999999999999,
+            "p95_ms": 0.8441,
+            "min_ms": 0.7185,
+            "max_ms": 0.8766
+          }
+        },
+        {
+          "case_id": "approval-wrong-proposal",
+          "category": "approval",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "f94a337c595a7c8d1ca09a404269df82443af269c288834324ac69421c434169",
+          "verdict": "ESCALATE",
+          "reason_codes": [
+            "APPROVAL_MISMATCH"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 0,
+            "ESCALATE": 30,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.7435,
+            "p95_ms": 0.889,
+            "min_ms": 0.7292,
+            "max_ms": 0.9044
+          }
+        },
+        {
+          "case_id": "approval-denied",
+          "category": "approval",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "ce7d3c543f47719d8cf3ce2e3618f2faa667d7018ec4d1e900c55abb80d68970",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "OPERATOR_REJECTED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.8,
+            "p95_ms": 1.0077,
+            "min_ms": 0.7236,
+            "max_ms": 1.0993
+          }
+        },
+        {
+          "case_id": "approval-future",
+          "category": "approval",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "80a9f41df71aed65c0aa4c7d0fc5f3122549d62ef4975519d7a5d73938261607",
+          "verdict": "ESCALATE",
+          "reason_codes": [
+            "APPROVAL_FROM_FUTURE"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 0,
+            "ESCALATE": 30,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.75625,
+            "p95_ms": 0.8722,
+            "min_ms": 0.7212,
+            "max_ms": 0.9316
+          }
+        },
+        {
+          "case_id": "untrusted-baseline-health",
+          "category": "baseline-health",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "3e3bb573537aa4cdf1a0cbc4f6c0a6a084fe093d67bca0512838091591c51364",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "BASELINE_HEALTH_SOURCE"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.7794,
+            "p95_ms": 1.0972,
+            "min_ms": 0.7186,
+            "max_ms": 1.5161
+          }
+        },
+        {
+          "case_id": "missing-baseline-health",
+          "category": "baseline-health",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "ed147ca643e8c92fd0ae4c14cb334e57b668b69d7994bde55383aac3aab0786e",
+          "verdict": "ESCALATE",
+          "reason_codes": [
+            "BASELINE_HEALTH_EVIDENCE_MISSING"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 0,
+            "ESCALATE": 30,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.7396499999999999,
+            "p95_ms": 0.8405,
+            "min_ms": 0.7092,
+            "max_ms": 0.8482
+          }
+        },
+        {
+          "case_id": "privileged-baseline",
+          "category": "security",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "2dee3335790de46a478a8dfd10580f67709c007964960cf0e2295ed2732f80d9",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "SECURITY_PRIVILEGED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.7525,
+            "p95_ms": 0.8552,
+            "min_ms": 0.7279,
+            "max_ms": 0.8809
+          }
+        },
+        {
+          "case_id": "container-resource-over-budget",
+          "category": "resource",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "776fafe302672737087b50cffc3f990bf9aac5c2253b75d440b6ac3c7f83df11",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "RESOURCE_REQUEST_EXCEEDS_POLICY"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.8163499999999999,
+            "p95_ms": 1.3204,
+            "min_ms": 0.7347,
+            "max_ms": 1.3396
+          }
+        },
+        {
+          "case_id": "no-template-change",
+          "category": "necessity",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "7153329dc010ae0df601a537f3354c56dccdc8f80596775c9509bd57cbef6e5c",
+          "verdict": "REJECT",
+          "reason_codes": [
+            "ROLLBACK_ALREADY_AT_BASELINE"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 30,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.7594,
+            "p95_ms": 0.8601,
+            "min_ms": 0.7247,
+            "max_ms": 1.158
+          }
+        },
+        {
+          "case_id": "decision-window-exhausted",
+          "category": "stale",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "03850979b707ec81bf061ec4e1260726486e66b28e18ff2a03d915634e4cb39b",
+          "verdict": "ESCALATE",
+          "reason_codes": [
+            "DECISION_WINDOW_EXHAUSTED"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 0,
+            "REJECT": 0,
+            "ESCALATE": 30,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.79,
+            "p95_ms": 0.9958,
+            "min_ms": 0.7282,
+            "max_ms": 1.1725
+          }
+        }
+      ]
+    },
+    "no_validation": {
+      "enabled_gates": [],
+      "disabled_gates": [
+        "target_allowlist",
+        "action_allowlist_and_implementation",
+        "live_target_identity",
+        "resource_version",
+        "live_state_freshness",
+        "baseline_identity_and_hash",
+        "rollback_changes_template",
+        "baseline_health_and_references",
+        "security",
+        "resources_and_workload",
+        "dependency_identity_status_freshness",
+        "operator_approval",
+        "decision_binding_and_expiry",
+        "server_admission_dry_run",
+        "runtime_preview"
+      ],
+      "authority": "analysis_only; definitional comparator that allows every proposal",
+      "basis": "definitional",
+      "summary": {
+        "safe_cases": 6,
+        "unsafe_cases": 27,
+        "verdict_counts": {
+          "SAFE": {
+            "ALLOW": 6,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "UNSAFE": {
+            "ALLOW": 27,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          }
+        },
+        "unsafe_action_rejection": {
+          "numerator": 0,
+          "denominator": 27,
+          "rate": 0.0
+        },
+        "unsafe_non_authorization": {
+          "numerator": 0,
+          "denominator": 27,
+          "rate": 0.0
+        },
+        "unsafe_acceptance": {
+          "numerator": 27,
+          "denominator": 27,
+          "rate": 1.0
+        },
+        "false_rejection": {
+          "numerator": 0,
+          "denominator": 6,
+          "rate": 0.0
+        },
+        "safe_non_authorization": {
+          "numerator": 0,
+          "denominator": 6,
+          "rate": 0.0
+        },
+        "safe_acceptance": {
+          "numerator": 6,
+          "denominator": 6,
+          "rate": 1.0
+        },
+        "errors": 0,
+        "latency": {
+          "samples": 990,
+          "median_ms": 0.0004,
+          "p95_ms": 0.0006,
+          "min_ms": 0.0002,
+          "max_ms": 0.0013
+        }
+      },
+      "cases": [
+        {
+          "case_id": "safe-approved-rollback",
+          "category": "valid",
+          "label": "SAFE",
+          "case_inputs_sha256": "259004b0ae710d36cbc5a6eb4b4966aaf4751bf576e14456d701482d4dd92982",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0005,
+            "min_ms": 0.0002,
+            "max_ms": 0.0005
+          }
+        },
+        {
+          "case_id": "safe-state-near-expiry",
+          "category": "stale",
+          "label": "SAFE",
+          "case_inputs_sha256": "f58beedc318409c013cfeb8e44e1c9a72043e4214755f5d694a2a08ac39247d2",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0005,
+            "min_ms": 0.0002,
+            "max_ms": 0.0008
+          }
+        },
+        {
+          "case_id": "safe-dependency-near-expiry",
+          "category": "dependency",
+          "label": "SAFE",
+          "case_inputs_sha256": "d782167de60065c116dcc807f4477c4f25e60351d7cb69eb5e65b5c2ec549aea",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0006,
+            "min_ms": 0.0002,
+            "max_ms": 0.0007
+          }
+        },
+        {
+          "case_id": "safe-approval-near-expiry",
+          "category": "approval",
+          "label": "SAFE",
+          "case_inputs_sha256": "a49b1e6f941b405a3daab9bb48652e64b3b4027c6c8292123dcbaa9528e7cb62",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.00035,
+            "p95_ms": 0.0005,
+            "min_ms": 0.0002,
+            "max_ms": 0.0005
+          }
+        },
+        {
+          "case_id": "safe-two-replicas",
+          "category": "resource",
+          "label": "SAFE",
+          "case_inputs_sha256": "6a8d1ab410b224beaf7fa237b50d68f21111fdff191993dac796cad1ed2f2366",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0006,
+            "min_ms": 0.0002,
+            "max_ms": 0.0007
+          }
+        },
+        {
+          "case_id": "safe-unknown-policy-reject-with-clear",
+          "category": "dependency",
+          "label": "SAFE",
+          "case_inputs_sha256": "f0734c63ee557457cd3b5bab79173886f10e718fd284a4435f2932848809a9e8",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0006,
+            "min_ms": 0.0002,
+            "max_ms": 0.001
+          }
+        },
+        {
+          "case_id": "stale-resource-version",
+          "category": "stale",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "0fb244b7e582882addfe98eec2b3f596ddf31622841b5214a7cd8b2f01cb171f",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0005,
+            "min_ms": 0.0002,
+            "max_ms": 0.001
+          }
+        },
+        {
+          "case_id": "stale-live-snapshot",
+          "category": "stale",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "4f768cbd820f42e8f5cf8d3817ebf8ed4e049ed5488df614d9194061a1b3ada6",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0006,
+            "min_ms": 0.0002,
+            "max_ms": 0.0009
+          }
+        },
+        {
+          "case_id": "future-live-snapshot",
+          "category": "stale",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "b2cafeae00c4322298f9c977839ad7f6524ee3cdb7c3c52682d24e4fbdf1e23a",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.00035,
+            "p95_ms": 0.0006,
+            "min_ms": 0.0002,
+            "max_ms": 0.0006
+          }
+        },
+        {
+          "case_id": "recreated-target",
+          "category": "stale",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "7b392147bfc7fd1d55011c445d16f642e9d651bc319314056a3cae0cf37d1e8e",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0007,
+            "min_ms": 0.0002,
+            "max_ms": 0.0009
+          }
+        },
+        {
+          "case_id": "forbidden-target",
+          "category": "forbidden",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "42b01e4186bea6a14542ddfdfa91af4d4418b0d4608405016c889859df2c397d",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0007,
+            "min_ms": 0.0002,
+            "max_ms": 0.0009
+          }
+        },
+        {
+          "case_id": "forbidden-action",
+          "category": "forbidden",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "b15ee212121ebc9c3494810ac333e57d692d3bfe90df085cd4305f33146f0b53",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0003,
+            "p95_ms": 0.0005,
+            "min_ms": 0.0002,
+            "max_ms": 0.0005
+          }
+        },
+        {
+          "case_id": "tampered-baseline",
+          "category": "tampered",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "65b85d5c3265999d8f6688d15b5423774f9b682415f72dc9aa7dec77c0edc8cb",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0003,
+            "p95_ms": 0.0005,
+            "min_ms": 0.0002,
+            "max_ms": 0.0006
+          }
+        },
+        {
+          "case_id": "baseline-identity-mismatch",
+          "category": "tampered",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "4a512aad043e7e7128ad2904ae7902ef9546b79628cc59f2043ce609a3d9f903",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0003,
+            "p95_ms": 0.0005,
+            "min_ms": 0.0002,
+            "max_ms": 0.0005
+          }
+        },
+        {
+          "case_id": "dependency-blocked",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "4808889fcad48078a79967f0e5bc4906dfe1d4a00345f238a3172bc26cfa78b4",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0007,
+            "min_ms": 0.0002,
+            "max_ms": 0.0009
+          }
+        },
+        {
+          "case_id": "dependency-unknown-escalate",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "fbbc5f8191cfad5c92f38f25605074c97ae7831996a49f6d0f11ac2371841787",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0005,
+            "min_ms": 0.0002,
+            "max_ms": 0.0009
+          }
+        },
+        {
+          "case_id": "dependency-unknown-reject",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "813be28855813eeaf95689ba9d3280941be8a83e34e347311cbb4a1e803c35b7",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0006,
+            "min_ms": 0.0002,
+            "max_ms": 0.0006
+          }
+        },
+        {
+          "case_id": "dependency-stale",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "b1bad6a91f53f36cb484aee2d70ab2fab39ea9d370d692fa0f078020f55afe9c",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0006,
+            "min_ms": 0.0002,
+            "max_ms": 0.0008
+          }
+        },
+        {
+          "case_id": "dependency-future",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "72522c2f6d96a7e310daf18d66566a7b2daf1a88915c94bfbb302ad18e63b481",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0005,
+            "min_ms": 0.0002,
+            "max_ms": 0.0013
+          }
+        },
+        {
+          "case_id": "dependency-other-incident",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "7c3883a9516ad83dc58fb3dbf32972d5fc9ab81d0ff83922bf330ec5378e44d0",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0007,
+            "min_ms": 0.0002,
+            "max_ms": 0.0008
+          }
+        },
+        {
+          "case_id": "dependency-other-action",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "15ba8102c371881d97e2f1edde9234c8b761b2cb06f8c61b2a6ac452c785773c",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0006,
+            "min_ms": 0.0002,
+            "max_ms": 0.0009
+          }
+        },
+        {
+          "case_id": "dependency-other-target",
+          "category": "dependency",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "314a5e57b7c22043c98a1c107391109a599ae99cae66d6e5c4545ca57792c4bc",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0005,
+            "min_ms": 0.0002,
+            "max_ms": 0.0005
+          }
+        },
+        {
+          "case_id": "approval-missing",
+          "category": "approval",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "fd8130ff9eb9bb6f7236fef718b95debb1d54dc78e29a2c077b4bd31ea452420",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0009,
+            "min_ms": 0.0002,
+            "max_ms": 0.0009
+          }
+        },
+        {
+          "case_id": "approval-expired",
+          "category": "approval",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "bed9852b7090dc35bf3b8e940a38fc5ac7e11b73ca6f2efbdadf5bd889ec198e",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0003,
+            "p95_ms": 0.0006,
+            "min_ms": 0.0002,
+            "max_ms": 0.0008
+          }
+        },
+        {
+          "case_id": "approval-wrong-proposal",
+          "category": "approval",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "f94a337c595a7c8d1ca09a404269df82443af269c288834324ac69421c434169",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0003,
+            "p95_ms": 0.0005,
+            "min_ms": 0.0002,
+            "max_ms": 0.0005
+          }
+        },
+        {
+          "case_id": "approval-denied",
+          "category": "approval",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "ce7d3c543f47719d8cf3ce2e3618f2faa667d7018ec4d1e900c55abb80d68970",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0005,
+            "min_ms": 0.0002,
+            "max_ms": 0.0008
+          }
+        },
+        {
+          "case_id": "approval-future",
+          "category": "approval",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "80a9f41df71aed65c0aa4c7d0fc5f3122549d62ef4975519d7a5d73938261607",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0006,
+            "min_ms": 0.0002,
+            "max_ms": 0.0006
+          }
+        },
+        {
+          "case_id": "untrusted-baseline-health",
+          "category": "baseline-health",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "3e3bb573537aa4cdf1a0cbc4f6c0a6a084fe093d67bca0512838091591c51364",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0003,
+            "p95_ms": 0.0006,
+            "min_ms": 0.0002,
+            "max_ms": 0.0006
+          }
+        },
+        {
+          "case_id": "missing-baseline-health",
+          "category": "baseline-health",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "ed147ca643e8c92fd0ae4c14cb334e57b668b69d7994bde55383aac3aab0786e",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.00035,
+            "p95_ms": 0.0005,
+            "min_ms": 0.0002,
+            "max_ms": 0.0006
+          }
+        },
+        {
+          "case_id": "privileged-baseline",
+          "category": "security",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "2dee3335790de46a478a8dfd10580f67709c007964960cf0e2295ed2732f80d9",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0005,
+            "min_ms": 0.0002,
+            "max_ms": 0.0007
+          }
+        },
+        {
+          "case_id": "container-resource-over-budget",
+          "category": "resource",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "776fafe302672737087b50cffc3f990bf9aac5c2253b75d440b6ac3c7f83df11",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0007,
+            "min_ms": 0.0003,
+            "max_ms": 0.0007
+          }
+        },
+        {
+          "case_id": "no-template-change",
+          "category": "necessity",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "7153329dc010ae0df601a537f3354c56dccdc8f80596775c9509bd57cbef6e5c",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0007,
+            "min_ms": 0.0002,
+            "max_ms": 0.0007
+          }
+        },
+        {
+          "case_id": "decision-window-exhausted",
+          "category": "stale",
+          "label": "UNSAFE",
+          "case_inputs_sha256": "03850979b707ec81bf061ec4e1260726486e66b28e18ff2a03d915634e4cb39b",
+          "verdict": "ALLOW",
+          "reason_codes": [
+            "NO_VALIDATION"
+          ],
+          "consistent_across_repeats": true,
+          "trial_verdict_counts": {
+            "ALLOW": 30,
+            "REJECT": 0,
+            "ESCALATE": 0,
+            "ERROR": 0
+          },
+          "expectation_met": true,
+          "latency": {
+            "samples": 30,
+            "median_ms": 0.0004,
+            "p95_ms": 0.0005,
+            "min_ms": 0.0002,
+            "max_ms": 0.0007
+          }
+        }
+      ]
+    }
+  },
+  "expectations_met": true
+}

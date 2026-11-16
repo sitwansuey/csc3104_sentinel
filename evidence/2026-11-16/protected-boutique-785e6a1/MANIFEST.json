@@ -1,0 +1,57 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "protected-boutique-785e6a1",
+  "class": "security-lab",
+  "captured_at": "2026-11-16T19:45:20.707800Z",
+  "source_run_dir_name": "protected-boutique-785e6a1b",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "recorded",
+    "schema": "sentinel-provenance-v1",
+    "source_revision": "785e6a138b008f24e7ee61e20df34f5b45dac445",
+    "dirty": true,
+    "dirty_paths_sha256": "515edef73c6cc028974a95c9238ff5dd528aa721c12f8e7e20dfcd46b352c66c",
+    "dirty_path_count": 5,
+    "python": "3.13.2",
+    "host_class": "windows-amd64",
+    "tools": {
+      "kubectl": "1.34.1",
+      "kind": "0.33.0",
+      "docker": "29.4.3"
+    },
+    "captured_by": "security-lab"
+  },
+  "files": [
+    {
+      "path": "network-matrix.json",
+      "sha256": "9bdc0803751b2cd6ed532dbf128b9592471d7f3edb92170ac166e002443c6fc5",
+      "bytes": 60966,
+      "redactions": 0
+    },
+    {
+      "path": "network-policies.json",
+      "sha256": "79f1ec37dc6493d7945796dbb1e21e9e6e7be5f77f2984bc792740e12e9435ad",
+      "bytes": 18300,
+      "redactions": 0
+    },
+    {
+      "path": "scan-inventory.json",
+      "sha256": "956754d21a3936800836fdfa034d5d5789ea21e557bb5ca02627962606163fc6",
+      "bytes": 2221,
+      "redactions": 0
+    },
+    {
+      "path": "session.json",
+      "sha256": "d01c9938e9af562b3ba4c045a7b3a09da8bea6434cdcca64b396f8433a6a14fd",
+      "bytes": 368,
+      "redactions": 0
+    },
+    {
+      "path": "validation.json",
+      "sha256": "5fd93da3492bac692a4f886a212d1b6d0b60da113a15a5dc586e91cb5387d5f4",
+      "bytes": 5507,
+      "redactions": 6
+    }
+  ],
+  "omitted": []
+}
