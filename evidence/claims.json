@@ -625,6 +625,36 @@
       ],
       "scope_caveat": "Eight runs on 13 Nov 2026 between 12:09 and 12:38 UTC: three of each pair and one Executor-kill variant of each. The pair labels in experiments/boutique/catalog.json are not signed off (labels pending), so these runs are checked against the pre-registered expectations but are not scored trials. Proposals came from the code rule provider with a trusted live-template read (no model), and every approval was auto-lab (automated-lab identity, no person decided). One Windows/amd64 host with Docker Desktop, one kind node (cluster kind-sentinel-boutique-connected) and one harness process that drove both incidents and verified one target at a time, so the pair timings do not measure independent workers or machines. In all four redis-pod+cart-config runs the Guard refused both repairs with DEPENDENCY_BLOCKED, the refusals named each other and the run stopped with DEPENDENCY_DEADLOCK and no write: the catalog accepts that as a safe stop, but it shows no ordered recovery (ordered_recovery_shown false), and none of the three storefront journeys taken after it passed (ShopOutcome FAILED). After scoring, the harness's administrator cleanup returned cartservice's C1 configuration to its baseline in each of those runs; that is lab cleanup, not a Sentinel repair, and the check recorded in those bundles still uses the older wording 'put the remaining faulted configuration back'. The dependency pair's kill variant stopped before any write, so there was nothing to kill and it shows nothing about reconciliation; only the independent pair's kill variant killed a worker. Whether a NotReady caller should block its callee's repair is still an owner decision (L-CALLER-BLOCKS-CALLEE-REPAIR). The eight earlier pair runs at 29e41f8 failed on a harness defect and are in evidence/exclusions.json. Provenance recorded: dca7369, clean tree, 2026-11-13 UTC.",
       "value": "shipping-config+cart-pod at dca7369 PASS x3: RECOVERED, ShopOutcome RECOVERED, Executor writes cartservice 1 and shippingservice 1, RESTART attributed, chaos cleaned up, labels pending; shipping-config+cart-pod with an Executor kill on shippingservice at dca7369 PASS: RECOVERED, ShopOutcome RECOVERED, Executor writes cartservice 1 and shippingservice 1, RESTART attributed, shippingservice worker killed after 1 write, reconciled APPLIED with 0 further writes, chaos cleaned up, labels pending; redis-pod+cart-config at dca7369 PASS x3: DEPENDENCY_DEADLOCK, ShopOutcome FAILED, Executor writes cartservice 0 and redis-cart 0, ordered recovery shown: no, chaos cleaned up, administrator restored cartservice to baseline after scoring (not a repair), labels pending; redis-pod+cart-config with an Executor kill on cartservice at dca7369 PASS: DEPENDENCY_DEADLOCK, ShopOutcome FAILED, Executor writes cartservice 0 and redis-cart 0, no cartservice write, so no worker was killed, ordered recovery shown: no, chaos cleaned up, administrator restored cartservice to baseline after scoring (not a repair), labels pending"
+    },
+    {
+      "id": "C-DISTRIBUTED-KIND-S8-0A33BCF",
+      "text": "Phase 6 deployed S8 (revocation mid-patch, seal, holder PATCH refused) passed in {value} runs",
+      "derive": "acceptance_s8_ratio",
+      "bundles": [
+        "sentinel-dist-20261116t170342-p6"
+      ],
+      "scope_caveat": "Invariants held in 5/5. Every holder PATCH was refused 422 after the seal; revoked actions made zero template writes. The audit maximum of 1 template write per action includes separately approved later incidents. Four kind nodes on one Docker host (shared kernel, clock and disk), synthetic planner, harness approvals; unscored, owner sign-off pending. Provenance recorded at deployed source 0a33bcf, captured 16 Nov 2026 UTC (17 Nov Singapore).",
+      "value": "5/5"
+    },
+    {
+      "id": "C-DISTRIBUTED-KIND-S11-0A33BCF",
+      "text": "Phase 6 deployed refusal checks S11a (Guard-refused), S11b (missing approval) and S11c (stale state) passed in {value} runs",
+      "derive": "acceptance_s11_ratio",
+      "bundles": [
+        "sentinel-dist-20261116t170342-p6"
+      ],
+      "scope_caveat": "One run each, all passed with every invariant holding and zero Executor writes for each refused action. S11b observed two leases without approval, then a separately approved action wrote once. S11a's audit extract was omitted by the per-file cap; its summary and records remain collected. Four kind nodes on one Docker host (shared kernel, clock and disk), synthetic planner, harness approvals; unscored, owner sign-off pending. Provenance recorded at deployed source 0a33bcf, captured 16 Nov 2026 UTC (17 Nov Singapore).",
+      "value": "3/3"
+    },
+    {
+      "id": "C-DISTRIBUTED-KIND-S10-0A33BCF",
+      "text": "Phase 6 deployed S10 (duplicate delivery of the same action) passed in {value} runs",
+      "derive": "acceptance_s10_ratio",
+      "bundles": [
+        "sentinel-dist-20261116t170342-p6"
+      ],
+      "scope_caveat": "Both runs remain in the denominator; invariants held in 2/2, one template write per run. S10-r1-170532z held at executor.before_submit: the original delivery was redelivered (attempt 2), but the peer found resourceVersion moved and returned CONFLICT; the Coordinator re-planned, the replacement action wrote, and the harness expectation failed. S10-r1-173528z held at executor.after_patch_before_save: the peer adopted the committed write with EVIDENCE_MATCH and no second PATCH. Run 2 was judged by the harness committed in b8e8c42 against the same deployed images from 0a33bcf. Four kind nodes on one Docker host (shared kernel, clock and disk), synthetic planner, harness approvals; unscored, owner sign-off pending. Provenance recorded at deployed source 0a33bcf, captured 16 Nov 2026 UTC (17 Nov Singapore).",
+      "value": "1/2"
     }
   ]
 }

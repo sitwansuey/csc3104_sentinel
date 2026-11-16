@@ -873,6 +873,26 @@ class AcceptanceOutcomeTests(unittest.TestCase):
         self.assertEqual(summarize.acceptance_runs(bundle), [{}])
         self.assertEqual(summarize.outcome(bundle), "INCOMPLETE")
 
+    def test_scenario_claims_count_runs_and_keep_failed_or_incomplete_summaries(self):
+        summaries = [(f"2026-11-16/{name}/summary.json", summary) for name, summary in (
+            ("S8-r1-120000z", {"scenario": "S8", "passed": True}),
+            ("S8-r2-120000z", []),
+            ("S10-r1-120000z", {"scenario": "S10", "passed": False}),
+            ("S10-r2-120000z", {"scenario": "S10", "passed": True}),
+            ("S11a-r1-120000z", {"scenario": "S11a", "passed": True}),
+            ("S11b-r1-120000z", {"scenario": "S11b", "passed": True}),
+            ("S11c-r1-120000z", {"scenario": "S11c"}))]
+        bundle = self.bundle(summaries=summaries + [
+            ("drills/restore-abcd/summary.json", {"scenario": "S8", "passed": True})])
+        unrelated = self.bundle(summaries=summaries)
+        unrelated.entry["class"] = "distributed-scenario"
+        for derivation, expected in (("acceptance_s8_ratio", "1/2"), ("acceptance_s10_ratio", "1/2"),
+                                     ("acceptance_s11_ratio", "2/3")):
+            with self.subTest(derivation=derivation):
+                claim = {"derive": derivation, "bundles": ["dist"]}
+                self.assertEqual(summarize.derive(claim, [bundle]), expected)
+                self.assertEqual(summarize.DERIVATIONS[derivation]([unrelated]), "0/0")
+
 class CveGateOutcomeTests(unittest.TestCase):
     """A P5.02 round passes only when every gate proof it records holds."""
 

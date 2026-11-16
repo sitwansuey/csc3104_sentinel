@@ -310,6 +310,13 @@ def pass_ratio(bundles):
     return ratio(sum(outcome(b) == "PASS" for b in bundles), len(bundles))
 
 
+def acceptance_pass_ratio(bundles, scenarios):
+    """Count selected scenario runs, keeping failed and incomplete summaries in the denominator."""
+    runs = [run for bundle in bundles if bundle.run_class == "distributed-acceptance"
+            for run in acceptance_runs(bundle, scenarios)]
+    return ratio(sum(run.get("passed") is True for run in runs), len(runs))
+
+
 def failure_class(summary):
     """Short failure label from a FAILED summary; unknown text keeps its error type."""
     failure = summary.get("agent_failure")
@@ -1323,6 +1330,9 @@ DERIVATIONS = {
     "scenario_outcomes": scenario_outcomes,
     "pair_outcomes": pair_outcomes,
     "distributed_expectations": distributed_expectations,
+    "acceptance_s8_ratio": lambda bundles: acceptance_pass_ratio(bundles, ("S8",)),
+    "acceptance_s10_ratio": lambda bundles: acceptance_pass_ratio(bundles, ("S10",)),
+    "acceptance_s11_ratio": lambda bundles: acceptance_pass_ratio(bundles, ("S11a", "S11b", "S11c")),
     "seal_outcomes": seal_outcomes,
     "trace_shapes": trace_shapes,
     "admission_probes": admission_probes,
@@ -1542,7 +1552,7 @@ def approval_kind(bundle):
     return "not recorded"
 
 
-def acceptance_runs(bundle):
+def acceptance_runs(bundle, scenarios=None):
     """Dated scenario-run summaries of a sentinel-dist bundle, in path order; excludes P4.02 drills.
 
     A summary that is not an object (a run that crashed while writing it) is
@@ -1551,7 +1561,8 @@ def acceptance_runs(bundle):
     """
     runs = []
     for item in sorted(bundle.manifest.get("files", []), key=lambda item: item["path"]):
-        if ACCEPTANCE_RUN.fullmatch(item["path"]):
+        if ACCEPTANCE_RUN.fullmatch(item["path"]) and (
+                scenarios is None or item["path"].split("/")[1].split("-")[0] in scenarios):
             value = bundle.json(item["path"])
             runs.append(value if isinstance(value, dict) else {})
     return runs
