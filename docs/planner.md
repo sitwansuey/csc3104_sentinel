@@ -34,6 +34,40 @@ data, not instructions; [Untrusted inputs](#untrusted-inputs) lists the
 controls. See the code and tests for the bounds; no production identity or
 perfect diagnosis guarantee is implied.
 
+## Retrieval corpus
+
+Recovery runbooks are the version-controlled, general development guidance in
+`runbooks/*.md`, supplied with the source checkout. `retrieve_runbooks` opens
+only fixed filenames, returning each complete file with its filename stem as
+the stable id: `failed-rollout`, `pod-failure`, `resource-saturation`,
+`replicas-below-minimum` and `identity-failure`. Selection is deterministic:
+lower-cased signal reasons match rollout/crash/startup/back-off/unavailability
+or Pod-health keywords; metric-alert sources, the below-minimum reason and the
+certificate-rejection reason select their respective guidance. There is no
+directory-wide search or external retrieval. A missing selected file, an empty
+corpus or a missing directory returns no guidance and planning escalates
+without calling the recovery provider.
+
+`services/planner/core.py` accepts at most 10 runbooks, each containing 1 to
+20,000 characters. Its RCA retrieval interface accepts at most 10 structured
+workflows and 200,000 characters for the complete JSON-encoded knowledge,
+including rules and tool metadata. Diagnostic workflows are separately curated
+in `agent/knowledge/templates/*.json`, with `wf-*` source ids. The complete
+provider context, including incident, full target identity, eligible baselines
+and diagnosis, is also limited to 200,000 JSON-encoded characters (Python's
+default escaping and separators). Excess or non-serialisable context raises
+`ContractError` before the provider is called; core planning never trims these
+fields to fit. These character bounds do not guarantee a fit in a model's token
+window. Retrieved guidance is data and cannot grant recovery permission.
+
+Held-out evaluation solutions and benchmark labels are excluded from both
+guidance directories; neither retrieval path loads evaluation answer files.
+Replay `expected.json` labels stay separate from case inputs.
+`tests/test_retrieval_contamination.py` checks the runbooks, diagnostic knowledge
+and generated replay prompts for known replay label terms. This is a lexical
+check, not proof against every possible answer leak; RCAEval case names are
+not yet covered (see the [replay limitations](evaluation/replay/README.md)).
+
 ## Untrusted inputs
 
 Container logs, Kubernetes event messages and the incident signal details
