@@ -1,0 +1,137 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": {
+        "budget_seconds": 600,
+        "calls": [
+          {
+            "attempt": 1,
+            "call_id": 1,
+            "eval_duration_seconds": 15.408859,
+            "load_duration_seconds": 0.0036567,
+            "model": "qwen3:14b",
+            "output_tokens": 236,
+            "planning_attempt": 1,
+            "prompt_characters": 11748,
+            "prompt_eval_duration_seconds": 4.237175,
+            "prompt_tokens": 4267,
+            "prompt_version": "rca-v1",
+            "retrieved_passages": [],
+            "role": "Analyzer",
+            "seconds": 20.165884600002755,
+            "status": "completed"
+          },
+          {
+            "attempt": 1,
+            "call_id": 2,
+            "eval_duration_seconds": 21.629171,
+            "load_duration_seconds": 0.0031476,
+            "model": "qwen3:14b",
+            "output_tokens": 310,
+            "planning_attempt": 1,
+            "prompt_characters": 13633,
+            "prompt_eval_duration_seconds": 5.118343,
+            "prompt_tokens": 4641,
+            "prompt_version": "rca-v1",
+            "retrieved_passages": [],
+            "role": "Reporter",
+            "seconds": 26.961316299999453,
+            "status": "completed"
+          },
+          {
+            "attempt": 1,
+            "call_id": 3,
+            "eval_duration_seconds": 16.802754,
+            "load_duration_seconds": 0.0031007,
+            "model": "qwen3:14b",
+            "output_tokens": 261,
+            "planning_attempt": 1,
+            "prompt_characters": 12197,
+            "prompt_eval_duration_seconds": 4.78823,
+            "prompt_tokens": 4394,
+            "prompt_version": "agent-recovery-v1",
+            "retrieved_passages": [
+              {
+                "content_sha256": "ee695a3fe86de107f83928612f9bfedaa893a20af52851bb35fff26609fb6ec6",
+                "id": "failed-rollout"
+              },
+              {
+                "content_sha256": "71fc9a2b439a85b6b4e973754bc6152f74fe43c5c9868cf4d79b1493bd356e6c",
+                "id": "pod-failure"
+              }
+            ],
+            "role": "Recovery Planner",
+            "seconds": 21.80289569999877,
+            "status": "completed"
+          }
+        ],
+        "decision": {
+          "codes": [],
+          "decided_by": "model",
+          "eligible": true,
+          "enforced": true,
+          "model_action": "ROLLBACK",
+          "overridden": false,
+          "policy": "gated"
+        },
+        "model_calls": 3,
+        "model_calls_completed": 3,
+        "model_seconds": 68.93,
+        "planning_attempt": 1,
+        "prompt_version": "agent-recovery-v1",
+        "retrieved_passages": [
+          {
+            "content_sha256": "ee695a3fe86de107f83928612f9bfedaa893a20af52851bb35fff26609fb6ec6",
+            "id": "failed-rollout"
+          },
+          {
+            "content_sha256": "71fc9a2b439a85b6b4e973754bc6152f74fe43c5c9868cf4d79b1493bd356e6c",
+            "id": "pod-failure"
+          }
+        ],
+        "seconds": 69.213
+      }
+    }
+  ],
+  "attempts": 1,
+  "delivered": 1,
+  "error_code": null,
+  "incident_id": "INC-E195C0C2F105",
+  "next_attempt": 0.0,
+  "proposal": {
+    "action": "ROLLBACK",
+    "action_id": "ACT-83d518a92d27a22b8bae5a5b",
+    "based_on_resource_version": "383740",
+    "evidence_refs": [
+      "E-A4D052A36220",
+      "E-7848D8916F68",
+      "E-5D7BD565D18C",
+      "E-0E84F64C9398",
+      "E-83537B0BB30E",
+      "E-B04F05148FE9",
+      "E-3B7E9DB9D0AA",
+      "E-EB810FC1267B",
+      "E-67B0C4B9C5CC",
+      "E-5593B288F815",
+      "E-CDE7632D3C7E",
+      "E-91EE6B5D828A",
+      "E-86224BA4CFFC"
+    ],
+    "incident_id": "INC-E195C0C2F105",
+    "kind": "proposal",
+    "parameters": {
+      "baseline_id": "BASE-LIVE-cb04c7e18696",
+      "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+    },
+    "rationale": "The incident evidence indicates a container startup failure in the 'shippingservice' deployment, with the container repeatedly crashing and entering a CrashLoopBackOff state. The change evidence shows that the live template has a modification in the 'spec.containers[server].env[PORT].value' field, where the port was changed from '50051' to 'invalid-port'. This change is likely the root cause of the failure, as the readiness probe is failing to connect to the service on the expected port. The rollback action is appropriate here because the evidence supports that a harmful configuration rollout (setting an invalid port) caused the issue, and restoring the last observed healthy baseline would revert the configuration to a known working state.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    }
+  }
+}

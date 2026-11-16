@@ -39,7 +39,7 @@ Read each number with its limits:
 <!-- BEGIN GENERATED:runs -->
 | Class | Runs | PASS | FAILED | INTERRUPTED | INCOMPLETE | Provenance |
 | --- | --- | --- | --- | --- | --- | --- |
-| agent | 44 | 30 | 14 | 0 | 0 | 24 recorded, 20 inferred |
+| agent | 45 | 31 | 14 | 0 | 0 | 25 recorded, 20 inferred |
 | cert-lifecycle | 4 | 4 | 0 | 0 | 0 | 0 recorded, 4 inferred |
 | chaos-batch | 17 | 3 | 13 | 0 | 1 | 0 recorded, 17 inferred |
 | chaos-recovery | 25 | 20 | 5 | 0 | 0 | 25 recorded, 0 inferred |
@@ -145,6 +145,7 @@ and labelled `expected escalation`.
 | b79fb5d | recorded | 1 | 1/1 | 0 | 3 | 27 | none |
 | 29e41f8 | recorded | 1 | 0/1 | 1 | n/a | n/a | expected escalation x1 |
 | f30b596 | recorded | 3 | 2/3 | 1 | 4 | 135.95 | agent escalated (ABSTAINED) x1 |
+| 19661f3 | recorded | 1 | 1/1 | 0 | 3 | 68.9 | none |
 <!-- END GENERATED:agent-runs -->
 
 ### Catalog scenario runs (unscored)
@@ -197,6 +198,7 @@ these rows are not scored trials.
 | boutique-live-20261116t174705z-aa3f81 | C1 | f30b596 | FAILED | ESCALATE | from a planning failure (ABSTAINED) | 0 | NEEDS_REVIEW | no | pending |
 | boutique-live-20261116t175115z-3b106e | R1 | f30b596 | PASS | ROLLBACK | decided by the model | 1 | FAILED | yes | pending |
 | boutique-live-20261116t175656z-bdb808 | R1 | f30b596 | PASS | ROLLBACK | decided by the model | 1 | NEEDS_REVIEW | yes | pending |
+| boutique-live-20261116t182043z-1a0d96 | R1 | 19661f3 | PASS | ROLLBACK | decided by the model | 1 | RECOVERED | yes | pending |
 <!-- END GENERATED:scenario-runs -->
 
 ## Guard rejection
@@ -308,9 +310,9 @@ Successful runs only. `recorded` values come from the harness timeline;
 <!-- BEGIN GENERATED:timings -->
 | Class | Interval | n | Median s | Min s | Max s | Source |
 | --- | --- | --- | --- | --- | --- | --- |
-| agent | fault -> incident observed | 19 | 7.8 | 7.5 | 10.3 | recorded |
-| agent | incident observed -> repair applied | 27 | 45 | 23.7 | 356.5 | approx |
-| agent | repair applied -> outcome window end | 27 | 43.6 | 23.5 | 316.8 | approx |
+| agent | fault -> incident observed | 20 | 7.8 | 7.5 | 10.3 | recorded |
+| agent | incident observed -> repair applied | 28 | 45.75 | 23.7 | 356.5 | approx |
+| agent | repair applied -> outcome window end | 28 | 43.6 | 23.5 | 316.8 | approx |
 | connected-harness | fault -> incident observed | 14 | 7.65 | 5.5 | 9.9 | recorded |
 | connected-harness | incident observed -> repair applied | 18 | 3.85 | 3.2 | 6 | approx |
 | connected-harness | repair applied -> outcome window end | 18 | 26.6 | 23.9 | 101.8 | approx |
@@ -347,20 +349,20 @@ with these limits:
   from the one harness process). See [dual-fault.md](dual-fault.md).
 
 <!-- BEGIN GENERATED:latency -->
-- agent: 44 runs, 30 PASS; stopped at: planning x12; verification x2.
+- agent: 45 runs, 31 PASS; stopped at: planning x12; verification x2.
 - harness: 20 runs, 18 PASS; stopped at: after_recovery x1; decision x1.
 
 | Mode | Stage | n | Median s | p90 s | Min s | Max s | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| agent | detection: start -> incident observed | 43 | 7.3 | 9.8 | 5.0 | 10.2 | bundle; start: first failing snapshot x20, injection x23 |
-| agent | planning: incident -> last planning record | 24 | 28.6 | 67.1 | 16.5 | 208.4 | bundle + run folder |
-| agent | model calls: sum per run (part of planning) | 31 | 43.3 | 66.6 | 21.9 | 206.8 | bundle |
-| agent | Guard: planning end -> ALLOW (incl. lab approval) | 21 | 0.7 | 1.0 | 0.2 | 1.5 | bundle + run folder |
-| agent | incident -> Guard ALLOW (planning + Guard) | 29 | 45.8 | 111.8 | 23.3 | 355.8 | bundle |
-| agent | execution: ALLOW -> Executor result | 29 | 0.7 | 0.8 | 0.5 | 0.8 | bundle |
-| agent | verification: Executor result -> outcome window end | 29 | 43.4 | 62.5 | 8.0 | 316.8 | bundle |
-| agent | fault to repair: start -> Executor result | 29 | 53.7 | 119.6 | 31.5 | 363.7 | bundle; start: first failing snapshot x13, injection x16 |
-| agent | total: start -> outcome window end | 29 | 100.5 | 232.6 | 56.9 | 534.9 | bundle; start: first failing snapshot x13, injection x16 |
+| agent | detection: start -> incident observed | 44 | 7.3 | 9.8 | 5.0 | 10.2 | bundle; start: first failing snapshot x20, injection x24 |
+| agent | planning: incident -> last planning record | 25 | 29.0 | 69.8 | 16.5 | 208.4 | bundle + run folder |
+| agent | model calls: sum per run (part of planning) | 32 | 44.6 | 68.9 | 21.9 | 206.8 | bundle |
+| agent | Guard: planning end -> ALLOW (incl. lab approval) | 22 | 0.7 | 1.0 | 0.2 | 126.2 | bundle + run folder |
+| agent | incident -> Guard ALLOW (planning + Guard) | 30 | 46.7 | 111.8 | 23.3 | 355.8 | bundle |
+| agent | execution: ALLOW -> Executor result | 30 | 0.6 | 0.7 | 0.5 | 0.8 | bundle |
+| agent | verification: Executor result -> outcome window end | 30 | 43.5 | 62.5 | 8.0 | 316.8 | bundle |
+| agent | fault to repair: start -> Executor result | 30 | 54.6 | 119.6 | 31.5 | 363.7 | bundle; start: first failing snapshot x13, injection x17 |
+| agent | total: start -> outcome window end | 30 | 100.8 | 232.6 | 56.9 | 534.9 | bundle; start: first failing snapshot x13, injection x17 |
 | harness | detection: start -> incident observed | 20 | 7.3 | 7.6 | 5.1 | 9.7 | bundle; start: first failing snapshot x4, injection x16 |
 | harness | planning: incident -> last planning record | 16 | 3.0 | 4.2 | 2.4 | 4.4 | bundle |
 | harness | model calls: sum per run (part of planning) | 0 | n/a | n/a | n/a | n/a | - |
@@ -388,10 +390,10 @@ load during a run has been measured with that transport.
 <!-- BEGIN GENERATED:model-calls -->
 | Mode | Measure | n | Median s | p90 s | Max s |
 | --- | --- | --- | --- | --- | --- |
-| agent | model time per run, warm runs | 22 | 27.4 | 65.1 | 206.8 |
+| agent | model time per run, warm runs | 23 | 27.7 | 68.9 | 206.8 |
 | agent | model time per run, cold runs | 1 | 43.1 | 43.1 | 43.1 |
 | agent | model time per run, unclassified runs | 8 | 50.3 | 109.3 | 109.3 |
-| agent | one call, warm | 86 | 8.7 | 21.0 | 118.5 |
+| agent | one call, warm | 89 | 8.7 | 22.0 | 118.5 |
 | agent | one call, cold | 2 | 32.5 | 41.1 | 41.1 |
 | agent | one call, unclassified | 33 | 11.2 | 28.9 | 46.3 |
 | agent | model load time of cold calls | 2 | 21.1 | 25.6 | 25.6 |

@@ -104,7 +104,7 @@ is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.
 <!-- BEGIN GENERATED:index -->
 | Class | Bundles | Recorded | Inferred | Superseded | Withdrawn |
 | --- | --- | --- | --- | --- | --- |
-| agent | 44 | 24 | 20 | 0 | 0 |
+| agent | 45 | 25 | 20 | 0 | 0 |
 | cert-lifecycle | 4 | 0 | 4 | 0 | 0 |
 | chaos-batch | 17 | 0 | 17 | 0 | 0 |
 | chaos-recovery | 25 | 25 | 0 | 1 | 0 |

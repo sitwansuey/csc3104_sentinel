@@ -2620,6 +2620,16 @@
       "provenance": "recorded",
       "status": "current",
       "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261116t182043z-1a0d96",
+      "class": "agent",
+      "path": "2026-11-16/boutique-live-20261116t182043z-1a0d96",
+      "captured_at": "2026-11-16T18:20:43.709879Z",
+      "source_revision": "19661f384c48315057d62d1f30b9ecc00fff3566",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
     }
   ]
 }

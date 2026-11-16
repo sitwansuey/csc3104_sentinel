@@ -1,0 +1,3910 @@
+{
+  "schema": "sentinel-latency-ledger-v1",
+  "generator": "scripts/latency_report.py",
+  "method": {
+    "unit": "one run; stages are wall-clock differences between recorded timestamps, in seconds",
+    "start": "fault_injected_at when recorded, else the timeline fault_injected phase, else the first failing Observer snapshot (from_first_failing_snapshot: a lower bound on detection, never imputed)",
+    "percentiles": "median; p90 and p95 by nearest rank; null when n is 0",
+    "cold_call": "a model call whose load_duration_seconds is over 1; calls without a recorded load duration are unclassified, never counted as warm",
+    "stages": {
+      "detection": "start -> incident observed",
+      "planning": "incident observed -> last planning-progress record (run folder only)",
+      "model": "sum of model call wall times; null when planning did not finish",
+      "guard": "planning end -> Guard ALLOW; includes the dependency check and the lab approval (pre-authorised before 4139385, automated auto-lab through the approval API from 4139385)",
+      "decision": "incident observed -> Guard ALLOW; in harness mode includes the scripted negative cases",
+      "execution": "Guard ALLOW -> Executor result recorded",
+      "verification": "Executor result -> end of the Verifier outcome window",
+      "repair": "start -> Executor result recorded",
+      "total": "start -> end of the Verifier outcome window"
+    }
+  },
+  "limitations": [
+    "One Windows/amd64 host with Docker Desktop and kind; runs share the host, cluster and model.",
+    "Mostly one fault type (invalid shipping PORT); from 870aa7d also the unscored catalog scenarios R2 and N1. Lab approval is pre-authorised or automated (auto-lab), so no human wait is included.",
+    "Runs before fault_injected_at was recorded start from the first failing snapshot, which understates detection.",
+    "Stages marked run_folder come from local run folders that are not committed and cannot be rechecked in CI.",
+    "Model time depends on the GPU, model and context size of the run; it is not portable to other hosts."
+  ],
+  "rows": [
+    {
+      "run": "boutique-live-20261110T170340Z-924ad0",
+      "bundle_id": "boutique-live-20261110t170340z-924ad0",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.105,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": 2.785,
+        "execution": 0.638,
+        "verification": 26.637,
+        "repair": 10.528,
+        "total": 37.165
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback",
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261110T171150Z-44469c",
+      "bundle_id": "boutique-live-20261110t171150z-44469c",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "FAILED",
+      "outcome": "NOT_RECOVERED",
+      "failure_stage": "verification",
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.145,
+        "planning": null,
+        "model": 66.59,
+        "guard": null,
+        "decision": 68.495,
+        "execution": 0.67,
+        "verification": 8.007,
+        "repair": 76.31,
+        "total": 84.317
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": "bundle",
+        "guard": null,
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Planner",
+          "status": null,
+          "seconds": 39.23922859999993,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3556,
+          "output_tokens": 494,
+          "cold": null
+        },
+        {
+          "role": "Analyzer",
+          "status": null,
+          "seconds": 5.115965500000129,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 1910,
+          "output_tokens": 151,
+          "cold": null
+        },
+        {
+          "role": "Reporter",
+          "status": null,
+          "seconds": 11.19389080000019,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3353,
+          "output_tokens": 382,
+          "cold": null
+        },
+        {
+          "role": "Recovery Planner",
+          "status": null,
+          "seconds": 11.041375100000096,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3560,
+          "output_tokens": 367,
+          "cold": null
+        }
+      ],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261110T171528Z-3f8ebc",
+      "bundle_id": "boutique-live-20261110t171528z-3f8ebc",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "FAILED",
+      "outcome": "NOT_RECOVERED",
+      "failure_stage": "verification",
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.135,
+        "planning": null,
+        "model": 47.36,
+        "guard": null,
+        "decision": 49.115,
+        "execution": 0.716,
+        "verification": 7.993,
+        "repair": 56.967,
+        "total": 64.96
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": "bundle",
+        "guard": null,
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Planner",
+          "status": null,
+          "seconds": 16.708610800000315,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3578,
+          "output_tokens": 630,
+          "cold": null
+        },
+        {
+          "role": "Analyzer",
+          "status": null,
+          "seconds": 7.253511699999763,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 2167,
+          "output_tokens": 246,
+          "cold": null
+        },
+        {
+          "role": "Reporter",
+          "status": null,
+          "seconds": 11.175462299999708,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3717,
+          "output_tokens": 365,
+          "cold": null
+        },
+        {
+          "role": "Recovery Planner",
+          "status": null,
+          "seconds": 12.222772799999802,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3548,
+          "output_tokens": 422,
+          "cold": null
+        }
+      ],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261110T184654Z-638872",
+      "bundle_id": "boutique-live-20261110t184654z-638872",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.11,
+        "planning": null,
+        "model": 109.315,
+        "guard": null,
+        "decision": 111.802,
+        "execution": 0.642,
+        "verification": 28.902,
+        "repair": 119.554,
+        "total": 148.456
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": "bundle",
+        "guard": null,
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Planner",
+          "status": null,
+          "seconds": 28.870131500001662,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 4720,
+          "output_tokens": 618,
+          "cold": null
+        },
+        {
+          "role": "Analyzer",
+          "status": null,
+          "seconds": 46.28067420000116,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 2870,
+          "output_tokens": 2048,
+          "cold": null
+        },
+        {
+          "role": "Analyzer",
+          "status": null,
+          "seconds": 8.760566900000413,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 2870,
+          "output_tokens": 407,
+          "cold": null
+        },
+        {
+          "role": "Reporter",
+          "status": null,
+          "seconds": 12.887622599999304,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 5152,
+          "output_tokens": 364,
+          "cold": null
+        },
+        {
+          "role": "Recovery Planner",
+          "status": null,
+          "seconds": 12.51628189999974,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 4071,
+          "output_tokens": 409,
+          "cold": null
+        }
+      ],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261110T185103Z-e3d521",
+      "bundle_id": "boutique-live-20261110t185103z-e3d521",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.127,
+        "planning": null,
+        "model": 38.206,
+        "guard": null,
+        "decision": 40.022,
+        "execution": 0.605,
+        "verification": 53.429,
+        "repair": 47.754,
+        "total": 101.184
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": "bundle",
+        "guard": null,
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Planner",
+          "status": null,
+          "seconds": 13.734920999999304,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3577,
+          "output_tokens": 494,
+          "cold": null
+        },
+        {
+          "role": "Analyzer",
+          "status": null,
+          "seconds": 5.732722499998999,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 1982,
+          "output_tokens": 179,
+          "cold": null
+        },
+        {
+          "role": "Reporter",
+          "status": null,
+          "seconds": 8.856532899999365,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3464,
+          "output_tokens": 269,
+          "cold": null
+        },
+        {
+          "role": "Recovery Planner",
+          "status": null,
+          "seconds": 9.881593600000997,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3457,
+          "output_tokens": 322,
+          "cold": null
+        }
+      ],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261110T185411Z-484196",
+      "bundle_id": "boutique-live-20261110t185411z-484196",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.144,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": 2.801,
+        "execution": 0.593,
+        "verification": 26.34,
+        "repair": 10.539,
+        "total": 36.879
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback",
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261110T185646Z-275eb5",
+      "bundle_id": "boutique-live-20261110t185646z-275eb5",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.213,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": 2.837,
+        "execution": 0.601,
+        "verification": 26.052,
+        "repair": 10.651,
+        "total": 36.703
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback",
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261110T192436Z-42206e",
+      "bundle_id": "boutique-live-20261110t192436z-42206e",
+      "planning_mode": "agent",
+      "model": null,
+      "status": "FAILED",
+      "outcome": null,
+      "failure_stage": "planning",
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.156,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "calls": [],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261110T192628Z-f6ccfc",
+      "bundle_id": "boutique-live-20261110t192628z-f6ccfc",
+      "planning_mode": "agent",
+      "model": null,
+      "status": "FAILED",
+      "outcome": null,
+      "failure_stage": "planning",
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.225,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "calls": [],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261110T192806Z-88c2d9",
+      "bundle_id": "boutique-live-20261110t192806z-88c2d9",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.167,
+        "planning": null,
+        "model": 53.16,
+        "guard": null,
+        "decision": 355.838,
+        "execution": 0.687,
+        "verification": 43.279,
+        "repair": 363.692,
+        "total": 406.971
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": "bundle",
+        "guard": null,
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Planner",
+          "status": null,
+          "seconds": 26.014623699998992,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3569,
+          "output_tokens": 630,
+          "cold": null
+        },
+        {
+          "role": "Analyzer",
+          "status": null,
+          "seconds": 7.218724599999405,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 2165,
+          "output_tokens": 240,
+          "cold": null
+        },
+        {
+          "role": "Reporter",
+          "status": null,
+          "seconds": 9.388834900000802,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3703,
+          "output_tokens": 287,
+          "cold": null
+        },
+        {
+          "role": "Recovery Planner",
+          "status": null,
+          "seconds": 10.537882499998886,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3470,
+          "output_tokens": 353,
+          "cold": null
+        }
+      ],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261110T193604Z-2aad1c",
+      "bundle_id": "boutique-live-20261110t193604z-2aad1c",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.177,
+        "planning": null,
+        "model": 45.906,
+        "guard": null,
+        "decision": 47.673,
+        "execution": 0.65,
+        "verification": 44.974,
+        "repair": 55.5,
+        "total": 100.473
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": "bundle",
+        "guard": null,
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Planner",
+          "status": null,
+          "seconds": 15.880905099998927,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 4547,
+          "output_tokens": 537,
+          "cold": null
+        },
+        {
+          "role": "Analyzer",
+          "status": null,
+          "seconds": 6.340871500000503,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 2851,
+          "output_tokens": 166,
+          "cold": null
+        },
+        {
+          "role": "Reporter",
+          "status": null,
+          "seconds": 11.949305699999968,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 4806,
+          "output_tokens": 343,
+          "cold": null
+        },
+        {
+          "role": "Recovery Planner",
+          "status": null,
+          "seconds": 11.735263099999429,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 4006,
+          "output_tokens": 374,
+          "cold": null
+        }
+      ],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261110T193859Z-7f29f5",
+      "bundle_id": "boutique-live-20261110t193859z-7f29f5",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.154,
+        "planning": null,
+        "model": 43.329,
+        "guard": null,
+        "decision": 45.792,
+        "execution": 0.744,
+        "verification": 53.967,
+        "repair": 53.69,
+        "total": 107.657
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": "bundle",
+        "guard": null,
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Planner",
+          "status": null,
+          "seconds": 16.45105390000026,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3552,
+          "output_tokens": 621,
+          "cold": null
+        },
+        {
+          "role": "Analyzer",
+          "status": null,
+          "seconds": 6.200380499998573,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 2359,
+          "output_tokens": 176,
+          "cold": null
+        },
+        {
+          "role": "Reporter",
+          "status": null,
+          "seconds": 10.312599199998658,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3826,
+          "output_tokens": 315,
+          "cold": null
+        },
+        {
+          "role": "Recovery Planner",
+          "status": null,
+          "seconds": 10.36472540000068,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3491,
+          "output_tokens": 337,
+          "cold": null
+        }
+      ],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261111T144125Z-81e38f",
+      "bundle_id": "boutique-live-20261111t144125z-81e38f",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "FAILED",
+      "outcome": null,
+      "failure_stage": "planning",
+      "planning_seconds_before_failure": 5.7,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.331,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "calls": [],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261111T144310Z-65663a",
+      "bundle_id": "boutique-live-20261111t144310z-65663a",
+      "planning_mode": "agent",
+      "model": "sentinel-not-installed:latest",
+      "status": "FAILED",
+      "outcome": null,
+      "failure_stage": "planning",
+      "planning_seconds_before_failure": 0.7,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.4,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "calls": [],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261111T144432Z-5fb1d8",
+      "bundle_id": "boutique-live-20261111t144432z-5fb1d8",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.249,
+        "planning": null,
+        "model": 66.359,
+        "guard": null,
+        "decision": 68.249,
+        "execution": 0.773,
+        "verification": 61.464,
+        "repair": 76.27,
+        "total": 137.734
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": "bundle",
+        "guard": null,
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Planner",
+          "status": null,
+          "seconds": 39.18420100000003,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3577,
+          "output_tokens": 494,
+          "cold": null
+        },
+        {
+          "role": "Analyzer",
+          "status": null,
+          "seconds": 5.720568700000058,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 1980,
+          "output_tokens": 171,
+          "cold": null
+        },
+        {
+          "role": "Reporter",
+          "status": null,
+          "seconds": 11.18439909999961,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3454,
+          "output_tokens": 370,
+          "cold": null
+        },
+        {
+          "role": "Recovery Planner",
+          "status": null,
+          "seconds": 10.27027420000013,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": 3610,
+          "output_tokens": 325,
+          "cold": null
+        }
+      ],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261111T145525Z-4aa779",
+      "bundle_id": "boutique-live-20261111t145525z-4aa779",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.416,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": 3.084,
+        "execution": 0.731,
+        "verification": 55.457,
+        "repair": 11.23,
+        "total": 66.687
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback",
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261111T160349Z-4edbe0",
+      "bundle_id": "boutique-live-20261111t160349z-4edbe0",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "FAILED",
+      "outcome": null,
+      "failure_stage": "planning",
+      "planning_seconds_before_failure": 5.3,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 5.018,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "failed",
+          "seconds": 2.0566717000001518,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": null,
+          "output_tokens": null,
+          "cold": null
+        },
+        {
+          "role": "Analyzer",
+          "status": "failed",
+          "seconds": 2.0674998000004052,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": null,
+          "output_tokens": null,
+          "cold": null
+        }
+      ],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261111T160522Z-20298d",
+      "bundle_id": "boutique-live-20261111t160522z-20298d",
+      "planning_mode": "agent",
+      "model": "sentinel-not-installed:latest",
+      "status": "FAILED",
+      "outcome": null,
+      "failure_stage": "planning",
+      "planning_seconds_before_failure": 0.2,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 5.026,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "failed",
+          "seconds": 0.0360422000003382,
+          "load_seconds": null,
+          "prompt_eval_seconds": null,
+          "eval_seconds": null,
+          "prompt_tokens": null,
+          "output_tokens": null,
+          "cold": null
+        }
+      ],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261111T160642Z-6cedf0",
+      "bundle_id": "boutique-live-20261111t160642z-6cedf0",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "FAILED",
+      "outcome": null,
+      "failure_stage": "planning",
+      "planning_seconds_before_failure": 60.7,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 5.134,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 41.137996000000385,
+          "load_seconds": 25.5929686,
+          "prompt_eval_seconds": 3.722037,
+          "eval_seconds": 11.722073,
+          "prompt_tokens": 2577,
+          "output_tokens": 224,
+          "cold": true
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 19.31445369999892,
+          "load_seconds": 0.0052384,
+          "prompt_eval_seconds": 3.431558,
+          "eval_seconds": 15.702974,
+          "prompt_tokens": 2839,
+          "output_tokens": 299,
+          "cold": false
+        }
+      ],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261111T160943Z-f1193b",
+      "bundle_id": "boutique-live-20261111t160943z-f1193b",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.282,
+        "planning": 52.331,
+        "model": 51.137,
+        "guard": 0.43,
+        "decision": 52.762,
+        "execution": 0.825,
+        "verification": 42.665,
+        "repair": 60.868,
+        "total": 103.533
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "run_folder",
+        "model": "bundle",
+        "guard": "run_folder",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 14.063080100000661,
+          "load_seconds": 0.0059956,
+          "prompt_eval_seconds": 2.604924,
+          "eval_seconds": 10.694241,
+          "prompt_tokens": 2606,
+          "output_tokens": 209,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 19.746089300000676,
+          "load_seconds": 0.0208576,
+          "prompt_eval_seconds": 3.464347,
+          "eval_seconds": 16.088895,
+          "prompt_tokens": 2853,
+          "output_tokens": 302,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 17.328191399999923,
+          "load_seconds": 0.0100268,
+          "prompt_eval_seconds": 2.376388,
+          "eval_seconds": 14.725296,
+          "prompt_tokens": 2413,
+          "output_tokens": 297,
+          "cold": false
+        }
+      ],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261111T161243Z-d4cba2",
+      "bundle_id": "boutique-live-20261111t161243z-d4cba2",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.305,
+        "planning": 57.467,
+        "model": 56.11,
+        "guard": 0.447,
+        "decision": 57.914,
+        "execution": 0.841,
+        "verification": 36.227,
+        "repair": 66.06,
+        "total": 102.287
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "run_folder",
+        "model": "bundle",
+        "guard": "run_folder",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 14.833510899999965,
+          "load_seconds": 0.0617383,
+          "prompt_eval_seconds": 2.598885,
+          "eval_seconds": 11.37308,
+          "prompt_tokens": 2619,
+          "output_tokens": 221,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 22.044804200000726,
+          "load_seconds": 0.0052104,
+          "prompt_eval_seconds": 3.441795,
+          "eval_seconds": 18.417423,
+          "prompt_tokens": 2878,
+          "output_tokens": 343,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 19.232123399999182,
+          "load_seconds": 0.0041616,
+          "prompt_eval_seconds": 2.971827,
+          "eval_seconds": 16.055379,
+          "prompt_tokens": 2456,
+          "output_tokens": 328,
+          "cold": false
+        }
+      ],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261111T165457Z-da6e95",
+      "bundle_id": "boutique-live-20261111t165457z-da6e95",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.354,
+        "planning": 43.907,
+        "model": 43.089,
+        "guard": 0.39,
+        "decision": 44.297,
+        "execution": 0.693,
+        "verification": 55.165,
+        "repair": 52.343,
+        "total": 107.508
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "run_folder",
+        "model": "bundle",
+        "guard": "run_folder",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 23.896582299999864,
+          "load_seconds": 16.6770647,
+          "prompt_eval_seconds": 2.88459,
+          "eval_seconds": 4.308666,
+          "prompt_tokens": 3124,
+          "output_tokens": 200,
+          "cold": true
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 10.906780799999979,
+          "load_seconds": 0.0041986,
+          "prompt_eval_seconds": 2.831375,
+          "eval_seconds": 7.915968,
+          "prompt_tokens": 3362,
+          "output_tokens": 374,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 8.285403699999733,
+          "load_seconds": 0.0032093,
+          "prompt_eval_seconds": 2.576623,
+          "eval_seconds": 5.548567,
+          "prompt_tokens": 2989,
+          "output_tokens": 267,
+          "cold": false
+        }
+      ],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261111T165802Z-914d8d",
+      "bundle_id": "boutique-live-20261111t165802z-914d8d",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.131,
+        "planning": 26.065,
+        "model": 25.065,
+        "guard": 0.375,
+        "decision": 26.439,
+        "execution": 0.625,
+        "verification": 43.825,
+        "repair": 34.196,
+        "total": 78.021
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "run_folder",
+        "model": "bundle",
+        "guard": "run_folder",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 7.293399099999078,
+          "load_seconds": 0.0053403,
+          "prompt_eval_seconds": 2.205001,
+          "eval_seconds": 4.990802,
+          "prompt_tokens": 2674,
+          "output_tokens": 235,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 9.35944550000022,
+          "load_seconds": 0.0026811,
+          "prompt_eval_seconds": 2.45128,
+          "eval_seconds": 6.786306,
+          "prompt_tokens": 2947,
+          "output_tokens": 321,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 8.412630900000295,
+          "load_seconds": 0.0031224,
+          "prompt_eval_seconds": 1.991835,
+          "eval_seconds": 6.313979,
+          "prompt_tokens": 2428,
+          "output_tokens": 310,
+          "cold": false
+        }
+      ],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261111T170034Z-1cc9bc",
+      "bundle_id": "boutique-live-20261111t170034z-1cc9bc",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "from_first_failing_snapshot",
+      "stages": {
+        "detection": 7.186,
+        "planning": 27.223,
+        "model": 26.417,
+        "guard": 0.376,
+        "decision": 27.599,
+        "execution": 0.666,
+        "verification": 43.571,
+        "repair": 35.451,
+        "total": 79.022
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "run_folder",
+        "model": "bundle",
+        "guard": "run_folder",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 7.111746000000494,
+          "load_seconds": 0.0031936,
+          "prompt_eval_seconds": 2.211864,
+          "eval_seconds": 4.758383,
+          "prompt_tokens": 2664,
+          "output_tokens": 219,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 10.980137299999114,
+          "load_seconds": 0.0040933,
+          "prompt_eval_seconds": 2.46243,
+          "eval_seconds": 8.342991,
+          "prompt_tokens": 2921,
+          "output_tokens": 389,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 8.32466419999946,
+          "load_seconds": 0.0033177,
+          "prompt_eval_seconds": 2.098313999,
+          "eval_seconds": 6.022411,
+          "prompt_tokens": 2481,
+          "output_tokens": 293,
+          "cold": false
+        }
+      ],
+      "schema_notes": [
+        "no injection time recorded; detection measured from the first failing snapshot"
+      ],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261111T202419Z-cedc47",
+      "bundle_id": "boutique-live-20261111t202419z-cedc47",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.34,
+        "planning": 2.795,
+        "model": null,
+        "guard": 0.255,
+        "decision": 3.05,
+        "execution": 0.646,
+        "verification": 26.552,
+        "repair": 11.036,
+        "total": 37.588
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback"
+      ],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261111T202845Z-ea7221",
+      "bundle_id": "boutique-live-20261111t202845z-ea7221",
+      "planning_mode": "agent",
+      "model": "qwen3:does-not-exist",
+      "status": "FAILED",
+      "outcome": null,
+      "failure_stage": "planning",
+      "planning_seconds_before_failure": 0.1,
+      "start_basis": null,
+      "stages": {
+        "detection": null,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "stage_sources": {
+        "detection": null,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "calls": [],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261111T202847Z-3e370f",
+      "bundle_id": "boutique-live-20261111t202847z-3e370f",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.271,
+        "planning": 24.563,
+        "model": 23.56,
+        "guard": 0.19,
+        "decision": 24.753,
+        "execution": 0.709,
+        "verification": 43.684,
+        "repair": 32.733,
+        "total": 76.417
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": "bundle",
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 6.4871569000024465,
+          "load_seconds": 0.0036315,
+          "prompt_eval_seconds": 2.17697,
+          "eval_seconds": 4.241328999,
+          "prompt_tokens": 2649,
+          "output_tokens": 200,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 8.661896400000842,
+          "load_seconds": 0.0038056,
+          "prompt_eval_seconds": 2.420301,
+          "eval_seconds": 6.076698,
+          "prompt_tokens": 2887,
+          "output_tokens": 291,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 8.41050670000186,
+          "load_seconds": 0.004811,
+          "prompt_eval_seconds": 1.991468,
+          "eval_seconds": 6.237459,
+          "prompt_tokens": 2383,
+          "output_tokens": 309,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261111T203130Z-728cc5",
+      "bundle_id": "boutique-live-20261111t203130z-728cc5",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.394,
+        "planning": 23.143,
+        "model": 21.92,
+        "guard": 0.203,
+        "decision": 23.346,
+        "execution": 0.741,
+        "verification": 26.555,
+        "repair": 31.481,
+        "total": 58.036
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": "bundle",
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 6.158434000000852,
+          "load_seconds": 0.0052308,
+          "prompt_eval_seconds": 2.1913,
+          "eval_seconds": 3.91091,
+          "prompt_tokens": 2678,
+          "output_tokens": 183,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 8.475733999999647,
+          "load_seconds": 0.0068592,
+          "prompt_eval_seconds": 2.432493,
+          "eval_seconds": 5.865034,
+          "prompt_tokens": 2899,
+          "output_tokens": 281,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 7.286323399999674,
+          "load_seconds": 0.0047054,
+          "prompt_eval_seconds": 1.974893,
+          "eval_seconds": 5.133048,
+          "prompt_tokens": 2389,
+          "output_tokens": 256,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261111T203342Z-c264c5",
+      "bundle_id": "boutique-live-20261111t203342z-c264c5",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.421,
+        "planning": 25.355,
+        "model": 24.032,
+        "guard": 0.209,
+        "decision": 25.564,
+        "execution": 0.712,
+        "verification": 44.221,
+        "repair": 33.697,
+        "total": 77.918
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": "bundle",
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 8.034847399998398,
+          "load_seconds": 0.0047404,
+          "prompt_eval_seconds": 2.20217,
+          "eval_seconds": 5.761655,
+          "prompt_tokens": 2684,
+          "output_tokens": 273,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 7.738515999997617,
+          "load_seconds": 0.0027399,
+          "prompt_eval_seconds": 2.527144,
+          "eval_seconds": 4.999288,
+          "prompt_tokens": 2995,
+          "output_tokens": 238,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 8.258535099997971,
+          "load_seconds": 0.0025796,
+          "prompt_eval_seconds": 2.057498,
+          "eval_seconds": 5.984598,
+          "prompt_tokens": 2445,
+          "output_tokens": 297,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261111T220652Z-f42864",
+      "bundle_id": "boutique-live-20261111t220652z-f42864",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.321,
+        "planning": 2.643,
+        "model": null,
+        "guard": 0.365,
+        "decision": 3.008,
+        "execution": 0.642,
+        "verification": 24.056,
+        "repair": 10.971,
+        "total": 35.027
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback"
+      ],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261111T220933Z-5145ad",
+      "bundle_id": "boutique-live-20261111t220933z-5145ad",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "FAILED",
+      "outcome": null,
+      "failure_stage": "decision",
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.297,
+        "planning": 2.78,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "calls": [],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261111T221204Z-602449",
+      "bundle_id": "boutique-live-20261111t221204z-602449",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.393,
+        "planning": 76.187,
+        "model": 70.08,
+        "guard": 0.708,
+        "decision": 76.895,
+        "execution": 0.545,
+        "verification": 62.525,
+        "repair": 84.833,
+        "total": 147.358
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": "bundle",
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "failed",
+          "seconds": 45.03533249999964,
+          "load_seconds": 0.0031574,
+          "prompt_eval_seconds": 2.163893,
+          "eval_seconds": 42.81596,
+          "prompt_tokens": 2609,
+          "output_tokens": 2048,
+          "cold": false
+        },
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 8.252948600002128,
+          "load_seconds": 0.0048246,
+          "prompt_eval_seconds": 0.025458,
+          "eval_seconds": 8.174358,
+          "prompt_tokens": 2609,
+          "output_tokens": 393,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 8.520516000000498,
+          "load_seconds": 0.0043016,
+          "prompt_eval_seconds": 2.55695,
+          "eval_seconds": 5.798325,
+          "prompt_tokens": 3040,
+          "output_tokens": 277,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 8.271152199999051,
+          "load_seconds": 0.0042773,
+          "prompt_eval_seconds": 2.076024,
+          "eval_seconds": 6.048296,
+          "prompt_tokens": 2480,
+          "output_tokens": 300,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261111T221600Z-772bbe",
+      "bundle_id": "boutique-live-20261111t221600z-772bbe",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "FAILED",
+      "outcome": null,
+      "failure_stage": "planning",
+      "planning_seconds_before_failure": 18.1,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.308,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 9.042862599999353,
+          "load_seconds": 0.0027097,
+          "prompt_eval_seconds": 2.079472,
+          "eval_seconds": 6.896045,
+          "prompt_tokens": 2532,
+          "output_tokens": 335,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 8.753034800000023,
+          "load_seconds": 0.0027533,
+          "prompt_eval_seconds": 2.444955,
+          "eval_seconds": 6.141563,
+          "prompt_tokens": 2907,
+          "output_tokens": 296,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261111T221737Z-2b9319",
+      "bundle_id": "boutique-live-20261111t221737z-2b9319",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.304,
+        "planning": 24.273,
+        "model": 23.323,
+        "guard": 0.795,
+        "decision": 25.068,
+        "execution": 0.629,
+        "verification": 41.962,
+        "repair": 33.001,
+        "total": 74.963
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": "bundle",
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 7.414462900000217,
+          "load_seconds": 0.0052151,
+          "prompt_eval_seconds": 2.183544,
+          "eval_seconds": 5.165443,
+          "prompt_tokens": 2609,
+          "output_tokens": 245,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 8.710165000000416,
+          "load_seconds": 0.0026232,
+          "prompt_eval_seconds": 2.442804,
+          "eval_seconds": 6.109157,
+          "prompt_tokens": 2892,
+          "output_tokens": 293,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 7.198225100000855,
+          "load_seconds": 0.0031254,
+          "prompt_eval_seconds": 1.98905,
+          "eval_seconds": 5.065491,
+          "prompt_tokens": 2398,
+          "output_tokens": 252,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261111T222004Z-07f850",
+      "bundle_id": "boutique-live-20261111t222004z-07f850",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": null,
+      "failure_stage": null,
+      "planning_seconds_before_failure": 15.9,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 9.804,
+        "planning": 16.469,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "calls": [],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261112T050930Z-ba0f81",
+      "bundle_id": "boutique-live-20261112t050930z-ba0f81",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.283,
+        "planning": 26.484,
+        "model": 25.272,
+        "guard": 1.047,
+        "decision": 27.53,
+        "execution": 0.605,
+        "verification": 35.166,
+        "repair": 35.418,
+        "total": 70.584
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": "bundle",
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 7.23929059999864,
+          "load_seconds": 0.0120579,
+          "prompt_eval_seconds": 2.42169,
+          "eval_seconds": 4.726069,
+          "prompt_tokens": 2663,
+          "output_tokens": 219,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 9.644851500001096,
+          "load_seconds": 0.0144261,
+          "prompt_eval_seconds": 2.453513,
+          "eval_seconds": 6.981209,
+          "prompt_tokens": 2920,
+          "output_tokens": 327,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 8.387361100001726,
+          "load_seconds": 0.002631,
+          "prompt_eval_seconds": 2.070998999,
+          "eval_seconds": 6.112066,
+          "prompt_tokens": 2431,
+          "output_tokens": 299,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261112T051156Z-009b69",
+      "bundle_id": "boutique-live-20261112t051156z-009b69",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.259,
+        "planning": 24.775,
+        "model": 23.872,
+        "guard": 0.741,
+        "decision": 25.516,
+        "execution": 0.591,
+        "verification": 23.526,
+        "repair": 33.366,
+        "total": 56.892
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": "bundle",
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 6.708902600003057,
+          "load_seconds": 0.003255,
+          "prompt_eval_seconds": 2.19589,
+          "eval_seconds": 4.447702,
+          "prompt_tokens": 2603,
+          "output_tokens": 208,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 8.745242200002394,
+          "load_seconds": 0.002667,
+          "prompt_eval_seconds": 2.428069,
+          "eval_seconds": 6.134902,
+          "prompt_tokens": 2849,
+          "output_tokens": 290,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 8.418174099999305,
+          "load_seconds": 0.003231,
+          "prompt_eval_seconds": 1.992589,
+          "eval_seconds": 6.23567,
+          "prompt_tokens": 2391,
+          "output_tokens": 307,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261112T051406Z-ef3fbb",
+      "bundle_id": "boutique-live-20261112t051406z-ef3fbb",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.205,
+        "planning": 24.508,
+        "model": 23.655,
+        "guard": 0.671,
+        "decision": 25.179,
+        "execution": 0.544,
+        "verification": 43.377,
+        "repair": 32.929,
+        "total": 76.306
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": "bundle",
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 7.114266800002952,
+          "load_seconds": 0.0036769,
+          "prompt_eval_seconds": 2.207249,
+          "eval_seconds": 4.847552,
+          "prompt_tokens": 2624,
+          "output_tokens": 226,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 8.318784700000833,
+          "load_seconds": 0.0027126,
+          "prompt_eval_seconds": 2.45322,
+          "eval_seconds": 5.698182,
+          "prompt_tokens": 2888,
+          "output_tokens": 266,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 8.221738699998241,
+          "load_seconds": 0.0026107,
+          "prompt_eval_seconds": 1.994851,
+          "eval_seconds": 6.059557,
+          "prompt_tokens": 2385,
+          "output_tokens": 299,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261112T074450Z-38278f",
+      "bundle_id": "boutique-live-20261112t074450z-38278f",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 9.731,
+        "planning": 54.175,
+        "model": 52.966,
+        "guard": 0.813,
+        "decision": 54.988,
+        "execution": 0.718,
+        "verification": 35.812,
+        "repair": 65.437,
+        "total": 101.249
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": "bundle",
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 9.169540400002006,
+          "load_seconds": 0.0060715,
+          "prompt_eval_seconds": 3.724986,
+          "eval_seconds": 5.363219,
+          "prompt_tokens": 4299,
+          "output_tokens": 240,
+          "cold": false
+        },
+        {
+          "role": "Planner",
+          "status": "completed",
+          "seconds": 15.818886299999576,
+          "load_seconds": 0.0032041,
+          "prompt_eval_seconds": 5.17221,
+          "eval_seconds": 10.400068,
+          "prompt_tokens": 5821,
+          "output_tokens": 455,
+          "cold": false
+        },
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 5.841360899998108,
+          "load_seconds": 0.0032265,
+          "prompt_eval_seconds": 0.365106,
+          "eval_seconds": 5.07913,
+          "prompt_tokens": 4522,
+          "output_tokens": 232,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 12.846634199999244,
+          "load_seconds": 0.004222,
+          "prompt_eval_seconds": 4.344297,
+          "eval_seconds": 8.314154,
+          "prompt_tokens": 4886,
+          "output_tokens": 367,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 9.289626100002351,
+          "load_seconds": 0.0036851,
+          "prompt_eval_seconds": 3.707172,
+          "eval_seconds": 5.334417,
+          "prompt_tokens": 4164,
+          "output_tokens": 248,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261112T074810Z-311065",
+      "bundle_id": "boutique-live-20261112t074810z-311065",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 9.846,
+        "planning": 57.938,
+        "model": 56.836,
+        "guard": 0.854,
+        "decision": 58.791,
+        "execution": 0.597,
+        "verification": 44.926,
+        "repair": 69.234,
+        "total": 114.159
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": "bundle",
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 8.646339000002627,
+          "load_seconds": 0.0041901,
+          "prompt_eval_seconds": 3.761262,
+          "eval_seconds": 4.826271,
+          "prompt_tokens": 4315,
+          "output_tokens": 210,
+          "cold": false
+        },
+        {
+          "role": "Planner",
+          "status": "completed",
+          "seconds": 20.975468999997247,
+          "load_seconds": 0.0031212,
+          "prompt_eval_seconds": 5.194688,
+          "eval_seconds": 15.527443,
+          "prompt_tokens": 5808,
+          "output_tokens": 676,
+          "cold": false
+        },
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 5.6378961999980675,
+          "load_seconds": 0.0223151,
+          "prompt_eval_seconds": 0.325109,
+          "eval_seconds": 4.43675,
+          "prompt_tokens": 4509,
+          "output_tokens": 203,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 12.330528200000117,
+          "load_seconds": 0.0057885,
+          "prompt_eval_seconds": 4.217779999,
+          "eval_seconds": 7.919151,
+          "prompt_tokens": 4844,
+          "output_tokens": 345,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 9.245343500002491,
+          "load_seconds": 0.0037586,
+          "prompt_eval_seconds": 3.564377,
+          "eval_seconds": 5.392621,
+          "prompt_tokens": 4126,
+          "output_tokens": 251,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261112T075130Z-fb6439",
+      "bundle_id": "boutique-live-20261112t075130z-fb6439",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 9.927,
+        "planning": 29.028,
+        "model": 27.727,
+        "guard": 0.792,
+        "decision": 29.821,
+        "execution": 0.628,
+        "verification": 45.284,
+        "repair": 40.376,
+        "total": 85.66
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": "bundle",
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 7.716653100000258,
+          "load_seconds": 0.0128985,
+          "prompt_eval_seconds": 3.810544,
+          "eval_seconds": 3.84105,
+          "prompt_tokens": 4366,
+          "output_tokens": 167,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 10.791885499998898,
+          "load_seconds": 0.003644,
+          "prompt_eval_seconds": 4.072203,
+          "eval_seconds": 6.52543,
+          "prompt_tokens": 4656,
+          "output_tokens": 289,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 9.218653100000665,
+          "load_seconds": 0.0032294,
+          "prompt_eval_seconds": 3.600009,
+          "eval_seconds": 5.361892,
+          "prompt_tokens": 4155,
+          "output_tokens": 250,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261112T075413Z-3d1324",
+      "bundle_id": "boutique-live-20261112t075413z-3d1324",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "FAILED",
+      "outcome": null,
+      "failure_stage": "planning",
+      "planning_seconds_before_failure": 15.3,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 9.672,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 5.882173400001193,
+          "load_seconds": 0.0032206,
+          "prompt_eval_seconds": 1.689257,
+          "eval_seconds": 4.117631999,
+          "prompt_tokens": 1997,
+          "output_tokens": 191,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 9.069843199999013,
+          "load_seconds": 0.0033347,
+          "prompt_eval_seconds": 1.93471,
+          "eval_seconds": 7.031701,
+          "prompt_tokens": 2311,
+          "output_tokens": 338,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261112T075550Z-26a26a",
+      "bundle_id": "boutique-live-20261112t075550z-26a26a",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "FAILED",
+      "outcome": null,
+      "failure_stage": "planning",
+      "planning_seconds_before_failure": 13.9,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.282,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 5.613055499998154,
+          "load_seconds": 0.0031099,
+          "prompt_eval_seconds": 1.664525,
+          "eval_seconds": 3.897598,
+          "prompt_tokens": 1948,
+          "output_tokens": 185,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 7.946138600000268,
+          "load_seconds": 0.0039006,
+          "prompt_eval_seconds": 1.901888,
+          "eval_seconds": 5.902611,
+          "prompt_tokens": 2256,
+          "output_tokens": 286,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261112T080534Z-160519",
+      "bundle_id": "boutique-live-20261112t080534z-160519",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 8.54,
+        "planning": 24.778,
+        "model": 22.12,
+        "guard": 0.71,
+        "decision": 25.488,
+        "execution": 0.556,
+        "verification": 35.511,
+        "repair": 34.585,
+        "total": 70.095
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": "bundle",
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 4.932573100002628,
+          "load_seconds": 0.0043244,
+          "prompt_eval_seconds": 1.695459,
+          "eval_seconds": 3.109298,
+          "prompt_tokens": 1948,
+          "output_tokens": 137,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 9.134805199999391,
+          "load_seconds": 0.0032084,
+          "prompt_eval_seconds": 1.872927,
+          "eval_seconds": 6.912595,
+          "prompt_tokens": 2208,
+          "output_tokens": 324,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 8.052141100000881,
+          "load_seconds": 0.0114753,
+          "prompt_eval_seconds": 2.459027,
+          "eval_seconds": 5.39021,
+          "prompt_tokens": 2916,
+          "output_tokens": 258,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261112T080756Z-29fd09",
+      "bundle_id": "boutique-live-20261112t080756z-29fd09",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": null,
+      "failure_stage": null,
+      "planning_seconds_before_failure": 66.6,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.365,
+        "planning": 67.145,
+        "model": 61.032,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": "bundle",
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 4.689767799998663,
+          "load_seconds": 0.0239777,
+          "prompt_eval_seconds": 1.665579,
+          "eval_seconds": 2.913078,
+          "prompt_tokens": 1943,
+          "output_tokens": 133,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "failed",
+          "seconds": 44.66424099999858,
+          "load_seconds": 0.0031243,
+          "prompt_eval_seconds": 1.850966,
+          "eval_seconds": 42.702749,
+          "prompt_tokens": 2199,
+          "output_tokens": 2048,
+          "cold": false
+        },
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 3.100991100000101,
+          "load_seconds": 0.0051824,
+          "prompt_eval_seconds": 0.036055,
+          "eval_seconds": 2.863075,
+          "prompt_tokens": 1943,
+          "output_tokens": 133,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 8.577083300002414,
+          "load_seconds": 0.0095929,
+          "prompt_eval_seconds": 0.02087,
+          "eval_seconds": 8.37168,
+          "prompt_tokens": 2199,
+          "output_tokens": 401,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261112T081032Z-63d609",
+      "bundle_id": "boutique-live-20261112t081032z-63d609",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.348,
+        "planning": 57.541,
+        "model": 56.63,
+        "guard": 0.682,
+        "decision": 58.223,
+        "execution": 0.543,
+        "verification": 35.351,
+        "repair": 66.114,
+        "total": 101.465
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": "bundle",
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 7.519960700003139,
+          "load_seconds": 0.0027712,
+          "prompt_eval_seconds": 2.989037,
+          "eval_seconds": 4.460098,
+          "prompt_tokens": 3461,
+          "output_tokens": 203,
+          "cold": false
+        },
+        {
+          "role": "Planner",
+          "status": "completed",
+          "seconds": 24.971329500000138,
+          "load_seconds": 0.0030859,
+          "prompt_eval_seconds": 4.371518,
+          "eval_seconds": 20.400677,
+          "prompt_tokens": 4947,
+          "output_tokens": 915,
+          "cold": false
+        },
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 4.753925799999706,
+          "load_seconds": 0.0031066,
+          "prompt_eval_seconds": 0.291946,
+          "eval_seconds": 4.122167,
+          "prompt_tokens": 3648,
+          "output_tokens": 196,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 11.129889600000752,
+          "load_seconds": 0.0032326,
+          "prompt_eval_seconds": 3.49967,
+          "eval_seconds": 7.473318,
+          "prompt_tokens": 3976,
+          "output_tokens": 334,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 8.254789399998117,
+          "load_seconds": 0.0089079,
+          "prompt_eval_seconds": 2.915711,
+          "eval_seconds": 5.098959,
+          "prompt_tokens": 3412,
+          "output_tokens": 244,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261112T111640Z-b8eaa6",
+      "bundle_id": "boutique-live-20261112t111640z-b8eaa6",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "FAILED",
+      "outcome": "RECOVERED",
+      "failure_stage": "after_recovery",
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 9.686,
+        "planning": 2.595,
+        "model": null,
+        "guard": 0.422,
+        "decision": 3.017,
+        "execution": 0.611,
+        "verification": 91.091,
+        "repair": 13.314,
+        "total": 104.405
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback"
+      ],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261112T112137Z-9b327b",
+      "bundle_id": "boutique-live-20261112t112137z-9b327b",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.365,
+        "planning": 2.636,
+        "model": null,
+        "guard": 0.42,
+        "decision": 3.056,
+        "execution": 0.631,
+        "verification": 26.231,
+        "repair": 11.052,
+        "total": 37.283
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback"
+      ],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261112T112406Z-01cb56",
+      "bundle_id": "boutique-live-20261112t112406z-01cb56",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.301,
+        "planning": 28.22,
+        "model": 26.992,
+        "guard": 0.759,
+        "decision": 28.979,
+        "execution": 0.599,
+        "verification": 35.323,
+        "repair": 36.88,
+        "total": 72.203
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": "bundle",
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 8.052020399998582,
+          "load_seconds": 0.0052308,
+          "prompt_eval_seconds": 3.118727,
+          "eval_seconds": 4.879405,
+          "prompt_tokens": 3567,
+          "output_tokens": 219,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 10.421031199999561,
+          "load_seconds": 0.0046337,
+          "prompt_eval_seconds": 3.379623,
+          "eval_seconds": 6.885086,
+          "prompt_tokens": 3921,
+          "output_tokens": 310,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 8.518616599998495,
+          "load_seconds": 0.0031083,
+          "prompt_eval_seconds": 3.133463,
+          "eval_seconds": 5.146882,
+          "prompt_tokens": 3637,
+          "output_tokens": 244,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261112T112846Z-f1c4ed",
+      "bundle_id": "boutique-live-20261112t112846z-f1c4ed",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 5.738,
+        "planning": 4.42,
+        "model": null,
+        "guard": 0.943,
+        "decision": 5.363,
+        "execution": 0.952,
+        "verification": 102.338,
+        "repair": 12.053,
+        "total": 114.391
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback"
+      ],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261113T091828Z-07294f",
+      "bundle_id": "chaos-n2-agent-r1-29e41f8",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": null,
+      "failure_stage": null,
+      "planning_seconds_before_failure": 39.6,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 10.21,
+        "planning": 40.666,
+        "model": 38.746,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": "bundle",
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 18.515813599999092,
+          "load_seconds": 0.0036313,
+          "prompt_eval_seconds": 10.453899,
+          "eval_seconds": 7.986364,
+          "prompt_tokens": 10402,
+          "output_tokens": 289,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 20.230666600000404,
+          "load_seconds": 0.0031095,
+          "prompt_eval_seconds": 10.820424,
+          "eval_seconds": 9.00885,
+          "prompt_tokens": 10827,
+          "output_tokens": 327,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261113T092149Z-1de586",
+      "bundle_id": "dual-fault-baseline-r1-29e41f8",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.233,
+        "planning": 2.467,
+        "model": null,
+        "guard": 0.371,
+        "decision": 2.838,
+        "execution": 0.635,
+        "verification": 25.255,
+        "repair": 10.706,
+        "total": 35.961
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback"
+      ],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261113T092418Z-761088",
+      "bundle_id": "dual-fault-baseline-c1-29e41f8",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 9.61,
+        "planning": 2.354,
+        "model": null,
+        "guard": 0.409,
+        "decision": 2.764,
+        "execution": 0.638,
+        "verification": 67.306,
+        "repair": 13.011,
+        "total": 80.318
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback"
+      ],
+      "run_folder_read": false
+    },
+    {
+      "run": "boutique-live-20261116T174705Z-aa3f81",
+      "bundle_id": "boutique-live-20261116t174705z-aa3f81",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "FAILED",
+      "outcome": null,
+      "failure_stage": "planning",
+      "planning_seconds_before_failure": 104.3,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 9.843,
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": null,
+        "model": null,
+        "guard": null,
+        "decision": null,
+        "execution": null,
+        "verification": null,
+        "repair": null,
+        "total": null
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 15.029381500000454,
+          "load_seconds": 0.0073554,
+          "prompt_eval_seconds": 3.863658,
+          "eval_seconds": 11.079848,
+          "prompt_tokens": 3310,
+          "output_tokens": 191,
+          "cold": false
+        },
+        {
+          "role": "Planner",
+          "status": "completed",
+          "seconds": 43.74677860000156,
+          "load_seconds": 0.0044284,
+          "prompt_eval_seconds": 6.169728,
+          "eval_seconds": 37.375626,
+          "prompt_tokens": 4783,
+          "output_tokens": 403,
+          "cold": false
+        },
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 12.72452510000221,
+          "load_seconds": 0.0064973,
+          "prompt_eval_seconds": 0.379236,
+          "eval_seconds": 11.952144,
+          "prompt_tokens": 3484,
+          "output_tokens": 183,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 32.13885139999911,
+          "load_seconds": 0.0031807,
+          "prompt_eval_seconds": 4.563956,
+          "eval_seconds": 27.416671,
+          "prompt_tokens": 3816,
+          "output_tokens": 379,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261116T175115Z-3b106e",
+      "bundle_id": "boutique-live-20261116t175115z-3b106e",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "NOT_RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.381,
+        "planning": 66.448,
+        "model": 65.125,
+        "guard": 0.958,
+        "decision": 67.406,
+        "execution": 0.62,
+        "verification": 157.155,
+        "repair": 75.407,
+        "total": 232.563
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "run_folder",
+        "model": "bundle",
+        "guard": "run_folder",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 18.65777309999976,
+          "load_seconds": 0.0053542,
+          "prompt_eval_seconds": 3.609632,
+          "eval_seconds": 14.963471,
+          "prompt_tokens": 3495,
+          "output_tokens": 239,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 25.770722000001115,
+          "load_seconds": 0.0031198,
+          "prompt_eval_seconds": 4.64335,
+          "eval_seconds": 20.877173,
+          "prompt_tokens": 3869,
+          "output_tokens": 320,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 20.69656319999922,
+          "load_seconds": 0.0046887,
+          "prompt_eval_seconds": 4.061195,
+          "eval_seconds": 16.384777999,
+          "prompt_tokens": 3640,
+          "output_tokens": 266,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261116T175656Z-bdb808",
+      "bundle_id": "boutique-live-20261116t175656z-bdb808",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "UNKNOWN",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.458,
+        "planning": 208.42,
+        "model": 206.756,
+        "guard": 1.504,
+        "decision": 209.925,
+        "execution": 0.655,
+        "verification": 316.849,
+        "repair": 218.038,
+        "total": 534.887
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "run_folder",
+        "model": "bundle",
+        "guard": "run_folder",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 16.403848400001152,
+          "load_seconds": 0.005986,
+          "prompt_eval_seconds": 3.618816,
+          "eval_seconds": 12.705454,
+          "prompt_tokens": 3570,
+          "output_tokens": 216,
+          "cold": false
+        },
+        {
+          "role": "Planner",
+          "status": "completed",
+          "seconds": 118.5077547999972,
+          "load_seconds": 0.003732,
+          "prompt_eval_seconds": 5.870815,
+          "eval_seconds": 112.393675,
+          "prompt_tokens": 5069,
+          "output_tokens": 1113,
+          "cold": false
+        },
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 15.607745400000567,
+          "load_seconds": 0.0341633,
+          "prompt_eval_seconds": 0.395301,
+          "eval_seconds": 14.71779,
+          "prompt_tokens": 3770,
+          "output_tokens": 209,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 28.978043099999923,
+          "load_seconds": 0.003648,
+          "prompt_eval_seconds": 5.425134,
+          "eval_seconds": 23.371622,
+          "prompt_tokens": 4123,
+          "output_tokens": 309,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 27.259092399999645,
+          "load_seconds": 0.0031029,
+          "prompt_eval_seconds": 4.339076,
+          "eval_seconds": 17.089416,
+          "prompt_tokens": 3646,
+          "output_tokens": 262,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": true
+    },
+    {
+      "run": "boutique-live-20261116T182043Z-1a0d96",
+      "bundle_id": "boutique-live-20261116t182043z-1a0d96",
+      "planning_mode": "agent",
+      "model": "qwen3:14b",
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 9.496,
+        "planning": 69.816,
+        "model": 68.93,
+        "guard": 126.211,
+        "decision": 196.027,
+        "execution": 0.525,
+        "verification": 135.541,
+        "repair": 206.048,
+        "total": 341.589
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "run_folder",
+        "model": "bundle",
+        "guard": "run_folder",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [
+        {
+          "role": "Analyzer",
+          "status": "completed",
+          "seconds": 20.165884600002755,
+          "load_seconds": 0.0036567,
+          "prompt_eval_seconds": 4.237175,
+          "eval_seconds": 15.408859,
+          "prompt_tokens": 4267,
+          "output_tokens": 236,
+          "cold": false
+        },
+        {
+          "role": "Reporter",
+          "status": "completed",
+          "seconds": 26.961316299999453,
+          "load_seconds": 0.0031476,
+          "prompt_eval_seconds": 5.118343,
+          "eval_seconds": 21.629171,
+          "prompt_tokens": 4641,
+          "output_tokens": 310,
+          "cold": false
+        },
+        {
+          "role": "Recovery Planner",
+          "status": "completed",
+          "seconds": 21.80289569999877,
+          "load_seconds": 0.0031007,
+          "prompt_eval_seconds": 4.78823,
+          "eval_seconds": 16.802754,
+          "prompt_tokens": 4394,
+          "output_tokens": 261,
+          "cold": false
+        }
+      ],
+      "schema_notes": [],
+      "run_folder_read": true
+    },
+    {
+      "run": "r1-cve-cart",
+      "bundle_id": "p5conn-r1-cve-cart",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.515,
+        "planning": 3.012,
+        "model": null,
+        "guard": 0.47,
+        "decision": 3.481,
+        "execution": 0.797,
+        "verification": 86.749,
+        "repair": 11.793,
+        "total": 98.542
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback"
+      ],
+      "run_folder_read": false
+    },
+    {
+      "run": "r1-cve-negative-shipping",
+      "bundle_id": "p5conn-r1-cve-negative-shipping",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 5.162,
+        "planning": 3.078,
+        "model": null,
+        "guard": 0.482,
+        "decision": 3.56,
+        "execution": 0.768,
+        "verification": 26.737,
+        "repair": 9.49,
+        "total": 36.227
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback"
+      ],
+      "run_folder_read": false
+    },
+    {
+      "run": "r2-cve-cart",
+      "bundle_id": "p5conn-r2-cve-cart",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.593,
+        "planning": 3.071,
+        "model": null,
+        "guard": 0.482,
+        "decision": 3.553,
+        "execution": 0.79,
+        "verification": 69.223,
+        "repair": 11.936,
+        "total": 81.159
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback"
+      ],
+      "run_folder_read": false
+    },
+    {
+      "run": "r2-cve-negative-shipping",
+      "bundle_id": "p5conn-r2-cve-negative-shipping",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 5.182,
+        "planning": 3.25,
+        "model": null,
+        "guard": 0.486,
+        "decision": 3.736,
+        "execution": 0.856,
+        "verification": 25.811,
+        "repair": 9.775,
+        "total": 35.585
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback"
+      ],
+      "run_folder_read": false
+    },
+    {
+      "run": "r3-cve-cart",
+      "bundle_id": "p5conn-r3-cve-cart",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 5.471,
+        "planning": 4.164,
+        "model": null,
+        "guard": 0.668,
+        "decision": 4.833,
+        "execution": 0.935,
+        "verification": 89.592,
+        "repair": 11.239,
+        "total": 100.83
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback"
+      ],
+      "run_folder_read": false
+    },
+    {
+      "run": "r3-cve-negative-shipping",
+      "bundle_id": "p5conn-r3-cve-negative-shipping",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 5.276,
+        "planning": 3.234,
+        "model": null,
+        "guard": 0.475,
+        "decision": 3.709,
+        "execution": 0.822,
+        "verification": 27.509,
+        "repair": 9.807,
+        "total": 37.316
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback"
+      ],
+      "run_folder_read": false
+    },
+    {
+      "run": "smoke-cve-cart",
+      "bundle_id": "p5conn-smoke-cve-cart",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 7.548,
+        "planning": 2.986,
+        "model": null,
+        "guard": 0.481,
+        "decision": 3.467,
+        "execution": 0.788,
+        "verification": 70.381,
+        "repair": 11.803,
+        "total": 82.184
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback"
+      ],
+      "run_folder_read": false
+    },
+    {
+      "run": "smoke-cve-negative-shipping",
+      "bundle_id": "p5conn-smoke-cve-negative-shipping",
+      "planning_mode": "harness",
+      "model": null,
+      "status": "PASS",
+      "outcome": "RECOVERED",
+      "failure_stage": null,
+      "planning_seconds_before_failure": null,
+      "start_basis": "fault_injected_at",
+      "stages": {
+        "detection": 5.11,
+        "planning": 3.022,
+        "model": null,
+        "guard": 0.477,
+        "decision": 3.499,
+        "execution": 0.788,
+        "verification": 25.995,
+        "repair": 9.397,
+        "total": 35.392
+      },
+      "stage_sources": {
+        "detection": "bundle",
+        "planning": "bundle",
+        "model": null,
+        "guard": "bundle",
+        "decision": "bundle",
+        "execution": "bundle",
+        "verification": "bundle",
+        "repair": "bundle",
+        "total": "bundle"
+      },
+      "calls": [],
+      "schema_notes": [
+        "harness decision stage includes the scripted negative cases before the approved rollback"
+      ],
+      "run_folder_read": false
+    }
+  ]
+}
