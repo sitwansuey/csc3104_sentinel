@@ -1,0 +1,185 @@
+{
+  "schema": "sentinel-release-manifest-v1",
+  "tag": "v1.0.0-rc.2",
+  "version": "1.0.0-rc.2",
+  "source_revision": "04177074a9e649cb1230148b498ef7f9e6ed9e4e",
+  "platform": "linux/amd64",
+  "ci_run_url": null,
+  "scanner": {
+    "image": "aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c",
+    "version": "0.76.1",
+    "db_updated_at": "2026-11-17T06:59:44.233351399Z",
+    "gate": "HIGH and CRITICAL findings with a fix fail unless waived in .trivyignore"
+  },
+  "waivers": [],
+  "images": [
+    {
+      "name": "sentinel-boutique-runner",
+      "tag": "sentinel-boutique-runner:1.0.0-rc.2",
+      "dockerfile": "deploy/docker/demo-runner.Dockerfile",
+      "image_id": "sha256:25519565de6401aca5a85259a443be579f7db0a6fcf1e5721fb33c3bf2a7b149",
+      "os": "linux",
+      "architecture": "amd64",
+      "labels": {
+        "org.opencontainers.image.revision": "04177074a9e649cb1230148b498ef7f9e6ed9e4e",
+        "org.opencontainers.image.source": "local-build",
+        "org.opencontainers.image.title": "Sentinel Boutique demo runner",
+        "org.opencontainers.image.version": "1.0.0-rc.2"
+      },
+      "archive": "sentinel-boutique-runner-1.0.0-rc.2.tar.gz",
+      "sbom": "sentinel-boutique-runner-1.0.0-rc.2.cdx.json",
+      "report": "sentinel-boutique-runner-1.0.0-rc.2.trivy.json",
+      "gate_report": "sentinel-boutique-runner-1.0.0-rc.2.gate.json",
+      "gate": "pass",
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 1,
+        "low": 0,
+        "unknown": 1
+      },
+      "unwaived_fixable_high_critical": 0,
+      "waivers_used": []
+    },
+    {
+      "name": "sentinel-coordinator",
+      "tag": "sentinel-coordinator:1.0.0-rc.2",
+      "dockerfile": "deploy/docker/coordinator.Dockerfile",
+      "image_id": "sha256:1aad30d24a04f82be269e5a9f5ed1ece860b1072c1afa545be79d05702dd7b96",
+      "os": "linux",
+      "architecture": "amd64",
+      "labels": {
+        "org.opencontainers.image.revision": "04177074a9e649cb1230148b498ef7f9e6ed9e4e",
+        "org.opencontainers.image.source": "local-build",
+        "org.opencontainers.image.title": "Sentinel Coordinator",
+        "org.opencontainers.image.version": "1.0.0-rc.2"
+      },
+      "archive": "sentinel-coordinator-1.0.0-rc.2.tar.gz",
+      "sbom": "sentinel-coordinator-1.0.0-rc.2.cdx.json",
+      "report": "sentinel-coordinator-1.0.0-rc.2.trivy.json",
+      "gate_report": "sentinel-coordinator-1.0.0-rc.2.gate.json",
+      "gate": "pass",
+      "counts": {
+        "critical": 0,
+        "high": 47,
+        "medium": 97,
+        "low": 66,
+        "unknown": 5
+      },
+      "unwaived_fixable_high_critical": 0,
+      "waivers_used": []
+    },
+    {
+      "name": "sentinel-guard",
+      "tag": "sentinel-guard:1.0.0-rc.2",
+      "dockerfile": "deploy/docker/guard.Dockerfile",
+      "image_id": "sha256:6179da780203156eda296306898ce64dde2cee21cadef8d532f28b4af82110ce",
+      "os": "linux",
+      "architecture": "amd64",
+      "labels": {
+        "org.opencontainers.image.revision": "04177074a9e649cb1230148b498ef7f9e6ed9e4e",
+        "org.opencontainers.image.source": "local-build",
+        "org.opencontainers.image.title": "Sentinel Guard CLI",
+        "org.opencontainers.image.version": "1.0.0-rc.2"
+      },
+      "archive": "sentinel-guard-1.0.0-rc.2.tar.gz",
+      "sbom": "sentinel-guard-1.0.0-rc.2.cdx.json",
+      "report": "sentinel-guard-1.0.0-rc.2.trivy.json",
+      "gate_report": "sentinel-guard-1.0.0-rc.2.gate.json",
+      "gate": "pass",
+      "counts": {
+        "critical": 0,
+        "high": 47,
+        "medium": 97,
+        "low": 66,
+        "unknown": 5
+      },
+      "unwaived_fixable_high_critical": 0,
+      "waivers_used": []
+    },
+    {
+      "name": "sentinel-observer",
+      "tag": "sentinel-observer:1.0.0-rc.2",
+      "dockerfile": "deploy/docker/observer.Dockerfile",
+      "image_id": "sha256:ed123df78de7c5f002d27540f19b82b96af07775d1c5923d677ae9b256301275",
+      "os": "linux",
+      "architecture": "amd64",
+      "labels": {
+        "org.opencontainers.image.revision": "04177074a9e649cb1230148b498ef7f9e6ed9e4e",
+        "org.opencontainers.image.source": "local-build",
+        "org.opencontainers.image.title": "Sentinel Observer",
+        "org.opencontainers.image.version": "1.0.0-rc.2"
+      },
+      "archive": "sentinel-observer-1.0.0-rc.2.tar.gz",
+      "sbom": "sentinel-observer-1.0.0-rc.2.cdx.json",
+      "report": "sentinel-observer-1.0.0-rc.2.trivy.json",
+      "gate_report": "sentinel-observer-1.0.0-rc.2.gate.json",
+      "gate": "pass",
+      "counts": {
+        "critical": 0,
+        "high": 47,
+        "medium": 97,
+        "low": 66,
+        "unknown": 5
+      },
+      "unwaived_fixable_high_critical": 0,
+      "waivers_used": []
+    },
+    {
+      "name": "sentinel-security-inspector",
+      "tag": "sentinel-security-inspector:1.0.0-rc.2",
+      "dockerfile": "deploy/docker/security-inspector.Dockerfile",
+      "image_id": "sha256:b82a2e1c77edf1e4489cd38c4d46ee5a2cfda06795eaae5868a5a01950a1bed4",
+      "os": "linux",
+      "architecture": "amd64",
+      "labels": {
+        "org.opencontainers.image.revision": "04177074a9e649cb1230148b498ef7f9e6ed9e4e",
+        "org.opencontainers.image.source": "local-build",
+        "org.opencontainers.image.title": "Sentinel security inspector",
+        "org.opencontainers.image.version": "1.0.0-rc.2"
+      },
+      "archive": "sentinel-security-inspector-1.0.0-rc.2.tar.gz",
+      "sbom": "sentinel-security-inspector-1.0.0-rc.2.cdx.json",
+      "report": "sentinel-security-inspector-1.0.0-rc.2.trivy.json",
+      "gate_report": "sentinel-security-inspector-1.0.0-rc.2.gate.json",
+      "gate": "pass",
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "unknown": 0
+      },
+      "unwaived_fixable_high_critical": 0,
+      "waivers_used": []
+    },
+    {
+      "name": "sentinel-worker",
+      "tag": "sentinel-worker:1.0.0-rc.2",
+      "dockerfile": "deploy/docker/worker.Dockerfile",
+      "image_id": "sha256:c2595705f213664405bdbd1620c645c01d46ad25c9866741b9b0acdf3964344c",
+      "os": "linux",
+      "architecture": "amd64",
+      "labels": {
+        "org.opencontainers.image.revision": "04177074a9e649cb1230148b498ef7f9e6ed9e4e",
+        "org.opencontainers.image.source": "local-build",
+        "org.opencontainers.image.title": "Sentinel worker",
+        "org.opencontainers.image.version": "1.0.0-rc.2"
+      },
+      "archive": "sentinel-worker-1.0.0-rc.2.tar.gz",
+      "sbom": "sentinel-worker-1.0.0-rc.2.cdx.json",
+      "report": "sentinel-worker-1.0.0-rc.2.trivy.json",
+      "gate_report": "sentinel-worker-1.0.0-rc.2.gate.json",
+      "gate": "pass",
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 1,
+        "low": 0,
+        "unknown": 1
+      },
+      "unwaived_fixable_high_critical": 0,
+      "waivers_used": []
+    }
+  ]
+}

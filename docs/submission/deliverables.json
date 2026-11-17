@@ -1,6 +1,6 @@
 {
   "schema": "sentinel-submission-v1",
-  "release_tag": null,
+  "release_tag": "v1.0.0-rc.2",
   "instructions_pdf": "dist/GROUP05_INSTRUCTIONS.pdf",
   "article_pdf": null,
   "article_max_pages": null,
