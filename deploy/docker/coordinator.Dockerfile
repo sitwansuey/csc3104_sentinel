@@ -5,7 +5,7 @@ WORKDIR /app
 COPY services/__init__.py /app/services/
 COPY services/coordinator/ /app/services/coordinator/
 COPY services/executor/__init__.py services/executor/delivery_store.py services/executor/store.py /app/services/executor/
-COPY shared/__init__.py shared/actions.py shared/canonical.py shared/contracts.py shared/log.py shared/tracing.py /app/shared/
+COPY shared/__init__.py shared/actions.py shared/canonical.py shared/contracts.py shared/http.py shared/log.py shared/tracing.py /app/shared/
 COPY runtime/__init__.py runtime/service_identity.py runtime/worker_http.py runtime/worker_transport.py /app/runtime/
 COPY runtime/approval_http.py runtime/coordinator_server.py runtime/fault_points.py /app/runtime/
 RUN mkdir /data && chown 10001:10001 /data

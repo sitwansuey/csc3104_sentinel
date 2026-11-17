@@ -1,21 +1,61 @@
 import json
+import io
 from pathlib import Path
 import tempfile
 import threading
 import unittest
-from http.client import HTTPConnection
+from http.client import HTTPConnection, HTTPMessage
 from http.server import ThreadingHTTPServer
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from runtime.worker_http import handler, WorkerClient, WorkerHTTPServer, serve_until_stopped
 from runtime.worker_transport import Delivery, ProtocolError
 from services.coordinator.core import SQLiteStore, LocalEventBus, handle
+from shared.http import drain_request_body
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def sample(name):
     return json.loads((ROOT / 'data/sentinel/samples' / 'messages' / (name + '.json')).read_text())
+
+
+class RequestBodyDrainTests(unittest.TestCase):
+    def test_drain_is_bounded_by_the_declared_length_and_cap(self):
+        for size in (1, 4):
+            with self.subTest(size=size):
+                headers = HTTPMessage()
+                headers['Content-Length'] = str(size)
+                stream = io.BytesIO(b'bodyNEXT')
+                request = Mock(headers=headers, rfile=Mock(wraps=stream))
+                drain_request_body(request, 4)
+                request.rfile.read.assert_called_once_with(size)
+                self.assertEqual(stream.tell(), size)
+                request.connection.settimeout.assert_not_called()
+
+    def test_drain_skips_missing_invalid_oversize_or_ambiguous_lengths(self):
+        cases = [[], [('Transfer-Encoding', 'chunked'), ('Content-Length', '2')],
+                 [('Content-Length', '2'), ('Content-Length', '2')]]
+        cases += [[('Content-Length', value)] for value in
+                  ('', 'no', '-1', '0', '5', '2, 2', '+2', '1_0', '\u0662', '9' * 5000)]
+        for values in cases:
+            with self.subTest(headers=values):
+                headers = HTTPMessage()
+                for name, value in values:
+                    headers[name] = value
+                request = Mock(headers=headers)
+                drain_request_body(request, 4)
+                request.rfile.read.assert_not_called()
+
+    def test_drain_does_not_retry_timeout_or_connection_failure(self):
+        headers = HTTPMessage()
+        headers['Content-Length'] = '2'
+        for error in (TimeoutError, ConnectionAbortedError):
+            with self.subTest(error=error):
+                request = Mock(headers=headers)
+                request.rfile.read.side_effect = error
+                drain_request_body(request, 4)
+                request.rfile.read.assert_called_once_with(2)
 
 
 class TransportTests(unittest.TestCase):
@@ -179,6 +219,45 @@ class TransportTests(unittest.TestCase):
             finally:
                 server.shutdown()
                 thread.join()
+
+    def test_early_http_refusals_drain_without_parsing_and_preserve_the_status(self):
+        stopping = threading.Event()
+        worker_handler = handler(self.path, {'p': ('planner', 'good')}, stopping=stopping)
+        body = b'not JSON' + b'x' * (32 * 1024)
+        with WorkerHTTPServer(('127.0.0.1', 0), worker_handler) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                for status in (401, 503):
+                    if status == 503:
+                        stopping.set()
+                    for attempt in range(3):
+                        with self.subTest(status=status, attempt=attempt):
+                            connection = HTTPConnection('127.0.0.1', server.server_port, timeout=2)
+                            try:
+                                connection.request('POST', '/v1/claim', body=body,
+                                                   headers={'X-Service-Identity': 'p', 'Authorization': 'Bearer bad'})
+                                response = connection.getresponse()  # The entire body has already been sent.
+                                self.assertEqual(response.status, status)
+                                response.read()
+                            finally:
+                                connection.close()
+                self.assertEqual(self.store.db.execute('SELECT count(*) FROM transport_receipts').fetchone()[0], 0)
+            finally:
+                server.shutdown()
+                thread.join(3)
+
+    def test_worker_does_not_drain_again_after_a_body_read_times_out(self):
+        request = object.__new__(handler(self.path, {'p': ('planner', 'good')}))
+        request.path = '/v1/claim'
+        request.headers = HTTPMessage()
+        for name, value in [('Content-Length', '2'), ('Authorization', 'Bearer good'), ('X-Service-Identity', 'p')]:
+            request.headers[name] = value
+        request.rfile = Mock(read=Mock(side_effect=TimeoutError))
+        request.reply = Mock()
+        request.do_POST()
+        request.rfile.read.assert_called_once_with(2)
+        self.assertEqual(request.reply.call_args.args[0], 408)
 
     def test_two_connections_cannot_claim_the_same_active_lease(self):
         barrier = threading.Barrier(2)

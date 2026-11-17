@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 
 from services.coordinator.read import read_records
 from shared import log
+from shared.http import drain_request_body
 
 LOG = log.get_logger("dashboard")
 ROOT = Path(__file__).resolve().parents[1]
@@ -237,16 +238,14 @@ def make_server(db_path, telemetry_path, *, port=8765, provider=None, bind="127.
             elif approval_relay is not None and self.path in APPROVAL_ROUTES:
                 self._approval(APPROVAL_ROUTES[self.path])
             else:
+                self._drain()
                 self.send_error(404)
 
         def _drain(self):
             """Read a small unread body before refusing, so the client gets the status, not a reset."""
-            lengths = self.headers.get_all("Content-Length", [])
-            with contextlib.suppress(ValueError, OSError):
-                size = int(lengths[0]) if len(lengths) == 1 and not self.headers.get("Transfer-Encoding") else 0
-                if 0 < size <= DRAIN_LIMIT:
-                    self.connection.settimeout(3)
-                    self.rfile.read(size)
+            with contextlib.suppress(OSError):
+                self.connection.settimeout(3)
+                drain_request_body(self, DRAIN_LIMIT)
 
         def _lab_request(self):
             """Loopback Host, same-origin Origin, the session's lab token and a JSON body, or a refusal."""
@@ -298,6 +297,7 @@ def make_server(db_path, telemetry_path, *, port=8765, provider=None, bind="127.
             try:
                 size = int(self.headers.get("Content-Length", "0"))
                 if not 0 < size <= LAB_BODY_LIMIT:
+                    self._drain()
                     raise ValueError("Invalid body length")
                 self.connection.settimeout(3)
                 payload = json.loads(self.rfile.read(size))
