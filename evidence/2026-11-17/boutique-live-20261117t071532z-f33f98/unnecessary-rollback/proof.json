@@ -1,0 +1,46 @@
+{
+  "action_id": "ACT-LIVE-1c2a435435254ba282f9c42f3aaeee1c",
+  "after": {
+    "available": 1,
+    "desired": 1,
+    "generation": 356,
+    "observed_generation": 356,
+    "pod_uids": [
+      "2366f643-d38f-4952-9551-491b2d62f947"
+    ],
+    "ready": 1,
+    "resource_version": "406135",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  },
+  "approved_guard_verdict": "REJECT",
+  "before": {
+    "available": 1,
+    "desired": 1,
+    "generation": 356,
+    "observed_generation": 356,
+    "pod_uids": [
+      "2366f643-d38f-4952-9551-491b2d62f947"
+    ],
+    "ready": 1,
+    "resource_version": "406135",
+    "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  },
+  "executor_journal_attempts": 0,
+  "executor_patch_attempts": 0,
+  "executor_routes": 0,
+  "executor_status": "FAILED",
+  "guard_verdict": "REJECT",
+  "incident_id": "INC-FALSE-ALARM-B43980C73B8C",
+  "measurement_scope": "After baseline/probe/RBAC setup; counts Executor recovery writes only.",
+  "reason_code": "ROLLBACK_ALREADY_AT_BASELINE",
+  "scenario": "injected false recovery recommendation; no Pod failure",
+  "unchanged": {
+    "generation": true,
+    "pod_uids": true,
+    "resource_version": true,
+    "template_sha256": true,
+    "uid": true
+  }
+}

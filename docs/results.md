@@ -45,18 +45,18 @@ Read each number with its limits:
 <!-- BEGIN GENERATED:runs -->
 | Class | Runs | PASS | FAILED | INTERRUPTED | INCOMPLETE | Provenance |
 | --- | --- | --- | --- | --- | --- | --- |
-| agent | 48 | 32 | 16 | 0 | 0 | 28 recorded, 20 inferred |
+| agent | 49 | 33 | 16 | 0 | 0 | 29 recorded, 20 inferred |
 | cert-lifecycle | 4 | 4 | 0 | 0 | 0 | 0 recorded, 4 inferred |
 | chaos-batch | 17 | 3 | 13 | 0 | 1 | 0 recorded, 17 inferred |
 | chaos-recovery | 25 | 20 | 5 | 0 | 0 | 25 recorded, 0 inferred |
-| connected-harness | 21 | 19 | 2 | 0 | 0 | 17 recorded, 4 inferred |
+| connected-harness | 22 | 20 | 2 | 0 | 0 | 18 recorded, 4 inferred |
 | cve-gate | 4 | 4 | 0 | 0 | 0 | 0 recorded, 4 inferred |
 | distributed-acceptance | 16 | 7 | 9 | 0 | 0 | 14 recorded, 2 inferred |
 | distributed-scenario | 39 | 37 | 2 | 0 | 0 | 0 recorded, 39 inferred |
 | executor-admission | 1 | 1 | 0 | 0 | 0 | 0 recorded, 1 inferred |
 | executor-wedge | 31 | 29 | 2 | 0 | 0 | 0 recorded, 31 inferred |
-| guard-eval | 2 | 2 | 0 | 0 | 0 | 2 recorded, 0 inferred |
-| guard-rejection | 5 | 5 | 0 | 0 | 0 | 3 recorded, 2 inferred |
+| guard-eval | 3 | 3 | 0 | 0 | 0 | 3 recorded, 0 inferred |
+| guard-rejection | 6 | 6 | 0 | 0 | 0 | 4 recorded, 2 inferred |
 | kind-lab-session | 3 | 3 | 0 | 0 | 0 | 0 recorded, 3 inferred |
 | observer-acceptance | 3 | 3 | 0 | 0 | 0 | 0 recorded, 3 inferred |
 | packaged | 9 | 5 | 0 | 1 | 3 | 0 recorded, 9 inferred |
@@ -64,7 +64,7 @@ Read each number with its limits:
 | provider-recovery | 1 | 0 | 1 | 0 | 0 | 0 recorded, 1 inferred |
 | scale-recovery | 4 | 4 | 0 | 0 | 0 | 4 recorded, 0 inferred |
 | scenario-pair | 8 | 8 | 0 | 0 | 0 | 8 recorded, 0 inferred |
-| security-lab | 9 | 9 | 0 | 0 | 0 | 6 recorded, 3 inferred |
+| security-lab | 10 | 10 | 0 | 0 | 0 | 7 recorded, 3 inferred |
 | shipping-lab | 2 | 2 | 0 | 0 | 0 | 0 recorded, 2 inferred |
 | ui-session | 7 | 0 | 0 | 0 | 7 | 0 recorded, 7 inferred |
 | worker-container | 2 | 1 | 0 | 0 | 1 | 0 recorded, 2 inferred |
@@ -86,20 +86,20 @@ harness's dashboard acceptance step, fixed in a932a5f
 <!-- BEGIN GENERATED:recovery-checks -->
 | Class | Check | Passed / runs |
 | --- | --- | --- |
-| connected-harness | healthy baseline captured with real service samples and immutable image | 21/21 |
-| connected-harness | real ServiceAccount permits only selected Deployment get/patch; forbidden write denied | 21/21 |
-| connected-harness | Connected cart and checkout fail while shipping configuration is broken | 14/21 |
-| connected-harness | missing-approval makes zero executor writes | 21/21 |
-| connected-harness | hard-policy-rejection makes zero executor writes | 21/21 |
-| connected-harness | stale-state makes zero executor writes | 21/21 |
-| connected-harness | real API rejects JSON Patch after resourceVersion changes | 21/21 |
-| connected-harness | competing real worker is excluded before mutation | 20/21 |
-| connected-harness | approved real rollback, duplicate replay and changed-ID rejection | 20/21 |
-| connected-harness | Role 6 verified gRPC, readiness and template; Coordinator RECOVERED | 20/21 |
-| connected-harness | gRPC quote and replica health after executor rollback; Role 6 published RECOVERED | 20/21 |
-| connected-harness | actual worker process exits after live patch; restart reconciles without resubmission | 20/21 |
-| connected-harness | Guard rejects unnecessary rollback despite approval; zero Executor patch attempts | 20/21 |
-| connected-harness | Connected home, add to cart, cart and checkout fail while cart configuration is broken | 7/21 |
+| connected-harness | healthy baseline captured with real service samples and immutable image | 22/22 |
+| connected-harness | real ServiceAccount permits only selected Deployment get/patch; forbidden write denied | 22/22 |
+| connected-harness | Connected cart and checkout fail while shipping configuration is broken | 15/22 |
+| connected-harness | missing-approval makes zero executor writes | 22/22 |
+| connected-harness | hard-policy-rejection makes zero executor writes | 22/22 |
+| connected-harness | stale-state makes zero executor writes | 22/22 |
+| connected-harness | real API rejects JSON Patch after resourceVersion changes | 22/22 |
+| connected-harness | competing real worker is excluded before mutation | 21/22 |
+| connected-harness | approved real rollback, duplicate replay and changed-ID rejection | 21/22 |
+| connected-harness | Role 6 verified gRPC, readiness and template; Coordinator RECOVERED | 21/22 |
+| connected-harness | gRPC quote and replica health after executor rollback; Role 6 published RECOVERED | 21/22 |
+| connected-harness | actual worker process exits after live patch; restart reconciles without resubmission | 21/22 |
+| connected-harness | Guard rejects unnecessary rollback despite approval; zero Executor patch attempts | 21/22 |
+| connected-harness | Connected home, add to cart, cart and checkout fail while cart configuration is broken | 7/22 |
 | shipping-lab | healthy baseline captured with real service samples and immutable image | 2/2 |
 | shipping-lab | real ServiceAccount permits only selected Deployment get/patch; forbidden write denied | 2/2 |
 | shipping-lab | missing-approval makes zero executor writes | 2/2 |
@@ -157,6 +157,7 @@ recovered and do not enter the medians.
 | fc3ed0d | recorded | 1 | 0/1 | 1 | n/a | n/a | agent escalated (ABSTAINED) x1 |
 | 97fa813 | recorded | 1 | 0/1 | 1 | n/a | n/a | agent escalated (ABSTAINED) x1 |
 | 785e6a1 | recorded | 1 | 1/1 | 0 | 5 | 61.5 | none |
+| a1c57ea | recorded | 1 | 1/1 | 0 | 6 | 96.5 | none |
 <!-- END GENERATED:agent-runs -->
 
 ### Catalog scenario runs (unscored)
@@ -213,6 +214,7 @@ these rows are not scored trials.
 | boutique-live-20261116t183439z-7e47ab | C1 | fc3ed0d | FAILED | ESCALATE | from a planning failure (ABSTAINED) | 0 | NEEDS_REVIEW | no | pending |
 | boutique-live-20261116t183747z-12dd16 | C1 | 97fa813 | FAILED | ESCALATE | from a planning failure (ABSTAINED) | 0 | NEEDS_REVIEW | no | pending |
 | boutique-live-20261116t193534z-6c99ab | R1 | 785e6a1 | PASS | ROLLBACK | decided by the model | 1 | RECOVERED | yes | pending |
+| boutique-live-20261117t071645z-12f813 | R1 | a1c57ea | PASS | ROLLBACK | decided by the model | 1 | RECOVERED | yes | pending |
 <!-- END GENERATED:scenario-runs -->
 
 ## Guard rejection
@@ -223,7 +225,7 @@ refuse it and the Executor must make no write.
 <!-- BEGIN GENERATED:guard-rejection -->
 | Runs | Refused | Executor writes for the refused action | Unmeasured |
 | --- | --- | --- | --- |
-| 5 | 5/5 | 0 | 0 |
+| 6 | 6/6 | 0 | 0 |
 <!-- END GENERATED:guard-rejection -->
 
 ## Guard fixture evaluation
@@ -261,6 +263,9 @@ diagnosis accuracy.
 | guard-eval-v1-20261117-785e6a1 | PRELIMINARY_NOT_FROZEN | state_policy_only | measured | 21/27 | 6/27 | 0/27 | 6/6 | 0/6 | 0 |
 | guard-eval-v1-20261117-785e6a1 | PRELIMINARY_NOT_FROZEN | full_available | measured | 0/27 | 18/27 | 9/27 | 6/6 | 0/6 | 0 |
 | guard-eval-v1-20261117-785e6a1 | PRELIMINARY_NOT_FROZEN | no_validation | definitional | 27/27 | 0/27 | 0/27 | 6/6 | 0/6 | 0 |
+| guard-eval-v1-20261117-a1c57ea | PRELIMINARY_NOT_FROZEN | state_policy_only | measured | 21/27 | 6/27 | 0/27 | 6/6 | 0/6 | 0 |
+| guard-eval-v1-20261117-a1c57ea | PRELIMINARY_NOT_FROZEN | full_available | measured | 0/27 | 18/27 | 9/27 | 6/6 | 0/6 | 0 |
+| guard-eval-v1-20261117-a1c57ea | PRELIMINARY_NOT_FROZEN | no_validation | definitional | 27/27 | 0/27 | 0/27 | 6/6 | 0/6 | 0 |
 <!-- END GENERATED:guard-eval -->
 
 ## Executor wedge
@@ -327,12 +332,12 @@ Successful runs only. `recorded` values come from the harness timeline;
 <!-- BEGIN GENERATED:timings -->
 | Class | Interval | n | Median s | Min s | Max s | Source |
 | --- | --- | --- | --- | --- | --- | --- |
-| agent | fault -> incident observed | 21 | 7.8 | 7.5 | 10.3 | recorded |
-| agent | incident observed -> repair applied | 29 | 46.5 | 23.7 | 356.5 | approx |
-| agent | repair applied -> outcome window end | 29 | 43.6 | 23.5 | 316.8 | approx |
-| connected-harness | fault -> incident observed | 15 | 7.7 | 5.5 | 10 | recorded |
-| connected-harness | incident observed -> repair applied | 19 | 3.8 | 3.2 | 6 | approx |
-| connected-harness | repair applied -> outcome window end | 19 | 26.6 | 23.9 | 101.8 | approx |
+| agent | fault -> incident observed | 22 | 7.8 | 7.5 | 10.3 | recorded |
+| agent | incident observed -> repair applied | 30 | 47.4 | 23.7 | 356.5 | approx |
+| agent | repair applied -> outcome window end | 30 | 43.6 | 23.5 | 316.8 | approx |
+| connected-harness | fault -> incident observed | 16 | 7.7 | 5.5 | 10 | recorded |
+| connected-harness | incident observed -> repair applied | 20 | 3.6 | 3.2 | 6 | approx |
+| connected-harness | repair applied -> outcome window end | 20 | 26.5 | 23.9 | 101.8 | approx |
 <!-- END GENERATED:timings -->
 
 ## Per-stage latency
@@ -366,29 +371,29 @@ with these limits:
   from the one harness process). See [dual-fault.md](dual-fault.md).
 
 <!-- BEGIN GENERATED:latency -->
-- agent: 48 runs, 32 PASS; stopped at: planning x14; verification x2.
-- harness: 21 runs, 19 PASS; stopped at: after_recovery x1; decision x1.
+- agent: 49 runs, 33 PASS; stopped at: planning x14; verification x2.
+- harness: 22 runs, 20 PASS; stopped at: after_recovery x1; decision x1.
 
 | Mode | Stage | n | Median s | p90 s | Min s | Max s | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| agent | detection: start -> incident observed | 47 | 7.3 | 9.8 | 5.0 | 10.2 | bundle; start: first failing snapshot x20, injection x27 |
-| agent | planning: incident -> last planning record | 26 | 34.8 | 69.8 | 16.5 | 208.4 | bundle + run folder |
-| agent | model calls: sum per run (part of planning) | 33 | 45.9 | 68.9 | 21.9 | 206.8 | bundle |
-| agent | Guard: planning end -> ALLOW (incl. lab approval) | 23 | 0.7 | 1.0 | 0.2 | 126.2 | bundle + run folder |
-| agent | incident -> Guard ALLOW (planning + Guard) | 31 | 47.7 | 111.8 | 23.3 | 355.8 | bundle |
-| agent | execution: ALLOW -> Executor result | 31 | 0.6 | 0.7 | 0.5 | 0.8 | bundle |
-| agent | verification: Executor result -> outcome window end | 31 | 43.6 | 62.5 | 8.0 | 316.8 | bundle |
-| agent | fault to repair: start -> Executor result | 31 | 55.5 | 119.6 | 31.5 | 363.7 | bundle; start: first failing snapshot x13, injection x18 |
-| agent | total: start -> outcome window end | 31 | 101.2 | 232.6 | 56.9 | 534.9 | bundle; start: first failing snapshot x13, injection x18 |
-| harness | detection: start -> incident observed | 21 | 7.3 | 9.6 | 5.1 | 9.7 | bundle; start: first failing snapshot x4, injection x17 |
-| harness | planning: incident -> last planning record | 17 | 3.0 | 4.2 | 2.4 | 4.4 | bundle |
+| agent | detection: start -> incident observed | 48 | 7.3 | 9.8 | 5.0 | 10.2 | bundle; start: first failing snapshot x20, injection x28 |
+| agent | planning: incident -> last planning record | 27 | 40.7 | 76.2 | 16.5 | 208.4 | bundle + run folder |
+| agent | model calls: sum per run (part of planning) | 34 | 46.6 | 70.1 | 21.9 | 206.8 | bundle |
+| agent | Guard: planning end -> ALLOW (incl. lab approval) | 24 | 0.7 | 1.0 | 0.2 | 126.2 | bundle + run folder |
+| agent | incident -> Guard ALLOW (planning + Guard) | 32 | 48.4 | 111.8 | 23.3 | 355.8 | bundle |
+| agent | execution: ALLOW -> Executor result | 32 | 0.6 | 0.7 | 0.5 | 0.8 | bundle |
+| agent | verification: Executor result -> outcome window end | 32 | 43.5 | 62.5 | 8.0 | 316.8 | bundle |
+| agent | fault to repair: start -> Executor result | 32 | 56.2 | 119.6 | 31.5 | 363.7 | bundle; start: first failing snapshot x13, injection x19 |
+| agent | total: start -> outcome window end | 32 | 101.2 | 232.6 | 56.9 | 534.9 | bundle; start: first failing snapshot x13, injection x19 |
+| harness | detection: start -> incident observed | 22 | 7.3 | 9.7 | 5.1 | 9.7 | bundle; start: first failing snapshot x4, injection x18 |
+| harness | planning: incident -> last planning record | 18 | 2.9 | 4.2 | 2.4 | 4.4 | bundle |
 | harness | model calls: sum per run (part of planning) | 0 | n/a | n/a | n/a | n/a | - |
-| harness | Guard: planning end -> ALLOW (incl. lab approval) | 16 | 0.5 | 0.7 | 0.3 | 0.9 | bundle |
-| harness | incident -> Guard ALLOW (planning + Guard) | 20 | 3.1 | 3.7 | 2.8 | 5.4 | bundle |
-| harness | execution: ALLOW -> Executor result | 20 | 0.7 | 0.9 | 0.6 | 1.0 | bundle |
-| harness | verification: Executor result -> outcome window end | 20 | 26.7 | 89.6 | 24.1 | 102.3 | bundle |
-| harness | fault to repair: start -> Executor result | 20 | 11.0 | 13.0 | 9.4 | 13.3 | bundle; start: first failing snapshot x4, injection x16 |
-| harness | total: start -> outcome window end | 20 | 37.5 | 100.8 | 35.0 | 114.4 | bundle; start: first failing snapshot x4, injection x16 |
+| harness | Guard: planning end -> ALLOW (incl. lab approval) | 17 | 0.5 | 0.7 | 0.3 | 0.9 | bundle |
+| harness | incident -> Guard ALLOW (planning + Guard) | 21 | 3.1 | 3.7 | 2.8 | 5.4 | bundle |
+| harness | execution: ALLOW -> Executor result | 21 | 0.7 | 0.9 | 0.6 | 1.0 | bundle |
+| harness | verification: Executor result -> outcome window end | 21 | 26.6 | 89.6 | 24.1 | 102.3 | bundle |
+| harness | fault to repair: start -> Executor result | 21 | 11.1 | 13.2 | 9.4 | 13.3 | bundle; start: first failing snapshot x4, injection x17 |
+| harness | total: start -> outcome window end | 21 | 37.6 | 100.8 | 35.0 | 114.4 | bundle; start: first failing snapshot x4, injection x17 |
 <!-- END GENERATED:latency -->
 
 ### Model calls and cold loads
@@ -407,10 +412,10 @@ load during a run has been measured with that transport.
 <!-- BEGIN GENERATED:model-calls -->
 | Mode | Measure | n | Median s | p90 s | Max s |
 | --- | --- | --- | --- | --- | --- |
-| agent | model time per run, warm runs | 24 | 33.2 | 68.9 | 206.8 |
+| agent | model time per run, warm runs | 25 | 38.7 | 70.1 | 206.8 |
 | agent | model time per run, cold runs | 1 | 43.1 | 43.1 | 43.1 |
 | agent | model time per run, unclassified runs | 8 | 50.3 | 109.3 | 109.3 |
-| agent | one call, warm | 102 | 9.1 | 25.0 | 118.5 |
+| agent | one call, warm | 107 | 9.1 | 25.0 | 118.5 |
 | agent | one call, cold | 2 | 32.5 | 41.1 | 41.1 |
 | agent | one call, unclassified | 33 | 11.2 | 28.9 | 46.3 |
 | agent | model load time of cold calls | 2 | 21.1 | 25.6 | 25.6 |
@@ -522,6 +527,7 @@ Blocked probes are the bypass, identity and outage probes that must fail.
 | p5sec-p504-r3 | PASS | yes | 8/8 | yes |
 | p5sec-p504-smoke | PASS | yes | 8/8 | yes |
 | protected-boutique-785e6a1 | PASS | yes | 8/8 | yes |
+| protected-boutique-a1c57ea | PASS | yes | 8/8 | yes |
 <!-- END GENERATED:security-lab -->
 
 ## Observer acceptance

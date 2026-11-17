@@ -1,0 +1,17 @@
+{
+  "action_id": "ACT-LIVE-1c2a435435254ba282f9c42f3aaeee1c",
+  "details": "Fresh Guard validation refused execution: ROLLBACK_ALREADY_AT_BASELINE",
+  "incident_id": "INC-FALSE-ALARM-B43980C73B8C",
+  "kind": "execution_result",
+  "recorded_at": "2026-11-17T07:16:42.638494Z",
+  "resource_version": "406135",
+  "schema_version": "1.0",
+  "status": "FAILED",
+  "target": {
+    "cluster_id": "sentinel-boutique-connected",
+    "kind": "Deployment",
+    "name": "shippingservice",
+    "namespace": "sentinel-boutique-connected",
+    "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+  }
+}

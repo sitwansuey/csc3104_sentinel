@@ -1,0 +1,57 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "guard-eval-v1-20261117-a1c57ea",
+  "class": "guard-eval",
+  "captured_at": "2026-11-17T07:12:59.257673Z",
+  "source_run_dir_name": "guard-evaluation-a1c57ea",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "recorded",
+    "schema": "sentinel-provenance-v1",
+    "source_revision": "a1c57eac0916f85854e31e2ba0bb62dba2bf1c9b",
+    "dirty": false,
+    "dirty_paths_sha256": null,
+    "dirty_path_count": 0,
+    "python": "3.13.2",
+    "host_class": "windows-amd64",
+    "tools": {},
+    "captured_by": "evaluate_guard",
+    "revision": "a1c57eac0916f85854e31e2ba0bb62dba2bf1c9b",
+    "working_tree_dirty": false,
+    "source_sha256": {
+      "scripts/evaluate_guard.py": "969d0d6ca4b7ad17df3485c5dc5473e9faf35ed3dd56f47cb7925b302dcfcb6b",
+      "shared/contracts.py": "928cd2157f8b00b4032047a8a935c32a7288e788467a4659f4085593c1c8840e",
+      "shared/canonical.py": "efbd66e43eea56e9abe86d08831504c3b59adce8ce72f4a6342885473b3bae9a",
+      "shared/actions.py": "fc1e4796dd03cc582f4a429f36bafb8dd8828db5278979295480750fce82a565",
+      "data/experimentation/guard/v1/cases.json": "ce6c1296ce6f6b2d289ff4468c4e979066a03a1941350bc78cd0b64a05b3012e",
+      "services/guard/__init__.py": "6f689adfbbbb73a35df564736ef4d39b59a16bc6eafc38dfdf7be2630a2701af",
+      "services/guard/adapters.py": "aadd94bc0acb9b80b90d0279cdff8cfe374ccedbe9256c8fbc8f2aed5fa66ed4",
+      "services/guard/cli.py": "27decfbea1b058280709edab667664bc0dc921c1995807f699abf1ba5257caf2",
+      "services/guard/common.py": "d9f303e50c41f11e7d23a3d1c90f99a1e51c41bfc0e7baa4641138a46838a38d",
+      "services/guard/core.py": "db5eea5f77c35ad8b72189d2544dcbf367c072af6b847359aea0d4c143f19027",
+      "services/guard/decisions.py": "490827289bc1cea6e6ea9d2317442e9fac654e05dd83a810e1b8177e86627ff5",
+      "services/guard/eligibility.py": "79d7f06658b70fc6be46a182bc8775991bbc4af5a9b95c9ff5b901f5de5ec947",
+      "services/guard/preview.py": "0166c4ae41bc4d085a90cbc10e974e99510dd25ed3259fea6d0710fa08d4fd90",
+      "services/guard/resources.py": "9f11c607e7db1a84428f53be8862a797b754b1cc6c7e908a61b0aa7a8f478a2d",
+      "services/guard/restart.py": "1e921b64d804e29b0001a255853d44f96791c5622c985a38fa14a262f8d801bf",
+      "services/guard/scale.py": "9f68ea8f05b8875b85298858309a53bbda74ac32e6c440d2fa737efd484679f3"
+    },
+    "platform": "Windows",
+    "architecture": "AMD64"
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "4561557eb13a3d91812281767c70cf3a5afabeb70befba3f702b07f854d567ab",
+      "bytes": 4421,
+      "redactions": 0
+    },
+    {
+      "path": "results.json",
+      "sha256": "0f30d99d5fccdff9bb7b816b56a96695431768b90fe945b8add0174fbbf97886",
+      "bytes": 84887,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}
