@@ -104,18 +104,18 @@ is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.
 <!-- BEGIN GENERATED:index -->
 | Class | Bundles | Recorded | Inferred | Superseded | Withdrawn |
 | --- | --- | --- | --- | --- | --- |
-| agent | 48 | 28 | 20 | 0 | 0 |
+| agent | 49 | 29 | 20 | 0 | 0 |
 | cert-lifecycle | 4 | 0 | 4 | 0 | 0 |
 | chaos-batch | 17 | 0 | 17 | 0 | 0 |
 | chaos-recovery | 25 | 25 | 0 | 1 | 0 |
-| connected-harness | 21 | 17 | 4 | 0 | 0 |
+| connected-harness | 22 | 18 | 4 | 0 | 0 |
 | cve-gate | 4 | 0 | 4 | 0 | 0 |
 | distributed-acceptance | 16 | 14 | 2 | 0 | 0 |
 | distributed-scenario | 39 | 0 | 39 | 0 | 0 |
 | executor-admission | 1 | 0 | 1 | 0 | 0 |
 | executor-wedge | 31 | 0 | 31 | 0 | 0 |
-| guard-eval | 2 | 2 | 0 | 0 | 0 |
-| guard-rejection | 5 | 3 | 2 | 0 | 0 |
+| guard-eval | 3 | 3 | 0 | 0 | 0 |
+| guard-rejection | 6 | 4 | 2 | 0 | 0 |
 | kind-lab-session | 3 | 0 | 3 | 0 | 0 |
 | observer-acceptance | 3 | 0 | 3 | 0 | 0 |
 | packaged | 9 | 0 | 9 | 0 | 0 |
@@ -123,7 +123,7 @@ is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.
 | provider-recovery | 1 | 0 | 1 | 0 | 0 |
 | scale-recovery | 4 | 4 | 0 | 0 | 0 |
 | scenario-pair | 8 | 8 | 0 | 0 | 0 |
-| security-lab | 9 | 6 | 3 | 0 | 0 |
+| security-lab | 10 | 7 | 3 | 0 | 0 |
 | shipping-lab | 2 | 0 | 2 | 0 | 0 |
 | ui-session | 7 | 0 | 7 | 0 | 0 |
 | worker-container | 2 | 0 | 2 | 0 | 0 |

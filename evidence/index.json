@@ -2700,6 +2700,56 @@
       "provenance": "recorded",
       "status": "current",
       "reason": null
+    },
+    {
+      "bundle_id": "guard-eval-v1-20261117-a1c57ea",
+      "class": "guard-eval",
+      "path": "2026-11-17/guard-eval-v1-20261117-a1c57ea",
+      "captured_at": "2026-11-17T07:12:59.257673Z",
+      "source_revision": "a1c57eac0916f85854e31e2ba0bb62dba2bf1c9b",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261117t071303z-4e5443",
+      "class": "connected-harness",
+      "path": "2026-11-17/boutique-live-20261117t071303z-4e5443",
+      "captured_at": "2026-11-17T07:13:03.848551Z",
+      "source_revision": "a1c57eac0916f85854e31e2ba0bb62dba2bf1c9b",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261117t071532z-f33f98",
+      "class": "guard-rejection",
+      "path": "2026-11-17/boutique-live-20261117t071532z-f33f98",
+      "captured_at": "2026-11-17T07:15:32.378994Z",
+      "source_revision": "a1c57eac0916f85854e31e2ba0bb62dba2bf1c9b",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "boutique-live-20261117t071645z-12f813",
+      "class": "agent",
+      "path": "2026-11-17/boutique-live-20261117t071645z-12f813",
+      "captured_at": "2026-11-17T07:16:45.622856Z",
+      "source_revision": "a1c57eac0916f85854e31e2ba0bb62dba2bf1c9b",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
+    },
+    {
+      "bundle_id": "protected-boutique-a1c57ea",
+      "class": "security-lab",
+      "path": "2026-11-17/protected-boutique-a1c57ea",
+      "captured_at": "2026-11-17T07:26:36.231431Z",
+      "source_revision": "a1c57eac0916f85854e31e2ba0bb62dba2bf1c9b",
+      "provenance": "recorded",
+      "status": "current",
+      "reason": null
     }
   ]
 }

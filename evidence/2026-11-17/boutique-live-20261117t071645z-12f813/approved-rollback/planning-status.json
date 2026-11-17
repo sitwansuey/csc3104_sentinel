@@ -1,0 +1,221 @@
+{
+  "attempt_usage": [
+    {
+      "attempt": 1,
+      "usage": {
+        "budget_seconds": 600,
+        "calls": [
+          {
+            "attempt": 1,
+            "call_id": 1,
+            "error_type": "ValueError",
+            "eval_duration_seconds": 45.746433,
+            "load_duration_seconds": 0.003256,
+            "model": "qwen3:14b",
+            "output_tokens": 2048,
+            "planning_attempt": 1,
+            "prompt_characters": 11905,
+            "prompt_eval_duration_seconds": 3.808343,
+            "prompt_tokens": 4386,
+            "prompt_version": "rca-v1",
+            "retrieved_passages": [],
+            "role": "Analyzer",
+            "seconds": 49.635149300000194,
+            "status": "failed"
+          }
+        ],
+        "model_calls": 1,
+        "model_calls_completed": 0,
+        "model_seconds": 49.635,
+        "planning_attempt": 1,
+        "prompt_version": "agent-recovery-v1",
+        "retrieved_passages": [],
+        "seconds": 49.864
+      }
+    },
+    {
+      "attempt": 2,
+      "usage": {
+        "budget_seconds": 600,
+        "calls": [
+          {
+            "attempt": 1,
+            "call_id": 1,
+            "eval_duration_seconds": 4.707413,
+            "load_duration_seconds": 0.0027082,
+            "model": "qwen3:14b",
+            "output_tokens": 211,
+            "planning_attempt": 2,
+            "prompt_characters": 11905,
+            "prompt_eval_duration_seconds": 0.054668,
+            "prompt_tokens": 4386,
+            "prompt_version": "rca-v1",
+            "retrieved_passages": [],
+            "role": "Analyzer",
+            "seconds": 4.81208179999976,
+            "status": "completed"
+          },
+          {
+            "attempt": 1,
+            "call_id": 2,
+            "eval_duration_seconds": 9.824572,
+            "load_duration_seconds": 0.0026537,
+            "model": "qwen3:14b",
+            "output_tokens": 431,
+            "planning_attempt": 2,
+            "prompt_characters": 17977,
+            "prompt_eval_duration_seconds": 5.207943,
+            "prompt_tokens": 5879,
+            "prompt_version": "rca-v1",
+            "retrieved_passages": [
+              {
+                "content_sha256": "c3ddbc6a197681e509603771ed301e8271155fde0b24bb118a8da6efe7adba28",
+                "id": "multimodal_rca"
+              },
+              {
+                "content_sha256": "639659abc6805c31099ad2232a2f6daaa5488f49b60aaed8cb01bde374ac2ca3",
+                "id": "cpu_exhaustion"
+              }
+            ],
+            "role": "Planner",
+            "seconds": 15.240544299999783,
+            "status": "completed"
+          },
+          {
+            "attempt": 1,
+            "call_id": 3,
+            "eval_duration_seconds": 4.403579,
+            "load_duration_seconds": 0.0031356,
+            "model": "qwen3:14b",
+            "output_tokens": 203,
+            "planning_attempt": 2,
+            "prompt_characters": 12867,
+            "prompt_eval_duration_seconds": 0.296072,
+            "prompt_tokens": 4580,
+            "prompt_version": "rca-v1",
+            "retrieved_passages": [],
+            "role": "Analyzer",
+            "seconds": 5.0331341999999495,
+            "status": "completed"
+          },
+          {
+            "attempt": 1,
+            "call_id": 4,
+            "eval_duration_seconds": 7.464989,
+            "load_duration_seconds": 0.0027398,
+            "model": "qwen3:14b",
+            "output_tokens": 331,
+            "planning_attempt": 2,
+            "prompt_characters": 14555,
+            "prompt_eval_duration_seconds": 4.350311,
+            "prompt_tokens": 4927,
+            "prompt_version": "rca-v1",
+            "retrieved_passages": [],
+            "role": "Reporter",
+            "seconds": 12.00365580000016,
+            "status": "completed"
+          },
+          {
+            "attempt": 1,
+            "call_id": 5,
+            "eval_duration_seconds": 5.710313,
+            "load_duration_seconds": 0.0032012,
+            "model": "qwen3:14b",
+            "output_tokens": 264,
+            "planning_attempt": 2,
+            "prompt_characters": 12197,
+            "prompt_eval_duration_seconds": 3.883461,
+            "prompt_tokens": 4424,
+            "prompt_version": "agent-recovery-v1",
+            "retrieved_passages": [
+              {
+                "content_sha256": "ee695a3fe86de107f83928612f9bfedaa893a20af52851bb35fff26609fb6ec6",
+                "id": "failed-rollout"
+              },
+              {
+                "content_sha256": "71fc9a2b439a85b6b4e973754bc6152f74fe43c5c9868cf4d79b1493bd356e6c",
+                "id": "pod-failure"
+              }
+            ],
+            "role": "Recovery Planner",
+            "seconds": 9.814753999999994,
+            "status": "completed"
+          }
+        ],
+        "decision": {
+          "codes": [],
+          "decided_by": "model",
+          "eligible": true,
+          "enforced": true,
+          "model_action": "ROLLBACK",
+          "overridden": false,
+          "policy": "gated"
+        },
+        "model_calls": 5,
+        "model_calls_completed": 5,
+        "model_seconds": 46.904,
+        "planning_attempt": 2,
+        "prompt_version": "agent-recovery-v1",
+        "retrieved_passages": [
+          {
+            "content_sha256": "c3ddbc6a197681e509603771ed301e8271155fde0b24bb118a8da6efe7adba28",
+            "id": "multimodal_rca"
+          },
+          {
+            "content_sha256": "639659abc6805c31099ad2232a2f6daaa5488f49b60aaed8cb01bde374ac2ca3",
+            "id": "cpu_exhaustion"
+          },
+          {
+            "content_sha256": "ee695a3fe86de107f83928612f9bfedaa893a20af52851bb35fff26609fb6ec6",
+            "id": "failed-rollout"
+          },
+          {
+            "content_sha256": "71fc9a2b439a85b6b4e973754bc6152f74fe43c5c9868cf4d79b1493bd356e6c",
+            "id": "pod-failure"
+          }
+        ],
+        "seconds": 47.097
+      }
+    }
+  ],
+  "attempts": 2,
+  "delivered": 1,
+  "error_code": "INVALID_MODEL_OUTPUT",
+  "incident_id": "INC-D26A4884A227",
+  "next_attempt": 1794899956.434731,
+  "proposal": {
+    "action": "ROLLBACK",
+    "action_id": "ACT-d0f7edd52f23ad1543cc0ce0",
+    "based_on_resource_version": "406547",
+    "evidence_refs": [
+      "E-F1B5E3147C46",
+      "E-173C2BD2C908",
+      "E-2698D11237B5",
+      "E-5ECACCD8F3FD",
+      "E-364BD08324A3",
+      "E-873CD7B85594",
+      "E-3BE353EF082E",
+      "E-1D6D63F64208",
+      "E-CC0BB7447F20",
+      "E-50306545CB6D",
+      "E-BC595EF8D842",
+      "E-09A55160F6F1",
+      "E-1D0150EDE4E2"
+    ],
+    "incident_id": "INC-D26A4884A227",
+    "kind": "proposal",
+    "parameters": {
+      "baseline_id": "BASE-LIVE-9023fc27ac7b",
+      "template_sha256": "5434e0fd84f05fa1a89f447cf77ed97e133aa06e7c270f261d9b309e7826ef26"
+    },
+    "rationale": "The incident evidence indicates a container startup failure in the 'shippingservice' deployment, with the container repeatedly crashing and entering a CrashLoopBackOff state. The change evidence shows that the live template has a modification in the 'spec.containers[server].env[PORT].value' field, where the port was changed from '50051' to 'invalid-port'. This change is likely the root cause of the failure, as the readiness probe is failing due to an inability to connect to the service on the expected port. The rollback action is appropriate here because the evidence supports that a harmful configuration rollout (setting an invalid port) caused the issue, and restoring the last observed healthy baseline would revert the configuration to a known good state.",
+    "schema_version": "1.0",
+    "target": {
+      "cluster_id": "sentinel-boutique-connected",
+      "kind": "Deployment",
+      "name": "shippingservice",
+      "namespace": "sentinel-boutique-connected",
+      "uid": "7afb61df-2d75-4529-ae2c-5825a573335d"
+    }
+  }
+}

@@ -1,0 +1,169 @@
+{
+  "provenance": {
+    "schema": "sentinel-provenance-v1",
+    "source_revision": "a1c57eac0916f85854e31e2ba0bb62dba2bf1c9b",
+    "dirty": false,
+    "dirty_paths_sha256": null,
+    "dirty_path_count": 0,
+    "python": "3.13.2",
+    "host_class": "windows-amd64",
+    "tools": {
+      "kubectl": "1.34.1",
+      "kind": "0.33.0",
+      "docker": "29.4.3"
+    },
+    "captured_by": "security-lab"
+  },
+  "passed": true,
+  "baseline_attempts": [
+    {
+      "at": "2026-11-17T07:26:36.231431Z",
+      "home_status": 200,
+      "add_to_cart_status": 302,
+      "cart_status": 200,
+      "checkout_status": 200,
+      "cart_contains_product": true,
+      "order_confirmation_id": "38a5890e-e258-11f1-be4b-3aa00bed7846",
+      "order_confirmation_found": true,
+      "order_page_confirmed": true,
+      "passed": true,
+      "errors": {}
+    }
+  ],
+  "shopping_and_checkout": {
+    "at": "2026-11-17T07:26:36.231431Z",
+    "home_status": 200,
+    "add_to_cart_status": 302,
+    "cart_status": 200,
+    "checkout_status": 200,
+    "cart_contains_product": true,
+    "order_confirmation_id": "38a5890e-e258-11f1-be4b-3aa00bed7846",
+    "order_confirmation_found": true,
+    "order_page_confirmed": true,
+    "passed": true,
+    "errors": {}
+  },
+  "network_matrix": {
+    "status": "PASS",
+    "reasons": [],
+    "journey_passed": true,
+    "allowed": {
+      "cells": 22,
+      "open": 22
+    },
+    "forbidden": {
+      "cells": 248,
+      "closed": 248,
+      "timed_out": 248
+    },
+    "untested": 0
+  },
+  "valid_mtls_quote": {
+    "succeeded": true,
+    "output": "{\n  \"costUsd\": {\n    \"currencyCode\": \"USD\",\n    \"units\": \"8\",\n    \"nanos\": 990000000\n  }\n}\n"
+  },
+  "verifier_identity_quote": {
+    "succeeded": true,
+    "output": "{\n  \"costUsd\": {\n    \"currencyCode\": \"USD\",\n    \"units\": \"8\",\n    \"nanos\": 990000000\n  }\n}\n"
+  },
+  "invalid_quantity": {
+    "succeeded": false,
+    "output": "ERROR:\n  Code: PermissionDenied\n  Message: \n"
+  },
+  "missing_client_certificate": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"security-gateway:8443\": context deadline exceeded\n"
+  },
+  "wrong_client_identity": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"security-gateway:8443\": context deadline exceeded\n"
+  },
+  "direct_service_bypass": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"shippingservice:50051\": context deadline exceeded\n"
+  },
+  "direct_pod_ip_bypass": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"<private-ip>:50051\": context deadline exceeded\n"
+  },
+  "direct_egress_bypass": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"<private-ip>:50052\": context deadline exceeded\n"
+  },
+  "valid_mtls_cart": {
+    "succeeded": true,
+    "output": "{}\n"
+  },
+  "cart_invalid_quantity": {
+    "succeeded": false,
+    "output": "ERROR:\n  Code: PermissionDenied\n  Message: \n"
+  },
+  "cart_missing_client_certificate": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"security-cart-gateway:8445\": context deadline exceeded\n"
+  },
+  "cart_wrong_client_identity": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"security-cart-gateway:8445\": context deadline exceeded\n"
+  },
+  "cart_direct_service_bypass": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"cartservice:7070\": context deadline exceeded\n"
+  },
+  "cart_direct_pod_ip_bypass": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"<private-ip>:7070\": context deadline exceeded\n"
+  },
+  "cart_direct_egress_bypass": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"<private-ip>:50053\": context deadline exceeded\n"
+  },
+  "proxy_outage": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"security-gateway:8443\": connection error: desc = \"transport: error while dialing: dial tcp <private-ip>:8443: connect: connection refused\"\n"
+  },
+  "outage_direct_bypass": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"shippingservice:50051\": context deadline exceeded\n"
+  },
+  "cart_proxy_outage": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"security-cart-gateway:8445\": connection error: desc = \"transport: error while dialing: dial tcp <private-ip>:8445: connect: connection refused\"\n"
+  },
+  "cart_outage_direct_bypass": {
+    "succeeded": false,
+    "output": "Failed to dial target host \"cartservice:7070\": context deadline exceeded\n"
+  },
+  "restore_attempts": [
+    {
+      "at": "2026-11-17T07:29:54.516123Z",
+      "home_status": 200,
+      "add_to_cart_status": 302,
+      "cart_status": 200,
+      "checkout_status": 200,
+      "cart_contains_product": true,
+      "order_confirmation_id": "aee10e83-e258-11f1-be4b-3aa00bed7846",
+      "order_confirmation_found": true,
+      "order_page_confirmed": true,
+      "passed": true,
+      "errors": {}
+    }
+  ],
+  "shopping_after_proxy_restore": {
+    "at": "2026-11-17T07:29:54.516123Z",
+    "home_status": 200,
+    "add_to_cart_status": 302,
+    "cart_status": 200,
+    "checkout_status": 200,
+    "cart_contains_product": true,
+    "order_confirmation_id": "aee10e83-e258-11f1-be4b-3aa00bed7846",
+    "order_confirmation_found": true,
+    "order_page_confirmed": true,
+    "passed": true,
+    "errors": {}
+  },
+  "empty_cart": {
+    "status": 200,
+    "error": null
+  }
+}

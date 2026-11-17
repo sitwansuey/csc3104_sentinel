@@ -86,9 +86,10 @@ class FaultProxyTests(unittest.TestCase):
 
     def test_reset_closes_with_a_reset_before_forwarding(self):
         self.proxy.set_mode("reset")
-        with socket.create_connection(self.proxy.address, timeout=2) as client:
-            time.sleep(0.2)
-            with self.assertRaises((ConnectionResetError, ConnectionAbortedError)):
+        # The reset can reach the client during connect() or on the first send/recv, depending on scheduling.
+        with self.assertRaises((ConnectionResetError, ConnectionAbortedError)):
+            with socket.create_connection(self.proxy.address, timeout=2) as client:
+                time.sleep(0.2)
                 client.sendall(b"ping")
                 client.recv(65536)
         self.assertEqual(self.server.received, [])
