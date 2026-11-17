@@ -2,18 +2,22 @@
 
 A release is a version tag, a set of images built from that tag on a
 GitHub-hosted runner, and a GitHub release that a person has reviewed and
-published. The first planned release is `v1.0.0-rc.1`, then `v1.0.0` after a
+published. The next planned release is `v1.0.0-rc.2`, then `v1.0.0` after a
 clean-machine rehearsal against the candidate's assets.
 
 Status: the tooling below is in the repository and covered by offline tests.
-No tag has been pushed, `release.yml` has not run, and no image from it has
-been scanned or published yet (`L-NO-RELEASE` in [limitations](limitations.md)).
+The `v1.0.0-rc.1` scan gate failed in run 44026433805 on fixable High/Critical
+findings in `sentinel-coordinator`, `sentinel-guard` and `sentinel-observer`.
+Prepare `v1.0.0-rc.2`; the rc.1 tag is never reused, and publication remains
+pending (`L-NO-RELEASE` in [limitations](limitations.md)).
+The Python 3.12 Debian slim index digest is still current; these three
+Dockerfiles apply OS upgrades before copying application code.
 
 ## Pieces
 
 | File | Role |
 | --- | --- |
-| `VERSION` | The version being prepared, `X.Y.Z` or `X.Y.Z-rc.N`. `pyproject.toml` holds the same version in PEP 440 form (`1.0.0rc1`). |
+| `VERSION` | The version being prepared, `X.Y.Z` or `X.Y.Z-rc.N`. `pyproject.toml` holds the same version in PEP 440 form (`1.0.0rc2`). |
 | `scripts/release/policy.py` | The image build list, version rules, required evidence classes and waiver rules, shared by the scripts below. |
 | `scripts/release/preflight.py` | Local go/no-go table before a tag. Changes nothing in git or on GitHub. |
 | `scripts/release/notes.py` | Draft release notes from merged pull request titles, the limitations register and the evidence index. |
@@ -43,7 +47,7 @@ On an up-to-date checkout of `main`:
 ```powershell
 git fetch origin
 git switch --detach origin/main
-python scripts/release/preflight.py --tag v1.0.0-rc.1 --notes release-notes.md
+python scripts/release/preflight.py --tag v1.0.0-rc.2 --notes release-notes.md
 ```
 
 `--notes` writes the draft notes outside the repository folder or into an
@@ -76,8 +80,8 @@ changes under `agent/`. Fresh recorded runs on the candidate commit come first.
 With `GO` on the merged commit, and the owner's explicit approval:
 
 ```powershell
-git tag -a v1.0.0-rc.1 -m "Sentinel v1.0.0-rc.1"
-git push origin v1.0.0-rc.1
+git tag -a v1.0.0-rc.2 -m "Sentinel v1.0.0-rc.2"
+git push origin v1.0.0-rc.2
 ```
 
 ### 3. The release workflow
@@ -156,9 +160,9 @@ reports are too large for the evidence policy and stay as release assets.
 Download the assets and verify them before loading:
 
 ```powershell
-Get-FileHash .\sentinel-boutique-runner-1.0.0-rc.1.tar.gz -Algorithm SHA256
-docker load --input .\sentinel-boutique-runner-1.0.0-rc.1.tar.gz
-docker image inspect sentinel-boutique-runner:1.0.0-rc.1 --format "{{.Os}}/{{.Architecture}} {{index .Config.Labels \"org.opencontainers.image.revision\"}}"
+Get-FileHash .\sentinel-boutique-runner-1.0.0-rc.2.tar.gz -Algorithm SHA256
+docker load --input .\sentinel-boutique-runner-1.0.0-rc.2.tar.gz
+docker image inspect sentinel-boutique-runner:1.0.0-rc.2 --format "{{.Os}}/{{.Architecture}} {{index .Config.Labels \"org.opencontainers.image.revision\"}}"
 ```
 
 Compare the hash with `SHA256SUMS` and the revision with the manifest. On

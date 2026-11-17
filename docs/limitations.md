@@ -51,7 +51,7 @@ the fix and regenerate.
 | [L-CALLER-BLOCKS-CALLEE-REPAIR](#l-caller-blocks-callee-repair) | limitation | open | A callee cannot be repaired while a caller it broke is NotReady, so the dependency-ordered pair cannot show its ordering | P4.05 | #77 |
 | [L-SECURITY-SHIPPING-ONLY](#l-security-shipping-only) | limitation | open | Shipping and cart mTLS/inspection passed four live rounds; other edges remain plaintext and policies stay lab-only | P4.06, P5.04, P5.05 | #69, #71 |
 | [L-SECURITY-GATEWAY-CAPACITY](#l-security-gateway-capacity) | limitation | open | Inspector shedding held fail-closed in smoke, but 200-worker storefront load mostly failed and the gateway is a single replica | P5.04 | #71 |
-| [L-NO-RELEASE](#l-no-release) | limitation | open | No tagged, scanned release image | P2.09, P2.10 | #63, #73 |
+| [L-NO-RELEASE](#l-no-release) | limitation | open | No published, scan-gated release image | P2.09, P2.10 | #63, #73 |
 | [L-RESTORE-DETECTION](#l-restore-detection) | limitation | mitigated | A Coordinator restored from a backup is detected, but lost acknowledged results are re-driven by hand | P4.02 | #62, #63 |
 | [L-HOST-LOCAL-EXECUTOR](#l-host-local-executor) | limitation | mitigated | The Executor ledger and target locks are host-local | P3.04, P4.01 | #18, #58, #59 |
 | [L-NO-FENCING](#l-no-fencing) | limitation | mitigated | Abandoned or revoked Executor writes are fenced only by a seal, run live on one Docker host | P3.04, P3.05, P4.01 | #18, #58, #61 |
@@ -294,11 +294,11 @@ the fix and regenerate.
 
 ### L-NO-RELEASE
 
-**No tagged, scanned release image.** Limitation, open; recorded 2026-11-11. Planned: P2.09, P2.10. Issues: #63, #73.
+**No published, scan-gated release image.** Limitation, open; recorded 2026-11-11. Planned: P2.09, P2.10. Issues: #63, #73.
 
-- Impact: The packaged runner is built locally from the checkout. It was rebuilt and scanned for PR #98, but no image is tagged or published, and that scan is not a committed evidence bundle. A release preflight, a tag-triggered build with a Trivy gate, SBOMs and checksums now exist (docs/release.md) but have not run: no tag has been pushed. The launcher now derives the runner tag and local build's OCI version label from VERSION; this does not supply a scanned release image. Decision (17 Nov 2026): release v1.0.0 is scoped to the packaged shipping-only runner plus the source release for the connected and agent workflows; publication remains pending.
+- Impact: The packaged runner is built locally from the checkout. It was rebuilt and scanned for PR #98, but no release image is published, and that scan is not a committed evidence bundle. A release preflight, a tag-triggered build with a Trivy gate, SBOMs and checksums now exist (docs/release.md). On 17 Nov 2026, the rc.1 release scan (run 44026433805) failed on fixable High/Critical findings in sentinel-coordinator, sentinel-guard and sentinel-observer, and rc.2 rebuilt all three on the patched Python 3.12 Debian slim base using OS upgrades. The launcher now derives the runner tag and local build's OCI version label from VERSION; this does not supply a scanned release image. Decision (17 Nov 2026): release v1.0.0 is scoped to the packaged shipping-only runner plus the source release for the connected and agent workflows; publication remains pending.
 - Workaround: Build the runner from the revision you are testing.
-- Evidence: claim `C-PACKAGED`; `scripts/packaged-demo-common.ps1:9`; `.github/workflows/release.yml`.
+- Evidence: claim `C-PACKAGED`; `scripts/packaged-demo-common.ps1:9`; `.github/workflows/release.yml`; `deploy/docker/coordinator.Dockerfile:2`; `deploy/docker/guard.Dockerfile:3`; `deploy/docker/observer.Dockerfile:2`.
 
 ### L-RESTORE-DETECTION
 

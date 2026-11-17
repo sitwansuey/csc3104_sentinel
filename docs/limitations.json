@@ -907,16 +907,19 @@
     },
     {
       "id": "L-NO-RELEASE",
-      "title": "No tagged, scanned release image",
+      "title": "No published, scan-gated release image",
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-11",
-      "impact": "The packaged runner is built locally from the checkout. It was rebuilt and scanned for PR #98, but no image is tagged or published, and that scan is not a committed evidence bundle. A release preflight, a tag-triggered build with a Trivy gate, SBOMs and checksums now exist (docs/release.md) but have not run: no tag has been pushed. The launcher now derives the runner tag and local build's OCI version label from VERSION; this does not supply a scanned release image. Decision (17 Nov 2026): release v1.0.0 is scoped to the packaged shipping-only runner plus the source release for the connected and agent workflows; publication remains pending.",
+      "impact": "The packaged runner is built locally from the checkout. It was rebuilt and scanned for PR #98, but no release image is published, and that scan is not a committed evidence bundle. A release preflight, a tag-triggered build with a Trivy gate, SBOMs and checksums now exist (docs/release.md). On 17 Nov 2026, the rc.1 release scan (run 44026433805) failed on fixable High/Critical findings in sentinel-coordinator, sentinel-guard and sentinel-observer, and rc.2 rebuilt all three on the patched Python 3.12 Debian slim base using OS upgrades. The launcher now derives the runner tag and local build's OCI version label from VERSION; this does not supply a scanned release image. Decision (17 Nov 2026): release v1.0.0 is scoped to the packaged shipping-only runner plus the source release for the connected and agent workflows; publication remains pending.",
       "workaround": "Build the runner from the revision you are testing.",
       "cites": [
         {"claim": "C-PACKAGED"},
         {"at": "scripts/packaged-demo-common.ps1:9", "text": "sentinel-boutique-runner:$script:PackagedVersion"},
-        {"at": ".github/workflows/release.yml"}
+        {"at": ".github/workflows/release.yml"},
+        {"at": "deploy/docker/coordinator.Dockerfile:2", "text": "RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*"},
+        {"at": "deploy/docker/guard.Dockerfile:3", "text": "RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*"},
+        {"at": "deploy/docker/observer.Dockerfile:2", "text": "RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*"}
       ],
       "planned": ["P2.09", "P2.10"],
       "issues": [63, 73]

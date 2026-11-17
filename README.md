@@ -172,7 +172,7 @@ and the code or evidence it cites, and CI fails when a citation stops resolving.
 - [L-CALLER-BLOCKS-CALLEE-REPAIR](docs/limitations.md#l-caller-blocks-callee-repair): A callee cannot be repaired while a caller it broke is NotReady, so the dependency-ordered pair cannot show its ordering (limitation, open; planned P4.05)
 - [L-SECURITY-SHIPPING-ONLY](docs/limitations.md#l-security-shipping-only): Shipping and cart mTLS/inspection passed four live rounds; other edges remain plaintext and policies stay lab-only (limitation, open; planned P4.06, P5.04, P5.05)
 - [L-SECURITY-GATEWAY-CAPACITY](docs/limitations.md#l-security-gateway-capacity): Inspector shedding held fail-closed in smoke, but 200-worker storefront load mostly failed and the gateway is a single replica (limitation, open; planned P5.04)
-- [L-NO-RELEASE](docs/limitations.md#l-no-release): No tagged, scanned release image (limitation, open; planned P2.09, P2.10)
+- [L-NO-RELEASE](docs/limitations.md#l-no-release): No published, scan-gated release image (limitation, open; planned P2.09, P2.10)
 - [L-RESTORE-DETECTION](docs/limitations.md#l-restore-detection): A Coordinator restored from a backup is detected, but lost acknowledged results are re-driven by hand (limitation, mitigated; planned P4.02)
 - [L-HOST-LOCAL-EXECUTOR](docs/limitations.md#l-host-local-executor): The Executor ledger and target locks are host-local (limitation, mitigated; planned P3.04, P4.01)
 - [L-NO-FENCING](docs/limitations.md#l-no-fencing): Abandoned or revoked Executor writes are fenced only by a seal, run live on one Docker host (limitation, mitigated; planned P3.04, P3.05, P4.01)
