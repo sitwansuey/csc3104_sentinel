@@ -2,7 +2,7 @@
 # Pick the role with --role and mount its trusted configuration at /config/worker.json.
 # Secrets come only from environment variables that the configuration names.
 # The kubectl stage is the demo runner's, line for line, so both images share it.
-FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS kubectl-build
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS kubectl-build
 ARG TARGETARCH
 ARG KUBECTL_VERSION=v1.37.1
 ARG KUBECTL_COMMIT=f78e722310e50bcaca9276be22276d9e91d91308
@@ -27,7 +27,7 @@ RUN cp /kubernetes/cmd/kubectl/kubectl.go main.go \
        -ldflags="-s -w -X k8s.io/component-base/version.gitMajor=1 -X k8s.io/component-base/version.gitMinor=37 -X k8s.io/component-base/version.gitVersion=${KUBECTL_VERSION} -X k8s.io/component-base/version.gitCommit=${KUBECTL_COMMIT} -X k8s.io/component-base/version.gitTreeState=clean" \
        -o /out/kubectl .
 
-FROM python:3.12-alpine3.23@sha256:3d0ca66b723a0ff2a7a6e424cc2d01443e1b7c75ffcc110145f75d0f4daf6d63
+FROM python:3.15-alpine3.23@sha256:32f06114a111c2467804d06194c5584f16804a78cfaf427fb1fcbb0b3391d0f1
 ARG SOURCE_REVISION=unknown
 LABEL org.opencontainers.image.title="Sentinel worker" \
       org.opencontainers.image.revision=${SOURCE_REVISION}
