@@ -60,7 +60,7 @@
         {"at": "runtime/worker_transport.py:327", "text": "Result answers a superseded request"},
         {"at": "runtime/remote_worker.py:200", "text": "lease_duration(delivery, clock) / 3"},
         {"at": "services/guard/core.py:160", "text": "if approved_at > checked_at + skew:"},
-        {"at": "runtime/worker_http.py:322", "text": "self.samples.clear()"},
+        {"at": "runtime/worker_http.py:327", "text": "self.samples.clear()"},
         {"at": "runtime/live_executor.py:136", "text": "now=self.clock()"},
         {"at": "services/verifier/store.py:96", "text": "Monitoring cannot start before execution"},
         {"at": "tests/test_distributed_processes.py:90", "text": "def test_s7_executor_clocks_300_s_behind_end_failed_without_a_write_or_a_wedge"},
@@ -124,7 +124,7 @@
         {"at": "experiments/boutique/harness/agent_live.py:384", "text": "return self.request_approval(proposal, decision)"},
         {"at": "scripts/boutique_provider.py:30", "text": "approve=lab.request_approval"},
         {"at": "tests/test_live_agent.py:533", "text": "def test_agent_success_approves_through_the_session_and_records_the_strategy"},
-        {"at": "tests/test_dashboard_approval_relay.py:261", "text": "def test_typed_approval_is_relayed_as_the_dashboard_operator_and_executes_once"},
+        {"at": "tests/test_dashboard_approval_relay.py:282", "text": "def test_typed_approval_is_relayed_as_the_dashboard_operator_and_executes_once"},
         {"at": "tests/test_provider_approval.py:67", "text": "def test_provider_mode_approves_through_the_session_and_records_the_strategy"},
         {"claim": "C-CONNECTED-HARNESS"},
         {"claim": "C-CONNECTED-HARNESS-AUTOLAB"},
@@ -202,7 +202,7 @@
       "workaround": "For recorded runs, read the per-run JSON evidence files and the dashboard event journal. For networked runs, collect each process's stderr with SENTINEL_LOG_FORMAT=json and print the traces with scripts/trace_view.py.",
       "cites": [
         {"at": "shared/log.py:237", "text": "def entrypoint(component: str)"},
-        {"at": "runtime/worker_http.py:529", "text": "@log.entrypoint(\"worker_http\")"},
+        {"at": "runtime/worker_http.py:534", "text": "@log.entrypoint(\"worker_http\")"},
         {"at": "shared/tracing.py:123", "text": "def start_span("},
         {"at": "services/executor/core.py:318-319", "text": "any read failure leaves the outcome unknown"},
         {"at": "docs/observability.md", "text": "only when their entrypoint configures logging"},
@@ -280,7 +280,7 @@
       "cites": [
         {"at": "services/coordinator/store.py:135", "text": "lower(hex(randomblob(16)))"},
         {"at": "services/coordinator/store.py:468", "text": "UPDATE store_meta SET commit_counter=commit_counter+1"},
-        {"at": "runtime/worker_http.py:412", "text": "elif floor is not None and compared < floor:"},
+        {"at": "runtime/worker_http.py:417", "text": "elif floor is not None and compared < floor:"},
         {"at": "runtime/remote_worker.py:343", "text": "\"status\": \"store_changed\""},
         {"at": "scripts/coordinator_restore_check.py"},
         {"at": "tests/test_store_generation.py:374", "text": "def test_a_rolled_back_database_stops_claiming_keeps_saved_results_and_resumes_after_acceptance"},
@@ -376,7 +376,7 @@
       "impact": "The networked layer has run as separate processes and containers, including four kind nodes, but always on one Docker host with one shared kernel, clock and disk. P3.01 kind-mode sessions used one kind node and a real shippingservice Deployment (C-DISTRIBUTED-KIND-ALL); the session at 02d91e5 passed 12/12 after the Verifier sampling fix (C-DISTRIBUTED-KIND-02D91E5). P4.01 sentinel-dist places every role in its own Deployment with separate state and credentials, and the Coordinator and two Executors on three different kind nodes. Across deploys 10-15, S0-S9 recorded 71/80 completed runs passing and all 80 summaries passed invariants; aborted attempts without summaries are excluded. S2 r2 exposed a worker lost-lease loop (fixed b37017e); the other recorded failures were harness or expectation issues. S8 deploy 15 remains 3/5 as recorded; the separate scoped offline re-judge at 0ff1fb3 gives 5/5, while deploy 14 stays 0/5. All 80 run summaries (deploys 10-15) and the P4.02 drill summaries (deploys 14-17) are in collected evidence bundles, with the audit extracts and records over the per-file cap listed as omitted in their manifests. P4.02 adds restart, partition and restore measurements in docs/distributed-model.md. All runs are unscored and owner sign-off is pending. No run verifies delivery or recovery across separate machines. Decision (17 Nov 2026): the four kind nodes on one Docker host are accepted as software-isolated independent workers, each with its own PVC, ledger, identity and network path; verification across separate physical machines remains a limitation and is not attempted before submission. 17 Nov 2026: Phase 6 at recorded deployed source 0a33bcf adds S8 5/5, S11a-c 1/1 each with zero writes for refused actions, and S10 1/2 (invariants 10/10), with S10 run 2 judged by harness b8e8c42 against the same deployed 0a33bcf images, all unscored with a synthetic planner and harness approvals on four kind nodes sharing one Docker host.",
       "workaround": "Quote the recorded results with their unscored, one-host scope; keep the S8 offline re-judge separate from the live verdicts.",
       "cites": [
-        {"at": "tests/test_worker_transport.py:163", "text": "('127.0.0.1', 0)"},
+        {"at": "tests/test_worker_transport.py:203", "text": "('127.0.0.1', 0)"},
         {"at": "experiments/distributed/topology.py", "text": "class Topology:"},
         {"at": "experiments/distributed/kind_bundle.py", "text": "class KindLab:"},
         {"at": "deploy/sentinel/COORDINATOR.md", "text": "not recorded Kubernetes acceptance"},
@@ -432,7 +432,7 @@
       "impact": "Found live on 12 Nov 2026: an agent-mode Planner container that was planning normally failed two Docker health checks during one 128.7 s planning pass (C-WORKER-READINESS-BEFORE-FIX; Docker kept it healthy only because three failures in a row are needed), because /readyz counted only the end of a polling pass as Coordinator contact and turned 503 once that was older than --ready-seconds (60), although the worker renewed its lease every few seconds. A liveness-style probe on /readyz would have killed a healthy Planner mid-inference. Fixed in code: every Coordinator request answered with 200 (a claim, each lease renewal, a result, a clock measurement) now counts as contact, a refused, failed or timed-out request never does, and --ready-seconds must be longer than the 5 s renewal interval; the preflight, clock and store conditions are unchanged. The trade-off: a worker whose own component fails on every pass (an Executor that cannot reach its cluster, a Planner whose model call crashes after its preflight passed) still has its claims and retries answered, so it now stays ready; that shows only in its retry and back-off log lines. The fix has now run once in a container (C-WORKER-CONTAINER-READINESS): an image built at be6e636 planned an R1 incident in one 89.6 s pass, longer than the 60 s window, and all 88 health samples from the first Docker-healthy one until the Coordinator stopped were Docker healthy with /readyz 200 (89 were taken while it was up; the first, still starting, also answered /readyz 200), with the highest contact age 19.1 s (during a worker.status retry after a TimeoutError at 18:24:31, after the pass). After the Coordinator stopped, /readyz answered 503 at 62.0 s, one readiness window, but Docker's status turned unhealthy only at 126.0 s, because the image's HEALTHCHECK then ran every 30 s and needs 3 failures. Fixed in code; live verification pending: the image's HEALTHCHECK now runs every 10 s with a 5 s timeout and 3 retries (start period 60 s), so Docker should report unhealthy at most 35 s (interval x retries + timeout) after /readyz starts answering 503, or 45 s if every probe times out; this timing has not been measured live. Lease renewals during the pass are inferred from the single-attempt receipt; the Coordinator logs no renew line at info level. It stays mitigated: one run on one host.",
       "workaround": "Before the fix: a --ready-seconds longer than the longest model call, or a container HEALTHCHECK that is not used to restart the worker. With the fix, poll /readyz directly when a failed Coordinator must be noticed within one readiness window; Docker's health status lags it by up to 35 s with the image's HEALTHCHECK (up to three 30 s checks in images built before that change).",
       "cites": [
-        {"at": "runtime/worker_http.py:496", "text": "self.answered()"},
+        {"at": "runtime/worker_http.py:501", "text": "self.answered()"},
         {"at": "runtime/worker_service.py", "text": "answered=health.contacted"},
         {"at": "tests/test_remote_workers.py:492", "text": "def test_lease_renewals_keep_a_pass_longer_than_the_readiness_window_ready"},
         {"at": "tests/test_remote_workers.py:503", "text": "def test_a_pass_whose_renewals_fail_turns_not_ready_after_the_readiness_window"},
@@ -907,16 +907,19 @@
     },
     {
       "id": "L-NO-RELEASE",
-      "title": "No tagged, scanned release image",
+      "title": "No published, scan-gated release image",
       "kind": "limitation",
       "status": "open",
       "since": "2026-11-11",
-      "impact": "The packaged runner is built locally from the checkout. It was rebuilt and scanned for PR #98, but no image is tagged or published, and that scan is not a committed evidence bundle. A release preflight, a tag-triggered build with a Trivy gate, SBOMs and checksums now exist (docs/release.md) but have not run: no tag has been pushed. The launcher now derives the runner tag and local build's OCI version label from VERSION; this does not supply a scanned release image. Decision (17 Nov 2026): release v1.0.0 is scoped to the packaged shipping-only runner plus the source release for the connected and agent workflows; publication remains pending.",
+      "impact": "The packaged runner is built locally from the checkout. It was rebuilt and scanned for PR #98, but no release image is published, and that scan is not a committed evidence bundle. A release preflight, a tag-triggered build with a Trivy gate, SBOMs and checksums now exist (docs/release.md). On 17 Nov 2026, the rc.1 release scan (run 44026433805) failed on fixable High/Critical findings in sentinel-coordinator, sentinel-guard and sentinel-observer, and rc.2 rebuilt all three on the patched Python 3.12 Debian slim base using OS upgrades. The launcher now derives the runner tag and local build's OCI version label from VERSION; this does not supply a scanned release image. Decision (17 Nov 2026): release v1.0.0 is scoped to the packaged shipping-only runner plus the source release for the connected and agent workflows; publication remains pending.",
       "workaround": "Build the runner from the revision you are testing.",
       "cites": [
         {"claim": "C-PACKAGED"},
         {"at": "scripts/packaged-demo-common.ps1:9", "text": "sentinel-boutique-runner:$script:PackagedVersion"},
-        {"at": ".github/workflows/release.yml"}
+        {"at": ".github/workflows/release.yml"},
+        {"at": "deploy/docker/coordinator.Dockerfile:2", "text": "RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*"},
+        {"at": "deploy/docker/guard.Dockerfile:3", "text": "RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*"},
+        {"at": "deploy/docker/observer.Dockerfile:2", "text": "RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*"}
       ],
       "planned": ["P2.09", "P2.10"],
       "issues": [63, 73]

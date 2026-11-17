@@ -8,6 +8,7 @@ the in-memory fake. The browser side is plain HTTP requests carrying only the
 per-session lab token, as the React panel sends them.
 """
 from copy import deepcopy
+from http.client import HTTPConnection
 import io
 import json
 from pathlib import Path
@@ -203,6 +204,26 @@ class RelayRefusalTests(RelayServerCase):
             server.shutdown()
             server.server_close()
             worker.join(2)
+
+    def test_early_refusals_with_a_full_body_reliably_reach_the_client(self):
+        body = b'not JSON' + b'x' * (32 * 1024)
+        for route, status, token in (('/api/approvals/delete', 404, 'wrong'),
+                                    ('/api/approvals/approve', 403, 'wrong'), ('/api/lab/inject', 403, 'wrong'),
+                                    ('/api/approvals/approve', 413, self.lab_token),
+                                    ('/api/lab/inject', 400, self.lab_token)):
+            for attempt in range(3):
+                with self.subTest(route=route, attempt=attempt):
+                    connection = HTTPConnection('127.0.0.1', self.server.server_port, timeout=5)
+                    try:
+                        connection.request('POST', route, body=body,
+                                           headers={'Content-Type': 'application/json', 'Origin': self.base,
+                                                    'X-Sentinel-Lab-Token': token})
+                        response = connection.getresponse()  # Read only after sending the full refused body.
+                        self.assertEqual(response.status, status)
+                        response.read()
+                    finally:
+                        connection.close()
+        self.assertEqual(self.history(), [])
 
     def test_upstream_401_reaches_the_page_and_the_request_stays_pending(self):
         self.offer()

@@ -24,6 +24,7 @@ from runtime.worker_transport import (
 )
 from services.coordinator.core import SQLiteStore
 from shared import log, tracing
+from shared.http import drain_request_body
 
 MAX_BODY = 1024 * 1024
 LOG = log.get_logger("worker_http")
@@ -165,6 +166,7 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
 
         def do_POST(self):
             started, operation = time.monotonic(), OPERATIONS.get(self.path, "unknown")
+            body_unread = True
             ids, outcome, reason, error_type, span = {}, None, None, None, None
             store, position, before = None, None, None
             with ExitStack() as scope:
@@ -186,6 +188,7 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
                     length = int(lengths[0])
                     if not 0 < length <= MAX_BODY:
                         raise ProtocolError(413, "Invalid body length")
+                    body_unread = False  # A failed/timed-out read must not be attempted again.
                     raw = self.rfile.read(length)
                     if len(raw) != length:
                         raise ProtocolError(400, "Incomplete request body")
@@ -251,6 +254,8 @@ def handler(database, services, lease_seconds=30, retention_seconds=86400,
             if status == 200 and operation == "result":
                 # Inert outside lab fault runs (runtime/fault_points.py): committed, not yet answered.
                 fault_points.checkpoint("coordinator.after_commit_before_reply", qualifier=_result_kind(body))
+            if body_unread:
+                drain_request_body(self, MAX_BODY)
             self.reply(status, response, position, before)
 
         def reply(self, status, value, position=None, before=None):
