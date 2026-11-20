@@ -62,6 +62,7 @@ Read each number with its limits:
 | packaged | 9 | 5 | 0 | 1 | 3 | 0 recorded, 9 inferred |
 | protected-recovery | 9 | 8 | 1 | 0 | 0 | 9 recorded, 0 inferred |
 | provider-recovery | 1 | 0 | 1 | 0 | 0 | 0 recorded, 1 inferred |
+| rcaeval | 1 | 0 | 0 | 0 | 1 | 0 recorded, 1 inferred |
 | scale-recovery | 4 | 4 | 0 | 0 | 0 | 4 recorded, 0 inferred |
 | scenario-pair | 8 | 8 | 0 | 0 | 0 | 8 recorded, 0 inferred |
 | security-lab | 10 | 10 | 0 | 0 | 0 | 7 recorded, 3 inferred |

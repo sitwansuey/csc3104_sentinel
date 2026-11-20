@@ -28,10 +28,10 @@ value that no bundle records is shown as "not recorded".
 <!-- BEGIN GENERATED:evaluation-setup -->
 | Item | Recorded in the evidence |
 | --- | --- |
-| Bundles | 274 current: 120 with recorded provenance, 154 inferred (superseded and withdrawn bundles left out) |
-| Captured | 2026-11-10 to 2026-11-17 |
-| Source revisions | 26 distinct in recorded bundles, 26 in inferred ones |
-| Host class | not recorded x14, windows-amd64 x96; 164 bundles record no provenance block |
+| Bundles | 275 current: 120 with recorded provenance, 155 inferred (superseded and withdrawn bundles left out) |
+| Captured | 2026-11-10 to 2026-11-20 |
+| Source revisions | 26 distinct in recorded bundles, 27 in inferred ones |
+| Host class | not recorded x14, windows-amd64 x96; 165 bundles record no provenance block |
 | Tools | docker 29.4.3; helm 4.3.1+gc0d08d0; kind 0.33.0; kubectl 1.34.1; ollama 0.40.16 |
 | Python | 3.12.3 x2, 3.13.2 x94 |
 | Chaos Mesh (chaos-batch attempts) | 2.8.2 x13 |
@@ -48,7 +48,7 @@ section says "not yet run" and live recovery counts must not be quoted as
 diagnosis accuracy.
 
 <!-- BEGIN GENERATED:evaluation-rcaeval -->
-_Not yet run._ No RCAEval report is committed under `evidence/evaluation/rcaeval/`. Pre-registration: sample manifest not committed, freeze file not committed; no rcaeval bundle collected.
+_Not yet run._ No RCAEval report is committed under `evidence/evaluation/rcaeval/`. Pre-registration: sample manifest not committed, freeze file not committed; 1 rcaeval bundles collected.
 <!-- END GENERATED:evaluation-rcaeval -->
 
 ## Guard ablation
@@ -385,7 +385,7 @@ and open defects.
 - **Planner.** Live runs by planner: code rule, no model x27, model qwen3:14b x44, model qwen3:does-not-exist x1, model sentinel-not-installed:latest x2, not recorded x39, operator-authored proposal, no model x8. Distributed runs with the synthetic planner: file and kind 39/39, sentinel-dist 90/90; those runs test coordination and fencing, not planning.
 - **Approvals.** Live runs by approval: a person (interactive) x1, auto-lab x58, not recorded x28, not-requested x17, pre-authorised x16, reject x1. auto-lab is the harness approving through the authenticated API under the automated-lab identity: no person decides. pre-authorised is a run whose summary records approval given in advance for the whole run, not a person approving each action. Live runs that record a person approving: 1/121.
 - **Small n, correlated repetitions.** Catalog scenarios run live: 7, at most 15 runs each. Repeated runs share the host, the cluster, the model and often the revision, so they are not independent trials; where an interval is given, read it rather than the point value.
-- **Provenance.** 154/274 current bundles have inferred provenance: their source revision is a best guess, not a recorded commit.
+- **Provenance.** 155/275 current bundles have inferred provenance: their source revision is a best guess, not a recorded commit.
 - **Replay inputs.** Of 74 replay cases, 10 derived and 12 adversarial ones are synthetic, and every case's cluster state is reconstructed, not recorded. Replay judges decisions only; recovery comes from live runs.
 - **One model family, one application.** Models loaded in live runs: qwen3:14b x28. Pre-registered replay runs committed: 4/5. RCAEval reports committed: not yet run. Workloads named by live runs: Full Online Boutique v0.10.7 with synthetic checkout traffic x109, Online Boutique shippingservice v0.10.7 x8, not recorded x4.
 <!-- END GENERATED:evaluation-threats -->
