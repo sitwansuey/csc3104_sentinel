@@ -7,6 +7,7 @@ This implementation reads the Hugging Face Parquet edition directly.
 
 import argparse
 from collections import defaultdict
+from datetime import UTC, datetime
 import hashlib
 import json
 import math
@@ -240,31 +241,72 @@ def score(answers, predictions):
                         for key, values in usage.items()}
     for group in ("dataset", "system", "fault"):
         summary["by_" + group] = {key: {"service": aggregate([r for r in rows if r[group] == key], "service"),
-                                             "indicator": aggregate([r for r in rows if r[group] == key], "indicator")}
+                                              "indicator": aggregate([r for r in rows if r[group] == key], "indicator")}
                                     for key in sorted({r[group] for r in rows})}
     return summary, rows
 
 
-def metric_frame(path, task):
+def metric_frame(path, task, *, clip=True):
+    """Metric columns; clip=False keeps rows outside the standard window (healthy history)."""
     frame = parquet().read_table(path).to_pandas()
     if "time" not in frame:
         raise ValueError("Metrics lack a time column")
     keep = [c for c in frame.columns if c != "time.1" and not c.endswith("_latency-50")]
     frame = frame[keep].rename(columns={c: c[:-3] for c in keep if c.endswith("_latency-90")})
     frame = frame.loc[:, ~frame.columns.duplicated()]
+    if not clip:
+        return frame.sort_values("time")
     start, end = task["standard_window"]["start"], task["standard_window"]["end"]
     return frame[(frame["time"] >= start) & (frame["time"] <= end)].sort_values("time")
+
+
+def trace_columns(names):
+    """Header mapping for a trace CSV. RE2 'time' is a dateless HH:MM; epoch startTime is the timestamp."""
+    if "startTime" in names:
+        return {"startTime": "timestamp", "time": "time_of_day", "serviceName": "cmdb_id"}
+    return {"time": "timestamp", "serviceName": "cmdb_id"}
+
+
+def sentinel_timing(task):
+    """Code-owned ISO times from blinded benchmark metadata, never model arithmetic."""
+    times = {"anomaly": task["inject_time"], **task["standard_window"]}
+    if any(type(times[k]) not in (int, float) or not math.isfinite(times[k])
+           for k in ("anomaly", "start", "end")):
+        raise ValueError("Benchmark times must be finite Unix seconds")
+    if not times["start"] <= times["anomaly"] <= times["end"] or times["start"] >= times["end"]:
+        raise ValueError("Benchmark window must contain the anomaly time")
+    return {k: datetime.fromtimestamp(times[k], UTC).isoformat()
+            for k in ("anomaly", "start", "end")}
 
 
 def sentinel_prediction(task_dir, task, output, overrides):
     from agent.agent import Agent, FIELDS
     from agent.llm import Ollama
     from agent.tools import Telemetry
+    timing = sentinel_timing(task)
+
+    class BenchmarkAgent(Agent):
+        """Bind every diagnostic call to the benchmark window before caching or logging."""
+
+        def execute(self, node, parent="root", depth=0):
+            if (isinstance(node, dict) and node.get("kind") == "tool"
+                    and node.get("tool") in {"metrics", "logs", "traces"}):
+                raw = node.get("args", {})
+                args = dict(raw) if isinstance(raw, dict) else {}
+                args.update(start=timing["start"], end=timing["end"])
+                # Healthy baseline: only rows before the known anomaly, never the faulty window.
+                if node.get("tool") in {"metrics", "logs"}:
+                    args["baseline_end"] = timing["anomaly"]
+                else:
+                    args.pop("baseline_end", None)
+                node = {**node, "args": args}
+            return super().execute(node, parent, depth)
     # CSV conversion is local to the blinded worker workspace and contains no labels.
     import csv
     telemetry = output / "telemetry"
     telemetry.mkdir(parents=True)
-    frame = metric_frame(task_dir / task["files"]["metrics"], task)
+    # Unclipped: pre-window rows supply the healthy baseline; the tools still bind analysis to the window.
+    frame = metric_frame(task_dir / task["files"]["metrics"], task, clip=False)
     metric_dir = telemetry / "metric"
     metric_dir.mkdir()
     long = frame.melt(id_vars=["time"], var_name="metric", value_name="value")
@@ -278,7 +320,7 @@ def sentinel_prediction(task_dir, task, output, overrides):
         target.mkdir()
         reader = parquet().ParquetFile(task_dir / task["files"][modality])
         names = reader.schema_arrow.names
-        mapping = {"container_name": "cmdb_id"} if modality == "logs" else {"time": "timestamp", "serviceName": "cmdb_id"}
+        mapping = {"container_name": "cmdb_id"} if modality == "logs" else trace_columns(names)
         with (target / "data.csv").open("w", newline="", encoding="utf-8") as stream:
             writer = csv.writer(stream)
             writer.writerow([mapping.get(n, n) for n in names])
@@ -289,8 +331,20 @@ def sentinel_prediction(task_dir, task, output, overrides):
     config.update(overrides)
     config["allow_abstention"] = True
     llm = Ollama(config)
-    agent = Agent(llm, Telemetry(telemetry, config["max_rows"]), config, output / "agent")
-    context = ("System: " + task["system"] + "\nKnown anomaly timestamp (Unix seconds): " + str(task["inject_time"])
+    file_tools = {directory + "/data.csv": tool for tool, directory in
+                  [("metrics", "metric"), ("logs", "log"), ("traces", "trace")] if tool in task["files"]}
+    agent = BenchmarkAgent(llm, Telemetry(telemetry, config["max_rows"], file_tools=file_tools,
+                                        utc_evidence=True), config, output / "agent")
+    agent.support_not_before = timing["anomaly"]
+    save(output / "benchmark-timing.json", timing)
+    context = ("System: " + task["system"] + "\nKnown anomaly timestamp (ISO 8601 UTC): " + timing["anomaly"]
+               + "\nInvestigation window start (inclusive): " + timing["start"]
+               + "\nInvestigation window end (inclusive): " + timing["end"]
+               + "\nUse these exact ISO timestamps. The evaluation framework binds all metrics, logs, "
+                 "and traces calls to this standard window. Do not convert timestamps or invent dates."
+               + "\nAll structured evidence timestamps are ISO 8601 UTC with +00:00 offsets. "
+                 "Use only each inventory file's allowed_tools. An absent modality is unavailable: "
+                 "never interpret metrics as log messages or trace durations."
                + "\n## POSSIBLE ROOT CAUSE COMPONENTS\n" + "\n".join("- " + s for s in task["candidate_services"]))
     prediction = agent.run("Identify the single most likely initiating root-cause service from telemetry. Abstain if unsupported.",
                            context=context, required_fields=[FIELDS[1]], failure_count=1)

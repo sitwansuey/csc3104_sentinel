@@ -5,7 +5,7 @@ import time
 from .llm import PlanningBudgetExceeded, ask_with_provenance
 from .tools import CATALOG
 from .workflows import retrieve
-from .evidence import compact_evidence, corroborated_onsets, timestamp_rejection
+from .evidence import compact_evidence, corroborated_onsets, supported_components, timestamp_rejection
 from .progress import notify
 from .untrusted import UNTRUSTED_KEY
 
@@ -155,6 +155,11 @@ class Agent:
         self.cache = {}
         self.cache_hits = 0
         self.call_history = []
+        # Calls refused before execution (tool/data mismatch); they consume no budget.
+        self.rejected_calls = []
+        # ISO time of a known anomaly (benchmark adapters only). When set, the Reporter may
+        # name only components with sustained evidence starting at or after it.
+        self.support_not_before = None
         # Evidence ids each reported failure cites, when run(cite_evidence=True).
         self.citations = {}
         self.round_ceiling = self.config.get("max_steps", 16)
@@ -180,6 +185,38 @@ class Agent:
                     stamp = stamp.replace(tzinfo=timezone(timedelta(hours=8)))
                 normalized[name] = stamp.astimezone(timezone.utc).isoformat()
         return json.dumps([tool, normalized], sort_keys=True)
+
+    def modality_mismatch(self, tool, args):
+        """Refuse a diagnostic call on a file of another modality before spending budget."""
+        file_tools = getattr(self.telemetry, "file_tools", None)
+        if file_tools is None or tool not in {"metrics", "logs", "traces"} or not args.get("file"):
+            return None
+        try:
+            name = self.telemetry.path(args["file"]).relative_to(self.telemetry.root).as_posix()
+        except (ValueError, OSError):
+            return None
+        modality = file_tools.get(name)
+        if modality == tool:
+            return None
+        return (f"Tool/data mismatch: {tool} cannot read this {modality or 'unregistered'} file; "
+                "use the inventory allowed_tools. Missing modalities are unavailable.")
+
+    def available_tools(self, inventory):
+        allowed = [f["allowed_tools"] for f in inventory if "allowed_tools" in f]
+        if not allowed:
+            return None
+        return sorted({tool for tools in allowed for tool in tools})
+
+    def catalog(self, inventory):
+        """The tool catalog restricted to tools some inventory file allows."""
+        available = self.available_tools(inventory)
+        if available is None:
+            return CATALOG
+        hidden = {"metrics", "logs", "traces"} - set(available)
+        lines = [line for line in CATALOG.splitlines() if not any(line.startswith(t + "(") for t in hidden)]
+        if hidden:
+            lines.append("Unavailable in this case (no such telemetry; never call): " + ", ".join(sorted(hidden)) + ".")
+        return "\n".join(lines)
 
     def ensure_coverage(self, inventory):
         """Reserve deterministic checks for available but unexamined modalities."""
@@ -241,7 +278,12 @@ class Agent:
                 key = self.call_key(tool, args)
             except (ValueError, KeyError, TypeError):
                 key = json.dumps([tool, args], sort_keys=True)
-            if key in self.cache:
+            mismatch = self.modality_mismatch(tool, args)
+            if mismatch:
+                if not any(r["tool"] == tool and r["file"] == args.get("file") for r in self.rejected_calls):
+                    self.rejected_calls.append({"tool": tool, "file": args.get("file"), "reason": mismatch})
+                outputs = [{"error": mismatch}]
+            elif key in self.cache:
                 self.cache_hits += 1
                 success, cached = self.cache[key]
                 outputs = [{**item, "cache_hit": True, "reused_by": branch} for item in cached]
@@ -321,9 +363,12 @@ class Agent:
             self.round_ceiling = min(self.config.get("max_steps", 16), self.steps + 6)
             prompt = json.dumps({**base, "prior_analysis": bounded(self.summaries, 6000),
                                 "completed_calls": self.call_history,
+                                **({"available_tools": self.available_tools(inventory)}
+                                   if self.available_tools(inventory) is not None else {}),
+                                **({"rejected_calls_never_retry": self.rejected_calls} if self.rejected_calls else {}),
                                 UNTRUSTED_KEY: bounded(compact_evidence(self.evidence), 10000),
                                 "remaining_tools": self.config.get("max_steps", 16)-self.steps})
-            plan = initial_plan if round_id == 0 and initial_plan is not None else ask("Planner", prompt + "\n" + CATALOG +
+            plan = initial_plan if round_id == 0 and initial_plan is not None else ask("Planner", prompt + "\n" + self.catalog(inventory) +
                 "\nProduce a bounded behavior tree. NEVER repeat a completed call; cached results provide no new evidence. Follow up on unexamined modalities, changed windows or columns. Distinguish sustained episodes from isolated spikes and boundary-censored runs. Do not select the earliest anomaly as root cause. Use sequence for dependencies, selector for fallback, parallel for independent analyses. A metrics/logs leaf with no findings fails its diagnostic condition; truncated results also fail. Use parallel when all modalities should be inspected even if one is empty. Plan only relevant dates. No more than 6 tool leaves per round.", PLAN, base["workflows"])
             save(self.workspace / f"plan-{round_id}.json", plan)
             _, outputs = self.execute(plan.get("plan", {}))
@@ -349,6 +394,15 @@ class Agent:
                 break
         self.check_deadline("report")
         valid_reasons, valid_components = extract_candidates(context)
+        support = None
+        if self.support_not_before is not None:
+            # Code-owned gate: a component without post-anomaly, healthy-baseline support cannot be named.
+            support = supported_components(self.evidence, self.support_not_before)
+            if valid_components:
+                support = {c: support[c] for c in valid_components if c in support}
+            save(self.workspace / "supported-components.json", support)
+            if support:
+                valid_components = sorted(support)
         final_schema = json.loads(json.dumps(FINAL))
         if required_fields:
             item_props = {}
@@ -390,7 +444,9 @@ class Agent:
             UNTRUSTED_KEY: bounded(compact_evidence(self.evidence))})
         report_instructions = (
             "\nReport failures chronologically. Use exact component/reason vocabulary from the task or system context. "
-            "Datetimes must be YYYY-MM-DD HH:MM:SS in UTC+8. Choose a causally plausible initiating event, "
+            + ("Datetimes must be ISO 8601 UTC with an explicit +00:00 offset. "
+               if getattr(self.telemetry, "utc_evidence", False) else "Datetimes must be YYYY-MM-DD HH:MM:SS in UTC+8. ")
+            + "Choose a causally plausible initiating event, "
             "NEVER simply the earliest anomaly. Include only requested root cause fields. Return the requested "
             "number of failures, not a list of symptoms. Explain supporting evidence IDs, contradictions, "
             "and limitations outside failures. "
@@ -409,6 +465,12 @@ class Agent:
                 "when estimating a timestamp. Low confidence does not block an answer. Clearly state uncertainty "
                 "and missing evidence in explanation/limitations; do not present estimates as proven facts."
             )
+        if support:
+            report_instructions += (
+                " Only these components have sustained evidence beginning at or after the known anomaly, "
+                "measured against a healthy pre-anomaly baseline (component: evidence ids): "
+                + json.dumps(support) + ". Choose among them on causal grounds: an initiating resource or "
+                "connectivity fault, not a downstream latency/error symptom.")
         if cite_evidence:
             report_instructions += (
                 " Each failure MUST list evidence_ids: the IDs of the collected tool results that show this "
@@ -420,8 +482,12 @@ class Agent:
             return validate_report(stripped, required_fields, failure_count, allow_abstention,
                                    valid_reasons, valid_components), cited
 
-        refusal = None  # cite_evidence only: why the report is replaced by an abstention
-        if cite_evidence and not results:
+        refusal = None  # why the report is replaced by an abstention
+        if support is not None and not support:
+            final, prediction, cited = {"failures": []}, {}, {}
+            refusal = ("No candidate component has a sustained episode beginning at or after the known anomaly "
+                       "against a healthy baseline (empty windows and contaminated baselines give no support).")
+        elif cite_evidence and not results:
             final, prediction, cited = {"failures": []}, {}, {}
             refusal = "No tool result was collected, so no diagnosis can cite evidence."
         else:
@@ -435,7 +501,7 @@ class Agent:
                 try:
                     prediction, cited = check(final)
                 except ValueError as again:
-                    if not cite_evidence:
+                    if not cite_evidence and support is None:
                         raise
                     # One correction only: a report still outside the code-owned vocabulary abstains.
                     save(self.workspace / "invalid-correction.json", final)

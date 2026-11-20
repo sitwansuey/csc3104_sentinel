@@ -36,7 +36,7 @@ TOOLS_KNOWLEDGE: Dict[str, ToolMeta] = {
             "findings: sorted list of anomalous component-kpi pairs with peak scores and onset times",
             "episodes: persistent anomaly intervals (onset, end, duration, sustained status)",
             "baseline_mean: mean value during normal operation baseline",
-            "baseline_source: whether preceding 60-min or full series was used"
+            "baseline_source: which healthy pre-window (or pre-anomaly) baseline was used; series without one are not scored"
         ],
         preconditions=[
             "Baseline must be calculated before window filtering",
