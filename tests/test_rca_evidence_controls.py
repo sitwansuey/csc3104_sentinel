@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 import pandas as pd
 from agent.agent import Agent
-from agent.tools import Telemetry, episodes, error_mask
+from agent.tools import Telemetry, episodes, error_mask, evidence_time
 from agent.evidence import corroborated_onsets, timestamp_rejection
 
 
@@ -16,6 +16,14 @@ def metric_entry(kpi="cpu", time="2021-03-06 09:05:00", component="api", sustain
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_utc_evidence_preserves_instant_for_naive_and_aware_times(self):
+        for value in ["2024-01-16 04:47:12", "2024-01-16T04:47:12+08:00", "2024-01-15T20:47:12Z"]:
+            self.assertEqual(evidence_time(value, True), "2024-01-15T20:47:12+00:00")
+        frame = pd.DataFrame({"_time": pd.date_range("2024-01-16 04:45", periods=5, freq="min", tz="Asia/Singapore")})
+        result = episodes(frame, pd.Series([0, 5, 5, 5, 0]), utc=True)
+        self.assertEqual(result[0]["onset"], "2024-01-15T20:46:00+00:00")
+        self.assertEqual(result[0]["end"], "2024-01-15T20:48:00+00:00")
+
     def test_persistence_and_boundary(self):
         frame = pd.DataFrame({"_time": pd.date_range("2021-03-06 09:00", periods=10, freq="min", tz="Asia/Singapore")})
         result = episodes(frame, pd.Series([5, 0, 5, 0, 0, 5, 5, 5, 0, 0]))
@@ -73,6 +81,29 @@ class ExecutionTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def test_modality_binding_rejects_cross_tool_calls_even_with_valid_columns(self):
+        # Deliberately supply every column: modality must come from the adapter, not schema guessing.
+        frame = pd.DataFrame({"timestamp": [1705351632], "cmdb_id": ["api"],
+                              "kpi_name": ["cpu"], "value": [1], "message": ["error"], "duration": [1]})
+        mapping = {tool + ".csv": tool for tool in ("metrics", "logs", "traces")}
+        for name in mapping:
+            frame.to_csv(self.telemetry / name, index=False)
+        tools = Telemetry(self.telemetry, file_tools=mapping, utc_evidence=True)
+        for item in tools.inventory():
+            self.assertEqual(item["allowed_tools"], ["profile", mapping[item["file"]]])
+        for name, allowed in mapping.items():
+            for tool in mapping.values():
+                if tool == allowed:
+                    self.assertEqual(tools.run(tool, {"file": name})["rows_in_window"], 1)
+                else:
+                    with self.assertRaisesRegex(ValueError, "Tool/data mismatch"):
+                        tools.run(tool, {"file": "./" + name, "message_column": "value", "duration_column": "value"})
+            self.assertIn("sample", tools.run("profile", {"file": name}))
+        logs = tools.run("logs", {"file": "logs.csv"})
+        self.assertEqual(logs["examples"][0]["time"], "2024-01-15T20:47:12+00:00")
+        with self.assertRaisesRegex(ValueError, "Tool/data mismatch"):
+            tools.run("logs", {"file": "unregistered.csv"})
 
     def test_duplicates_normalize_defaults_paths_and_timezones(self):
         agent = Agent(None, self.tools, {"max_steps": 1}, self.root / "run")

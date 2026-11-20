@@ -25,7 +25,18 @@ def error_mask(messages):
     return errors & (~routine_gc | serious_gc)
 
 
-def episodes(window, scores):
+def evidence_time(value, utc=False):
+    stamp = pd.Timestamp(value)
+    if pd.isna(stamp):
+        return None
+    if utc:
+        if stamp.tzinfo is None:
+            stamp = stamp.tz_localize(TZ)
+        return stamp.tz_convert(timezone.utc).isoformat()
+    return stamp.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def episodes(window, scores, *, utc=False):
     """Separate isolated spikes from runs; never treat a censored run as an onset."""
     table = pd.DataFrame({"time": window["_time"], "score": scores}).dropna().sort_values("time")
     table = table.groupby("time", as_index=False)["score"].max()
@@ -38,12 +49,20 @@ def episodes(window, scores):
     found = []
     for _, group in table[flags].groupby(groups[flags]):
         span = (group["time"].iloc[-1] - group["time"].iloc[0]).total_seconds()
-        found.append({"onset": group["time"].iloc[0].strftime("%Y-%m-%d %H:%M:%S"),
-            "end": group["time"].iloc[-1].strftime("%Y-%m-%d %H:%M:%S"),
+        found.append({"onset": evidence_time(group["time"].iloc[0], utc),
+            "end": evidence_time(group["time"].iloc[-1], utc),
             "samples": len(group), "duration_seconds": span, "peak_score": min(float(group["score"].max()), 1e12),
             "sustained": len(group) >= 3 and span >= 2 * cadence,
             "left_censored": group["time"].iloc[0] == table["time"].iloc[0]})
     return sorted(found, key=lambda e: (-e["sustained"], -e["duration_seconds"], -e["peak_score"]))[:5]
+
+
+TIME_OF_DAY = r"\s*\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?\s*"
+
+
+def time_of_day_mask(series):
+    """Values such as '15:33' carry no date; pandas would silently attach today's."""
+    return series.astype(str).str.fullmatch(TIME_OF_DAY)
 
 
 def timestamps(series):
@@ -52,16 +71,31 @@ def timestamps(series):
         magnitude = numeric.abs().median()
         unit = "ns" if magnitude > 1e17 else "us" if magnitude > 1e14 else "ms" if magnitude > 1e11 else "s"
         return pd.to_datetime(numeric, unit=unit, utc=True, errors="coerce").dt.tz_convert(TZ)
-    return pd.to_datetime(series, errors="coerce", format="mixed").apply(
+    # A time of day without a date is unparseable, never anchored to the current date.
+    dated = series.where(~time_of_day_mask(series))
+    return pd.to_datetime(dated, errors="coerce", format="mixed").apply(
         lambda t: t.tz_localize(TZ) if pd.notna(t) and t.tzinfo is None else t)
 
 
+def bound(value):
+    if not value:
+        return None
+    stamp = pd.Timestamp(value)
+    return stamp.tz_localize(TZ) if stamp.tzinfo is None else stamp
+
+
 class Telemetry:
-    def __init__(self, root, max_rows=1000000):
+    def __init__(self, root, max_rows=1000000, *, file_tools=None, utc_evidence=False):
         self.root = Path(root).resolve()
         if not self.root.is_dir() or self.root.name != "telemetry":
             raise ValueError("Provide an existing telemetry directory, not the dataset parent")
         self.max_rows = max_rows
+        self.utc_evidence = utc_evidence
+        # Supplied by the data adapter, never by the model or CSV contents.
+        self.file_tools = None if file_tools is None else {
+            self.path(name).relative_to(self.root).as_posix(): tool for name, tool in file_tools.items()}
+        if self.file_tools is not None and any(t not in {"metrics", "logs", "traces"} for t in self.file_tools.values()):
+            raise ValueError("Invalid telemetry modality")
 
     def path(self, relative):
         clean = str(relative).strip().replace("\\", "/")
@@ -87,6 +121,9 @@ class Telemetry:
             self.path(str(p.relative_to(self.root)))
             files.append({"file": p.relative_to(self.root).as_posix(), "bytes": p.stat().st_size,
                           "columns": list(pd.read_csv(p, nrows=0).columns)})
+            if self.file_tools is not None:
+                modality = self.file_tools.get(files[-1]["file"])
+                files[-1]["allowed_tools"] = ["profile", modality] if modality else ["profile"]
         if not files:
             raise ValueError("No telemetry CSV files found")
         return files
@@ -95,10 +132,19 @@ class Telemetry:
         if tool not in {"profile", "metrics", "logs", "traces"}:
             raise ValueError(f"Unknown tool: {tool}")
         path = self.path(args["file"])
+        if self.file_tools is not None and tool != "profile":
+            modality = self.file_tools.get(path.relative_to(self.root).as_posix())
+            if tool != modality:
+                raise ValueError(f"Tool/data mismatch: {tool} cannot read this {modality or 'unregistered'} file; "
+                                 "use the inventory allowed_tools. Missing modalities are unavailable.")
         if tool == "profile":
             frame = pd.read_csv(path, nrows=min(self.max_rows, 1000) + 1)
             truncated = len(frame) > min(self.max_rows, 1000)
             frame = frame.iloc[:min(self.max_rows, 1000)]
+            if self.utc_evidence:
+                for column in ("timestamp", "time", "startTime"):
+                    if column in frame:
+                        frame[column] = timestamps(frame[column]).map(lambda t: evidence_time(t, True))
             info = {"file": path.relative_to(self.root).as_posix(), "rows_scanned": len(frame), "truncated": False,
                     "profile_sample_only": truncated}
             # Sample text values are telemetry too: quoted, never copied raw.
@@ -108,31 +154,37 @@ class Telemetry:
                         distinct={c: int(frame[c].nunique()) for c in frame.columns})
             return info
         # Stream the full file; only incident-window rows are retained, under a hard cap.
-        # Baseline moments aggregate every metric row before window filtering.
+        # Baselines use only rows before baseline_end (default: start), never the window under test.
         parts = []
         scanned = matched = invalid = kept = 0
+        first_seen = last_seen = None
         time_col = args.get("time_column", "timestamp")
         component = args.get("component_column", "cmdb_id")
         value = args.get("value_column", "value")
         kpi = args.get("kpi_column", "kpi_name")
-        baseline = None
         prior_baseline = None
         log_baseline = None
         log_baseline_available = False
-        start = pd.Timestamp(args["start"]) if args.get("start") else None
-        if start is not None and start.tzinfo is None:
-            start = start.tz_localize(TZ)
+        start, end = bound(args.get("start")), bound(args.get("end"))
+        baseline_end = bound(args.get("baseline_end")) or start
         for chunk in pd.read_csv(path, chunksize=100000):
             if time_col not in chunk or component not in chunk:
                 raise ValueError("Missing time/component column; inspect inventory")
+            if scanned == 0 and len(chunk) and bool(time_of_day_mask(chunk[time_col].dropna()).all()):
+                raise ValueError(f"Time column '{time_col}' holds times of day without dates; "
+                                 "choose a column with full dates or epoch values")
             scanned += len(chunk)
             chunk["_time"] = timestamps(chunk[time_col])
             invalid += int(chunk["_time"].isna().sum())
-            if tool == "logs" and start is not None:
+            if chunk["_time"].notna().any():
+                low, high = chunk["_time"].min(), chunk["_time"].max()
+                first_seen = low if first_seen is None else min(first_seen, low)
+                last_seen = high if last_seen is None else max(last_seen, high)
+            if tool == "logs" and baseline_end is not None:
                 message = args.get("message_column", "message")
                 if message not in chunk:
                     raise ValueError(f"Missing message column {message}")
-                previous = chunk[(chunk["_time"] < start) & (chunk["_time"] >= start - pd.Timedelta(minutes=60))]
+                previous = chunk[(chunk["_time"] < baseline_end) & (chunk["_time"] >= baseline_end - pd.Timedelta(minutes=60))]
                 if "timestamp_known" in previous:
                     previous = previous[previous["timestamp_known"].astype(str).str.lower() == "true"]
                 log_baseline_available |= not previous.empty
@@ -149,18 +201,15 @@ class Telemetry:
                 chunk[value] = pd.to_numeric(chunk[value], errors="coerce")
                 chunk[value] = chunk[value].replace([float("inf"), -float("inf")], float("nan"))
                 chunk["_square"] = chunk[value] ** 2
-                moments = chunk.groupby([component, kpi]).agg(count=(value, "count"), total=(value, "sum"), square=("_square", "sum"))
-                baseline = moments if baseline is None else baseline.add(moments, fill_value=0)
-                if start is not None:
-                    before = chunk[(chunk["_time"] < start) & (chunk["_time"] >= start - pd.Timedelta(minutes=60))]
+                if baseline_end is not None:
+                    before = chunk[(chunk["_time"] < baseline_end) & (chunk["_time"] >= baseline_end - pd.Timedelta(minutes=60))]
                     prior = before.groupby([component, kpi]).agg(count=(value, "count"), total=(value, "sum"), square=("_square", "sum"))
                     prior_baseline = prior if prior_baseline is None else prior_baseline.add(prior, fill_value=0)
             mask = chunk["_time"].notna()
-            for bound, op in [("start", "ge"), ("end", "le")]:
-                if args.get(bound):
-                    t = pd.Timestamp(args[bound])
-                    t = t.tz_localize(TZ) if t.tzinfo is None else t
-                    mask &= getattr(chunk["_time"], op)(t)
+            if start is not None:
+                mask &= chunk["_time"].ge(start)
+            if end is not None:
+                mask &= chunk["_time"].le(end)
             window = chunk.loc[mask]
             matched += len(window)
             if kept < self.max_rows:
@@ -170,16 +219,22 @@ class Telemetry:
         selected = pd.concat(parts, ignore_index=True) if parts else chunk.iloc[:0]
         info = {"file": path.relative_to(self.root).as_posix(), "rows_scanned": scanned, "rows_in_window": matched,
                 "rows_retained": kept, "truncated": matched > kept, "invalid_timestamps": invalid}
+        if matched == 0:
+            # An empty window is absent evidence, not a healthy system.
+            info["window_empty"] = True
+            info["data_range"] = {"first": evidence_time(first_seen, self.utc_evidence) if first_seen is not None else None,
+                                  "last": evidence_time(last_seen, self.utc_evidence) if last_seen is not None else None}
+            info["note"] = "No rows fall inside the requested window; this file provides no evidence for it."
         if tool == "metrics":
             findings = []
+            without_baseline = 0
+            source = "pre_anomaly" if args.get("baseline_end") else "preceding_60_minutes"
             for keys, window in selected.groupby([component, kpi]):
-                moments = baseline.loc[keys]
-                baseline_source = "full_series_fallback"
-                if prior_baseline is not None and keys in prior_baseline.index and prior_baseline.loc[keys, "count"] >= 5:
-                    moments = prior_baseline.loc[keys]
-                    baseline_source = "preceding_60_minutes"
-                if moments["count"] == 0:
+                if prior_baseline is None or keys not in prior_baseline.index or prior_baseline.loc[keys, "count"] < 5:
+                    without_baseline += 1
                     continue
+                moments = prior_baseline.loc[keys]
+                baseline_source = source
                 center = float(moments["total"] / moments["count"])
                 variance = max(0, float(moments["square"] / moments["count"] - center**2))
                 scale = max(variance**.5, abs(center) * .01, 1e-9)
@@ -190,11 +245,13 @@ class Telemetry:
                         "baseline_source": baseline_source, "baseline_samples": int(moments["count"]),
                         "baseline_mean": center, "max_score": min(float(scores.max()), 1e12),
                         "anomaly_count": len(abnormal), "anomaly_fraction": len(abnormal)/len(window),
-                        "first_occurrence": abnormal["_time"].min().strftime("%Y-%m-%d %H:%M:%S"),
-                        "peak_value": float(abnormal[value].max()), "episodes": episodes(window, scores)})
+                        "first_occurrence": evidence_time(abnormal["_time"].min(), self.utc_evidence),
+                        "peak_value": float(abnormal[value].max()), "episodes": episodes(window, scores, utc=self.utc_evidence)})
             info["findings"] = sorted(findings, key=lambda x: (
                 -any(e["sustained"] and not e["left_censored"] for e in x["episodes"]), -x["max_score"]))[:30]
             info["total_findings"] = len(findings)
+            # Series lacking >=5 healthy samples are not scored: a baseline containing the fault hides it.
+            info["series_without_healthy_baseline"] = without_baseline
         elif tool == "logs":
             message = args.get("message_column", "message")
             if message not in selected:
@@ -202,7 +259,7 @@ class Telemetry:
             matches = selected[error_mask(selected[message])]
             info["error_count"] = len(matches)
             info["components"] = {label(k): int(v) for k, v in matches[component].value_counts().head(30).items()}
-            info["examples"] = [{"component": label(r[component]), "time": str(r["_time"]), **quote(r[message])}
+            info["examples"] = [{"component": label(r[component]), "time": evidence_time(r["_time"], True) if self.utc_evidence else str(r["_time"]), **quote(r[message])}
                                 for _, r in matches.head(15).iterrows()]
             # Instruction-like lines anywhere in the window, not only error lines.
             texts = selected[message].astype(str)
@@ -224,7 +281,7 @@ class Telemetry:
                     threshold = max(3, mean + 3 * variance**.5)
                     prior_key = (key[0], key[1] - pd.Timedelta(minutes=1))
                     if count >= threshold and counts.get(prior_key, 0) < threshold:
-                        info["events"].append({"component": label(key[0]), "time": key[1].strftime("%Y-%m-%d %H:%M:%S"),
+                        info["events"].append({"component": label(key[0]), "time": evidence_time(key[1], self.utc_evidence),
                             "error_count": int(count), "baseline_errors_per_minute": mean,
                             "left_censored": start is not None and key[1] <= start.floor("min")})
             info["events"] = sorted(info["events"], key=lambda e: -e["error_count"])[:30]
@@ -248,7 +305,7 @@ class Telemetry:
                 scale = max(float((minute-center).abs().median()) * 1.4826, abs(center)*.05, 1e-9)
                 flags = minute > center + 3 * scale
                 for time in minute.index[flags & ~flags.shift(fill_value=False)]:
-                    info["events"].append({"component": label(key), "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    info["events"].append({"component": label(key), "time": evidence_time(time, self.utc_evidence),
                         "p95": float(minute.loc[time]), "left_censored": time == minute.index[0]})
             info["events"] = sorted(info["events"], key=lambda e: -e["p95"])[:30]
             info["note"] = "Latency summaries alone do not establish parent-child causality."
@@ -257,7 +314,7 @@ class Telemetry:
 
 CATALOG = """Tools (CSV files only):
 profile(file): column names, first 3 rows, cardinalities. Inspect before choosing columns.
-metrics(file,time_column,component_column,kpi_column,value_column,start,end): anomalies and persistent episodes against the preceding 60 minutes (full-series fallback if insufficient baseline). Onset is not the earliest outlier; left_censored episodes have unknown onset. For wide data choose ONE value_column and omit kpi_column.
+metrics(file,time_column,component_column,kpi_column,value_column,start,end): anomalies and persistent episodes against a healthy baseline (the 60 minutes before the window or known anomaly); series without one are not scored. window_empty means the file has no rows in the window. Onset is not the earliest outlier; left_censored episodes have unknown onset. For wide data choose ONE value_column and omit kpi_column.
 logs(file,time_column,component_column,message_column,start,end): error counts and examples.
 traces(file,time_column,component_column,duration_column,start,end): per-component span latency.
 start/end are optional ISO date-times in UTC+8. Epoch s/ms/us/ns are detected.

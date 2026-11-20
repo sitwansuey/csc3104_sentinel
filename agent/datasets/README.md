@@ -91,6 +91,23 @@ python scripts/evaluate_rcaeval.py run --tasks data/experimentation/runs/rcaeval
 
 Sentinel's local Ollama model/endpoint defaults come from `data/sentinel/samples/rca-config.json`; `--config overrides.json` supplies overrides. No LLM calls are made by export or scoring. The default method is casetoolkit.
 
+The Sentinel adapter converts the known anomaly and standard-window Unix seconds
+to explicit UTC ISO timestamps in code. All metrics, logs and traces calls are
+bound to that same inclusive 20-minute window before execution, caching and
+evidence recording, including replanned calls. Model-generated dates cannot
+change the benchmark window. `benchmark-timing.json` records the effective times.
+This uses only blinded task metadata. Runs made before this timing correction
+must remain separate; use a fresh results directory rather than resuming them.
+
+The adapter also binds each exported CSV to its source modality. Inventory lists
+`allowed_tools`; metrics, logs and traces tools reject files of another modality,
+even if the model supplies column aliases. Profile remains available for every
+registered file. Missing modalities cannot be substituted with metric values.
+Structured evidence times (metric findings and episodes, log examples and bursts,
+trace events, and sampled timestamp columns) use UTC ISO 8601 with explicit
+`+00:00` offsets, as does the benchmark Reporter instruction. Legacy non-benchmark
+telemetry retains its existing time presentation and input timezone assumptions.
+
 ### Test your model with CaseToolkit
 
 Install the pinned upstream package and its toolkit dependencies, then export, run and score:

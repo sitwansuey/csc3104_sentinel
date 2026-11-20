@@ -29,6 +29,15 @@ def answer(identifier="a", service="cartservice", fault="cpu", dataset="RE1-OB")
 
 
 class SelectionTests(unittest.TestCase):
+    def test_sentinel_timing_converts_epoch_without_model_arithmetic(self):
+        self.assertEqual(ev.sentinel_timing({"inject_time": 1705351632,
+                         "standard_window": {"start": 1705351032, "end": 1705352232}}),
+                         {"anomaly": "2024-01-15T20:47:12+00:00",
+                          "start": "2024-01-15T20:37:12+00:00", "end": "2024-01-15T20:57:12+00:00"})
+        for start, end in [(2000, 1000), (1001, 1600), (float('nan'), 1600), ('400', 1600)]:
+            with self.subTest(start=start, end=end), self.assertRaises(ValueError):
+                ev.sentinel_timing({"inject_time": 1000, "standard_window": {"start": start, "end": end}})
+
     def test_all_three_systems_and_only_non_code_suites(self):
         config = data.settings()
         rows = [case(suite, system) for suite in ["RE1", "RE2"] for system in ["ob", "ss", "tt"]]
@@ -204,12 +213,24 @@ class ExportTests(unittest.TestCase):
 
             def ask(self, role, prompt, schema):
                 if role == "Planner":
-                    return {"plan": {"kind": "tool", "goal": "Inspect metrics", "tool": "metrics",
-                                     "args": {"file": "metric/data.csv"}}}
+                    assert "1970-01-01T00:16:40+00:00" in prompt
+                    assert '"allowed_tools": ["profile", "metrics"]' in prompt
+                    assert '"allowed_tools": ["profile", "logs"]' in prompt
+                    # Both observed failure modes: invented ISO dates and raw epoch strings.
+                    return {"plan": {"kind": "parallel", "goal": "Inspect metrics", "children": [
+                        {"kind": "tool", "goal": "Inspect metrics", "tool": "metrics",
+                         "args": {"file": "metric/data.csv", "start": start, "end": end}}
+                        for start, end in [("2023-11-17T12:07:12+08:00", "2023-11-17T13:07:12+08:00"),
+                                           ("1000", "1600")]] + [
+                        {"kind": "tool", "goal": "Read other modality", "tool": tool,
+                         "args": {"file": file, "start": "1000", "end": "1600"}}
+                        for tool, file in [("logs", "log/data.csv"), ("traces", "trace/data.csv")]]}}
                 if role == "Analyzer":
                     return {"summary": "Observed metric change", "complete": True,
                             "confidence": .99, "next_steps": ""}
                 if role == "Reporter":
+                    assert "Datetimes must be ISO 8601 UTC" in prompt
+                    assert "Datetimes must be YYYY-MM-DD HH:MM:SS in UTC+8" not in prompt
                     return {"failures": [{"root cause component": "cartservice"}],
                             "explanation": "Test model response", "limitations": "Synthetic test"}
                 raise AssertionError(role)
@@ -219,17 +240,36 @@ class ExportTests(unittest.TestCase):
             task_dir = root / "task"
             task_dir.mkdir()
             metrics = task_dir / "metrics.parquet"
-            pq.write_table(pa.table({"time": [990, 995, 1000, 1005], "cartservice_cpu": [1., 1., 10., 10.],
-                                     "frontend_cpu": [1., 1., 1., 1.]}), metrics)
+            # Six healthy samples before the anomaly (the baseline), then a sustained rise.
+            pq.write_table(pa.table({"time": list(range(970, 1020, 5)), "cartservice_cpu": [1.] * 6 + [10.] * 4,
+                                     "frontend_cpu": [1.] * 10}), metrics)
+            pq.write_table(pa.table({"timestamp": [1000], "container_name": ["cartservice"],
+                                     "message": ["error: synthetic failure"]}), task_dir / "logs.parquet")
+            pq.write_table(pa.table({"time": [1000], "serviceName": ["cartservice"],
+                                     "duration": [100.]}), task_dir / "traces.parquet")
             task = {"case_id": "case-test", "system": "Online Boutique", "inject_time": 1000,
                     "standard_window": {"start": 400, "end": 1600}, "candidate_services": ["cartservice", "frontend"],
-                    "files": {"metrics": "metrics.parquet"}, "sha256": {"metrics.parquet": ev.digest(metrics)}}
+                    "files": {m: m + ".parquet" for m in ("metrics", "logs", "traces")},
+                    "sha256": {p.name: ev.digest(p) for p in task_dir.glob("*.parquet")}}
             (task_dir / "task.json").write_text(json.dumps(task))
             with patch("agent.llm.Ollama", return_value=FakeLLM()):
                 ev.worker(task_dir, root / "result/result.json", "sentinel", {"max_rounds": 1})
             result = json.loads((root / "result/result.json").read_text())
             self.assertEqual(result["ranks"], ["cartservice"])
             self.assertEqual(result["status"], "ok")
+            agent_dir = root / "result/agent"
+            history = json.loads((agent_dir / "call-history.json").read_text())
+            self.assertEqual(len(history), 3)  # Duplicate metric calls share the normalized cache key.
+            for call in history:
+                self.assertEqual(call["args"]["start"], "1970-01-01T00:06:40+00:00")
+                self.assertEqual(call["args"]["end"], "1970-01-01T00:26:40+00:00")
+                evidence = json.loads((agent_dir / call["evidence_id"] / "result.json").read_text())
+                self.assertGreater(evidence["outputs"][0]["result"]["rows_in_window"], 0)
+            evidence = json.loads((agent_dir / history[0]["evidence_id"] / "result.json").read_text())
+            self.assertEqual(evidence["outputs"][0]["result"]["rows_in_window"], 20)
+            self.assertEqual(evidence["outputs"][0]["result"]["findings"][0]["baseline_source"], "pre_anomaly")
+            self.assertEqual(json.loads((agent_dir / "supported-components.json").read_text()),
+                             {"cartservice": [history[0]["evidence_id"]]})
             self.assertFalse(any(p.name == "ground-truth.json" for p in (root / "result").rglob("*")))
 
 

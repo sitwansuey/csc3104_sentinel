@@ -146,7 +146,7 @@
       "workaround": "For a paraphrase the rules miss, the remaining controls are the Guard and authenticated approval, plus the narrow action set: in agent mode the Recovery Planner can only propose a rollback to a measured baseline, and where a provider may choose RESTART, it may only add a planner-bound restart token to the reviewed baseline template. A SUSPECTED_INJECTION escalation is a prompt for review: find the flagged lines by message_sha256 in the attempt's logs.csv and the saved observation.",
       "cites": [
         {"at": "agent/untrusted.py", "text": "def suspicious(text):"},
-        {"at": "agent/tools.py:205", "text": "**quote(r[message])"},
+        {"at": "agent/tools.py:262", "text": "**quote(r[message])"},
         {"at": "experiments/boutique/harness/agent_live.py:90", "text": "csv_cell(cleaned)"},
         {"at": "services/planner/agent_provider.py:366", "text": "raise PlanningError(\"SUSPECTED_INJECTION\", terminal=True)"},
         {"at": "runtime/remote_adapters.py:420", "text": "raise PlanningError(\"SUSPECTED_INJECTION\", terminal=True)"},

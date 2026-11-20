@@ -63,6 +63,38 @@ def corroborated_onsets(evidence, tolerance_seconds=120):
     return sorted(unique.values(), key=lambda c: (-len(c["modalities"]), -c["supporting_signals"], -c["peak_score"]))[:30]
 
 
+HEALTHY_BASELINES = {"pre_anomaly", "preceding_60_minutes"}
+
+
+def supported_components(evidence, not_before, tolerance_seconds=30):
+    """Components with a sustained, uncensored episode starting at or after the known anomaly.
+
+    Metric episodes count only against a healthy baseline; log bursts and trace latency
+    events count when they begin after the anomaly. Returns {component: [evidence_id, ...]}.
+    A component absent here has no temporal support, whatever its anomaly score.
+    """
+    floor = datetime.fromisoformat(not_before).timestamp() - tolerance_seconds
+    support = {}
+    for entry in evidence:
+        data = entry.get("result", {})
+        if data.get("truncated") or data.get("window_empty"):
+            continue
+        if entry.get("tool") == "metrics":
+            for finding in data.get("findings", []):
+                if finding.get("baseline_source") not in HEALTHY_BASELINES:
+                    continue
+                if any(e["sustained"] and not e["left_censored"] and e["onset"]
+                       and datetime.fromisoformat(e["onset"]).timestamp() >= floor
+                       for e in finding.get("episodes", [])):
+                    support.setdefault(finding["component"], set()).add(entry["evidence_id"])
+        elif entry.get("tool") in {"logs", "traces"}:
+            for event in data.get("events", []):
+                if (not event.get("left_censored", False) and event.get("time")
+                        and datetime.fromisoformat(event["time"]).timestamp() >= floor):
+                    support.setdefault(event["component"], set()).add(entry["evidence_id"])
+    return {component: sorted(ids) for component, ids in support.items()}
+
+
 def timestamp_rejection(failures, candidates, analysis, confidence_threshold):
     """A reporter cannot override an incomplete diagnosis with a plausible guess."""
     timed = [f for f in failures if "root cause occurrence datetime" in f]
