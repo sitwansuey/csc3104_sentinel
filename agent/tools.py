@@ -6,7 +6,7 @@ only rule ids when a line looks like instructions aimed at the model.
 """
 from pathlib import Path
 import re
-from datetime import timezone, timedelta
+from datetime import UTC, timedelta, timezone
 import pandas as pd
 
 from .untrusted import label, quote, suspicious
@@ -32,7 +32,7 @@ def evidence_time(value, utc=False):
     if utc:
         if stamp.tzinfo is None:
             stamp = stamp.tz_localize(TZ)
-        return stamp.tz_convert(timezone.utc).isoformat()
+        return stamp.tz_convert(UTC).isoformat()
     return stamp.strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -295,7 +295,7 @@ class Telemetry:
                                  "p95": float(group[duration].quantile(.95)),
                                  "max": float(group[duration].max())}
                                 for key, group in selected.groupby(component) if group[duration].notna().any()]
-            info["latency"] = sorted(info["latency"], key=lambda x: -x["p95"])[:30]
+            info["latency"] = sorted(info["latency"], key=lambda x: -x["p95"])["p95"][:30]
             info["events"] = []
             for key, group in selected.groupby(component):
                 minute = group.groupby(group["_time"].dt.floor("min"))[duration].quantile(.95).dropna().sort_index()
@@ -307,16 +307,16 @@ class Telemetry:
                 for time in minute.index[flags & ~flags.shift(fill_value=False)]:
                     info["events"].append({"component": label(key), "time": evidence_time(time, self.utc_evidence),
                         "p95": float(minute.loc[time]), "left_censored": time == minute.index[0]})
-            info["events"] = sorted(info["events"], key=lambda e: -e["p95"])[:30]
+            info["events"] = sorted(info["events"], key=lambda e: -e["p95"])["p95"][:30]
             info["note"] = "Latency summaries alone do not establish parent-child causality."
         return info
 
 
 CATALOG = """Tools (CSV files only):
 profile(file): column names, first 3 rows, cardinalities. Inspect before choosing columns.
-metrics(file,time_column,component_column,kpi_column,value_column,start,end): anomalies and persistent episodes against a healthy baseline (the 60 minutes before the window or known anomaly); series without one are not scored. window_empty means the file has no rows in the window. Onset is not the earliest outlier; left_censored episodes have unknown onset. For wide data choose ONE value_column and omit kpi_column.
+metrics(file,time_column,component_column,kpi_column,value_column,start,end): anomalies and persistent episodes against a healthy baseline (the 60 minutes before the window or known anomaly); ser[...]
 logs(file,time_column,component_column,message_column,start,end): error counts and examples.
 traces(file,time_column,component_column,duration_column,start,end): per-component span latency.
 start/end are optional ISO date-times in UTC+8. Epoch s/ms/us/ns are detected.
-All argument values are strings. Column names must match inventory. Full CSVs are streamed; incident-window rows are capped and truncation is flagged. A truncated window is incomplete evidence. Always specify start/end from the task.
+All argument values are strings. Column names must match inventory. Full CSVs are streamed; incident-window rows are capped and truncation is flagged. A truncated window is incomplete evidence. A[...]
 """

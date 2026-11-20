@@ -7,7 +7,7 @@ This implementation reads the Hugging Face Parquet edition directly.
 
 import argparse
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 import hashlib
 import json
 import math
@@ -241,7 +241,7 @@ def score(answers, predictions):
                         for key, values in usage.items()}
     for group in ("dataset", "system", "fault"):
         summary["by_" + group] = {key: {"service": aggregate([r for r in rows if r[group] == key], "service"),
-                                             "indicator": aggregate([r for r in rows if r[group] == key], "indicator")}
+                                              "indicator": aggregate([r for r in rows if r[group] == key], "indicator")}
                                     for key in sorted({r[group] for r in rows})}
     return summary, rows
 
@@ -275,7 +275,7 @@ def sentinel_timing(task):
         raise ValueError("Benchmark times must be finite Unix seconds")
     if not times["start"] <= times["anomaly"] <= times["end"] or times["start"] >= times["end"]:
         raise ValueError("Benchmark window must contain the anomaly time")
-    return {k: datetime.fromtimestamp(times[k], timezone.utc).isoformat()
+    return {k: datetime.fromtimestamp(times[k], UTC).isoformat()
             for k in ("anomaly", "start", "end")}
 
 
