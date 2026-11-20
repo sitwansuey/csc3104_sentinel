@@ -2758,6 +2758,16 @@
       "captured_at": "2026-11-20T05:44:03Z",
       "source_revision": "7220856",
       "provenance": "inferred",
+      "status": "superseded",
+      "reason": "Replaced by rcaeval-ob-strat50-sentinel-r2: the same 50 predictions and scores, rewritten in the rcaeval_run.py summary format (with answers and sample hashes) so rcaeval_report.py can read them."
+    },
+    {
+      "bundle_id": "rcaeval-ob-strat50-sentinel-r2",
+      "class": "rcaeval",
+      "path": "2026-11-20/rcaeval-ob-strat50-sentinel-r2",
+      "captured_at": "2026-11-20T05:44:03Z",
+      "source_revision": "7220856",
+      "provenance": "inferred",
       "status": "current",
       "reason": null
     }

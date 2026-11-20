@@ -41,14 +41,28 @@ value that no bundle records is shown as "not recorded".
 
 ## Diagnosis accuracy (RCAEval)
 
-The pre-registered Online Boutique evaluation of root-cause diagnosis
-([protocol and run guide](evaluation/rcaeval/README.md)). Its report lands under
-`evidence/evaluation/rcaeval/<sample>/report.json`; until one is committed, this
-section says "not yet run" and live recovery counts must not be quoted as
-diagnosis accuracy.
+Offline root-cause diagnosis on RCAEval Online Boutique cases
+([protocol and run guide](evaluation/rcaeval/README.md)). Each report lands under
+`evidence/evaluation/rcaeval/<sample>/report.json`. The pre-registered
+`sample-ob-v1` evaluation has not been run; the only report so far is the
+exploratory stratified 50-case run (`strat50-ob`, with its deviations in
+[its README](../evidence/evaluation/rcaeval/strat50-ob/README.md)). Quote it as
+exploratory, and never quote live recovery counts as diagnosis accuracy.
 
 <!-- BEGIN GENERATED:evaluation-rcaeval -->
-_Not yet run._ No RCAEval report is committed under `evidence/evaluation/rcaeval/`. Pre-registration: sample manifest not committed, freeze file not committed; 1 rcaeval bundles collected.
+Pre-registration: sample manifest not committed, freeze file not committed; 1 rcaeval bundles collected.
+
+**`evidence/evaluation/rcaeval/strat50-ob/report.json`**: split all, sample sample-strat50-ob, service level, 95% intervals.
+
+| Method | n | AC@1 | AC@3 | AC@5 | Avg@5 | Missing | Abstained | Errors |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| sentinel-healthy-baseline | 50 | 0.780 [0.648, 0.872] | 0.780 [0.648, 0.872] (equals AC@1) | 0.780 [0.648, 0.872] (equals AC@1) | 0.780 [0.660, 0.880] (equals AC@1) | 0 | 2 | 1 |
+
+_No paired comparison in the report._
+
+Missing rows count as misses in AC@k and Avg@5. sentinel-healthy-baseline returns one service, so AC@3, AC@5 and Avg@5 equal AC@1 by construction; an Avg@5 difference against it credits the ranked method for ranks 2-5 that a single answer cannot earn.
+
+Deviations: sentinel-healthy-baseline: run status FAILED (50/50 predicted, 1 errors); sentinel-healthy-baseline: run from a dirty or unknown working tree.
 <!-- END GENERATED:evaluation-rcaeval -->
 
 ## Guard ablation
@@ -387,7 +401,7 @@ and open defects.
 - **Small n, correlated repetitions.** Catalog scenarios run live: 7, at most 15 runs each. Repeated runs share the host, the cluster, the model and often the revision, so they are not independent trials; where an interval is given, read it rather than the point value.
 - **Provenance.** 155/275 current bundles have inferred provenance: their source revision is a best guess, not a recorded commit.
 - **Replay inputs.** Of 74 replay cases, 10 derived and 12 adversarial ones are synthetic, and every case's cluster state is reconstructed, not recorded. Replay judges decisions only; recovery comes from live runs.
-- **One model family, one application.** Models loaded in live runs: qwen3:14b x28. Pre-registered replay runs committed: 4/5. RCAEval reports committed: not yet run. Workloads named by live runs: Full Online Boutique v0.10.7 with synthetic checkout traffic x109, Online Boutique shippingservice v0.10.7 x8, not recorded x4.
+- **One model family, one application.** Models loaded in live runs: qwen3:14b x28. Pre-registered replay runs committed: 4/5. RCAEval reports committed: 1. Workloads named by live runs: Full Online Boutique v0.10.7 with synthetic checkout traffic x109, Online Boutique shippingservice v0.10.7 x8, not recorded x4.
 <!-- END GENERATED:evaluation-threats -->
 
 ## Interpretation

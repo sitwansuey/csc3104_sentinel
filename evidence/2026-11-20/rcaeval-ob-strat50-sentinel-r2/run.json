@@ -1,0 +1,422 @@
+{
+  "schema": "sentinel-rcaeval-strat50-v1",
+  "method": "sentinel",
+  "label": "sentinel-healthy-baseline",
+  "sample": "Stratified Online Boutique sample: 25 RE1 + 25 RE2. Strata are (suite, fault); RE1 keeps cpu, delay, disk, loss, mem; RE2 keeps cpu, disk, loss, mem, socket (delay omitted by the seeded hash order). Each stratum holds all five root-cause services once.",
+  "not_protocol": "Not the pre-registered sample-ob-v1 dev/eval protocol (docs/evaluation/rcaeval/PROTOCOL.md): no freeze file, run with scripts/evaluate_rcaeval.py run/score.",
+  "timeout": 1200,
+  "config": {
+    "base_url": "http://127.0.0.1:11434",
+    "model": "qwen3:14b",
+    "role_models": {},
+    "num_ctx": 16384,
+    "num_predict": 4096,
+    "timeout": 300,
+    "planning_budget_seconds": 600,
+    "seed": 42,
+    "max_rounds": 3,
+    "max_steps": 16,
+    "max_depth": 4,
+    "confidence_threshold": 0.8,
+    "allow_abstention": true,
+    "max_rows": 1000000
+  },
+  "parts": [
+    {
+      "name": "dev10",
+      "source_run": "rcaeval-ob-re1-re2-20261120-sample5-healthy-baseline",
+      "tasks_sha256": "8a22dcf7f1de7ab098a2a507a7dbc438f9ae14b402fe1c01a1e07daab5f854f6",
+      "n": 10,
+      "selection_seed": 3104,
+      "selection_rule": "Per suite: hash-order fault categories, take five; hash-select a feasible assignment of five distinct services; hash-select one repetition per fault/service. No predictions used.",
+      "omitted_faults": {
+        "RE1": [],
+        "RE2": [
+          "delay"
+        ]
+      },
+      "role": "Used while developing the diagnosis-tool fixes.",
+      "agent_sha256": {
+        "agent.py": "08439ce3e6889c160bd400add85cf12666949e1eb04eb4fe85cbc9405ed7b6a3",
+        "tools.py": "e15281e2ceb54144ba54452ee27920c00fcbe302a5f86af02c503865f9e152a8",
+        "llm.py": "abf73d1ff48bbe1a4bf1f336b49d02ba3e4d6a9985bc105a613baaf6016ea4fb"
+      },
+      "cases": [
+        {
+          "case": "re1ob_cartservice_mem_1",
+          "suite": "RE1",
+          "fault": "mem",
+          "root_cause_service": "cartservice",
+          "repetition": 1
+        },
+        {
+          "case": "re1ob_productcatalogservice_cpu_3",
+          "suite": "RE1",
+          "fault": "cpu",
+          "root_cause_service": "productcatalogservice",
+          "repetition": 3
+        },
+        {
+          "case": "re1ob_checkoutservice_loss_5",
+          "suite": "RE1",
+          "fault": "loss",
+          "root_cause_service": "checkoutservice",
+          "repetition": 5
+        },
+        {
+          "case": "re1ob_currencyservice_delay_1",
+          "suite": "RE1",
+          "fault": "delay",
+          "root_cause_service": "currencyservice",
+          "repetition": 1
+        },
+        {
+          "case": "re1ob_adservice_disk_1",
+          "suite": "RE1",
+          "fault": "disk",
+          "root_cause_service": "adservice",
+          "repetition": 1
+        },
+        {
+          "case": "re2ob_checkoutservice_disk_2",
+          "suite": "RE2",
+          "fault": "disk",
+          "root_cause_service": "checkoutservice",
+          "repetition": 2
+        },
+        {
+          "case": "re2ob_currencyservice_socket_3",
+          "suite": "RE2",
+          "fault": "socket",
+          "root_cause_service": "currencyservice",
+          "repetition": 3
+        },
+        {
+          "case": "re2ob_productcatalogservice_cpu_2",
+          "suite": "RE2",
+          "fault": "cpu",
+          "root_cause_service": "productcatalogservice",
+          "repetition": 2
+        },
+        {
+          "case": "re2ob_recommendationservice_loss_3",
+          "suite": "RE2",
+          "fault": "loss",
+          "root_cause_service": "recommendationservice",
+          "repetition": 3
+        },
+        {
+          "case": "re2ob_emailservice_mem_3",
+          "suite": "RE2",
+          "fault": "mem",
+          "root_cause_service": "emailservice",
+          "repetition": 3
+        }
+      ]
+    },
+    {
+      "name": "ext40",
+      "source_run": "rcaeval-ob-re1-re2-20261120-ext20",
+      "tasks_sha256": "1239ccb533bfb07755d51ffc0678530280d1b855e02495fc7466616d8f88a5c3",
+      "n": 40,
+      "selection_seed": "3104|ext20",
+      "selection_rule": "Extend the 5+5 sample to 25+25: per suite and sampled fault, add the four services not yet used.\n\nRule (no predictions used): for each (suite, fault) of the original sample, every Online\nBoutique service except the one already sampled gets one repetition, chosen as the\nrepetition with the smallest sha256('3104|ext20|<suite>|<fault>|<service>|<rep>').",
+      "role": "Drawn after development from the remaining services; run with the code unchanged.",
+      "agent_sha256": {
+        "agent.py": "4aa16825c5b800652bfa5a39cd49d48285032c995cd5b25adf0f2e303febf746",
+        "tools.py": "e15281e2ceb54144ba54452ee27920c00fcbe302a5f86af02c503865f9e152a8",
+        "llm.py": "abf73d1ff48bbe1a4bf1f336b49d02ba3e4d6a9985bc105a613baaf6016ea4fb"
+      },
+      "cases": [
+        {
+          "case": "re1ob_adservice_cpu_4",
+          "suite": "RE1",
+          "fault": "cpu",
+          "root_cause_service": "adservice",
+          "repetition": 4
+        },
+        {
+          "case": "re1ob_cartservice_cpu_5",
+          "suite": "RE1",
+          "fault": "cpu",
+          "root_cause_service": "cartservice",
+          "repetition": 5
+        },
+        {
+          "case": "re1ob_checkoutservice_cpu_3",
+          "suite": "RE1",
+          "fault": "cpu",
+          "root_cause_service": "checkoutservice",
+          "repetition": 3
+        },
+        {
+          "case": "re1ob_currencyservice_cpu_1",
+          "suite": "RE1",
+          "fault": "cpu",
+          "root_cause_service": "currencyservice",
+          "repetition": 1
+        },
+        {
+          "case": "re1ob_adservice_delay_4",
+          "suite": "RE1",
+          "fault": "delay",
+          "root_cause_service": "adservice",
+          "repetition": 4
+        },
+        {
+          "case": "re1ob_cartservice_delay_5",
+          "suite": "RE1",
+          "fault": "delay",
+          "root_cause_service": "cartservice",
+          "repetition": 5
+        },
+        {
+          "case": "re1ob_checkoutservice_delay_5",
+          "suite": "RE1",
+          "fault": "delay",
+          "root_cause_service": "checkoutservice",
+          "repetition": 5
+        },
+        {
+          "case": "re1ob_productcatalogservice_delay_4",
+          "suite": "RE1",
+          "fault": "delay",
+          "root_cause_service": "productcatalogservice",
+          "repetition": 4
+        },
+        {
+          "case": "re1ob_cartservice_disk_4",
+          "suite": "RE1",
+          "fault": "disk",
+          "root_cause_service": "cartservice",
+          "repetition": 4
+        },
+        {
+          "case": "re1ob_checkoutservice_disk_2",
+          "suite": "RE1",
+          "fault": "disk",
+          "root_cause_service": "checkoutservice",
+          "repetition": 2
+        },
+        {
+          "case": "re1ob_currencyservice_disk_5",
+          "suite": "RE1",
+          "fault": "disk",
+          "root_cause_service": "currencyservice",
+          "repetition": 5
+        },
+        {
+          "case": "re1ob_productcatalogservice_disk_4",
+          "suite": "RE1",
+          "fault": "disk",
+          "root_cause_service": "productcatalogservice",
+          "repetition": 4
+        },
+        {
+          "case": "re1ob_adservice_loss_2",
+          "suite": "RE1",
+          "fault": "loss",
+          "root_cause_service": "adservice",
+          "repetition": 2
+        },
+        {
+          "case": "re1ob_cartservice_loss_4",
+          "suite": "RE1",
+          "fault": "loss",
+          "root_cause_service": "cartservice",
+          "repetition": 4
+        },
+        {
+          "case": "re1ob_currencyservice_loss_4",
+          "suite": "RE1",
+          "fault": "loss",
+          "root_cause_service": "currencyservice",
+          "repetition": 4
+        },
+        {
+          "case": "re1ob_productcatalogservice_loss_3",
+          "suite": "RE1",
+          "fault": "loss",
+          "root_cause_service": "productcatalogservice",
+          "repetition": 3
+        },
+        {
+          "case": "re1ob_adservice_mem_3",
+          "suite": "RE1",
+          "fault": "mem",
+          "root_cause_service": "adservice",
+          "repetition": 3
+        },
+        {
+          "case": "re1ob_checkoutservice_mem_1",
+          "suite": "RE1",
+          "fault": "mem",
+          "root_cause_service": "checkoutservice",
+          "repetition": 1
+        },
+        {
+          "case": "re1ob_currencyservice_mem_2",
+          "suite": "RE1",
+          "fault": "mem",
+          "root_cause_service": "currencyservice",
+          "repetition": 2
+        },
+        {
+          "case": "re1ob_productcatalogservice_mem_5",
+          "suite": "RE1",
+          "fault": "mem",
+          "root_cause_service": "productcatalogservice",
+          "repetition": 5
+        },
+        {
+          "case": "re2ob_checkoutservice_cpu_3",
+          "suite": "RE2",
+          "fault": "cpu",
+          "root_cause_service": "checkoutservice",
+          "repetition": 3
+        },
+        {
+          "case": "re2ob_currencyservice_cpu_2",
+          "suite": "RE2",
+          "fault": "cpu",
+          "root_cause_service": "currencyservice",
+          "repetition": 2
+        },
+        {
+          "case": "re2ob_emailservice_cpu_3",
+          "suite": "RE2",
+          "fault": "cpu",
+          "root_cause_service": "emailservice",
+          "repetition": 3
+        },
+        {
+          "case": "re2ob_recommendationservice_cpu_1",
+          "suite": "RE2",
+          "fault": "cpu",
+          "root_cause_service": "recommendationservice",
+          "repetition": 1
+        },
+        {
+          "case": "re2ob_currencyservice_disk_1",
+          "suite": "RE2",
+          "fault": "disk",
+          "root_cause_service": "currencyservice",
+          "repetition": 1
+        },
+        {
+          "case": "re2ob_emailservice_disk_3",
+          "suite": "RE2",
+          "fault": "disk",
+          "root_cause_service": "emailservice",
+          "repetition": 3
+        },
+        {
+          "case": "re2ob_productcatalogservice_disk_3",
+          "suite": "RE2",
+          "fault": "disk",
+          "root_cause_service": "productcatalogservice",
+          "repetition": 3
+        },
+        {
+          "case": "re2ob_recommendationservice_disk_3",
+          "suite": "RE2",
+          "fault": "disk",
+          "root_cause_service": "recommendationservice",
+          "repetition": 3
+        },
+        {
+          "case": "re2ob_checkoutservice_loss_2",
+          "suite": "RE2",
+          "fault": "loss",
+          "root_cause_service": "checkoutservice",
+          "repetition": 2
+        },
+        {
+          "case": "re2ob_currencyservice_loss_2",
+          "suite": "RE2",
+          "fault": "loss",
+          "root_cause_service": "currencyservice",
+          "repetition": 2
+        },
+        {
+          "case": "re2ob_emailservice_loss_3",
+          "suite": "RE2",
+          "fault": "loss",
+          "root_cause_service": "emailservice",
+          "repetition": 3
+        },
+        {
+          "case": "re2ob_productcatalogservice_loss_1",
+          "suite": "RE2",
+          "fault": "loss",
+          "root_cause_service": "productcatalogservice",
+          "repetition": 1
+        },
+        {
+          "case": "re2ob_checkoutservice_mem_2",
+          "suite": "RE2",
+          "fault": "mem",
+          "root_cause_service": "checkoutservice",
+          "repetition": 2
+        },
+        {
+          "case": "re2ob_currencyservice_mem_1",
+          "suite": "RE2",
+          "fault": "mem",
+          "root_cause_service": "currencyservice",
+          "repetition": 1
+        },
+        {
+          "case": "re2ob_productcatalogservice_mem_3",
+          "suite": "RE2",
+          "fault": "mem",
+          "root_cause_service": "productcatalogservice",
+          "repetition": 3
+        },
+        {
+          "case": "re2ob_recommendationservice_mem_1",
+          "suite": "RE2",
+          "fault": "mem",
+          "root_cause_service": "recommendationservice",
+          "repetition": 1
+        },
+        {
+          "case": "re2ob_checkoutservice_socket_2",
+          "suite": "RE2",
+          "fault": "socket",
+          "root_cause_service": "checkoutservice",
+          "repetition": 2
+        },
+        {
+          "case": "re2ob_emailservice_socket_2",
+          "suite": "RE2",
+          "fault": "socket",
+          "root_cause_service": "emailservice",
+          "repetition": 2
+        },
+        {
+          "case": "re2ob_productcatalogservice_socket_2",
+          "suite": "RE2",
+          "fault": "socket",
+          "root_cause_service": "productcatalogservice",
+          "repetition": 2
+        },
+        {
+          "case": "re2ob_recommendationservice_socket_3",
+          "suite": "RE2",
+          "fault": "socket",
+          "root_cause_service": "recommendationservice",
+          "repetition": 3
+        }
+      ]
+    }
+  ],
+  "retry": {
+    "case": "re1ob_currencyservice_cpu_1",
+    "result": "error again (Reporter call exceeded the 300 s model-call deadline); scored as a miss"
+  },
+  "code": {
+    "revision": "7220856",
+    "note": "ext40 ran on exactly the agent code of 7220856; dev10 ran on 7220856 minus the one-line abstain-instead-of-raise fix in agent/agent.py, which no dev10 case triggered."
+  }
+}

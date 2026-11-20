@@ -1,7 +1,13 @@
 # RCAEval Online Boutique protocol (sample-ob-v1)
 
-**Status: prepared, not run.** No RCAEval telemetry has been downloaded and no
-method has been run under this protocol. This file fixes the question, sample,
+**Status: prepared; not yet run under this protocol.** No method has been run
+under this protocol, its sample manifest and freeze file are not committed, and
+it has no eval results. RCAEval telemetry has since been downloaded for a
+separate, exploratory stratified 50-case run of Sentinel outside this protocol
+([results](../../../evidence/evaluation/rcaeval/strat50-ob/README.md),
+[sample](sample-strat50-ob.json)). That run used the protocol's tooling but not
+its pre-registration, so it does not count as a result of this protocol. This
+file fixes the question, sample,
 methods, metrics and tests before any eval-split run. Git history shows the
 order: this file, then the sample manifest, then the freeze file, then the eval
 results. The steps are in the [run guide](README.md).

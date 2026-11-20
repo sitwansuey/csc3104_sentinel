@@ -1,0 +1,92 @@
+{
+  "schema": "sentinel-rcaeval-sample-v1",
+  "name": "sample-strat50-ob",
+  "cases_sha256": "b9f374208b1d8569d69b7705c4245b2cfac561306fddac27ac786a0882c46a73",
+  "rule": {
+    "system": "ob",
+    "suites": [
+      "RE1",
+      "RE2"
+    ],
+    "cell": "suite x fault, every root-cause service once",
+    "faults_kept": {
+      "RE1": [
+        "cpu",
+        "delay",
+        "disk",
+        "loss",
+        "mem"
+      ],
+      "RE2": [
+        "cpu",
+        "disk",
+        "loss",
+        "mem",
+        "socket"
+      ]
+    },
+    "dev": "Per suite: hash-order fault categories, take five; hash-select a feasible assignment of five distinct services; hash-select one repetition per fault/service. No predictions used. Seed 3104.",
+    "eval": "Extend the 5+5 sample to 25+25: per suite and sampled fault, add the four services not yet used.\n\nRule (no predictions used): for each (suite, fault) of the original sample, every Online\nBoutique service except the one already sampled gets one repetition, chosen as the\nrepetition with the smallest sha256('3104|ext20|<suite>|<fault>|<service>|<rep>').",
+    "note": "Drawn without predictions. Dev guided development of the diagnosis-tool fixes; eval was drawn afterwards and run with the code unchanged. Not the pre-registered sample-ob-v1 protocol: there is no freeze file."
+  },
+  "counts": {
+    "dev": 10,
+    "eval": 40
+  },
+  "splits": {
+    "dev": [
+      "re1ob_adservice_disk_1",
+      "re1ob_cartservice_mem_1",
+      "re1ob_checkoutservice_loss_5",
+      "re1ob_currencyservice_delay_1",
+      "re1ob_productcatalogservice_cpu_3",
+      "re2ob_checkoutservice_disk_2",
+      "re2ob_currencyservice_socket_3",
+      "re2ob_emailservice_mem_3",
+      "re2ob_productcatalogservice_cpu_2",
+      "re2ob_recommendationservice_loss_3"
+    ],
+    "eval": [
+      "re1ob_adservice_cpu_4",
+      "re1ob_adservice_delay_4",
+      "re1ob_adservice_loss_2",
+      "re1ob_adservice_mem_3",
+      "re1ob_cartservice_cpu_5",
+      "re1ob_cartservice_delay_5",
+      "re1ob_cartservice_disk_4",
+      "re1ob_cartservice_loss_4",
+      "re1ob_checkoutservice_cpu_3",
+      "re1ob_checkoutservice_delay_5",
+      "re1ob_checkoutservice_disk_2",
+      "re1ob_checkoutservice_mem_1",
+      "re1ob_currencyservice_cpu_1",
+      "re1ob_currencyservice_disk_5",
+      "re1ob_currencyservice_loss_4",
+      "re1ob_currencyservice_mem_2",
+      "re1ob_productcatalogservice_delay_4",
+      "re1ob_productcatalogservice_disk_4",
+      "re1ob_productcatalogservice_loss_3",
+      "re1ob_productcatalogservice_mem_5",
+      "re2ob_checkoutservice_cpu_3",
+      "re2ob_checkoutservice_loss_2",
+      "re2ob_checkoutservice_mem_2",
+      "re2ob_checkoutservice_socket_2",
+      "re2ob_currencyservice_cpu_2",
+      "re2ob_currencyservice_disk_1",
+      "re2ob_currencyservice_loss_2",
+      "re2ob_currencyservice_mem_1",
+      "re2ob_emailservice_cpu_3",
+      "re2ob_emailservice_disk_3",
+      "re2ob_emailservice_loss_3",
+      "re2ob_emailservice_socket_2",
+      "re2ob_productcatalogservice_disk_3",
+      "re2ob_productcatalogservice_loss_1",
+      "re2ob_productcatalogservice_mem_3",
+      "re2ob_productcatalogservice_socket_2",
+      "re2ob_recommendationservice_cpu_1",
+      "re2ob_recommendationservice_disk_3",
+      "re2ob_recommendationservice_mem_1",
+      "re2ob_recommendationservice_socket_3"
+    ]
+  }
+}

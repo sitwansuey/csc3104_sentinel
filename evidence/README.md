@@ -121,7 +121,7 @@ is stale, a bundle no longer matches its MANIFEST, or a claim is unsupported.
 | packaged | 9 | 0 | 9 | 0 | 0 |
 | protected-recovery | 9 | 9 | 0 | 0 | 0 |
 | provider-recovery | 1 | 0 | 1 | 0 | 0 |
-| rcaeval | 1 | 0 | 1 | 0 | 0 |
+| rcaeval | 2 | 0 | 2 | 1 | 0 |
 | scale-recovery | 4 | 4 | 0 | 0 | 0 |
 | scenario-pair | 8 | 8 | 0 | 0 | 0 |
 | security-lab | 10 | 7 | 3 | 0 | 0 |

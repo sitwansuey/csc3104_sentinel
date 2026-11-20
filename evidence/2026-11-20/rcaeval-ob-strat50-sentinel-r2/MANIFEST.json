@@ -1,0 +1,52 @@
+{
+  "schema": "sentinel-evidence-manifest-v1",
+  "bundle_id": "rcaeval-ob-strat50-sentinel-r2",
+  "class": "rcaeval",
+  "captured_at": "2026-11-20T05:44:03Z",
+  "source_run_dir_name": "rcaeval-ob-strat50-sentinel-r2",
+  "sanitiser_version": "5",
+  "provenance": {
+    "kind": "inferred",
+    "source_revision": "7220856",
+    "basis": "Runs used an uncommitted tree later committed as 7220856; agent code diffs recorded beside each run match 7220856 (eval part exactly; dev part lacks only the one-line abstain fix in agent/agent.py, never triggered)"
+  },
+  "files": [
+    {
+      "path": "predictions.jsonl",
+      "sha256": "bebe85c41e363e0f1f6107323232069c94b0a02799c69652a1751bf9f0315f37",
+      "bytes": 10625,
+      "redactions": 0
+    },
+    {
+      "path": "run.json",
+      "sha256": "462595986ec1ae841ca5105b9ec8aeba7c19c832bc25d5709e3b3e89076d40bc",
+      "bytes": 13419,
+      "redactions": 0
+    },
+    {
+      "path": "scores/per-case.jsonl",
+      "sha256": "54266e766a7916f44f18a607a119a5b934355892d82049779707cfcae490396d",
+      "bytes": 18552,
+      "redactions": 0
+    },
+    {
+      "path": "scores/summary.json",
+      "sha256": "c541bf95c794613132e5b1f35b339bf8ef2046813c2719356ecf0d54677e72dd",
+      "bytes": 5416,
+      "redactions": 2
+    },
+    {
+      "path": "summary.json",
+      "sha256": "f0621ad280e17eb5a2d71bc99a141743ea2cc45143d12b0cb71a84a7dccf77b4",
+      "bytes": 2014,
+      "redactions": 0
+    },
+    {
+      "path": "versions.json",
+      "sha256": "33475ac89c4effab024b8529002bf2d879c4e337028c41c73b07544faea307d0",
+      "bytes": 323,
+      "redactions": 0
+    }
+  ],
+  "omitted": []
+}

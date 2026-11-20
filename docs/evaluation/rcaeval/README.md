@@ -1,10 +1,11 @@
 # Running the RCAEval Online Boutique evaluation
 
 This is the procedure for the pre-registered evaluation in
-[PROTOCOL.md](PROTOCOL.md). Everything here is prepared and tested on
-synthetic data only. **No dataset has been downloaded and no method has been
-run.** A person approves and performs each step that downloads data or uses
-the GPU.
+[PROTOCOL.md](PROTOCOL.md). Steps 1 to 8 are prepared and tested on synthetic
+data; **no method has been run under the protocol yet.** The telemetry has been
+downloaded, and an exploratory stratified run outside the protocol is described
+in [section 9](#9-exploratory-stratified-run-sample-strat50-ob). A person
+approves and performs each step that downloads data or uses the GPU.
 
 Commands run from the repository root, after
 `python -m pip install -r agent/datasets/requirements.txt`.
@@ -125,3 +126,29 @@ They must never be copied into `agent/knowledge/` or `runbooks/`.
 Until these steps are done, the
 [limitations register](../../limitations.md) keeps the
 `L-NO-DIAGNOSIS-ACCURACY` entry open.
+
+## 9. Exploratory stratified run (sample-strat50-ob)
+
+Outside the protocol, Sentinel was run on a stratified sample of 50 Online
+Boutique cases: 25 RE1 and 25 RE2, one stratum per suite and fault type, each
+stratum holding all five root-cause services once
+([sample](sample-strat50-ob.json)). Its ten dev cases guided the fixes to the
+diagnosis tools described in the
+[adapter README](../../../agent/datasets/README.md); the 40 eval cases were
+drawn afterwards and run with the code unchanged. It has no freeze file and no
+baseline, so it is not a protocol result and keeps `L-NO-DIAGNOSIS-ACCURACY`
+open. Result: service AC@1 0.78 (39/50, 95% interval 0.648 to 0.872); see
+[the report](../../../evidence/evaluation/rcaeval/strat50-ob/README.md).
+
+Each part was exported with `export_tasks(..., cases=[...])` for its case
+list, then run and scored with the same settings:
+
+```powershell
+python scripts/evaluate_rcaeval.py run --tasks <part>/export/tasks --out <part>/results --method sentinel --timeout 1200 --config <part>/config.json
+python scripts/evaluate_rcaeval.py score --answers <part>/export/answers.jsonl --predictions <part>/results/predictions.jsonl --out <part>/scores
+```
+
+`config.json` held `{"num_predict": 4096}`. The two parts' answers and
+predictions were appended, rescored, written in the `rcaeval_run.py` summary
+format, collected as the `rcaeval-ob-strat50-sentinel-r2` bundle and reported
+with `rcaeval_report.py` (section 8), without `--freeze-file`.
