@@ -1,0 +1,97 @@
+{
+  "schema": "sentinel-rcaeval-report-v1",
+  "split": "all",
+  "sample": "sample-strat50-ob",
+  "sample_sha256": "5d45abe2f94034056d59a0f9205f85a3fa7c90f3ccc0c3a068c112f71bd56c25",
+  "answers_sha256": "59c384e4208283397dd0ba57da2114d25911ae73ee5c35f2a864e6b3d7e1379f",
+  "level": "service",
+  "seed": 3104,
+  "resamples": 10000,
+  "methods": {
+    "sentinel-healthy-baseline": {
+      "method": "sentinel",
+      "n": 50,
+      "AC@1": {
+        "value": 0.78,
+        "count": 39,
+        "ci95": [
+          0.647585,
+          0.872461
+        ]
+      },
+      "AC@3": {
+        "value": 0.78,
+        "count": 39,
+        "ci95": [
+          0.647585,
+          0.872461
+        ]
+      },
+      "AC@5": {
+        "value": 0.78,
+        "count": 39,
+        "ci95": [
+          0.647585,
+          0.872461
+        ]
+      },
+      "Avg@5": {
+        "value": 0.78,
+        "ci95": [
+          0.66,
+          0.88
+        ]
+      },
+      "MRR@5": {
+        "value": 0.78,
+        "ci95": [
+          0.66,
+          0.88
+        ]
+      },
+      "indicator_AC@1": {
+        "value": 0.0,
+        "count": 0,
+        "ci95": [
+          0.0,
+          0.071348
+        ]
+      },
+      "abstention_rate": {
+        "value": 0.04,
+        "count": 2,
+        "ci95": [
+          0.011039,
+          0.134601
+        ]
+      },
+      "error_rate": {
+        "value": 0.02,
+        "count": 1,
+        "ci95": [
+          0.003539,
+          0.104954
+        ]
+      },
+      "missing": 0,
+      "unsafe_action_rate": null,
+      "latency_s": {
+        "n": 50,
+        "median": 116.457621,
+        "p90": 231.491783,
+        "max": 745.302546
+      },
+      "model_tokens": {
+        "input_tokens": 908538,
+        "output_tokens": 65847
+      },
+      "top1_only": true
+    }
+  },
+  "paired": [],
+  "unsafe_action_rate_note": "Not applicable: RCAEval scores diagnosis only, and no method acts on a cluster.",
+  "deviations": [
+    "sentinel-healthy-baseline: run status FAILED (50/50 predicted, 1 errors)",
+    "sentinel-healthy-baseline: run from a dirty or unknown working tree"
+  ]
+}

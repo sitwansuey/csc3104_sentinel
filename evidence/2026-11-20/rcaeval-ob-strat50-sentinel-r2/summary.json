@@ -1,0 +1,75 @@
+{
+  "schema": "sentinel-rcaeval-run-v1",
+  "status": "FAILED",
+  "complete": true,
+  "interrupted": false,
+  "started_at": "2026-11-20T05:44:03Z",
+  "finished_at": "2026-11-20T08:22:23Z",
+  "split": "all",
+  "method": "sentinel",
+  "label": "sentinel-healthy-baseline",
+  "sample": "sample-strat50-ob",
+  "sample_sha256": "5d45abe2f94034056d59a0f9205f85a3fa7c90f3ccc0c3a068c112f71bd56c25",
+  "answers_sha256": "59c384e4208283397dd0ba57da2114d25911ae73ee5c35f2a864e6b3d7e1379f",
+  "prompt_sha256": null,
+  "config": {
+    "base_url": "http://127.0.0.1:11434",
+    "model": "qwen3:14b",
+    "role_models": {},
+    "num_ctx": 16384,
+    "num_predict": 4096,
+    "timeout": 300,
+    "planning_budget_seconds": 600,
+    "seed": 42,
+    "max_rounds": 3,
+    "max_steps": 16,
+    "max_depth": 4,
+    "confidence_threshold": 0.8,
+    "allow_abstention": true,
+    "max_rows": 1000000
+  },
+  "timeout_s": 1200,
+  "n_cases": 50,
+  "n_predicted": 50,
+  "n_errors": 1,
+  "n_abstained": 2,
+  "service": {
+    "n": 50,
+    "AC@1": 0.78,
+    "AC@3": 0.78,
+    "AC@5": 0.78,
+    "Avg@5": 0.78,
+    "Chance@5": 0.23641463799358536,
+    "Lift@5": 0.5435853620064146,
+    "MRR": 0.78
+  },
+  "indicator": {
+    "n": 50,
+    "AC@1": 0.0,
+    "AC@3": 0.0,
+    "AC@5": 0.0,
+    "Avg@5": 0.0,
+    "Chance@5": 0.054758074273638144,
+    "Lift@5": -0.054758074273638144,
+    "MRR": 0.0
+  },
+  "invocations": [
+    {
+      "at": "2026-11-20T05:44:03Z",
+      "part": "dev",
+      "source_revision": "7220856 (inferred)",
+      "dirty": true
+    },
+    {
+      "at": "2026-11-20T06:26:17Z",
+      "part": "eval",
+      "source_revision": "7220856 (inferred)",
+      "dirty": true
+    }
+  ],
+  "parts_AC@1": {
+    "dev10": 0.8,
+    "ext40": 0.775
+  },
+  "note": "Run with scripts/evaluate_rcaeval.py run/score in two parts (dev 10, eval 40), merged and rescored here. FAILED means one worker error (a Reporter timeout, also on a seeded retry), scored as a miss; it is not an accuracy threshold. Not the pre-registered sample-ob-v1 protocol."
+}

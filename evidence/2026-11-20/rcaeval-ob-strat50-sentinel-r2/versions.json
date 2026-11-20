@@ -1,0 +1,15 @@
+{
+  "python": "3.13.9",
+  "packages": {
+    "RCAEval": "1.11.0",
+    "pandas": "2.3.3",
+    "numpy": "2.3.5",
+    "pyarrow": "21.0.0",
+    "scikit-learn": "1.7.2"
+  },
+  "model": {
+    "name": "qwen3:14b",
+    "digest": "bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8",
+    "quantization": "Q4_K_M"
+  }
+}

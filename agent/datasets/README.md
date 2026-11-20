@@ -108,6 +108,39 @@ trace events, and sampled timestamp columns) use UTC ISO 8601 with explicit
 `+00:00` offsets, as does the benchmark Reporter instruction. Legacy non-benchmark
 telemetry retains its existing time presentation and input timezone assumptions.
 
+Evidence quality rules (`agent/tools.py`, `agent/evidence.py`; tested in
+`tests/test_rcaeval_evidence_fixes.py`):
+
+- **Healthy-only baseline.** The metric CSV is written unclipped
+  (`metric_frame(clip=False)`), so rows before the window are available, while
+  every query is still bound to the window. Metric and log calls carry a
+  code-owned `baseline_end` equal to the known anomaly time: a series is scored
+  only against its samples in the 60 minutes before it, and a series with fewer
+  than five such samples is not scored (`series_without_healthy_baseline`).
+  The window under test never enters its own baseline. Outside the benchmark,
+  `baseline_end` defaults to the window start. The BARO and anomaly-rank
+  baselines still read the clipped window.
+- **Dated timestamps only.** RE2 trace files have a `time` column that holds
+  only `HH:MM`. The adapter maps the epoch `startTime` column to `timestamp`
+  and keeps `time` as `time_of_day`. The telemetry tools never give a date-less
+  value the current date: such values are unparseable, and a time column made
+  only of them is rejected.
+- **Explicit empty windows.** A call with no rows in the window returns
+  `window_empty: true` and the file's `data_range`, rather than an empty,
+  healthy-looking result.
+- **Available tools only.** The Planner's tool catalog lists only the
+  modalities this case has. A call on a file of another modality is refused
+  before it uses budget and is listed as `rejected_calls_never_retry`.
+- **Reporter support gate.** The Reporter may name only a candidate service
+  with a sustained, uncensored episode that starts at or after the anomaly
+  time, measured against a healthy baseline, or with a log or trace event
+  after it (`supported_components`). With no supported service it abstains
+  without a model call; an answer still invalid after one correction also
+  abstains. The live RCA path does not set this gate.
+
+An exploratory stratified 50-case run with these rules is recorded in
+`evidence/evaluation/rcaeval/strat50-ob/` (service AC@1 0.78, 39/50).
+
 ### Test your model with CaseToolkit
 
 Install the pinned upstream package and its toolkit dependencies, then export, run and score:
@@ -153,7 +186,7 @@ The formulas and normalization match the inspected upstream scoring/evaluator at
 
 The report includes service/indicator metrics, Chance@5, Lift@5, MRR, case coverage, errors, numeric usage totals and breakdowns by subset, system and fault. Missing predictions count as misses across the full selected case set. Duplicate, malformed and unknown case IDs are rejected. The scoring command does not discard failed cases to improve accuracy.
 
-RCAEval measures offline diagnosis accuracy, not recovery safety or live repair effectiveness. The dataset's published split is not a held-out train/test design. If tuning methods, separate complete case groups before evaluation; the importer and harness do not invent a train/test split. The pre-registered Online Boutique evaluation ([protocol](../../docs/evaluation/rcaeval/PROTOCOL.md)) splits dev and eval by repetition, freezes prompt hashes after the dev runs, and adds Wilson intervals and paired tests (`scripts/evaluation/`). It is prepared but has not been run.
+RCAEval measures offline diagnosis accuracy, not recovery safety or live repair effectiveness. The dataset's published split is not a held-out train/test design. If tuning methods, separate complete case groups before evaluation; the importer and harness do not invent a train/test split. The pre-registered Online Boutique evaluation ([protocol](../../docs/evaluation/rcaeval/PROTOCOL.md)) splits dev and eval by repetition, freezes prompt hashes after the dev runs, and adds Wilson intervals and paired tests (`scripts/evaluation/`). It is prepared but has not been run. A separate, exploratory stratified run of 50 Online Boutique cases (25 RE1, 25 RE2) used the same scoring and report tooling without the pre-registration; see `evidence/evaluation/rcaeval/strat50-ob/README.md`.
 
 ## Sources and license
 
