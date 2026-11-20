@@ -1,4 +1,5 @@
 # Weekly, grouped update proposals so pinned SHAs, digests and locks do not rot.
+# Major versions and Docker runtime minors need deliberate compatibility testing.
 # A pip update to a .in file must be followed by 'python scripts/ci/locks.py
 # --compile' on the same branch: the quality job fails until the hashed locks
 # match their inputs again.
@@ -8,6 +9,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       actions:
         patterns: ["*"]
@@ -19,6 +23,9 @@ updates:
       - /experiments/workloads/verifier-lab
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     groups:
       base-images:
         patterns: ["*"]
@@ -28,6 +35,9 @@ updates:
       - /agent/datasets
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       python:
         patterns: ["*"]
@@ -35,6 +45,9 @@ updates:
     directory: /dashboard
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       dashboard:
         patterns: ["*"]

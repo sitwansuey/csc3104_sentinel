@@ -1,5 +1,5 @@
 name: Checks
-on: [push, pull_request]
+on: {push: {branches: [main]}, pull_request: {}}
 permissions:
   contents: read
 # Actions are pinned to full commit SHAs; the comment names the release.

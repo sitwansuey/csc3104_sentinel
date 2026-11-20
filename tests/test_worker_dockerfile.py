@@ -233,9 +233,7 @@ class WorkerDockerfileTests(unittest.TestCase):
     def test_each_rule_reports_a_broken_dockerfile(self):
         good = DOCKERFILE.read_text(encoding="utf-8")
         cases = {
-            "base image not pinned": good.replace(
-                "python:3.12-alpine3.23@sha256:3d0ca66b723a0ff2a7a6e424cc2d01443e1b7c75ffcc110145f75d0f4daf6d63",
-                "python:3.12-alpine3.23"),
+            "base image not pinned": re.sub(r"(FROM python:[^@\s]+)@sha256:[0-9a-f]{64}", r"\1", good),
             "non-root user": good.replace("USER 10001:10001", "USER root"),
             "--require-hashes": good.replace("--require-hashes ", ""),
             "from source": good.replace("--only-binary=:all: ", ""),
